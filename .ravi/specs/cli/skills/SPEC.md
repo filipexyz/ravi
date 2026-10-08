@@ -101,8 +101,9 @@ the global envelope, exit taxonomy, authorization or transport behavior.
     rendering as "Remote command failed.".
 14. A successful install MUST NOT imply visibility. Its payload lists
     `nextSteps` with the `ravi skills grant <agent> <skill>` command for each
-    installed skill, and `skills grant` on a non-installed skill points to
-    `ravi skills install --source <skill-dir>`.
+    installed skill, and `skills grant` on a skill that is neither in the
+    catalog nor installed points to `ravi skills install --source <skill-dir>`.
+    A catalog skill MUST be grantable without `skills install`.
 
 ## Write classification (brake decision per invocation)
 
@@ -133,7 +134,7 @@ per invocation from source kind and overwrite intent.
 | source holds no `SKILL.md` | `SKILL_SOURCE_EMPTY` | 1 |
 | Git clone failed | `SKILL_SOURCE_UNAVAILABLE` (retryable) | 1 |
 | selected skill already installed without `--overwrite` | `SKILL_ALREADY_INSTALLED` (suggests grant or overwrite) | 1 |
-| runtime agent reads a skill outside its allowlist | `SKILL_NOT_AUTHORIZED` (`Skill '<skill>' is not authorized for agent '<agent>'.` + install/grant action) | 1 |
+| runtime agent reads a skill it is not authorized for | `SKILL_NOT_AUTHORIZED` (`Skill '<skill>' is not authorized for agent '<agent>'.` + grant action; `install --source` only for a skill outside Ravi) | 1 |
 | Git install or overwrite without `--execute` | `WRITE_REQUIRES_EXECUTE` + source-appropriate minimal plan | 3 |
 
 ## Domain exceptions and ordering

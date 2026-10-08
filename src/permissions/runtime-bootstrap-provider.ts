@@ -1,5 +1,5 @@
 import type { ContextCapability } from "../router/router-db.js";
-import { isChatOnlyAgent } from "./agent-default-capabilities-provider.js";
+import { suppressesRuntimeBootstrap } from "./agent-default-capabilities-provider.js";
 import type {
   PermissionProvider,
   PermissionProviderCapabilityOptions,
@@ -73,10 +73,10 @@ function shouldSuppressRuntimeBootstrap(
   subjectId: string,
   options?: PermissionProviderCapabilityOptions,
 ): boolean {
-  if (subjectType === "agent") return isChatOnlyAgent(subjectId);
+  if (subjectType === "agent") return suppressesRuntimeBootstrap(subjectId);
   if (subjectType === "automation") {
     const executorAgentId = options?.executorAgentId?.trim();
-    return executorAgentId ? isChatOnlyAgent(executorAgentId) : false;
+    return executorAgentId ? suppressesRuntimeBootstrap(executorAgentId) : false;
   }
   return false;
 }

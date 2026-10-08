@@ -20,6 +20,7 @@ import { publishSessionPrompt } from "../omni/session-stream.js";
 import { loadRouterConfig, expandHome } from "../router/index.js";
 import { buildSessionRelayTurnOrigin } from "../runtime/turn-origin.js";
 import { getOrCreateSession, resolveSession } from "../router/sessions.js";
+import { runtimeProviderHasTranscript } from "../transcripts.js";
 import type { SessionEntry } from "../router/types.js";
 import { gradeEvalRun, type EvalExecutionResult, type EvalGrade } from "./grader.js";
 import {
@@ -74,7 +75,9 @@ export async function runEvalTask(task: LoadedEvalTaskSpec, outputDir?: string):
     prompt: task.spec.prompt,
     sinceMessageCount: beforeTranscript.exists ? beforeTranscript.messages.length : 0,
   };
-  const readRunTranscript = (): EvalTranscriptRead => readEvalSessionTranscript(resolveSession(sessionName) ?? session);
+  const currentSession = () => resolveSession(sessionName) ?? session;
+  const readRunTranscript = (): EvalTranscriptRead => readEvalSessionTranscript(currentSession());
+  const agentProvider = loadRouterConfig().agents[session.agentId]?.provider;
 
   const execution = await runPromptAndWait({
     sessionName,
@@ -87,7 +90,16 @@ export async function runEvalTask(task: LoadedEvalTaskSpec, outputDir?: string):
     },
     readOwnTurnText: () => {
       const read = readRunTranscript();
-      if (!read.exists) return { readable: false };
+      if (!read.exists) {
+        // A fresh session gets its runtime session ID only after the daemon has
+        // already emitted turn.complete, so its transcript shows up a moment later
+        // (first the ID, then the file the ID points at). Until the deadline, a
+        // missing file only means "not written yet" for providers that keep one.
+        return {
+          readable: false,
+          pending: runtimeProviderHasTranscript(currentSession().runtimeProvider ?? agentProvider),
+        };
+      }
       const run = buildEvalTranscriptRun(read.messages, runScope);
       return {
         readable: true,
@@ -156,7 +168,11 @@ function resolveOrCreateEvalSession(task: LoadedEvalTaskSpec): SessionEntry {
   return created;
 }
 
-export type OwnTurnText = { readable: false } | { readable: true; text: string | null };
+/**
+ * `pending`: no transcript yet, but the provider keeps one (a fresh session's
+ * file shows up after its turn.complete), so keep waiting before history.
+ */
+export type OwnTurnText = { readable: false; pending?: boolean } | { readable: true; text: string | null };
 
 export interface RunPromptAndWaitInput {
   sessionName: string;
@@ -286,6 +302,8 @@ async function runPromptAndWait(input: RunPromptAndWaitInput): Promise<EvalExecu
  * event, so poll briefly. Ravi's stored history is only a fallback for
  * sessions without a readable transcript: its rows after the cursor can
  * include the reply of a turn that was already running when the eval started.
+ * A transcript that is still expected is waited for until the deadline, so
+ * the after snapshot can grade it; only then does history step in.
  */
 export async function readTurnResponse(
   input: Pick<RunPromptAndWaitInput, "sessionName" | "historyCursor" | "readOwnTurnText">,
@@ -295,11 +313,13 @@ export async function readTurnResponse(
   for (;;) {
     const own = input.readOwnTurnText();
     if (own.readable && own.text !== null) return own.text;
-    const fromHistory = own.readable
-      ? null
-      : readThisTurnAssistantText(getRecentHistory(input.sessionName, 50), input.historyCursor);
+    const expired = Date.now() >= deadline;
+    const fromHistory =
+      own.readable || (own.pending && !expired)
+        ? null
+        : readThisTurnAssistantText(getRecentHistory(input.sessionName, 50), input.historyCursor);
     if (fromHistory) return fromHistory.text;
-    if (Date.now() >= deadline) return "";
+    if (expired) return "";
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
 }

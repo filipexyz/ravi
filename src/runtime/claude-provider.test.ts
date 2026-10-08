@@ -51,9 +51,13 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
   }),
 }));
 
-const { buildClaudeCodeEnvironment, buildClaudeQueryOptions, createClaudeRuntimeProvider } = await import(
-  "./claude-provider.js"
-);
+const {
+  buildClaudeCodeEnvironment,
+  buildClaudeQueryOptions,
+  CLAUDE_STREAM_ACTIVITY_INTERVAL_MS,
+  createClaudeRuntimeProvider,
+  normalizeClaudeEvents,
+} = await import("./claude-provider.js");
 
 function makeStartRequest(
   messages: RuntimeStartRequest["prompt"],
@@ -485,6 +489,53 @@ describe("createClaudeRuntimeProvider", () => {
     ]);
   });
 
+  it("drops the turn Claude Code starts by itself after the prompt's result and runs the next prompt", async () => {
+    nextMessages = [
+      { type: "assistant", message: { content: [{ type: "text", text: "BG-INICIADO" }] } },
+      { type: "result", subtype: "success", is_error: false, session_id: "claude-session-bg", usage: zeroUsage },
+      // A background task finished: Claude Code opens a turn on its own.
+      { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "O sleep" } } },
+      {
+        type: "assistant",
+        message: {
+          content: [
+            { type: "text", text: "O sleep terminou." },
+            { type: "tool_use", id: "toolu_self", name: "Bash", input: { command: "ls" } },
+          ],
+        },
+      },
+      { type: "result", subtype: "success", is_error: false, session_id: "claude-session-bg", usage: zeroUsage },
+    ];
+
+    const provider = createClaudeRuntimeProvider();
+    const session = provider.startSession(
+      makeStartRequest(
+        (async function* () {
+          for (const content of ["primeiro", "segundo"]) {
+            yield {
+              type: "user" as const,
+              message: { role: "user" as const, content },
+              session_id: "",
+              parent_tool_use_id: null,
+            };
+          }
+        })(),
+      ),
+    );
+
+    const events = await collectEvents(session.events);
+
+    expect(queryCalls.map((call) => call.prompt)).toEqual(["primeiro", "segundo"]);
+    expect(findEventsByType(events, "assistant.message").map((event) => event.text)).toEqual([
+      "BG-INICIADO",
+      "BG-INICIADO",
+    ]);
+    expect(findEventsByType(events, "text.delta")).toHaveLength(0);
+    expect(findEventsByType(events, "tool.started")).toHaveLength(0);
+    expect(findEventsByType(events, "turn.complete")).toHaveLength(2);
+    expect(findEventsByType(events, "turn.failed")).toHaveLength(0);
+  });
+
   it("synthesizes a failed turn when the provider stream ends without a terminal result", async () => {
     nextMessages = [
       {
@@ -898,6 +949,68 @@ describe("createClaudeRuntimeProvider", () => {
     await collectEvents(handle.events);
     expect(queryCalls[0]?.options.settingSources).toEqual(["user"]);
     expect(queryCalls[0]?.options.settingSources).not.toContain("project");
+  });
+});
+
+describe("normalizeClaudeEvents stream activity", () => {
+  const streamEvent = (event: Record<string, unknown>) => ({ type: "stream_event", event });
+  const thinking = streamEvent({
+    type: "content_block_delta",
+    index: 0,
+    delta: { type: "thinking_delta", thinking: "secret reasoning" },
+  });
+  const toolInput = streamEvent({
+    type: "content_block_delta",
+    index: 1,
+    delta: { type: "input_json_delta", partial_json: '{"content":"<html>' },
+  });
+
+  async function normalize(messages: Array<{ at: number; message: unknown }>): Promise<RuntimeEvent[]> {
+    let clock = 0;
+    const query = {
+      async *[Symbol.asyncIterator]() {
+        for (const entry of messages) {
+          clock = entry.at;
+          yield entry.message;
+        }
+      },
+    };
+    const output: RuntimeEvent[] = [];
+    for await (const event of normalizeClaudeEvents(query as any, () => clock)) {
+      output.push(event);
+    }
+    return output;
+  }
+
+  it("signals activity for thinking and streamed tool input without exposing content", async () => {
+    const events = await normalize([
+      { at: 0, message: thinking },
+      { at: 1_000, message: thinking },
+      { at: CLAUDE_STREAM_ACTIVITY_INTERVAL_MS, message: toolInput },
+      { at: CLAUDE_STREAM_ACTIVITY_INTERVAL_MS + 1_000, message: toolInput },
+      { at: 2 * CLAUDE_STREAM_ACTIVITY_INTERVAL_MS + 1, message: toolInput },
+    ]);
+
+    expect(events).toEqual([
+      { type: "provider.activity" },
+      { type: "provider.activity" },
+      { type: "provider.activity" },
+    ]);
+    expect(JSON.stringify(events)).not.toContain("secret reasoning");
+    expect(JSON.stringify(events)).not.toContain("<html>");
+  });
+
+  it("does not add activity signals right after other provider events", async () => {
+    const events = await normalize([
+      {
+        at: 0,
+        message: streamEvent({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Oi" } }),
+      },
+      { at: 1_000, message: thinking },
+      { at: CLAUDE_STREAM_ACTIVITY_INTERVAL_MS + 1, message: thinking },
+    ]);
+
+    expect(events).toEqual([{ type: "text.delta", text: "Oi" }, { type: "provider.activity" }]);
   });
 });
 

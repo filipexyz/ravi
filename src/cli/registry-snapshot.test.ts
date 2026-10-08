@@ -275,6 +275,16 @@ describe("buildRegistry", () => {
       source: "inferred",
       ruleId: "pages",
     });
+    expect(inferRaviCommandSkillGate("ravi bases rows query crm deals --json")).toMatchObject({
+      skill: "ravi-system-bases",
+      source: "inferred",
+      ruleId: "bases",
+    });
+    expect(inferRaviCommandSkillGate("ravi bases list --project demo")).toMatchObject({
+      skill: "ravi-system-bases",
+      source: "inferred",
+      ruleId: "bases",
+    });
     expect(inferRaviCommandSkillGate('echo "ravi tasks list"', { executables: ["echo"] })).toBeUndefined();
   });
 
@@ -308,6 +318,11 @@ describe("buildRegistry", () => {
       skill: "ravi-system-pages",
       source: "inferred",
       ruleId: "pages",
+    });
+    expect(inferRaviToolSkillGate("bases_rows_query")).toMatchObject({
+      skill: "ravi-system-bases",
+      source: "inferred",
+      ruleId: "bases",
     });
     expect(inferRaviToolSkillGate("sessions_visibility")).toBeUndefined();
   });

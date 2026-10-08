@@ -136,7 +136,9 @@ ravi skills grant <agent> find-skills                        # dá visibilidade 
 ravi skills inspect <agent>                                  # confere a allowlist
 ```
 
-`SKILL_NOT_AUTHORIZED` nomeia a skill e o agente (`Skill 'x' is not authorized for agent 'y'.`) e aponta esses dois comandos. `skills grant` de uma skill não instalada falha com `SKILL_NOT_FOUND` e sugere o `install --source`.
+`SKILL_NOT_AUTHORIZED` nomeia a skill e o agente (`Skill 'x' is not authorized for agent 'y'.`) e aponta o remédio certo para a origem da skill. `skills grant` de uma skill não instalada falha com `SKILL_NOT_FOUND` e sugere o `install --source`.
+
+Skill que já vem no catálogo do Ravi (ex.: `bases`) não se instala: basta `ravi skills grant <agent> <skill>` ou a capability `use:skill:<skill>`. `use:skill:*` (que o `full-access` materializa) e `admin:system:*` liberam a leitura sob demanda de qualquer skill do catálogo ou instalada, sem colocá-la no catálogo do prompt. Rode o grant sozinho: uma linha de shell que também lê a skill negada é rejeitada inteira, e o grant dela não roda.
 
 ### Sincronizar
 

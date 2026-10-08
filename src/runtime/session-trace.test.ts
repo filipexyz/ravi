@@ -1304,6 +1304,119 @@ describe("runtime session trace instrumentation", () => {
     expect(listSessionEvents(SESSION_KEY).filter((event) => event.eventType === "turn.complete")).toHaveLength(2);
   });
 
+  it("restarts with the queued send when the runtime loop fails between turns", async () => {
+    // A send queued behind a finished turn has not reached the provider yet;
+    // when the runtime loop dies before handing it over, it must survive into
+    // the restart instead of staying in the dead session object.
+    updateSessionName(SESSION_KEY, SESSION_NAME);
+    const firstSend = createQueuedRuntimeUserMessage({
+      prompt: "first send before background",
+      deliveryBarrier: "after_response",
+      _turnOrigin: buildSessionRelayTurnOrigin("send"),
+    });
+    const streaming = makeStreamingSession({
+      agentMode: "active",
+      currentSource: undefined,
+      currentEffort: "low",
+      pendingMessages: [firstSend],
+      currentTurnPendingIds: firstSend.pendingId ? [firstSend.pendingId] : [],
+      turnActive: false,
+    });
+    const provider: SessionRuntimeProvider = {
+      id: PROVIDER,
+      getCapabilities: () => capabilities,
+      startSession: () => makeRuntimeSession([]),
+    };
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const { runtimeRequest } = await buildRuntimeStartRequest({
+      runId: "run-loop-fails-between-turns",
+      sessionName: SESSION_NAME,
+      prompt: {
+        prompt: "first send before background",
+        _turnOrigin: buildSessionRelayTurnOrigin("send"),
+        deliveryBarrier: "after_response",
+      },
+      session: makeSession(),
+      agent: makeAgent(),
+      runtimeProviderId: PROVIDER,
+      runtimeProvider: provider,
+      runtimeCapabilities: capabilities,
+      sessionCwd: stateDir ?? "/tmp",
+      dbSessionKey: SESSION_KEY,
+      model: MODEL,
+      runtimeResolution: {
+        options: { model: MODEL },
+        sources: { model: "agent_default", effort: null, thinking: null },
+        hasTaskRuntimeContext: false,
+      },
+      storedRuntimeSessionParams: undefined,
+      canResumeStoredSession: false,
+      resolvedSource: undefined,
+      streamingSession: streaming,
+      stashedMessages,
+      defaultRuntimeProviderId: PROVIDER,
+      crashRecovery,
+    });
+
+    const dispatcher = new RuntimeSessionDispatcher({
+      instanceId: "trace-test",
+      maxConcurrentSessions: 10,
+      interactiveReservedSessions: 0,
+      safeEmit: async () => {},
+      notifyRuntimeRecoveryExhausted: async () => {},
+      getConfigModel: () => MODEL,
+      crashRecovery,
+    });
+    dispatcher.streamingSessions.set(SESSION_NAME, streaming);
+    const runtimeSession: RuntimeSessionHandle = {
+      provider: PROVIDER,
+      interrupt: async () => {},
+      events: (async function* () {
+        const first = await runtimeRequest.prompt.next();
+        expect(first.done).toBe(false);
+        await dispatcher.handlePromptImmediate(SESSION_NAME, {
+          prompt: "second send queued behind",
+          _turnOrigin: buildSessionRelayTurnOrigin("send"),
+          _agentId: AGENT_ID,
+          deliveryBarrier: "after_response",
+          deliveryBarrierSource: "default",
+        });
+        yield { type: "assistant.message", text: "first reply" } satisfies RuntimeEvent;
+        yield {
+          type: "turn.complete",
+          providerSessionId: "provider-before-background",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        } satisfies RuntimeEvent;
+        throw new Error("provider stream broke between turns");
+      })(),
+    };
+    streaming.queryHandle = runtimeSession;
+
+    const restarts: Array<{ reason: string; stashed: string[] }> = [];
+    try {
+      await runTraceLoop(streaming, runtimeSession, {
+        agent: makeAgent(),
+        streamingSessions: dispatcher.streamingSessions,
+        stashedMessages,
+        restartStashedSession: async ({ reason }) => {
+          restarts.push({
+            reason,
+            stashed: (stashedMessages.get(SESSION_NAME) ?? []).map((message) => message.message.content),
+          });
+        },
+      }).catch(() => undefined);
+    } finally {
+      streaming.done = true;
+      streaming.onTurnComplete?.();
+      await runtimeRequest.prompt.return?.(undefined);
+    }
+
+    expect(restarts).toHaveLength(1);
+    expect(restarts[0]?.reason).toBe("runtime_event_loop_closed");
+    expect(restarts[0]?.stashed.some((content) => content.includes("second send queued behind"))).toBe(true);
+    expect(restarts[0]?.stashed.some((content) => content.includes("first send before background"))).toBe(false);
+  });
+
   it("rebounds a session-relay continue without _cliDestination to the primary attached output", async () => {
     const leftoverChat = dbUpsertChat({
       channel: "whatsapp",
@@ -3529,6 +3642,51 @@ describe("runtime session trace instrumentation", () => {
       expect(terminals[0]!.timestamp - compactionCompletedAt).toBeGreaterThanOrEqual(1_000);
       expect(terminals[0]?.payloadJson).toMatchObject({ abort_reason: "provider_inactive" });
     }
+  });
+
+  it("keeps a long generation alive after a tool while the provider signals activity", async () => {
+    const previousTimeout = process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS;
+    process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS = "1000";
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-tool-then-long-generation");
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const runtimeSession = makeRuntimeSessionThenHang([]);
+    runtimeSession.events = (async function* (): AsyncGenerator<RuntimeEvent> {
+      yield { type: "tool.started", toolUse: { id: "tool-read", name: "Read", input: {} } };
+      yield { type: "tool.completed", toolUseId: "tool-read", toolName: "Read", content: "skill" };
+      // The model thinks / streams a large tool input for longer than the
+      // after-tool window, with only liveness signals and no canonical event.
+      // Short gaps leave a wide margin under the 1s watch; the total still
+      // runs past it, so the test only passes if each signal re-arms the watch.
+      for (let i = 0; i < 10; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        yield { type: "provider.activity" };
+      }
+      yield { type: "assistant.message", text: "Arquivo escrito." };
+      yield {
+        type: "turn.complete",
+        providerSessionId: "provider-long-generation",
+        usage: { inputTokens: 1, outputTokens: 1 },
+      };
+    })();
+
+    try {
+      await runTraceLoop(streaming, runtimeSession, {
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      });
+    } finally {
+      if (previousTimeout === undefined) {
+        delete process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS;
+      } else {
+        process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS = previousTimeout;
+      }
+    }
+
+    expect(emitted.some((event) => event.data.type === "provider.inactive")).toBe(false);
+    expect(emitted.some((event) => event.data.type === "provider.activity")).toBe(false);
+    expect(getSessionTurn("turn-tool-then-long-generation")?.status).toBe("complete");
   });
 
   it("recovers a mid-turn utterance plus tool hang by interrupting and continuing", async () => {

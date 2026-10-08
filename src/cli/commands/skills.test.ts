@@ -735,7 +735,9 @@ describe("skills agent-first contract", () => {
     expect(denied.code).toBe("SKILL_NOT_AUTHORIZED");
     expect(denied.message).toBe(`Skill '${deniedSkill!.name}' is not authorized for agent '${agentId}'.`);
     expect(String(denied.suggestedAction)).toContain(`ravi skills grant ${agentId} ${deniedSkill!.name}`);
-    expect(String(denied.suggestedAction)).toContain("ravi skills install --source <skill-dir>");
+    // Catalog skills ship with Ravi: the remediation is a grant, never an install.
+    expect(String(denied.suggestedAction)).toContain("nothing to install");
+    expect(String(denied.suggestedAction)).not.toContain("ravi skills install");
 
     expect(() =>
       withoutLogs(() => runWithContext({}, () => commands.show(deniedSkill!.name, undefined, undefined, true))),
@@ -1132,8 +1134,9 @@ describe("skills install --source for a single on-disk skill (bug 2b7fcc09)", ()
         approved: false,
         reason:
           "SKILL_NOT_AUTHORIZED: Skill 'other-skill' is not authorized for agent 'loop-agent'. " +
-          "Install it into Ravi if needed ('ravi skills install --source <skill-dir>'), then grant it " +
-          "('ravi skills grant loop-agent other-skill').",
+          "It is not in the Ravi catalog or installed: install it ('ravi skills install --source <skill-dir>'), " +
+          "then grant it ('ravi skills grant loop-agent other-skill'). Installing and granting need " +
+          "mutate:skills:install and mutate:skills:grant; if this agent cannot run them, ask an operator.",
       });
       const grantedRead = await services.authorizeCommandExecution({ command: `head -20 ${findSkillFile}`, input: {} });
       expect(String(grantedRead.reason ?? "")).not.toStartWith("SKILL_NOT_AUTHORIZED");

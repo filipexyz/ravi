@@ -82,8 +82,8 @@ Regras:
 Só use capability solta quando ainda não existir profile adequado. Nesse caso,
 coloque a capability em `--capabilities` como bootstrap de um profile estreito.
 `full-access` é break-glass e exige aprovação explícita do operador. O profile
-materializa `admin system:*`, `execute executable:*`, `use tool:*` e
-`use toolgroup:*`. Em turnos `turn-runtime` com ator resolvido, o PreToolUse
+materializa `admin system:*`, `execute executable:*`, `use tool:*`,
+`use toolgroup:*` e `use skill:*` (lê qualquer skill que o Ravi conhece). Em turnos `turn-runtime` com ator resolvido, o PreToolUse
 do Bash relê esse teto do executor no próximo check — sem reset de sessão.
 Não pede `full-access` para denial operacional comum; não confunda com tag
 `permission.admin` de contato.
@@ -111,12 +111,15 @@ Regras:
   humanos, prefira `ravi permissions allow/resolve`.
 - Profiles de runtime: `bootstrap` (piso de nascimento), `chat-only`
   (conversation only; sentinel explícito `{ profile: "chat-only" }`),
+  `explicit-only` (só as capabilities explícitas, sem piso bootstrap — para
+  agentes que atendem público: `use:tool:Bash` + os grupos/ações necessários),
   `full-access` (break-glass), `none`/`clear`/`off` (apaga overlay e volta ao
   piso bootstrap). `none` não é zero-authority.
 - `runtime-bootstrap`, `agent-default-capabilities`,
   `agent-identity-permissions` e `contact-policy-permissions` são os
-  materializers padrão. `chat-only` suprime a injeção de `runtime-bootstrap`
-  no agent e no `agent_identity` derivado.
+  materializers padrão. `chat-only` e `explicit-only` suprimem a injeção de
+  `runtime-bootstrap` no agent e no `agent_identity` derivado (`chat-only`
+  também descarta as explícitas; `explicit-only` as mantém).
 - `operator-control` é o authorization provider explícito para operador local;
   ele não materializa capabilities de agent e não autoriza execução de tools.
 - O contexto efetivo de um turno externo usa `authorityMode=agent-identity`:

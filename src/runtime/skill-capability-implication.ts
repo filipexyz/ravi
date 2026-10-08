@@ -1,5 +1,15 @@
+import { realpathSync } from "node:fs";
+import { basename, isAbsolute, resolve } from "node:path";
 import { listGroupSkillRules } from "../cli/skill-gates.js";
+import { canWithCapabilities } from "../permissions/capability-snapshot.js";
 import type { ContextCapability } from "../router/router-db.js";
+import {
+  findSkillByName,
+  listCatalogSkills,
+  listInstalledSkills,
+  slugifySkillName,
+  type RaviSkill,
+} from "../skills/manager.js";
 import { skillIdentifiersMatch } from "./skill-visibility.js";
 
 /**
@@ -46,9 +56,11 @@ export function specificSkillsFromCapabilities(capabilities: readonly ContextCap
 }
 
 /**
- * Whether an official gated system skill is implied by the identity's
- * capabilities. Custom/personal skills are never implied here — those stay
- * grant-only so skill visibility cannot mint effect authority.
+ * Whether an official gated system skill is implied by the identity's command
+ * capabilities. Custom/personal skills are never implied by command
+ * capabilities: they need a grant or an explicit `use:skill:<id>` capability
+ * ({@link skillCoveredBySkillCapability}). Visibility never mints effect
+ * authority.
  */
 export function officialSkillImpliedByCapabilities(
   capabilities: readonly ContextCapability[],
@@ -62,4 +74,134 @@ export function officialSkillImpliedByCapabilities(
     return true;
   }
   return rules.some((rule) => capabilities.some((capability) => capabilityMatchesGroupRule(capability, rule.pattern)));
+}
+
+/** Object type of `use:skill:<id>` capabilities. */
+export const SKILL_CAPABILITY_OBJECT_TYPE = "skill";
+
+function isSkillUseCapability(capability: ContextCapability): boolean {
+  return capability.permission === "use" && capability.objectType === SKILL_CAPABILITY_OBJECT_TYPE;
+}
+
+/** Whether any `use:skill:<id>` capability (wildcards included) is present. */
+export function hasSkillUseCapability(capabilities: readonly ContextCapability[]): boolean {
+  return capabilities.some(isSkillUseCapability);
+}
+
+/**
+ * A skill Ravi itself knows: a catalog skill shipped with Ravi, or a skill an
+ * operator installed (`ravi skills install`). Resolution matches `ravi skills
+ * grant`. Skills that only exist on disk resolve to null.
+ */
+export function resolveKnownRaviSkill(skillName: string): RaviSkill | null {
+  const name = skillName.trim();
+  if (!name) return null;
+  return (
+    findSkillByName(listCatalogSkills(), name) ?? findSkillByName(listInstalledSkills({ includeCodex: false }), name)
+  );
+}
+
+/**
+ * Whether `directory` is where `skill` lives. Catalog skills ship inside Ravi
+ * under a virtual path, so no directory on disk is ever one of them.
+ */
+function isKnownSkillDirectory(skill: RaviSkill, directory: string): boolean {
+  if (skill.source.startsWith("catalog:") || !isAbsolute(skill.path)) return false;
+  const canonical = (path: string) => {
+    const resolved = resolve(path);
+    try {
+      return realpathSync(resolved);
+    } catch {
+      return resolved;
+    }
+  };
+  return canonical(directory) === canonical(skill.path);
+}
+
+/**
+ * The installed Ravi skill named `skillName` that lives in `directory`. Checked
+ * against every installed skill, so an installed skill that shares its name
+ * with a catalog skill still matches its own directory.
+ */
+function resolveKnownRaviSkillAt(skillName: string, directory: string): RaviSkill | null {
+  if (!skillName.trim()) return null;
+  return (
+    listInstalledSkills({ includeCodex: false }).find(
+      (skill) => findSkillByName([skill], skillName) !== null && isKnownSkillDirectory(skill, directory),
+    ) ?? null
+  );
+}
+
+/** Whether `directory` is the installed copy of the Ravi skill named `skillName`. */
+export function isKnownRaviSkillDirectory(skillName: string, directory: string): boolean {
+  return resolveKnownRaviSkillAt(skillName, directory) !== null;
+}
+
+/** Capability ids that name `skill`: its name, its directory and plugin-qualified aliases. */
+function skillCapabilityIds(skill: RaviSkill): string[] {
+  const ids = new Set<string>([slugifySkillName(skill.name), slugifySkillName(basename(skill.path))]);
+  if (skill.pluginName) {
+    ids.add(slugifySkillName(`${skill.pluginName}-${skill.name}`));
+    ids.add(slugifySkillName(`${skill.pluginName}-${basename(skill.path)}`));
+  }
+  return [...ids];
+}
+
+/** `ravi-system:bases` → `ravi-system-bases`; wildcards keep their `*`. */
+function normalizeSkillCapabilityId(objectId: string): string {
+  const trimmed = objectId.trim().toLowerCase();
+  if (!trimmed.includes("*")) return slugifySkillName(trimmed);
+  return trimmed.replace(/[^a-z0-9._*]+/g, "-");
+}
+
+/**
+ * Whether a `use:skill:<id>` capability (or the `admin:system:*` break-glass)
+ * covers `skillName`. Uses the same matcher as tool and group capabilities:
+ * exact id, trailing glob (`use:skill:ravi-system-*`), `use:skill:*`, and the
+ * admin short-circuit.
+ *
+ * Only skills Ravi knows are covered (catalog or installed). A skill that only
+ * exists on disk must be installed before any capability or grant reaches it.
+ * With `skillPath` (the directory actually being read), coverage applies only
+ * to the installed skill in that directory, never same-named content elsewhere.
+ */
+export function skillCoveredBySkillCapability(
+  capabilities: readonly ContextCapability[],
+  skillName: string,
+  options: { skillPath?: string } = {},
+): boolean {
+  const skillCapabilities = capabilities.filter(isSkillUseCapability);
+  const adminAll = isAdminAll(capabilities);
+  if (!adminAll && skillCapabilities.length === 0) return false;
+
+  const skill =
+    options.skillPath === undefined
+      ? resolveKnownRaviSkill(skillName)
+      : resolveKnownRaviSkillAt(skillName, options.skillPath);
+  if (!skill) return false;
+  if (adminAll) return true;
+
+  const normalized = skillCapabilities.map((capability) => ({
+    ...capability,
+    objectId: normalizeSkillCapabilityId(capability.objectId),
+  }));
+  return skillCapabilityIds(skill).some((id) =>
+    canWithCapabilities(normalized, "use", SKILL_CAPABILITY_OBJECT_TYPE, id),
+  );
+}
+
+/**
+ * Canonical names of the skills that concrete `use:skill:<id>` capabilities
+ * name. They join the announced catalog like grants do. Wildcards
+ * (`use:skill:*`, `use:skill:ravi-system-*`) and admin authorize reads but never
+ * widen the catalog.
+ */
+export function skillNamesFromSkillCapabilities(capabilities: readonly ContextCapability[]): string[] {
+  const names = new Set<string>();
+  for (const capability of capabilities) {
+    if (!isSkillUseCapability(capability) || capability.objectId.includes("*")) continue;
+    const skill = resolveKnownRaviSkill(capability.objectId);
+    if (skill) names.add(skill.name);
+  }
+  return [...names];
 }

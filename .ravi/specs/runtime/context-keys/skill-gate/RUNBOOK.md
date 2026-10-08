@@ -76,7 +76,8 @@ ravi skills inspect <agent> --json
 ```
 
 2. If the skill is missing from the agent's catalog, grant it through
-   `ravi skills grant` or a group permission. The gate MUST NOT auto-load a
+   `ravi skills grant <agent> <skill>`, a `use:skill:<skill>` capability, or a
+   permission for the matching command group. The gate MUST NOT auto-load a
    skill the agent is not allowed to read.
 3. If no plugin provides the skill at all, fix the gate declaration (`tool`,
    `command`, `commandPrefix`, or `commandRegex` plus `skill`) rather than the

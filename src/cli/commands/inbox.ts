@@ -174,7 +174,7 @@ export class InboxCommands {
       limit: parsePositiveInteger(limit, "--limit"),
       offset: parseNonNegativeInteger(offset, "--offset"),
     });
-    const payload = { items: pickFields(items, fields) };
+    const payload = { total: items.length, items: pickFields(items, fields) };
     if (asJson) {
       printJson(payload);
       return payload;

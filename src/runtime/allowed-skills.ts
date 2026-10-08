@@ -2,14 +2,17 @@ import { listGroupSkillRules } from "../cli/skill-gates.js";
 import { materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
 import { dbListSkillGrantsForAgent, type ContextCapability } from "../router/router-db.js";
 import {
+  hasSkillUseCapability,
   isAdminAll,
   selectGroupCaps,
+  skillNamesFromSkillCapabilities,
   specificSkillsFromCapabilities,
   capabilityMatchesGroupRule,
 } from "./skill-capability-implication.js";
 
 export {
   officialSkillImpliedByCapabilities,
+  skillCoveredBySkillCapability,
   specificSkillsFromCapabilities,
 } from "./skill-capability-implication.js";
 
@@ -20,7 +23,11 @@ export {
  *
  * Produces a per-agent allowlist from the operational baseline plus:
  *   1. explicit grants (`ravi skills grant`);
- *   2. system skills derived from command capabilities.
+ *   2. system skills derived from command capabilities;
+ *   3. skills named by concrete `use:skill:<id>` capabilities (like grants).
+ *
+ * `use:skill:*`, globs and `admin:system:*` authorize reading any skill Ravi
+ * knows (see `skill-authorization`) but never widen this catalog.
  *
  * Grants stay authoritative against a generic `execute:group:*` dump.
  * `admin:system:*` and specific `read|mutate:<resource>:<action>` /
@@ -53,6 +60,11 @@ export interface ResolvedAgentSkills {
   hasConfiguration: boolean;
   /** Nomes canônicos de skill visíveis (baseline ∪ derivadas ∪ grants). */
   allowlist: string[];
+  /**
+   * Allowlist names that only concrete `use:skill:<id>` capabilities put there.
+   * A turn that supplies its own capabilities re-checks them against the turn.
+   */
+  fromSkillCapabilitiesOnly: string[];
   provenance: {
     baseline: string[];
     fromCapabilities: string[];
@@ -98,6 +110,7 @@ export function resolveAgentSkills(
     return {
       hasConfiguration: false,
       allowlist: [],
+      fromSkillCapabilitiesOnly: [],
       provenance: { baseline: [], fromCapabilities: [], fromGrants: [] },
     };
   }
@@ -133,16 +146,29 @@ export function resolveAgentSkills(
         : specificSkillsFromCapabilities(capabilities).flatMap(expandSkillNames)
       : derivedNames;
 
+  // Concrete `use:skill:<id>` capabilities name one skill each, like a grant.
+  const skillCapabilityNames = skillNamesFromSkillCapabilities(capabilities).flatMap(expandSkillNames);
+  const fromCapabilities = [...new Set([...effectiveDerivedNames, ...skillCapabilityNames])];
+
   const hasSpecificCommandCaps = specificSkillsFromCapabilities(capabilities).length > 0;
-  const hasConfiguration = adminAll || groupCaps.length > 0 || grants.length > 0 || hasSpecificCommandCaps;
-  const allowlist = [...new Set([...baselineNames, ...effectiveDerivedNames, ...grantNames])];
+  // Any `use:skill` capability, wildcards included, configures the agent: it
+  // then reads only skills Ravi knows, never disk-only ones by grandfathering.
+  const hasConfiguration =
+    adminAll ||
+    groupCaps.length > 0 ||
+    grants.length > 0 ||
+    hasSpecificCommandCaps ||
+    hasSkillUseCapability(capabilities);
+  const allowlist = [...new Set([...baselineNames, ...fromCapabilities, ...grantNames])];
+  const otherNames = new Set([...baselineNames, ...effectiveDerivedNames, ...grantNames]);
 
   return {
     hasConfiguration,
     allowlist,
+    fromSkillCapabilitiesOnly: [...new Set(skillCapabilityNames)].filter((name) => !otherNames.has(name)),
     provenance: {
       baseline: baselineNames,
-      fromCapabilities: effectiveDerivedNames,
+      fromCapabilities,
       fromGrants: grantNames,
     },
   };

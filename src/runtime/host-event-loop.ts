@@ -66,6 +66,7 @@ import { classifyFatalToolFailure, FATAL_TOOL_FAILURE_REASON, type FatalToolFail
 import {
   LEGACY_RUNTIME_PROVIDER_ID,
   getCrashRecoveryReplayablePendingRuntimeMessages,
+  getPendingRuntimeTurnSuccessors,
   getRuntimeTurnReplaySafety,
   isProviderEndedAfterCompletedTools,
   runtimeTurnAttemptTerminalEventType,
@@ -2083,6 +2084,37 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     });
   };
 
+  /**
+   * The loop closed between turns (the last turn already has its terminal).
+   * Prompts queued behind that turn never reached the provider; without a
+   * restart they would stay in this dead session object and be lost.
+   */
+  const recoverQueueBehindSettledTurn = () => {
+    const reason =
+      streaming.internalAbortReason ??
+      (streaming.abortController.signal.aborted ? "runtime_aborted" : "runtime_event_loop_closed");
+    if (reason !== "runtime_event_loop_closed" || streaming.toolRunning || !crashRecovery?.acceptingDeliveries) {
+      return;
+    }
+    // Only successors: the finished turn's own prompt is never replayed here,
+    // whatever its terminal was.
+    const successors = getPendingRuntimeTurnSuccessors(streaming);
+    if (successors.length === 0) {
+      return;
+    }
+    stashedMessages.set(
+      sessionName,
+      successors.map((message) => ({ ...message })),
+    );
+    restartStashedReason = reason;
+    log.warn("Restarting runtime to deliver prompts queued behind a finished turn", {
+      runId,
+      sessionName,
+      reason,
+      stashedMessages: successors.length,
+    });
+  };
+
   const prepareUnterminatedTurnRecovery = () => {
     if (streaming.durableTurnPreparationFailed) {
       if (!restartStashedReason) {
@@ -2109,12 +2141,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
 
     const currentTurnId = streaming.currentTraceTurnId;
-    if (
-      !currentTurnId ||
-      streaming.currentTraceTurnTerminalRecorded ||
-      streaming.currentCrashRecoveryTerminal ||
-      restartStashedReason
-    ) {
+    if (restartStashedReason) {
+      return;
+    }
+    if (!currentTurnId || streaming.currentTraceTurnTerminalRecorded || streaming.currentCrashRecoveryTerminal) {
+      recoverQueueBehindSettledTurn();
       return;
     }
 
@@ -2679,6 +2710,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       // tool.completed for providers that finish the tool in-process (Grok/Claude/Pi).
       if (providerInactivityWatchArmed && event.type !== "tool.result_delivered") {
         armProviderInactivityWatch();
+      }
+
+      // Liveness-only signal: it has already reset the watchdogs above and
+      // carries nothing to project, persist, or deliver.
+      if (event.type === "provider.activity") {
+        continue;
       }
 
       const logLevel = runtimeEventLogLevel(event.type);

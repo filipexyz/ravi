@@ -364,3 +364,72 @@ function pageCommentInbox(pageId: string, body: string) {
     createdAt: "2026-09-26T00:00:00.000Z",
   };
 }
+
+describe("TriggerRunner main-session reply routing", () => {
+  it("replies where the main session last talked when no reply session is set", async () => {
+    const { getOrCreateSession, updateSessionSource } = await import("../../router/sessions.js");
+    getOrCreateSession("agent:trigger-test-agent:main", "trigger-test-agent", "/tmp/trigger-test-agent-real", {
+      name: "trigger-main",
+    });
+    updateSessionSource("agent:trigger-test-agent:main", {
+      channel: "whatsapp",
+      accountId: "main-account",
+      chatId: "chat-a",
+    });
+    const topic = "ravi.test.main-reply";
+    const trigger = dbCreateTrigger({
+      name: "main-no-reply-session",
+      agentId: "trigger-test-agent",
+      topic,
+      message: "agent prompt",
+      session: "main",
+      cooldownMs: 0,
+    });
+    expect(trigger.replySession).toBeUndefined();
+
+    await startRunner();
+    emit(topic, { eventId: "evt-main" });
+    await waitFor(() => publishCalls.length >= 1);
+
+    expect(publishCalls[0]?.sessionName).toBe("trigger-main");
+    expect(publishCalls[0]?.payload.source).toEqual({
+      channel: "whatsapp",
+      accountId: "main-account",
+      chatId: "chat-a",
+    });
+  });
+});
+
+describe("TriggerRunner main-session pinned recipient", () => {
+  it("keeps the creator-time reply source over the main session's last chat", async () => {
+    const { getOrCreateSession, updateSessionSource } = await import("../../router/sessions.js");
+    getOrCreateSession("agent:trigger-test-agent:main", "trigger-test-agent", "/tmp/trigger-test-agent-real", {
+      name: "trigger-main",
+    });
+    updateSessionSource("agent:trigger-test-agent:main", {
+      channel: "whatsapp",
+      accountId: "main-account",
+      chatId: "chat-latest",
+    });
+    const topic = "ravi.test.main-pinned";
+    dbCreateTrigger({
+      name: "main-pinned-recipient",
+      agentId: "trigger-test-agent",
+      topic,
+      message: "agent prompt",
+      session: "main",
+      cooldownMs: 0,
+      replySource: { channel: "whatsapp", accountId: "creator-account", chatId: "chat-creator" },
+    });
+
+    await startRunner();
+    emit(topic, { eventId: "evt-pinned" });
+    await waitFor(() => publishCalls.length >= 1);
+
+    expect(publishCalls[0]?.payload.source).toEqual({
+      channel: "whatsapp",
+      accountId: "creator-account",
+      chatId: "chat-creator",
+    });
+  });
+});

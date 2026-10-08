@@ -429,7 +429,13 @@ describe("remote gateway exit taxonomy", () => {
     [1, "failed", "COMMAND_FAILED", "Remote command failed."],
     [1, "denied", "PERMISSION_DENIED", "Remote gateway denied the command."],
     [2, "usage_error", "USAGE_ERROR", "Remote gateway rejected the command input."],
-    [3, "blocked", "WRITE_REQUIRES_EXECUTE", "Remote command was blocked by policy."],
+    [
+      3,
+      "blocked",
+      "WRITE_REQUIRES_EXECUTE",
+      "Dry-run: nothing was written. Re-run with --execute to perform the write.",
+    ],
+    [3, "blocked", "POLICY_BLOCKED", "Remote command was blocked by policy."],
   ] as const)(
     "projects a complete exit %i/%s response into a safe local contract",
     (exitCode, outcome, code, message) => {
@@ -463,6 +469,39 @@ describe("remote gateway exit taxonomy", () => {
       expect(serialized).not.toContain("metadata");
     },
   );
+
+  it("tells a remote dry-run to add --execute instead of reporting a policy block", () => {
+    // `ravi bug comment <id>` without --execute from an agent session used to print
+    // "Remote command was blocked by policy.", hiding the write brake's next step.
+    const error = remoteGatewayErrorToContractError(
+      "bug comment",
+      result({
+        status: 409,
+        body: JSON.stringify({
+          success: false,
+          op: "bug comment",
+          exitCode: 3,
+          outcome: "blocked",
+          error: {
+            code: "WRITE_REQUIRES_EXECUTE",
+            message: "PRIVATE_MESSAGE_8K2R",
+            retryable: false,
+            dryRun: true,
+            plan: { textPresent: true },
+          },
+        }),
+      }),
+    );
+
+    expect(error?.envelope().error).toMatchObject({
+      code: "WRITE_REQUIRES_EXECUTE",
+      message: "Dry-run: nothing was written. Re-run with --execute to perform the write.",
+      suggestedAction: "Re-run 'bug comment' adding --execute to perform the write",
+      dryRun: true,
+    });
+    expect(error?.exitCode).toBe(3);
+    expect(JSON.stringify(error?.envelope())).not.toContain("PRIVATE_MESSAGE_8K2R");
+  });
 
   it("rejects an invalid remote error code instead of reflecting it", () => {
     const error = remoteGatewayErrorToContractError(
@@ -540,7 +579,7 @@ describe("remote gateway exit taxonomy", () => {
     );
 
     expect(error?.envelope().error).toMatchObject({
-      suggestedAction: "Review the remote policy block before retrying the command",
+      suggestedAction: "Re-run 'commands list' adding --execute to perform the write",
       suggestions: ["CRM-42", "calendar_main"],
       acceptedFlags: ["--json"],
       acceptedPositionals: ["<opportunity>", "[text]", "<name...>"],

@@ -2157,6 +2157,2166 @@ class AudioVoicesReturn {
 
 AudioVoicesReturn audioVoicesReturnFromJson(Object? json) => AudioVoicesReturn.fromJsonValue(json);
 
+class BasesAggregateOptions {
+  const BasesAggregateOptions({this.agg, this.console, this.filter, this.groupBy, this.project});
+
+  final List<String>? agg;
+  final String? console;
+  final String? filter;
+  final List<String>? groupBy;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (agg != null) {
+      into["agg"] = RaviJson.from(agg);
+    }
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (filter != null) {
+      into["filter"] = RaviJson.from(filter);
+    }
+    if (groupBy != null) {
+      into["groupBy"] = RaviJson.from(groupBy);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class BasesAggregateReturn {
+  const BasesAggregateReturn({required this.baseRef, required this.consoleUrl, required this.groups, required this.projectRef, required this.success, required this.suppressedGroups, required this.users});
+
+  final String baseRef;
+  final String consoleUrl;
+  final List<RaviJson> groups;
+  final String projectRef;
+  final bool success;
+  final double suppressedGroups;
+  final Map<String, RaviJson> users;
+
+  factory BasesAggregateReturn.fromJson(Map<String, Object?> json) {
+    return BasesAggregateReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      groups: raviJsonAsList(json["groups"], RaviJson.from),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      success: raviJsonAsBool(json["success"]),
+      suppressedGroups: raviJsonAsDouble(json["suppressedGroups"]),
+      users: raviJsonAsRaviJsonMap(json["users"]),
+    );
+  }
+
+  static BasesAggregateReturn fromJsonValue(Object? json) {
+    return BasesAggregateReturn.fromJson(raviJsonObject(json, "BasesAggregateReturn"));
+  }
+}
+
+BasesAggregateReturn basesAggregateReturnFromJson(Object? json) => BasesAggregateReturn.fromJsonValue(json);
+
+class BasesArchiveOptions {
+  const BasesArchiveOptions({this.console, this.execute, this.expectedVersion, this.project});
+
+  final String? console;
+  final bool? execute;
+  final String? expectedVersion;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (expectedVersion != null) {
+      into["expectedVersion"] = RaviJson.from(expectedVersion);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class BasesArchiveReturn {
+  const BasesArchiveReturn({required this.base, required this.consoleUrl, required this.projectRef, required this.success});
+
+  final RaviJson base;
+  final String consoleUrl;
+  final String projectRef;
+  final bool success;
+
+  factory BasesArchiveReturn.fromJson(Map<String, Object?> json) {
+    return BasesArchiveReturn(
+      base: RaviJson.from(json["base"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static BasesArchiveReturn fromJsonValue(Object? json) {
+    return BasesArchiveReturn.fromJson(raviJsonObject(json, "BasesArchiveReturn"));
+  }
+}
+
+BasesArchiveReturn basesArchiveReturnFromJson(Object? json) => BasesArchiveReturn.fromJsonValue(json);
+
+class BasesChartsArchiveOptions {
+  const BasesChartsArchiveOptions({this.console, this.execute, this.expectedVersion, this.project});
+
+  final String? console;
+  final bool? execute;
+  final String? expectedVersion;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (expectedVersion != null) {
+      into["expectedVersion"] = RaviJson.from(expectedVersion);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class BasesChartsArchiveReturn {
+  const BasesChartsArchiveReturn({required this.baseRef, required this.chart, required this.consoleUrl, required this.projectRef, required this.success});
+
+  final String baseRef;
+  final RaviJson chart;
+  final String consoleUrl;
+  final String projectRef;
+  final bool success;
+
+  factory BasesChartsArchiveReturn.fromJson(Map<String, Object?> json) {
+    return BasesChartsArchiveReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      chart: RaviJson.from(json["chart"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static BasesChartsArchiveReturn fromJsonValue(Object? json) {
+    return BasesChartsArchiveReturn.fromJson(raviJsonObject(json, "BasesChartsArchiveReturn"));
+  }
+}
+
+BasesChartsArchiveReturn basesChartsArchiveReturnFromJson(Object? json) => BasesChartsArchiveReturn.fromJsonValue(json);
+
+class BasesChartsCreateOptions {
+  const BasesChartsCreateOptions({this.console, this.name, this.project, this.spec, this.view});
+
+  final String? console;
+  final String? name;
+  final String? project;
+  final String? spec;
+  final String? view;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (name != null) {
+      into["name"] = RaviJson.from(name);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (spec != null) {
+      into["spec"] = RaviJson.from(spec);
+    }
+    if (view != null) {
+      into["view"] = RaviJson.from(view);
+    }
+  }
+}
+
+class BasesChartsCreateReturn {
+  const BasesChartsCreateReturn({required this.baseRef, required this.chart, required this.consoleUrl, required this.projectRef, required this.success});
+
+  final String baseRef;
+  final RaviJson chart;
+  final String consoleUrl;
+  final String projectRef;
+  final bool success;
+
+  factory BasesChartsCreateReturn.fromJson(Map<String, Object?> json) {
+    return BasesChartsCreateReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      chart: RaviJson.from(json["chart"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static BasesChartsCreateReturn fromJsonValue(Object? json) {
+    return BasesChartsCreateReturn.fromJson(raviJsonObject(json, "BasesChartsCreateReturn"));
+  }
+}
+
+BasesChartsCreateReturn basesChartsCreateReturnFromJson(Object? json) => BasesChartsCreateReturn.fromJsonValue(json);
+
+class BasesChartsDataOptions {
+  const BasesChartsDataOptions({this.console, this.project});
+
+  final String? console;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class BasesChartsDataReturn {
+  const BasesChartsDataReturn({required this.baseRef, required this.chart, required this.consoleUrl, required this.data, required this.fields, required this.projectRef, required this.success, required this.suppressedGroups, required this.users});
+
+  final String baseRef;
+  final RaviJson chart;
+  final String consoleUrl;
+  final List<Map<String, RaviJson>> data;
+  final Map<String, RaviJson> fields;
+  final String projectRef;
+  final bool success;
+  final double suppressedGroups;
+  final Map<String, RaviJson> users;
+
+  factory BasesChartsDataReturn.fromJson(Map<String, Object?> json) {
+    return BasesChartsDataReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      chart: RaviJson.from(json["chart"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      data: raviJsonAsList(json["data"], raviJsonAsRaviJsonMap),
+      fields: raviJsonAsRaviJsonMap(json["fields"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      success: raviJsonAsBool(json["success"]),
+      suppressedGroups: raviJsonAsDouble(json["suppressedGroups"]),
+      users: raviJsonAsRaviJsonMap(json["users"]),
+    );
+  }
+
+  static BasesChartsDataReturn fromJsonValue(Object? json) {
+    return BasesChartsDataReturn.fromJson(raviJsonObject(json, "BasesChartsDataReturn"));
+  }
+}
+
+BasesChartsDataReturn basesChartsDataReturnFromJson(Object? json) => BasesChartsDataReturn.fromJsonValue(json);
+
+class BasesChartsListOptions {
+  const BasesChartsListOptions({this.console, this.fields, this.limit, this.offset, this.project});
+
+  final String? console;
+  final String? fields;
+  final String? limit;
+  final String? offset;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (fields != null) {
+      into["fields"] = RaviJson.from(fields);
+    }
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class BasesChartsListReturn {
+  const BasesChartsListReturn({required this.baseRef, required this.charts, required this.consoleUrl, required this.items, required this.pagination, required this.projectRef, required this.success, required this.total});
+
+  final String baseRef;
+  final List<RaviJson> charts;
+  final String consoleUrl;
+  final List<RaviJson> items;
+  final RaviJson pagination;
+  final String projectRef;
+  final bool success;
+  final double total;
+
+  factory BasesChartsListReturn.fromJson(Map<String, Object?> json) {
+    return BasesChartsListReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      charts: raviJsonAsList(json["charts"], RaviJson.from),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      items: raviJsonAsList(json["items"], RaviJson.from),
+      pagination: RaviJson.from(json["pagination"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      success: raviJsonAsBool(json["success"]),
+      total: raviJsonAsDouble(json["total"]),
+    );
+  }
+
+  static BasesChartsListReturn fromJsonValue(Object? json) {
+    return BasesChartsListReturn.fromJson(raviJsonObject(json, "BasesChartsListReturn"));
+  }
+}
+
+BasesChartsListReturn basesChartsListReturnFromJson(Object? json) => BasesChartsListReturn.fromJsonValue(json);
+
+class BasesChartsShowOptions {
+  const BasesChartsShowOptions({this.console, this.project});
+
+  final String? console;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class BasesChartsShowReturn {
+  const BasesChartsShowReturn({required this.baseRef, required this.chart, required this.consoleUrl, required this.projectRef, required this.success});
+
+  final String baseRef;
+  final RaviJson chart;
+  final String consoleUrl;
+  final String projectRef;
+  final bool success;
+
+  factory BasesChartsShowReturn.fromJson(Map<String, Object?> json) {
+    return BasesChartsShowReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      chart: RaviJson.from(json["chart"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static BasesChartsShowReturn fromJsonValue(Object? json) {
+    return BasesChartsShowReturn.fromJson(raviJsonObject(json, "BasesChartsShowReturn"));
+  }
+}
+
+BasesChartsShowReturn basesChartsShowReturnFromJson(Object? json) => BasesChartsShowReturn.fromJsonValue(json);
+
+class BasesChartsUpdateOptions {
+  const BasesChartsUpdateOptions({this.console, this.expectedVersion, this.name, this.project, this.spec});
+
+  final String? console;
+  final String? expectedVersion;
+  final String? name;
+  final String? project;
+  final String? spec;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (expectedVersion != null) {
+      into["expectedVersion"] = RaviJson.from(expectedVersion);
+    }
+    if (name != null) {
+      into["name"] = RaviJson.from(name);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (spec != null) {
+      into["spec"] = RaviJson.from(spec);
+    }
+  }
+}
+
+class BasesChartsUpdateReturn {
+  const BasesChartsUpdateReturn({required this.baseRef, required this.chart, required this.consoleUrl, required this.projectRef, required this.success});
+
+  final String baseRef;
+  final RaviJson chart;
+  final String consoleUrl;
+  final String projectRef;
+  final bool success;
+
+  factory BasesChartsUpdateReturn.fromJson(Map<String, Object?> json) {
+    return BasesChartsUpdateReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      chart: RaviJson.from(json["chart"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static BasesChartsUpdateReturn fromJsonValue(Object? json) {
+    return BasesChartsUpdateReturn.fromJson(raviJsonObject(json, "BasesChartsUpdateReturn"));
+  }
+}
+
+BasesChartsUpdateReturn basesChartsUpdateReturnFromJson(Object? json) => BasesChartsUpdateReturn.fromJsonValue(json);
+
+class BasesCreateOptions {
+  const BasesCreateOptions({this.console, this.description, this.icon, this.project, this.schema, this.slug, this.timezone});
+
+  final String? console;
+  final String? description;
+  final String? icon;
+  final String? project;
+  final String? schema;
+  final String? slug;
+  final String? timezone;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (description != null) {
+      into["description"] = RaviJson.from(description);
+    }
+    if (icon != null) {
+      into["icon"] = RaviJson.from(icon);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (schema != null) {
+      into["schema"] = RaviJson.from(schema);
+    }
+    if (slug != null) {
+      into["slug"] = RaviJson.from(slug);
+    }
+    if (timezone != null) {
+      into["timezone"] = RaviJson.from(timezone);
+    }
+  }
+}
+
+class BasesCreateReturn {
+  const BasesCreateReturn({required this.base, required this.consoleUrl, required this.projectRef, required this.success});
+
+  final RaviJson base;
+  final String consoleUrl;
+  final String projectRef;
+  final bool success;
+
+  factory BasesCreateReturn.fromJson(Map<String, Object?> json) {
+    return BasesCreateReturn(
+      base: RaviJson.from(json["base"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static BasesCreateReturn fromJsonValue(Object? json) {
+    return BasesCreateReturn.fromJson(raviJsonObject(json, "BasesCreateReturn"));
+  }
+}
+
+BasesCreateReturn basesCreateReturnFromJson(Object? json) => BasesCreateReturn.fromJsonValue(json);
+
+class BasesListOptions {
+  const BasesListOptions({this.console, this.fields, this.includeArchived, this.limit, this.offset, this.project});
+
+  final String? console;
+  final String? fields;
+  final bool? includeArchived;
+  final String? limit;
+  final String? offset;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (fields != null) {
+      into["fields"] = RaviJson.from(fields);
+    }
+    if (includeArchived != null) {
+      into["includeArchived"] = RaviJson.from(includeArchived);
+    }
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class BasesListReturn {
+  const BasesListReturn({required this.bases, required this.consoleUrl, required this.items, required this.pagination, required this.projectRef, required this.success, required this.total});
+
+  final List<RaviJson> bases;
+  final String consoleUrl;
+  final List<RaviJson> items;
+  final RaviJson pagination;
+  final String projectRef;
+  final bool success;
+  final double total;
+
+  factory BasesListReturn.fromJson(Map<String, Object?> json) {
+    return BasesListReturn(
+      bases: raviJsonAsList(json["bases"], RaviJson.from),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      items: raviJsonAsList(json["items"], RaviJson.from),
+      pagination: RaviJson.from(json["pagination"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      success: raviJsonAsBool(json["success"]),
+      total: raviJsonAsDouble(json["total"]),
+    );
+  }
+
+  static BasesListReturn fromJsonValue(Object? json) {
+    return BasesListReturn.fromJson(raviJsonObject(json, "BasesListReturn"));
+  }
+}
+
+BasesListReturn basesListReturnFromJson(Object? json) => BasesListReturn.fromJsonValue(json);
+
+class BasesPropsAddOptions {
+  const BasesPropsAddOptions({this.config, this.console, this.description, this.expectedSchemaVersion, this.key, this.options, this.position, this.project, this.required_, this.type});
+
+  final String? config;
+  final String? console;
+  final String? description;
+  final String? expectedSchemaVersion;
+  final String? key;
+  final String? options;
+  final String? position;
+  final String? project;
+  final bool? required_;
+  final String? type;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (config != null) {
+      into["config"] = RaviJson.from(config);
+    }
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (description != null) {
+      into["description"] = RaviJson.from(description);
+    }
+    if (expectedSchemaVersion != null) {
+      into["expectedSchemaVersion"] = RaviJson.from(expectedSchemaVersion);
+    }
+    if (key != null) {
+      into["key"] = RaviJson.from(key);
+    }
+    if (options != null) {
+      into["options"] = RaviJson.from(options);
+    }
+    if (position != null) {
+      into["position"] = RaviJson.from(position);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (required_ != null) {
+      into["required"] = RaviJson.from(required_);
+    }
+    if (type != null) {
+      into["type"] = RaviJson.from(type);
+    }
+  }
+}
+
+class BasesPropsAddReturn {
+  const BasesPropsAddReturn({required this.base, required this.consoleUrl, required this.projectRef, required this.property, required this.report, required this.success});
+
+  final RaviJson base;
+  final String consoleUrl;
+  final String projectRef;
+  final RaviJson property;
+  final RaviJson report;
+  final bool success;
+
+  factory BasesPropsAddReturn.fromJson(Map<String, Object?> json) {
+    return BasesPropsAddReturn(
+      base: RaviJson.from(json["base"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      property: RaviJson.from(json["property"]),
+      report: RaviJson.from(json["report"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static BasesPropsAddReturn fromJsonValue(Object? json) {
+    return BasesPropsAddReturn.fromJson(raviJsonObject(json, "BasesPropsAddReturn"));
+  }
+}
+
+BasesPropsAddReturn basesPropsAddReturnFromJson(Object? json) => BasesPropsAddReturn.fromJsonValue(json);
+
+class BasesPropsDeleteOptions {
+  const BasesPropsDeleteOptions({this.console, this.execute, this.expectedSchemaVersion, this.project});
+
+  final String? console;
+  final bool? execute;
+  final String? expectedSchemaVersion;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (expectedSchemaVersion != null) {
+      into["expectedSchemaVersion"] = RaviJson.from(expectedSchemaVersion);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class BasesPropsDeleteReturn {
+  const BasesPropsDeleteReturn({required this.base, required this.consoleUrl, required this.projectRef, required this.property, required this.report, required this.success});
+
+  final RaviJson base;
+  final String consoleUrl;
+  final String projectRef;
+  final RaviJson property;
+  final RaviJson report;
+  final bool success;
+
+  factory BasesPropsDeleteReturn.fromJson(Map<String, Object?> json) {
+    return BasesPropsDeleteReturn(
+      base: RaviJson.from(json["base"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      property: RaviJson.from(json["property"]),
+      report: RaviJson.from(json["report"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static BasesPropsDeleteReturn fromJsonValue(Object? json) {
+    return BasesPropsDeleteReturn.fromJson(raviJsonObject(json, "BasesPropsDeleteReturn"));
+  }
+}
+
+BasesPropsDeleteReturn basesPropsDeleteReturnFromJson(Object? json) => BasesPropsDeleteReturn.fromJsonValue(json);
+
+class BasesPropsListOptions {
+  const BasesPropsListOptions({this.console, this.fields, this.includeDeleted, this.limit, this.offset, this.project});
+
+  final String? console;
+  final String? fields;
+  final bool? includeDeleted;
+  final String? limit;
+  final String? offset;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (fields != null) {
+      into["fields"] = RaviJson.from(fields);
+    }
+    if (includeDeleted != null) {
+      into["includeDeleted"] = RaviJson.from(includeDeleted);
+    }
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class BasesPropsListReturn {
+  const BasesPropsListReturn({required this.baseRef, required this.consoleUrl, required this.items, required this.pagination, required this.projectRef, required this.properties, required this.schemaVersion, required this.success, required this.total});
+
+  final String baseRef;
+  final String consoleUrl;
+  final List<RaviJson> items;
+  final RaviJson pagination;
+  final String projectRef;
+  final List<RaviJson> properties;
+  final double schemaVersion;
+  final bool success;
+  final double total;
+
+  factory BasesPropsListReturn.fromJson(Map<String, Object?> json) {
+    return BasesPropsListReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      items: raviJsonAsList(json["items"], RaviJson.from),
+      pagination: RaviJson.from(json["pagination"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      properties: raviJsonAsList(json["properties"], RaviJson.from),
+      schemaVersion: raviJsonAsDouble(json["schemaVersion"]),
+      success: raviJsonAsBool(json["success"]),
+      total: raviJsonAsDouble(json["total"]),
+    );
+  }
+
+  static BasesPropsListReturn fromJsonValue(Object? json) {
+    return BasesPropsListReturn.fromJson(raviJsonObject(json, "BasesPropsListReturn"));
+  }
+}
+
+BasesPropsListReturn basesPropsListReturnFromJson(Object? json) => BasesPropsListReturn.fromJsonValue(json);
+
+class BasesPropsRestoreOptions {
+  const BasesPropsRestoreOptions({this.console, this.expectedSchemaVersion, this.project});
+
+  final String? console;
+  final String? expectedSchemaVersion;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (expectedSchemaVersion != null) {
+      into["expectedSchemaVersion"] = RaviJson.from(expectedSchemaVersion);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class BasesPropsRestoreReturn {
+  const BasesPropsRestoreReturn({required this.base, required this.consoleUrl, required this.projectRef, required this.property, required this.report, required this.success});
+
+  final RaviJson base;
+  final String consoleUrl;
+  final String projectRef;
+  final RaviJson property;
+  final RaviJson report;
+  final bool success;
+
+  factory BasesPropsRestoreReturn.fromJson(Map<String, Object?> json) {
+    return BasesPropsRestoreReturn(
+      base: RaviJson.from(json["base"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      property: RaviJson.from(json["property"]),
+      report: RaviJson.from(json["report"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static BasesPropsRestoreReturn fromJsonValue(Object? json) {
+    return BasesPropsRestoreReturn.fromJson(raviJsonObject(json, "BasesPropsRestoreReturn"));
+  }
+}
+
+BasesPropsRestoreReturn basesPropsRestoreReturnFromJson(Object? json) => BasesPropsRestoreReturn.fromJsonValue(json);
+
+class BasesPropsUpdateOptions {
+  const BasesPropsUpdateOptions({this.config, this.console, this.description, this.execute, this.expectedSchemaVersion, this.key, this.name, this.options, this.position, this.project, this.required_, this.type});
+
+  final String? config;
+  final String? console;
+  final String? description;
+  final bool? execute;
+  final String? expectedSchemaVersion;
+  final String? key;
+  final String? name;
+  final String? options;
+  final String? position;
+  final String? project;
+  final String? required_;
+  final String? type;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (config != null) {
+      into["config"] = RaviJson.from(config);
+    }
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (description != null) {
+      into["description"] = RaviJson.from(description);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (expectedSchemaVersion != null) {
+      into["expectedSchemaVersion"] = RaviJson.from(expectedSchemaVersion);
+    }
+    if (key != null) {
+      into["key"] = RaviJson.from(key);
+    }
+    if (name != null) {
+      into["name"] = RaviJson.from(name);
+    }
+    if (options != null) {
+      into["options"] = RaviJson.from(options);
+    }
+    if (position != null) {
+      into["position"] = RaviJson.from(position);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (required_ != null) {
+      into["required"] = RaviJson.from(required_);
+    }
+    if (type != null) {
+      into["type"] = RaviJson.from(type);
+    }
+  }
+}
+
+class BasesPropsUpdateReturn {
+  const BasesPropsUpdateReturn({required this.base, required this.consoleUrl, required this.projectRef, required this.property, required this.report, required this.success});
+
+  final RaviJson base;
+  final String consoleUrl;
+  final String projectRef;
+  final RaviJson property;
+  final RaviJson report;
+  final bool success;
+
+  factory BasesPropsUpdateReturn.fromJson(Map<String, Object?> json) {
+    return BasesPropsUpdateReturn(
+      base: RaviJson.from(json["base"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      property: RaviJson.from(json["property"]),
+      report: RaviJson.from(json["report"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static BasesPropsUpdateReturn fromJsonValue(Object? json) {
+    return BasesPropsUpdateReturn.fromJson(raviJsonObject(json, "BasesPropsUpdateReturn"));
+  }
+}
+
+BasesPropsUpdateReturn basesPropsUpdateReturnFromJson(Object? json) => BasesPropsUpdateReturn.fromJsonValue(json);
+
+class BasesRestoreOptions {
+  const BasesRestoreOptions({this.console, this.execute, this.expectedVersion, this.project});
+
+  final String? console;
+  final bool? execute;
+  final String? expectedVersion;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (expectedVersion != null) {
+      into["expectedVersion"] = RaviJson.from(expectedVersion);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class BasesRestoreReturn {
+  const BasesRestoreReturn({required this.base, required this.consoleUrl, required this.projectRef, required this.success});
+
+  final RaviJson base;
+  final String consoleUrl;
+  final String projectRef;
+  final bool success;
+
+  factory BasesRestoreReturn.fromJson(Map<String, Object?> json) {
+    return BasesRestoreReturn(
+      base: RaviJson.from(json["base"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static BasesRestoreReturn fromJsonValue(Object? json) {
+    return BasesRestoreReturn.fromJson(raviJsonObject(json, "BasesRestoreReturn"));
+  }
+}
+
+BasesRestoreReturn basesRestoreReturnFromJson(Object? json) => BasesRestoreReturn.fromJsonValue(json);
+
+class BasesRowsAddOptions {
+  const BasesRowsAddOptions({this.body, this.bodyFile, this.console, this.idempotencyKey, this.project, this.set_, this.values, this.view});
+
+  final String? body;
+  final String? bodyFile;
+  final String? console;
+  final String? idempotencyKey;
+  final String? project;
+  final List<String>? set_;
+  final String? values;
+  final String? view;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (body != null) {
+      into["body"] = RaviJson.from(body);
+    }
+    if (bodyFile != null) {
+      into["bodyFile"] = RaviJson.from(bodyFile);
+    }
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (set_ != null) {
+      into["set"] = RaviJson.from(set_);
+    }
+    if (values != null) {
+      into["values"] = RaviJson.from(values);
+    }
+    if (view != null) {
+      into["view"] = RaviJson.from(view);
+    }
+  }
+}
+
+class BasesRowsAddReturn {
+  const BasesRowsAddReturn({required this.baseRef, required this.consoleUrl, required this.idempotencyKey, required this.idempotentReplay, required this.projectRef, required this.row, required this.success, required this.users, required this.viewId});
+
+  final String baseRef;
+  final String consoleUrl;
+  final String idempotencyKey;
+  final bool idempotentReplay;
+  final String projectRef;
+  final RaviJson row;
+  final bool success;
+  final Map<String, RaviJson> users;
+  final RaviJson viewId;
+
+  factory BasesRowsAddReturn.fromJson(Map<String, Object?> json) {
+    return BasesRowsAddReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      idempotencyKey: raviJsonAsString(json["idempotencyKey"]),
+      idempotentReplay: raviJsonAsBool(json["idempotentReplay"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      row: RaviJson.from(json["row"]),
+      success: raviJsonAsBool(json["success"]),
+      users: raviJsonAsRaviJsonMap(json["users"]),
+      viewId: RaviJson.from(json["viewId"]),
+    );
+  }
+
+  static BasesRowsAddReturn fromJsonValue(Object? json) {
+    return BasesRowsAddReturn.fromJson(raviJsonObject(json, "BasesRowsAddReturn"));
+  }
+}
+
+BasesRowsAddReturn basesRowsAddReturnFromJson(Object? json) => BasesRowsAddReturn.fromJsonValue(json);
+
+class BasesRowsArchiveOptions {
+  const BasesRowsArchiveOptions({this.console, this.expectedVersion, this.lastWriteWins, this.project, this.view});
+
+  final String? console;
+  final String? expectedVersion;
+  final bool? lastWriteWins;
+  final String? project;
+  final String? view;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (expectedVersion != null) {
+      into["expectedVersion"] = RaviJson.from(expectedVersion);
+    }
+    if (lastWriteWins != null) {
+      into["lastWriteWins"] = RaviJson.from(lastWriteWins);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (view != null) {
+      into["view"] = RaviJson.from(view);
+    }
+  }
+}
+
+class BasesRowsArchiveReturn {
+  const BasesRowsArchiveReturn({required this.baseRef, required this.consoleUrl, required this.idempotentReplay, required this.projectRef, required this.row, required this.success, required this.users, required this.viewId});
+
+  final String baseRef;
+  final String consoleUrl;
+  final bool idempotentReplay;
+  final String projectRef;
+  final RaviJson row;
+  final bool success;
+  final Map<String, RaviJson> users;
+  final RaviJson viewId;
+
+  factory BasesRowsArchiveReturn.fromJson(Map<String, Object?> json) {
+    return BasesRowsArchiveReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      idempotentReplay: raviJsonAsBool(json["idempotentReplay"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      row: RaviJson.from(json["row"]),
+      success: raviJsonAsBool(json["success"]),
+      users: raviJsonAsRaviJsonMap(json["users"]),
+      viewId: RaviJson.from(json["viewId"]),
+    );
+  }
+
+  static BasesRowsArchiveReturn fromJsonValue(Object? json) {
+    return BasesRowsArchiveReturn.fromJson(raviJsonObject(json, "BasesRowsArchiveReturn"));
+  }
+}
+
+BasesRowsArchiveReturn basesRowsArchiveReturnFromJson(Object? json) => BasesRowsArchiveReturn.fromJsonValue(json);
+
+class BasesRowsExportOptions {
+  const BasesRowsExportOptions({this.console, this.filter, this.format, this.includeBody, this.maxRows, this.out, this.project, this.sort, this.view});
+
+  final String? console;
+  final String? filter;
+  final String? format;
+  final bool? includeBody;
+  final String? maxRows;
+  final String? out;
+  final String? project;
+  final List<String>? sort;
+  final String? view;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (filter != null) {
+      into["filter"] = RaviJson.from(filter);
+    }
+    if (format != null) {
+      into["format"] = RaviJson.from(format);
+    }
+    if (includeBody != null) {
+      into["includeBody"] = RaviJson.from(includeBody);
+    }
+    if (maxRows != null) {
+      into["maxRows"] = RaviJson.from(maxRows);
+    }
+    if (out != null) {
+      into["out"] = RaviJson.from(out);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (sort != null) {
+      into["sort"] = RaviJson.from(sort);
+    }
+    if (view != null) {
+      into["view"] = RaviJson.from(view);
+    }
+  }
+}
+
+class BasesRowsExportReturn {
+  const BasesRowsExportReturn({required this.baseRef, required this.columns, required this.consoleUrl, required this.content, required this.format, required this.outFile, required this.projectRef, required this.rowCount, required this.success, required this.truncated, required this.viewId});
+
+  final String baseRef;
+  final List<String> columns;
+  final String consoleUrl;
+  final RaviJson content;
+  final String format;
+  final RaviJson outFile;
+  final String projectRef;
+  final double rowCount;
+  final bool success;
+  final bool truncated;
+  final RaviJson viewId;
+
+  factory BasesRowsExportReturn.fromJson(Map<String, Object?> json) {
+    return BasesRowsExportReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      columns: raviJsonAsList(json["columns"], raviJsonAsString),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      content: RaviJson.from(json["content"]),
+      format: raviJsonAsString(json["format"]),
+      outFile: RaviJson.from(json["outFile"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      rowCount: raviJsonAsDouble(json["rowCount"]),
+      success: raviJsonAsBool(json["success"]),
+      truncated: raviJsonAsBool(json["truncated"]),
+      viewId: RaviJson.from(json["viewId"]),
+    );
+  }
+
+  static BasesRowsExportReturn fromJsonValue(Object? json) {
+    return BasesRowsExportReturn.fromJson(raviJsonObject(json, "BasesRowsExportReturn"));
+  }
+}
+
+BasesRowsExportReturn basesRowsExportReturnFromJson(Object? json) => BasesRowsExportReturn.fromJsonValue(json);
+
+class BasesRowsGetOptions {
+  const BasesRowsGetOptions({this.console, this.includeArchived, this.project, this.view});
+
+  final String? console;
+  final bool? includeArchived;
+  final String? project;
+  final String? view;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (includeArchived != null) {
+      into["includeArchived"] = RaviJson.from(includeArchived);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (view != null) {
+      into["view"] = RaviJson.from(view);
+    }
+  }
+}
+
+class BasesRowsGetReturn {
+  const BasesRowsGetReturn({required this.baseRef, required this.consoleUrl, required this.projectRef, required this.row, required this.success, required this.users, required this.viewId});
+
+  final String baseRef;
+  final String consoleUrl;
+  final String projectRef;
+  final RaviJson row;
+  final bool success;
+  final Map<String, RaviJson> users;
+  final RaviJson viewId;
+
+  factory BasesRowsGetReturn.fromJson(Map<String, Object?> json) {
+    return BasesRowsGetReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      row: RaviJson.from(json["row"]),
+      success: raviJsonAsBool(json["success"]),
+      users: raviJsonAsRaviJsonMap(json["users"]),
+      viewId: RaviJson.from(json["viewId"]),
+    );
+  }
+
+  static BasesRowsGetReturn fromJsonValue(Object? json) {
+    return BasesRowsGetReturn.fromJson(raviJsonObject(json, "BasesRowsGetReturn"));
+  }
+}
+
+BasesRowsGetReturn basesRowsGetReturnFromJson(Object? json) => BasesRowsGetReturn.fromJsonValue(json);
+
+class BasesRowsHistoryOptions {
+  const BasesRowsHistoryOptions({this.console, this.cursor, this.limit, this.project, this.view});
+
+  final String? console;
+  final String? cursor;
+  final String? limit;
+  final String? project;
+  final String? view;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (cursor != null) {
+      into["cursor"] = RaviJson.from(cursor);
+    }
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (view != null) {
+      into["view"] = RaviJson.from(view);
+    }
+  }
+}
+
+class BasesRowsHistoryReturn {
+  const BasesRowsHistoryReturn({required this.baseRef, required this.consoleUrl, required this.entries, required this.nextCursor, required this.pagination, required this.projectRef, required this.success, required this.users, required this.viewId});
+
+  final String baseRef;
+  final String consoleUrl;
+  final List<RaviJson> entries;
+  final RaviJson nextCursor;
+  final RaviJson pagination;
+  final String projectRef;
+  final bool success;
+  final Map<String, RaviJson> users;
+  final RaviJson viewId;
+
+  factory BasesRowsHistoryReturn.fromJson(Map<String, Object?> json) {
+    return BasesRowsHistoryReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      entries: raviJsonAsList(json["entries"], RaviJson.from),
+      nextCursor: RaviJson.from(json["nextCursor"]),
+      pagination: RaviJson.from(json["pagination"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      success: raviJsonAsBool(json["success"]),
+      users: raviJsonAsRaviJsonMap(json["users"]),
+      viewId: RaviJson.from(json["viewId"]),
+    );
+  }
+
+  static BasesRowsHistoryReturn fromJsonValue(Object? json) {
+    return BasesRowsHistoryReturn.fromJson(raviJsonObject(json, "BasesRowsHistoryReturn"));
+  }
+}
+
+BasesRowsHistoryReturn basesRowsHistoryReturnFromJson(Object? json) => BasesRowsHistoryReturn.fromJsonValue(json);
+
+class BasesRowsImportOptions {
+  const BasesRowsImportOptions({this.batch, this.console, this.execute, this.map, this.project});
+
+  final String? batch;
+  final String? console;
+  final bool? execute;
+  final List<String>? map;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (batch != null) {
+      into["batch"] = RaviJson.from(batch);
+    }
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (map != null) {
+      into["map"] = RaviJson.from(map);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class BasesRowsImportReturn {
+  const BasesRowsImportReturn({required this.baseRef, required this.batchCount, required this.batches, required this.columns, required this.consoleUrl, required this.created, required this.emptyRowsSkipped, required this.file, required this.projectRef, required this.rowCount, required this.success});
+
+  final String baseRef;
+  final double batchCount;
+  final List<RaviJson> batches;
+  final List<RaviJson> columns;
+  final String consoleUrl;
+  final double created;
+  final double emptyRowsSkipped;
+  final String file;
+  final String projectRef;
+  final double rowCount;
+  final bool success;
+
+  factory BasesRowsImportReturn.fromJson(Map<String, Object?> json) {
+    return BasesRowsImportReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      batchCount: raviJsonAsDouble(json["batchCount"]),
+      batches: raviJsonAsList(json["batches"], RaviJson.from),
+      columns: raviJsonAsList(json["columns"], RaviJson.from),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      created: raviJsonAsDouble(json["created"]),
+      emptyRowsSkipped: raviJsonAsDouble(json["emptyRowsSkipped"]),
+      file: raviJsonAsString(json["file"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      rowCount: raviJsonAsDouble(json["rowCount"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static BasesRowsImportReturn fromJsonValue(Object? json) {
+    return BasesRowsImportReturn.fromJson(raviJsonObject(json, "BasesRowsImportReturn"));
+  }
+}
+
+BasesRowsImportReturn basesRowsImportReturnFromJson(Object? json) => BasesRowsImportReturn.fromJsonValue(json);
+
+class BasesRowsPurgeOptions {
+  const BasesRowsPurgeOptions({this.console, this.execute, this.project});
+
+  final String? console;
+  final bool? execute;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class BasesRowsPurgeReturn {
+  const BasesRowsPurgeReturn({required this.baseRef, required this.consoleUrl, required this.projectRef, required this.purged, required this.rowId, required this.success});
+
+  final String baseRef;
+  final String consoleUrl;
+  final String projectRef;
+  final bool purged;
+  final String rowId;
+  final bool success;
+
+  factory BasesRowsPurgeReturn.fromJson(Map<String, Object?> json) {
+    return BasesRowsPurgeReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      purged: raviJsonAsBool(json["purged"]),
+      rowId: raviJsonAsString(json["rowId"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static BasesRowsPurgeReturn fromJsonValue(Object? json) {
+    return BasesRowsPurgeReturn.fromJson(raviJsonObject(json, "BasesRowsPurgeReturn"));
+  }
+}
+
+BasesRowsPurgeReturn basesRowsPurgeReturnFromJson(Object? json) => BasesRowsPurgeReturn.fromJsonValue(json);
+
+class BasesRowsQueryOptions {
+  const BasesRowsQueryOptions({this.all, this.console, this.cursor, this.filter, this.format, this.includeArchived, this.includeBody, this.limit, this.maxRows, this.project, this.sort, this.view});
+
+  final bool? all;
+  final String? console;
+  final String? cursor;
+  final String? filter;
+  final String? format;
+  final bool? includeArchived;
+  final bool? includeBody;
+  final String? limit;
+  final String? maxRows;
+  final String? project;
+  final List<String>? sort;
+  final String? view;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (all != null) {
+      into["all"] = RaviJson.from(all);
+    }
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (cursor != null) {
+      into["cursor"] = RaviJson.from(cursor);
+    }
+    if (filter != null) {
+      into["filter"] = RaviJson.from(filter);
+    }
+    if (format != null) {
+      into["format"] = RaviJson.from(format);
+    }
+    if (includeArchived != null) {
+      into["includeArchived"] = RaviJson.from(includeArchived);
+    }
+    if (includeBody != null) {
+      into["includeBody"] = RaviJson.from(includeBody);
+    }
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (maxRows != null) {
+      into["maxRows"] = RaviJson.from(maxRows);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (sort != null) {
+      into["sort"] = RaviJson.from(sort);
+    }
+    if (view != null) {
+      into["view"] = RaviJson.from(view);
+    }
+  }
+}
+
+class BasesRowsQueryReturn {
+  const BasesRowsQueryReturn({required this.baseRef, required this.columns, required this.consoleUrl, required this.nextCursor, required this.pagination, required this.projectRef, required this.rows, required this.success, required this.truncated, required this.users, required this.viewId});
+
+  final String baseRef;
+  final List<String> columns;
+  final String consoleUrl;
+  final RaviJson nextCursor;
+  final RaviJson pagination;
+  final String projectRef;
+  final List<RaviJson> rows;
+  final bool success;
+  final bool truncated;
+  final Map<String, RaviJson> users;
+  final RaviJson viewId;
+
+  factory BasesRowsQueryReturn.fromJson(Map<String, Object?> json) {
+    return BasesRowsQueryReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      columns: raviJsonAsList(json["columns"], raviJsonAsString),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      nextCursor: RaviJson.from(json["nextCursor"]),
+      pagination: RaviJson.from(json["pagination"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      rows: raviJsonAsList(json["rows"], RaviJson.from),
+      success: raviJsonAsBool(json["success"]),
+      truncated: raviJsonAsBool(json["truncated"]),
+      users: raviJsonAsRaviJsonMap(json["users"]),
+      viewId: RaviJson.from(json["viewId"]),
+    );
+  }
+
+  static BasesRowsQueryReturn fromJsonValue(Object? json) {
+    return BasesRowsQueryReturn.fromJson(raviJsonObject(json, "BasesRowsQueryReturn"));
+  }
+}
+
+BasesRowsQueryReturn basesRowsQueryReturnFromJson(Object? json) => BasesRowsQueryReturn.fromJsonValue(json);
+
+class BasesRowsRestoreOptions {
+  const BasesRowsRestoreOptions({this.console, this.expectedVersion, this.lastWriteWins, this.project});
+
+  final String? console;
+  final String? expectedVersion;
+  final bool? lastWriteWins;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (expectedVersion != null) {
+      into["expectedVersion"] = RaviJson.from(expectedVersion);
+    }
+    if (lastWriteWins != null) {
+      into["lastWriteWins"] = RaviJson.from(lastWriteWins);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class BasesRowsRestoreReturn {
+  const BasesRowsRestoreReturn({required this.baseRef, required this.consoleUrl, required this.idempotentReplay, required this.projectRef, required this.row, required this.success, required this.users, required this.viewId});
+
+  final String baseRef;
+  final String consoleUrl;
+  final bool idempotentReplay;
+  final String projectRef;
+  final RaviJson row;
+  final bool success;
+  final Map<String, RaviJson> users;
+  final RaviJson viewId;
+
+  factory BasesRowsRestoreReturn.fromJson(Map<String, Object?> json) {
+    return BasesRowsRestoreReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      idempotentReplay: raviJsonAsBool(json["idempotentReplay"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      row: RaviJson.from(json["row"]),
+      success: raviJsonAsBool(json["success"]),
+      users: raviJsonAsRaviJsonMap(json["users"]),
+      viewId: RaviJson.from(json["viewId"]),
+    );
+  }
+
+  static BasesRowsRestoreReturn fromJsonValue(Object? json) {
+    return BasesRowsRestoreReturn.fromJson(raviJsonObject(json, "BasesRowsRestoreReturn"));
+  }
+}
+
+BasesRowsRestoreReturn basesRowsRestoreReturnFromJson(Object? json) => BasesRowsRestoreReturn.fromJsonValue(json);
+
+class BasesRowsUpdateOptions {
+  const BasesRowsUpdateOptions({this.body, this.bodyFile, this.console, this.expectedVersion, this.idempotencyKey, this.lastWriteWins, this.project, this.set_, this.values, this.view});
+
+  final String? body;
+  final String? bodyFile;
+  final String? console;
+  final String? expectedVersion;
+  final String? idempotencyKey;
+  final bool? lastWriteWins;
+  final String? project;
+  final List<String>? set_;
+  final String? values;
+  final String? view;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (body != null) {
+      into["body"] = RaviJson.from(body);
+    }
+    if (bodyFile != null) {
+      into["bodyFile"] = RaviJson.from(bodyFile);
+    }
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (expectedVersion != null) {
+      into["expectedVersion"] = RaviJson.from(expectedVersion);
+    }
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
+    }
+    if (lastWriteWins != null) {
+      into["lastWriteWins"] = RaviJson.from(lastWriteWins);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (set_ != null) {
+      into["set"] = RaviJson.from(set_);
+    }
+    if (values != null) {
+      into["values"] = RaviJson.from(values);
+    }
+    if (view != null) {
+      into["view"] = RaviJson.from(view);
+    }
+  }
+}
+
+class BasesRowsUpdateReturn {
+  const BasesRowsUpdateReturn({required this.baseRef, required this.consoleUrl, required this.idempotencyKey, required this.idempotentReplay, required this.projectRef, required this.row, required this.success, required this.users, required this.viewId});
+
+  final String baseRef;
+  final String consoleUrl;
+  final String idempotencyKey;
+  final bool idempotentReplay;
+  final String projectRef;
+  final RaviJson row;
+  final bool success;
+  final Map<String, RaviJson> users;
+  final RaviJson viewId;
+
+  factory BasesRowsUpdateReturn.fromJson(Map<String, Object?> json) {
+    return BasesRowsUpdateReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      idempotencyKey: raviJsonAsString(json["idempotencyKey"]),
+      idempotentReplay: raviJsonAsBool(json["idempotentReplay"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      row: RaviJson.from(json["row"]),
+      success: raviJsonAsBool(json["success"]),
+      users: raviJsonAsRaviJsonMap(json["users"]),
+      viewId: RaviJson.from(json["viewId"]),
+    );
+  }
+
+  static BasesRowsUpdateReturn fromJsonValue(Object? json) {
+    return BasesRowsUpdateReturn.fromJson(raviJsonObject(json, "BasesRowsUpdateReturn"));
+  }
+}
+
+BasesRowsUpdateReturn basesRowsUpdateReturnFromJson(Object? json) => BasesRowsUpdateReturn.fromJsonValue(json);
+
+class BasesShowOptions {
+  const BasesShowOptions({this.console, this.project});
+
+  final String? console;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class BasesShowReturn {
+  const BasesShowReturn({required this.base, required this.consoleUrl, required this.projectRef, required this.success});
+
+  final RaviJson base;
+  final String consoleUrl;
+  final String projectRef;
+  final bool success;
+
+  factory BasesShowReturn.fromJson(Map<String, Object?> json) {
+    return BasesShowReturn(
+      base: RaviJson.from(json["base"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static BasesShowReturn fromJsonValue(Object? json) {
+    return BasesShowReturn.fromJson(raviJsonObject(json, "BasesShowReturn"));
+  }
+}
+
+BasesShowReturn basesShowReturnFromJson(Object? json) => BasesShowReturn.fromJsonValue(json);
+
+class BasesSubscribeOptions {
+  const BasesSubscribeOptions({this.console, this.project});
+
+  final String? console;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class BasesSubscribeReturn {
+  const BasesSubscribeReturn({required this.consoleUrl, required this.delivery, required this.projectRef, required this.subscription, required this.success});
+
+  final String consoleUrl;
+  final RaviJson delivery;
+  final String projectRef;
+  final RaviJson subscription;
+  final bool success;
+
+  factory BasesSubscribeReturn.fromJson(Map<String, Object?> json) {
+    return BasesSubscribeReturn(
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      delivery: RaviJson.from(json["delivery"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      subscription: RaviJson.from(json["subscription"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static BasesSubscribeReturn fromJsonValue(Object? json) {
+    return BasesSubscribeReturn.fromJson(raviJsonObject(json, "BasesSubscribeReturn"));
+  }
+}
+
+BasesSubscribeReturn basesSubscribeReturnFromJson(Object? json) => BasesSubscribeReturn.fromJsonValue(json);
+
+class BasesSubscriptionsOptions {
+  const BasesSubscriptionsOptions({this.console, this.project});
+
+  final String? console;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class BasesSubscriptionsReturn {
+  const BasesSubscriptionsReturn({required this.baseRef, required this.consoleUrl, required this.projectRef, required this.subscriptions, required this.success});
+
+  final String baseRef;
+  final String consoleUrl;
+  final String projectRef;
+  final List<RaviJson> subscriptions;
+  final bool success;
+
+  factory BasesSubscriptionsReturn.fromJson(Map<String, Object?> json) {
+    return BasesSubscriptionsReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      subscriptions: raviJsonAsList(json["subscriptions"], RaviJson.from),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static BasesSubscriptionsReturn fromJsonValue(Object? json) {
+    return BasesSubscriptionsReturn.fromJson(raviJsonObject(json, "BasesSubscriptionsReturn"));
+  }
+}
+
+BasesSubscriptionsReturn basesSubscriptionsReturnFromJson(Object? json) => BasesSubscriptionsReturn.fromJsonValue(json);
+
+class BasesUnsubscribeOptions {
+  const BasesUnsubscribeOptions({this.console, this.project});
+
+  final String? console;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class BasesUnsubscribeReturn {
+  const BasesUnsubscribeReturn({required this.consoleUrl, required this.projectRef, required this.subscription, required this.success});
+
+  final String consoleUrl;
+  final String projectRef;
+  final RaviJson subscription;
+  final bool success;
+
+  factory BasesUnsubscribeReturn.fromJson(Map<String, Object?> json) {
+    return BasesUnsubscribeReturn(
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      subscription: RaviJson.from(json["subscription"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static BasesUnsubscribeReturn fromJsonValue(Object? json) {
+    return BasesUnsubscribeReturn.fromJson(raviJsonObject(json, "BasesUnsubscribeReturn"));
+  }
+}
+
+BasesUnsubscribeReturn basesUnsubscribeReturnFromJson(Object? json) => BasesUnsubscribeReturn.fromJsonValue(json);
+
+class BasesUpdateOptions {
+  const BasesUpdateOptions({this.console, this.description, this.expectedVersion, this.icon, this.name, this.project, this.slug, this.timezone});
+
+  final String? console;
+  final String? description;
+  final String? expectedVersion;
+  final String? icon;
+  final String? name;
+  final String? project;
+  final String? slug;
+  final String? timezone;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (description != null) {
+      into["description"] = RaviJson.from(description);
+    }
+    if (expectedVersion != null) {
+      into["expectedVersion"] = RaviJson.from(expectedVersion);
+    }
+    if (icon != null) {
+      into["icon"] = RaviJson.from(icon);
+    }
+    if (name != null) {
+      into["name"] = RaviJson.from(name);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (slug != null) {
+      into["slug"] = RaviJson.from(slug);
+    }
+    if (timezone != null) {
+      into["timezone"] = RaviJson.from(timezone);
+    }
+  }
+}
+
+class BasesUpdateReturn {
+  const BasesUpdateReturn({required this.base, required this.consoleUrl, required this.projectRef, required this.success});
+
+  final RaviJson base;
+  final String consoleUrl;
+  final String projectRef;
+  final bool success;
+
+  factory BasesUpdateReturn.fromJson(Map<String, Object?> json) {
+    return BasesUpdateReturn(
+      base: RaviJson.from(json["base"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static BasesUpdateReturn fromJsonValue(Object? json) {
+    return BasesUpdateReturn.fromJson(raviJsonObject(json, "BasesUpdateReturn"));
+  }
+}
+
+BasesUpdateReturn basesUpdateReturnFromJson(Object? json) => BasesUpdateReturn.fromJsonValue(json);
+
+class BasesViewsArchiveOptions {
+  const BasesViewsArchiveOptions({this.console, this.execute, this.expectedVersion, this.project});
+
+  final String? console;
+  final bool? execute;
+  final String? expectedVersion;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (expectedVersion != null) {
+      into["expectedVersion"] = RaviJson.from(expectedVersion);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class BasesViewsArchiveReturn {
+  const BasesViewsArchiveReturn({required this.baseRef, required this.consoleUrl, required this.projectRef, required this.success, required this.view});
+
+  final String baseRef;
+  final String consoleUrl;
+  final String projectRef;
+  final bool success;
+  final RaviJson view;
+
+  factory BasesViewsArchiveReturn.fromJson(Map<String, Object?> json) {
+    return BasesViewsArchiveReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      success: raviJsonAsBool(json["success"]),
+      view: RaviJson.from(json["view"]),
+    );
+  }
+
+  static BasesViewsArchiveReturn fromJsonValue(Object? json) {
+    return BasesViewsArchiveReturn.fromJson(raviJsonObject(json, "BasesViewsArchiveReturn"));
+  }
+}
+
+BasesViewsArchiveReturn basesViewsArchiveReturnFromJson(Object? json) => BasesViewsArchiveReturn.fromJsonValue(json);
+
+class BasesViewsCreateOptions {
+  const BasesViewsCreateOptions({this.console, this.name, this.project, this.spec});
+
+  final String? console;
+  final String? name;
+  final String? project;
+  final String? spec;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (name != null) {
+      into["name"] = RaviJson.from(name);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (spec != null) {
+      into["spec"] = RaviJson.from(spec);
+    }
+  }
+}
+
+class BasesViewsCreateReturn {
+  const BasesViewsCreateReturn({required this.baseRef, required this.consoleUrl, required this.projectRef, required this.success, required this.view});
+
+  final String baseRef;
+  final String consoleUrl;
+  final String projectRef;
+  final bool success;
+  final RaviJson view;
+
+  factory BasesViewsCreateReturn.fromJson(Map<String, Object?> json) {
+    return BasesViewsCreateReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      success: raviJsonAsBool(json["success"]),
+      view: RaviJson.from(json["view"]),
+    );
+  }
+
+  static BasesViewsCreateReturn fromJsonValue(Object? json) {
+    return BasesViewsCreateReturn.fromJson(raviJsonObject(json, "BasesViewsCreateReturn"));
+  }
+}
+
+BasesViewsCreateReturn basesViewsCreateReturnFromJson(Object? json) => BasesViewsCreateReturn.fromJsonValue(json);
+
+class BasesViewsListOptions {
+  const BasesViewsListOptions({this.console, this.fields, this.limit, this.offset, this.project});
+
+  final String? console;
+  final String? fields;
+  final String? limit;
+  final String? offset;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (fields != null) {
+      into["fields"] = RaviJson.from(fields);
+    }
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class BasesViewsListReturn {
+  const BasesViewsListReturn({required this.baseRef, required this.consoleUrl, required this.items, required this.pagination, required this.projectRef, required this.success, required this.total, required this.views});
+
+  final String baseRef;
+  final String consoleUrl;
+  final List<RaviJson> items;
+  final RaviJson pagination;
+  final String projectRef;
+  final bool success;
+  final double total;
+  final List<RaviJson> views;
+
+  factory BasesViewsListReturn.fromJson(Map<String, Object?> json) {
+    return BasesViewsListReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      items: raviJsonAsList(json["items"], RaviJson.from),
+      pagination: RaviJson.from(json["pagination"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      success: raviJsonAsBool(json["success"]),
+      total: raviJsonAsDouble(json["total"]),
+      views: raviJsonAsList(json["views"], RaviJson.from),
+    );
+  }
+
+  static BasesViewsListReturn fromJsonValue(Object? json) {
+    return BasesViewsListReturn.fromJson(raviJsonObject(json, "BasesViewsListReturn"));
+  }
+}
+
+BasesViewsListReturn basesViewsListReturnFromJson(Object? json) => BasesViewsListReturn.fromJsonValue(json);
+
+class BasesViewsQueryOptions {
+  const BasesViewsQueryOptions({this.all, this.console, this.cursor, this.filter, this.format, this.includeBody, this.limit, this.maxRows, this.project, this.sort});
+
+  final bool? all;
+  final String? console;
+  final String? cursor;
+  final String? filter;
+  final String? format;
+  final bool? includeBody;
+  final String? limit;
+  final String? maxRows;
+  final String? project;
+  final List<String>? sort;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (all != null) {
+      into["all"] = RaviJson.from(all);
+    }
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (cursor != null) {
+      into["cursor"] = RaviJson.from(cursor);
+    }
+    if (filter != null) {
+      into["filter"] = RaviJson.from(filter);
+    }
+    if (format != null) {
+      into["format"] = RaviJson.from(format);
+    }
+    if (includeBody != null) {
+      into["includeBody"] = RaviJson.from(includeBody);
+    }
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (maxRows != null) {
+      into["maxRows"] = RaviJson.from(maxRows);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (sort != null) {
+      into["sort"] = RaviJson.from(sort);
+    }
+  }
+}
+
+class BasesViewsQueryReturn {
+  const BasesViewsQueryReturn({required this.baseRef, required this.columns, required this.consoleUrl, required this.nextCursor, required this.pagination, required this.projectRef, required this.rows, required this.success, required this.truncated, required this.users, required this.viewId});
+
+  final String baseRef;
+  final List<String> columns;
+  final String consoleUrl;
+  final RaviJson nextCursor;
+  final RaviJson pagination;
+  final String projectRef;
+  final List<RaviJson> rows;
+  final bool success;
+  final bool truncated;
+  final Map<String, RaviJson> users;
+  final RaviJson viewId;
+
+  factory BasesViewsQueryReturn.fromJson(Map<String, Object?> json) {
+    return BasesViewsQueryReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      columns: raviJsonAsList(json["columns"], raviJsonAsString),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      nextCursor: RaviJson.from(json["nextCursor"]),
+      pagination: RaviJson.from(json["pagination"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      rows: raviJsonAsList(json["rows"], RaviJson.from),
+      success: raviJsonAsBool(json["success"]),
+      truncated: raviJsonAsBool(json["truncated"]),
+      users: raviJsonAsRaviJsonMap(json["users"]),
+      viewId: RaviJson.from(json["viewId"]),
+    );
+  }
+
+  static BasesViewsQueryReturn fromJsonValue(Object? json) {
+    return BasesViewsQueryReturn.fromJson(raviJsonObject(json, "BasesViewsQueryReturn"));
+  }
+}
+
+BasesViewsQueryReturn basesViewsQueryReturnFromJson(Object? json) => BasesViewsQueryReturn.fromJsonValue(json);
+
+class BasesViewsShowOptions {
+  const BasesViewsShowOptions({this.console, this.project});
+
+  final String? console;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class BasesViewsShowReturn {
+  const BasesViewsShowReturn({required this.baseRef, required this.consoleUrl, required this.projectRef, required this.success, required this.view});
+
+  final String baseRef;
+  final String consoleUrl;
+  final String projectRef;
+  final bool success;
+  final RaviJson view;
+
+  factory BasesViewsShowReturn.fromJson(Map<String, Object?> json) {
+    return BasesViewsShowReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      success: raviJsonAsBool(json["success"]),
+      view: RaviJson.from(json["view"]),
+    );
+  }
+
+  static BasesViewsShowReturn fromJsonValue(Object? json) {
+    return BasesViewsShowReturn.fromJson(raviJsonObject(json, "BasesViewsShowReturn"));
+  }
+}
+
+BasesViewsShowReturn basesViewsShowReturnFromJson(Object? json) => BasesViewsShowReturn.fromJsonValue(json);
+
+class BasesViewsUpdateOptions {
+  const BasesViewsUpdateOptions({this.console, this.expectedVersion, this.name, this.project, this.spec});
+
+  final String? console;
+  final String? expectedVersion;
+  final String? name;
+  final String? project;
+  final String? spec;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (expectedVersion != null) {
+      into["expectedVersion"] = RaviJson.from(expectedVersion);
+    }
+    if (name != null) {
+      into["name"] = RaviJson.from(name);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (spec != null) {
+      into["spec"] = RaviJson.from(spec);
+    }
+  }
+}
+
+class BasesViewsUpdateReturn {
+  const BasesViewsUpdateReturn({required this.baseRef, required this.consoleUrl, required this.projectRef, required this.success, required this.view});
+
+  final String baseRef;
+  final String consoleUrl;
+  final String projectRef;
+  final bool success;
+  final RaviJson view;
+
+  factory BasesViewsUpdateReturn.fromJson(Map<String, Object?> json) {
+    return BasesViewsUpdateReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      success: raviJsonAsBool(json["success"]),
+      view: RaviJson.from(json["view"]),
+    );
+  }
+
+  static BasesViewsUpdateReturn fromJsonValue(Object? json) {
+    return BasesViewsUpdateReturn.fromJson(raviJsonObject(json, "BasesViewsUpdateReturn"));
+  }
+}
+
+BasesViewsUpdateReturn basesViewsUpdateReturnFromJson(Object? json) => BasesViewsUpdateReturn.fromJsonValue(json);
+
 class BridgesCreateOptions {
   const BridgesCreateOptions({this.allow, this.console, this.description, this.name, this.project, this.session});
 

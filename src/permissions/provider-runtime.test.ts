@@ -153,6 +153,12 @@ describe("Permission Provider Runtime", () => {
       objectId: "*",
       source: "agent-default-capabilities:agent:trusted-agent",
     });
+    expect(capabilities).toContainEqual({
+      permission: "use",
+      objectType: "skill",
+      objectId: "*",
+      source: "agent-default-capabilities:agent:trusted-agent",
+    });
     expect(canWithCapabilities(capabilities, "execute", "executable", "omni")).toBe(true);
     expect(canWithCapabilities(capabilities, "execute", "executable", "ssh")).toBe(true);
   });

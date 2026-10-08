@@ -2610,6 +2610,2691 @@ public struct AudioVoicesReturn: Codable, Sendable {
   }
 }
 
+public struct BasesAggregateOptions: Codable, Sendable {
+  public var agg: [String]?
+  public var console: String?
+  public var filter: String?
+  public var groupBy: [String]?
+  public var project: String?
+
+  public init(agg: [String]? = nil, console: String? = nil, filter: String? = nil, groupBy: [String]? = nil, project: String? = nil) {
+    self.agg = agg
+    self.console = console
+    self.filter = filter
+    self.groupBy = groupBy
+    self.project = project
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agg = "agg"
+    case console = "console"
+    case filter = "filter"
+    case groupBy = "groupBy"
+    case project = "project"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.agg {
+      body["agg"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.filter {
+      body["filter"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.groupBy {
+      body["groupBy"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesAggregateReturn: Codable, Sendable {
+  public var baseRef: String
+  public var consoleUrl: String
+  public var groups: [RaviJSON]
+  public var projectRef: String
+  public var success: Bool
+  public var suppressedGroups: Double
+  public var users: [String: RaviJSON]
+
+  public init(baseRef: String, consoleUrl: String, groups: [RaviJSON], projectRef: String, success: Bool, suppressedGroups: Double, users: [String: RaviJSON]) {
+    self.baseRef = baseRef
+    self.consoleUrl = consoleUrl
+    self.groups = groups
+    self.projectRef = projectRef
+    self.success = success
+    self.suppressedGroups = suppressedGroups
+    self.users = users
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case baseRef = "baseRef"
+    case consoleUrl = "consoleUrl"
+    case groups = "groups"
+    case projectRef = "projectRef"
+    case success = "success"
+    case suppressedGroups = "suppressedGroups"
+    case users = "users"
+  }
+}
+
+public struct BasesArchiveOptions: Codable, Sendable {
+  public var console: String?
+  public var execute: Bool?
+  public var expectedVersion: String?
+  public var project: String?
+
+  public init(console: String? = nil, execute: Bool? = nil, expectedVersion: String? = nil, project: String? = nil) {
+    self.console = console
+    self.execute = execute
+    self.expectedVersion = expectedVersion
+    self.project = project
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case execute = "execute"
+    case expectedVersion = "expectedVersion"
+    case project = "project"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.expectedVersion {
+      body["expectedVersion"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesArchiveReturn: Codable, Sendable {
+  public var base: RaviJSON
+  public var consoleUrl: String
+  public var projectRef: String
+  public var success: Bool
+
+  public init(base: RaviJSON, consoleUrl: String, projectRef: String, success: Bool) {
+    self.base = base
+    self.consoleUrl = consoleUrl
+    self.projectRef = projectRef
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case base = "base"
+    case consoleUrl = "consoleUrl"
+    case projectRef = "projectRef"
+    case success = "success"
+  }
+}
+
+public struct BasesChartsArchiveOptions: Codable, Sendable {
+  public var console: String?
+  public var execute: Bool?
+  public var expectedVersion: String?
+  public var project: String?
+
+  public init(console: String? = nil, execute: Bool? = nil, expectedVersion: String? = nil, project: String? = nil) {
+    self.console = console
+    self.execute = execute
+    self.expectedVersion = expectedVersion
+    self.project = project
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case execute = "execute"
+    case expectedVersion = "expectedVersion"
+    case project = "project"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.expectedVersion {
+      body["expectedVersion"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesChartsArchiveReturn: Codable, Sendable {
+  public var baseRef: String
+  public var chart: RaviJSON
+  public var consoleUrl: String
+  public var projectRef: String
+  public var success: Bool
+
+  public init(baseRef: String, chart: RaviJSON, consoleUrl: String, projectRef: String, success: Bool) {
+    self.baseRef = baseRef
+    self.chart = chart
+    self.consoleUrl = consoleUrl
+    self.projectRef = projectRef
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case baseRef = "baseRef"
+    case chart = "chart"
+    case consoleUrl = "consoleUrl"
+    case projectRef = "projectRef"
+    case success = "success"
+  }
+}
+
+public struct BasesChartsCreateOptions: Codable, Sendable {
+  public var console: String?
+  public var name: String?
+  public var project: String?
+  public var spec: String?
+  public var view: String?
+
+  public init(console: String? = nil, name: String? = nil, project: String? = nil, spec: String? = nil, view: String? = nil) {
+    self.console = console
+    self.name = name
+    self.project = project
+    self.spec = spec
+    self.view = view
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case name = "name"
+    case project = "project"
+    case spec = "spec"
+    case view = "view"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.name {
+      body["name"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.spec {
+      body["spec"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.view {
+      body["view"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesChartsCreateReturn: Codable, Sendable {
+  public var baseRef: String
+  public var chart: RaviJSON
+  public var consoleUrl: String
+  public var projectRef: String
+  public var success: Bool
+
+  public init(baseRef: String, chart: RaviJSON, consoleUrl: String, projectRef: String, success: Bool) {
+    self.baseRef = baseRef
+    self.chart = chart
+    self.consoleUrl = consoleUrl
+    self.projectRef = projectRef
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case baseRef = "baseRef"
+    case chart = "chart"
+    case consoleUrl = "consoleUrl"
+    case projectRef = "projectRef"
+    case success = "success"
+  }
+}
+
+public struct BasesChartsDataOptions: Codable, Sendable {
+  public var console: String?
+  public var project: String?
+
+  public init(console: String? = nil, project: String? = nil) {
+    self.console = console
+    self.project = project
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case project = "project"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesChartsDataReturn: Codable, Sendable {
+  public var baseRef: String
+  public var chart: RaviJSON
+  public var consoleUrl: String
+  public var data: [[String: RaviJSON]]
+  public var fields: [String: RaviJSON]
+  public var projectRef: String
+  public var success: Bool
+  public var suppressedGroups: Double
+  public var users: [String: RaviJSON]
+
+  public init(baseRef: String, chart: RaviJSON, consoleUrl: String, data: [[String: RaviJSON]], fields: [String: RaviJSON], projectRef: String, success: Bool, suppressedGroups: Double, users: [String: RaviJSON]) {
+    self.baseRef = baseRef
+    self.chart = chart
+    self.consoleUrl = consoleUrl
+    self.data = data
+    self.fields = fields
+    self.projectRef = projectRef
+    self.success = success
+    self.suppressedGroups = suppressedGroups
+    self.users = users
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case baseRef = "baseRef"
+    case chart = "chart"
+    case consoleUrl = "consoleUrl"
+    case data = "data"
+    case fields = "fields"
+    case projectRef = "projectRef"
+    case success = "success"
+    case suppressedGroups = "suppressedGroups"
+    case users = "users"
+  }
+}
+
+public struct BasesChartsListOptions: Codable, Sendable {
+  public var console: String?
+  public var fields: String?
+  public var limit: String?
+  public var offset: String?
+  public var project: String?
+
+  public init(console: String? = nil, fields: String? = nil, limit: String? = nil, offset: String? = nil, project: String? = nil) {
+    self.console = console
+    self.fields = fields
+    self.limit = limit
+    self.offset = offset
+    self.project = project
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case fields = "fields"
+    case limit = "limit"
+    case offset = "offset"
+    case project = "project"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.fields {
+      body["fields"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesChartsListReturn: Codable, Sendable {
+  public var baseRef: String
+  public var charts: [RaviJSON]
+  public var consoleUrl: String
+  public var items: [RaviJSON]
+  public var pagination: RaviJSON
+  public var projectRef: String
+  public var success: Bool
+  public var total: Double
+
+  public init(baseRef: String, charts: [RaviJSON], consoleUrl: String, items: [RaviJSON], pagination: RaviJSON, projectRef: String, success: Bool, total: Double) {
+    self.baseRef = baseRef
+    self.charts = charts
+    self.consoleUrl = consoleUrl
+    self.items = items
+    self.pagination = pagination
+    self.projectRef = projectRef
+    self.success = success
+    self.total = total
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case baseRef = "baseRef"
+    case charts = "charts"
+    case consoleUrl = "consoleUrl"
+    case items = "items"
+    case pagination = "pagination"
+    case projectRef = "projectRef"
+    case success = "success"
+    case total = "total"
+  }
+}
+
+public struct BasesChartsShowOptions: Codable, Sendable {
+  public var console: String?
+  public var project: String?
+
+  public init(console: String? = nil, project: String? = nil) {
+    self.console = console
+    self.project = project
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case project = "project"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesChartsShowReturn: Codable, Sendable {
+  public var baseRef: String
+  public var chart: RaviJSON
+  public var consoleUrl: String
+  public var projectRef: String
+  public var success: Bool
+
+  public init(baseRef: String, chart: RaviJSON, consoleUrl: String, projectRef: String, success: Bool) {
+    self.baseRef = baseRef
+    self.chart = chart
+    self.consoleUrl = consoleUrl
+    self.projectRef = projectRef
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case baseRef = "baseRef"
+    case chart = "chart"
+    case consoleUrl = "consoleUrl"
+    case projectRef = "projectRef"
+    case success = "success"
+  }
+}
+
+public struct BasesChartsUpdateOptions: Codable, Sendable {
+  public var console: String?
+  public var expectedVersion: String?
+  public var name: String?
+  public var project: String?
+  public var spec: String?
+
+  public init(console: String? = nil, expectedVersion: String? = nil, name: String? = nil, project: String? = nil, spec: String? = nil) {
+    self.console = console
+    self.expectedVersion = expectedVersion
+    self.name = name
+    self.project = project
+    self.spec = spec
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case expectedVersion = "expectedVersion"
+    case name = "name"
+    case project = "project"
+    case spec = "spec"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.expectedVersion {
+      body["expectedVersion"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.name {
+      body["name"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.spec {
+      body["spec"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesChartsUpdateReturn: Codable, Sendable {
+  public var baseRef: String
+  public var chart: RaviJSON
+  public var consoleUrl: String
+  public var projectRef: String
+  public var success: Bool
+
+  public init(baseRef: String, chart: RaviJSON, consoleUrl: String, projectRef: String, success: Bool) {
+    self.baseRef = baseRef
+    self.chart = chart
+    self.consoleUrl = consoleUrl
+    self.projectRef = projectRef
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case baseRef = "baseRef"
+    case chart = "chart"
+    case consoleUrl = "consoleUrl"
+    case projectRef = "projectRef"
+    case success = "success"
+  }
+}
+
+public struct BasesCreateOptions: Codable, Sendable {
+  public var console: String?
+  public var description: String?
+  public var icon: String?
+  public var project: String?
+  public var schema: String?
+  public var slug: String?
+  public var timezone: String?
+
+  public init(console: String? = nil, description: String? = nil, icon: String? = nil, project: String? = nil, schema: String? = nil, slug: String? = nil, timezone: String? = nil) {
+    self.console = console
+    self.description = description
+    self.icon = icon
+    self.project = project
+    self.schema = schema
+    self.slug = slug
+    self.timezone = timezone
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case description = "description"
+    case icon = "icon"
+    case project = "project"
+    case schema = "schema"
+    case slug = "slug"
+    case timezone = "timezone"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.description {
+      body["description"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.icon {
+      body["icon"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.schema {
+      body["schema"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.slug {
+      body["slug"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.timezone {
+      body["timezone"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesCreateReturn: Codable, Sendable {
+  public var base: RaviJSON
+  public var consoleUrl: String
+  public var projectRef: String
+  public var success: Bool
+
+  public init(base: RaviJSON, consoleUrl: String, projectRef: String, success: Bool) {
+    self.base = base
+    self.consoleUrl = consoleUrl
+    self.projectRef = projectRef
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case base = "base"
+    case consoleUrl = "consoleUrl"
+    case projectRef = "projectRef"
+    case success = "success"
+  }
+}
+
+public struct BasesListOptions: Codable, Sendable {
+  public var console: String?
+  public var fields: String?
+  public var includeArchived: Bool?
+  public var limit: String?
+  public var offset: String?
+  public var project: String?
+
+  public init(console: String? = nil, fields: String? = nil, includeArchived: Bool? = nil, limit: String? = nil, offset: String? = nil, project: String? = nil) {
+    self.console = console
+    self.fields = fields
+    self.includeArchived = includeArchived
+    self.limit = limit
+    self.offset = offset
+    self.project = project
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case fields = "fields"
+    case includeArchived = "includeArchived"
+    case limit = "limit"
+    case offset = "offset"
+    case project = "project"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.fields {
+      body["fields"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.includeArchived {
+      body["includeArchived"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesListReturn: Codable, Sendable {
+  public var bases: [RaviJSON]
+  public var consoleUrl: String
+  public var items: [RaviJSON]
+  public var pagination: RaviJSON
+  public var projectRef: String
+  public var success: Bool
+  public var total: Double
+
+  public init(bases: [RaviJSON], consoleUrl: String, items: [RaviJSON], pagination: RaviJSON, projectRef: String, success: Bool, total: Double) {
+    self.bases = bases
+    self.consoleUrl = consoleUrl
+    self.items = items
+    self.pagination = pagination
+    self.projectRef = projectRef
+    self.success = success
+    self.total = total
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case bases = "bases"
+    case consoleUrl = "consoleUrl"
+    case items = "items"
+    case pagination = "pagination"
+    case projectRef = "projectRef"
+    case success = "success"
+    case total = "total"
+  }
+}
+
+public struct BasesPropsAddOptions: Codable, Sendable {
+  public var config: String?
+  public var console: String?
+  public var description: String?
+  public var expectedSchemaVersion: String?
+  public var key: String?
+  public var options: String?
+  public var position: String?
+  public var project: String?
+  public var required: Bool?
+  public var type: String?
+
+  public init(config: String? = nil, console: String? = nil, description: String? = nil, expectedSchemaVersion: String? = nil, key: String? = nil, options: String? = nil, position: String? = nil, project: String? = nil, required: Bool? = nil, type: String? = nil) {
+    self.config = config
+    self.console = console
+    self.description = description
+    self.expectedSchemaVersion = expectedSchemaVersion
+    self.key = key
+    self.options = options
+    self.position = position
+    self.project = project
+    self.required = required
+    self.type = type
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case config = "config"
+    case console = "console"
+    case description = "description"
+    case expectedSchemaVersion = "expectedSchemaVersion"
+    case key = "key"
+    case options = "options"
+    case position = "position"
+    case project = "project"
+    case required = "required"
+    case type = "type"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.config {
+      body["config"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.description {
+      body["description"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.expectedSchemaVersion {
+      body["expectedSchemaVersion"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.key {
+      body["key"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.options {
+      body["options"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.position {
+      body["position"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.required {
+      body["required"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.type {
+      body["type"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesPropsAddReturn: Codable, Sendable {
+  public var base: RaviJSON
+  public var consoleUrl: String
+  public var projectRef: String
+  public var property: RaviJSON
+  public var report: RaviJSON
+  public var success: Bool
+
+  public init(base: RaviJSON, consoleUrl: String, projectRef: String, property: RaviJSON, report: RaviJSON, success: Bool) {
+    self.base = base
+    self.consoleUrl = consoleUrl
+    self.projectRef = projectRef
+    self.property = property
+    self.report = report
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case base = "base"
+    case consoleUrl = "consoleUrl"
+    case projectRef = "projectRef"
+    case property = "property"
+    case report = "report"
+    case success = "success"
+  }
+}
+
+public struct BasesPropsDeleteOptions: Codable, Sendable {
+  public var console: String?
+  public var execute: Bool?
+  public var expectedSchemaVersion: String?
+  public var project: String?
+
+  public init(console: String? = nil, execute: Bool? = nil, expectedSchemaVersion: String? = nil, project: String? = nil) {
+    self.console = console
+    self.execute = execute
+    self.expectedSchemaVersion = expectedSchemaVersion
+    self.project = project
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case execute = "execute"
+    case expectedSchemaVersion = "expectedSchemaVersion"
+    case project = "project"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.expectedSchemaVersion {
+      body["expectedSchemaVersion"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesPropsDeleteReturn: Codable, Sendable {
+  public var base: RaviJSON
+  public var consoleUrl: String
+  public var projectRef: String
+  public var property: RaviJSON
+  public var report: RaviJSON
+  public var success: Bool
+
+  public init(base: RaviJSON, consoleUrl: String, projectRef: String, property: RaviJSON, report: RaviJSON, success: Bool) {
+    self.base = base
+    self.consoleUrl = consoleUrl
+    self.projectRef = projectRef
+    self.property = property
+    self.report = report
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case base = "base"
+    case consoleUrl = "consoleUrl"
+    case projectRef = "projectRef"
+    case property = "property"
+    case report = "report"
+    case success = "success"
+  }
+}
+
+public struct BasesPropsListOptions: Codable, Sendable {
+  public var console: String?
+  public var fields: String?
+  public var includeDeleted: Bool?
+  public var limit: String?
+  public var offset: String?
+  public var project: String?
+
+  public init(console: String? = nil, fields: String? = nil, includeDeleted: Bool? = nil, limit: String? = nil, offset: String? = nil, project: String? = nil) {
+    self.console = console
+    self.fields = fields
+    self.includeDeleted = includeDeleted
+    self.limit = limit
+    self.offset = offset
+    self.project = project
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case fields = "fields"
+    case includeDeleted = "includeDeleted"
+    case limit = "limit"
+    case offset = "offset"
+    case project = "project"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.fields {
+      body["fields"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.includeDeleted {
+      body["includeDeleted"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesPropsListReturn: Codable, Sendable {
+  public var baseRef: String
+  public var consoleUrl: String
+  public var items: [RaviJSON]
+  public var pagination: RaviJSON
+  public var projectRef: String
+  public var properties: [RaviJSON]
+  public var schemaVersion: Double
+  public var success: Bool
+  public var total: Double
+
+  public init(baseRef: String, consoleUrl: String, items: [RaviJSON], pagination: RaviJSON, projectRef: String, properties: [RaviJSON], schemaVersion: Double, success: Bool, total: Double) {
+    self.baseRef = baseRef
+    self.consoleUrl = consoleUrl
+    self.items = items
+    self.pagination = pagination
+    self.projectRef = projectRef
+    self.properties = properties
+    self.schemaVersion = schemaVersion
+    self.success = success
+    self.total = total
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case baseRef = "baseRef"
+    case consoleUrl = "consoleUrl"
+    case items = "items"
+    case pagination = "pagination"
+    case projectRef = "projectRef"
+    case properties = "properties"
+    case schemaVersion = "schemaVersion"
+    case success = "success"
+    case total = "total"
+  }
+}
+
+public struct BasesPropsRestoreOptions: Codable, Sendable {
+  public var console: String?
+  public var expectedSchemaVersion: String?
+  public var project: String?
+
+  public init(console: String? = nil, expectedSchemaVersion: String? = nil, project: String? = nil) {
+    self.console = console
+    self.expectedSchemaVersion = expectedSchemaVersion
+    self.project = project
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case expectedSchemaVersion = "expectedSchemaVersion"
+    case project = "project"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.expectedSchemaVersion {
+      body["expectedSchemaVersion"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesPropsRestoreReturn: Codable, Sendable {
+  public var base: RaviJSON
+  public var consoleUrl: String
+  public var projectRef: String
+  public var property: RaviJSON
+  public var report: RaviJSON
+  public var success: Bool
+
+  public init(base: RaviJSON, consoleUrl: String, projectRef: String, property: RaviJSON, report: RaviJSON, success: Bool) {
+    self.base = base
+    self.consoleUrl = consoleUrl
+    self.projectRef = projectRef
+    self.property = property
+    self.report = report
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case base = "base"
+    case consoleUrl = "consoleUrl"
+    case projectRef = "projectRef"
+    case property = "property"
+    case report = "report"
+    case success = "success"
+  }
+}
+
+public struct BasesPropsUpdateOptions: Codable, Sendable {
+  public var config: String?
+  public var console: String?
+  public var description: String?
+  public var execute: Bool?
+  public var expectedSchemaVersion: String?
+  public var key: String?
+  public var name: String?
+  public var options: String?
+  public var position: String?
+  public var project: String?
+  public var required: String?
+  public var type: String?
+
+  public init(config: String? = nil, console: String? = nil, description: String? = nil, execute: Bool? = nil, expectedSchemaVersion: String? = nil, key: String? = nil, name: String? = nil, options: String? = nil, position: String? = nil, project: String? = nil, required: String? = nil, type: String? = nil) {
+    self.config = config
+    self.console = console
+    self.description = description
+    self.execute = execute
+    self.expectedSchemaVersion = expectedSchemaVersion
+    self.key = key
+    self.name = name
+    self.options = options
+    self.position = position
+    self.project = project
+    self.required = required
+    self.type = type
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case config = "config"
+    case console = "console"
+    case description = "description"
+    case execute = "execute"
+    case expectedSchemaVersion = "expectedSchemaVersion"
+    case key = "key"
+    case name = "name"
+    case options = "options"
+    case position = "position"
+    case project = "project"
+    case required = "required"
+    case type = "type"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.config {
+      body["config"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.description {
+      body["description"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.expectedSchemaVersion {
+      body["expectedSchemaVersion"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.key {
+      body["key"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.name {
+      body["name"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.options {
+      body["options"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.position {
+      body["position"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.required {
+      body["required"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.type {
+      body["type"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesPropsUpdateReturn: Codable, Sendable {
+  public var base: RaviJSON
+  public var consoleUrl: String
+  public var projectRef: String
+  public var property: RaviJSON
+  public var report: RaviJSON
+  public var success: Bool
+
+  public init(base: RaviJSON, consoleUrl: String, projectRef: String, property: RaviJSON, report: RaviJSON, success: Bool) {
+    self.base = base
+    self.consoleUrl = consoleUrl
+    self.projectRef = projectRef
+    self.property = property
+    self.report = report
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case base = "base"
+    case consoleUrl = "consoleUrl"
+    case projectRef = "projectRef"
+    case property = "property"
+    case report = "report"
+    case success = "success"
+  }
+}
+
+public struct BasesRestoreOptions: Codable, Sendable {
+  public var console: String?
+  public var execute: Bool?
+  public var expectedVersion: String?
+  public var project: String?
+
+  public init(console: String? = nil, execute: Bool? = nil, expectedVersion: String? = nil, project: String? = nil) {
+    self.console = console
+    self.execute = execute
+    self.expectedVersion = expectedVersion
+    self.project = project
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case execute = "execute"
+    case expectedVersion = "expectedVersion"
+    case project = "project"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.expectedVersion {
+      body["expectedVersion"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesRestoreReturn: Codable, Sendable {
+  public var base: RaviJSON
+  public var consoleUrl: String
+  public var projectRef: String
+  public var success: Bool
+
+  public init(base: RaviJSON, consoleUrl: String, projectRef: String, success: Bool) {
+    self.base = base
+    self.consoleUrl = consoleUrl
+    self.projectRef = projectRef
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case base = "base"
+    case consoleUrl = "consoleUrl"
+    case projectRef = "projectRef"
+    case success = "success"
+  }
+}
+
+public struct BasesRowsAddOptions: Codable, Sendable {
+  public var body: String?
+  public var bodyFile: String?
+  public var console: String?
+  public var idempotencyKey: String?
+  public var project: String?
+  public var set: [String]?
+  public var values: String?
+  public var view: String?
+
+  public init(body: String? = nil, bodyFile: String? = nil, console: String? = nil, idempotencyKey: String? = nil, project: String? = nil, set: [String]? = nil, values: String? = nil, view: String? = nil) {
+    self.body = body
+    self.bodyFile = bodyFile
+    self.console = console
+    self.idempotencyKey = idempotencyKey
+    self.project = project
+    self.set = set
+    self.values = values
+    self.view = view
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case body = "body"
+    case bodyFile = "bodyFile"
+    case console = "console"
+    case idempotencyKey = "idempotencyKey"
+    case project = "project"
+    case set = "set"
+    case values = "values"
+    case view = "view"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.body {
+      body["body"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.bodyFile {
+      body["bodyFile"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.idempotencyKey {
+      body["idempotencyKey"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.set {
+      body["set"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.values {
+      body["values"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.view {
+      body["view"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesRowsAddReturn: Codable, Sendable {
+  public var baseRef: String
+  public var consoleUrl: String
+  public var idempotencyKey: String
+  public var idempotentReplay: Bool
+  public var projectRef: String
+  public var row: RaviJSON
+  public var success: Bool
+  public var users: [String: RaviJSON]
+  public var viewId: RaviJSON
+
+  public init(baseRef: String, consoleUrl: String, idempotencyKey: String, idempotentReplay: Bool, projectRef: String, row: RaviJSON, success: Bool, users: [String: RaviJSON], viewId: RaviJSON) {
+    self.baseRef = baseRef
+    self.consoleUrl = consoleUrl
+    self.idempotencyKey = idempotencyKey
+    self.idempotentReplay = idempotentReplay
+    self.projectRef = projectRef
+    self.row = row
+    self.success = success
+    self.users = users
+    self.viewId = viewId
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case baseRef = "baseRef"
+    case consoleUrl = "consoleUrl"
+    case idempotencyKey = "idempotencyKey"
+    case idempotentReplay = "idempotentReplay"
+    case projectRef = "projectRef"
+    case row = "row"
+    case success = "success"
+    case users = "users"
+    case viewId = "viewId"
+  }
+}
+
+public struct BasesRowsArchiveOptions: Codable, Sendable {
+  public var console: String?
+  public var expectedVersion: String?
+  public var lastWriteWins: Bool?
+  public var project: String?
+  public var view: String?
+
+  public init(console: String? = nil, expectedVersion: String? = nil, lastWriteWins: Bool? = nil, project: String? = nil, view: String? = nil) {
+    self.console = console
+    self.expectedVersion = expectedVersion
+    self.lastWriteWins = lastWriteWins
+    self.project = project
+    self.view = view
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case expectedVersion = "expectedVersion"
+    case lastWriteWins = "lastWriteWins"
+    case project = "project"
+    case view = "view"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.expectedVersion {
+      body["expectedVersion"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.lastWriteWins {
+      body["lastWriteWins"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.view {
+      body["view"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesRowsArchiveReturn: Codable, Sendable {
+  public var baseRef: String
+  public var consoleUrl: String
+  public var idempotentReplay: Bool
+  public var projectRef: String
+  public var row: RaviJSON
+  public var success: Bool
+  public var users: [String: RaviJSON]
+  public var viewId: RaviJSON
+
+  public init(baseRef: String, consoleUrl: String, idempotentReplay: Bool, projectRef: String, row: RaviJSON, success: Bool, users: [String: RaviJSON], viewId: RaviJSON) {
+    self.baseRef = baseRef
+    self.consoleUrl = consoleUrl
+    self.idempotentReplay = idempotentReplay
+    self.projectRef = projectRef
+    self.row = row
+    self.success = success
+    self.users = users
+    self.viewId = viewId
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case baseRef = "baseRef"
+    case consoleUrl = "consoleUrl"
+    case idempotentReplay = "idempotentReplay"
+    case projectRef = "projectRef"
+    case row = "row"
+    case success = "success"
+    case users = "users"
+    case viewId = "viewId"
+  }
+}
+
+public struct BasesRowsExportOptions: Codable, Sendable {
+  public var console: String?
+  public var filter: String?
+  public var format: String?
+  public var includeBody: Bool?
+  public var maxRows: String?
+  public var out: String?
+  public var project: String?
+  public var sort: [String]?
+  public var view: String?
+
+  public init(console: String? = nil, filter: String? = nil, format: String? = nil, includeBody: Bool? = nil, maxRows: String? = nil, out: String? = nil, project: String? = nil, sort: [String]? = nil, view: String? = nil) {
+    self.console = console
+    self.filter = filter
+    self.format = format
+    self.includeBody = includeBody
+    self.maxRows = maxRows
+    self.out = out
+    self.project = project
+    self.sort = sort
+    self.view = view
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case filter = "filter"
+    case format = "format"
+    case includeBody = "includeBody"
+    case maxRows = "maxRows"
+    case out = "out"
+    case project = "project"
+    case sort = "sort"
+    case view = "view"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.filter {
+      body["filter"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.format {
+      body["format"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.includeBody {
+      body["includeBody"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.maxRows {
+      body["maxRows"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.out {
+      body["out"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.sort {
+      body["sort"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.view {
+      body["view"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesRowsExportReturn: Codable, Sendable {
+  public var baseRef: String
+  public var columns: [String]
+  public var consoleUrl: String
+  public var content: RaviJSON
+  public var format: String
+  public var outFile: RaviJSON
+  public var projectRef: String
+  public var rowCount: Double
+  public var success: Bool
+  public var truncated: Bool
+  public var viewId: RaviJSON
+
+  public init(baseRef: String, columns: [String], consoleUrl: String, content: RaviJSON, format: String, outFile: RaviJSON, projectRef: String, rowCount: Double, success: Bool, truncated: Bool, viewId: RaviJSON) {
+    self.baseRef = baseRef
+    self.columns = columns
+    self.consoleUrl = consoleUrl
+    self.content = content
+    self.format = format
+    self.outFile = outFile
+    self.projectRef = projectRef
+    self.rowCount = rowCount
+    self.success = success
+    self.truncated = truncated
+    self.viewId = viewId
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case baseRef = "baseRef"
+    case columns = "columns"
+    case consoleUrl = "consoleUrl"
+    case content = "content"
+    case format = "format"
+    case outFile = "outFile"
+    case projectRef = "projectRef"
+    case rowCount = "rowCount"
+    case success = "success"
+    case truncated = "truncated"
+    case viewId = "viewId"
+  }
+}
+
+public struct BasesRowsGetOptions: Codable, Sendable {
+  public var console: String?
+  public var includeArchived: Bool?
+  public var project: String?
+  public var view: String?
+
+  public init(console: String? = nil, includeArchived: Bool? = nil, project: String? = nil, view: String? = nil) {
+    self.console = console
+    self.includeArchived = includeArchived
+    self.project = project
+    self.view = view
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case includeArchived = "includeArchived"
+    case project = "project"
+    case view = "view"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.includeArchived {
+      body["includeArchived"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.view {
+      body["view"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesRowsGetReturn: Codable, Sendable {
+  public var baseRef: String
+  public var consoleUrl: String
+  public var projectRef: String
+  public var row: RaviJSON
+  public var success: Bool
+  public var users: [String: RaviJSON]
+  public var viewId: RaviJSON
+
+  public init(baseRef: String, consoleUrl: String, projectRef: String, row: RaviJSON, success: Bool, users: [String: RaviJSON], viewId: RaviJSON) {
+    self.baseRef = baseRef
+    self.consoleUrl = consoleUrl
+    self.projectRef = projectRef
+    self.row = row
+    self.success = success
+    self.users = users
+    self.viewId = viewId
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case baseRef = "baseRef"
+    case consoleUrl = "consoleUrl"
+    case projectRef = "projectRef"
+    case row = "row"
+    case success = "success"
+    case users = "users"
+    case viewId = "viewId"
+  }
+}
+
+public struct BasesRowsHistoryOptions: Codable, Sendable {
+  public var console: String?
+  public var cursor: String?
+  public var limit: String?
+  public var project: String?
+  public var view: String?
+
+  public init(console: String? = nil, cursor: String? = nil, limit: String? = nil, project: String? = nil, view: String? = nil) {
+    self.console = console
+    self.cursor = cursor
+    self.limit = limit
+    self.project = project
+    self.view = view
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case cursor = "cursor"
+    case limit = "limit"
+    case project = "project"
+    case view = "view"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.cursor {
+      body["cursor"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.view {
+      body["view"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesRowsHistoryReturn: Codable, Sendable {
+  public var baseRef: String
+  public var consoleUrl: String
+  public var entries: [RaviJSON]
+  public var nextCursor: RaviJSON
+  public var pagination: RaviJSON
+  public var projectRef: String
+  public var success: Bool
+  public var users: [String: RaviJSON]
+  public var viewId: RaviJSON
+
+  public init(baseRef: String, consoleUrl: String, entries: [RaviJSON], nextCursor: RaviJSON, pagination: RaviJSON, projectRef: String, success: Bool, users: [String: RaviJSON], viewId: RaviJSON) {
+    self.baseRef = baseRef
+    self.consoleUrl = consoleUrl
+    self.entries = entries
+    self.nextCursor = nextCursor
+    self.pagination = pagination
+    self.projectRef = projectRef
+    self.success = success
+    self.users = users
+    self.viewId = viewId
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case baseRef = "baseRef"
+    case consoleUrl = "consoleUrl"
+    case entries = "entries"
+    case nextCursor = "nextCursor"
+    case pagination = "pagination"
+    case projectRef = "projectRef"
+    case success = "success"
+    case users = "users"
+    case viewId = "viewId"
+  }
+}
+
+public struct BasesRowsImportOptions: Codable, Sendable {
+  public var batch: String?
+  public var console: String?
+  public var execute: Bool?
+  public var map: [String]?
+  public var project: String?
+
+  public init(batch: String? = nil, console: String? = nil, execute: Bool? = nil, map: [String]? = nil, project: String? = nil) {
+    self.batch = batch
+    self.console = console
+    self.execute = execute
+    self.map = map
+    self.project = project
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case batch = "batch"
+    case console = "console"
+    case execute = "execute"
+    case map = "map"
+    case project = "project"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.batch {
+      body["batch"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.map {
+      body["map"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesRowsImportReturn: Codable, Sendable {
+  public var baseRef: String
+  public var batchCount: Double
+  public var batches: [RaviJSON]
+  public var columns: [RaviJSON]
+  public var consoleUrl: String
+  public var created: Double
+  public var emptyRowsSkipped: Double
+  public var file: String
+  public var projectRef: String
+  public var rowCount: Double
+  public var success: Bool
+
+  public init(baseRef: String, batchCount: Double, batches: [RaviJSON], columns: [RaviJSON], consoleUrl: String, created: Double, emptyRowsSkipped: Double, file: String, projectRef: String, rowCount: Double, success: Bool) {
+    self.baseRef = baseRef
+    self.batchCount = batchCount
+    self.batches = batches
+    self.columns = columns
+    self.consoleUrl = consoleUrl
+    self.created = created
+    self.emptyRowsSkipped = emptyRowsSkipped
+    self.file = file
+    self.projectRef = projectRef
+    self.rowCount = rowCount
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case baseRef = "baseRef"
+    case batchCount = "batchCount"
+    case batches = "batches"
+    case columns = "columns"
+    case consoleUrl = "consoleUrl"
+    case created = "created"
+    case emptyRowsSkipped = "emptyRowsSkipped"
+    case file = "file"
+    case projectRef = "projectRef"
+    case rowCount = "rowCount"
+    case success = "success"
+  }
+}
+
+public struct BasesRowsPurgeOptions: Codable, Sendable {
+  public var console: String?
+  public var execute: Bool?
+  public var project: String?
+
+  public init(console: String? = nil, execute: Bool? = nil, project: String? = nil) {
+    self.console = console
+    self.execute = execute
+    self.project = project
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case execute = "execute"
+    case project = "project"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesRowsPurgeReturn: Codable, Sendable {
+  public var baseRef: String
+  public var consoleUrl: String
+  public var projectRef: String
+  public var purged: Bool
+  public var rowId: String
+  public var success: Bool
+
+  public init(baseRef: String, consoleUrl: String, projectRef: String, purged: Bool, rowId: String, success: Bool) {
+    self.baseRef = baseRef
+    self.consoleUrl = consoleUrl
+    self.projectRef = projectRef
+    self.purged = purged
+    self.rowId = rowId
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case baseRef = "baseRef"
+    case consoleUrl = "consoleUrl"
+    case projectRef = "projectRef"
+    case purged = "purged"
+    case rowId = "rowId"
+    case success = "success"
+  }
+}
+
+public struct BasesRowsQueryOptions: Codable, Sendable {
+  public var all: Bool?
+  public var console: String?
+  public var cursor: String?
+  public var filter: String?
+  public var format: String?
+  public var includeArchived: Bool?
+  public var includeBody: Bool?
+  public var limit: String?
+  public var maxRows: String?
+  public var project: String?
+  public var sort: [String]?
+  public var view: String?
+
+  public init(all: Bool? = nil, console: String? = nil, cursor: String? = nil, filter: String? = nil, format: String? = nil, includeArchived: Bool? = nil, includeBody: Bool? = nil, limit: String? = nil, maxRows: String? = nil, project: String? = nil, sort: [String]? = nil, view: String? = nil) {
+    self.all = all
+    self.console = console
+    self.cursor = cursor
+    self.filter = filter
+    self.format = format
+    self.includeArchived = includeArchived
+    self.includeBody = includeBody
+    self.limit = limit
+    self.maxRows = maxRows
+    self.project = project
+    self.sort = sort
+    self.view = view
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case all = "all"
+    case console = "console"
+    case cursor = "cursor"
+    case filter = "filter"
+    case format = "format"
+    case includeArchived = "includeArchived"
+    case includeBody = "includeBody"
+    case limit = "limit"
+    case maxRows = "maxRows"
+    case project = "project"
+    case sort = "sort"
+    case view = "view"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.all {
+      body["all"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.cursor {
+      body["cursor"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.filter {
+      body["filter"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.format {
+      body["format"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.includeArchived {
+      body["includeArchived"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.includeBody {
+      body["includeBody"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.maxRows {
+      body["maxRows"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.sort {
+      body["sort"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.view {
+      body["view"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesRowsQueryReturn: Codable, Sendable {
+  public var baseRef: String
+  public var columns: [String]
+  public var consoleUrl: String
+  public var nextCursor: RaviJSON
+  public var pagination: RaviJSON
+  public var projectRef: String
+  public var rows: [RaviJSON]
+  public var success: Bool
+  public var truncated: Bool
+  public var users: [String: RaviJSON]
+  public var viewId: RaviJSON
+
+  public init(baseRef: String, columns: [String], consoleUrl: String, nextCursor: RaviJSON, pagination: RaviJSON, projectRef: String, rows: [RaviJSON], success: Bool, truncated: Bool, users: [String: RaviJSON], viewId: RaviJSON) {
+    self.baseRef = baseRef
+    self.columns = columns
+    self.consoleUrl = consoleUrl
+    self.nextCursor = nextCursor
+    self.pagination = pagination
+    self.projectRef = projectRef
+    self.rows = rows
+    self.success = success
+    self.truncated = truncated
+    self.users = users
+    self.viewId = viewId
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case baseRef = "baseRef"
+    case columns = "columns"
+    case consoleUrl = "consoleUrl"
+    case nextCursor = "nextCursor"
+    case pagination = "pagination"
+    case projectRef = "projectRef"
+    case rows = "rows"
+    case success = "success"
+    case truncated = "truncated"
+    case users = "users"
+    case viewId = "viewId"
+  }
+}
+
+public struct BasesRowsRestoreOptions: Codable, Sendable {
+  public var console: String?
+  public var expectedVersion: String?
+  public var lastWriteWins: Bool?
+  public var project: String?
+
+  public init(console: String? = nil, expectedVersion: String? = nil, lastWriteWins: Bool? = nil, project: String? = nil) {
+    self.console = console
+    self.expectedVersion = expectedVersion
+    self.lastWriteWins = lastWriteWins
+    self.project = project
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case expectedVersion = "expectedVersion"
+    case lastWriteWins = "lastWriteWins"
+    case project = "project"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.expectedVersion {
+      body["expectedVersion"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.lastWriteWins {
+      body["lastWriteWins"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesRowsRestoreReturn: Codable, Sendable {
+  public var baseRef: String
+  public var consoleUrl: String
+  public var idempotentReplay: Bool
+  public var projectRef: String
+  public var row: RaviJSON
+  public var success: Bool
+  public var users: [String: RaviJSON]
+  public var viewId: RaviJSON
+
+  public init(baseRef: String, consoleUrl: String, idempotentReplay: Bool, projectRef: String, row: RaviJSON, success: Bool, users: [String: RaviJSON], viewId: RaviJSON) {
+    self.baseRef = baseRef
+    self.consoleUrl = consoleUrl
+    self.idempotentReplay = idempotentReplay
+    self.projectRef = projectRef
+    self.row = row
+    self.success = success
+    self.users = users
+    self.viewId = viewId
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case baseRef = "baseRef"
+    case consoleUrl = "consoleUrl"
+    case idempotentReplay = "idempotentReplay"
+    case projectRef = "projectRef"
+    case row = "row"
+    case success = "success"
+    case users = "users"
+    case viewId = "viewId"
+  }
+}
+
+public struct BasesRowsUpdateOptions: Codable, Sendable {
+  public var body: String?
+  public var bodyFile: String?
+  public var console: String?
+  public var expectedVersion: String?
+  public var idempotencyKey: String?
+  public var lastWriteWins: Bool?
+  public var project: String?
+  public var set: [String]?
+  public var values: String?
+  public var view: String?
+
+  public init(body: String? = nil, bodyFile: String? = nil, console: String? = nil, expectedVersion: String? = nil, idempotencyKey: String? = nil, lastWriteWins: Bool? = nil, project: String? = nil, set: [String]? = nil, values: String? = nil, view: String? = nil) {
+    self.body = body
+    self.bodyFile = bodyFile
+    self.console = console
+    self.expectedVersion = expectedVersion
+    self.idempotencyKey = idempotencyKey
+    self.lastWriteWins = lastWriteWins
+    self.project = project
+    self.set = set
+    self.values = values
+    self.view = view
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case body = "body"
+    case bodyFile = "bodyFile"
+    case console = "console"
+    case expectedVersion = "expectedVersion"
+    case idempotencyKey = "idempotencyKey"
+    case lastWriteWins = "lastWriteWins"
+    case project = "project"
+    case set = "set"
+    case values = "values"
+    case view = "view"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.body {
+      body["body"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.bodyFile {
+      body["bodyFile"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.expectedVersion {
+      body["expectedVersion"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.idempotencyKey {
+      body["idempotencyKey"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.lastWriteWins {
+      body["lastWriteWins"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.set {
+      body["set"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.values {
+      body["values"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.view {
+      body["view"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesRowsUpdateReturn: Codable, Sendable {
+  public var baseRef: String
+  public var consoleUrl: String
+  public var idempotencyKey: String
+  public var idempotentReplay: Bool
+  public var projectRef: String
+  public var row: RaviJSON
+  public var success: Bool
+  public var users: [String: RaviJSON]
+  public var viewId: RaviJSON
+
+  public init(baseRef: String, consoleUrl: String, idempotencyKey: String, idempotentReplay: Bool, projectRef: String, row: RaviJSON, success: Bool, users: [String: RaviJSON], viewId: RaviJSON) {
+    self.baseRef = baseRef
+    self.consoleUrl = consoleUrl
+    self.idempotencyKey = idempotencyKey
+    self.idempotentReplay = idempotentReplay
+    self.projectRef = projectRef
+    self.row = row
+    self.success = success
+    self.users = users
+    self.viewId = viewId
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case baseRef = "baseRef"
+    case consoleUrl = "consoleUrl"
+    case idempotencyKey = "idempotencyKey"
+    case idempotentReplay = "idempotentReplay"
+    case projectRef = "projectRef"
+    case row = "row"
+    case success = "success"
+    case users = "users"
+    case viewId = "viewId"
+  }
+}
+
+public struct BasesShowOptions: Codable, Sendable {
+  public var console: String?
+  public var project: String?
+
+  public init(console: String? = nil, project: String? = nil) {
+    self.console = console
+    self.project = project
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case project = "project"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesShowReturn: Codable, Sendable {
+  public var base: RaviJSON
+  public var consoleUrl: String
+  public var projectRef: String
+  public var success: Bool
+
+  public init(base: RaviJSON, consoleUrl: String, projectRef: String, success: Bool) {
+    self.base = base
+    self.consoleUrl = consoleUrl
+    self.projectRef = projectRef
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case base = "base"
+    case consoleUrl = "consoleUrl"
+    case projectRef = "projectRef"
+    case success = "success"
+  }
+}
+
+public struct BasesSubscribeOptions: Codable, Sendable {
+  public var console: String?
+  public var project: String?
+
+  public init(console: String? = nil, project: String? = nil) {
+    self.console = console
+    self.project = project
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case project = "project"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesSubscribeReturn: Codable, Sendable {
+  public var consoleUrl: String
+  public var delivery: RaviJSON
+  public var projectRef: String
+  public var subscription: RaviJSON
+  public var success: Bool
+
+  public init(consoleUrl: String, delivery: RaviJSON, projectRef: String, subscription: RaviJSON, success: Bool) {
+    self.consoleUrl = consoleUrl
+    self.delivery = delivery
+    self.projectRef = projectRef
+    self.subscription = subscription
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case consoleUrl = "consoleUrl"
+    case delivery = "delivery"
+    case projectRef = "projectRef"
+    case subscription = "subscription"
+    case success = "success"
+  }
+}
+
+public struct BasesSubscriptionsOptions: Codable, Sendable {
+  public var console: String?
+  public var project: String?
+
+  public init(console: String? = nil, project: String? = nil) {
+    self.console = console
+    self.project = project
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case project = "project"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesSubscriptionsReturn: Codable, Sendable {
+  public var baseRef: String
+  public var consoleUrl: String
+  public var projectRef: String
+  public var subscriptions: [RaviJSON]
+  public var success: Bool
+
+  public init(baseRef: String, consoleUrl: String, projectRef: String, subscriptions: [RaviJSON], success: Bool) {
+    self.baseRef = baseRef
+    self.consoleUrl = consoleUrl
+    self.projectRef = projectRef
+    self.subscriptions = subscriptions
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case baseRef = "baseRef"
+    case consoleUrl = "consoleUrl"
+    case projectRef = "projectRef"
+    case subscriptions = "subscriptions"
+    case success = "success"
+  }
+}
+
+public struct BasesUnsubscribeOptions: Codable, Sendable {
+  public var console: String?
+  public var project: String?
+
+  public init(console: String? = nil, project: String? = nil) {
+    self.console = console
+    self.project = project
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case project = "project"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesUnsubscribeReturn: Codable, Sendable {
+  public var consoleUrl: String
+  public var projectRef: String
+  public var subscription: RaviJSON
+  public var success: Bool
+
+  public init(consoleUrl: String, projectRef: String, subscription: RaviJSON, success: Bool) {
+    self.consoleUrl = consoleUrl
+    self.projectRef = projectRef
+    self.subscription = subscription
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case consoleUrl = "consoleUrl"
+    case projectRef = "projectRef"
+    case subscription = "subscription"
+    case success = "success"
+  }
+}
+
+public struct BasesUpdateOptions: Codable, Sendable {
+  public var console: String?
+  public var description: String?
+  public var expectedVersion: String?
+  public var icon: String?
+  public var name: String?
+  public var project: String?
+  public var slug: String?
+  public var timezone: String?
+
+  public init(console: String? = nil, description: String? = nil, expectedVersion: String? = nil, icon: String? = nil, name: String? = nil, project: String? = nil, slug: String? = nil, timezone: String? = nil) {
+    self.console = console
+    self.description = description
+    self.expectedVersion = expectedVersion
+    self.icon = icon
+    self.name = name
+    self.project = project
+    self.slug = slug
+    self.timezone = timezone
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case description = "description"
+    case expectedVersion = "expectedVersion"
+    case icon = "icon"
+    case name = "name"
+    case project = "project"
+    case slug = "slug"
+    case timezone = "timezone"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.description {
+      body["description"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.expectedVersion {
+      body["expectedVersion"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.icon {
+      body["icon"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.name {
+      body["name"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.slug {
+      body["slug"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.timezone {
+      body["timezone"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesUpdateReturn: Codable, Sendable {
+  public var base: RaviJSON
+  public var consoleUrl: String
+  public var projectRef: String
+  public var success: Bool
+
+  public init(base: RaviJSON, consoleUrl: String, projectRef: String, success: Bool) {
+    self.base = base
+    self.consoleUrl = consoleUrl
+    self.projectRef = projectRef
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case base = "base"
+    case consoleUrl = "consoleUrl"
+    case projectRef = "projectRef"
+    case success = "success"
+  }
+}
+
+public struct BasesViewsArchiveOptions: Codable, Sendable {
+  public var console: String?
+  public var execute: Bool?
+  public var expectedVersion: String?
+  public var project: String?
+
+  public init(console: String? = nil, execute: Bool? = nil, expectedVersion: String? = nil, project: String? = nil) {
+    self.console = console
+    self.execute = execute
+    self.expectedVersion = expectedVersion
+    self.project = project
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case execute = "execute"
+    case expectedVersion = "expectedVersion"
+    case project = "project"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.expectedVersion {
+      body["expectedVersion"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesViewsArchiveReturn: Codable, Sendable {
+  public var baseRef: String
+  public var consoleUrl: String
+  public var projectRef: String
+  public var success: Bool
+  public var view: RaviJSON
+
+  public init(baseRef: String, consoleUrl: String, projectRef: String, success: Bool, view: RaviJSON) {
+    self.baseRef = baseRef
+    self.consoleUrl = consoleUrl
+    self.projectRef = projectRef
+    self.success = success
+    self.view = view
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case baseRef = "baseRef"
+    case consoleUrl = "consoleUrl"
+    case projectRef = "projectRef"
+    case success = "success"
+    case view = "view"
+  }
+}
+
+public struct BasesViewsCreateOptions: Codable, Sendable {
+  public var console: String?
+  public var name: String?
+  public var project: String?
+  public var spec: String?
+
+  public init(console: String? = nil, name: String? = nil, project: String? = nil, spec: String? = nil) {
+    self.console = console
+    self.name = name
+    self.project = project
+    self.spec = spec
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case name = "name"
+    case project = "project"
+    case spec = "spec"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.name {
+      body["name"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.spec {
+      body["spec"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesViewsCreateReturn: Codable, Sendable {
+  public var baseRef: String
+  public var consoleUrl: String
+  public var projectRef: String
+  public var success: Bool
+  public var view: RaviJSON
+
+  public init(baseRef: String, consoleUrl: String, projectRef: String, success: Bool, view: RaviJSON) {
+    self.baseRef = baseRef
+    self.consoleUrl = consoleUrl
+    self.projectRef = projectRef
+    self.success = success
+    self.view = view
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case baseRef = "baseRef"
+    case consoleUrl = "consoleUrl"
+    case projectRef = "projectRef"
+    case success = "success"
+    case view = "view"
+  }
+}
+
+public struct BasesViewsListOptions: Codable, Sendable {
+  public var console: String?
+  public var fields: String?
+  public var limit: String?
+  public var offset: String?
+  public var project: String?
+
+  public init(console: String? = nil, fields: String? = nil, limit: String? = nil, offset: String? = nil, project: String? = nil) {
+    self.console = console
+    self.fields = fields
+    self.limit = limit
+    self.offset = offset
+    self.project = project
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case fields = "fields"
+    case limit = "limit"
+    case offset = "offset"
+    case project = "project"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.fields {
+      body["fields"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesViewsListReturn: Codable, Sendable {
+  public var baseRef: String
+  public var consoleUrl: String
+  public var items: [RaviJSON]
+  public var pagination: RaviJSON
+  public var projectRef: String
+  public var success: Bool
+  public var total: Double
+  public var views: [RaviJSON]
+
+  public init(baseRef: String, consoleUrl: String, items: [RaviJSON], pagination: RaviJSON, projectRef: String, success: Bool, total: Double, views: [RaviJSON]) {
+    self.baseRef = baseRef
+    self.consoleUrl = consoleUrl
+    self.items = items
+    self.pagination = pagination
+    self.projectRef = projectRef
+    self.success = success
+    self.total = total
+    self.views = views
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case baseRef = "baseRef"
+    case consoleUrl = "consoleUrl"
+    case items = "items"
+    case pagination = "pagination"
+    case projectRef = "projectRef"
+    case success = "success"
+    case total = "total"
+    case views = "views"
+  }
+}
+
+public struct BasesViewsQueryOptions: Codable, Sendable {
+  public var all: Bool?
+  public var console: String?
+  public var cursor: String?
+  public var filter: String?
+  public var format: String?
+  public var includeBody: Bool?
+  public var limit: String?
+  public var maxRows: String?
+  public var project: String?
+  public var sort: [String]?
+
+  public init(all: Bool? = nil, console: String? = nil, cursor: String? = nil, filter: String? = nil, format: String? = nil, includeBody: Bool? = nil, limit: String? = nil, maxRows: String? = nil, project: String? = nil, sort: [String]? = nil) {
+    self.all = all
+    self.console = console
+    self.cursor = cursor
+    self.filter = filter
+    self.format = format
+    self.includeBody = includeBody
+    self.limit = limit
+    self.maxRows = maxRows
+    self.project = project
+    self.sort = sort
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case all = "all"
+    case console = "console"
+    case cursor = "cursor"
+    case filter = "filter"
+    case format = "format"
+    case includeBody = "includeBody"
+    case limit = "limit"
+    case maxRows = "maxRows"
+    case project = "project"
+    case sort = "sort"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.all {
+      body["all"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.cursor {
+      body["cursor"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.filter {
+      body["filter"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.format {
+      body["format"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.includeBody {
+      body["includeBody"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.maxRows {
+      body["maxRows"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.sort {
+      body["sort"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesViewsQueryReturn: Codable, Sendable {
+  public var baseRef: String
+  public var columns: [String]
+  public var consoleUrl: String
+  public var nextCursor: RaviJSON
+  public var pagination: RaviJSON
+  public var projectRef: String
+  public var rows: [RaviJSON]
+  public var success: Bool
+  public var truncated: Bool
+  public var users: [String: RaviJSON]
+  public var viewId: RaviJSON
+
+  public init(baseRef: String, columns: [String], consoleUrl: String, nextCursor: RaviJSON, pagination: RaviJSON, projectRef: String, rows: [RaviJSON], success: Bool, truncated: Bool, users: [String: RaviJSON], viewId: RaviJSON) {
+    self.baseRef = baseRef
+    self.columns = columns
+    self.consoleUrl = consoleUrl
+    self.nextCursor = nextCursor
+    self.pagination = pagination
+    self.projectRef = projectRef
+    self.rows = rows
+    self.success = success
+    self.truncated = truncated
+    self.users = users
+    self.viewId = viewId
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case baseRef = "baseRef"
+    case columns = "columns"
+    case consoleUrl = "consoleUrl"
+    case nextCursor = "nextCursor"
+    case pagination = "pagination"
+    case projectRef = "projectRef"
+    case rows = "rows"
+    case success = "success"
+    case truncated = "truncated"
+    case users = "users"
+    case viewId = "viewId"
+  }
+}
+
+public struct BasesViewsShowOptions: Codable, Sendable {
+  public var console: String?
+  public var project: String?
+
+  public init(console: String? = nil, project: String? = nil) {
+    self.console = console
+    self.project = project
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case project = "project"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesViewsShowReturn: Codable, Sendable {
+  public var baseRef: String
+  public var consoleUrl: String
+  public var projectRef: String
+  public var success: Bool
+  public var view: RaviJSON
+
+  public init(baseRef: String, consoleUrl: String, projectRef: String, success: Bool, view: RaviJSON) {
+    self.baseRef = baseRef
+    self.consoleUrl = consoleUrl
+    self.projectRef = projectRef
+    self.success = success
+    self.view = view
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case baseRef = "baseRef"
+    case consoleUrl = "consoleUrl"
+    case projectRef = "projectRef"
+    case success = "success"
+    case view = "view"
+  }
+}
+
+public struct BasesViewsUpdateOptions: Codable, Sendable {
+  public var console: String?
+  public var expectedVersion: String?
+  public var name: String?
+  public var project: String?
+  public var spec: String?
+
+  public init(console: String? = nil, expectedVersion: String? = nil, name: String? = nil, project: String? = nil, spec: String? = nil) {
+    self.console = console
+    self.expectedVersion = expectedVersion
+    self.name = name
+    self.project = project
+    self.spec = spec
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case expectedVersion = "expectedVersion"
+    case name = "name"
+    case project = "project"
+    case spec = "spec"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.expectedVersion {
+      body["expectedVersion"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.name {
+      body["name"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.spec {
+      body["spec"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesViewsUpdateReturn: Codable, Sendable {
+  public var baseRef: String
+  public var consoleUrl: String
+  public var projectRef: String
+  public var success: Bool
+  public var view: RaviJSON
+
+  public init(baseRef: String, consoleUrl: String, projectRef: String, success: Bool, view: RaviJSON) {
+    self.baseRef = baseRef
+    self.consoleUrl = consoleUrl
+    self.projectRef = projectRef
+    self.success = success
+    self.view = view
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case baseRef = "baseRef"
+    case consoleUrl = "consoleUrl"
+    case projectRef = "projectRef"
+    case success = "success"
+    case view = "view"
+  }
+}
+
 public struct BridgesCreateOptions: Codable, Sendable {
   public var allow: String?
   public var console: String?

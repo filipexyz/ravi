@@ -44,7 +44,12 @@ import {
   type SkillGatePersistedListener,
 } from "./skill-gate.js";
 import { formatSkillNotAuthorizedReason, isSkillAuthorizedForAgent } from "./skill-authorization.js";
-import { extractRequestedSkillsFromCommandLine, extractRequestedSkillsFromToolCall } from "./skill-visibility.js";
+import {
+  commandLineRunsSkillRemediation,
+  extractRequestedSkillsFromCommandLine,
+  extractRequestedSkillsFromToolCall,
+  toolCallRunsSkillRemediation,
+} from "./skill-visibility.js";
 
 const RUNTIME_BUILTIN_EXECUTABLES = new Set(["ravi"]);
 let cachedRuntimeDynamicTools: ExportedTool[] | null = null;
@@ -458,7 +463,9 @@ async function authorizeRuntimeCommandExecution(
     (skill) => !isSkillAuthorizedForAgent(options.agentId, skill, { capabilities: options.context.capabilities }),
   );
   if (deniedCommandSkill) {
-    const reason = formatSkillNotAuthorizedReason(deniedCommandSkill, options.agentId);
+    const reason = formatSkillNotAuthorizedReason(deniedCommandSkill, options.agentId, {
+      lineAlsoRemediates: commandLineRunsSkillRemediation(command),
+    });
     emitRuntimePolicyDenied(options, {
       type: "tool",
       denied: `skill:${deniedCommandSkill}`,
@@ -651,7 +658,9 @@ async function authorizeRuntimeToolUse(
     (skill) => !isSkillAuthorizedForAgent(options.agentId, skill, { capabilities: options.context.capabilities }),
   );
   if (deniedToolSkill) {
-    const reason = formatSkillNotAuthorizedReason(deniedToolSkill, options.agentId);
+    const reason = formatSkillNotAuthorizedReason(deniedToolSkill, options.agentId, {
+      lineAlsoRemediates: toolCallRunsSkillRemediation(request.input),
+    });
     emitRuntimePolicyDenied(options, {
       type: "tool",
       denied: `skill:${deniedToolSkill}`,

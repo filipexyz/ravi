@@ -3,7 +3,11 @@ import { join } from "node:path";
 import type { ContextCapability } from "../router/router-db.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import { formatSkillNotAuthorizedReason, isSkillAuthorizedForAgent } from "./skill-authorization.js";
-import { extractRequestedSkillsFromToolCall, isSkillNameAuthorizedOnAllowlist } from "./skill-visibility.js";
+import {
+  extractRequestedSkillsFromToolCall,
+  isSkillNameAuthorizedOnAllowlist,
+  toolCallRunsSkillRemediation,
+} from "./skill-visibility.js";
 import type {
   RuntimeApprovalHandler,
   RuntimeApprovalQuestion,
@@ -374,7 +378,9 @@ export async function authorizePiToolCall(
   if (deniedSkill) {
     return {
       allowed: false,
-      reason: formatSkillNotAuthorizedReason(deniedSkill, handlers.agentId),
+      reason: formatSkillNotAuthorizedReason(deniedSkill, handlers.agentId, {
+        lineAlsoRemediates: toolCallRunsSkillRemediation(input),
+      }),
     };
   }
 

@@ -19,7 +19,7 @@ owners:
   - main
 status: active
 normative: true
-review: "v6 2026-09-26 — Pi com allowlist sobe com --no-skills (anúncio = gate); SKILL_NOT_AUTHORIZED nomeia skill e agente e aponta install --source → grant (bug 2b7fcc09)."
+review: "v7 2026-10-07 — `use:skill:<id>` e `admin:system:*` (full-access materializa `use:skill:*`) autorizam a leitura de toda skill que o Ravi conhece, sem ampliar o catálogo; `bases` ganha gate; SKILL_NOT_AUTHORIZED aponta o remédio pela origem da skill; resume aceita skill lida sob demanda que o gate autoriza."
 ---
 
 <!-- markdownlint-disable-next-line MD025 -->
@@ -34,7 +34,9 @@ Cada agente vê no contexto **só as skills que fazem sentido pra ele** — reso
 1. Agente com grants explícitos recebe `baseline ∪ grants ∪ skills oficiais implicadas por autoridade específica`. `execute:group:*` genérico NÃO amplia esse catálogo. `admin:system:*` e capabilities semânticas (`mutate:permissions:allow`, `mutate:pages:ship`, `execute:group:pages`) continuam a expor a skill do comando autorizado.
 2. Agente sem grants explícitos recebe `baseline ∪ derivadas-de-permissão`, preservando compatibilidade.
 
-Ambos produzem uma **allowlist por agente** que alimenta o **filtro nativo do motor**.
+Ambos produzem uma **allowlist por agente** que alimenta o **filtro nativo do motor**. Capabilities `use:skill:<id>` concretas entram nela como um grant.
+
+**Ler é mais largo que anunciar.** O gate (Invariant G) também autoriza, sob demanda, qualquer skill que o Ravi conhece (catálogo ou instalada) coberta por `use:skill:<id>`, glob (`use:skill:ravi-system-*`), `use:skill:*` ou `admin:system:*`. O profile `full-access` materializa `admin:system:*` e `use:skill:*`, então um agente full-access lê toda skill do Ravi. Wildcards e admin NÃO ampliam o catálogo anunciado (custo de contexto).
 
 ## Arquitetura (núcleo agnóstico + adaptador fino)
 
@@ -64,19 +66,20 @@ Todo agente — inclusive recém-criado — MUST receber automaticamente um base
 
 ## Invariants
 
-- **R (fonte única).** A allowlist MUST vir só de `resolveAgentSkills`: `baseline ∪ grants ∪ skills oficiais implicadas por autoridade` quando houver grants; caso contrário, `baseline ∪ derivadas-permissão`. Nada de outra origem.
+- **R (fonte única).** A allowlist MUST vir só de `resolveAgentSkills`: `baseline ∪ grants ∪ skills oficiais implicadas por autoridade` quando houver grants; caso contrário, `baseline ∪ derivadas-permissão`. Capabilities `use:skill:<id>` concretas (sem `*`) entram como grants. Nada de outra origem.
 - **T (por turno).** MUST ser resolvida na montagem de cada turno pelo `runtime-request-builder` e entregue ao adaptador do provider. Mudança de permissão ou grant vale no próximo turno, sem restart.
 - **N (agnóstico).** `resolveAgentSkills` MUST ser provider-agnostic. Só o *enforcement* (aplicar a lista ao motor) é por-provider. MUST NOT ramificar a lógica de resolução por provider.
 - **D (derivação compatível).** Uma permissão genérica (`execute:group:*`) MUST NOT ampliar um catálogo com grants explícitos. `admin:system:*` e capabilities específicas de comando (`read|mutate:<resource>:<action>`, `execute:group:<group>`) MUST continuar a expor a skill oficial daquele comando. Visibilidade segue autoridade; autoridade NUNCA é concedida só porque a skill é visível.
 - **B (baseline).** Todo agente MUST receber o baseline, sempre — mesmo sem permissão nenhuma.
 - **U (single-source).** Skill personalizada MUST ter um único arquivo central; N grants MUST NOT duplicar arquivo em disco.
-- **G (gate consistente).** Toda entrega de uma skill, inclusive skill-gate e `ravi skills show`, MUST usar a mesma autorização: allowlist do agente OU skill oficial implicada pelas capabilities efetivas da identidade. Uma skill não concedida e não implicada MUST falhar com `SKILL_NOT_AUTHORIZED`. A mensagem MUST nomear skill e agente nessa ordem (`Skill '<skill>' is not authorized for agent '<agent>'.`) e apontar `ravi skills install --source <skill-dir>` + `ravi skills grant <agent> <skill>`.
+- **G (gate consistente).** Toda entrega de uma skill, inclusive skill-gate e `ravi skills show`, MUST usar a mesma autorização: allowlist do agente OU skill oficial implicada pelas capabilities efetivas da identidade OU skill que o Ravi conhece (catálogo ou instalada) coberta por `use:skill:<id>` / `admin:system:*` (mesmo matcher das capabilities de tool e grupo: id exato, glob final, `*`, admin). Skill que só existe no disco nunca é coberta por capability. Quando o turno traz capabilities efetivas (overlay de chat de contato, grants de observação), elas são o teto da autorização por capability: o gate MUST NOT cair para as capabilities mais largas do agente. A allowlist continua sendo do agente (baseline, grants e skills oficiais derivadas das capabilities de comando do agente), para que a skill exigida por uma tool que o turno pode usar continue sendo entregue; só os nomes que apenas um `use:skill:<id>` concreto do agente pôs nela respondem às capabilities do turno. Allowlist e capabilities valem para a skill que o Ravi conhece, nunca para conteúdo de mesmo nome de outra origem (`ravi skills show --source`); a negação desse caso MUST dizer que o conteúdo do `--source` não é a skill do Ravi. Uma skill não concedida e não implicada MUST falhar com `SKILL_NOT_AUTHORIZED`. A mensagem MUST nomear skill e agente nessa ordem (`Skill '<skill>' is not authorized for agent '<agent>'.`) e apontar o remédio pela origem da skill: skill do catálogo ou instalada → `ravi skills grant <agent> <skill>` ou `use:skill:<skill>`, sem `install`; skill fora do Ravi → `ravi skills install --source <skill-dir>` + `ravi skills grant <agent> <skill>`. Nos dois casos MUST nomear a capability exigida (`mutate:skills:grant`) e dizer para pedir a um operador quem não puder rodá-la. Quando a linha negada também roda o remédio (`ravi skills grant`…), a mensagem MUST dizer que a linha foi rejeitada inteira e que o grant deve rodar sozinho.
 - **A (anúncio = gate).** Um provider MUST NOT anunciar ao modelo, por descoberta nativa, skill que o gate negaria para um agente com allowlist. Skill que só existe no disco (ex.: `~/.agents/skills/<skill>`) MUST NOT ser concedida automaticamente: o caminho suportado é `skills install --source` → `skills grant` → leitura liberada.
-- **F (no-break / fallback).** Agente sem configuração explícita mantém a derivação compatível. Grants explícitos NÃO escondem skills oficiais que a identidade já pode executar.
+- **F (no-break / fallback).** Agente sem configuração explícita mantém a derivação compatível. Qualquer capability `use:skill:<id>`, wildcard incluído, conta como configuração: o agente passa a ler só skills que o Ravi conhece, nunca skill só do disco por fallback. Grants explícitos NÃO escondem skills oficiais que a identidade já pode executar.
 - **C (cache-friendly).** A allowlist SHOULD ser estável entre turnos do mesmo agente (recomputa, mas idêntica) → o prefixo do prompt mantém cache. SHOULD mudar só em mudança de permissão/grant.
 - **S (camadas independentes).** Visibilidade de skill e permissão de ferramenta são controles distintos. O catálogo e `ravi skills show` MUST aplicar a allowlist; capacidades de efeito continuam sendo autorizadas pela camada de ferramentas.
 - **L (colisão de nome).** Skill local do agente (`<agent-cwd>/.claude/skills/`) MUST ter precedência sobre a compartilhada de mesmo nome; a compartilhada MUST ser suprimida do índice desse agente na colisão.
-- **CLI.** O grant MUST ser gerenciável por `ravi skills grant/revoke/who`; MUST NOT exigir edição manual de config.
+- **CLI.** O grant MUST ser gerenciável por `ravi skills grant/revoke/who`; MUST NOT exigir edição manual de config. Skill do catálogo MUST aceitar grant sem `skills install`.
+- **K (continuidade).** Ler sob demanda uma skill que o gate autoriza mas que não está na allowlist MUST NOT impedir o resume da sessão do provider. Skill anunciada que saiu da allowlist continua forçando sessão nova.
 
 ## Implementação vigente
 
@@ -87,7 +90,8 @@ Todo agente — inclusive recém-criado — MUST receber automaticamente um base
 5. O host converte a skill lida de volta ao alias anunciado e persiste a evidência no snapshot do turno.
 6. No Pi, o permission extension chama `authorizePiToolCall` antes de qualquer tool. Além do REBAC e do Bash `authorizeCommandExecution`, o authorize path aplica a allowlist a invocações de skill (Skill tool, `ravi skills show`, Read/Edit de `skills/<name>/SKILL.md`). Filtrar o catálogo no prompt NÃO é a barreira de segurança.
 7. No Pi com allowlist, o spawn RPC recebe `--no-skills`; o catálogo filtrado do Ravi passa a ser o único anúncio de skills. Agente sem allowlist (Invariant F) mantém a descoberta nativa do Pi.
-8. O gate de comando (host Bash e Pi) avalia TODAS as skills referenciadas na linha (`extractRequestedSkillsFromCommandLine`: cada segmento `;`/`&`/`&&`/`||`/`|`/newline e cada token `SKILL.md`) e nega nomeando a primeira não autorizada; uma skill concedida na mesma linha não mascara outra. `ravi skills install|list --source <path>` sem expansão/redirecionamento não conta como leitura de skill, para não bloquear o próprio caminho de remediação. A negação continua por linha: shell não permite executar só parte dela.
+8. `isSkillAuthorizedForAgent` consulta, nessa ordem, a allowlist, a implicação por capability de comando (`DEFAULT_RAVI_GROUP_SKILL_RULES`) e `use:skill:<id>` / `admin:system:*` contra a skill resolvida no catálogo ou nas instaladas (`skillCoveredBySkillCapability`), usando as capabilities do turno quando fornecidas e as do agente só quando omitidas (a allowlist é a do agente, menos os nomes que só `use:skill:<id>` pôs nela quando o turno traz capabilities); `skills show --source` passa o diretório lido (`skillPath`): só uma skill instalada naquele diretório é coberta pela allowlist (grants) ou por `use:skill` / admin, mesmo quando divide o nome com uma skill do catálogo, e a implicação por capability de comando (só por nome) não se aplica. O `runtime-request-builder` passa essa mesma autorização ao teste de resume (Invariant K).
+9. O gate de comando (host Bash e Pi) avalia TODAS as skills referenciadas na linha (`extractRequestedSkillsFromCommandLine`: cada segmento `;`/`&`/`&&`/`||`/`|`/newline e cada token `SKILL.md`) e nega nomeando a primeira não autorizada; uma skill concedida na mesma linha não mascara outra. `ravi skills install|list --source <path>` sem expansão/redirecionamento não conta como leitura de skill, para não bloquear o próprio caminho de remediação. A negação continua por linha: shell não permite executar só parte dela.
 
 ## Scope
 

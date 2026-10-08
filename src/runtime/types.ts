@@ -512,6 +512,15 @@ export type RuntimeEvent =
       rawEvent?: Record<string, unknown>;
     } & RuntimeEventBase)
   | ({
+      /**
+       * Content-free liveness signal: the provider is still producing output
+       * (thinking, streamed tool input) that has no canonical event of its own.
+       * It only feeds inactivity watchdogs; it carries no text and is never
+       * projected, persisted, or delivered.
+       */
+      type: "provider.activity";
+    } & RuntimeEventBase)
+  | ({
       type: "text.delta";
       text: string;
     } & RuntimeEventBase)

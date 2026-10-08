@@ -581,6 +581,31 @@ describe("ConsoleApiClient", () => {
     expect(deleted).toBe(true);
   });
 
+  it("deletes local credentials when refresh returns 404 NOT_FOUND", async () => {
+    let deleted = false;
+    const client = new ConsoleApiClient({
+      consoleUrl: "https://console.example",
+      fetch: async () => jsonResponse({ error: { code: "NOT_FOUND", message: "unknown installation" } }, 404),
+    });
+
+    try {
+      await refreshCredentialsForStore({
+        client,
+        credentials: makeCredentials(),
+        write: () => {},
+        delete: () => {
+          deleted = true;
+        },
+      });
+      throw new Error("Expected refreshCredentialsForStore to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(CloudAuthError);
+      expect((error as CloudAuthError).code).toBe("CREDENTIALS_INVALID");
+    }
+
+    expect(deleted).toBe(true);
+  });
+
   it("calls the merged Console /api/cli/link contract", async () => {
     const calls: FetchCall[] = [];
     const client = new ConsoleApiClient({

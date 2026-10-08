@@ -122,6 +122,7 @@ The transform pipeline is the orchestrator; `skill-gate` is one policy plugged i
 - **Mid-flight soft gate** — the runtime delivers the skill content; the agent's next attempt is allowed to invoke the tool only after the agent's context has acknowledged the skill. Acknowledgement is a turn boundary, not a free pass.
 - **Permission missing** — if the agent lacks permission to load the skill (no `toolgroup:navigate` or skill-specific deny), the gate MUST report the permission gap rather than silently auto-loading.
 - **Capability-implied official skill** — if the identity can already run the gated command (`admin:system:*`, `mutate:permissions:allow`, `mutate:pages:ship`, or `execute:group:<group>`), the gate MUST treat the official system skill as visible even when a custom grant hid it from the advertised catalog. The first call is still `RAVI_SKILL_REQUIRED`. A visible skill MUST NOT, by itself, grant those capabilities.
+- **Skill capability** — a `use:skill:<skill>` capability (exact, trailing glob, or `*`) or `admin:system:*` makes any catalog or installed skill visible to the gate the same way. Skills that only exist on disk are never covered by a capability.
 
 ## Acceptance Criteria
 

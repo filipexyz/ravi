@@ -134,7 +134,7 @@ export function evaluateSkillGate(input: EvaluateSkillGateInput): SkillGateDecis
       capabilities: input.context?.capabilities,
     })
   ) {
-    const reason = `RAVI_SKILL_GATE_CONFIG_ERROR: ${input.toolName} requires skill ${input.gate.skill}, but that skill is not visible to agent ${session.agentId}. Grant it via 'ravi skills grant' or a matching command capability.`;
+    const reason = `RAVI_SKILL_GATE_CONFIG_ERROR: ${input.toolName} requires skill ${input.gate.skill}, but that skill is not visible to agent ${session.agentId}. Grant it ('ravi skills grant ${session.agentId} ${input.gate.skill}'), or give the agent the 'use:skill:${input.gate.skill}' capability or a capability for the matching command.`;
     emitSkillGateEvent(session, {
       type: "skill.gate.error",
       toolName: input.toolName,

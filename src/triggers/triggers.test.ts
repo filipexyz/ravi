@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { resolveTriggerActivation } from "./activation.js";
 import { compileFilter } from "./filter.js";
-import { isTriggerOriginatedEvent, planTriggerTopicRefresh, shouldRetryTriggerTopic } from "./runner.js";
+import {
+  isTriggerOriginatedEvent,
+  planTriggerTopicRefresh,
+  shouldRetryTriggerTopic,
+  sourceFromSessionEntry,
+} from "./runner.js";
 import { findTriggerTopicCatalogEntry } from "./topic-catalog.js";
 import { dbCreateTrigger, dbGetTrigger, dbRecordTriggerFilterRejects, dbUpdateTrigger } from "./triggers-db.js";
 
@@ -212,5 +217,24 @@ describe("triggers native automation support", () => {
     });
     dbUpdateTrigger(trigger.id, { name: "renamed again" });
     expect(dbGetTrigger(trigger.id)?.filterRejectCount).toBe(1);
+  });
+});
+
+describe("trigger reply source", () => {
+  it("replies where the session last talked", () => {
+    expect(
+      sourceFromSessionEntry({ lastChannel: "whatsapp", lastAccountId: "main-account", lastTo: "chat-a" }),
+    ).toEqual({ channel: "whatsapp", accountId: "main-account", chatId: "chat-a" });
+  });
+
+  it("lets the trigger's explicit account win", () => {
+    expect(
+      sourceFromSessionEntry({ lastChannel: "whatsapp", lastAccountId: "main-account", lastTo: "chat-a" }, "other"),
+    ).toEqual({ channel: "whatsapp", accountId: "other", chatId: "chat-a" });
+  });
+
+  it("has no source when the session never talked to a chat", () => {
+    expect(sourceFromSessionEntry({ lastChannel: "whatsapp" })).toBeUndefined();
+    expect(sourceFromSessionEntry(null)).toBeUndefined();
   });
 });

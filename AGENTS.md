@@ -424,6 +424,7 @@ defaults:
 ravi agents permissions dev             # Show runtime profile
 ravi agents permissions dev full-access --execute # Full Ravi permissions (sem --execute e dry-run, exit 3)
 ravi agents permissions dev chat-only             # Reception agent: conversation only, no tools/shell/CLI groups
+ravi agents permissions dev explicit-only --capabilities use:tool:Bash,read:crypto:* --execute # Public agent: only the listed capabilities, no bootstrap floor
 ravi agents permissions dev none                  # Reset to bootstrap minimum immediately (not zero-authority)
 ```
 
