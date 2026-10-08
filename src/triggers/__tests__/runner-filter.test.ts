@@ -399,3 +399,37 @@ describe("TriggerRunner main-session reply routing", () => {
     });
   });
 });
+
+describe("TriggerRunner main-session pinned recipient", () => {
+  it("keeps the creator-time reply source over the main session's last chat", async () => {
+    const { getOrCreateSession, updateSessionSource } = await import("../../router/sessions.js");
+    getOrCreateSession("agent:trigger-test-agent:main", "trigger-test-agent", "/tmp/trigger-test-agent-real", {
+      name: "trigger-main",
+    });
+    updateSessionSource("agent:trigger-test-agent:main", {
+      channel: "whatsapp",
+      accountId: "main-account",
+      chatId: "chat-latest",
+    });
+    const topic = "ravi.test.main-pinned";
+    dbCreateTrigger({
+      name: "main-pinned-recipient",
+      agentId: "trigger-test-agent",
+      topic,
+      message: "agent prompt",
+      session: "main",
+      cooldownMs: 0,
+      replySource: { channel: "whatsapp", accountId: "creator-account", chatId: "chat-creator" },
+    });
+
+    await startRunner();
+    emit(topic, { eventId: "evt-pinned" });
+    await waitFor(() => publishCalls.length >= 1);
+
+    expect(publishCalls[0]?.payload.source).toEqual({
+      channel: "whatsapp",
+      accountId: "creator-account",
+      chatId: "chat-creator",
+    });
+  });
+});

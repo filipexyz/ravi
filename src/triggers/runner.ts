@@ -416,12 +416,16 @@ export class TriggerRunner {
           sessionName = this.resolveMainSessionName(agentId, agentCwd);
         }
       } else {
-        // No reply override: the turn runs in the agent main session, so it
-        // replies where that session last talked — the same routing an
-        // explicit `--reply-session <main>` gives. Without it the turn was
-        // source-less and its reply could be dropped by the gateway (2a728cd4).
+        // No reply override: the turn runs in the agent main session. A
+        // creator-time `replySource` stays the pinned recipient (applied
+        // below); only without one does the turn reply where the main session
+        // last talked, the routing an explicit `--reply-session <main>` gives.
+        // Without either the turn was source-less and its reply could be
+        // dropped by the gateway (2a728cd4).
         sessionName = this.resolveMainSessionName(agentId, agentCwd);
-        source = sourceFromSessionEntry(resolveSession(sessionName), trigger.accountId);
+        if (!trigger.replySource) {
+          source = sourceFromSessionEntry(resolveSession(sessionName), trigger.accountId);
+        }
       }
     } else {
       const dbKey = `agent:${agentId}:trigger:${trigger.id}`;
