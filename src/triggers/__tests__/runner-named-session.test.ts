@@ -236,4 +236,19 @@ describe("TriggerRunner named sessions", () => {
       chatId: "5511@s.whatsapp.net",
     });
   });
+  it("never routes an event-derived name into another agent's session", async () => {
+    dbCreateAgent({ id: "other-agent", cwd: "/tmp/other-agent-real" });
+    getOrCreateSession("agent:other-agent:dm:5522", "other-agent", "/tmp/other-agent-real", {
+      name: "issue-topic-x",
+    });
+    createTrigger({ name: "forum-foreign", topic, session: "issue-{{data.payload.row.values.topic_id.0}}" });
+    await startRunner();
+
+    emit(topic, commentEvent("c1", "topic-x"));
+    emit(topic, commentEvent("c2", "topic-a"));
+    await waitFor(() => publishCalls.length >= 1);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(publishCalls.map((call) => call.sessionName)).toEqual(["issue-topic-a"]);
+  });
 });

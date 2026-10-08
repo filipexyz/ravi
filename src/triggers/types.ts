@@ -114,3 +114,8 @@ export interface TriggerInput {
   /** Optional filter expression. If set, trigger only fires when event data matches. */
   filter?: string;
 }
+
+/** True when the session value has a {{...}} placeholder resolved per event. */
+export function isSessionNameTemplate(value: SessionTarget): boolean {
+  return /\{\{[^{}]+\}\}/.test(value);
+}

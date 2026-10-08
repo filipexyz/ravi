@@ -27,7 +27,7 @@ import {
 import { getAgent } from "../router/config.js";
 import { dbListTriggers, dbGetTrigger, dbRecordTriggerFilterRejects, dbUpdateTriggerState } from "./triggers-db.js";
 import type { CompiledFilter } from "./filter.js";
-import { isLegacySessionTarget, type Trigger } from "./types.js";
+import { isLegacySessionTarget, isSessionNameTemplate, type Trigger } from "./types.js";
 import { resolveTemplate, resolveTemplateStrict } from "./template.js";
 import { resolveTriggerActivation } from "./activation.js";
 import { buildTriggerPrompt } from "./prompt.js";
@@ -124,7 +124,7 @@ export class TriggerRunner {
   private running = false;
   private recentEventFires = new Map<string, number>();
   /** Last fire per resolved session of named-session triggers (per-session cooldown). */
-  private keyedLastFiredAt = new Map<string, number>();
+  private keyedLastFiredAt = new Map<string, { at: number; cooldownMs: number }>();
   private recentEventFireOps = 0;
   private pendingFilterRejects = new Map<string, PendingFilterRejects>();
   private filterRejectFlushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -333,7 +333,9 @@ export class TriggerRunner {
               }
               keyedCooldownKey = keyedCooldownId(trigger, targetName);
             }
-            const lastFiredAt = keyedCooldownKey ? this.keyedLastFiredAt.get(keyedCooldownKey) : trigger.lastFiredAt;
+            const lastFiredAt = keyedCooldownKey
+              ? this.keyedLastFiredAt.get(keyedCooldownKey)?.at
+              : trigger.lastFiredAt;
             // Cooldown check
             if (lastFiredAt && Date.now() - lastFiredAt < trigger.cooldownMs) {
               log.debug("Trigger cooldown active, skipping", {
@@ -411,10 +413,12 @@ export class TriggerRunner {
 
   private markKeyedFire(key: string, cooldownMs: number): void {
     const now = Date.now();
-    this.keyedLastFiredAt.set(key, now);
+    this.keyedLastFiredAt.set(key, { at: now, cooldownMs });
     if (this.keyedLastFiredAt.size > EVENT_DEDUPE_MAX) {
-      for (const [candidate, timestamp] of this.keyedLastFiredAt) {
-        if (now - timestamp >= cooldownMs) this.keyedLastFiredAt.delete(candidate);
+      // Each entry expires on its own trigger's cooldown, so pruning for one
+      // trigger never shortens another's.
+      for (const [candidate, entry] of this.keyedLastFiredAt) {
+        if (now - entry.at >= entry.cooldownMs) this.keyedLastFiredAt.delete(candidate);
       }
     }
   }
@@ -509,6 +513,17 @@ export class TriggerRunner {
       // normalized form still finds its session.
       const rawTarget = resolveTemplate(trigger.session, event).trim();
       const existing = resolveSession(rawTarget) ?? resolveSession(targetName) ?? resolveSession(dbKey);
+      if (existing && existing.agentId !== agentId && isSessionNameTemplate(trigger.session)) {
+        // A name built from event data must not reach into another agent's
+        // session; only a literal name chosen at creation may do that.
+        log.warn("Skipping trigger fire; resolved session belongs to another agent", {
+          triggerId: trigger.id,
+          triggerName: trigger.name,
+          topic: event.topic,
+          session: existing.name ?? existing.sessionKey,
+        });
+        return;
+      }
       if (existing?.name) {
         sessionName = existing.name;
       } else {
