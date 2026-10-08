@@ -3543,8 +3543,10 @@ describe("runtime session trace instrumentation", () => {
       yield { type: "tool.completed", toolUseId: "tool-read", toolName: "Read", content: "skill" };
       // The model thinks / streams a large tool input for longer than the
       // after-tool window, with only liveness signals and no canonical event.
-      for (let i = 0; i < 5; i++) {
-        await new Promise((resolve) => setTimeout(resolve, 400));
+      // Short gaps leave a wide margin under the 1s watch; the total still
+      // runs past it, so the test only passes if each signal re-arms the watch.
+      for (let i = 0; i < 10; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 150));
         yield { type: "provider.activity" };
       }
       yield { type: "assistant.message", text: "Arquivo escrito." };
