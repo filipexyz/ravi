@@ -31,7 +31,7 @@ ravi skills show solucoes
 ravi whatsapp group send <group> "<request>" --json --execute
 ```
 
-2. Store the `messageId` on the domain row before anyone can react, with a versioned, keyed write:
+2. Store the `messageId` on the domain row before anyone can react, with a versioned, keyed write. Run it in the same shell step as the send, with no agent turn in between: the reaction event has no queue, so a reaction that finds no row is lost.
 
 ```bash
 ravi bases rows update <base> <row> --set approval_message=<messageId> --expected-version <n> --idempotency-key <base>:<row>:ask

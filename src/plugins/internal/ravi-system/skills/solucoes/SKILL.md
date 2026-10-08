@@ -101,7 +101,7 @@ Mostre a ficha antes de expor dado ou mandar mensagem. Depois, carregue a skill 
 ## 9. Receitas
 - Recurso com versão: uma linha por horário; reservar = `rows update --expected-version`; `VERSION_CONFLICT`: já foi, ofereça outro.
 - Frente sem perna perigosa: `ravi agents permissions <id> chat-only` na frente, observer escreve, `--shell` envia campos tipados.
-- Aprovação: grupo (`whatsapp group send --json` → `messageId` na linha → `ravi.inbound.reaction` acha por `targetMessageId`), botão do Slack (`block_id`) ou view `aprovador contains $viewer`; confira `rows history`.
+- Aprovação: grupo (`whatsapp group send --json` → `messageId` na linha no mesmo `--shell` → `ravi.inbound.reaction` acha por `targetMessageId`), botão do Slack (`block_id`) ou view `aprovador contains $viewer`; confira `rows history`.
 - Ids de membro: `ravi bases show <base> --json` → `members[]`, ou preset `$viewer.raviUserId` em formulário.
 - Evento sem fila (reação, botão, e-mail): cooldown é do trigger todo; varra por cron.
 

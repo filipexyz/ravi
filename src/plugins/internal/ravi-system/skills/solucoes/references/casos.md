@@ -33,7 +33,7 @@ CAPTAR: PDV por `ravi cron add --shell` + `ravi bases rows import vendas <csv> -
 GUARDAR: vendas, estoque, promos (status, msg_aprovacao)
 MOSTRAR: gráfico da view de 7 dias (`ravi bases charts data`)
 REAGIR: trigger em ravi.inbound.reaction, --cooldown 1s; promo por targetMessageId; sem linha → @@SILENT@@
-AGIR: `ravi audio generate` + `ravi media send --ptt --account <conta>`; `ravi image generate`; pedido por `ravi whatsapp group send <grupo-do-dono> "..." --json`, messageId na linha
+AGIR: `ravi audio generate` + `ravi media send --ptt --account <conta>`; `ravi image generate`; pedido por `ravi whatsapp group send <grupo-do-dono> "..." --json --execute` e o messageId na linha no mesmo `--shell`, sem turno no meio
 RELATAR: cron segunda 6h, --message --isolated
 Agents: gerente com bases, audio, image, media, whatsapp
 Ousadia: voz com arte → construída: dá para ouvir dirigindo
@@ -50,8 +50,8 @@ Por que é bom: "ninguém vê a nota do outro antes de enviar a sua" vira um fla
 FICHA scorecards
 Pessoas: membros=entrevistadores, head de pessoas | de fora=candidatos
 CAPTAR: formulário (read: [] + create, write.set entrevistador = $viewer.raviUserId)
-GUARDAR: candidatos (entrevistadores, data_entrevista), scorecards (candidato_id, liberado, leitores), pessoas (slack_id)
-MOSTRAR: /entrevistas private: "Meus" filtra liberado eq false; "Debrief", liberado e leitores contains $viewer
+GUARDAR: candidatos (entrevistadores, data_entrevista), scorecards (candidato_id, entrevistador, liberado, leitores), pessoas (slack_id)
+MOSTRAR: /entrevistas private: "Meus" filtra entrevistador contains $viewer.raviUserId e liberado eq false; "Debrief", liberado e leitores contains $viewer.raviUserId
 REAGIR: `ravi bases subscribe scorecards` + trigger, actor.type == "user", --cooldown 5s
 AGIR: todos enviados → `ravi bases rows update ... --expected-version <v>` liga liberado; `ravi slack messages-send <canal> "Debrief liberado" --execute`
 RELATAR: cron 9h cobra scorecard atrasado
@@ -130,10 +130,10 @@ Por que é bom: a pergunta deixada num vídeo vira nota pública e volta a quem 
 FICHA jardim
 Pessoas: membros=autora, editor | de fora=quem comenta, leitores do site
 CAPTAR: observer nas conversas da autora; cron --shell com `ravi yt unanswered <videoId> --json`; `ravi watch create`
-GUARDAR: jardim (estagio, comentarios, respondidos, resposta_yt)
+GUARDAR: jardim (estagio, comentarios, respondidos, resposta_yt, falhas)
 MOSTRAR: /jardim private para aprovar o texto exato; site estático noutro projeto
 REAGIR: `ravi bases subscribe jardim` + trigger --shell, actor.type == "user", --cooldown 5s, varredura --every 15m
-AGIR: grava o commentId em respondidos e só então `ravi yt reply <commentId> "<resposta_yt>" --execute`, um por vez
+AGIR: grava o commentId em respondidos e só então `ravi yt reply <commentId> "<resposta_yt>" --execute`, um por vez; reply que falha vai para falhas e volta para aprovação (nunca reenvia sozinho)
 RELATAR: cron de domingo junta duplicadas
 Agents: jardineiro com bases; o principal lê só estagio eq Árvore
 Ousadia: observer que planta calado → construída
@@ -149,7 +149,7 @@ Por que é bom: quem pede não executa; um sócio aprova na página e um guardi�
 ```text
 FICHA cofre
 Pessoas: membros=os dois sócios | de fora=clientes do grupo VIP
-CAPTAR: solicitantes só criam: `ravi bases rows add cofre --values @pedido.json --idempotency-key carrinho:cupom-vip:2026-10-07`
+CAPTAR: solicitantes só criam: `ravi bases rows add cofre --values @pedido.json --idempotency-key carrinho:<pedidoId>:cofre` (uma chave por pedido; o retry do mesmo pedido repete a chave)
 GUARDAR: cofre (tipo fechado, alvo, decisao, resultado, body = prévia exata)
 MOSTRAR: /cofre private; a view escreve só decisao e nota
 REAGIR: `ravi bases subscribe cofre` + trigger --shell, surface == "page" e actor.type == "user", --cooldown 1s
