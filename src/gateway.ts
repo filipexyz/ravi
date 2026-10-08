@@ -74,6 +74,19 @@ const NATIVE_PRESENCE_CHANNELS = new Set(["slack"]);
  * outcome used to be visible only in the delivery trace, so a dropped reply
  * looked like a missing log line (2a728cd4).
  */
+/**
+ * Omni instance for an outbound target. A target can carry an empty
+ * `accountId` (a source-less trigger turn on a session whose last account
+ * was never recorded) while its canonical chat still names the instance;
+ * use that instead of dropping the reply as `missing_instance` (2a728cd4).
+ */
+export function resolveTargetInstanceId(target: { accountId?: string; instanceId?: string }): string | undefined {
+  if (!target.accountId?.trim() && target.instanceId?.trim()) {
+    return configStore.resolveInstanceId(target.instanceId.trim());
+  }
+  return configStore.resolveInstanceId(target.accountId ?? "");
+}
+
 // Outcomes that are intended, or already logged where they happen.
 const QUIET_DELIVERY_REASONS = new Set(["silent", "silent_response", "duplicate_media", "send_error"]);
 
@@ -1204,7 +1217,7 @@ export class Gateway {
       return;
     }
 
-    const instanceId = configStore.resolveInstanceId(target.accountId);
+    const instanceId = resolveTargetInstanceId(target);
     if (!instanceId) {
       await emitDelivery({ status: "dropped", reason: "missing_instance", target });
       return;
@@ -1332,7 +1345,7 @@ export class Gateway {
         return;
       }
 
-      const instanceId = configStore.resolveInstanceId(target.accountId);
+      const instanceId = resolveTargetInstanceId(target);
       if (!instanceId) {
         await emitDelivery({ status: "dropped", reason: "missing_instance", target });
         return;
