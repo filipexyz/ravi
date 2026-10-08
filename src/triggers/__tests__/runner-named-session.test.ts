@@ -178,6 +178,8 @@ describe("TriggerRunner named sessions", () => {
       name: "forum-skip",
       topic,
       session: "issue-{{data.payload.row.values.topic_id.0}}",
+      // Unresolved events must not consume the cooldown of later ones.
+      cooldownMs: 60_000,
     });
     await startRunner();
 

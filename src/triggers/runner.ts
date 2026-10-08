@@ -317,9 +317,22 @@ export class TriggerRunner {
             const trigger = prepared.trigger;
             // Named-session triggers cool down per resolved session: one busy
             // session must not swallow events that belong to another.
-            const keyedCooldownKey = isLegacySessionTarget(trigger.session)
-              ? null
-              : keyedCooldownId(trigger, resolveSessionTargetName(trigger.session, event));
+            let keyedCooldownKey: string | null = null;
+            if (!isLegacySessionTarget(trigger.session)) {
+              const targetName = resolveSessionTargetName(trigger.session, event);
+              if (!targetName) {
+                // Skip before touching cooldown, so every unresolved event
+                // is logged and none holds back a resolvable one.
+                log.warn("Skipping trigger fire; session name template did not resolve", {
+                  triggerId: trigger.id,
+                  triggerName: trigger.name,
+                  topic: event.topic,
+                  session: trigger.session,
+                });
+                continue;
+              }
+              keyedCooldownKey = keyedCooldownId(trigger, targetName);
+            }
             const lastFiredAt = keyedCooldownKey ? this.keyedLastFiredAt.get(keyedCooldownKey) : trigger.lastFiredAt;
             // Cooldown check
             if (lastFiredAt && Date.now() - lastFiredAt < trigger.cooldownMs) {
@@ -990,9 +1003,9 @@ function sortForStableStringify(value: unknown): unknown {
   return sorted;
 }
 
-/** Per-session cooldown id; an unresolved name gets its own bucket (it is skipped anyway). */
-function keyedCooldownId(trigger: Trigger, sessionKey: string | null): string {
-  return `${trigger.id}\u0000${sessionKey ?? ""}`;
+/** Per-session cooldown id for a named-session trigger. */
+function keyedCooldownId(trigger: Trigger, sessionName: string): string {
+  return `${trigger.id}\u0000${sessionName}`;
 }
 
 /**
