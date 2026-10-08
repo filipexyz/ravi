@@ -54,6 +54,9 @@ import {
   upsertDeliveredItem,
 } from "./inbox-db.js";
 import { enrichMailMessageReceivedPayload, withMailEnrichmentFailure } from "./mail-enrichment.js";
+import { basesApiRoot } from "../bases/client.js";
+import type { BaseRowWriteResponse } from "../bases/schemas.js";
+import { enrichBasesRowPayload, isBasesRowInboxEvent } from "./bases-enrichment.js";
 import { INBOX_NATS_SUBJECT, type ConsoleInboxItem, type InboxNatsPayload } from "./types.js";
 
 const log = logger.child("inbox:runner");
@@ -671,6 +674,28 @@ export class InboxRunner {
     },
     natsPayload: InboxNatsPayload,
   ): Promise<InboxNatsPayload> {
+    if (isBasesRowInboxEvent(input.item.eventType)) {
+      const enriched = await enrichBasesRowPayload(natsPayload, ({ projectId, baseId, rowId, includeArchived }) =>
+        this.withAutoRefresh(input.client, input.credentials, (token) =>
+          input.client.requestJson<BaseRowWriteResponse>(
+            "GET",
+            `${basesApiRoot(projectId)}/${encodeURIComponent(baseId)}/rows/${encodeURIComponent(rowId)}${
+              includeArchived ? "?includeArchived=1" : ""
+            }`,
+            undefined,
+            token,
+          ),
+        ),
+      );
+      const rowEnrichment = enriched.payload?.rowEnrichment as { status?: string; code?: string } | undefined;
+      if (rowEnrichment?.status === "failed") {
+        log.warn("Bases row enrichment failed; publishing metadata-only payload", {
+          itemId: input.item.itemId,
+          code: rowEnrichment.code,
+        });
+      }
+      return enriched;
+    }
     if (input.item.eventType !== "mail.message.received") return natsPayload;
     const mailClient = new RaviMailClient(input.client);
     let lastError: unknown = null;
