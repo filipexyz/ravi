@@ -10,7 +10,7 @@ Examples use the instance names `wa-main` (WhatsApp) and `slack-main` (Slack) an
 
 ## How a message is routed
 
-1. **Instance.** The message arrives on an instance, the record of one channel account. A disabled instance ignores it.
+1. **Instance.** The message arrives on an instance, the record of one channel account. A disabled WhatsApp instance ignores it.
 2. **Agent.** A route on that instance that matches the chat picks the agent. Without a matching route, the instance's own agent answers. With neither, the message is saved as pending.
 3. **Policy.** The DM or group policy decides whether the sender or group may reach the agent. Rejected messages are dropped or saved as pending.
 4. **Session.** The agent, the chat and the DM scope give the session key, and the agent runs a turn in that session.
@@ -38,10 +38,10 @@ ravi instances deleted
 ravi instances restore wa-main
 ```
 
-`ravi instances set` accepts `agent`, `dmPolicy`, `groupPolicy`, `contactIntakeMode`, `defaultContactTags`, `dmScope`, `instanceId`, `channel`, `enabled` and `defaults`. Use `-` as the value to clear one. The instance `dmScope` is stored but routing does not read it; set DM scope on the agent or on a route.
+`ravi instances set` accepts `agent`, `dmPolicy`, `groupPolicy`, `contactIntakeMode`, `defaultContactTags`, `dmScope`, `instanceId`, `channel`, `enabled` and `defaults`. Use `-` as the value to clear `agent`, `dmScope`, `instanceId`, `defaults` or `defaultContactTags`. The instance `dmScope` is stored but routing does not read it; set DM scope on the agent or on a route.
 
 <Warning>
-Never run `ravi instances create` on a name that already exists. It overwrites the whole record: the Omni instance id and the agent are cleared and the policies go back to `open`. The instance then stops receiving messages and the daemon logs `Unknown instanceId — not registered in ravi, skipping`. Change an existing instance with `ravi instances set`. For WhatsApp you never need `create`, because `connect` creates the instance.
+Never run `ravi instances create` on a name that already exists. It overwrites the whole record: the Omni instance id is cleared, and the agent and policies are replaced by the flags you pass (no agent and `open` when you pass none). The instance then stops receiving messages and the daemon logs `Unknown instanceId — not registered in ravi, skipping`. Change an existing instance with `ravi instances set`. For WhatsApp you never need `create`, because `connect` creates the instance.
 </Warning>
 
 ## Policies
@@ -61,7 +61,7 @@ Never run `ravi instances create` on a name that already exists. It overwrites t
 - The policy comes from the matching route's `--policy` first, then the instance, then `open`.
 - **An explicit route admits a group whatever the group policy**, `closed` included. Any pattern other than `*` counts as explicit. Adding a group route is the same as approving the group.
 - On Slack, an explicit route also admits DMs, and under `pairing` it is the only way in: Slack does not check the contact status for DMs. On WhatsApp, `pairing` admits `allowed` contacts.
-- The contact status `blocked` is only checked under `pairing` and `allowlist`. Under `open`, a blocked contact still reaches the agent.
+- The sender's contact status is only checked for WhatsApp DMs under `pairing` (`allowlist` checks the group, not the sender). Under `open`, in an admitted group, and on native Slack, a blocked contact still reaches the agent.
 
 <Warning>
 The defaults are `open`, and `ravi instances connect` rewrites the instance record every time it runs: policies go back to `open`, contact intake to `off`, and `defaultContactTags` and `defaults` are cleared. Set `pairing` and `allowlist` right after each connect. The WhatsApp policy questions in `ravi setup` do not configure instances.
@@ -166,7 +166,7 @@ ravi routes explain wa-main group:120363012345678901
 ravi instances target wa-main --pattern group:120363012345678901
 ```
 
-Both print which CLI build and database you are targeting, the configured route for the pattern, and its live effect: which route and agent win for that pattern in the live router. Run one before and after every route change. If the live winner is not the route you configured, the change is not done.
+Both print which CLI build and database you are targeting, the configured route for the pattern, and its live effect: which route and agent win for that pattern in the live router. Run one before and after every route change. If the live winner is not the route you configured, the change is not done. The winner check covers `group:`, `lid:` and phone-number patterns; for other patterns, such as a Slack member id, it says the check was skipped.
 
 ## WhatsApp groups
 

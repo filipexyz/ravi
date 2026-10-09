@@ -67,7 +67,7 @@ ravi agents permissions public explicit-only --capabilities use:tool:Bash,read:c
 ravi agents permissions main bootstrap --capabilities execute:executable:curl,view:agent:* --execute
 ```
 
-**Dry-run rule.** The command writes immediately when the change keeps or reduces authority. It stops with a dry-run (exit 3, nothing written) only when the change expands authority: moving to `full-access`, adding a capability the agent did not have, or leaving `chat-only` or `explicit-only` (including `none` from those). Re-run with `--execute`.
+**Dry-run rule.** The command writes immediately when the change keeps or reduces authority. It stops with a dry-run (exit 3, nothing written) only when the change expands authority: moving to `full-access`, adding a capability not already covered by its explicit list, or leaving `chat-only` or `explicit-only` (including `none` from those). Re-run with `--execute`.
 
 **`--capabilities` replaces the list.** Repeat the capabilities the agent already has. The seeded `main` agent starts with one explicit capability, `view:agent:*`. `--clear-capabilities` drops the list and keeps the profile.
 
@@ -204,7 +204,7 @@ All `ravi permissions` subcommands accept `--json`.
 
 When a turn needs a capability it does not hold, Ravi posts an approval request in the chat the turn came from.
 
-- **Who can approve:** a contact (or agent) whose identity on that channel and instance is linked, and whose global capabilities include the requested capability or `admin:system:*`. An owner tagged `permission-owner` can approve anything. Chat-scoped grants do not make anyone an approver. Clicks or reactions from anyone else are ignored.
+- **Who can approve:** a contact (or agent) that the clicker's or reactor's identity is linked to, and whose global capabilities include the requested capability or `admin:system:*`. An owner tagged `permission-owner` can approve anything. Chat-scoped grants do not make anyone an approver. Clicks or reactions from anyone else are ignored.
 - **Slack:** use the **Approve** or **Reject** button. Reactions and replies are ignored.
 - **WhatsApp and other channels:** react with 👍 or ❤️ to approve. Any other reaction, or a reply to the request message, rejects it.
 - **Timeout:** after 5 minutes without a decision, the request is denied.
@@ -217,14 +217,14 @@ Before every Bash command, Ravi checks it against the turn's capabilities. These
 
 - shells and string execution: `bash`, `sh`, `zsh`, `dash`, `ksh`, `csh`, `fish`, `tcsh`, `eval`, `exec`, `source`, `.`;
 - command substitution (`$(...)`, backticks), process substitution and here-documents;
-- piping into a shell, or into `python`, `python3`, `node`, `perl` or `ruby`;
+- piping into a shell, or into `python`, `python3`, `node`, `perl` or `ruby` as the last command (code read from stdin);
 - inline code: `python -c`, `python3 -c`, `node -e`, `perl -e`, `ruby -e`, `php -r`.
 
 Below `full-access`, two more rules apply: redirecting output to a file needs `use:tool:Write` (the bootstrap floor includes it), and commands that set `RAVI_*` environment variables are refused.
 
 ## Denials and audit
 
-Every denial is recorded and published on the NATS topic `ravi.audit.denied`. The payload includes `agentId`, `denied`, `reason`, `blockType`, `command` (when there is one), `context`, and `denialId`.
+Every denial is recorded and published on the NATS topic `ravi.audit.denied`. The payload includes `type`, `agentId`, `denied`, `reason` and `dedupeKey`, plus `command`, `context`, `blockType` and `denialId` when they apply.
 
 Watch them live, or route them to an agent:
 

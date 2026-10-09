@@ -102,7 +102,7 @@ ravi contacts note <contact> "Asked for a callback on Monday"
 
 `set` accepts `name`, `email`, `tags`, `notes`, `opt-out`, `source`, `allowed-agents` and `mode`. Use `-` to clear `name`, `email`, `source` or `allowed-agents`. `note` appends an entry to the contact's timeline.
 
-Tags are labels. The only tags that grant authority are `permission-admin`, `permission-owner` and `permission-superadmin`, which give `admin:system:*` while the contact is `allowed`. They apply immediately, with no dry-run, so tag carefully. See [Make yourself the owner](/start/owner).
+Tags are labels, except permission tags. `permission-admin`, `permission-owner` and `permission-superadmin` give `admin:system:*` while the contact is `allowed`, and a profile created with `ravi permissions allow` (a `permission-<profile>` tag) gives its capabilities the same way. They apply immediately, with no dry-run, so tag carefully. See [Make yourself the owner](/start/owner).
 
 ## Status
 

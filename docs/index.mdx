@@ -16,7 +16,7 @@ Ravi also connects to the Ravi Console. After `ravi login`, your agents can publ
 | `ravi-channels` | The native channel runner, a separate PM2 process started with `ravi channels start`. It connects Slack. |
 | Omni | The bridge for WhatsApp, Telegram and Discord. It runs as two PM2 processes, `omni-api` and `omni-nats`, and stores its data in PostgreSQL. |
 | NATS JetStream | The event bus between all processes, at `NATS_URL` (default `nats://127.0.0.1:4222`). The default install gets it from Omni's `omni-nats`. |
-| `~/.ravi/ravi.db` | SQLite database with agents, sessions, contacts, instances, routes, settings and permissions. |
+| `~/.ravi/ravi.db`, `~/.ravi/chat.db` | SQLite databases. `ravi.db` holds agents, sessions, instances, routes, settings and tags; `chat.db` holds contacts and their identities. |
 | Providers | The model runtime behind each agent: `codex` (the built-in default), `claude`, `pi` or `grok`. You choose one per agent. |
 
 You manage all of it with the `ravi` CLI. Agents use the same CLI as their tools, within the permissions you give them.

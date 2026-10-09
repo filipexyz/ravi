@@ -25,7 +25,7 @@ In the terminal you are always the owner: turns you start with `ravi sessions se
 
 | Profile | What the agent can do |
 |---|---|
-| `bootstrap` | The starting profile. All tools, a short list of safe executables (`cat`, `git`, `ls`, `ravi` and others), its own contacts, and the `sessions`, `tasks`, `specs`, `skills`, `self` and `doctor` CLI groups. Other groups, such as `contacts`, `cron` and `instances`, need an approval. |
+| `bootstrap` | The starting profile. All tools, a short list of safe executables (`cat`, `git`, `ls`, `ravi` and others), its own contacts, and the `sessions`, `tasks`, `specs`, `skills`, `self` and `doctor` CLI groups. Other groups, such as `contacts`, `cron` and `instances`, are refused. |
 | `chat-only` | Conversation only: no tools, shell or CLI. Approvals are refused. |
 | `explicit-only` | Exactly the capabilities you list with `--capabilities`, nothing else. Meant for agents that serve the public. |
 | `full-access` | Everything: `admin system:*`, any executable, any tool and any skill. |
@@ -71,7 +71,7 @@ The identity you use depends on the channel: your phone number on WhatsApp, your
     ravi contacts link <contact-id> --channel <channel> --id <platform-user-id> --instance <instance-id>
     ```
 
-    `--instance` takes the `Instance ID` that `ravi instances show <instance>` prints, not the instance name. Approvals look up your identity on the instance where the approval arrives, so link one identity for each instance you use.
+    On Slack, `--instance` is the instance name (`slack-main`). For a WhatsApp or other Omni instance, use the `Instance ID` that `ravi instances show <instance>` prints. Ravi matches identities per instance, so link one identity for each instance you use.
   </Step>
   <Step title="Check it">
     ```bash
@@ -98,17 +98,18 @@ Your contact decides what your messages can do. Policies and routes decide whose
 - `open` lets every message in. New instances start with `open` for both policies.
 - `pairing` holds DMs from people you have not approved, for your review (`ravi instances pending list <instance>`). On WhatsApp, an `allowed` contact gets through. On Slack, a DM needs an explicit route even for an `allowed` contact.
 - `allowlist` holds groups and channels until you let each one in.
-- An explicit route (`ravi instances routes add`) lets that chat in whatever the policy says.
+- An explicit route (`ravi instances routes add`) lets that group or channel in whatever the policy says. On Slack it does the same for a DM. On WhatsApp, a DM under `pairing` still needs an `allowed` contact.
 
 The setup wizard's WhatsApp policy questions do not set any of this. The [Slack](/channels/slack) and [WhatsApp](/channels/whatsapp) pages set the policies and routes in the right order for each channel.
 
 ## Approvals
 
-When a turn needs something outside what it may do, Ravi asks in the chat the message came from:
+When a turn needs something outside what it may do, Ravi can ask in the chat the message came from. Only agents on the Pi and Grok providers ask. On Claude and Codex, a shell command outside the ceiling is refused at once, and on every provider a `ravi` command group outside it is refused without asking.
 
 - **Slack:** a message with approve and reject buttons.
 - **WhatsApp and the other Omni channels:** a message you react to. A thumbs-up (`👍`) or heart (`❤️`) approves. Any other reaction, or a text reply to it, rejects.
 - A request that gets no answer in 5 minutes is not approved.
+- Approving a shell command does not make it run today: it is still refused. To let the agent run an executable, add it to the agent's ceiling ([Permissions](/guides/permissions)).
 
 Only a contact whose own capabilities cover the request, or who has `admin:system:*` (your `permission-owner` tag), can approve. Clicks and reactions from anyone else are ignored, and grants in a governed chat do not make anyone an approver. The terminal has no approval route, so whatever a terminal turn cannot do is denied. With the agent at `full-access`, few requests need approval at all.
 

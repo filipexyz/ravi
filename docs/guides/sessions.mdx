@@ -25,7 +25,7 @@ Every `ravi sessions` command accepts either one. `ravi sessions list` shows bot
 |---|---|---|
 | DM, default scope (`per-peer`) | `agent:main:dm:<peer>` | WhatsApp: `main-dm-<last 6 digits>` |
 | DM with agent scope `main` | `agent:main:main` | `main` |
-| WhatsApp group | `agent:main:whatsapp:wa-main:group:<group-id>` | group subject, slugified |
+| WhatsApp group | `agent:main:whatsapp:wa-main:group:<group-id>` | `main-group-<last 8 digits>`; the group subject, slugified, when created with `ravi whatsapp group create --agent` |
 | Slack channel | `agent:main:slack:slack-main:group:<C...>` | derived by Ravi |
 | Slack thread | `agent:main:slack:slack-main:group:<C...>:thread:<ts>` | derived by Ravi |
 | Cron job with `--isolated` | `agent:main:cron:<job-id>` | `main-cron-<job-name>` |
@@ -43,7 +43,7 @@ DM scope decides how DMs are grouped:
 | `per-channel-peer` | `agent:main:whatsapp:dm:<peer>` | One per person per channel |
 | `per-account-channel-peer` | `agent:main:whatsapp:wa-main:dm:<peer>` | One per person per instance |
 
-Set it per agent with `ravi agents set main dmScope main`, or per route (see [Instances and routing](/guides/routing)). Changing the scope changes the key that new messages compute, so they start a new session; the old one stays as it was.
+Set it per agent with `ravi agents set main dmScope main`, or per route (see [Instances and routing](/guides/routing)). Changing the scope only affects chats that have no session yet. A chat that already talked stays attached to its old session; to move it, detach it with `ravi sessions detach <old-session> --chat <chat-id>` and its next message goes to the session the new scope computes.
 
 ## Find and read a session
 
@@ -182,7 +182,7 @@ ravi sessions detach <session> --chat <chat-id>
 - `--chat` takes Ravi's chat id or the platform id (for Slack, the channel id `C...`).
 
 <Warning>
-Attach does not change which agent answers the chat. Create the route to the right agent first, for example `ravi instances routes add slack-main group:C0ABC123 main --session <session>`, then attach. A chat already attached to another session must be detached from it first.
+Attach does not create a route. Create the route first, for example `ravi instances routes add slack-main group:C0ABC123 main --session <session>`, then attach. Once attached, the chat's messages go to this session and its agent even if a route names another agent (`ravi routes explain` reports it as `Sticky attach`). Every chat that has already talked is attached to its own session, so detach it from that session first.
 </Warning>
 
 ## When something goes wrong

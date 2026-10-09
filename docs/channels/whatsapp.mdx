@@ -61,7 +61,7 @@ On the phone with the dedicated number, open WhatsApp, go to **Settings > Linked
 
 - It waits up to 120 seconds. On `Timed out waiting for instance connection.`, run it again.
 - `connect` creates the instance in Omni and in Ravi. Do not run `ravi instances create` first.
-- `--agent` must name an agent that exists.
+- If the agent in `--agent` does not exist, `connect` creates it, so check the spelling.
 - In scripts, `--json` returns at the first QR (`"status": "qr_required"`) and does not wait for the scan. Check the result later with `ravi instances status wa-main`.
 
 </Step>

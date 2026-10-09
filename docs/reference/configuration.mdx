@@ -26,7 +26,7 @@ The daemon and the CLI both read `~/.ravi/.env`, but not the same way:
 
 - **The daemon** (`ravi` under PM2) loads the file at start and **overrides** any value already in its environment. The file wins.
 - **The CLI** (`ravi` in your shell) loads the file but **only fills keys that are not already set**. A variable exported in your shell wins over the file.
-- **The channel runner** (`ravi-channels`) does not read the file itself. It gets its environment from the CLI process that ran `ravi channels start` or `ravi channels restart`, so it sees the file plus anything exported in that shell.
+- **The channel runner** (`ravi-channels`) runs the CLI, so it reads the file the CLI way. It also inherits the environment of the shell that ran `ravi channels start` or `ravi channels restart`, so a variable exported in that shell wins over the file.
 
 Apply a change with:
 
@@ -157,7 +157,7 @@ Older docs list `OMNI_DIR`, `DATABASE_URL`, `OMNI_API_PORT` and `NATS_PORT`. Rav
 Settings live in `ravi.db` and apply immediately.
 
 ```bash
-ravi settings list                    # every known key, its value and default
+ravi settings list                    # every known key, its value and what it does
 ravi settings get defaultTimezone
 ravi settings set defaultTimezone America/Sao_Paulo
 ravi settings delete defaultTimezone --execute   # braked: dry-run without --execute

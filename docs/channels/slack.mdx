@@ -4,7 +4,7 @@ description: Create a Slack app, keep its tokens in Ravi's credential broker, an
 icon: hash
 ---
 
-By the end of this page, a Slack app is connected to Ravi through Socket Mode, the agent `main` answers you in a DM, in a channel and in threads, you approve its requests with a button, and only you and the channels you choose can reach it.
+By the end of this page, a Slack app is connected to Ravi through Socket Mode, the agent `main` answers you in a DM, in a channel and in threads, and only you and the channels you choose can reach it.
 
 Slack is the recommended channel. Ravi connects to Slack itself: messages do not go through Omni, and you need no phone and no public URL.
 
@@ -146,7 +146,7 @@ ravi contacts tag <contact-id> permission-owner
 ravi instances routes add slack-main U0123ABCD main
 ```
 
-- `contacts add` prints the `<contact-id>`. `--instance` must be exactly `slack-main`. A typo is accepted silently, and then your messages do not resolve to you: the agent answers without tools and ignores your approval clicks. `ravi contacts check U0123ABCD --json` must show `"instanceId": "slack-main"`.
+- `contacts add` prints the `<contact-id>`. `--instance` must be exactly `slack-main`. A typo is accepted silently, and then your messages do not resolve to you: the agent answers without tools. `ravi contacts check U0123ABCD --json` must show `"instanceId": "slack-main"`.
 - Already have an owner contact, for example from WhatsApp? Link your Slack ID to it instead: `ravi contacts link <contact-id> --channel slack --id U0123ABCD --instance slack-main`.
 - The route is what lets your DMs through `pairing`. On Slack, an `allowed` contact alone is not enough.
 
@@ -204,8 +204,9 @@ The agent then puts an hourglass reaction on your message and removes it when do
 
 ## Approvals
 
-When a turn asks for something the agent's ceiling does not cover and the request goes to approval, Ravi posts a message with **Approve** and **Reject** buttons in the chat the request came from. With the Codex, Pi and Grok providers, commands and tools outside the ceiling go to approval; with Claude, commands and built-in tools outside it are refused without asking.
+When a turn asks for something the agent's ceiling does not cover and the request goes to approval, Ravi posts a message with **Approve** and **Reject** buttons in the chat the request came from. Only agents on the Pi and Grok providers ask. On Claude and Codex, a shell command outside the ceiling is refused at once, and on every provider a `ravi` command group outside it is refused without asking.
 
+- Approving a shell command does not make it run today: it is still refused. To let the agent run an executable, add it to the agent's ceiling.
 - Only clicks count; reactions and text replies are ignored.
 - Only a contact whose capabilities cover the request, or who has `admin:system:*` (your `permission-owner` tag), can decide. Other clicks are ignored without any message in Slack.
 - No click within 5 minutes means not approved.
@@ -222,8 +223,8 @@ ravi channels status                               # health: ready ... connected
 
 1. **DM.** In the app's Messages tab, send `hi`; the agent answers. Ask it to run `ravi agents list`; it runs, because you are the owner.
 2. **Channel.** In the routed channel, send `@Ravi hi`. The answer appears at the channel root.
-3. **Thread.** Reply in a thread under that answer. The agent answers in the thread, and `ravi sessions list --agent main` shows a session ending in `:thread:<ts>`.
-4. **Approval** (Codex, Pi or Grok provider; Claude refuses instead of asking). Lower the ceiling with `ravi agents permissions main bootstrap` (it applies at once), ask the agent in the DM to run `uname -a`, and click **Approve**; the command runs. Restore it with `ravi agents permissions main full-access --execute`.
+3. **Thread.** Reply in a thread under that answer. The agent answers in the thread, and `ravi sessions list --agent main` shows a new session whose name contains `-t-` and the thread timestamp.
+4. **Ceiling.** Lower the ceiling with `ravi agents permissions main bootstrap` (it applies at once) and ask the agent in the DM to run `uname -a`. The command is refused, because `uname` is outside `bootstrap` (on Pi or Grok, Ravi first posts **Approve** and **Reject** buttons; click **Reject**). Restore it with `ravi agents permissions main full-access --execute`.
 
 ## If it does not answer
 

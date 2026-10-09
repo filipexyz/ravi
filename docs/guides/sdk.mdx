@@ -6,7 +6,7 @@ icon: code
 
 Ravi exposes its commands over an authenticated HTTP gateway under `/api/v1/*`. At the end of this page you will have the gateway running on the daemon host, a scoped context key for your app, and a client in TypeScript, Dart or Swift calling Ravi and streaming its events.
 
-The gateway and the SDKs are generated from the same command registry as the CLI (`src/cli/registry-snapshot.ts`), so every command you can run as `ravi <group> <command>` has the same name, arguments and return shape in the SDKs. The repository also keeps an OpenAPI snapshot of it in `docs/openapi.json`.
+The gateway and the SDKs are generated from the same command registry as the CLI (`src/cli/registry-snapshot.ts`), so every `ravi <group> <command>` that is not marked CLI-only (a few long-running or terminal-bound commands such as `ravi channels logs`) has the same name, arguments and return shape in the SDKs. The repository also keeps an OpenAPI snapshot of it in `docs/openapi.json`.
 
 | SDK | Package | Source |
 |---|---|---|
@@ -155,7 +155,7 @@ Streams always need a valid context key.
 
 ### Errors and binary responses
 
-Every transport throws the same classes from `@ravi-os/sdk/errors`: `RaviAuthError` (401), `RaviPermissionError` (403), `RaviValidationError` (other 4xx, with `issues[]`), `RaviInternalError` (5xx) and `RaviTransportError` (network or timeout), all subclasses of `RaviError`.
+Every transport throws the same classes from `@ravi-os/sdk/errors`: `RaviContractError` (the gateway returned the CLI's error envelope, with `code`, `retryable` and `exitCode`), `RaviAuthError` (401), `RaviPermissionError` (403), `RaviValidationError` (other 4xx, with `issues[]`), `RaviInternalError` (5xx) and `RaviTransportError` (network or timeout), all subclasses of `RaviError`.
 
 ```ts
 import { RaviError, RaviValidationError } from "@ravi-os/sdk/errors";
@@ -229,7 +229,7 @@ await for (final event in stream.session('main', const SessionStreamOptions(time
 }
 ```
 
-Errors are the same classes as TypeScript, plus `RaviContractError` when the gateway returns a contract envelope or a response that does not match the declared return shape. Destructive calls take an options object with `execute: true`, for example `client.agents.delete('support', const AgentsDeleteOptions(execute: true))`.
+Errors are the same classes as TypeScript; Dart also throws `RaviContractError` when a response does not match the declared return shape. Destructive calls take an options object with `execute: true`, for example `client.agents.delete('support', const AgentsDeleteOptions(execute: true))`.
 
 ## Swift
 
@@ -256,13 +256,13 @@ Use this if you call the gateway without an SDK. Every command is a POST:
 POST /api/v1/<group-segments>/<command>
 ```
 
-The body is flat JSON: positional arguments and options side by side at the top level, never wrapped in `{ "args": ..., "options": ... }`. For `ravi instances routes add main group:120363428558776322 ravi-web --channel whatsapp`:
+The body is flat JSON: positional arguments and options side by side at the top level, never wrapped in `{ "args": ..., "options": ... }`. For `ravi instances routes add wa-main group:120363428558776322 main --priority 10`:
 
 ```bash
 curl -s http://127.0.0.1:7777/api/v1/instances/routes/add \
   -H "Authorization: Bearer $RAVI_CONTEXT_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"name":"main","pattern":"group:120363428558776322","agent":"ravi-web","channel":"whatsapp"}'
+  -d '{"name":"wa-main","pattern":"group:120363428558776322","agent":"main","priority":"10"}'
 ```
 
 The SDKs also send `x-ravi-sdk-version` and `x-ravi-registry-hash`, which identify the SDK release and the registry it was generated from.
