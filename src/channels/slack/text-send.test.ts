@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { ChannelConfig } from "../../router/router-db.js";
-import { resolveSlackNativeChannel, sendSlackText, updateSlackText } from "./text-send.js";
+import { lookupSlackUserEmail, resolveSlackNativeChannel, sendSlackText, updateSlackText } from "./text-send.js";
 
 function slackChannel(overrides: Partial<ChannelConfig> = {}): ChannelConfig {
   return {
@@ -196,5 +196,63 @@ describe("sendSlackText", () => {
         },
       ),
     ).rejects.toThrow("Slack chat.postMessage failed: missing_scope");
+  });
+
+  it("turns off link and media unfurls when asked", async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+      requests.push({ url: String(url), init });
+      return Response.json({ ok: true, channel: "D123", ts: "1784000000.000300" });
+    }) as typeof fetch;
+
+    const result = await sendSlackText(
+      { accountId: "hana-slack", chatId: "U123", text: "open https://console.example/link/x", unfurlLinks: false },
+      {
+        channels: { hana: slackChannel() },
+        resolveSecret: async () => ({
+          secret: JSON.stringify({ appToken: "xapp-test", botToken: "xoxb-test" }),
+        }),
+        fetchImpl,
+        apiBaseUrl: "https://slack.test/api/",
+      },
+    );
+
+    const body = new URLSearchParams(String(requests[0]?.init?.body));
+    expect(body.get("channel")).toBe("U123");
+    expect(body.get("unfurl_links")).toBe("false");
+    expect(body.get("unfurl_media")).toBe("false");
+    expect(result.raw.channel).toBe("D123");
+  });
+});
+
+describe("lookupSlackUserEmail", () => {
+  const deps = (user: unknown) => ({
+    channels: { hana: slackChannel() },
+    resolveSecret: async () => ({
+      secret: JSON.stringify({ appToken: "xapp-test", botToken: "xoxb-test" }),
+    }),
+    fetchImpl: (async () => Response.json({ ok: true, user })) as unknown as typeof fetch,
+    apiBaseUrl: "https://slack.test/api/",
+  });
+
+  it("returns the profile email of a person", async () => {
+    await expect(
+      lookupSlackUserEmail(
+        { accountId: "hana-slack", userId: "U123" },
+        deps({ id: "U123", profile: { email: " ana@example.com " } }),
+      ),
+    ).resolves.toBe("ana@example.com");
+  });
+
+  it("returns null for bots and hidden emails", async () => {
+    await expect(
+      lookupSlackUserEmail(
+        { accountId: "hana-slack", userId: "U123" },
+        deps({ id: "U123", is_bot: true, profile: { email: "bot@example.com" } }),
+      ),
+    ).resolves.toBeNull();
+    await expect(
+      lookupSlackUserEmail({ accountId: "hana-slack", userId: "U123" }, deps({ id: "U123", profile: {} })),
+    ).resolves.toBeNull();
   });
 });

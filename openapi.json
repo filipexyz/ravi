@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "50f73e2291e20de7"
+    "version": "8cb4593bbbf6000f"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -56527,6 +56527,136 @@
         "summary": "Execute a hook once with a synthetic event",
         "tags": [
           "hooks"
+        ]
+      }
+    },
+    "/api/v1/identity/link": {
+      "post": {
+        "operationId": "identity.link",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "linked": {
+                          "const": true,
+                          "type": "boolean"
+                        },
+                        "status": {
+                          "const": "already_linked",
+                          "type": "string"
+                        },
+                        "success": {
+                          "const": true,
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "success",
+                        "status",
+                        "linked"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "expiresAt": {
+                          "type": "string"
+                        },
+                        "linked": {
+                          "const": false,
+                          "type": "boolean"
+                        },
+                        "status": {
+                          "const": "dm_sent",
+                          "type": "string"
+                        },
+                        "success": {
+                          "const": true,
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "success",
+                        "status",
+                        "linked",
+                        "expiresAt"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Send the message author a private link to approve in the Console",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/v1/identity/unlink": {
+      "post": {
+        "operationId": "identity.unlink",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "linked": {
+                      "const": false,
+                      "type": "boolean"
+                    },
+                    "status": {
+                      "enum": [
+                        "unlinked",
+                        "not_linked"
+                      ],
+                      "type": "string"
+                    },
+                    "success": {
+                      "const": true,
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "status",
+                    "linked"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Remove the message author's Console link on this installation",
+        "tags": [
+          "identity"
         ]
       }
     },
@@ -119517,6 +119647,10 @@
     {
       "description": "Generic runtime hooks",
       "name": "hooks"
+    },
+    {
+      "description": "Link chat people to their Ravi Console account",
+      "name": "identity"
     },
     {
       "description": "Image generation tools",

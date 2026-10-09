@@ -11811,6 +11811,32 @@ typedef HooksTestReturn = Map<String, RaviJson>;
 
 HooksTestReturn hooksTestReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
 
+typedef IdentityLinkReturn = RaviJson;
+
+IdentityLinkReturn identityLinkReturnFromJson(Object? json) => RaviJson.from(json);
+
+class IdentityUnlinkReturn {
+  const IdentityUnlinkReturn({required this.linked, required this.status, required this.success});
+
+  final bool linked;
+  final String status;
+  final bool success;
+
+  factory IdentityUnlinkReturn.fromJson(Map<String, Object?> json) {
+    return IdentityUnlinkReturn(
+      linked: raviJsonAsBool(json["linked"]),
+      status: raviJsonAsString(json["status"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static IdentityUnlinkReturn fromJsonValue(Object? json) {
+    return IdentityUnlinkReturn.fromJson(raviJsonObject(json, "IdentityUnlinkReturn"));
+  }
+}
+
+IdentityUnlinkReturn identityUnlinkReturnFromJson(Object? json) => IdentityUnlinkReturn.fromJsonValue(json);
+
 class ImageAtlasSplitOptions {
   const ImageAtlasSplitOptions({this.account, this.background, this.caption, this.channel, this.cols, this.execute, this.fit, this.fuzz, this.mode, this.names, this.output, this.pad, this.parentArtifact, this.rows, this.send, this.size, this.threadId, this.to});
 

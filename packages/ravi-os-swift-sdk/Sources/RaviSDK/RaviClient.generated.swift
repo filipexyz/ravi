@@ -119,6 +119,10 @@ public final class RaviClient {
     HooksNamespace(transport: transport)
   }
 
+  public var identity: IdentityNamespace {
+    IdentityNamespace(transport: transport)
+  }
+
   public var image: ImageNamespace {
     ImageNamespace(transport: transport)
   }
@@ -2777,6 +2781,24 @@ public struct HooksNamespace: Sendable {
     requestBody["id"] = try RaviJSON.fromEncodable(id)
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["hooks"], command: "test", body: requestBody, as: HooksTestReturn.self)
+  }
+}
+
+public struct IdentityNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func link() async throws -> IdentityLinkReturn {
+    let requestBody: [String: RaviJSON] = [:]
+    return try await transport.call(groupSegments: ["identity"], command: "link", body: requestBody, as: IdentityLinkReturn.self)
+  }
+
+  public func unlink() async throws -> IdentityUnlinkReturn {
+    let requestBody: [String: RaviJSON] = [:]
+    return try await transport.call(groupSegments: ["identity"], command: "unlink", body: requestBody, as: IdentityUnlinkReturn.self)
   }
 }
 

@@ -7,72 +7,52 @@ title: "ravi link checks"
 
 ## Static Checks
 
-- `ravi link --help` and `ravi unlink --help` MUST expose `--json` and MUST
-  NOT expose `--contact`, `--user`, `--org`, or `--endpoint`.
-- CLI code MUST NOT persist provider OAuth tokens in `~/.ravi/cloud-auth`.
-- Actor-binding cache files MUST contain IDs + TTL only.
-- `resolveConnectorCloudCredentials({ requireBoundUser: true })` MUST refuse
-  operator JWT fallback.
-- The HTTP client MUST call `POST /api/cli/link`, `GET /api/cli/link`, and
-  `POST /api/cli/link/unlink`. It MUST NOT call `/api/cli/actor-bindings`.
+- `ravi link --help`, `ravi unlink --help` and `ravi identity link --help`
+  MUST expose only `--json`.
+- No code path MUST print, log, publish or return the approval URL or token.
+  It goes from `createLinkRequest` straight into `LinkMessenger.send`.
+- `cloud_link_requests` and the binding cache MUST hold ids and chat
+  coordinates only.
+- Link calls MUST NOT send `installationId`.
+- The client MUST NOT call `POST /api/cli/link` (closed by the Console).
 
-## Ambient Success
+## Requester
 
-With a stored `ravi login` session and `RAVI_CONTEXT_KEY` pointing at a
-turn-runtime whose `actorPrincipal` is `contact:<id>`:
+- No context, an agent or automation principal, an unresolved actor, or an
+  actor whose `contactId` differs from the principal MUST fail
+  `CONTACT_REQUIRED` with the matching `details.reason`, before any Console
+  call or message.
 
-```bash
-ravi link --json
-```
+## Link
 
-- The CLI MUST call Console `POST /api/cli/link` with `contactId`,
-  `organizationId`, `installationId`, and `platformIdentities` when present.
-- JSON MUST include `binding.consoleUserId` and `local.actorPrincipal`.
-- The local cache MUST resolve the binding after success.
-- Turn metadata MUST be able to carry `consoleUserId`.
+- `already_linked` MUST write the cache, update context metadata and send no
+  message.
+- `pending` MUST send exactly one private message to the author (Slack user
+  id, unfurl off) and record the local request with the chat the message
+  landed in.
+- A failed private message MUST cancel the Console request, record nothing and
+  fail `LINK_DM_FAILED` without ids.
+- A second `ravi link` while pending MUST leave only the newest local request
+  pending.
+- Slack outside the native adapter, a non-person Slack sender, a WhatsApp
+  group as recipient, and other channels MUST fail `LINK_DM_UNSUPPORTED`.
 
-## Missing Login
+## Watcher
 
-No cloud-auth session:
-
-```bash
-ravi link --json
-```
-
-- The command MUST fail with `AUTH_REQUIRED`.
-- The suggested action MUST be `ravi login`.
-
-## Missing Contact
-
-Cloud session present, no resolved `contact:<id>` in context:
-
-```bash
-ravi link --json
-```
-
-- The command MUST fail with `CONTACT_REQUIRED`.
-- The message MUST tell the operator to run inside a turn/session with a
-  contact and MUST NOT suggest a contact flag.
-
-## Conflict
-
-- Console `CONFLICT` MUST map to CLI `ACTOR_BINDING_CONFLICT` for a
-  different user and MUST NOT overwrite the local cache.
-- A same-user upsert (`created: false`) MUST succeed with `idempotent: true`.
-
-## Error mapping
-
-- Console `NOT_MEMBER` MUST map to `ORG_ACCESS_DENIED`.
-- Console `INSTALLATION_ORG_MISMATCH` MUST map to `ORG_ACCESS_DENIED`.
-- Console `CONTACT_REQUIRED` MUST stay `CONTACT_REQUIRED`.
+- `approved` MUST cache the binding and confirm in the private chat and in
+  the origin chat once (a Slack top-level message gets a thread reply).
+- `denied` and `expired` MUST tell the person privately.
+- A request unknown to the Console MUST close as `failed`.
+- Requests created under another installation MUST be left alone until an
+  hour after they expire.
+- Revalidation MUST drop cached bindings the Console no longer reports and
+  MUST NOT touch bindings of another installation.
 
 ## Validation
 
-- `bun test src/cli/commands/link.test.ts` SHOULD pass after any change to
-  the ambient link command.
-- `bun test src/cloud-auth/client.test.ts` SHOULD prove the `/api/cli/link`
-  paths and Console error aliases.
-- `bun test src/cloud-auth/storage.test.ts` SHOULD pass after any change to
-  the multi-user store.
-- `bun test src/cloud-auth/connector-auth.test.ts` SHOULD prove
-  `requireBoundUser` refuses operator JWT fallback.
+```bash
+bun test src/identity-link/ src/cloud-auth/
+bun test src/router/router-db.link-requests.test.ts
+bun test src/channels/slack/text-send.test.ts
+bun test src/cli/remote-gateway.test.ts
+```

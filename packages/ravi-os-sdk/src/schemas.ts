@@ -47658,6 +47658,104 @@ export const HooksTestReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `identity.link`. */
+export const IdentityLinkInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `identity.link`. */
+export const IdentityLinkReturnSchema = {
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "linked": {
+          "const": true,
+          "type": "boolean"
+        },
+        "status": {
+          "const": "already_linked",
+          "type": "string"
+        },
+        "success": {
+          "const": true,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "success",
+        "status",
+        "linked"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "expiresAt": {
+          "type": "string"
+        },
+        "linked": {
+          "const": false,
+          "type": "boolean"
+        },
+        "status": {
+          "const": "dm_sent",
+          "type": "string"
+        },
+        "success": {
+          "const": true,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "success",
+        "status",
+        "linked",
+        "expiresAt"
+      ],
+      "type": "object"
+    }
+  ]
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `identity.unlink`. */
+export const IdentityUnlinkInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `identity.unlink`. */
+export const IdentityUnlinkReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "linked": {
+      "const": false,
+      "type": "boolean"
+    },
+    "status": {
+      "enum": [
+        "unlinked",
+        "not_linked"
+      ],
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "status",
+    "linked"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `image.atlas.split`. */
 export const ImageAtlasSplitInputSchema = {
   "additionalProperties": false,

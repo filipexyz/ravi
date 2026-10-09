@@ -48219,6 +48219,108 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let IdentityLinkInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let IdentityLinkReturnSchema = #"""
+  {
+    "oneOf": [
+      {
+        "additionalProperties": false,
+        "properties": {
+          "linked": {
+            "const": true,
+            "type": "boolean"
+          },
+          "status": {
+            "const": "already_linked",
+            "type": "string"
+          },
+          "success": {
+            "const": true,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "status",
+          "linked"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "expiresAt": {
+            "type": "string"
+          },
+          "linked": {
+            "const": false,
+            "type": "boolean"
+          },
+          "status": {
+            "const": "dm_sent",
+            "type": "string"
+          },
+          "success": {
+            "const": true,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "status",
+          "linked",
+          "expiresAt"
+        ],
+        "type": "object"
+      }
+    ]
+  }
+  """#
+
+  public static let IdentityUnlinkInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let IdentityUnlinkReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "linked": {
+        "const": false,
+        "type": "boolean"
+      },
+      "status": {
+        "enum": [
+          "unlinked",
+          "not_linked"
+        ],
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "status",
+      "linked"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ImageAtlasSplitInputSchema = #"""
   {
     "additionalProperties": false,

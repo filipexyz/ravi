@@ -12,7 +12,6 @@ import type {
   ActorBinding,
   ActorBindingResolveQuery,
   ActorBindingUnlinkInput,
-  ActorBindingUpsertInput,
   CloudAuthOrganization,
   CloudAuthUser,
   CloudCredentials,
@@ -22,12 +21,20 @@ import type {
   CredentialRefreshInput,
   DeviceAuthorizationResponse,
   DeviceTokenResponse,
+  LinkRequestCreateInput,
+  LinkRequestCreateResult,
+  LinkRequestRecord,
+  LinkRequestStatus,
+  LinkRequestStatusResult,
   LogoutInput,
 } from "./types.js";
 import { DEFAULT_CONSOLE_URL } from "./types.js";
 import { completeVerificationUri } from "./verification-uri.js";
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
+
+const LINK_REQUESTS_PATH = "/api/cli/link/requests";
+const LINK_REQUEST_STATUSES: readonly LinkRequestStatus[] = ["pending", "approved", "denied", "expired", "cancelled"];
 
 export interface ConsoleApiClientOptions {
   consoleUrl?: string;
@@ -98,24 +105,49 @@ export class ConsoleApiClient {
   }
 
   /**
-   * Merged Console contract (ravi-console#18):
-   * `POST /api/cli/link` upserts the ambient contact↔user binding.
+   * `POST /api/cli/link/requests`: start a link the person approves in the
+   * browser. An already linked contact answers `already_linked` without
+   * creating state; a pending request for the same contact is replaced.
+   * The returned `approveUrl` carries a single-use token: hand it only to
+   * the person, never to logs, NATS or agent output.
    */
-  async upsertActorBinding(
-    input: ActorBindingUpsertInput,
-    accessToken: string,
-  ): Promise<{ binding: ActorBinding; created: boolean }> {
+  async createLinkRequest(input: LinkRequestCreateInput, accessToken: string): Promise<LinkRequestCreateResult> {
     const payload = await this.requestJson<unknown>(
       "POST",
-      "/api/cli/link",
-      toConsoleLinkUpsertBody(input),
+      LINK_REQUESTS_PATH,
+      toConsoleLinkRequestBody(input),
       accessToken,
     );
     const root = objectValue(payload);
-    return {
-      binding: parseActorBinding(payload),
-      created: root?.created === true,
-    };
+    if (root?.status === "already_linked") {
+      return { status: "already_linked", binding: parseActorBinding(payload) };
+    }
+    const approveUrl = stringValue(root?.approveUrl);
+    if (root?.status !== "pending" || !approveUrl) {
+      throw new CloudAuthError("PAYLOAD_INVALID", "Console link request response is incomplete.");
+    }
+    return { status: "pending", request: parseLinkRequest(root.request), approveUrl };
+  }
+
+  async getLinkRequest(requestId: string, accessToken: string): Promise<LinkRequestStatusResult> {
+    const payload = await this.requestJson<unknown>(
+      "GET",
+      `${LINK_REQUESTS_PATH}/${encodeURIComponent(requestId)}`,
+      undefined,
+      accessToken,
+    );
+    const root = objectValue(payload);
+    return { request: parseLinkRequest(root?.request), binding: parseOptionalActorBinding(payload) };
+  }
+
+  async cancelLinkRequest(requestId: string, accessToken: string): Promise<LinkRequestRecord> {
+    const payload = await this.requestJson<unknown>(
+      "DELETE",
+      `${LINK_REQUESTS_PATH}/${encodeURIComponent(requestId)}`,
+      undefined,
+      accessToken,
+    );
+    return parseLinkRequest(objectValue(payload)?.request);
   }
 
   async unlinkActorBinding(
@@ -131,26 +163,18 @@ export class ConsoleApiClient {
     return { unlinked: true, binding: parseOptionalActorBinding(payload) };
   }
 
+  /** Active binding of this installation for the contact, or null. */
   async resolveActorBinding(query: ActorBindingResolveQuery, accessToken: string): Promise<ActorBinding | null> {
     const params = new URLSearchParams();
     if (query.contactId) params.set("contactId", query.contactId);
     if (query.consoleUserId) params.set("consoleUserId", query.consoleUserId);
-    if (query.installationId) params.set("installationId", query.installationId);
-    if (query.organizationId) params.set("organizationId", query.organizationId);
-    try {
-      const payload = await this.requestJson<unknown>(
-        "GET",
-        `/api/cli/link?${params.toString()}`,
-        undefined,
-        accessToken,
-      );
-      return parseOptionalActorBinding(payload);
-    } catch (error) {
-      if (error instanceof CloudAuthError && (error.status === 404 || error.code === "PAYLOAD_INVALID")) {
-        return null;
-      }
-      throw error;
-    }
+    const payload = await this.requestJson<unknown>(
+      "GET",
+      `/api/cli/link?${params.toString()}`,
+      undefined,
+      accessToken,
+    );
+    return parseOptionalActorBinding(payload);
   }
 
   async createPageUploadSession(
@@ -364,20 +388,10 @@ export function credentialsFromConsoleResponse(
     throw new CloudAuthError("PAYLOAD_INVALID", "Console did not return Ravi CLI credentials.");
   }
 
-  const installation =
-    objectValue(source.installation) ??
-    objectValue(root.installation) ??
-    ({ id: stringValue(source.installationId) ?? stringValue(root.installationId) } as Record<string, unknown>);
-
   return {
     version: 1,
     consoleUrl,
-    installationId:
-      stringValue(source.installationId) ??
-      stringValue(root.installationId) ??
-      stringValue(installation.id) ??
-      stringValue(installation.installationId) ??
-      fallbackInstallationId,
+    installationId: consoleInstallationId(source) ?? consoleInstallationId(root) ?? fallbackInstallationId,
     accessToken,
     refreshToken,
     accessTokenExpiresAt:
@@ -404,6 +418,24 @@ export function credentialsFromConsoleResponse(
     createdAt: previous?.createdAt ?? now,
     updatedAt: now,
   };
+}
+
+/**
+ * The Console names the install it enrolled as `localInstallation`; every CLI
+ * call is pinned to that id. Older shapes (`installationId`, `installation`)
+ * are read only when it is absent.
+ */
+export function consoleInstallationId(value: unknown): string | null {
+  const record = objectValue(value);
+  if (!record) return null;
+  const local = objectValue(record.localInstallation);
+  const legacy = objectValue(record.installation);
+  return (
+    stringValue(local?.id) ??
+    stringValue(record.installationId) ??
+    stringValue(legacy?.id) ??
+    stringValue(legacy?.installationId)
+  );
 }
 
 export async function refreshCredentialsForStore(input: {
@@ -481,13 +513,14 @@ async function readJsonBody(response: Response): Promise<unknown> {
   }
 }
 
-function toConsoleLinkUpsertBody(input: ActorBindingUpsertInput): Record<string, unknown> {
+function toConsoleLinkRequestBody(input: LinkRequestCreateInput): Record<string, unknown> {
+  const displayName = input.requester?.displayName?.trim();
+  const expectedEmail = input.expectedEmail?.trim();
   return {
     contactId: input.contactId,
-    ...(input.installationId ? { installationId: input.installationId } : {}),
-    ...(input.organizationId ? { organizationId: input.organizationId } : {}),
-    ...(input.consoleUserId ? { consoleUserId: input.consoleUserId } : {}),
     ...(input.platformIdentities ? { platformIdentities: input.platformIdentities } : {}),
+    ...(displayName ? { requester: { displayName } } : {}),
+    ...(expectedEmail ? { expectedEmail } : {}),
   };
 }
 
@@ -495,8 +528,25 @@ function toConsoleLinkUnlinkBody(input: ActorBindingUnlinkInput): Record<string,
   return {
     ...(input.contactId ? { contactId: input.contactId } : {}),
     ...(input.bindingId ? { bindingId: input.bindingId } : {}),
-    ...(input.installationId ? { installationId: input.installationId } : {}),
-    ...(input.organizationId ? { organizationId: input.organizationId } : {}),
+  };
+}
+
+function parseLinkRequest(value: unknown): LinkRequestRecord {
+  const record = objectValue(value);
+  const id = stringValue(record?.id);
+  const status = stringValue(record?.status);
+  const expiresAt = stringValue(record?.expiresAt);
+  if (!id || !expiresAt || !status || !(LINK_REQUEST_STATUSES as readonly string[]).includes(status)) {
+    throw new CloudAuthError("PAYLOAD_INVALID", "Console link request response is incomplete.");
+  }
+  const approvedAt = stringValue(record?.approvedAt);
+  const failureReason = stringValue(record?.failureReason);
+  return {
+    id,
+    status: status as LinkRequestStatus,
+    expiresAt,
+    ...(approvedAt ? { approvedAt } : {}),
+    ...(failureReason ? { failureReason } : {}),
   };
 }
 
@@ -517,7 +567,11 @@ function mapConsoleError(status: number, payload: unknown, headers: Headers | un
   const nested = objectValue(data?.error);
   const rawCode = data?.code ?? nested?.code ?? data?.error;
   // A bare 409 means "still pending" only on the login/refresh flow.
-  const fallback = statusToErrorCode(status, { authFlow: isConsoleAuthPath(path) });
+  // A Console from before link approval requests answers the route with a bare 404.
+  const fallback =
+    status === 404 && rawCode === undefined && isConsoleLinkRequestsPath(path)
+      ? "LINK_REQUESTS_UNAVAILABLE"
+      : statusToErrorCode(status, { authFlow: isConsoleAuthPath(path) });
   const code = normalizeCloudAuthErrorCode(rawCode, fallback, { linkAliases: isConsoleLinkPath(path) });
   const message =
     stringValue(data?.message) ??
@@ -536,6 +590,10 @@ function mapConsoleError(status: number, payload: unknown, headers: Headers | un
 
 function isConsoleAuthPath(path: string): boolean {
   return path === "/api/cli/auth" || path.startsWith("/api/cli/auth/") || path.startsWith("/api/cli/auth?");
+}
+
+function isConsoleLinkRequestsPath(path: string): boolean {
+  return path === LINK_REQUESTS_PATH || path.startsWith(`${LINK_REQUESTS_PATH}/`);
 }
 
 function isConsoleLinkPath(path: string): boolean {

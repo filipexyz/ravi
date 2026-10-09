@@ -40,6 +40,7 @@ import {
   type ContractErrorDetails,
 } from "./agent-contract.js";
 import { CALLER_CWD_HEADER, parseCallerCwd } from "./caller-cwd.js";
+import { cloudContractCatalogCopy } from "./cloud-error-contract.js";
 import { localMediaSendCatalogCopy } from "./media-send-auth.js";
 import { isSafeLocalPayloadMessage } from "./payload-error-message.js";
 import { projectPublicIssues, sanitizePublicValue } from "./redaction.js";
@@ -403,6 +404,9 @@ interface CompleteContractErrorBody {
   error: { code: string; message: string; retryable: boolean; [key: string]: unknown };
 }
 
+/** `ravi link` failures are relayed to people, so they keep the local cloud copy instead of a generic line. */
+const IDENTITY_LINK_OPS = new Set(["identity link", "identity unlink"]);
+
 const REMOTE_DRY_RUN_MESSAGE = "Dry-run: nothing was written. Re-run with --execute to perform the write.";
 
 function isRemoteWriteBrake(body: CompleteContractErrorBody): boolean {
@@ -425,6 +429,10 @@ function remoteContractFailureMessage(
   if (code === "PAYLOAD_INVALID") return remoteValidationFailureMessage(issues, sourceMessage);
   if (op === "media send" && code) {
     const catalog = localMediaSendCatalogCopy(code);
+    if (catalog) return catalog.message;
+  }
+  if (IDENTITY_LINK_OPS.has(op) && code) {
+    const catalog = cloudContractCatalogCopy(code);
     if (catalog) return catalog.message;
   }
   return "Remote command failed.";
@@ -480,8 +488,11 @@ function projectRemoteContractDetails(
   const remote = body.error;
   const details: ContractErrorDetails = { retryable: remote.retryable, status };
   const mediaCatalog = op === "media send" ? localMediaSendCatalogCopy(remote.code) : undefined;
+  const identityCatalog = IDENTITY_LINK_OPS.has(op) ? cloudContractCatalogCopy(remote.code) : undefined;
   if (mediaCatalog) {
     details.suggestedAction = mediaCatalog.suggestedAction;
+  } else if (identityCatalog && body.outcome === "failed") {
+    details.suggestedAction = identityCatalog.suggestedAction;
   } else if (typeof remote.suggestedAction === "string" || isRemoteWriteBrake(body)) {
     details.suggestedAction = remoteSuggestedAction(op, body.outcome, remote.code);
   }

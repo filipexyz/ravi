@@ -13,9 +13,11 @@
 - `ravi login --help` exposes `--console <url>` with
   `https://console.ravi.bot` as the default.
 - `ravi login --help` does not expose `--endpoint`.
-- Root help exposes ambient `ravi link` / `ravi unlink` (Console
-  contact↔user binding) and MUST NOT expose product-specific installation
-  enrollment or `--endpoint`.
+- Root help exposes ambient `ravi link` / `ravi unlink` (the message author
+  approves a Console link in the browser; see `cli/ravi-link`) and MUST NOT
+  expose product-specific installation enrollment or `--endpoint`.
+- Stored credentials carry the Console's `localInstallation.id` as
+  `installationId`; a stored local id is replaced after the next `/me`.
 - Default secret backend is the portable file store. Keychain is optional
   and never required.
 - No remote-login discovery, post-login provider, or remote installation

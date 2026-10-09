@@ -1,5 +1,5 @@
 import { stripVTControlCharacters } from "node:util";
-import { CloudAuthError, isRetryableCloudAuthError } from "../cloud-auth/errors.js";
+import { CLOUD_AUTH_ERROR_CODES, CloudAuthError, isRetryableCloudAuthError } from "../cloud-auth/errors.js";
 import { ContractError, CONTRACT_EXIT_ERROR, CONTRACT_EXIT_USAGE } from "./agent-contract.js";
 import { getContext } from "./context.js";
 import { payloadInvalidIssues, sanitizePayloadInvalidMessage } from "./payload-error-message.js";
@@ -57,9 +57,21 @@ function publicMessage(code: CloudAuthError["code"], sourceMessage: string): str
     case "CLOUD_PUBLISH_NOT_IMPLEMENTED":
       return "Console publishing is unavailable for this command.";
     case "CONTACT_REQUIRED":
-      return "A resolved contact is required in the current turn or session.";
+      return "ravi link needs the current chat message to come from a known person (a resolved contact).";
     case "ACTOR_BINDING_CONFLICT":
       return "This contact is already linked to a different Console user.";
+    case "LOCAL_INSTALLATION_MISSING":
+      return "Console does not know this local Ravi installation.";
+    case "INSTALLATION_MISMATCH":
+      return "The request named a different installation than the current Console session.";
+    case "LINK_APPROVAL_REQUIRED":
+      return "Linking requires the person's approval in the browser; the direct link call is closed.";
+    case "LINK_REQUESTS_UNAVAILABLE":
+      return "This Console does not support link approval requests yet.";
+    case "LINK_DM_UNSUPPORTED":
+      return "Ravi cannot send a private message to this person on this channel.";
+    case "LINK_DM_FAILED":
+      return "Ravi could not send the private message to the person who asked.";
     case "NOT_FOUND":
       return "Console resource was not found.";
     case "CONFLICT":
@@ -67,6 +79,15 @@ function publicMessage(code: CloudAuthError["code"], sourceMessage: string): str
     case "VERSION_CONFLICT":
       return "Console resource changed since it was read.";
   }
+}
+
+/**
+ * Local copy for a cloud code, for transports that must not trust remote text.
+ * Codes whose copy depends on the source message return undefined.
+ */
+export function cloudContractCatalogCopy(code: string): { message: string; suggestedAction: string } | undefined {
+  if (!isCloudAuthErrorCode(code) || code === "PAYLOAD_INVALID" || code === "DOMAIN_SETUP_REQUIRED") return undefined;
+  return { message: publicMessage(code, ""), suggestedAction: suggestedAction(code) };
 }
 
 /** Render once for the local CLI. Tools and gateway serialize the returned ContractError themselves. */
@@ -108,9 +129,20 @@ function suggestedAction(code: CloudAuthError["code"]): string {
     case "CLOUD_PUBLISH_NOT_IMPLEMENTED":
       return "use a supported publish path";
     case "CONTACT_REQUIRED":
-      return "run `ravi link` from a turn or session with a resolved contact; do not pass a contact flag";
+      return "ask the person to send the request from their own account in a routed chat; ravi link never takes a contact flag";
     case "ACTOR_BINDING_CONFLICT":
-      return "run `ravi unlink` on the existing binding, or login as the already-linked Console user";
+      return "run `ravi unlink` from the linked person's chat, or have them revoke it on the Console /link page, then retry";
+    case "LOCAL_INSTALLATION_MISSING":
+    case "INSTALLATION_MISMATCH":
+      return "run 'ravi login' on the daemon host, then retry";
+    case "LINK_APPROVAL_REQUIRED":
+      return "run `ravi link` from the person's chat turn; Ravi sends them a private approval link";
+    case "LINK_REQUESTS_UNAVAILABLE":
+      return "update Ravi Console to a version with link approval requests, then retry";
+    case "LINK_DM_UNSUPPORTED":
+      return "ask the person to run the request on Slack or WhatsApp, where Ravi can message them privately";
+    case "LINK_DM_FAILED":
+      return "ask the person to open a direct conversation with the bot, then retry";
     case "NOT_FOUND":
       return "check the id or slug against the parent listing, then retry";
     case "CONFLICT":
@@ -126,4 +158,8 @@ function safeDomainSetupMessage(message: string): string {
     .trim();
   if (!sanitized) return "Ravi Pages domain setup requires an external DNS action.";
   return sanitized.length > 4096 ? `${sanitized.slice(0, 4093)}...` : sanitized;
+}
+
+function isCloudAuthErrorCode(code: string): code is CloudAuthError["code"] {
+  return (CLOUD_AUTH_ERROR_CODES as readonly string[]).includes(code);
 }

@@ -1,5 +1,11 @@
 import { describe, expect, it, mock } from "bun:test";
-import { ConsoleApiClient, getMeWithAutoRefresh, normalizeConsoleUrl, refreshCredentialsForStore } from "./client.js";
+import {
+  ConsoleApiClient,
+  credentialsFromConsoleResponse,
+  getMeWithAutoRefresh,
+  normalizeConsoleUrl,
+  refreshCredentialsForStore,
+} from "./client.js";
 import { CloudAuthError } from "./errors.js";
 import type { CloudCredentials } from "./types.js";
 
@@ -606,132 +612,162 @@ describe("ConsoleApiClient", () => {
     expect(deleted).toBe(true);
   });
 
-  it("calls the merged Console /api/cli/link contract", async () => {
+  it("creates, polls and cancels link requests without sending installation ids", async () => {
     const calls: FetchCall[] = [];
+    const request = { id: "lr_1", status: "pending" as const, expiresAt: "2026-09-16T14:10:00.000Z" };
     const client = new ConsoleApiClient({
       consoleUrl: "https://console.example",
       fetch: mock(async (url: string, init?: RequestInit) => {
         calls.push(recordFetchCall(url, init));
         const path = new URL(url).pathname;
-        if (path === "/api/cli/link" && init?.method === "POST") {
+        if (path === "/api/cli/link/requests" && init?.method === "POST") {
           return jsonResponse(
-            {
-              version: 1,
-              created: true,
-              binding: {
-                id: "bind_1",
-                contactId: "luis",
-                consoleUserId: "user_alice",
-                organizationId: "org_123",
-                installationId: "ins_123",
-                platformIdentities: { channel: "whatsapp", platformIdentityId: "wa:5511" },
-                status: "active",
-              },
-            },
+            { version: 1, status: "pending", request, approveUrl: "https://console.example/link/ravi_lr_token" },
             201,
           );
         }
-        if (path === "/api/cli/link" && init?.method === "GET") {
+        if (path === "/api/cli/link/requests/lr_1" && init?.method === "GET") {
           return jsonResponse({
             version: 1,
+            request: { ...request, status: "approved", approvedAt: "2026-09-16T14:02:00.000Z" },
             binding: {
+              id: "bind_1",
               contactId: "luis",
               consoleUserId: "user_alice",
               organizationId: "org_123",
-              installationId: "ins_123",
+              installationId: "ins_console",
+              platformIdentities: { channel: "slack", platformUserId: "U123" },
               status: "active",
             },
           });
         }
+        if (path === "/api/cli/link/requests/lr_1" && init?.method === "DELETE") {
+          return jsonResponse({ version: 1, request: { ...request, status: "cancelled" } });
+        }
+        if (path === "/api/cli/link" && init?.method === "GET") {
+          return jsonResponse({ version: 1, binding: null });
+        }
         if (path === "/api/cli/link/unlink" && init?.method === "POST") {
-          return jsonResponse({
-            version: 1,
-            binding: {
-              contactId: "luis",
-              consoleUserId: "user_alice",
-              organizationId: "org_123",
-              installationId: "ins_123",
-              status: "revoked",
-            },
-          });
+          return jsonResponse({ version: 1, binding: null });
         }
         return jsonResponse({ error: { code: "SERVER_UNAVAILABLE" } }, 500);
       }),
     });
 
-    const upserted = await client.upsertActorBinding(
+    const created = await client.createLinkRequest(
       {
         contactId: "luis",
-        installationId: "ins_123",
-        organizationId: "org_123",
-        platformIdentities: { channel: "whatsapp", platformIdentityId: "wa:5511" },
+        platformIdentities: { channel: "slack", accountId: "acme", platformUserId: "U123" },
+        requester: { displayName: " Luís Filipe " },
+        expectedEmail: "luis@example.com",
       },
       "access-secret",
     );
-    const resolved = await client.resolveActorBinding(
-      { contactId: "luis", installationId: "ins_123" },
-      "access-secret",
-    );
-    await client.unlinkActorBinding({ contactId: "luis", installationId: "ins_123" }, "access-secret");
+    const polled = await client.getLinkRequest("lr_1", "access-secret");
+    const cancelled = await client.cancelLinkRequest("lr_1", "access-secret");
+    await client.resolveActorBinding({ contactId: "luis" }, "access-secret");
+    await client.unlinkActorBinding({ contactId: "luis" }, "access-secret");
 
-    expect(upserted.created).toBe(true);
-    expect(upserted.binding.consoleUserId).toBe("user_alice");
-    expect(upserted.binding.platformIdentity).toEqual({
-      channel: "whatsapp",
-      platformIdentityId: "wa:5511",
+    expect(created).toEqual({
+      status: "pending",
+      request,
+      approveUrl: "https://console.example/link/ravi_lr_token",
     });
-    expect(resolved?.contactId).toBe("luis");
+    expect(polled.request).toMatchObject({ id: "lr_1", status: "approved" });
+    expect(polled.binding).toMatchObject({
+      contactId: "luis",
+      consoleUserId: "user_alice",
+      installationId: "ins_console",
+    });
+    expect(cancelled.status).toBe("cancelled");
     expect(calls.map((call) => `${call.method} ${new URL(call.url).pathname}`)).toEqual([
-      "POST /api/cli/link",
+      "POST /api/cli/link/requests",
+      "GET /api/cli/link/requests/lr_1",
+      "DELETE /api/cli/link/requests/lr_1",
       "GET /api/cli/link",
       "POST /api/cli/link/unlink",
     ]);
     expect(calls[0]?.body).toEqual({
       contactId: "luis",
-      installationId: "ins_123",
-      organizationId: "org_123",
-      platformIdentities: { channel: "whatsapp", platformIdentityId: "wa:5511" },
+      platformIdentities: { channel: "slack", accountId: "acme", platformUserId: "U123" },
+      requester: { displayName: "Luís Filipe" },
+      expectedEmail: "luis@example.com",
     });
+    expect(new URL(calls[3]!.url).search).toBe("?contactId=luis");
+    expect(calls[4]?.body).toEqual({ contactId: "luis" });
   });
 
-  it("maps Console link error codes onto existing CLI codes", async () => {
+  it("returns an existing binding without a link when the contact is already linked", async () => {
     const client = new ConsoleApiClient({
       consoleUrl: "https://console.example",
-      fetch: mock(async (url: string) => {
-        const path = new URL(url).pathname;
-        if (path === "/api/cli/link") {
-          return jsonResponse({ error: { code: "CONFLICT", message: "already bound" } }, 409);
-        }
-        return jsonResponse({ error: { code: "SERVER_UNAVAILABLE" } }, 500);
-      }),
+      fetch: mock(async () =>
+        jsonResponse({
+          version: 1,
+          status: "already_linked",
+          binding: {
+            contactId: "luis",
+            consoleUserId: "user_alice",
+            organizationId: "org_123",
+            installationId: "ins_console",
+            status: "active",
+          },
+        }),
+      ),
     });
 
-    await expect(
-      client.upsertActorBinding({ contactId: "luis", organizationId: "org_123" }, "access-secret"),
-    ).rejects.toMatchObject({
-      code: "ACTOR_BINDING_CONFLICT",
-      status: 409,
-    });
+    const result = await client.createLinkRequest({ contactId: "luis" }, "access-secret");
+    expect(result).toMatchObject({ status: "already_linked", binding: { consoleUserId: "user_alice" } });
+    expect("approveUrl" in result).toBe(false);
   });
 
-  it("maps NOT_MEMBER and INSTALLATION_ORG_MISMATCH to ORG_ACCESS_DENIED", async () => {
+  it("maps Console link error codes onto CLI codes", async () => {
     const responses = [
+      jsonResponse({ error: { code: "CONFLICT", message: "already bound" } }, 409),
       jsonResponse({ error: { code: "NOT_MEMBER" } }, 403),
       jsonResponse({ error: { code: "INSTALLATION_ORG_MISMATCH" } }, 409),
+      jsonResponse({ error: { code: "LOCAL_INSTALLATION_MISSING" } }, 404),
+      jsonResponse({ error: { code: "INSTALLATION_MISMATCH" } }, 403),
+      new Response("<html>Not found</html>", { status: 404, headers: { "Content-Type": "text/html" } }),
     ];
     const client = new ConsoleApiClient({
       consoleUrl: "https://console.example",
       fetch: mock(async () => responses.shift() ?? jsonResponse({ error: { code: "SERVER_UNAVAILABLE" } }, 500)),
     });
+    const create = () => client.createLinkRequest({ contactId: "luis" }, "access-secret");
 
-    await expect(client.upsertActorBinding({ contactId: "luis" }, "access-secret")).rejects.toMatchObject({
-      code: "ORG_ACCESS_DENIED",
-      status: 403,
+    await expect(create()).rejects.toMatchObject({ code: "ACTOR_BINDING_CONFLICT", status: 409 });
+    await expect(create()).rejects.toMatchObject({ code: "ORG_ACCESS_DENIED", status: 403 });
+    await expect(create()).rejects.toMatchObject({ code: "ORG_ACCESS_DENIED", status: 409 });
+    await expect(create()).rejects.toMatchObject({ code: "LOCAL_INSTALLATION_MISSING", status: 404 });
+    await expect(create()).rejects.toMatchObject({ code: "INSTALLATION_MISMATCH", status: 403 });
+    await expect(create()).rejects.toMatchObject({ code: "LINK_REQUESTS_UNAVAILABLE", status: 404 });
+  });
+
+  it("surfaces resolve failures instead of reporting the contact as unlinked", async () => {
+    const client = new ConsoleApiClient({
+      consoleUrl: "https://console.example",
+      fetch: mock(async () => jsonResponse({ error: { code: "LOCAL_INSTALLATION_MISSING" } }, 404)),
     });
-    await expect(client.upsertActorBinding({ contactId: "luis" }, "access-secret")).rejects.toMatchObject({
-      code: "ORG_ACCESS_DENIED",
-      status: 409,
+
+    await expect(client.resolveActorBinding({ contactId: "luis" }, "access-secret")).rejects.toMatchObject({
+      code: "LOCAL_INSTALLATION_MISSING",
     });
+  });
+
+  it("stores the Console's localInstallation id from exchange responses", () => {
+    const credentials = credentialsFromConsoleResponse(
+      {
+        accessToken: "access-secret",
+        refreshToken: "refresh-secret",
+        localInstallation: { id: "ins_console", name: "luis-mac" },
+        user: { id: "user_alice" },
+        organization: { id: "org_123" },
+      },
+      "https://console.example",
+      "local-random-uuid",
+    );
+
+    expect(credentials.installationId).toBe("ins_console");
   });
 
   it("treats a null Console binding as unresolved", async () => {

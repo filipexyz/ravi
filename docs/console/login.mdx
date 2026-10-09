@@ -124,7 +124,7 @@ ravi cloud scope clear --global                              # remove a saved de
 
 Any `ravi pages` or `ravi bases` command also takes `--project <slug>`, which wins over everything. Otherwise Ravi uses `RAVI_CONSOLE_PROJECT_REF` if it is set, then the saved defaults (session, agent, workspace, global), then the only project your account can see. `ravi cloud scope explain` prints the whole chain.
 
-There is no separate command that links a local folder to a Console project: the scope is the link. `ravi link` is something else. It binds the chat contact of an agent turn to your Console user, and you do not need it for Pages or Bases.
+There is no separate command that links a local folder to a Console project: the scope is the link. `ravi link` is something else. It links the author of a chat message to their own Console account: Ravi sends them a private link and they approve it in the browser. You do not need it for Pages or Bases.
 
 ## Log in again when scopes change
 

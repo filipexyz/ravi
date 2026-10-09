@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { resolveCachedContactForConsoleUser, writeCachedActorBinding } from "./actor-bindings.js";
 import { CloudAuthError } from "./errors.js";
+import { getInstallationKeyPath, readOrCreateInstallationKey } from "./installation-key.js";
 import { detectCloudAuthBackends, selectCloudAuthBackend } from "./secret-backends.js";
 import {
   deleteCloudCredentials,
@@ -12,9 +14,11 @@ import {
   getCloudAuthUsersDir,
   getCloudCredentialsPath,
   listCloudAuthUserIds,
+  persistMeIntoCredentials,
   readActiveCloudAuthUserId,
   readCloudCredentials,
   readCloudCredentialsForUser,
+  shouldPersistHydratedIdentity,
   toSafeCloudAuthSession,
   writeCloudCredentials,
 } from "./storage.js";
@@ -143,6 +147,52 @@ describe("cloud auth credential storage", () => {
     deleteCloudCredentials();
     expect(readCloudCredentials()).toBeNull();
     expect(readActiveCloudAuthUserId()).toBeNull();
+  });
+});
+
+describe("cloud auth installation identity", () => {
+  it("adopts the Console's local installation id from /me and persists the change", () => {
+    const stored = makeCredentials({ installationId: "ins_local_random", user: { id: "user_alice" } });
+    const next = persistMeIntoCredentials(stored, {
+      user: { id: "user_alice" },
+      organization: { id: "org_123" },
+      localInstallation: { id: "ins_console" },
+    });
+
+    expect(next.installationId).toBe("ins_console");
+    expect(shouldPersistHydratedIdentity(stored, next)).toBe(true);
+    expect(shouldPersistHydratedIdentity(next, persistMeIntoCredentials(next, { localInstallation: null }))).toBe(
+      false,
+    );
+  });
+
+  it("keeps one private installation key across calls and logout", () => {
+    const first = readOrCreateInstallationKey();
+    writeCloudCredentials(makeCredentials({ user: { id: "user_alice" } }));
+    deleteCloudCredentials();
+
+    expect(readOrCreateInstallationKey()).toBe(first);
+    expect(first).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(statSync(getInstallationKeyPath()).mode & 0o777).toBe(0o600);
+  });
+
+  it("maps a Console user back to a contact only when exactly one cached link matches", () => {
+    const binding = {
+      contactId: "contact_luis",
+      actorPrincipal: "contact:contact_luis",
+      consoleUserId: "user_luis",
+      orgId: "org_123",
+      installationId: "ins_console",
+    };
+    const query = { consoleUserId: "user_luis", orgId: "org_123", installationId: "ins_console" };
+    expect(resolveCachedContactForConsoleUser(query)).toBeNull();
+
+    writeCachedActorBinding(binding);
+    expect(resolveCachedContactForConsoleUser(query)).toBe("contact_luis");
+    expect(resolveCachedContactForConsoleUser({ ...query, installationId: "ins_other" })).toBeNull();
+
+    writeCachedActorBinding({ ...binding, contactId: "contact_luis_wa", actorPrincipal: "contact:contact_luis_wa" });
+    expect(resolveCachedContactForConsoleUser(query)).toBeNull();
   });
 });
 

@@ -17,6 +17,9 @@ export interface SlackPostMessageInput {
   readonly clientMsgId?: string;
   readonly blocks?: readonly SlackBlockKitBlock[];
   readonly metadata?: Record<string, unknown>;
+  /** Set false so Slack does not fetch links in the message (for single-use URLs). */
+  readonly unfurlLinks?: boolean;
+  readonly unfurlMedia?: boolean;
 }
 
 export interface SlackPostEphemeralInput extends SlackPostMessageInput {
@@ -367,6 +370,12 @@ export class SlackWebApiClient {
     }
     if (input.metadata) {
       body.metadata = JSON.stringify(input.metadata);
+    }
+    if (input.unfurlLinks !== undefined) {
+      body.unfurl_links = input.unfurlLinks;
+    }
+    if (input.unfurlMedia !== undefined) {
+      body.unfurl_media = input.unfurlMedia;
     }
 
     const response = await this.apiRequest<SlackPostMessageResponse>("chat.postMessage", this.botToken, body);

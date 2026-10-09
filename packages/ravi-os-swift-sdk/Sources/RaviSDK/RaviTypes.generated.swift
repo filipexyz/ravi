@@ -13920,6 +13920,26 @@ public struct HooksTestOptions: Codable, Sendable {
 
 public typealias HooksTestReturn = [String: RaviJSON]
 
+public typealias IdentityLinkReturn = RaviJSON
+
+public struct IdentityUnlinkReturn: Codable, Sendable {
+  public var linked: Bool
+  public var status: String
+  public var success: Bool
+
+  public init(linked: Bool, status: String, success: Bool) {
+    self.linked = linked
+    self.status = status
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case linked = "linked"
+    case status = "status"
+    case success = "success"
+  }
+}
+
 public struct ImageAtlasSplitOptions: Codable, Sendable {
   public var account: String?
   public var background: String?

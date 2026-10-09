@@ -65,26 +65,46 @@ export interface ActorBindingCacheRecord {
   updatedAt: string;
 }
 
-export interface ActorBindingUpsertInput {
-  contactId: string;
-  installationId?: string;
-  organizationId?: string;
-  consoleUserId?: string;
-  platformIdentities?: ActorPlatformIdentity | Record<string, unknown> | null;
-}
-
+/**
+ * The Console pins every link call to the installation of the CLI session, so
+ * none of these inputs carries an installation or organization id.
+ */
 export interface ActorBindingUnlinkInput {
   contactId?: string;
   bindingId?: string;
-  installationId?: string;
-  organizationId?: string;
 }
 
 export interface ActorBindingResolveQuery {
   contactId?: string;
   consoleUserId?: string;
-  installationId?: string;
-  organizationId?: string;
+}
+
+/** `POST /api/cli/link/requests`: ask the person to approve a binding in the browser. */
+export interface LinkRequestCreateInput {
+  contactId: string;
+  platformIdentities?: ActorPlatformIdentity | null;
+  requester?: { displayName?: string } | null;
+  /** Email the chat platform reports for the person; the Console stores only a keyed hash. */
+  expectedEmail?: string | null;
+}
+
+export type LinkRequestStatus = "pending" | "approved" | "denied" | "expired" | "cancelled";
+
+export interface LinkRequestRecord {
+  id: string;
+  status: LinkRequestStatus;
+  expiresAt: string;
+  approvedAt?: string;
+  failureReason?: string;
+}
+
+export type LinkRequestCreateResult =
+  | { status: "already_linked"; binding: ActorBinding }
+  | { status: "pending"; request: LinkRequestRecord; approveUrl: string };
+
+export interface LinkRequestStatusResult {
+  request: LinkRequestRecord;
+  binding: ActorBinding | null;
 }
 
 export interface SafeCloudAuthSession {
@@ -149,6 +169,8 @@ export interface ConsoleMeResponse {
   org?: CloudAuthOrganization | null;
   installation?: { id?: string | null; installationId?: string | null } | null;
   installationId?: string | null;
+  /** The Console's record of this local install. Its id is the installation every CLI call is pinned to. */
+  localInstallation?: { id?: string | null; name?: string | null; status?: string | null } | null;
   scopes?: string[];
   accessTokenExpiresAt?: string | null;
   expiresAt?: string | null;

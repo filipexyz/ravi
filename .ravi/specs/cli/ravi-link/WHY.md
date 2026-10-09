@@ -1,37 +1,47 @@
 ---
 id: cli/ravi-link
-title: "Why ravi link is ambient"
+title: "Why ravi link asks the person to approve"
 ---
 
 # ravi link / WHY
 
-## Why Zero Flags
+## Why the person approves in the browser
 
-If `ravi link` accepted `--contact` or `--user`, an agent (or a confused
-operator) could bind the wrong human to the wrong Console account. The
-product agreement is: the current cloud session is the Console identity, and
-the current turn's resolved contact is the local identity. No substitution.
+The first version bound the turn's contact to whoever ran `ravi login` on the
+daemon host. In a channel, every author who asked would have been linked to
+the operator's Console account and could act as the operator. Only the person
+can prove their Console identity, so the Console writes the link from their
+own approval and the daemon session is just the transport.
 
-## Why Login Must Come First
+## Why the link goes by private message
 
-The binding is a Console record. Without `ravi login` there is no
-`consoleUserId`, `orgId`, or installation to write. Local-only linking would
-invent an identity Console cannot enforce.
+The approval URL is a bearer secret for a few minutes. A private message to
+the author is the possession proof that it reaches the right person; posting
+it in the channel would let anyone approve. Turning unfurling off keeps link
+previews from fetching it. When the platform knows the author's email, the
+Console also checks it against the approver.
 
-## Why Not RAVI_ADMIN_TOKEN
+## Why no flags
 
-Admin/operator tokens represent the host, not the human in the chat.
-Using them for SSO or connector pass-through would let one operator act as
-every linked user.
+A flag that names a contact or user would let an agent or a confused operator
+link someone else. The author of the message is the only subject.
 
-## Why Cache IDs Locally
+## Why the Console's installation id
 
-Later turns need `consoleUserId` on metadata without a Console round trip on
-every message. A signed/TTL cache of IDs is enough. Tokens stay in the
-per-user cloud-auth slot. Console remains the source of truth.
+`ravi login` used to store a random local id the Console had never seen, so
+every link call failed as `PAYLOAD_INVALID` ("Unknown installation"). The
+Console returns its own `localInstallation.id`; the CLI now stores that, and
+a persisted installation key makes re-logins reuse it.
+
+## Why a daemon watcher
+
+The approval happens in the browser, outside any turn. The daemon polls the
+request so it can confirm in the chats, and re-checks cached bindings so a
+revoke on the Console reaches this install within minutes.
 
 ## Follow-ups
 
-- Installation enrollment org split: require session org == enrolled org.
-- Full user-scoped connector vault on the `link.ravi.so` Worker.
-- Live e2e against merged Console `/api/cli/link` routes.
+- Opening the person's Ravi session from a Pages viewer assertion through the
+  bridge (widgets and chat).
+- `ravi link` started from a Page.
+- A Console push instead of polling.

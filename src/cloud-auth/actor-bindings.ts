@@ -82,6 +82,26 @@ export function listCachedActorBindings(env: NodeJS.ProcessEnv = process.env, no
   return bindings;
 }
 
+/**
+ * Reverse lookup for a verified Console user (for example the `sub` of a
+ * Pages viewer assertion): the contact linked to that user on this
+ * installation. Returns null unless exactly one cached binding matches, so a
+ * caller never guesses a contact.
+ */
+export function resolveCachedContactForConsoleUser(
+  input: { consoleUserId: string; orgId: string; installationId: string },
+  env: NodeJS.ProcessEnv = process.env,
+  now = Date.now(),
+): string | null {
+  const matches = listCachedActorBindings(env, now).filter(
+    (binding) =>
+      binding.consoleUserId === input.consoleUserId &&
+      binding.orgId === input.orgId &&
+      binding.installationId === input.installationId,
+  );
+  return matches.length === 1 ? (matches[0]?.contactId ?? null) : null;
+}
+
 export function consoleIdentityFromBinding(binding: ActorBinding | null): {
   consoleUserId?: string;
   consoleOrgId?: string;

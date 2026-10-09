@@ -178,10 +178,16 @@ The CLI MAY cache non-secret metadata such as:
 - Console base URL;
 - user id/email/display name;
 - organization id/name;
-- local installation id;
+- local installation id, which MUST be the Console's `localInstallation.id`
+  from the exchange, refresh or `/api/cli/me` response (a locally generated
+  id is replaced on the next `/me`);
 - token expiry;
 - granted scopes;
 - TTL'd actor-binding IDs (contact, consoleUserId, orgId).
+
+`ravi login` sends `installation.machineFingerprint` from a random key kept at
+`<stateDir>/cloud-auth/installation-key` (mode 0600, survives logout), so the
+Console reuses the same installation when the same user logs in again.
 
 ## Token Handling
 
