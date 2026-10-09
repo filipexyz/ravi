@@ -128,7 +128,7 @@ All of it is local SQLite and files. The full list is in [Configuration](/refere
 
 ## HTTP gateway and SDK
 
-Set `RAVI_HTTP_PORT` and the daemon serves an HTTP API on `127.0.0.1` (change it with `RAVI_HTTP_HOST`). Under `/api/v1/` it exposes the CLI's commands (a few long-running ones stay CLI-only), authorized with `Authorization: Bearer rctx_...` runtime context keys. The same server receives webhooks. Binding a non-loopback address requires `RAVI_GATEWAY_NETWORK_AUTHORIZED=1`. See [SDK and HTTP gateway](/guides/sdk).
+Set `RAVI_HTTP_PORT` and the daemon serves an HTTP API on `127.0.0.1` (change it with `RAVI_HTTP_HOST`). Under `/api/v1/` it exposes the CLI's commands (a few long-running ones stay CLI-only), authorized with `Authorization: Bearer rctx_...` runtime context keys. The same server receives webhooks. Binding a non-loopback address requires `RAVI_GATEWAY_NETWORK_AUTHORIZED=1`. The gateway builds its routes from the CLI's command registry, and the TypeScript, Dart and Swift SDKs and the OpenAPI spec are generated from it; the pre-push hook and CI fail if they drift. See [SDKs and HTTP gateway](/guides/sdk).
 
 ## The Ravi Console
 
