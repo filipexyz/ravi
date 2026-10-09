@@ -182,7 +182,7 @@ A chat belongs to one session at a time, and Ravi posts the answer only if the c
 - **No `--session`, created by the agent in a chat**: the trigger runs in that chat's session and answers in that chat. This is the simplest setup.
 - **No `--session`, created from your terminal**: the trigger runs in the agent's main session and answers where that session last talked.
 - **`--session main` with a reply session**: the trigger runs in the reply session and answers in its chat.
-- **Any other named session** (for example a queue worker): it answers in a chat only if that session already owns one and either `--reply-session` names the same session or the trigger has no reply session and no creator chat (created from your terminal). A session the trigger creates owns no chat, so its answers stay in it.
+- **Any other named session** (for example a queue worker): it answers in a chat only if that session already owns one and either the reply session is that same session (`--reply-session <same-name>`) or the trigger has no reply session and no creator chat (created from your terminal). A session the trigger creates owns no chat, so its answers stay in it.
 - **`isolated`**: never answers in a chat.
 
 Read answers that stayed in a session with `ravi sessions read <name>`. If someone must be told, say so in the message, for example: `Then report with: ravi sessions inform <owner-session> "<summary>"`.

@@ -113,7 +113,7 @@ Active hours use the clock of the machine running the daemon. The start is inclu
 Changes take effect right away. A changed interval restarts that agent's timer, and restarting the daemon restarts every timer, so the next run comes one full interval later.
 
 <Note>
-`heartbeat set <agent> model` is stored and shown by `ravi heartbeat show`, but the current runtime does not use it: heartbeat runs use the main session's model. If a periodic check must run on a cheaper model, use a [cron job](/guides/cron-jobs) with `--isolated` and set the model of its session with `ravi sessions set-model <session> haiku` after the first run.
+`heartbeat set <agent> model` is stored and shown by `ravi heartbeat show`, but the current runtime does not use it: heartbeat runs use the main session's model. If a periodic check must run on a cheaper model, use a [cron job](/guides/cron-jobs) with `--isolated` and set the model of its session with `ravi sessions set-model <session> haiku` after the first run. An isolated job never posts to a chat, so tell it in the message how to report.
 </Note>
 
 ## Check status

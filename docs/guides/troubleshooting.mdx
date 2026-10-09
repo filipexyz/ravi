@@ -14,12 +14,13 @@ ravi channels status    # Slack: the ravi-channels runner and its adapters
 pm2 ls                  # every PM2 process, including ravi-channels
 ravi daemon logs -f     # follow the daemon log (-t 200 for the last 200 lines)
 ravi channels logs      # follow the channel runner log (Ctrl-C to stop)
+pm2 logs ravi-channels --nostream --lines 200   # one-shot read of the same log
 ```
 
 What to look for:
 
-- `ravi daemon status` does not list the Slack runner `ravi-channels`. Use `ravi channels status`: a healthy runner shows `health: ready` and the Slack adapter as `connected`. `health: stopped (not_running)` means it was never started.
-- `runtime: drifted` means the CLI, daemon and runner run different versions. Run `ravi update`, which installs the configured channel and restarts the managed processes.
+- `ravi daemon status` does not list the Slack runner `ravi-channels`. Use `ravi channels status`: a healthy runner shows `health: ready` and the Slack adapter as `connected`. `health: stopped (not_running)` means it is not online in PM2: never started, stopped or crashed.
+- `runtime: drifted` means the CLI, daemon and runner run different versions. Run `ravi update`, which installs the configured channel and restarts the managed processes. On `@next`, run `ravi update --next` unless you already used `--next` once; until then, a plain `ravi update` installs `latest`.
 - `omni-nats: not managed by PM2` is expected if you run your own `nats-server`.
 - On a Slack-only install the daemon logs `Omni not configured — no channel support` and `Creating gateway without omni — channel delivery will fail`. Slack replies go through the channel runner, so these lines are harmless there.
 
@@ -58,7 +59,7 @@ If a session exists, [read its trace](#read-the-session-trace). Otherwise, match
 | Slack: nothing in `ravi channels logs`; `ravi channels status` says `not_running` | Channel runner not started | `ravi channels start` |
 | Slack: adapter `failed` or `disconnected` | Token unreadable, revoked or missing scopes | `ravi slack permissions-list --channel slack-main`, fix the credential, `ravi channels restart`. See [Connect Slack](/channels/slack) |
 | Slack: log `Slack inbound held for owner review`, and `ravi instances list` has no instance named like the channel in `ravi channels list` | Channel config and instance names differ | Create the instance with the exact same name: `ravi instances create slack-main --channel slack --agent main --dm-policy pairing --group-policy allowlist` |
-| Slack: `held for owner review` with the instance in place | `pairing` DMs and `allowlist` channels need an explicit route; an `allowed` contact is not enough | `ravi instances routes add slack-main U0OWNER main --channel slack` (DM) or `... group:C0ABC123 main --channel slack` (channel) |
+| Slack: `held for owner review` with the instance in place | `pairing` DMs and `allowlist` channels need an explicit route; an `allowed` contact is not enough | `ravi instances routes add slack-main U0OWNER main` (DM) or `ravi instances routes add slack-main group:C0ABC123 main` (channel) |
 | WhatsApp: `No route for message, saved as pending` | Instance has no agent | `ravi instances set wa-main agent main` |
 | WhatsApp: `DM contact not approved (pairing policy), saved as pending` | Sender is not an allowed contact | `ravi instances pending approve wa-main <phone>` or `ravi contacts add <phone> "Name"` |
 | WhatsApp: `Group not in allowlist, saved as pending` | Group has no route | `ravi instances pending approve wa-main group:<id> --agent main` |
@@ -70,7 +71,7 @@ If a session exists, [read its trace](#read-the-session-trace). Otherwise, match
 | `ravi agents show main` says `Provider: codex` and turns fail | `codex` is the built-in default and its CLI is not installed | `ravi agents set main provider claude`, or install and log in to Codex |
 
 <Warning>
-Do not use `ravi instances pending approve slack-main C0ABC123` for a Slack channel: it stores a broken pattern. Add the route with `group:C0ABC123` as shown above. To see which route wins for a chat, run `ravi routes explain <instance> <pattern>`.
+Do not use `ravi instances pending approve` with Slack IDs: for a channel it stores a broken `group:` pattern made of the ID's digits, and for a member it can create a stray phone contact. Add the route yourself with `ravi instances routes add` as shown above. To see which route wins for a chat, run `ravi routes explain <instance> <pattern>`.
 </Warning>
 
 ## The agent answered but cannot use tools
@@ -211,7 +212,7 @@ ravi channels restart
 - `-m` is required: without it the restart fails with `Flag -m é obrigatória`. The message is passed to the main agent.
 - Restart the daemon after editing `~/.ravi/.env` or changing provider credentials.
 - Restart the channel runner after `ravi channels create` or `set`, after changing a Slack secret, and after a daemon restart if `ravi channels status` is not `ready`. Routes and instances reload on their own.
-- The runner must run the same Ravi version as the daemon. If `ravi channels start` refuses because of a bundle mismatch, run `ravi update` first.
+- The runner must run the same Ravi version as the daemon. If `ravi channels start` refuses because of a bundle mismatch, run `ravi update` first (`ravi update --next` on `@next`, as above).
 - Bring things up in order: NATS (Omni or your own `nats-server`), then the daemon, then the channel runner.
 
 <Warning>
