@@ -51,7 +51,8 @@ title: "ravi link checks"
   request without caching or confirming.
 - An unlink MUST win over a poll or a revalidation already in flight: the
   watcher claims the request before caching, and revalidation never rewrites
-  an entry that changed or disappeared during its call.
+  or deletes an entry whose binding id, Console user or installation changed,
+  or that disappeared, during its call.
 
 ## Validation
 

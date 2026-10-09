@@ -20,6 +20,7 @@ import {
   writeCachedActorBinding,
 } from "../cloud-auth/actor-bindings.js";
 import { isCloudAuthError } from "../cloud-auth/errors.js";
+import type { ActorBinding } from "../cloud-auth/types.js";
 import { logger } from "../utils/logger.js";
 import {
   createChannelLinkMessenger,
@@ -122,6 +123,15 @@ export async function processPendingLinkRequests(deps: LinkWatcherDeps = {}): Pr
   return listPendingLocalLinkRequests().length;
 }
 
+function isSameBinding(current: ActorBinding | null, expected: ActorBinding): boolean {
+  return (
+    current !== null &&
+    current.id === expected.id &&
+    current.consoleUserId === expected.consoleUserId &&
+    current.installationId === expected.installationId
+  );
+}
+
 /**
  * Re-check cached bindings of the active installation against the Console.
  * A binding the Console no longer reports is removed; a live one gets a fresh
@@ -140,7 +150,7 @@ export async function revalidateCachedBindings(deps: LinkWatcherDeps = {}): Prom
         try {
           const current = await client.resolveActorBinding({ contactId: binding.contactId }, credentials.accessToken);
           // An unlink or a new link may have changed the entry while this call was in flight.
-          if (readCachedActorBinding(binding.contactId, env)?.consoleUserId !== binding.consoleUserId) continue;
+          if (!isSameBinding(readCachedActorBinding(binding.contactId, env), binding)) continue;
           if (current && current.consoleUserId === binding.consoleUserId) {
             writeCachedActorBinding(current, env);
             result.kept += 1;

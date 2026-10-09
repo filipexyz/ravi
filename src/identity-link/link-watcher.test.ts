@@ -221,4 +221,21 @@ describe("revalidateCachedBindings", () => {
     expect(result).toEqual({ kept: 0, removed: 0 });
     expect(readCachedActorBinding("contact_luis")).toBeNull();
   });
+
+  it("keeps a binding that replaced the checked one while the check was in flight", async () => {
+    writeCachedActorBinding({ ...bindingPayload(), platformIdentity: null });
+    const fake = createFakeConsole();
+    fake.on((call) => {
+      if (call.path !== "/api/cli/link?contactId=contact_luis") return undefined;
+      // Unlinked and linked again to the same person: a new binding id.
+      writeCachedActorBinding({ ...bindingPayload({ id: "bind_new" }), platformIdentity: null });
+      return { body: { version: 1, binding: null } };
+    });
+    const { messenger } = createFakeMessenger();
+
+    const result = await revalidateCachedBindings(linkDeps(fake, createMemoryCredentials(), messenger));
+
+    expect(result).toEqual({ kept: 0, removed: 0 });
+    expect(readCachedActorBinding("contact_luis")?.id).toBe("bind_new");
+  });
 });
