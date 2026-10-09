@@ -81,8 +81,8 @@ RUNTIME (`src/triggers/`) is a separate, untouched contract.
 
 `src/plugins/internal/ravi-system/skills/triggers/SKILL.md` teaches this
 surface and MUST document `--execute` on `triggers rm` and `triggers test`.
-The docs pages (`docs/cli/overview.mdx`, `docs/features/overview.mdx`,
-`docs/guides/triggers.mdx`) and `AGENTS.md` teach the same flag. The trigger runner
+The docs pages (`docs/cli/overview.mdx`, `docs/guides/triggers.mdx`) and `AGENTS.md` teach the
+same flag. The trigger runner
 (`src/triggers/`) subscribes and fires through the service layer, never through
 the CLI, so the brake does not affect event-driven firings.
 

@@ -1,58 +1,144 @@
-# Ravi Artifacts
+---
+title: Artifacts
+description: Ravi's local ledger of produced files, with versions, lineage and links, and how it relates to publishing on Ravi Pages.
+icon: archive
+---
 
-`ravi artifacts` is Ravi's generic artifact ledger.
+An artifact is a record of something Ravi or an agent produced: a generated image, a report, a trace, a folder with a small website. This page shows how to find and inspect artifacts, how versions work, and when to publish one to Ravi Pages with `ravi artifacts publish` instead of the usual `ravi pages ship`.
 
-It stores durable outputs and their context so agents can inspect, reuse, edit, and explain artifacts later.
+## What an artifact holds
 
-## What It Stores
+Artifacts live in Ravi's local database (`~/.ravi/ravi.db`), with a copy of each file in `~/.ravi/artifacts/blobs/`. Their IDs look like `art_...`. Each one can carry:
 
-Each artifact can carry:
+- **Identity:** `id`, an optional `kind` (`image`, `report`, `trace`, ...), `title`, `summary`, `status`, `tags`.
+- **Content:** a file or a whole directory (a package with an entrypoint), a URI, or structured output, with MIME type, size and `sha256`.
+- **How it was made:** provider, model, prompt, command, duration, token counts and cost when known.
+- **Where it was made:** agent, session, task, channel, chat and message, filled in automatically when a command runs inside a session.
+- **Structured data:** metadata, metrics, lineage, input and output (JSON).
+- **Links** to tasks, sessions, messages, projects or any other target, and a timeline of **events** (`created`, `updated`, `queued`, `completed`, `failed`, `published`, ...).
 
-- identity: `id`, optional semantic `kind`, `title`, `summary`, `status`, `tags`
-- file data: original path, blob-store copy, MIME type, size, `sha256`
-- generation context: provider, model, prompt, command, duration, tokens, and known cost when explicitly available
-- Ravi context: session, agent, task, run, turn, channel, account, chat, message
-- structured data: metadata, metrics, lineage, input, output
-- relationships: links to tasks, sessions, messages, projects, or arbitrary targets
-- audit events: created, updated, attached, archived
-- immutable versions: content snapshots with manifest data and version assets
+Ravi creates artifacts on its own in two places:
 
-## Commands
+- `ravi image generate` records one `kind=image` artifact per image, before the provider is even called, and moves it through `pending`, `running`, `completed` or `failed`. See [Media](/reference/media#image-generation).
+- Every publish to Ravi Pages, including `ravi pages ship`, first stores the HTML (or the folder) as a local artifact and records the Console release on it as a `published` event.
+
+## Find and inspect
 
 ```bash
-ravi artifacts create --path /tmp/image.png --kind image --provider openai --model gpt-image-2
-ravi artifacts list --kind image
-ravi artifacts show art_xxx --json
-ravi artifacts versions art_xxx --json
-ravi artifacts version art_xxx --version 1 --json
-ravi artifacts snapshot art_xxx --label "before edit"
-ravi artifacts restore art_xxx --version 1
-ravi artifacts update art_xxx --metadata '{"approved":true}'
+ravi artifacts list                          # newest first, 50 per page
+ravi artifacts list --kind image --limit 10
+ravi artifacts list --session main --json
+ravi artifacts list --rich --lifecycle failed --json   # with stats and lineage
+
+ravi artifacts show art_xxx                  # details, links, events, file path
+ravi artifacts events art_xxx                # lifecycle timeline
+ravi artifacts blob art_xxx > copy.png       # raw bytes
+```
+
+`list` also filters by `--task`, `--tag` and `--agent` (with `--rich`), pages with `--limit`/`--offset`, and hides archived artifacts unless you pass `--include-deleted`. With `--json`, follow `pagination.nextCommand` to get the next page.
+
+## Create, update and link
+
+```bash
+# Record a file you produced
+ravi artifacts create --path ./diagram.png --kind image \
+  --title "Architecture diagram" --provider openai --model gpt-image-2
+
+# Record a folder as a package (entrypoint defaults to index.html)
+ravi artifacts create --path ./site --title "Launch page"
+
+# Edit fields (--metadata, --metrics and --lineage merge; the rest replace)
+ravi artifacts update art_xxx --summary "Approved version" --metadata '{"approved":true}'
+
+# Link to something else
 ravi artifacts attach art_xxx task task-123 --relation evidence
+
+# Add an event by hand
+ravi artifacts event art_xxx failed --status failed --message "provider timeout"
+
+# Archive (soft delete; still visible with --include-deleted)
 ravi artifacts archive art_xxx
 ```
 
-All commands support typed `--json` output where applicable.
+These commands write immediately. Only `publish` and `release activate` are dry-runs by default.
 
-## Versioning
+## Versions
 
-Artifacts keep the mutable high-level record for current state, while versions
-snapshot content. Creating an artifact with a file, blob, URI, or structured
-output creates an initial version. Updating file/blob/URI/output content creates
-the next version. Metadata-only edits do not create a version unless you call
-`ravi artifacts snapshot`.
+The artifact record shows the current state. Versions are immutable snapshots of its content.
 
-Restoring a previous version reapplies that version to the current artifact and
-creates a new version for the restore, preserving the full history.
+- Creating an artifact with a file, directory, URI or output creates version 1.
+- Updating content (`--path`, `--uri`, `--output`, `--mime`) creates the next version.
+- Metadata-only edits do not create a version. Run `ravi artifacts snapshot` when you want one.
+- Restoring a version copies it back as the current content and records the restore as a new version, so history is never lost.
 
-## Image Integration
+```bash
+ravi artifacts versions art_xxx
+ravi artifacts version art_xxx --version 1 --json
+ravi artifacts snapshot art_xxx --label "before edit"
+ravi artifacts restore art_xxx --version 1
+```
 
-`ravi image generate` automatically creates one `kind=image` artifact per generated image.
+## Artifacts and Ravi Pages
 
-The image artifact records the generated file, blob copy, hash, provider/model, prompt, duration, usage/tokens when returned by the provider, and current Ravi session/channel context when available.
+To put HTML on the web, use `ravi pages ship`. It is one command that uploads, mounts the page at a route on your project's host and activates it. See [Publish pages](/console/pages).
 
-## Provider Rule
+```bash
+ravi pages ship --title "Weekly report" --route /weekly --html ./report.html
+```
 
-There is no automatic provider fallback.
+`ravi artifacts publish` is the lower-level primitive underneath. Use it only when you need something `ship` does not do:
 
-If the selected provider fails, the command fails. To try another provider, retry explicitly with another `--provider`.
+- publish an artifact that already exists in the ledger (`art_*`), or a specific version of it (`--artifact-version <n>`);
+- upload without going live (`--no-activate`), or upload to Console without mounting a page (omit `--site`);
+- control the release: `--replace-release` (replace the host's whole route map instead of merging into it), `--reason`, `--idempotency-key` for safe retries;
+- set package options: `--entrypoint`, `--base-path`, `--asset-base`, `--name`, `--slug`, `--description`.
+
+It needs a Console login (see [Log in to the Console](/console/login)) and an explicit `--project`. Find the site slug with `ravi pages list --project <project>`. Without `--execute` it only prints the plan and exits with code 3:
+
+```bash
+ravi artifacts publish ./site --project my-project --site <site-slug> --route /launch --visibility private
+ravi artifacts publish ./site --project my-project --site <site-slug> --route /launch --visibility private --execute
+```
+
+The target can be a local `art_*` ID, a file, or a directory with an `index.html`. A file or directory is first stored as a new local artifact. On success the command prints the Console artifact, version, publish and release IDs, the URL, and `Local: recorded on art_... v1`.
+
+<Warning>
+`ravi artifacts publish` (like `ravi pages publish`) sends no `--uses` list. On a host that serves data pages backed by Bases, publishing this way clears the host's connector list and breaks those pages. Use `ravi pages ship` with the full `--uses` list on those hosts. See [Interactive pages with Bases](/console/bases).
+</Warning>
+
+### Re-activate an older release
+
+A release is a snapshot of the whole host: every route on it. Activating an older release puts every route back to that state, not just one page. The simplest way is the operator bar on the page (see [Publish pages](/console/pages#releases-and-restore)). From the terminal, activate the release recorded on a local artifact:
+
+```bash
+ravi artifacts events art_xxx                           # "published" events carry the release and site
+ravi artifacts release activate art_xxx --version 1     # plan only (exit 3)
+ravi artifacts release activate art_xxx --version 1 --execute
+```
+
+Pick the release with `--version <n>` (the release recorded for that artifact version) or `--release <id>`. A release that is not recorded on the artifact also needs `--site <site>`. There is no command that lists a site's releases; read them from the artifact's events or from the release history in the operator bar.
+
+To find the local artifact a `ravi pages ship` created, look for its title in `ravi artifacts list --limit 10`. The `artifactId` that `ship` prints is the Console's ID, not the local `art_*`.
+
+## Command reference
+
+| Command | What it does |
+|---|---|
+| `list` | List artifacts (filters, paging, `--rich`) |
+| `show <id>` | Details, links and events |
+| `create` | Record a file, folder, URI or output |
+| `update <id>` | Edit fields; content changes create a version |
+| `attach <id> <targetType> <targetId>` | Link to a task, session, message, project or other target |
+| `archive <id>` | Soft delete |
+| `event <id> <eventType>` | Append a lifecycle event |
+| `events <id>` | List lifecycle events |
+| `versions <id>` / `version <id>` | List versions / show one |
+| `snapshot <id>` | Create a version now |
+| `restore <id> --version <n>` | Restore content from a version |
+| `blob <id>` | Print the raw bytes |
+| `publish <target>` | Upload to Console and optionally release to Pages (dry-run without `--execute`) |
+| `release activate <id>` | Re-activate a recorded Pages release (dry-run without `--execute`) |
+
+Every command accepts `--json`. Run `ravi artifacts <command> --help` for all flags, or `ravi skills show artifacts` for the agent-facing guide.
+
+There is no automatic provider fallback for anything that generates artifacts: if the chosen provider fails, the command fails, and you retry with another `--provider` yourself.

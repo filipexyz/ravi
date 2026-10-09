@@ -1,0 +1,150 @@
+---
+title: Make yourself the owner
+description: Give the main agent its permission ceiling, make your own contact the owner who can approve requests, and keep strangers out.
+icon: shield-check
+---
+
+At the end of this page the `main` agent can do everything Ravi allows, your own chat identity is its owner (it drives the agent and approves requests), and you know who else can reach the agent and what their messages can make it do.
+
+## How it works
+
+Three things decide what a message can make the agent do:
+
+1. **The agent's ceiling.** A permission profile on the agent sets the most it can ever do. Every turn runs inside it.
+2. **Who sent the message.** Ravi resolves the sender's chat identity to a contact.
+   - In a chat that is not governed, a sender that resolves to any contact gets the agent's whole ceiling.
+   - A sender with no contact gets no tools. The agent still replies in text.
+   - In a [governed chat](#groups-with-other-people), each contact gets only what was granted to it there, never more than the ceiling.
+3. **Who can reach the agent at all.** Channel policies and routes decide which DMs and groups get through.
+
+There is no special owner field. The owner is a contact with status `allowed` and the tag `permission-owner`. The tag gives that contact `admin:system:*`, which makes it an approver and keeps its full power inside governed chats.
+
+In the terminal you are always the owner: turns you start with `ravi sessions send` or `ravi tui` run with the agent's whole ceiling, and the `ravi` commands you type yourself run as the local operator.
+
+## Set the agent's ceiling
+
+| Profile | What the agent can do |
+|---|---|
+| `bootstrap` | The starting profile. All tools, a short list of safe executables (`cat`, `git`, `ls`, `ravi` and others), its own contacts, and the `sessions`, `tasks`, `specs`, `skills`, `self` and `doctor` CLI groups. Other groups, such as `contacts`, `cron` and `instances`, need an approval. |
+| `chat-only` | Conversation only: no tools, shell or CLI. Approvals are refused. |
+| `explicit-only` | Exactly the capabilities you list with `--capabilities`, nothing else. Meant for agents that serve the public. |
+| `full-access` | Everything: `admin system:*`, any executable, any tool and any skill. |
+| `none` | Removes the profile and goes back to the `bootstrap` floor. It is not zero access. |
+
+For your personal agent, use `full-access`:
+
+```bash
+ravi agents permissions main full-access             # dry-run: prints the plan, writes nothing, exits 3
+ravi agents permissions main full-access --execute
+ravi agents permissions main                         # show the current profile
+```
+
+A change that widens what the agent can do is a dry-run until you add `--execute`. Changes that narrow it, such as `chat-only`, apply right away. You do not need to reset sessions: shell commands pick up the new ceiling at their next permission check. Even at `full-access`, Ravi's shell hook still blocks dangerous command patterns.
+
+## Make your contact the owner
+
+The identity you use depends on the channel: your phone number on WhatsApp, your member ID (`U...`) on Slack. The [Slack](/channels/slack) and [WhatsApp](/channels/whatsapp) pages show how to find it and the exact commands for that channel.
+
+<Steps>
+  <Step title="Create your contact">
+    ```bash
+    # WhatsApp: your phone number, country code first, digits only
+    ravi contacts add 5511987654321 "Your Name"
+
+    # Slack: your member ID, on the Slack instance
+    ravi contacts add U0123456789 "Your Name" --channel slack --instance slack-main
+    ```
+
+    `contacts add` creates the contact with status `allowed` and prints its id: `✓ Contact added: <contact-id> (Your Name) ...`. Use that id below.
+  </Step>
+  <Step title="Tag it as owner">
+    ```bash
+    ravi contacts tag <contact-id> permission-owner
+    ```
+
+    The tag applies immediately. There is no dry-run.
+  </Step>
+  <Step title="Link your other identities">
+    If you talk to the agent from more than one channel or instance, link each identity to the same contact so the owner tag follows you:
+
+    ```bash
+    ravi contacts link <contact-id> --channel <channel> --id <platform-user-id> --instance <instance-id>
+    ```
+
+    `--instance` takes the `Instance ID` that `ravi instances show <instance>` prints, not the instance name. Approvals look up your identity on the instance where the approval arrives, so link one identity for each instance you use.
+  </Step>
+  <Step title="Check it">
+    ```bash
+    ravi permissions materialize --subject-type contact --subject-id <contact-id>
+    ```
+
+    The output should include `admin system:*` from the contact's admin tag. If it says the contact has no materialized capabilities, check the status and tags with `ravi contacts check <contact-id>`.
+  </Step>
+</Steps>
+
+<Warning>
+**On WhatsApp, message the agent from a different number.** When you connect a WhatsApp number, Ravi records it as the agent's own identity. Messages from that number count as the agent's and never start a turn. Your owner contact must be another number.
+</Warning>
+
+## Who can reach the agent
+
+Your contact decides what your messages can do. Policies and routes decide whose messages reach the agent at all. Every channel instance has two policies:
+
+| Policy | Values | Use |
+|---|---|---|
+| DM policy | `open`, `pairing`, `closed` | `pairing` |
+| Group policy | `open`, `allowlist`, `closed` | `allowlist` |
+
+- `open` lets every message in. New instances start with `open` for both policies.
+- `pairing` holds DMs from people you have not approved, for your review (`ravi instances pending list <instance>`). On WhatsApp, an `allowed` contact gets through. On Slack, a DM needs an explicit route even for an `allowed` contact.
+- `allowlist` holds groups and channels until you let each one in.
+- An explicit route (`ravi instances routes add`) lets that chat in whatever the policy says.
+
+The setup wizard's WhatsApp policy questions do not set any of this. The [Slack](/channels/slack) and [WhatsApp](/channels/whatsapp) pages set the policies and routes in the right order for each channel.
+
+## Approvals
+
+When a turn needs something outside what it may do, Ravi asks in the chat the message came from:
+
+- **Slack:** a message with approve and reject buttons.
+- **WhatsApp and the other Omni channels:** a message you react to. A thumbs-up (`👍`) or heart (`❤️`) approves. Any other reaction, or a text reply to it, rejects.
+- A request that gets no answer in 5 minutes is not approved.
+
+Only a contact whose own capabilities cover the request, or who has `admin:system:*` (your `permission-owner` tag), can approve. Clicks and reactions from anyone else are ignored, and grants in a governed chat do not make anyone an approver. The terminal has no approval route, so whatever a terminal turn cannot do is denied. With the agent at `full-access`, few requests need approval at all.
+
+## Groups with other people
+
+In a chat that is not governed, every sender that resolves to a contact drives the agent with its full ceiling. Before you share a group with other people, govern it. Once any contact has a permission grant in a chat, each contact there gets only its own grants (within the ceiling) and contacts without a grant get no tools. Your `permission-owner` tag still applies, so you keep full power in that chat.
+
+To govern a chat, grant yourself a profile in it. Use a profile name other than `owner`: `owner` is the `permission-owner` tag you already added, and Ravi refuses to reuse it as a profile.
+
+```bash
+ravi chats list --json        # find the chat id
+ravi permissions allow chat-admin --to contact:<contact-id> --chat <chat-id> --agent main --capabilities 'admin:system:*'
+ravi permissions allow chat-admin --to contact:<contact-id> --chat <chat-id> --agent main --capabilities 'admin:system:*' --apply
+ravi permissions list --chat <chat-id> --json
+```
+
+Without `--apply`, `ravi permissions allow` only prints the plan. To give other members narrower profiles, or to revoke grants, see [Permissions](/guides/permissions).
+
+## Risks
+
+<Warning>
+**`full-access` with `open` policies hands your machine to anyone who can message the agent.** Keep DMs on `pairing` and groups on `allowlist`, add routes only for chats you trust, and govern every group you share with other people.
+
+- A contact's status does not limit what its messages can do. In a chat that is not governed, a contact that is `pending`, `discovered` or even `blocked` gets the agent's whole ceiling. Only the owner's `admin:system:*` requires `allowed`.
+- `ravi contacts block` is not a way to keep someone out. On Slack, entry depends only on policies and routes, so a blocked contact's messages still arrive. On WhatsApp it works only under `pairing`, `allowlist` or `closed`. Keep strangers out with policies and explicit routes.
+- An instance with contact intake turned on (`contactIntakeMode` set to `discovered` or `pending`) makes every new sender a contact, and so gives them the ceiling in chats that are not governed.
+- `ravi contacts tag <contact> permission-owner` grants `admin:system:*` at once, and an agent at `full-access` can run it too. Tag only yourself, and do not ask the agent to tag people on someone else's request.
+</Warning>
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Connect Slack (recommended)" icon="hash" href="/channels/slack">
+    Create the Slack app, set its policies and talk to your agent from Slack.
+  </Card>
+  <Card title="Connect WhatsApp" icon="message-circle" href="/channels/whatsapp">
+    Pair a dedicated number through Omni and lock its policies.
+  </Card>
+</CardGroup>

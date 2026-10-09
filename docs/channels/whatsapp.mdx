@@ -1,0 +1,248 @@
+---
+title: Connect WhatsApp
+description: Link a dedicated WhatsApp number to Ravi through Omni so your agent answers you in a DM and in a group.
+icon: message-circle
+---
+
+By the end of this page, a dedicated WhatsApp number is linked to Ravi, the agent `main` answers you in a direct message and in a group, strangers cannot reach it, and you are the owner with full permissions.
+
+Slack is the recommended channel ([Connect Slack](/channels/slack)). Use WhatsApp when the people you work with live there.
+
+<Note>
+WhatsApp runs through Omni, a separate service that `ravi setup` installs. Omni holds the WhatsApp session as a linked device and runs the NATS server Ravi uses (`omni-nats`) plus an API (`omni-api`). A native WhatsApp channel without Omni is planned work and is not in this release.
+</Note>
+
+In the commands below, `wa-main` is the instance (Ravi's record of the number), `main` is the agent, and `5511987654321` stands for **your personal number**: country code, area code and number, digits only, no `+` or spaces.
+
+<Steps>
+<Step title="Check what you need">
+
+- **A dedicated number** with WhatsApp or WhatsApp Business active on a phone. Ravi links to it as a linked device, so the phone keeps the number.
+- **A second number to talk from.** Messages sent from the connected number count as the agent's own and never start a turn. You write to the agent from your personal number.
+- **Ravi installed and answering in the terminal.** Follow [Install Ravi](/start/install), then confirm:
+
+  ```bash
+  ravi sessions send main "hi" -a main -w
+  ```
+
+  If this fails, fix the provider first. WhatsApp will not work until this does.
+- **Omni running.** `ravi daemon status` lists `omni-nats` and `omni-api` as `online`.
+
+If Omni is missing, install it and restart the daemon. Ravi looks for Omni only when the daemon starts, so restart it after every Omni install or reconfiguration:
+
+```bash
+bun add -g @automagik/omni
+omni install
+ravi daemon restart -m "omni installed"
+ravi daemon logs -t 200      # look for "Omni connection resolved"
+```
+
+Omni stores its data in PostgreSQL. `omni install` uses a local `pgserve` (autopg) server when one is on your PATH and prints how to install it when it is not. To use a database you already run, pass it explicitly: `omni install --database-url postgresql://user:pass@host:5432/omni`.
+
+</Step>
+<Step title="Link the number">
+
+With the daemon running:
+
+```bash
+ravi instances connect wa-main --agent main
+```
+
+```
+Creating whatsapp instance "wa-main" in omni...
+✓ Instance created in omni: <uuid>
+Connecting: wa-main → agent main  [whatsapp]
+Waiting for QR code...
+
+Scan this QR code:
+```
+
+On the phone with the dedicated number, open WhatsApp, go to **Settings > Linked devices > Link a device**, and scan the latest code in your terminal. The command ends with `✓ Connected as <profile name>`.
+
+- It waits up to 120 seconds. On `Timed out waiting for instance connection.`, run it again.
+- `connect` creates the instance in Omni and in Ravi. Do not run `ravi instances create` first.
+- `--agent` must name an agent that exists.
+- In scripts, `--json` returns at the first QR (`"status": "qr_required"`) and does not wait for the scan. Check the result later with `ravi instances status wa-main`.
+
+</Step>
+<Step title="Lock who can reach the agent">
+
+<Warning>
+Every `ravi instances connect` resets the instance's policies to `open` for DMs and groups. That includes a re-pairing after WhatsApp logs the device out. Run these two commands right after every connect.
+</Warning>
+
+```bash
+ravi instances set wa-main dmPolicy pairing
+ravi instances set wa-main groupPolicy allowlist
+ravi instances status wa-main
+```
+
+`status` should show `Connected: true`, `Agent: main`, `DM Policy: pairing` and `Group Policy: allowlist`.
+
+- `pairing`: only contacts with status `allowed` reach the agent in DMs. Everyone else is saved for your review.
+- `allowlist`: only groups you approved (an explicit route) reach the agent. Other groups are saved for review.
+
+With `open`, anyone who messages the number, and any group someone adds it to, reaches the agent. The WhatsApp policy questions in `ravi setup` do not configure instances; only the instance setting counts. Policies are also what makes `ravi contacts block` work: under `open`, a blocked contact still reaches the agent.
+
+</Step>
+<Step title="Make yourself the owner">
+
+```bash
+ravi agents permissions main full-access             # dry-run: prints the plan, exits 3
+ravi agents permissions main full-access --execute
+ravi contacts add 5511987654321 "Your Name"
+ravi contacts tag 5511987654321 permission-owner
+ravi contacts check 5511987654321
+```
+
+- `full-access` sets the agent's ceiling: what any turn can do at most.
+- `contacts add` creates you with status `allowed`, so you pass `pairing` and your messages resolve to you. Without a contact, the agent still answers but runs with no tools. Do not pass `--agent` here: it restricts the contact to the listed agents.
+- `permission-owner` gives you `admin:system:*` and makes you the person who can approve requests in chat.
+
+[Make yourself the owner](/start/owner) explains each layer. If you already did it there with this number, skip to the next step.
+
+</Step>
+<Step title="Test a DM">
+
+From your personal phone, send `hi` to the dedicated number. The agent replies within a few seconds. Then check from the terminal:
+
+```bash
+ravi sessions list --agent main          # a session named main-dm-654321 (last 6 digits)
+ravi sessions trace main-dm-654321 --explain
+```
+
+Ask the agent to run `ravi agents list`. If it says it cannot use tools, your number did not resolve to your contact.
+
+No reply? Look at the review queue:
+
+```bash
+ravi instances pending list wa-main
+ravi instances pending approve wa-main 5511987654321
+```
+
+Approving a contact only marks it `allowed`. If the daemon log says `No route for message, saved as pending`, the instance has no agent: run `ravi instances set wa-main agent main`.
+
+</Step>
+<Step title="Add a group">
+
+<Tabs>
+<Tab title="Group you create in the app">
+
+Create a group in WhatsApp with you and the dedicated number, then send a message in it. Under `allowlist` it waits for review:
+
+```bash
+ravi instances pending list wa-main
+ravi instances pending approve wa-main group:120363012345678901 --agent main
+```
+
+`pending list` shows the group under **Pending chats** with its route pattern. Approving creates the route `group:120363012345678901 → main`. Send a new message after approving.
+
+You can also route a group directly. Find its id first:
+
+```bash
+ravi whatsapp group list --account wa-main
+ravi instances routes add wa-main group:120363012345678901 main
+```
+
+</Tab>
+<Tab title="Group Ravi creates">
+
+```bash
+ravi whatsapp group create "Ravi HQ" 5511987654321 --agent main --account wa-main            # dry-run, exits 3
+ravi whatsapp group create "Ravi HQ" 5511987654321 --agent main --account wa-main --execute
+```
+
+```
+✓ Group created: Ravi HQ
+  ID:           120363012345678901@g.us
+  Participants: <count>
+  Agent:        existing main
+  Chat:         registered
+  Route:        main
+  Session:      ravi-hq
+  Inform:       sent
+```
+
+The dedicated number creates the group, adds you, routes it to `main` and opens the session. The agent introduces itself in the group right away. Every participant must already be a contact.
+
+</Tab>
+</Tabs>
+
+Always pass `--account wa-main` to `ravi whatsapp group`. Without it, the command uses the first enabled instance in alphabetical order, which is `slack-main` if you also connected Slack.
+
+</Step>
+</Steps>
+
+## How the agent behaves in groups
+
+- **There is no mention gate.** Every message in a routed group reaches the agent.
+- When a group has three or more known members, the agent is told to mostly stay silent and to answer when it is @mentioned or clearly useful. This is an instruction to the model, not a filter. In a group with only you and the number, it answers everything.
+- A contact's reply mode (`auto` or `mention`) is stored but not enforced. Do not rely on it.
+- **Debounce** combines messages that arrive close together into one prompt:
+
+  ```bash
+  ravi agents set main groupDebounceMs 3000   # groups
+  ravi agents debounce main 2000              # DMs, and groups without groupDebounceMs
+  ```
+
+- Start a message with `!!` to record it without starting a turn, or with `>>` to deliver it when the current turn ends.
+
+## Optional: a group with other people
+
+In a group without per-chat grants, every member whose number resolves to a contact gets the agent's full ceiling. To keep tools to yourself, grant yourself a profile in that chat. The first grant makes the chat **governed**: other members keep chatting but get no tools until they receive their own grant.
+
+```bash
+ravi chats list --type group --channel whatsapp --instance wa-main --json   # the group's "id"
+ravi contacts check 5511987654321 --json                                    # your contact id
+
+ravi permissions allow chat-admin --to contact:<contact-id> --chat <chat-id> --agent main --capabilities 'admin:system:*' --json          # plan
+ravi permissions allow chat-admin --to contact:<contact-id> --chat <chat-id> --agent main --capabilities 'admin:system:*' --apply --json
+ravi permissions list --chat <chat-id> --json
+```
+
+<Warning>
+Do not call this profile `owner`. `ravi permissions allow owner` maps to the tag `permission-owner`, which `ravi contacts tag` already created, and the command refuses to reuse it (`is not provider-owned by permissions`). Any other name, such as `chat-admin`, works.
+</Warning>
+
+Governed chats are not in `ravi.bot@latest`. See [Permissions](/guides/permissions) for grants, denials and approvals.
+
+## Smoke test
+
+```bash
+ravi daemon status                                        # ravi, omni-nats and omni-api online
+ravi instances status wa-main                             # Connected true, pairing, allowlist
+ravi instances pending list wa-main                       # empty once you and your group are approved
+ravi routes explain wa-main group:120363012345678901      # configured route and live winner
+ravi sessions trace main-dm-654321 --explain              # channel.message.received, then route.resolved
+ravi daemon logs -f                                       # watch the next message arrive
+```
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `connect` fails with `Omni not configured. Is omni running?` | Ravi finds neither `~/.omni/config.json` nor both `OMNI_API_URL` and `OMNI_API_KEY` | `omni install` (or `omni start`), then `ravi daemon restart -m "omni"` |
+| `connect` creates the instance but never shows a QR | The daemon started before Omni existed (log: `Omni not configured — no channel support`) | `ravi daemon restart -m "omni"`, then connect again |
+| Log: `Unknown instanceId — not registered in ravi, skipping` | `ravi instances create` was re-run and cleared the Omni id | `ravi instances connect wa-main --agent main` finds it by name again; then redo step 3 |
+| Log: `No route for message, saved as pending` | The instance has no agent and no route matches | `ravi instances set wa-main agent main` |
+| Log: `DM contact not approved (pairing policy), saved as pending` | The sender is not an `allowed` contact | `ravi contacts add` or `ravi instances pending approve wa-main <number>`. If pending shows a `lid:` id instead of your number, link it to your contact with `ravi contacts link` ([Contacts](/guides/contacts)) |
+| Log: `Group not in allowlist, saved as pending` | The group has no route | `ravi instances pending approve wa-main group:<id> --agent main` |
+| Log: `Contact not allowed for agent` | The contact was created with `--agent` for other agents | `ravi contacts set 5511987654321 allowed-agents -` |
+| The agent answers but cannot use tools | Your number does not resolve to a contact | Add the contact (step 4) |
+| You write from the connected number and nothing happens | That number is the agent's own identity | Write from another number |
+| Strangers or other groups get answers | A connect reset the policies to `open` | Redo step 3 |
+| The daemon keeps restarting with NATS errors | `omni-nats` is gone (`omni stop` and reinstalling Omni remove it) | `omni start`, then `ravi daemon restart -m "nats back"` |
+
+More in [Troubleshooting](/guides/troubleshooting) and [Instances and routing](/guides/routing).
+
+## Risks of using a personal number
+
+Use a dedicated number. If you link your personal number instead:
+
+- Every DM and group of that number reaches Ravi. Right after a connect the policies are `open`, so all your contacts get answers from the agent until you redo step 3.
+- You cannot talk to the agent from that number, because its messages count as the agent's own.
+- If the number is also linked to Omni as another instance, Omni drops its messages to prevent loops.
+- Omni links through an unofficial WhatsApp client. WhatsApp can log the device out or ban the number.
+- Your contacts and chats are stored in Ravi's database as messages arrive.
+
+If you do it anyway, keep `dmPolicy closed` (or `pairing`) and `groupPolicy allowlist`, and check them after every connect.

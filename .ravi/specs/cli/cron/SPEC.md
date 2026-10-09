@@ -80,10 +80,8 @@ with real side effects — so it is braked together with the destructive
 
 `src/plugins/internal/ravi-system/skills/cron/SKILL.md` teaches this surface and
 MUST document `--execute` on `cron run`/`cron rm`. The docs pages
-(`docs/cli/overview.mdx`, `docs/features/overview.mdx`,
-`docs/guides/cron-jobs.mdx`) teach the same flag. `AGENTS.md` still lists the
-bare `ravi cron run <id>` / `ravi cron rm <id>` forms; that root instruction
-file is managed separately from this wave. The daemon-side cron runner
+(`docs/cli/overview.mdx`, `docs/guides/cron-jobs.mdx`) teach the same flag.
+`AGENTS.md` no longer documents cron; it points to the skill. The daemon-side cron runner
 (`src/cron/runner.ts`) executes jobs through the service layer, not through the
 CLI, so the brake never affects scheduled firings.
 

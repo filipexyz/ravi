@@ -1,0 +1,219 @@
+---
+title: Troubleshooting
+description: Find which layer failed when an agent stays silent, cannot use tools, or a page misbehaves, then inspect traces and events and restart cleanly.
+icon: life-buoy
+---
+
+By the end of this page you will be able to tell, in a few commands, whether a problem sits in the processes, the channel, routing, permissions or the model provider, and to restart Ravi without leaving pieces behind.
+
+## First checks
+
+```bash
+ravi daemon status      # ravi, runtime alignment, omni-nats, omni-api
+ravi channels status    # Slack: the ravi-channels runner and its adapters
+pm2 ls                  # every PM2 process, including ravi-channels
+ravi daemon logs -f     # follow the daemon log (-t 200 for the last 200 lines)
+ravi channels logs      # follow the channel runner log (Ctrl-C to stop)
+```
+
+What to look for:
+
+- `ravi daemon status` does not list the Slack runner `ravi-channels`. Use `ravi channels status`: a healthy runner shows `health: ready` and the Slack adapter as `connected`. `health: stopped (not_running)` means it was never started.
+- `runtime: drifted` means the CLI, daemon and runner run different versions. Run `ravi update`, which installs the configured channel and restarts the managed processes.
+- `omni-nats: not managed by PM2` is expected if you run your own `nats-server`.
+- On a Slack-only install the daemon logs `Omni not configured — no channel support` and `Creating gateway without omni — channel delivery will fail`. Slack replies go through the channel runner, so these lines are harmless there.
+
+### `ravi doctor`
+
+```bash
+ravi doctor            # summary
+ravi doctor --full     # with evidence
+```
+
+Some findings are false alarms in this version:
+
+| Check | What it says | What to do |
+|---|---|---|
+| `instances.main` | `no instances are configured` or `main instance is missing` | It looks for an instance literally named `main`. With `slack-main`, `wa-main`, or terminal-only use, ignore it. |
+| `agents.instructions` | fix: `ravi agents sync-instructions --all` | That flag does not exist. Run `ravi agents sync-instructions --agent main --materialize-missing`. |
+| `agents.registered` | `claude: 1` | Agents with no explicit provider are counted as `claude`, but the built-in default is `codex`. Check `ravi agents show main`. |
+| `channels.instance_health_missing` | warning for Slack instances | Slack instances have no provider instance id. Expected. |
+
+The doctor does not check NATS, Omni, the channel runner, Slack tokens or provider credentials. A clean report does not prove a channel works.
+
+## The agent did not answer
+
+Start by finding out whether the message reached a session:
+
+```bash
+ravi sessions list --json                 # did a session appear for that chat?
+ravi instances pending list <instance>    # was the sender or chat held for review?
+```
+
+If a session exists, [read its trace](#read-the-session-trace). Otherwise, match what you see:
+
+| What you see | Cause | Fix |
+|---|---|---|
+| `ravi daemon status` shows `ravi: stopped` or restarting; log shows `NATS not ready, retrying...` | NATS is down | Start it (`pm2 restart omni-nats`, or your own `nats-server -js`), then `ravi daemon restart -m "nats back"` |
+| Slack: nothing in `ravi channels logs`; `ravi channels status` says `not_running` | Channel runner not started | `ravi channels start` |
+| Slack: adapter `failed` or `disconnected` | Token unreadable, revoked or missing scopes | `ravi slack permissions-list --channel slack-main`, fix the credential, `ravi channels restart`. See [Connect Slack](/channels/slack) |
+| Slack: log `Slack inbound held for owner review`, and `ravi instances list` has no instance named like the channel in `ravi channels list` | Channel config and instance names differ | Create the instance with the exact same name: `ravi instances create slack-main --channel slack --agent main --dm-policy pairing --group-policy allowlist` |
+| Slack: `held for owner review` with the instance in place | `pairing` DMs and `allowlist` channels need an explicit route; an `allowed` contact is not enough | `ravi instances routes add slack-main U0OWNER main --channel slack` (DM) or `... group:C0ABC123 main --channel slack` (channel) |
+| WhatsApp: `No route for message, saved as pending` | Instance has no agent | `ravi instances set wa-main agent main` |
+| WhatsApp: `DM contact not approved (pairing policy), saved as pending` | Sender is not an allowed contact | `ravi instances pending approve wa-main <phone>` or `ravi contacts add <phone> "Name"` |
+| WhatsApp: `Group not in allowlist, saved as pending` | Group has no route | `ravi instances pending approve wa-main group:<id> --agent main` |
+| WhatsApp: `Unknown instanceId — not registered in ravi, skipping` | The Ravi instance lost the Omni instance id | `ravi instances set wa-main instanceId <omni-instance-uuid>` |
+| `Contact not allowed for agent` | Contact is restricted to another agent | `ravi contacts set <contact> allowed-agents -` |
+| Your own WhatsApp messages never get a reply | You write from the number connected as the instance; Ravi treats it as the agent itself | Talk to the agent from another number |
+| Messages sent while the daemon was down got no reply | WhatsApp messages older than the daemon's start are recorded but do not run a turn; prompts from `ravi sessions send` expire after 60 seconds | Send again |
+| Trace shows `runtime.start` failed with `No managed runtime credential could be resolved for provider ...` | No credential for the agent's provider, or the credential's agent list excludes this agent | Pipe the token into `ravi runtime providers claude configure --stdin --agents main --set-provider` (list every agent that uses it). See [Install Ravi](/start/install) |
+| `ravi agents show main` says `Provider: codex` and turns fail | `codex` is the built-in default and its CLI is not installed | `ravi agents set main provider claude`, or install and log in to Codex |
+
+<Warning>
+Do not use `ravi instances pending approve slack-main C0ABC123` for a Slack channel: it stores a broken pattern. Add the route with `group:C0ABC123` as shown above. To see which route wins for a chat, run `ravi routes explain <instance> <pattern>`.
+</Warning>
+
+## The agent answered but cannot use tools
+
+The agent always replies, but what it may do depends on who is talking. A sender that Ravi cannot link to a contact gets zero capabilities.
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Denial says `... without a resolved contact has 0 capabilities` | Sender has no contact, or the identity is linked to another instance | `ravi contacts add U0OWNER "Name" --channel slack --instance slack-main` (or the phone number on WhatsApp). Check with `ravi contacts info <contact>` |
+| `ravi agents show main` shows `Permissions: bootstrap` | The agent ceiling is the minimum | `ravi agents permissions main full-access --execute`. See [Make yourself the owner](/start/owner) |
+| An action that needs approval is refused with `No approval source available.` | The turn came from the terminal, which has no chat to ask in | Grant the capability on the agent, or ask from a chat |
+| A tool call returns `RAVI_SKILL_REQUIRED: ...` | First use of a command group delivers its skill | Normal: the agent reads it and retries |
+
+To see what is allowed and watch denials live:
+
+```bash
+ravi permissions materialize --subject-type agent --subject-id main --json
+ravi events stream --only audit
+```
+
+[Permissions](/guides/permissions) covers profiles, contact tags and governed chats.
+
+## Read the session trace
+
+The trace is stored in `~/.ravi/ravi.db` and records every step of a session, from the incoming message to delivery.
+
+```bash
+ravi sessions trace <name> --since 2h --explain
+ravi sessions trace <name> --message <source_message_id> --explain
+ravi sessions trace <name> --turn <turn_id> --explain
+ravi sessions trace <name> --only dispatch      # also: adapter, tools, delivery, turn
+ravi sessions trace <name> --since 30m --limit 40
+ravi sessions trace <name> --json --explain     # JSONL, for scripts
+```
+
+Read it top to bottom and find the last row that is there:
+
+| Last row | Where it broke |
+|---|---|
+| no `channel.message.received` | The message never reached Ravi, or you are looking at the wrong session or time window |
+| `channel.message.received`, no `route.resolved` | Routing or contact policy |
+| `route.resolved`, no `prompt.published` | Publishing to the session stream (NATS) |
+| `prompt.published`, no `adapter.request` | Waiting: delivery barrier, active task, debounce, concurrency limit or runtime startup |
+| `runtime.start` with status `failed` | The runtime could not start. Read the error: provider credential, provider CLI, model |
+| `adapter.request`, no `turn.complete` / `turn.failed` / `turn.interrupted` | The provider or runtime after the request was built |
+| `turn.failed` | Read the error recorded on the row |
+| `assistant.message`, no `response.emitted` | Silent reply, suppression or interruption |
+| `response.emitted`, no `delivery.*` | Gateway or outbound |
+| `delivery.failed` / `delivery.dropped` | Channel delivery. `dropped` with `missing_target` means the reply had nowhere to go |
+
+Slack messages enter the trace at `prompt.published`; Slack's routing decisions are in `ravi channels logs`.
+
+Common `--explain` findings:
+
+| Finding | Meaning |
+|---|---|
+| `prompt-without-adapter-request` | The prompt never reached the provider. Run with `--only dispatch` |
+| `adapter-request-without-terminal-turn` | The provider got the request and never finished |
+| `response-without-delivery` | A reply was produced but no delivery was recorded |
+| `delivery-failed`, `delivery-dropped` | Outbound failed or had no target |
+| `interruption-or-abort`, `timeout` | A turn was interrupted, aborted or timed out |
+| `resume-disabled-with-provider-session` | Context was not resumed; expected after a reset or a provider/model change |
+| `tool-start-without-end` | A tool started and never finished |
+
+`--show-system-prompt`, `--show-user-prompt` (with `--turn`) and `--raw` print full prompts and payloads. They can contain private content, so replace real ids, phone numbers and prompts with placeholders before sharing a trace.
+
+For a session that is running right now, `ravi sessions debug <name>` tails its live events for 60 seconds.
+
+## Pages and Bases
+
+```bash
+ravi whoami                 # are you logged in to the Console?
+ravi cloud scope show       # which org and project commands use
+ravi pages published --json # what is live on the project host
+```
+
+| What you see | Fix |
+|---|---|
+| `pages ship` fails with `Missing Console project ...` | Run `ravi login`, or pass `--project <slug>` |
+| `PAYLOAD_INVALID: Console request input was invalid.` | The real reason is hidden. Usually an org slug that starts with `workos-` (rename it in the Console), a reserved `ravi-` host, or a project without a default host |
+| `CONFLICT` when shipping again | Someone left an unread comment on that route. Delete it from the page's toolbar, or ship to another route |
+| A route shipped as `public` still asks for login | The host's default visibility is private. Run `ravi pages visibility <site-slug> public --execute` without `--route` |
+| A base change never reaches the agent | Check `ravi inbox status`, `ravi bases subscriptions <base>` and `ravi triggers show <id>`; force a cycle with `ravi inbox poll` |
+
+[Publish pages](/console/pages) and [Interactive pages with Bases](/console/bases) cover these flows in depth.
+
+## Inspect NATS and JetStream
+
+Ravi needs NATS with JetStream at `NATS_URL` (default `nats://127.0.0.1:4222`). These streams exist on a typical install:
+
+| Stream | Created by | Subjects | Ravi consumer |
+|---|---|---|---|
+| `SESSION_PROMPTS` | Ravi | `ravi.session.*.prompt` (in memory, 60 s) | `ravi-prompts` |
+| `RAVI_EVENTS` | Ravi | session responses, tools, delivery, audit and other `ravi.*` events (7 days) | none, used for replay |
+| `CHANNEL_OUTBOUND` | Ravi | `ravi.channel.outbound.*` (Slack replies) | `ravi-channel-outbound` |
+| `MESSAGE` | Omni | `message.>` | `ravi-messages` |
+| `INSTANCE` | Omni | `instance.>` | `ravi-instances` |
+| `REACTION` | Omni | `reaction.>` | `ravi-reactions` |
+
+Omni also creates `IDENTITY`, `MEDIA`, `ACCESS`, `SESSION`, `CUSTOM`, `SYSTEM` and `AGENT`. A `KV_ravi-leader` stream holds the leader lock that decides which daemon runs cron and heartbeat.
+
+Ravi's own commands cover most needs:
+
+```bash
+ravi events stream                         # live, all events
+ravi events stream -f "ravi.session.*"     # one topic pattern
+ravi events stream --only tool             # prompt, response, tool, claude, runtime, cli, audit
+ravi events replay --since 2h --session <name> --stream RAVI_EVENTS,MESSAGE,REACTION
+ravi events replay --stream MESSAGE --subject "message.received.>" --contains "invoice" --raw
+```
+
+`replay` reads stored messages (default: the last 15 minutes from every non-KV stream). Include `RAVI_EVENTS` to see tool activity, responses, delivery and aborts; `MESSAGE` alone only has traffic from Omni channels such as WhatsApp.
+
+With the [`nats` CLI](https://github.com/nats-io/natscli) you can look at the server directly:
+
+```bash
+nats --server nats://127.0.0.1:4222 stream ls
+nats --server nats://127.0.0.1:4222 consumer report MESSAGE     # ack floor and pending per consumer
+nats --server nats://127.0.0.1:4222 sub "ravi.session.*.response"
+```
+
+If a WhatsApp consumer is stuck, delete it and restart the daemon. Ravi recreates it starting from new messages, so anything still pending is skipped, not replayed:
+
+```bash
+nats --server nats://127.0.0.1:4222 consumer rm MESSAGE ravi-messages
+ravi daemon restart -m "recreate MESSAGE consumer"
+```
+
+WhatsApp history-sync messages (`ingestMode: "history-sync"`) are stored but never run a turn.
+
+## Restart cleanly
+
+```bash
+ravi daemon restart -m "why you are restarting"
+ravi channels restart
+```
+
+- `-m` is required: without it the restart fails with `Flag -m é obrigatória`. The message is passed to the main agent.
+- Restart the daemon after editing `~/.ravi/.env` or changing provider credentials.
+- Restart the channel runner after `ravi channels create` or `set`, after changing a Slack secret, and after a daemon restart if `ravi channels status` is not `ready`. Routes and instances reload on their own.
+- The runner must run the same Ravi version as the daemon. If `ravi channels start` refuses because of a bundle mismatch, run `ravi update` first.
+- Bring things up in order: NATS (Omni or your own `nats-server`), then the daemon, then the channel runner.
+
+<Warning>
+`omni stop` removes both `omni-api` and `omni-nats` from PM2, which takes Ravi's NATS down with it. To restart Omni's NATS alone, use `pm2 restart omni-nats`.
+</Warning>
