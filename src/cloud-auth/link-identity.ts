@@ -1,70 +1,111 @@
-import { getRuntimeContextFromEnv } from "../runtime/context-registry.js";
 import type { ContextRecord } from "../router/router-db.js";
 import { CloudAuthError } from "./errors.js";
-import { parsePlatformIdentity } from "./actor-bindings.js";
 import type { ActorPlatformIdentity } from "./types.js";
 
-export interface AmbientLocalIdentity {
-  contactId: string;
-  actorPrincipal: string;
-  platformIdentity: ActorPlatformIdentity | null;
-  context: ContextRecord;
+export type LinkRequesterFailureReason = "no_context" | "actor_not_human" | "missing_contact";
+
+/** Where the request was made: the chat, thread and message the confirmation answers. */
+export interface LinkOrigin {
+  channel: string;
+  accountId: string;
+  chatId: string;
+  threadId?: string;
+  sourceMessageId?: string;
 }
 
-export function resolveAmbientLocalIdentity(
-  env: NodeJS.ProcessEnv = process.env,
-  context = getRuntimeContextFromEnv(env),
-): AmbientLocalIdentity {
+/**
+ * The author of the current chat message, as the daemon resolved it for the
+ * turn. `ravi link` acts only for this person: there is no flag to name
+ * another contact, and the private message goes to this sender only.
+ */
+export interface LinkRequester {
+  contactId: string;
+  actorPrincipal: string;
+  /** Sender id on the chat platform (Slack user id, WhatsApp JID/phone). Null when the turn has none. */
+  platformUserId: string | null;
+  platformIdentityId: string | null;
+  displayName: string | null;
+  origin: LinkOrigin | null;
+  platformIdentity: ActorPlatformIdentity | null;
+}
+
+/**
+ * Resolve the person `ravi link` acts for from the runtime context of the
+ * turn. Only a resolved human contact qualifies; agents, automations and
+ * unknown senders fail with `CONTACT_REQUIRED` and a `details.reason`.
+ * There is no fallback to other metadata fields.
+ */
+export function resolveLinkRequester(context: ContextRecord | null | undefined): LinkRequester {
   if (!context) {
-    throw new CloudAuthError(
-      "CONTACT_REQUIRED",
-      "ravi link must run inside a turn or session with a resolved contact. Do not pass a contact flag.",
+    throw contactRequired(
+      "no_context",
+      "ravi link runs inside a chat turn and links the author of the current message.",
     );
   }
 
   const metadata = asRecord(context.metadata) ?? {};
-  const actor = asRecord(metadata.actor) ?? asRecord(metadata.actorMetadata) ?? {};
-  const actorPrincipal = firstString(metadata.actorPrincipal, actor.actorPrincipal);
-  const contactId = resolveContactId(actorPrincipal, metadata, actor);
+  const actor = asRecord(metadata.actor) ?? {};
+  const actorPrincipal = firstString(metadata.actorPrincipal);
 
-  if (!contactId) {
-    throw new CloudAuthError(
-      "CONTACT_REQUIRED",
-      "Current context has no resolved contact. Run this command from a turn or session with a contact; do not pass a contact flag.",
+  if (actorPrincipal && !actorPrincipal.startsWith("contact:") && actorPrincipal !== "unknown") {
+    throw contactRequired(
+      "actor_not_human",
+      "The current turn was not started by a person, so there is no one to link.",
     );
   }
 
-  const principal = actorPrincipal && actorPrincipal.startsWith("contact:") ? actorPrincipal : `contact:${contactId}`;
-  if (!principal.startsWith("contact:")) {
-    throw new CloudAuthError(
-      "CONTACT_REQUIRED",
-      `Current actor is ${principal}. ravi link requires actorPrincipal contact:<id>.`,
+  const contactId = actorPrincipal?.startsWith("contact:") ? actorPrincipal.slice("contact:".length).trim() : "";
+  const actorContactId = firstString(actor.contactId);
+  if (
+    !contactId ||
+    metadata.actorResolution !== "resolved" ||
+    (actor.actorType !== undefined && actor.actorType !== "contact") ||
+    (actorContactId !== null && actorContactId !== contactId)
+  ) {
+    throw contactRequired(
+      "missing_contact",
+      "The author of the current message is not a resolved contact, so Ravi cannot tell who to link.",
     );
   }
+
+  const source = context.source;
+  const channel = firstString(actor.channel, source?.channel);
+  const accountId = firstString(actor.accountId, source?.accountId);
+  const chatId = firstString(actor.chatId, source?.chatId);
+  const threadId = firstString(actor.threadId, source?.threadId);
+  const sourceMessageId = firstString(actor.sourceMessageId);
+  const platformUserId = firstString(actor.rawSenderId);
+  const platformIdentityId = firstString(actor.platformIdentityId);
+
+  const platformIdentity: ActorPlatformIdentity = {
+    ...(channel ? { channel } : {}),
+    ...(accountId ? { accountId } : {}),
+    ...(platformUserId ? { platformUserId } : {}),
+    ...(platformIdentityId ? { platformIdentityId } : {}),
+  };
 
   return {
     contactId,
-    actorPrincipal: principal,
-    platformIdentity: parsePlatformIdentity({
-      channel: firstString(actor.channel, metadata.channel, context.source?.channel),
-      accountId: firstString(actor.accountId, metadata.accountId, context.source?.accountId),
-      platformUserId: firstString(actor.platformUserId, actor.rawSenderId, metadata.rawSenderId),
-      platformIdentityId: firstString(actor.platformIdentityId, metadata.platformIdentityId),
-    }),
-    context,
+    actorPrincipal: `contact:${contactId}`,
+    platformUserId,
+    platformIdentityId,
+    displayName: firstString(actor.senderName, metadata.actorDisplayName),
+    origin:
+      channel && accountId && chatId
+        ? {
+            channel,
+            accountId,
+            chatId,
+            ...(threadId ? { threadId } : {}),
+            ...(sourceMessageId ? { sourceMessageId } : {}),
+          }
+        : null,
+    platformIdentity: Object.keys(platformIdentity).length > 0 ? platformIdentity : null,
   };
 }
 
-function resolveContactId(
-  actorPrincipal: string | null,
-  metadata: Record<string, unknown>,
-  actor: Record<string, unknown>,
-): string | null {
-  if (actorPrincipal?.startsWith("contact:")) {
-    const id = actorPrincipal.slice("contact:".length).trim();
-    if (id) return id;
-  }
-  return firstString(actor.contactId, metadata.contactId);
+function contactRequired(reason: LinkRequesterFailureReason, message: string): CloudAuthError {
+  return new CloudAuthError("CONTACT_REQUIRED", message, { details: { reason } });
 }
 
 function firstString(...values: unknown[]): string | null {

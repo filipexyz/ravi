@@ -9483,6 +9483,31 @@ export type HooksTestInput = {
 /** Return shape for `hooks.test`. */
 export type HooksTestReturn = Record<string, unknown>;
 
+/** Input shape for `identity.link`. */
+export type IdentityLinkInput = Record<string, never>;
+
+/** Return shape for `identity.link`. */
+export type IdentityLinkReturn = ({
+  linked: true;
+  status: "already_linked";
+  success: true;
+}) | ({
+  expiresAt: string;
+  linked: false;
+  status: "dm_sent";
+  success: true;
+});
+
+/** Input shape for `identity.unlink`. */
+export type IdentityUnlinkInput = Record<string, never>;
+
+/** Return shape for `identity.unlink`. */
+export type IdentityUnlinkReturn = {
+  linked: false;
+  status: "unlinked" | "not_linked";
+  success: true;
+};
+
 /** Input shape for `image.atlas.split`. */
 export type ImageAtlasSplitInput = {
   account?: string;

@@ -1,6 +1,6 @@
 ---
 id: cli/ravi-link
-title: "ravi link ambient identity binding"
+title: "ravi link: link the message author to their Console account"
 kind: capability
 domain: cli
 capability: ravi-link
@@ -9,12 +9,18 @@ normative: true
 owners:
   - ravi-dev
 applies_to:
-  - src/cli/commands/link.ts
+  - src/cli/commands/identity.ts
+  - src/cli/index.ts
   - src/cloud-auth/link-identity.ts
   - src/cloud-auth/actor-bindings.ts
-  - src/cloud-auth/connector-auth.ts
   - src/cloud-auth/client.ts
-  - src/runtime/runtime-request-context.ts
+  - src/cloud-auth/installation-key.ts
+  - src/cloud-auth/storage.ts
+  - src/identity-link/link-service.ts
+  - src/identity-link/link-dm.ts
+  - src/identity-link/link-watcher.ts
+  - src/identity-link/link-requests-db.ts
+  - src/cli/remote-gateway.ts
 tags:
   - cli
   - auth
@@ -26,152 +32,154 @@ tags:
 
 ## Intent
 
-`ravi link` binds the **current human contact** to the **current Console user**.
-`ravi unlink` removes that ambient binding. Both commands take **no identity
-flags**. Agents use `--json`.
+`ravi link` links the **author of the current chat message** to **their own**
+Ravi Console account. The person proves who they are by approving in the
+browser with their Console login; the daemon's `ravi login` session is only
+the transport. `ravi unlink` removes that person's link on this installation.
 
-This is not `ravi instances` (channel accounts) and not SSO via
-`RAVI_ADMIN_TOKEN`.
+The Console owns the contract (`.ravi/specs/console/ravi-link` in
+ravi-console). This side asks, delivers the private link, records where to
+confirm and caches ids. It does not decide who may link whom.
 
 ## Commands
 
 ```bash
-ravi link
-ravi unlink
-ravi link --json
-ravi unlink --json
+ravi link            # alias of ravi identity link
+ravi unlink          # alias of ravi identity unlink
+ravi identity link --json
+ravi identity unlink --json
 ```
 
-`--help` MUST expose `--json` and MUST NOT expose `--contact`, `--user`,
-`--org`, `--endpoint`, or any other identity-passing flag.
+- The only flag is `--json`. There MUST NOT be a flag that names a contact,
+  user, organization, installation or endpoint.
+- Both run in the daemon: the CLI forwards them over the gateway with the
+  turn's context key. Without a chat turn they fail `CONTACT_REQUIRED`.
+- Neither carries `--execute`: the effect needs the person's approval in the
+  browser (link) or only reduces access (unlink).
+- The `identity` command group is in the bootstrap baseline, so every agent can
+  run it for the person it is talking to.
 
-## Ambient resolution (no flags)
+## Who is linked
 
-**Console identity** comes from the current cloud-auth session (`ravi login`):
+The requester is resolved only from the turn's runtime context
+(`resolveLinkRequester`). It MUST fail closed with `CONTACT_REQUIRED` and
+`details.reason`:
 
-- `consoleUserId`
-- `orgId`
-- `installationId`
-
-**Local identity** comes from ambient `RAVI_CONTEXT_KEY` / turn-runtime (or
-cli-runtime derived from it):
-
-- `actorPrincipal` MUST be `contact:<id>` (a resolved human)
-- platform identity from turn metadata MUST be included when present
-  (`channel`, `accountId`, `platformIdentityId`, `platformUserId`)
-
-Hard errors:
-
-- No cloud session → `AUTH_REQUIRED`: run `ravi login` first
-- No resolved contact in context → `CONTACT_REQUIRED`: must run inside a
-  turn/session with a contact. Do **not** add flags to pass a contact.
-
-## Organization match
-
-If installation enrollment split exists, the cloud session org MUST match the
-installation's enrolled org.
-
-That split is **not ready**. This capability REQUIRES the cloud session org
-and documents the follow-up: match `installation.enrolledOrgId` when Console
-exposes it.
-
-## Console API contract
-
-The CLI calls the merged Console surface from ravi-console#18. Do not invent a
-parallel path such as `/api/cli/actor-bindings`.
-
-```
-POST   /api/cli/link
-GET    /api/cli/link?contactId=… or ?consoleUserId=…
-DELETE /api/cli/link
-POST   /api/cli/link/unlink
-```
-
-`POST /api/cli/link` body (camelCase; Console also accepts snake_case aliases).
-The schema is strict — do not send `actorPrincipal` or `orgId`:
-
-```ts
-{
-  contactId: string
-  installationId?: string
-  organizationId?: string
-  consoleUserId?: string   // v1 must equal the caller
-  platformIdentities?: {
-    channel?: string
-    accountId?: string
-    platformUserId?: string
-    platformIdentityId?: string
-  }
-}
-```
-
-Success:
-
-```ts
-{
-  version: 1
-  created: boolean
-  binding: {
-    id: string
-    contactId: string
-    consoleUserId: string
-    organizationId: string
-    installationId: string
-    platformIdentities?: object
-    status: "active" | "revoked"
-  }
-}
-```
-
-`created` is false when the active row already belongs to the same Console
-user (idempotent upsert). The CLI maps that to `idempotent: true`.
-
-Console error codes map to existing CLI codes:
-
-| Console | CLI |
+| reason | when |
 | --- | --- |
-| `CONTACT_REQUIRED` | `CONTACT_REQUIRED` |
-| `CONFLICT` | `ACTOR_BINDING_CONFLICT` |
-| `NOT_MEMBER` | `ORG_ACCESS_DENIED` |
-| `INSTALLATION_ORG_MISMATCH` | `ORG_ACCESS_DENIED` |
-| `AUTH_REQUIRED` / `AUTH_EXPIRED` | same |
-| `INSTALLATION_REVOKED` | `INSTALLATION_REVOKED` |
+| `no_context` | no runtime context (plain CLI, no turn) |
+| `actor_not_human` | `actorPrincipal` is an agent or automation |
+| `missing_contact` | `actorPrincipal` is not `contact:<id>`, `actorResolution` is not `resolved`, `actor.actorType` is not `contact`, or `actor.contactId` names another contact |
 
-If the existing binding is the same Console user, `ravi link` MUST succeed
-idempotently (`created: false`, or a same-user `CONFLICT` resolved locally).
+There is no fallback to other metadata fields, and `ravi link` never creates
+contacts. In a channel or thread it acts for the message author only, never
+for the channel.
 
-## Local cache
+## Flow
 
-After a successful link, the CLI MUST write a TTL'd local cache of **IDs
-only** so later ambient resolution can read the binding without another
-round trip. Console remains the source of truth.
+1. Resolve the requester and the private route (below). An unsupported
+   channel fails `LINK_DM_UNSUPPORTED` before any Console call.
+2. With the daemon's Console session (`AUTH_REQUIRED` without one), call
+   `POST /api/cli/link/requests` with `contactId`, `platformIdentities`,
+   `requester.displayName` and, when known, `expectedEmail`.
+3. `already_linked`: refresh the local cache, set `consoleUserId` /
+   `consoleOrgId` on the context, answer `already_linked`. No message, no new
+   state.
+4. `pending`: send the approval URL privately to the author. Record the
+   request locally (`cloud_link_requests`: ids, origin chat, private chat,
+   expiry; never the URL or token) and answer `dm_sent` with `expiresAt`.
+5. If the private message fails: cancel the Console request
+   (`DELETE /api/cli/link/requests/:id`), record nothing, fail
+   `LINK_DM_FAILED`.
+6. The daemon's `LinkRequestWatcher` polls pending requests
+   (`GET /api/cli/link/requests/:id`, every 3 s while any is pending, 15 s
+   otherwise):
+   - `approved`: cache the binding, then confirm in the private chat and in
+     the chat where the person asked (in the Slack thread, or under the
+     top-level message).
+   - `denied` / `expired`: tell the person privately.
+   - `cancelled`, or unknown to the Console: close locally without a message.
+   Each transition is a conditional update from `pending`, so a confirmation
+   goes out once even when several daemons share the database.
+7. Every 10 minutes the watcher re-resolves cached bindings of the active
+   installation (`GET /api/cli/link?contactId=`), drops revoked ones and
+   refreshes live ones, and prunes finished local requests after 7 days.
 
-Cache path: `~/.ravi/cloud-auth/bindings/<contactId>.json` mode `0600`.
+Repeating `ravi link` while a request is pending sends a fresh link; the
+Console cancels the previous one.
 
-On unlink, the cache entry MUST be deleted.
+## Private route
 
-## Turn-runtime
+Derived from the turn actor only:
 
-When a contact has a binding, turn-runtime MUST set `consoleUserId` and
-`consoleOrgId` on context metadata so later connector work can use that
-user's Console session.
+- **Slack** (native adapter): `chat.postMessage` to the author's user id
+  (`U…`/`W…`), which lands in the app DM, with `unfurl_links` and
+  `unfurl_media` off so no unfurler fetches the single-use URL. The link is
+  shown as a labelled markdown link.
+- **WhatsApp** (Omni): the same chat when the turn is already a direct chat,
+  otherwise the sender's own number. Never a group.
+- Anything else: `LINK_DM_UNSUPPORTED`.
 
-## Credentials boundary
+The URL goes straight from the daemon to the platform: never through
+`ravi.outbound.deliver`, NATS, logs, agent output, the transcript, stdout or
+JSON. On Slack the author's profile email (`users.info`, needs
+`users:read.email`) is sent as `expectedEmail` when available; the Console
+refuses an approver whose verified email does not match.
 
-- `ravi link` stores an **identity binding** via Console (IDs only).
-- It MUST NOT store Gmail/Slack/provider OAuth tokens locally.
-- Multi-user Console session JWTs live in `cli/cloud-auth` under
-  `users/<consoleUserId>/`.
-- User-scoped connector tools MUST NOT fall back to the operator JWT. Use
-  `resolveConnectorCloudCredentials({ requireBoundUser: true })`. The full
-  user-scoped Worker vault is a follow-up.
+## Output
+
+```ts
+{ success: true, status: "already_linked", linked: true }
+{ success: true, status: "dm_sent", linked: false, expiresAt: string }
+{ success: true, status: "unlinked" | "not_linked", linked: false }
+```
+
+Outputs and errors MUST NOT contain the approval URL, token, emails, Console
+user ids, installation ids or platform ids. Over the gateway, failures of
+`identity link` / `identity unlink` keep the local message and suggested
+action for known cloud codes instead of "Remote command failed.".
+
+## Installation identity
+
+- `ravi login` sends `installation.machineFingerprint` from a random 32-byte
+  key at `<stateDir>/cloud-auth/installation-key` (mode 0600, survives
+  logout), so a re-login reuses the same Console installation.
+- Exchange, refresh and `/api/cli/me` responses carry the Console's
+  `localInstallation.id`. The CLI stores it as `installationId` and repairs
+  credentials saved with a local random id on the next `/me`.
+- Link calls never send `installationId`; the Console pins them to the CLI
+  session's installation.
+
+## Errors
+
+| code | meaning |
+| --- | --- |
+| `CONTACT_REQUIRED` | the author is not a resolved person (see reasons) |
+| `LINK_DM_UNSUPPORTED` | no private route to the author on this channel |
+| `LINK_DM_FAILED` | the private message failed; the request was cancelled |
+| `LINK_REQUESTS_UNAVAILABLE` | the Console has no `/api/cli/link/requests` (too old) |
+| `LINK_APPROVAL_REQUIRED` | the Console refused the old direct link |
+| `LOCAL_INSTALLATION_MISSING` | the session has no Console installation; run `ravi login` again |
+| `INSTALLATION_MISMATCH` | a request named another installation |
+| `ACTOR_BINDING_CONFLICT` | the contact is linked to someone else (Console `CONFLICT`) |
+| `ORG_ACCESS_DENIED` | Console `NOT_MEMBER` / `INSTALLATION_ORG_MISMATCH` |
+| `AUTH_REQUIRED` | no `ravi login` on the daemon host |
+
+## Pages and the bridge
+
+`resolveCachedContactForConsoleUser({ consoleUserId, orgId, installationId })`
+maps a verified Console user (the `sub` of a Pages viewer assertion) to the
+contact linked on this installation, and returns null unless exactly one
+cached binding matches. Opening that person's session from a Pages assertion
+is later scope.
 
 ## Acceptance Criteria
 
-- Ambient success with login + contact context links and caches the binding.
-- Missing login → `AUTH_REQUIRED`.
-- Missing contact → `CONTACT_REQUIRED`.
-- Same-user re-link is idempotent.
-- Different-user conflict surfaces `ACTOR_BINDING_CONFLICT`.
-- `--json` redacts tokens.
-- No identity flags exist on `ravi link` / `ravi unlink`.
+- In a channel or thread, `ravi link` sends the private link to the author only.
+- After approval the binding is cached and both chats get a confirmation.
+- Repeating the command reports `already_linked` without new state.
+- Expired, denied or reused links and a different approver fail on the Console
+  with a safe reason; the person is told privately about expiry and denial.
+- A failed private message returns `LINK_DM_FAILED` without ids or tokens.
+- `ravi unlink` and the Console `/link` page revoke; the watcher drops revoked
+  bindings from the cache.

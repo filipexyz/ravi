@@ -26,8 +26,8 @@ function groupIds(caps: Cap[]): string[] {
 describe("runtimeBootstrapProvider — least-privilege default", () => {
   test("agente nasce com o baseline de operação (kit de skill + fabric self/doctor), SEM coringa", () => {
     const groups = groupIds(materialize("agent", "newbie")).sort();
-    // 4 grupos de skill (sessions/tasks/specs/skills) + fabric de operação (self/doctor).
-    expect(groups).toEqual(["doctor", "self", "sessions", "skills", "specs", "tasks"]);
+    // 4 grupos de skill (sessions/tasks/specs/skills) + fabric de operação (self/doctor/identity).
+    expect(groups).toEqual(["doctor", "identity", "self", "sessions", "skills", "specs", "tasks"]);
     // Regressão dura: o default nunca mais pode ser o coringa.
     expect(groups).not.toContain("*");
   });
@@ -73,6 +73,7 @@ describe("runtimeBootstrapProvider — chat-only ceiling", () => {
     dbCreateAgent({ id: "newborn", cwd: "/tmp/newborn" });
     expect(groupIds(materialize("agent", "newborn")).sort()).toEqual([
       "doctor",
+      "identity",
       "self",
       "sessions",
       "skills",

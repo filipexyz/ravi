@@ -3,6 +3,7 @@ import { hostname } from "node:os";
 import { setTimeout as sleep } from "node:timers/promises";
 import {
   ConsoleApiClient,
+  consoleInstallationId,
   getMeWithAutoRefresh,
   normalizeConsoleUrl,
   refreshCredentialsForStore,
@@ -13,6 +14,7 @@ import {
   isCloudAuthError,
   isRetryableCloudAuthError,
 } from "../../cloud-auth/errors.js";
+import { readOrCreateInstallationKey } from "../../cloud-auth/installation-key.js";
 import { redactCloudAuthPayload } from "../../cloud-auth/redaction.js";
 import {
   deleteCloudCredentials,
@@ -391,7 +393,7 @@ function mergeMeIntoSession(credentials: CloudCredentials, me: ConsoleMeResponse
     user: me.user ?? credentials.user ?? null,
     organization: me.organization ?? me.org ?? credentials.organization ?? null,
     installation: {
-      id: me.installation?.id ?? me.installation?.installationId ?? me.installationId ?? credentials.installationId,
+      id: consoleInstallationId(me) ?? credentials.installationId,
     },
     scopes: me.scopes ?? credentials.scopes,
     accessTokenExpiresAt: me.accessTokenExpiresAt ?? me.expiresAt ?? credentials.accessTokenExpiresAt,
@@ -500,6 +502,7 @@ function localInstallationMetadata(env: NodeJS.ProcessEnv) {
     hostname: hostname(),
     platform: `${process.platform}-${process.arch}`,
     raviVersion: env.RAVI_VERSION || env.npm_package_version,
+    machineFingerprint: readOrCreateInstallationKey(env),
   };
 }
 

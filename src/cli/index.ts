@@ -37,7 +37,6 @@ import { runSetup } from "./commands/setup.js";
 import { maybeRunManagedRuntimeRebindFromEnv } from "../managed-runtime-rebind.js";
 import { runUpdate, type RaviUpdateOptions } from "./commands/update.js";
 import { runCloudAuthRootCommand, runLogin, runLogout, runWhoami } from "./commands/cloud-auth.js";
-import { runLink, runUnlink } from "./commands/link.js";
 import { emitCliAuditEvent, runWithCliAudit, wasContractErrorAudited } from "./audit.js";
 import { configureCliLogging } from "./logging.js";
 import { spawnDirectTui } from "./tui-launcher.js";
@@ -99,6 +98,7 @@ const AGENT_CONTRACT_DOMAINS = [
   "gmail",
   "heartbeat",
   "hooks",
+  "identity",
   "image",
   "inbox",
   "insights",
@@ -271,39 +271,26 @@ program
     );
   });
 
-program
-  .command("link")
-  .description("Bind the current contact to the active Console user (ambient; no identity flags)")
-  .option("--json", "Print raw JSON result")
-  .action(async (options: { json?: boolean }) => {
-    await runWithCliAudit(
-      {
-        group: "_root",
-        name: "link",
-        tool: "root_link",
-        input: options,
-        closeLazyConnection: true,
-      },
-      () => runCloudAuthRootCommand(options.json, () => runLink(options)),
-    );
-  });
-
-program
-  .command("unlink")
-  .description("Remove the ambient contact↔Console user binding for the current turn")
-  .option("--json", "Print raw JSON result")
-  .action(async (options: { json?: boolean }) => {
-    await runWithCliAudit(
-      {
-        group: "_root",
-        name: "unlink",
-        tool: "root_unlink",
-        input: options,
-        closeLazyConnection: true,
-      },
-      () => runCloudAuthRootCommand(options.json, () => runUnlink(options)),
-    );
-  });
+// `ravi link` / `ravi unlink` are the short names of `ravi identity link|unlink`.
+// They run the decorated commands, so a turn's CLI forwards them to the daemon
+// gateway with its context like any other command.
+for (const name of ["link", "unlink"] as const) {
+  program
+    .command(name)
+    .description(
+      name === "link"
+        ? "Send the message author a private link to approve in the Console (alias of `ravi identity link`)"
+        : "Remove the message author's Console link (alias of `ravi identity unlink`)",
+    )
+    .option("--json", "Print raw JSON result")
+    .action(async (options: { json?: boolean }) => {
+      const leaf = program.commands
+        .find((command) => command.name() === "identity")
+        ?.commands.find((command) => command.name() === name);
+      if (!leaf) throw new Error(`ravi identity ${name} is not registered`);
+      await leaf.parseAsync(options.json ? ["--json"] : [], { from: "user" });
+    });
+}
 
 // TUI - full-screen terminal interface
 program

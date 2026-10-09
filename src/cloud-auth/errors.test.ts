@@ -109,8 +109,22 @@ describe("cloudErrorToContractError", () => {
     ["HOST_UNREACHABLE", "Console is unreachable from this provider sandbox. The host CLI can reach Console.", false],
     ["CREDENTIALS_INVALID", "Console credentials are invalid.", false],
     ["CLOUD_PUBLISH_NOT_IMPLEMENTED", "Console publishing is unavailable for this command.", false],
-    ["CONTACT_REQUIRED", "A resolved contact is required in the current turn or session.", false],
+    [
+      "CONTACT_REQUIRED",
+      "ravi link needs the current chat message to come from a known person (a resolved contact).",
+      false,
+    ],
     ["ACTOR_BINDING_CONFLICT", "This contact is already linked to a different Console user.", false],
+    ["LOCAL_INSTALLATION_MISSING", "Console does not know this local Ravi installation.", false],
+    ["INSTALLATION_MISMATCH", "The request named a different installation than the current Console session.", false],
+    [
+      "LINK_APPROVAL_REQUIRED",
+      "Linking requires the person's approval in the browser; the direct link call is closed.",
+      false,
+    ],
+    ["LINK_REQUESTS_UNAVAILABLE", "This Console does not support link approval requests yet.", false],
+    ["LINK_DM_UNSUPPORTED", "Ravi cannot send a private message to this person on this channel.", false],
+    ["LINK_DM_FAILED", "Ravi could not send the private message to the person who asked.", false],
   ] as const)("maps %s to a stable public message", (code, publicMessage, retryable) => {
     const source = new CloudAuthError(code, `PRIVATE_PROVIDER_BODY_8K2R:${code}`, { status: 429 });
     const contract = cloudErrorToContractError("cloud fixture fail", source);

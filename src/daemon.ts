@@ -48,6 +48,7 @@ import { startSessionFollowupRunner, stopSessionFollowupRunner } from "./session
 import { startTriggerRunner, stopTriggerRunner } from "./triggers/index.js";
 import { startEphemeralRunner, stopEphemeralRunner } from "./ephemeral/index.js";
 import { startInboxRunner, stopInboxRunner } from "./inbox/index.js";
+import { startLinkRequestWatcher, stopLinkRequestWatcher } from "./identity-link/link-watcher.js";
 import { startHookRunner, stopHookRunner } from "./hooks-runtime/index.js";
 import { startTaskCheckpointRunner, stopTaskCheckpointRunner } from "./tasks/index.js";
 import { startSyncRunner, stopSyncRunner } from "./sync/index.js";
@@ -250,6 +251,7 @@ async function shutdown(signal: string, exitCode = 0) {
 
     // Stop runners and release leadership so another daemon can take over
     await stopInboxRunner();
+    await stopLinkRequestWatcher();
     await stopSyncRunner();
     await stopEphemeralRunner();
     await stopHookRunner();
@@ -457,6 +459,9 @@ export async function startDaemon() {
 
   await startInboxRunner();
   log.info("Inbox runner started");
+
+  await startLinkRequestWatcher();
+  log.info("Link request watcher started");
 
   await startSyncRunner();
   log.info("Sync runner started");

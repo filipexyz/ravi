@@ -48219,6 +48219,108 @@ class RaviSchemas {
 }
 ''';
 
+  static const identityLinkInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+}
+''';
+
+  static const identityLinkReturnSchema = r'''
+{
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "linked": {
+          "const": true,
+          "type": "boolean"
+        },
+        "status": {
+          "const": "already_linked",
+          "type": "string"
+        },
+        "success": {
+          "const": true,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "success",
+        "status",
+        "linked"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "expiresAt": {
+          "type": "string"
+        },
+        "linked": {
+          "const": false,
+          "type": "boolean"
+        },
+        "status": {
+          "const": "dm_sent",
+          "type": "string"
+        },
+        "success": {
+          "const": true,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "success",
+        "status",
+        "linked",
+        "expiresAt"
+      ],
+      "type": "object"
+    }
+  ]
+}
+''';
+
+  static const identityUnlinkInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+}
+''';
+
+  static const identityUnlinkReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "linked": {
+      "const": false,
+      "type": "boolean"
+    },
+    "status": {
+      "enum": [
+        "unlinked",
+        "not_linked"
+      ],
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "status",
+    "linked"
+  ],
+  "type": "object"
+}
+''';
+
   static const imageAtlasSplitInputSchema = r'''
 {
   "additionalProperties": false,

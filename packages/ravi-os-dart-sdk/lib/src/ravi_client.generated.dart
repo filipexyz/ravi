@@ -38,6 +38,7 @@ class RaviClient {
   GmailNamespace get gmail => GmailNamespace(_transport);
   HeartbeatNamespace get heartbeat => HeartbeatNamespace(_transport);
   HooksNamespace get hooks => HooksNamespace(_transport);
+  IdentityNamespace get identity => IdentityNamespace(_transport);
   ImageNamespace get image => ImageNamespace(_transport);
   InboxNamespace get inbox => InboxNamespace(_transport);
   InsightsNamespace get insights => InsightsNamespace(_transport);
@@ -3828,6 +3829,32 @@ class HooksNamespace {
       command: "test",
       body: requestBody,
       decode: hooksTestReturnFromJson,
+    );
+  }
+}
+
+class IdentityNamespace {
+  const IdentityNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<IdentityLinkReturn> link() async {
+    final requestBody = <String, RaviJson>{};
+    return _transport.callJson(
+      groupSegments: const ["identity"],
+      command: "link",
+      body: requestBody,
+      decode: identityLinkReturnFromJson,
+    );
+  }
+
+  Future<IdentityUnlinkReturn> unlink() async {
+    final requestBody = <String, RaviJson>{};
+    return _transport.callJson(
+      groupSegments: const ["identity"],
+      command: "unlink",
+      body: requestBody,
+      decode: identityUnlinkReturnFromJson,
     );
   }
 }

@@ -2459,6 +2459,34 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_console_inbox_poll_locks_expiry
       ON console_inbox_poll_locks(expires_at);
 
+    -- ravi link: Console link requests this install is waiting on, with where
+    -- to confirm. IDs and chat coordinates only; the approval token is never stored.
+    CREATE TABLE IF NOT EXISTS cloud_link_requests (
+      id                TEXT PRIMARY KEY,
+      console_url       TEXT NOT NULL,
+      installation_id   TEXT NOT NULL,
+      contact_id        TEXT NOT NULL,
+      display_name      TEXT,
+      origin_channel    TEXT,
+      origin_account_id TEXT,
+      origin_chat_id    TEXT,
+      origin_thread_id  TEXT,
+      origin_message_id TEXT,
+      dm_channel        TEXT NOT NULL,
+      dm_account_id     TEXT NOT NULL,
+      dm_chat_id        TEXT NOT NULL,
+      status            TEXT NOT NULL DEFAULT 'pending'
+                        CHECK(status IN ('pending','approved','denied','expired','cancelled','failed')),
+      expires_at        INTEGER NOT NULL,
+      created_at        INTEGER NOT NULL,
+      updated_at        INTEGER NOT NULL,
+      completed_at      INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_cloud_link_requests_status
+      ON cloud_link_requests(status, expires_at);
+    CREATE INDEX IF NOT EXISTS idx_cloud_link_requests_contact
+      ON cloud_link_requests(contact_id, status);
+
     -- Local-first sync: optional, best-effort replication ledger.
     -- SQLite remains the local source of truth; these tables are durable queues
     -- for remote bridge delivery and cursor-based remote intake.

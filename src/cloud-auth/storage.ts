@@ -153,16 +153,24 @@ export function toSafeCloudAuthSession(credentials: CloudCredentials): SafeCloud
   };
 }
 
+/**
+ * Merge `/api/cli/me` into stored credentials. The Console's
+ * `localInstallation.id` replaces a locally generated installation id, so
+ * calls pinned to the CLI session's installation name the one Console knows.
+ */
 export function persistMeIntoCredentials(
   credentials: CloudCredentials,
   me: {
     user?: CloudCredentials["user"];
     organization?: CloudCredentials["organization"];
     org?: CloudCredentials["organization"];
+    localInstallation?: { id?: string | null } | null;
   },
 ): CloudCredentials {
+  const installationId = me.localInstallation?.id?.trim();
   return {
     ...credentials,
+    ...(installationId ? { installationId } : {}),
     user: me.user ?? credentials.user ?? null,
     organization: me.organization ?? me.org ?? credentials.organization ?? null,
     updatedAt: new Date().toISOString(),
@@ -174,7 +182,10 @@ export function shouldPersistHydratedIdentity(previous: CloudCredentials, next: 
   const nextUserId = next.user?.id?.trim() || "";
   const previousOrgId = previous.organization?.id?.trim() || "";
   const nextOrgId = next.organization?.id?.trim() || "";
-  return Boolean((nextUserId && nextUserId !== previousUserId) || (nextOrgId && nextOrgId !== previousOrgId));
+  const installationChanged = Boolean(next.installationId && next.installationId !== previous.installationId);
+  return Boolean(
+    (nextUserId && nextUserId !== previousUserId) || (nextOrgId && nextOrgId !== previousOrgId) || installationChanged,
+  );
 }
 
 export function migrateLegacyCloudAuthStore(env: NodeJS.ProcessEnv = process.env): void {

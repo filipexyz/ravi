@@ -12,6 +12,8 @@ export interface SlackTextSendInput {
   readonly text: string;
   readonly threadId?: string;
   readonly blocks?: readonly SlackBlockKitBlock[];
+  /** Set false so Slack does not fetch links in the message (for single-use URLs). */
+  readonly unfurlLinks?: boolean;
 }
 
 export interface SlackTextUpdateInput {
@@ -60,6 +62,7 @@ export async function sendSlackText(
     text,
     ...(input.threadId ? { threadTs: input.threadId } : {}),
     ...(input.blocks ? { blocks: input.blocks } : {}),
+    ...(input.unfurlLinks === false ? { unfurlLinks: false, unfurlMedia: false } : {}),
   });
 
   return {
@@ -103,9 +106,29 @@ export async function updateSlackText(
   };
 }
 
+/**
+ * Email on the Slack profile of `userId`, or null when the app cannot read it
+ * (no `users:read.email` scope, a bot, or a hidden email).
+ */
+export async function lookupSlackUserEmail(
+  input: { readonly accountId: string; readonly userId: string },
+  dependencies: SlackTextSendDependencies = {},
+): Promise<string | null> {
+  const client = await createSlackTextClient(input.accountId, "users.info", dependencies);
+  const response = await client.usersInfo(input.userId);
+  const user = asRecord(response.user);
+  if (!user || user.is_bot === true || user.deleted === true) return null;
+  const email = asRecord(user.profile)?.email;
+  return typeof email === "string" && email.includes("@") ? email.trim() : null;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
 async function createSlackTextClient(
   accountId: string,
-  action: "chat.postMessage" | "chat.update",
+  action: "chat.postMessage" | "chat.update" | "users.info",
   dependencies: SlackTextSendDependencies,
 ): Promise<SlackWebApiClient> {
   const channels = dependencies.channels ?? configStore.getConfig().channels ?? {};

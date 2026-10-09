@@ -1,7 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import { userInfo } from "node:os";
 import { join } from "node:path";
+import { CloudAuthError } from "../cloud-auth/errors.js";
+import { contractErrorResponse } from "../sdk/gateway/errors.js";
 import { renderContractError } from "./agent-contract.js";
+import { cloudErrorToContractError } from "./cloud-error-contract.js";
 import {
   FILE_NOT_FOUND_CODE,
   FILE_NOT_FOUND_MESSAGE,
@@ -777,6 +780,32 @@ describe("remote gateway exit taxonomy", () => {
     expect(error?.message).not.toBe(FILE_NOT_FOUND_MESSAGE);
     expect(JSON.stringify(error?.envelope())).not.toContain("PRIVATE_MESSAGE_8K2R");
   });
+});
+
+describe("ravi link failures over the gateway", () => {
+  it.each(["CONTACT_REQUIRED", "LINK_DM_UNSUPPORTED", "LINK_DM_FAILED", "AUTH_REQUIRED"] as const)(
+    "keeps the local message and next step for %s",
+    async (code) => {
+      const local = cloudErrorToContractError("identity link", new CloudAuthError(code, "PRIVATE_MESSAGE_8K2R U0LUIS"));
+      const response = contractErrorResponse(local);
+
+      const error = remoteGatewayErrorToContractError(
+        "identity link",
+        result({ status: response.status, body: await response.text() }),
+      );
+
+      expect(error).toMatchObject({
+        op: "identity link",
+        code,
+        message: local.message,
+        details: { suggestedAction: local.details.suggestedAction },
+      });
+      expect(error?.message).not.toBe("Remote command failed.");
+      const serialized = JSON.stringify(error?.envelope());
+      expect(serialized).not.toContain("PRIVATE_MESSAGE_8K2R");
+      expect(serialized).not.toContain("U0LUIS");
+    },
+  );
 });
 
 describe("gateway requirement for runtime context keys", () => {

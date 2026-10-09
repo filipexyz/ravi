@@ -35,6 +35,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/runner-liveness.test.ts",
     // `sessions attach` seeds a routed Slack channel's chat before its first message.
     "src/channels/slack/route-seeded-chat.test.ts",
+    // Direct Slack sends: `ravi link` private links go out unfurl-free; author email lookup.
+    "src/channels/slack/text-send.test.ts",
   ],
   "src/omni/": [
     "src/omni/consumer-context.test.ts",
@@ -58,6 +60,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/router/router-db.announce-compaction.test.ts",
     // Daemon restart ledger records resume vs notice, only for published events.
     "src/router/router-db.daemon-restart.test.ts",
+    // `ravi link` pending requests: each terminal transition is claimed once across daemons.
+    "src/router/router-db.link-requests.test.ts",
     // Trigger session migration: drops the legacy main|isolated CHECK, keeps rows and indexes.
     "src/router/router-db.trigger-session-check.test.ts",
     // Crash-recovery storage covers both the router schema and its typed runtime DAO.
