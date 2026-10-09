@@ -8,7 +8,7 @@ Ravi runs AI agents on your own machine. Each agent keeps persistent sessions, a
 
 Ravi also connects to the Ravi Console. After `ravi login`, your agents can publish pages on `ravi.page` and build interactive pages backed by Bases, the typed tables of a Console project.
 
-Everything the CLI does is open to your own code too. The daemon serves every public command over HTTP, and typed SDKs for TypeScript, Dart and Swift are generated from the CLI itself, so they never drift from it. You can build any frontend for your Ravi: a dashboard, a mobile app, a browser extension or an internal tool.
+What the CLI does is open to your own code too. Turn on the daemon's HTTP gateway and it serves the CLI's public commands over HTTP. Typed SDKs for TypeScript, Dart and Swift are generated from the CLI itself and checked against it on every push, so their source never drifts from it. You can build any frontend for your Ravi: a dashboard, a mobile app, a browser extension or an internal tool.
 
 ## How the pieces fit
 
@@ -54,7 +54,7 @@ Follow these pages in order. Connect one channel (Slack is the recommended one) 
 ## Build on Ravi
 
 <Card title="SDKs and HTTP gateway" icon="code" href="/guides/sdk">
-  Call any Ravi command from TypeScript, Dart or Swift, stream sessions and events, and build your own frontend. The SDKs are generated from the CLI, so they match it command for command.
+  Call Ravi commands from TypeScript, Dart or Swift, stream sessions and events, and build your own frontend. The SDKs are generated from the CLI, and a check on every push keeps their source in step with it.
 </Card>
 
 ## Where to go next

@@ -16,14 +16,17 @@ At the end of this page you will have the gateway running on the daemon host, a 
 
 ## Generated from the CLI, with no drift
 
-The CLI, the HTTP gateway, the three SDKs and the OpenAPI spec come from one source: the command registry, built from the decorated command classes in `src/cli/commands/`.
+The CLI, the gateway's command routes, the commands in the three SDKs and the OpenAPI spec come from one source: the command registry, built from the decorated command classes in `src/cli/commands/`. The six SSE streams are the exception: they come from the gateway's stream table, are generated into the three SDKs and checked with them, and are not in the OpenAPI spec.
 
-- **The gateway** builds its routes from the registry when the daemon starts, so every command in the build the daemon runs is reachable over HTTP with the same name, arguments, options, return shape, permission check and dry-run. Only a short list of CLI-only commands stays off it, long-running or terminal-bound ones such as `ravi channels logs` and `ravi sandbox run`.
-- **The SDKs and the OpenAPI spec** are generated code, kept in the repository next to the CLI. The pre-push hook and every CI run compare them with a fresh generation from the registry and fail on any difference (`ravi sdk client check`, `sdk dart check`, `sdk swift check`, `sdk openapi check`). A command cannot change without its SDK methods, types and schemas changing with it.
-- **Return types** come from the return schema each command declares, so the SDKs know what a call returns, not just what it takes.
+- **The gateway** builds its routes from the registry when the daemon starts, so every command in the build the daemon runs is reachable over HTTP with the same name, arguments, options, return shape and dry-run, and goes through the same permission check. The exceptions:
+  - About 35 CLI-only commands have no route. Some are long-running or terminal-bound, such as `ravi channels logs` and `ravi sandbox run`; others are kept off HTTP on purpose, such as `ravi gmail send`, `ravi credentials broker exec` and `ravi pages password set`. `GET /api/v1/_meta/registry` lists every command the daemon serves.
+  - Superadmin-scoped commands (`ravi metrics rollup`, `show` and `dates`) have routes, but the gateway refuses them with 403 unless the daemon runs with `RAVI_SDK_GATEWAY_ALLOW_SUPERADMIN=1`.
+  - When an option has the same name as a positional argument, only the argument can be set over HTTP. On the `ravi slack` commands that take a `<channel>` argument, the `--channel` option (which Ravi Slack config to use) never arrives, so over HTTP they find the Slack config only when the host has a single one enabled.
+- **The SDKs and the OpenAPI spec** are generated code, kept in the repository next to the CLI. The pre-push hook and every CI run compare them with a fresh generation from the registry and fail on any difference (`ravi sdk client check`, `sdk dart check`, `sdk swift check`, `sdk openapi check`). A command's arguments, options or declared return schema cannot change without its SDK methods, types and schemas changing with it.
+- **Return types** come from the return schema each command declares. Many commands still declare only a loose object, so the SDKs type their result as an untyped map (`Record<string, unknown>` in TypeScript, `Map<String, RaviJson>` in Dart, `[String: RaviJSON]` in Swift), and changes to its fields are not caught. List commands often type the page but not the items, and Dart and Swift turn union returns into raw JSON. `ravi sdk returns status` counts the commands whose return schema is still weak.
 
 <Note>
-The npm and pub.dev packages are released separately from the CLI, so a published SDK can be older than the `ravi.bot@next` you run: commands added after its release are not in it yet. The packages under `packages/` in the repository always match the CLI of the same commit.
+The npm package is released by hand and the pub.dev package has not been republished since 0.1.0, so both can be older than the `ravi.bot@next` you run and miss commands and options added since. The sources under `packages/` always match the CLI of the same commit: to get every command your daemon serves, build the SDK from them (the Dart section shows a git dependency).
 </Note>
 
 ## Turn on the gateway
@@ -113,7 +116,6 @@ const ravi = new RaviClient(
   createHttpTransport({
     baseUrl: "http://127.0.0.1:7777",
     contextKey: process.env.RAVI_CONTEXT_KEY!,
-    timeoutMs: 10_000,
   }),
 );
 
@@ -122,6 +124,8 @@ const reply = await ravi.sessions.send("main", "Summarize the current work.", { 
 const history = await ravi.sessions.read("main", { count: "10" });
 const contacts = await ravi.contacts.list({ status: "allowed", limit: "50" });
 ```
+
+With `wait: true`, `sessions.send` returns the agent's reply, as `ravi sessions send -w` does. If you set the transport's `timeoutMs`, make it longer than the turns you wait for. Without `wait`, the call returns once the prompt is queued, and the reply arrives on the session stream as a `ravi.session.main.response` event (see [Streams](#streams)).
 
 Method names follow the CLI. Groups become nested objects and kebab-case becomes camelCase: `ravi instances routes add` is `ravi.instances.routes.add(...)`, `ravi daemon init-admin-key` is `ravi.daemon.initAdminKey()`. Positional arguments come first, then one options object. Contact statuses are `allowed`, `pending`, `blocked` and `discovered`.
 
@@ -206,8 +210,14 @@ const { client } = await createInheritedClient();
 
 ```yaml
 dependencies:
-  ravi_sdk: ^0.1.0
+  ravi_sdk:
+    git:
+      url: https://github.com/filipexyz/ravi.git
+      path: packages/ravi-os-dart-sdk
+      ref: dev
 ```
+
+The `dev` branch matches `ravi.bot@next`. `ravi_sdk: ^0.1.0` from pub.dev also works, but that release is older and lacks newer commands such as `pages.ship` and `bases.*`.
 
 ```dart
 import 'package:ravi_sdk/ravi_sdk.dart';
