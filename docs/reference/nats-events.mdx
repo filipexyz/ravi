@@ -90,7 +90,7 @@ Ravi creates these JetStream streams:
 
 Omni owns three streams that the daemon reads with durable consumers. Each consumer starts at new messages, so the daemon does not replay history when it first connects.
 
-| Omni stream | Subjects | Ravi consumer |
+| Omni stream | Subjects Ravi reads | Ravi consumer |
 |---|---|---|
 | `MESSAGE` | `message.received.>` | `ravi-messages` |
 | `REACTION` | `reaction.received.>` | `ravi-reactions` |

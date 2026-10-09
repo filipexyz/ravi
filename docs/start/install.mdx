@@ -16,7 +16,9 @@ You need a macOS or Linux machine with:
 - **PostgreSQL for Omni.** Ravi needs a NATS server with JetStream, and `ravi setup` gets one by installing Omni, which also bridges WhatsApp. Omni keeps its data in PostgreSQL. By default `omni install` uses an embedded server (`pgserve`, installed by autopg); when that is not on your `PATH`, it falls back to `postgresql://postgres:postgres@localhost:5432/omni`. Either install autopg with the command Omni suggests, or have PostgreSQL reachable at that URL:
 
   ```bash
-  curl -fsSL https://raw.githubusercontent.com/automagik-dev/autopg/main/install.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/automagik-dev/autopg/main/install.sh -o autopg-install.sh
+  less autopg-install.sh    # read it before you run it
+  bash autopg-install.sh && rm autopg-install.sh
   ```
 
 - **Free ports** 4222 (NATS) and 8882 (Omni API).

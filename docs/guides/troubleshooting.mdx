@@ -167,9 +167,9 @@ Ravi needs NATS with JetStream at `NATS_URL` (default `nats://127.0.0.1:4222`). 
 | `SESSION_PROMPTS` | Ravi | `ravi.session.*.prompt` (in memory, 60 s) | `ravi-prompts` |
 | `RAVI_EVENTS` | Ravi | session responses, tools, delivery, audit and other `ravi.*` events (7 days) | none, used for replay |
 | `CHANNEL_OUTBOUND` | Ravi | `ravi.channel.outbound.*` (Slack replies) | `ravi-channel-outbound` |
-| `MESSAGE` | Omni | `message.>` | `ravi-messages` |
+| `MESSAGE` | Omni | `message.>` (Ravi reads `message.received.>`) | `ravi-messages` |
 | `INSTANCE` | Omni | `instance.>` | `ravi-instances` |
-| `REACTION` | Omni | `reaction.>` | `ravi-reactions` |
+| `REACTION` | Omni | `reaction.>` (Ravi reads `reaction.received.>`) | `ravi-reactions` |
 
 Omni also creates `IDENTITY`, `MEDIA`, `ACCESS`, `SESSION`, `CUSTOM`, `SYSTEM` and `AGENT`. A `KV_ravi-leader` stream holds the leader lock that decides which daemon runs cron and heartbeat.
 
