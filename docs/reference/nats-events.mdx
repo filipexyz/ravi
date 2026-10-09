@@ -1,170 +1,190 @@
 ---
-title: NATS Event Bus
-description: Complete reference for all NATS topics, payloads, and event flow in Ravi.
+title: Events
+description: The NATS topics Ravi publishes and consumes, how to discover them live, and the payloads you will use most in triggers.
+icon: radio
 ---
 
-NATS is Ravi's central pub/sub backbone. All messages, prompts, tool calls, and responses flow through it as events on hierarchical topics.
+Ravi's processes talk over NATS JetStream, and almost everything that happens is published as an event. By the end of this page you will know how to see the topics on your own install, which topic families exist, which streams keep them, and the shape of the events you are most likely to put in a trigger.
 
-## Concepts
+## Discover topics on your install
 
-- **Topic/Subject** — Hierarchical namespace separated by `.` (e.g., `ravi.session.main.prompt`)
-- **Event** — JSON payload published to a subject
-- **Wildcards** — `*` matches one level, `>` matches multiple levels
-- **Connection** — Direct TCP to `nats://127.0.0.1:4222` (no HTTP/WebSocket intermediary)
+The topic list changes between releases, so ask the CLI instead of trusting a copy:
 
-## Session Events
-
-Events scoped to a session name (e.g., `agent-main-abc123`).
-
-| Topic | Payload |
-|-------|---------|
-| `ravi.session.{name}.prompt` | `{ prompt, source?, context?, _agentId? }` |
-| `ravi.session.{name}.response` | `{ response, target?, _emitId, _instanceId, _pid, _v: 2 }` |
-| `ravi.session.{name}.claude` | Raw Claude SDK event: `{ type: "system"/"assistant"/"result"/"silent"/... }` |
-| `ravi.session.{name}.tool` | Start: `{ event: "start", toolId, toolName, safety, input, timestamp, sessionName, agentId }` |
-| `ravi.session.{name}.tool` | End: `{ event: "end", toolId, toolName, output, isError, durationMs, timestamp, sessionName, agentId }` |
-| `ravi.session.{name}.stream` | `{ chunk }` — text delta streaming for TUI |
-| `ravi.session.abort` | `{ sessionKey?, sessionName? }` — abort ephemeral session |
-
-The prompt topic goes via JetStream WorkQueue stream (`SESSION_PROMPTS`). All others are plain NATS pub/sub.
-
-## Inbound Events (Channels to Bot)
-
-| Topic | Payload |
-|-------|---------|
-| `ravi.inbound.reaction` | `{ targetMessageId, emoji, senderId }` |
-| `ravi.inbound.reply` | `{ targetMessageId, text, senderId }` |
-| `ravi.inbound.pollVote` | `{ pollMessageId, votes: [{ name, voters[] }] }` |
-
-Inbound channel messages arrive through Omni JetStream subjects such as `message.received.{channelType}.{instanceId}` and are routed into sessions by `OmniConsumer`, not published as Ravi pub/sub aliases like `whatsapp.*.inbound`. Emoji reactions are normalized to the canonical trigger subject `ravi.inbound.reaction`; `whatsapp.*.reaction` is not published.
-
-Reaction events are correlation signals. Use `targetMessageId` to look up routine-owned state; do not assume the event includes the original chat, caption, media metadata, or domain object.
-
-## Delivery Events (Bot to Gateway)
-
-| Topic | Payload |
-|-------|---------|
-| `ravi.outbound.deliver` | `{ channel, accountId, to, text?, poll?, typingDelayMs?, pauseMs?, replyTopic? }` |
-| `ravi.outbound.reaction` | `{ channel, accountId, chatId, messageId, emoji }` |
-| `ravi.outbound.receipt` | `{ channel, accountId, chatId, senderId, messageIds[] }` |
-
-## Media Events
-
-| Topic | Payload |
-|-------|---------|
-| `ravi.media.send` | `{ channel, accountId, chatId, filePath, mimetype, type, filename, caption?, voiceNote? }` |
-
-Type values: `image`, `video`, `audio`, `document`.
-
-## Contact and Approval Events
-
-| Topic | Payload |
-|-------|---------|
-| `ravi.contacts.pending` | `{ type: "account", channel, accountId, senderId, chatId, isGroup }` |
-| `ravi.approval.request` | `{ type: "plan"/"spec"/"question", sessionName, agentId, delegated, channel, chatId, timestamp }` |
-| `ravi.approval.response` | `{ type: "plan"/"spec"/"question", sessionName, agentId, approved, reason?, answers? }` |
-
-## Instance Events
-
-| Topic | Payload |
-|-------|---------|
-| `ravi.instances.unregistered` | `{ instanceId, channelType, subject, from, chatId, isGroup, contentType, timestamp }` |
-| `ravi.whatsapp.qr.{instanceId}` | `{ type: "qr", instanceId, qr, channelType }` |
-| `ravi.whatsapp.connected.{instanceId}` | `{ type: "connected", instanceId, channelType, profileName, ownerIdentifier }` |
-| `ravi.whatsapp.group.{op}` | `{ accountId, replyTopic, ... }` — ops: list, info, create, leave, add, remove, join |
-
-## Audit Events
-
-| Topic | Payload |
-|-------|---------|
-| `ravi.audit.denied` | `{ type: "env_spoofing"/"executable"/"session_scope"/"tool"/"group", agentId, denied, reason, detail? }` |
-
-## System and Config Events
-
-| Topic | Payload |
-|-------|---------|
-| `ravi.config.changed` | `{}` — config changed via CLI |
-| `ravi.triggers.refresh` | `{}` — trigger subscription refresh |
-| `ravi.triggers.test` | `{ triggerId }` — manual trigger test |
-| `ravi.cron.refresh` | `{}` — cron timer refresh |
-| `ravi.cron.trigger` | `{ jobId }` — manual cron trigger |
-| `ravi.heartbeat.refresh` | `{}` — heartbeat timer refresh |
-| `ravi.copilot.watch` | `{ team, agentId }` — copilot inbox watcher |
-
-## CLI Tool Events
-
-When agents execute CLI tools, events are emitted:
-
-```
-ravi.{sessionKey}.cli.{group}.{command}
+```bash
+ravi triggers topics            # topics ready for triggers, with payload and examples
+ravi triggers topics --json     # the same, machine-readable: id, category, pattern, payload, schema, examples, filters, notes
 ```
 
-Example: `ravi.agent:main:main.cli.contacts.add`
+Watch events as they happen, or read back what was stored:
 
-Standalone CLI commands that are not tied to a session use `_cli` as the session token:
+```bash
+ravi events                                     # live stream (same as ravi events stream)
+ravi events stream --only cli                   # prompt, response, tool, claude, runtime, cli or audit
+ravi events stream -f 'ravi.inbound.*' --json   # glob filter, JSONL output
+ravi events replay --since 1h --subject 'ravi.audit.>'
+ravi events replay --session <nameOrKey> --type <type> -n 20 --json
+```
+
+`ravi events replay` reads the persisted streams. It defaults to the last 15 minutes and 100 events; `--where 'path=value'` and `--contains <text>` narrow it further.
+
+To act on an event, create a trigger. The topic is a NATS pattern (`*` is one token, `>` is the rest), and `--filter` tests the event data:
+
+```bash
+ravi triggers add "Reaction from Ana" \
+  --topic "ravi.inbound.reaction" \
+  --filter 'data.senderId == "5511999999999"' \
+  --message "Ana reacted to a message. Check what she approved." \
+  --agent main --cooldown 30s
+```
+
+See [Triggers](/guides/triggers).
+
+<Note>
+The catalog is a set of templates, not a whitelist: a trigger can listen on any subject. Three rules prevent loops. Triggers never subscribe to `ravi.session.*`. Events whose topic contains `:trigger:` (published from a trigger's own session) are skipped. Events whose data carries `_trigger: true` are skipped.
+</Note>
+
+## Topic families
+
+"Trigger" means the family is meant for triggers. "Replay" means it is kept in the `RAVI_EVENTS` stream for `ravi events replay`.
+
+| Family | Trigger | Replay | What it carries |
+|---|---|---|---|
+| `ravi.inbound.>` | yes | yes | Normalized channel interactions: `reaction`, `reply`, `pollVote`, `thread.created`, `interaction` (buttons and other components). |
+| `ravi.<sessionKey>.cli.<group>.<command>` | yes | no | A CLI command run from an agent session. |
+| `ravi._cli.cli.<group>.<command>` | yes | yes | A CLI command run outside an agent session. |
+| `ravi.audit.>` | yes | yes | Audit events, mainly `ravi.audit.denied`. |
+| `ravi.approval.>` | yes | yes | `ravi.approval.request` and `ravi.approval.response`. |
+| `ravi.contacts.>` | yes | yes | Contact changes and `ravi.contacts.pending`. |
+| `ravi.chats.>` | yes | yes | Chat changes, `ravi.chats.pending` and chat tags. |
+| `ravi.instances.>` | yes | yes | Channel instance changes and `ravi.instances.unregistered`. |
+| `ravi.console.>` | yes | yes | Console deliveries, mainly `ravi.console.inbox.item`. |
+| `ravi.watch.>` | yes | yes | Normalized watch events, `ravi.watch.<connector>.<eventType>`. |
+| `ravi.inbox.>` | yes | yes | Local inbox events, such as `ravi.inbox.mail.received`. |
+| `ravi.task.>` | yes | yes | Task lifecycle, `ravi.task.<taskId>.event`. |
+| `ravi.sessions.followup.>` | yes | yes | Session follow-up lifecycle. |
+| `ravi.tags.>` | yes | yes | Tag rule applications. |
+| `ravi.tts`, `ravi.tts.*` | yes | yes | Text-to-speech requests and lifecycle. |
+| `ravi.artifacts.>` | yes | yes | Artifact lifecycle. |
+| `ravi.meetings.>` | yes | yes | Meeting lifecycle and artifacts. |
+| `ravi.session.<name>.prompt` | no | no | Prompts waiting for a session (the `SESSION_PROMPTS` work queue). |
+| `ravi.session.<name>.response`, `.tool`, `.runtime`, `.stream`, `.delivery`, `.claude`, `.adapter.>` | no | yes | What a session does during a turn. Watch it with `ravi events stream`. |
+| `ravi.session.abort`, `.reset.*`, `.delete.*`, `.prune.*`, `.model.changed`, `.runtime.control` | no | yes | Internal session control. |
+| `ravi.outbound.>` | no | yes | Delivery requests: `deliver`, `reaction`, `message.edit`, `message.delete`, `receipt`. |
+| `ravi.presence.>` | no | yes | Typing and other presence. |
+| `ravi.media.send`, `ravi.stickers.send` | no | yes | Media and sticker send requests. |
+| `ravi.whatsapp.>` | no | yes | `ravi.whatsapp.qr.<instanceId>` and `ravi.whatsapp.connected.<instanceId>` during pairing. |
+| `ravi.runtime.>`, `ravi.rtk.>`, `ravi.work_objects.>` | no | yes | Runtime telemetry, hook rewrites and Work Object requests. |
+| `ravi.config.changed`, `ravi.triggers.>`, `ravi.cron.>`, `ravi.heartbeat.>`, `ravi.hooks.>` | no | yes | Internal refresh signals between the CLI and the daemon. |
+
+The `ravi.session.*` and internal families are for observing and debugging. Do not build triggers on them.
+
+## Streams
+
+Ravi creates these JetStream streams:
+
+| Stream | Subjects | Retention |
+|---|---|---|
+| `SESSION_PROMPTS` | `ravi.session.*.prompt` | Work queue, consumer `ravi-prompts`. Prompts older than 60 seconds are dropped. |
+| `RAVI_EVENTS` | Every family marked "Replay" above | 7 days or 512 MB. |
+| `CHANNEL_OUTBOUND` | `ravi.channel.outbound.*` | Outbound jobs for Slack, consumer `ravi-channel-outbound`. 7 days or 256 MB. |
+
+Omni owns three streams that the daemon reads with durable consumers. Each consumer starts at new messages, so the daemon does not replay history when it first connects.
+
+| Omni stream | Subjects Ravi reads | Ravi consumer |
+|---|---|---|
+| `MESSAGE` | `message.received.>` | `ravi-messages` |
+| `REACTION` | `reaction.received.>` | `ravi-reactions` |
+| `INSTANCE` | `instance.>` | `ravi-instances` |
+
+## Omni subjects
+
+Omni publishes `<eventType>.<channelType>.<instanceId>`, for example:
 
 ```
-ravi._cli.cli.{group}.{command}
+message.received.whatsapp-baileys.<instance-uuid>
+reaction.received.whatsapp-baileys.<instance-uuid>
+instance.connected.whatsapp-baileys.<instance-uuid>
+instance.qr_code.whatsapp-baileys.<instance-uuid>
 ```
 
-## Copilot Events (Claude Code Bridge)
+A message's `metadata.ingestMode` is `realtime` or `history-sync`. History-sync messages are recorded in Ravi's chat history but never start a turn. Omni reactions are republished as `ravi.inbound.reaction`, and pairing events as `ravi.whatsapp.qr.<instanceId>` and `ravi.whatsapp.connected.<instanceId>`, so you can trigger on the Ravi topics instead of Omni's.
 
-Events from Claude Code sessions, published by the hook script:
+Native Slack does not go through Omni subjects. Its reactions and interactions arrive on the same `ravi.inbound.*` topics.
 
-| Topic | CC Event | Description |
-|-------|----------|-------------|
-| `ravi.copilot.session.start` | SessionStart | CC session opened |
-| `ravi.copilot.session.end` | SessionEnd | CC session closed |
-| `ravi.copilot.prompt` | UserPromptSubmit | User sent prompt |
-| `ravi.copilot.tool.pre` | PreToolUse | Tool about to execute |
-| `ravi.copilot.tool.post` | PostToolUse | Tool executed |
-| `ravi.copilot.tool.fail` | PostToolUseFailure | Tool failed |
-| `ravi.copilot.stop` | Stop | Claude finished generating |
-| `ravi.copilot.subagent.start` | SubagentStart | Subagent created |
-| `ravi.copilot.subagent.stop` | SubagentStop | Subagent finished |
-| `ravi.copilot.notification` | Notification | CC notification |
-| `ravi.copilot.teammate.idle` | TeammateIdle | Teammate went idle |
-| `ravi.copilot.config.change` | ConfigChange | CC config changed |
-| `ravi.copilot.compact.pre` | PreCompact | Context compaction |
-| `ravi.copilot.task.completed` | TaskCompleted | Delegated task completed |
+## Payloads you will use
 
-### Copilot Payload Envelope
+Trigger filters and message templates address the payload as `data.<path>`.
+
+### `ravi.inbound.reaction`
 
 ```json
-{
-  "session_id": "abc-123",
-  "session_type": "main",
-  "cwd": "/path/to/project",
-  "event": "PostToolUse",
-  "timestamp": "2026-02-25T17:30:00Z",
-  "data": { }
-}
+{ "targetMessageId": "ABC123XYZ", "emoji": "<emoji>", "senderId": "5511999999999" }
 ```
 
-## JetStream Streams
+Published for WhatsApp reactions (through Omni) and Slack `reaction_added`. `targetMessageId` is the id of the message that got the reaction; keep your own mapping from message id to business state if a routine needs it.
 
-| Stream | Consumer | Filter | Source |
-|--------|----------|--------|--------|
-| `MESSAGE` | `ravi-messages` | `message.received.>` | omni (channel inbound) |
-| `INSTANCE` | `ravi-instances` | `instance.>` | omni (connection events) |
-| `REACTION` | `ravi-reactions` | `reaction.received.>` | omni (emoji reactions) |
-| `SESSION_PROMPTS` | `ravi-prompts` | `ravi.session.*.prompt` | ravi (internal routing) |
+### `ravi.audit.denied`
 
-## Programmatic API
-
-```typescript
-import { nats } from "./nats.js";
-
-// Publish event
-await nats.emit("ravi.session.main.prompt", { prompt: "oi" });
-
-// Subscribe (wildcards)
-for await (const event of nats.subscribe("ravi.session.*.prompt")) {
-  console.log(event.topic, event.data);
-}
-
-// Multiple topics
-for await (const event of nats.subscribe("ravi.session.*.response", "ravi.session.*.tool")) {
-  console.log(event.topic, event.data);
-}
 ```
+{ type, agentId, denied, reason, dedupeKey, timestamp,
+  command?, detail?, blockType?, missingPrincipals?, missingPrincipalDetails?,
+  recommendedGrantSubjects?, denialId?, context? }
+```
+
+Published whenever a permission or policy check refuses an agent. `missingPrincipals` and `recommendedGrantSubjects` name who lacks the permission and who to grant it to if the denial was wrong. See [Permissions](/guides/permissions).
+
+### CLI command audit
+
+When an agent session runs a command, Ravi publishes `ravi.<sessionKey>.cli.<group>.<command>`, for example `ravi.agent:main:main.cli.contacts.add`. Commands run outside a session publish `ravi._cli.cli.<group>.<command>`.
+
+```
+{ tool, input, isError, outcome, exitCode?, errorCode?, durationMs?, timestamp, sessionKey, ... }
+```
+
+`tool` is `<group>_<command>` (for example `contacts_add`). `outcome` is `succeeded`, `blocked`, `usage_error`, `denied` or `failed`. Inputs, and the output of session commands, are sanitized and truncated before they are published.
+
+```bash
+ravi triggers add "Contact added" --topic "ravi.*.cli.contacts.*" \
+  --filter 'data.tool == "contacts_add"' --message "A contact was added. Update the CRM." --agent main
+```
+
+### `ravi.console.inbox.item`
+
+When you are logged in to the Console, the daemon polls the agent inbox every 15 seconds and publishes each item here:
+
+```
+{ version, eventId, sequence, dedupeKey, eventType, category, severity, sensitivity,
+  title, summary, organization: { id }, project: { id }, source, actor: { type, id },
+  target, payload, links, delivery: { ... }, occurredAt, createdAt }
+```
+
+Watch items are also published as `ravi.watch.<connector>.<eventType>`, for example `ravi.watch.console.bug.status` for a bug report you follow.
+
+**Bases row events** have `category: "bases"`. Turn them on per base with `ravi bases subscribe <base>`.
+
+| Field | Value |
+|---|---|
+| `eventType` | `bases.row.created`, `bases.row.updated`, `bases.row.archived`, `bases.row.restored`, or `bases.rows.bulk_changed` (more than 50 rows in one request). |
+| `payload` | `{ baseId, baseSlug, projectId, rowId, version, schemaVersion, changedPropertyCount, surface }`. `surface` is `console`, `cli`, `page` or `system`. Bulk events have no `rowId`. |
+| `payload.row` | Added locally for `bases.row.*`: `{ rowId, version, values, archivedAt }`, the row as read at delivery (no body). |
+| `payload.rowEnrichment` | `{ "status": "ok" }`, or `{ "status": "failed", "code": ... }` when the row could not be read. Then there is no `payload.row`. |
+| `actor.type` | `user` for a person in the Console or on a page, `cli` for any CLI or agent of this install. |
+| `dedupeKey` | `bases:row:<rowId>:v<version>:<verb>:<installation>`. |
+
+```bash
+ravi triggers add "New ticket" --topic "ravi.console.inbox.item" \
+  --filter 'data.category == "bases" && data.payload.baseSlug == "tickets" && data.actor.type == "user"' \
+  --message "A ticket changed. Process the queue view." --agent main --cooldown 5s
+```
+
+<Tip>
+If the agent writes to the same base that wakes it, filter on `data.actor.type == "user"`. Its own writes arrive as `cli` and would otherwise trigger it again.
+</Tip>
+
+See [Bases](/console/bases) for queues, per-row sessions and cooldown behaviour.
+
+## Related
+
+- [Triggers](/guides/triggers): create, test and tune triggers.
+- [Architecture](/architecture): which process publishes what.
+- [Troubleshooting](/guides/troubleshooting): tracing a message that got no answer.

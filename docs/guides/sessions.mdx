@@ -1,420 +1,198 @@
 ---
 title: Sessions
-description: Manage agent sessions, ephemeral TTLs, cross-session messaging, and multi-agent coordination.
+description: How Ravi turns each conversation into a session, and how to find, message, steer, reset and tune one.
+icon: messages-square
 ---
 
-## Overview
+By the end of this page you will know which session a chat lands in, how to talk to any session from your terminal, how to control when a message reaches a busy agent, and how to reset a session or change its model.
 
-A session is a persistent conversation between an agent and a user (or system). Each session has a unique key, an associated agent, and optional channel routing for message delivery. Sessions store conversation history, token counts, model overrides, and metadata.
+## What a session is
 
-Sessions are the communication boundary, not the unit of tracked work. Use `ravi tasks` when the work needs an owner, progress, and a terminal state. Use `ravi eval` when you need reproducible measurement or regression checks.
+A session is one ongoing conversation of one agent. It holds the conversation history, the provider's own session (so the next turn resumes with context), the place where replies go, and any per-session overrides such as model or effort.
 
-## Session Types
+Sessions are how Ravi communicates. They are not a task tracker: when work needs an owner, progress and a done/failed state, use `ravi tasks`.
 
-### Permanent Sessions
+## Keys and names
 
-The default type. Permanent sessions persist indefinitely until explicitly reset or deleted.
+Every session has two identifiers:
 
-### Ephemeral Sessions
+- A **key**, built from the route that created it. It encodes the agent, channel, instance and peer.
+- A **name**, short and unique, which you type in commands. Names are single tokens with no spaces, dots, `*` or `>`, because they appear in NATS subjects.
 
-Sessions with a time-to-live (TTL). When the TTL expires, the session is automatically deleted. Ten minutes before expiration, the agent receives a system notification with CLI commands to extend, keep, or delete the session.
+Every `ravi sessions` command accepts either one. `ravi sessions list` shows both.
 
-The ephemeral lifecycle:
+| Conversation | Key | Name |
+|---|---|---|
+| DM, default scope (`per-peer`) | `agent:main:dm:<peer>` | WhatsApp: `main-dm-<last 6 digits>` |
+| DM with agent scope `main` | `agent:main:main` | `main` |
+| WhatsApp group | `agent:main:whatsapp:wa-main:group:<group-id>` | `main-group-<last 8 digits>`; the group subject, slugified, when created with `ravi whatsapp group create --agent` |
+| Slack channel | `agent:main:slack:slack-main:group:<C...>` | derived by Ravi |
+| Slack thread | `agent:main:slack:slack-main:group:<C...>:thread:<ts>` | derived by Ravi |
+| Cron job with `--isolated` | `agent:main:cron:<job-id>` | `main-cron-<job-name>` |
+| Trigger with `--session <name>` | `agent:main:trigger:<trigger-id>:key:<hash>` | the name you gave |
+| Created with `ravi sessions send <name> -a main` | `<name>` | `<name>` |
 
-1. A session is made ephemeral with `set-ttl`
-2. The countdown starts from the current time
-3. At T-10 minutes, the agent receives a `[System] Inform:` warning
-4. The agent can `extend` (add more time), `keep` (make permanent), or `delete`
-5. If no action is taken, the session is automatically deleted by the runner
+The `<peer>` in a DM key is the phone number on WhatsApp and the Slack member ID (`U...`) on Slack. Groups, channels and threads always get their own session, whatever the DM scope.
 
-## Session Keys
+DM scope decides how DMs are grouped:
 
-Every session is identified by a hierarchical key that encodes the agent, channel, scope, and peer.
+| Scope | Key | Effect |
+|---|---|---|
+| `main` | `agent:main:main` | Every DM shares one session |
+| `per-peer` (default) | `agent:main:dm:<peer>` | One session per person |
+| `per-channel-peer` | `agent:main:whatsapp:dm:<peer>` | One per person per channel |
+| `per-account-channel-peer` | `agent:main:whatsapp:wa-main:dm:<peer>` | One per person per instance |
 
-### Key Format
+Set it per agent with `ravi agents set main dmScope main`, or per route (see [Instances and routing](/guides/routing)). Changing the scope only affects chats that have no session yet. A chat that already talked stays attached to its old session; to move it, detach it with `ravi sessions detach <old-session> --chat <chat-id>` and its next message goes to the session the new scope computes.
 
-```
-agent:{agentId}:{scope}
-```
-
-The scope portion varies based on the DM scope setting:
-
-| DM Scope | Key Format | Example |
-|----------|------------|---------|
-| `main` | `agent:X:main` | `agent:main:main` |
-| `per-peer` | `agent:X:dm:{phone}` | `agent:main:dm:5511999999999` |
-| `per-channel-peer` | `agent:X:{channel}:dm:{phone}` | `agent:main:whatsapp:dm:5511999999999` |
-| `per-account-channel-peer` | `agent:X:{channel}:{account}:dm:{phone}` | `agent:main:whatsapp:vendas:dm:5511999999999` |
-
-### Group and Thread Keys
-
-Groups and threads are always fully isolated regardless of DM scope:
-
-```
-agent:main:whatsapp:vendas:group:120363123456@g.us
-agent:main:slack:channel:C123:thread:1234567890
-```
-
-### Special Session Keys
-
-Certain features create their own isolated sessions:
-
-| Feature | Key Format | Example |
-|---------|------------|---------|
-| Cron jobs | `agent:{agentId}:cron:{jobId}` | `agent:main:cron:abc123` |
-| Event triggers | `agent:{agentId}:trigger:{triggerId}` | `agent:main:trigger:a1b2c3d4` |
-
-## Listing Sessions
+## Find and read a session
 
 ```bash
-# List all sessions
-ravi sessions list
-
-# Filter by agent
-ravi sessions list --agent main
-
-# Show only ephemeral sessions
-ravi sessions list --ephemeral
+ravi sessions list                     # all sessions you can see
+ravi sessions list --agent main --json
+ravi sessions info <name>              # agent, key, overrides, routing, tokens
+ravi sessions read <name> -n 50        # last 50 user/assistant messages
+ravi sessions recap <name>             # short computed recap (identity, goal, recent tail)
 ```
 
-The list shows session name, agent, token usage, last activity, type (permanent/ephemeral), expiration date, and display name.
+`read` returns the stored message log without tool calls. That log survives resets and provider changes.
 
-## Session Details
+## Talk to a session from the terminal
 
 ```bash
-ravi sessions info <name>
+ravi sessions send main "hi, what can you do?" -a main -w
 ```
 
-Shows the full session record: key, display name, agent, model override, thinking level, SDK session ID, token breakdown (input/output/total/context), channel routing, ephemeral status, queue configuration, compaction count, and timestamps.
+- `-a main` creates the session with agent `main` if no session has that name or key. Without `-a`, a missing session fails with `Session not found: main. Use -a <agent> to create it.`
+- `-w` waits for this turn's reply and prints it. Without `-w`, `send` returns as soon as the prompt is published.
+- `-i` opens an interactive loop. Inside it, `/reset`, `/info` and `/exit` work.
 
-## Reading History
+When you run `send` from your shell, the agent receives your text as is. If the session came from a chat, the reply is also posted in that chat. A session created from the terminal has no chat: read its replies with `-w` or `ravi sessions read`.
+
+`send` prompts a session. It does not post your literal text into a chat. To make the agent say something in a channel, ask it to.
+
+## Messages between sessions
+
+Agents use the same commands to coordinate with each other. Each one wraps the text so the receiving agent knows what kind of message it is.
+
+| Command | What the target agent receives | Default barrier |
+|---|---|---|
+| `ravi sessions send <s> "..."` | From a shell: the text as is. From inside a session: `[System] Inform: [from: <caller-key>] ...` (`--raw` turns the wrapper off) | p2 |
+| `ravi sessions inform <s> "..."` | `[System] Inform: ...`. Context; the agent may stay silent | p2 |
+| `ravi sessions execute <s> "..."` | `[System] Execute: ...`. A job to carry out | p3 |
+| `ravi sessions ask <s> "..." [sender]` | `[System] Ask: [from: <caller-key>, sender: <sender>] ...`, plus instructions to reply with `ravi sessions answer` | p2 |
+| `ravi sessions answer <s> "..." [sender]` | `[System] Answer: [from: <caller-key>, sender: <sender>] ...` | p2 |
+
+The ask/answer flow: session A asks B; B answers right away if it knows, otherwise it asks in its own chat and relays every related reply back to A with `ravi sessions answer`.
+
+All five accept `--channel` and `--to`, used together, to deliver the agent's reply to another chat. What you pass is still a prompt for the agent, not text posted as is.
+
+## Delivery barriers
+
+A barrier decides when a message reaches an agent that is in the middle of a turn.
+
+| Barrier | Flag | Behaviour |
+|---|---|---|
+| p0, immediate | `--barrier p0` or `--immediate` | Interrupts a text reply, or a tool marked safe, as soon as possible |
+| p1, after tool | `--barrier p1` or `--steer` | Waits for the running tool to finish, then steers the turn. Default for chat messages |
+| p2, after response | `--barrier p2` or `--barrier followup` | Waits for the current turn to end |
+| p3, after task | `--barrier p3` | Waits until the session has no active task |
+
+On WhatsApp, a chat message that starts with `urgent`, `urgente` or `p0:` is delivered as p0.
+
+## Chat prefixes: `>>` and `!!`
+
+In Slack and WhatsApp you can start a message with a prefix to change how it is delivered:
+
+- `>>your text` waits for the current turn to end (p2) instead of steering it.
+- `!!your text` is saved to the conversation without running a turn. The agent sees it together with the next message that does run a turn.
+
+The prefix must be the first non-space text in the message, so a mention before it (`@Ravi >>...`) turns it off. `>>>` (a Slack quote) and `!!!` are not prefixes. A prefix with nothing after it is sent literally, and editing a message does not reapply a prefix.
+
+<Note>
+The `>>` and `!!` prefixes ship in `ravi.bot@next` and are not in `@latest`.
+</Note>
+
+## Reset and delete
+
+Reset and delete are dry-run by default: without `--execute` they print the plan and exit with code 3.
 
 ```bash
-# Read last 20 messages (default)
-ravi sessions read <name>
-
-# Read last 50 messages
-ravi sessions read <name> -n 50
+ravi sessions reset main            # shows what would happen (exit 3)
+ravi sessions reset main --execute
 ```
 
-Returns normalized message history (user and assistant messages only, no tool calls). Messages are read from the SDK transcript JSONL file. Silent responses (`@@SILENT@@`) are excluded.
-
-## Session Recap
-
-A recap is a bounded, computed projection of one session. Another agent can call it to learn what happened without dumping the transcript or reading agent-scoped `MEMORY.md`.
-
-```bash
-# Compact human recap
-ravi sessions recap <name>
-
-# Structured payload for another agent
-ravi sessions recap <name> --json
-
-# Bound the recent user/assistant tail (default: 8, max: 40)
-ravi sessions recap <name> -n 12 --json
-```
-
-v0 is computed on read from the session row, `session_goals` if present, and the same recent history used by `sessions read`. Empty `summary` / `pinned` / `decisions` fields mean those sources do not exist yet — the command does not invent narrative. Persist-on-compact and session search are out of this slice.
-
-Authorization matches `sessions read` (`access session:<id>`). A chat attach is not permission to recap.
-
-## Inspecting Session Trace
-
-Use `sessions trace` when you need to understand what happened in a real session
-end to end. Unlike `sessions read`, trace includes channel ingress, routing,
-dispatch decisions, runtime startup, adapter requests, tool activity, assistant
-messages, response emission, delivery observations, and terminal turn state.
-
-SQLite is the canonical source for this inspection path. NATS and daemon logs
-can help with live or process-level debugging, but they are not required to
-reconstruct the persisted session trace.
-
-```bash
-# Read the last two hours and explain common incident patterns
-ravi sessions trace <name> --since 2h --explain
-
-# Narrow to one provider turn
-ravi sessions trace <name> --turn <turn_id> --explain
-
-# Follow a source channel message
-ravi sessions trace <name> --message <source_message_id> --explain
-
-# Inspect a request/correlation id inside payloads
-ravi sessions trace <name> --correlation <correlation_id> --raw --explain
-```
-
-Useful filters:
-
-```bash
-ravi sessions trace <name> --only adapter
-ravi sessions trace <name> --only tools
-ravi sessions trace <name> --only delivery
-ravi sessions trace <name> --only dispatch
-ravi sessions trace <name> --only turn
-ravi sessions trace <name> --since 30m --limit 40
-ravi sessions trace <name> --json
-```
-
-Payload flags are explicit because prompts and request payloads can contain
-sensitive operational context:
-
-```bash
-ravi sessions trace <name> --show-system-prompt
-ravi sessions trace <name> --turn <turn_id> --show-user-prompt
-ravi sessions trace <name> --turn <turn_id> --raw
-```
-
-`--show-system-prompt` resolves the latest system prompt for the session; it
-does not require a visible `turn` row in the selected trace window. User prompt
-and raw request payloads remain turn/request-scoped.
-
-When reading a trace, first check whether the sequence reached
-`adapter.request`. If it did, Ravi built the final provider request. If it did
-not, look earlier in `channel`, `routing`, `prompt`, `dispatch`, and
-`runtime.start` rows.
-
-Common incident cues from `--explain`:
-
-| Finding | What it usually means |
-| --- | --- |
-| `prompt-without-adapter-request` | Prompt did not reach provider handoff; inspect queue, debounce, task barrier, or runtime startup. |
-| `adapter-request-without-terminal-turn` | Provider request was built, but no terminal turn state was recorded. |
-| `response-without-delivery` | Ravi emitted a response, but the gateway did not record final delivery. |
-| `delivery-failed` / `delivery-dropped` | Outbound channel delivery failed or was intentionally dropped, often because of target/routing. |
-| `interruption-or-abort` | A turn was interrupted or an abort was requested. Read `abortReason` and nearby `dispatch.*` rows. |
-| `runtime-stalled` | Active runtime turn stopped receiving provider events and was recovered as a failed turn without resetting session history. |
-| `timeout` | Runtime idle timeout or turn timeout was observed. |
-| `resume-disabled-with-provider-session` | Resume was disabled even though a provider session id existed; inspect reset, delete, fork, provider switch, or model/runtime changes. |
-| `tool-start-without-end` | Tool began but no completion event was recorded. |
-| `system-prompt-changed` | More than one system prompt hash appeared in the trace window. |
-
-SDE incident golden path for "the agent saw my message but did not reply":
-
-```bash
-ravi sessions trace <name> --since 2h --explain
-ravi sessions trace <name> --message <source_message_id> --explain
-ravi sessions trace <name> --turn <turn_id> --explain
-```
-
-Classify the gap by the last reliable row:
-
-| Last reliable row | Likely boundary |
-| --- | --- |
-| no `channel.message.received` | inbound did not reach Ravi or the window/session is wrong |
-| `channel.message.received` without `route.resolved` | routing or contact resolution |
-| `route.resolved` without `prompt.published` | session stream publish |
-| `prompt.published` without `adapter.request` | dispatch, task barrier, debounce, concurrency, or runtime startup |
-| `adapter.request` without terminal turn | provider/runtime after handoff |
-| `session.stalled` | silent runtime turn recovered as failed; inspect preceding tool/runtime rows |
-| `assistant.message` without `response.emitted` | silent/no-response behavior, suppression, or interruption |
-| `response.emitted` without `delivery.*` | gateway or outbound observation |
-| `delivery.failed` / `delivery.dropped` | final channel delivery |
-
-For abort or context-loss reports, check `session.abort`, `session.timeout`,
-`turn.interrupted`, `provider_session_id_before`, `provider_session_id_after`,
-and the system prompt hash. `resume=false` with an existing provider session id
-is suspicious unless a reset, delete, fork, provider/model change, or runtime
-capability explains it.
-
-Safe examples should use placeholders such as `<name>`, `<turn_id>`, and
-`<source_message_id>`. Do not paste real phone numbers, group ids, customer
-prompts, context keys, tokens, or provider session ids into docs or shared
-incident notes.
-
-## Managing Sessions
-
-### Rename
-
-```bash
-ravi sessions rename <name> "Customer Support Chat"
-```
-
-Sets the display name shown in listings.
-
-### Model Override
-
-```bash
-# Set model for a specific session
-ravi sessions set-model <name> opus
-
-# Clear override (use agent default)
-ravi sessions set-model <name> clear
-```
-
-Takes effect on the next session start (after reset or daemon restart).
-
-### Reasoning Effort
-
-```bash
-# Set reasoning effort for a specific session
-ravi sessions set-effort <name> ultra
-
-# Options: none, minimal, low, medium, high, xhigh, max, ultra, clear
-ravi sessions set-effort <name> clear
-```
-
-Effort is independent from `thinking`. It takes effect on the next turn; an active runtime is restarted when the effective effort changes. Runtime precedence is task/dispatch/profile override, then session effort override, then agent effort default, then the runtime default `xhigh`.
-
-### Thinking Level
-
-```bash
-# Set thinking level
-ravi sessions set-thinking <name> verbose
-
-# Options: off, normal, verbose, clear
-ravi sessions set-thinking <name> clear
-```
-
-Also takes effect on the next session start.
-
-### Reset
-
-```bash
-ravi sessions reset <name> --execute
-```
-
-Clears the conversation history but preserves the session configuration (name, routing, model, etc.). The next message starts a fresh conversation. The active SDK subprocess is aborted first.
-
-### Delete
+Reset stops a running turn and drops the provider conversation, the last-used provider and the token counters. The next message starts with a fresh context. The name, routing, attached chats and overrides stay, and so does the message log that `read` shows.
 
 ```bash
 ravi sessions delete <name> --execute
 ```
 
-Permanently removes the session. The SDK subprocess is aborted, then the session record is deleted from the database.
+Delete stops the session and removes it. The next message from that chat creates a new session.
 
-## Ephemeral Sessions
-
-### Make a Session Ephemeral
+To clean up in bulk, preview first:
 
 ```bash
-# Set a 5-hour TTL
-ravi sessions set-ttl <name> 5h
+ravi sessions prune --inactive-for 2d            # dry-run list
+ravi sessions prune --inactive-for 2d --execute
 ```
 
-Supported duration formats: `30m`, `5h`, `1d`.
+For a session that should expire on its own, `ravi sessions set-ttl <name> 5h` makes it ephemeral. Ten minutes before it expires, the agent gets a notice; `ravi sessions extend <name> [duration]` adds time (5h by default) and `ravi sessions keep <name>` makes it permanent again.
 
-### Extend
+## Model, provider and effort per session
+
+Overrides on a session win over the agent's settings, which win over global defaults (`ravi settings set runtime.defaultProvider claude`, `runtime.defaultModel`, `runtime.defaultEffort`).
 
 ```bash
-# Extend by default 5 hours
-ravi sessions extend <name>
-
-# Extend by a specific duration
-ravi sessions extend <name> 2h
+ravi sessions set-model <name> opus          # or: clear
+ravi sessions set-provider <name> claude     # codex, claude, pi, grok, or clear
+ravi sessions set-effort <name> high         # none|minimal|low|medium|high|xhigh|max|ultra, or clear
+ravi sessions set-thinking <name> verbose    # off|normal|verbose, or clear
 ```
 
-The extension is added on top of the current expiration time (or the current time, whichever is later).
+- `set-model` saves the override and notifies the running daemon. An active session switches without a restart when the provider supports it.
+- `set-provider` applies on the next turn. If the session's provider conversation belongs to another provider, it is cleared.
+- `set-effort` applies on the next turn and restarts an active runtime when the effort changes. With nothing set anywhere, effort is `xhigh`; a session created from the terminal with `send -a` starts at `high`.
+- `set-thinking` applies on the next session start (after a reset or a daemon restart).
+- `set-model` and `set-provider` take `--propagate` to also set the agent's default and move its other sessions that have no override.
 
-### Make Permanent
+A session that already ran remembers its last-used provider. Change the agent's provider with `ravi agents set main provider claude`: it also moves the agent's sessions that have no override (add `--force` to clear session overrides too).
+
+## Rename and label
 
 ```bash
-ravi sessions keep <name>
+ravi sessions rename <name> <new-name>              # changes the canonical name
+ravi sessions set-display <name> "Support inbox"    # label only
 ```
 
-Converts an ephemeral session back to a permanent one, removing the TTL and expiration.
+`rename` keeps the key and updates routes that pointed at the old name. `set-display` only changes the label shown in listings.
 
-## Cross-Session Messaging
+## Attach more chats to one session
 
-Sessions can communicate with each other using five message types. This enables multi-agent coordination and information sharing. For tracked execution with progress, dispatch `ravi tasks` instead of treating session messaging as backlog management.
-
-### Message Types
-
-| Type | CLI Command | Behavior |
-|------|-------------|----------|
-| **send** | `ravi sessions send` | Delivers a prompt; supports wait mode and interactive mode |
-| **inform** | `ravi sessions inform` | Fire-and-forget context; agent may reply or silently acknowledge |
-| **execute** | `ravi sessions execute` | Fire-and-forget task; agent performs the work using tools |
-| **ask** | `ravi sessions ask` | Sends a question; agent answers in-chat if unknown or replies directly if known |
-| **answer** | `ravi sessions answer` | Delivers a response to a previous ask; agent always processes it |
-
-### Send
-
-The most versatile command. Supports three modes:
+A route decides which agent answers a chat. Attach decides which session a chat feeds, so one session can share its history across several chats.
 
 ```bash
-# Fire-and-forget (default): send and return immediately
-ravi sessions send <name> "Generate the weekly report"
-
-# Wait mode: send and stream the response to your terminal
-ravi sessions send <name> "What is the current status?" -w
-
-# Interactive mode: open a chat loop with the target session
-ravi sessions send <name> -i
+ravi sessions attach <session> --chat <chat-id> --reason "same project"
+ravi sessions subscriptions <session>
+ravi sessions detach <session> --chat <chat-id>
 ```
 
-By default, `send` is still fire-and-forget. Internally it injects an informational prompt with source attribution. Use `-w` only when the caller needs to wait for and stream the response.
+- Each incoming message is answered in its own chat or thread.
+- The attached chat becomes the default output for turns that have no incoming message, such as cron jobs, triggers and `send` from the shell.
+- `--chat` takes Ravi's chat id or the platform id (for Slack, the channel id `C...`).
 
-`sessions send` is not a direct external-message primitive. It prompts a Ravi session; it does not itself publish visible text to WhatsApp, Telegram, Matrix, or another channel. For visible channel delivery, use the session's normal response path or an explicit channel/media/outbound command.
+<Warning>
+Attach does not create a route. Create the route first, for example `ravi instances routes add slack-main group:C0ABC123 main --session <session>`, then attach. Once attached, the chat's messages go to this session and its agent even if a route names another agent (`ravi routes explain` reports it as `Sticky attach`). Every chat that has already talked is attached to its own session, so detach it from that session first.
+</Warning>
 
-Use `-a <agent>` to auto-create the session if it does not exist:
+## When something goes wrong
+
+The session trace shows every step from the incoming message to delivery:
 
 ```bash
-ravi sessions send new-task -a main "Process this data"
+ravi sessions trace <name> --since 2h --explain
 ```
 
-Interactive mode supports `/reset`, `/info`, and `/exit` commands.
+[Troubleshooting](/guides/troubleshooting) explains how to read it.
 
-### Inform
-
-Send context information. The agent can silently acknowledge (`@@SILENT@@`) if the information is not relevant:
-
-```bash
-ravi sessions inform <name> "The deploy completed successfully at 14:30"
-```
-
-### Execute
-
-Send a task for the agent to perform. The agent uses tools and completes the work without necessarily responding:
-
-```bash
-ravi sessions execute <name> "Run the database backup and report the result"
-```
-
-### Ask / Answer Workflow
-
-The ask/answer pattern enables structured multi-agent coordination:
-
-```bash
-# Agent A asks Agent B a question
-ravi sessions ask agent:sales:main "What is the pricing for the enterprise plan?" "customer:5511999"
-
-# Agent B receives the question with source attribution:
-# [System] Ask: [from: agent:main:main, sender: customer:5511999] What is the pricing...
-
-# If Agent B knows the answer, it replies directly:
-ravi sessions answer agent:main:main "Enterprise plan starts at $499/month" "customer:5511999"
-
-# If Agent B does not know, it asks in the chat and forwards replies back as they come
-```
-
-The ask command includes instructions for the target agent to:
-- Answer immediately if it already knows
-- Otherwise, ask the question in its chat and relay answers back
-- Keep forwarding related follow-ups (not just the first reply)
-
-### Channel Overrides
-
-All messaging commands support channel and target overrides:
-
-```bash
-ravi sessions send <name> "message" --channel whatsapp --to 5511999999999
-```
-
-These overrides describe the prompt/source context used to resolve or create the session. They should not be treated as "send this literal text to that phone number".
-
-### Source Attribution
-
-All cross-session messages include a `[from: <sessionKey>]` tag so the receiving agent knows who sent it. For ask/answer, an optional sender parameter provides end-user attribution.
-
-## Scope Isolation
-
-Sessions respect REBAC permissions. When scope enforcement is active:
-
-- `sessions list` only shows accessible sessions
-- `sessions info` returns "not found" for inaccessible sessions
-- `sessions recap` returns "not found" for inaccessible sessions
-- `sessions send/ask/answer` cannot target sessions outside the caller's scope
-- Modify operations (rename, reset, delete, set-model, set-thinking, set-ttl, extend, keep) require modify permission
-
-This prevents agents from enumerating or interfering with sessions they should not access.
+Agents only see and change sessions inside their permission scope. A session outside it is reported as `Session not found`, so check `ravi sessions list` before concluding a session does not exist.

@@ -1,0 +1,198 @@
+---
+title: Publish pages
+description: Publish HTML as routes on your project's ravi.page host with `ravi pages ship`, then control who can open, comment on and roll back each page.
+icon: globe
+---
+
+At the end of this page you will have a page live at `https://<org-slug>-<project-slug>.ravi.page/<route>`, and you will know how to choose who can open it, protect it with a password, read comments on it and roll it back.
+
+You need a Console login and a default project first: see [Log in to the Console](/console/login).
+
+<Note>
+This page describes `ravi.bot@next`. In `@latest` (3.260927.5), `ravi pages ship` is a dry-run unless you pass `--execute`, and it creates a separate host named after `--title` instead of using the project host. Install `@next` with `bun add -g ravi.bot@next`, or switch an existing install with `ravi update --next`.
+</Note>
+
+## How Pages is organized
+
+- A project has one default host: `<org-slug>-<project-slug>.ravi.page`, for example `acme-website.ravi.page`.
+- A page is a route on that host. `/` is the project home; `/report` and `/docs` are other pages.
+- `--title` is the page title. It never creates a host.
+- Do not create one host per page. The host name `ravi` and names starting with `ravi-` are reserved and cannot be created.
+
+## Publish your first page
+
+<Steps>
+  <Step title="List the routes already published">
+    ```bash
+    ravi pages published --project website --json
+    ```
+
+    Shipping to a route that is already published replaces that page. `ravi pages list --project website --json` shows the host itself; the default one has `isDefault: true`.
+  </Step>
+  <Step title="Ship the page">
+    ```bash
+    ravi pages ship --project website --title "Hello" --route /hello --body "<h1>Hello</h1>" --json
+    ```
+
+    Without `--json`, the output lists the host, then the route, its visibility and the URL, then a `Comments` line (see [comments](#the-operator-bar-and-comments)):
+
+    ```text
+    ✓ Pages shipped
+      ...
+      Route      /hello
+      Visibility private
+      Artifact   ...
+      URL        https://acme-website.ravi.page/hello
+      Comments   ...
+    ```
+
+    If the project has no host yet, `ship` creates `<org-slug>-<project-slug>` and gives it this ship's `--visibility` as its default.
+  </Step>
+  <Step title="Open the URL">
+    The page is `private` by default: open it while signed in to the Console with an account that can read the project. To open it to everyone, see [Visibility](#visibility).
+  </Step>
+</Steps>
+
+### What `ship` takes
+
+Pass `--title` and exactly one content source:
+
+| Flag | Content |
+|---|---|
+| `--body "<h1>Hi</h1>"` | An HTML fragment, wrapped in a minimal HTML5 document |
+| `--html ./page.html` | One HTML file |
+| `--dir ./site` | A folder, served from `index.html` (change it with `--entrypoint`) |
+
+Defaults: `--route /`, `--visibility private`, `--entrypoint index.html`. `--project` overrides the saved project scope. `--json` returns `{ url, site, slug, route, visibility, artifactId, uses?, warnings? }`.
+
+`ship` publishes immediately. `--execute` is accepted and ignored. If a ship fails, read the error before retrying; do not probe by shipping again.
+
+<Warning>
+`--dir` uploads every file in the folder except `.git` and `.DS_Store`. That includes `.env` files and `node_modules`. Ship a clean build folder. Symlinks are refused. The Console accepts up to 1,000 files, 100 MB in total and 50 MB per file.
+</Warning>
+
+<Warning>
+A positional argument is not the project. `ravi pages ship website --title ...` creates or reuses a legacy extra host called `website.ravi.page`. Pass the project with `--project website`.
+</Warning>
+
+## Visibility
+
+| Visibility | Who can open the page |
+|---|---|
+| `private` | Anyone signed in to the Console who can read the project: `owner`, `admin` or `developer` of the organization, or a member of the project. Visitors who are not signed in are sent to log in; signed-in people without access are refused. |
+| `protected_link` | Today, the same people as `private`. It does not mean "anyone with the link". |
+| `public` | Anyone, without logging in. |
+| password | Anyone who types the route password. Set it with `ravi pages password set`, not with `--visibility`. See [Password](#password). |
+
+For `private` pages, the visitor's active organization in the Console must be the page's organization. People in several organizations may need to switch organization in the Console first.
+
+### Host default and route policy
+
+Two settings decide what a visitor gets:
+
+- The **host default**, set when the host was created: the **Default visibility** field, `--visibility` on `ravi cloud projects create --default-page-site`, or the `--visibility` of the first ship when that ship created the host.
+- The **route policy**, set by every ship (`--visibility`, default `private`).
+
+If the route is not `public`, the route policy applies. If the route is `public`, the host default applies. So a page is public only when both the route and the host default are `public`.
+
+<Warning>
+A `public` route on a `private` host stays private. The `ship` output and `ravi pages published` still show `public`, because they report the route policy, not what visitors get. A project created with the preselected `private` default hits this on its first public page.
+</Warning>
+
+Change visibility without uploading anything:
+
+```bash
+ravi pages visibility acme-website public                         # plan only, exit 3
+ravi pages visibility acme-website public --execute               # host default
+ravi pages visibility acme-website public --route /hello --execute  # one route
+ravi pages visibility acme-website private --route /hello         # lowering applies at once
+```
+
+- The first argument is the host slug (`<org-slug>-<project-slug>`), as shown by `ravi pages list`.
+- Without `--route`, only the host default changes. Routes shipped with the default `private` stay private.
+- With `--route`, only that route changes. The output shows the effective `Visibility` and the host `Default`.
+- Switching to `public` is a dry-run without `--execute`: it prints the plan (host or route, current and target) and exits 3. Lowering visibility applies immediately.
+
+To make a page public on a `private` host, run both: `ravi pages visibility <host> public --execute` and either ship with `--visibility public` or set the route with `--route`.
+
+There is no unpublish command. To take a page down, lower it: `ravi pages visibility acme-website private --route /hello`.
+
+## Password
+
+```bash
+ravi pages password set acme-website --route /report              # plan only, exit 3, never prompts
+ravi pages password set acme-website --route /report --execute    # hidden prompt, asks twice
+ravi pages password status acme-website --route /report --json
+ravi pages password remove acme-website --route /report --visibility private --execute
+```
+
+Visitors without a session get a password form. `--route` defaults to `/`.
+
+For automation, pipe the password from a protected file with `--stdin`:
+
+```bash
+ravi pages password set acme-website --route /report --stdin --execute < /secure/path/page-password
+```
+
+Never put the password in a command argument, an environment variable, a log or a JSON payload. The CLI has no flag for it, and its output never contains it. `remove` requires a replacement `--visibility`, so removing a password never makes a page public by accident.
+
+## The operator bar and comments
+
+When a project member opens a page from the Console (the project's **Pages** list), a bar appears at the top of the page. Ordinary visitors never see it. Its labels are in Portuguese today. From the bar you can:
+
+- see and change the page visibility, and manage the route password;
+- **Comentar**: leave a comment on an item of the page;
+- **Mais opções** → **Histórico de releases**: list releases, see **Mudanças** (changed files and line diffs) and **Restaurar** an older release.
+
+Comments stay in the Console. They do not reach your agent today. `ravi pages ship` prints a `Comments` line about a comment trigger, but the Console does not emit the event that trigger listens to, so it never fires. If people need to send feedback that wakes the agent, give them a form backed by a Base and a trigger, see [Interactive pages with Bases](/console/bases).
+
+<Warning>
+An open comment from someone else that you have not read blocks your next ship of that route, and restores from the bar. The CLI shows:
+
+```text
+CONFLICT: Console rejected the request because it conflicts with the current state.
+Next: re-read the resource, resolve the conflict, then retry.
+```
+
+The CLI cannot list or mark comments as read, and opening the bar does not mark them read either. Open the page from the Console, read the comment in the bar, then delete it with the trash icon (**Apagar comentário**). Deleting needs write access to the project. Or ship to a different route. Changing visibility is never blocked by comments.
+</Warning>
+
+## Releases and restore
+
+Every publish creates a release of the whole host: the map of all its routes. Restoring a release brings **every route** on the host back to that state, not just one page. Restore from the operator bar (**Restaurar**). An unread comment on any route in that release blocks the restore. The project's Pages screen in the Console lists the release history but has no restore button.
+
+To roll back a single page, ship its previous content to the same route again.
+
+`ship` also records each publish on a local artifact (`art_*`), so `ravi artifacts release activate` can re-activate a recorded release from the terminal. The `artifactId` that `ship` prints is the Console's id, not the local one; see [Artifacts](/reference/artifacts) for how to find it. The bar is the simpler path.
+
+## Let your agent publish
+
+Your agent runs the same `ravi pages ship` through the daemon, using the daemon's Console login. It publishes as you: your role, your name on the release, and your unread comments.
+
+1. Run `ravi login` as the same OS user as the daemon (same `HOME` or `RAVI_STATE_DIR`). No daemon restart is needed.
+2. Give the agent Pages permissions. An agent with the `full-access` profile (see [Make yourself the owner](/start/owner)) already has them. A narrower agent needs them in its capability list:
+
+   ```bash
+   ravi agents permissions main                     # current profile and capabilities
+   ravi agents permissions main bootstrap --capabilities "<current list>,mutate:pages:*,read:pages:*" --execute
+   ```
+
+   `--capabilities` replaces the list, so repeat the capabilities the agent already has. `execute:group:pages` also works for shipping and listing, but not for `ravi pages password`. See [Permissions](/guides/permissions).
+3. Ask the agent, for example: "Publish ./report as /report on the website project."
+
+The daemon gives a CLI call from an agent 30 seconds. A large `--dir` upload can time out on the agent's side even though the publish finished; check `ravi pages published` before shipping again.
+
+## Data pages
+
+Pages that read and write a Base (`--uses ravi.bases.*`) work only for signed-in members of the organization, on `private` or `protected_link` routes. `ship` refuses them on a public route (exit 2) unless you pass `--members-best-effort` on purpose. `--uses` applies to the whole host. See [Interactive pages with Bases](/console/bases).
+
+## Advanced and compatibility commands
+
+| Command | What it does |
+|---|---|
+| `ravi pages create <host>` | Creates a host record only, no content. Dry-run without `--execute` (exit 3). |
+| `ravi pages publish <project> <host> <source>` | Uploads to an existing host, or publishes a local `art_*`. Dry-run without `--execute` (exit 3). It cannot declare `--uses`, so a data page republished with it loses its actions; use `ship` on hosts with data pages. |
+| `ravi pages domains <host> <hostname> --execute` | Binds a custom domain to the host. |
+| `ravi pages ship <slug> ...` | Ships to a legacy extra host named `<slug>.ravi.page`. |
+
+Use `ravi pages ship` for new pages. `ravi skills show pages` prints the agent-facing guide with more examples.

@@ -124,7 +124,7 @@ migration](../SPEC.md#authorization-and-confirmation-are-different-controls).
 and MUST document `--execute` on every braked op and list the unbraked ops
 explicitly. Other teaching surfaces updated with `--execute`: the `agents` and
 `architect` skills, `src/prompt-builder.ts` (group-create suggestion + sentinel
-DM instructions), `docs/guides/whatsapp-groups.mdx` and `docs/cli/overview.mdx`.
+DM instructions), `docs/guides/routing.mdx` and `docs/cli/overview.mdx`.
 The sentinel prompt teaches `dm read` for local inspection and `dm ack ...
 --execute` for an intentional external receipt.
 Daemon-side outbound delivery publishes to NATS directly (channel senders), not

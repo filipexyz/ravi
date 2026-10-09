@@ -1,471 +1,249 @@
 ---
-title: Permissions (REBAC)
-description: Relation-based access control for agents — concepts, configuration, templates, and troubleshooting.
+title: Permissions
+description: How Ravi decides what an agent may do in each turn, and how you raise, narrow, approve and audit that authority.
+icon: shield
 ---
 
-## Overview
+By the end of this page you will know what an agent is allowed to do, who can drive it from a chat, how to give one person more power in one group, how approvals work, and how to find out why something was denied.
 
-Ravi uses a **Relation-Based Access Control** (REBAC) model. Every permission is a relation:
+<Note>
+This page describes `ravi.bot@next`. In `@latest` (3.260927.5) there is no `explicit-only` profile, no governed chats (`--chat`, `--chat-tag`, `--force`), and no `ravi permissions deny` or `list`.
+</Note>
 
+## How it fits together
+
+- Every permission is a **capability** string.
+- Each agent has a **ceiling**: a runtime profile plus an optional list of explicit capabilities.
+- Each turn gets its own authority, computed from the ceiling, who sent the message and which chat it came from.
+- When a turn lacks a capability, Ravi can ask a trusted person in the chat to **approve** it for that turn (on the Pi and Grok providers; see [Approvals](#approvals)).
+- Some shell commands are **always blocked**, whatever the profile.
+- Every denial is published on `ravi.audit.denied`.
+
+If you only want the owner setup (agent at `full-access`, yourself as owner contact), follow [Make yourself the owner](/start/owner). This page explains what those steps do.
+
+## Capabilities
+
+A capability has three parts:
+
+```text
+<permission>:<objectType>:<objectId>
 ```
-(subject) has (relation) on (object)
-```
 
-For example, `(agent:dev) execute (group:contacts)` means the agent `dev` can run CLI commands in the `contacts` group.
+| Capability | What it allows |
+|---|---|
+| `use:tool:Bash` | The Bash tool |
+| `execute:executable:git` | Running `git` from Bash |
+| `read:contacts:list` | `ravi contacts list` |
+| `mutate:contacts:*` | Every write command of `ravi contacts` |
+| `execute:group:contacts` | Every `ravi contacts` command (older group form) |
+| `access:session:dev-*` | Reading and messaging sessions whose name starts with `dev-` |
+| `admin:system:*` | Everything. Matches every check. |
 
-New agents are **closed by default** — they have no permissions until explicitly granted. Denied actions emit audit events to `ravi.audit.denied`.
+- The only wildcard is a trailing `*` on the object id: `dev-*`, `*`.
+- A CLI command accepts its semantic form (`<read|mutate>:<resource>:<action>`, the action may be `*`) or the older `execute:group:<group>` form. Prefer the semantic form.
+- Subcommand groups are their own objects: `ravi bases rows add` needs `mutate:bases.rows:add` or `execute:group:bases_rows`. `execute:group:bases` does not cover it.
 
-## Core Concepts
+## Agent ceilings
 
-### Subjects
-
-A subject is the entity requesting access. In Ravi, subjects are always agents:
-
-| Format | Example |
-|--------|---------|
-| `agent:<id>` | `agent:dev`, `agent:main`, `agent:vendas` |
-
-### Relations
-
-Relations define what kind of access is being granted:
-
-| Relation | Purpose | Object Type |
-|----------|---------|-------------|
-| `admin` | Superadmin — full system access | `system:*` |
-| `use` | Use an SDK tool or tool group | `tool:<name>` or `toolgroup:<name>` |
-| `execute` | Run a CLI command group or system executable | `group:<name>` or `executable:<name>` |
-| `access` | Read/send to a session | `session:<pattern>` |
-| `modify` | Reset/delete/rename a session | `session:<pattern>` |
-| `write_contacts` | Create, approve, block contacts | `system:*` |
-| `read_own_contacts` | Read contacts from own sessions | `system:*` |
-| `read_tagged_contacts` | Read contacts with a specific tag | `system:<tag>` |
-| `read_contact` | Read a specific contact | `contact:<id>` |
-| `view` | View another agent's details | `agent:<id>` |
-
-### Objects
-
-Objects are the resources being accessed:
-
-| Type | Examples | Used With |
-|------|----------|-----------|
-| `system` | `system:*` | `admin`, `write_contacts`, `read_own_contacts` |
-| `group` | `group:contacts`, `group:daemon` | `execute` |
-| `tool` | `tool:Bash`, `tool:Read` | `use` |
-| `toolgroup` | `toolgroup:read-only`, `toolgroup:write` | `use` |
-| `executable` | `executable:git`, `executable:node` | `execute` |
-| `session` | `session:dev-*`, `session:main` | `access`, `modify` |
-| `contact` | `contact:5511999999999` | `read_contact` |
-| `agent` | `agent:main` | `view` |
-| `cron` | `cron:<id>` | Resource ownership |
-| `trigger` | `trigger:<id>` | Resource ownership |
-| `team` | `team:<id>` | Team membership |
-
-## Permission Resolution
-
-When the engine evaluates `can(agent:dev, execute, group:daemon)`, it checks in this order:
-
-1. **Superadmin** — Does `(agent:dev, admin, system:*)` exist? If yes, allowed.
-2. **Direct relation** — Does `(agent:dev, execute, group:daemon)` exist? If yes, allowed.
-3. **Wildcard** — Does `(agent:dev, execute, group:*)` exist? If yes, allowed.
-4. **Pattern match** — Does any relation like `(agent:dev, execute, group:dae*)` match? If yes, allowed.
-5. **Tool group** — If checking a `tool`, does the agent have a `toolgroup` that includes it? If yes, allowed.
-6. **Denied** — No match found.
-
-When no agent context exists (direct CLI call, not from an agent session), all checks return allowed.
-
-### Wildcards
-
-Wildcards only work as a **trailing suffix** on the object ID:
+Set the ceiling with `ravi agents permissions`. Run it without a profile to see the current one:
 
 ```bash
-# Valid patterns
-group:*           # All groups
-session:dev-*     # Sessions starting with "dev-"
-executable:*      # All executables
-
-# Invalid patterns (will be rejected)
-session:*-dev     # Leading wildcard
-group:a*b         # Wildcard in the middle
+ravi agents permissions main
 ```
 
-## CLI Command Groups
-
-Groups with `scope: admin` require an `execute` grant. Use `group:<name>` as the object:
+| Profile | What the agent holds | Use it for |
+|---|---|---|
+| `bootstrap` | The birth floor (below) plus any explicit capabilities. New agents start here. | Personal agents you watch |
+| `chat-only` | Nothing. Conversation only: no tools, no shell, no CLI groups, no approvals. | Reception agents |
+| `explicit-only` | Exactly the `--capabilities` you list, with no birth floor | Agents that talk to people you do not fully trust |
+| `full-access` | `admin:system:*`, `execute:executable:*`, `use:tool:*`, `use:toolgroup:*`, `use:skill:*` | Your own agent, when you accept the risk |
+| `none` (also `clear`, `off`) | Removes the profile and the explicit list: back to `bootstrap`. Not zero authority. | Undoing a change |
 
 ```bash
-ravi permissions grant agent:dev execute group:daemon       # daemon restart/status/logs
-ravi permissions grant agent:dev execute group:agents       # agents create/set/list
-ravi permissions grant agent:dev execute group:sessions     # sessions list/send/read
-ravi permissions grant agent:dev execute group:contacts     # contacts add/approve/block
-ravi permissions grant agent:dev execute group:routes       # routes add/remove/list
-ravi permissions grant agent:dev execute group:settings     # settings get/set
-ravi permissions grant agent:dev execute group:channels     # channels start/stop
-ravi permissions grant agent:dev execute group:heartbeat    # heartbeat set/enable
-ravi permissions grant agent:dev execute group:matrix       # matrix rooms/send
-ravi permissions grant agent:dev execute group:whatsapp.group  # WhatsApp group mgmt
-ravi permissions grant agent:dev execute group:service      # service install/start
+ravi agents permissions main full-access                 # dry-run, exit 3, prints the plan
+ravi agents permissions main full-access --execute
+ravi agents permissions support chat-only                # applies immediately
+ravi agents permissions public explicit-only --capabilities use:tool:Bash,read:contacts:list --execute
+ravi agents permissions main bootstrap --capabilities execute:executable:curl,view:agent:* --execute
 ```
 
-### Subcommand Access
+**Dry-run rule.** The command writes immediately when the change keeps or reduces authority. It stops with a dry-run (exit 3, nothing written) only when the change expands authority: moving to `full-access`, adding a capability not already covered by its explicit list, or leaving `chat-only` or `explicit-only` (including `none` from those). Re-run with `--execute`.
 
-Grant access to a single command within a group:
+**`--capabilities` replaces the list.** Repeat the capabilities the agent already has. The seeded `main` agent starts with one explicit capability, `view:agent:*`. `--clear-capabilities` drops the list and keeps the profile.
+
+**What the ceiling covers.** The runtime's built-in tools (`Read`, `Edit`, `Bash`, `WebFetch` and the rest), shell commands and `ravi` commands. Tools from MCP servers that the runtime loads from its own configuration, such as a Claude `.mcp.json` in the agent's `cwd`, are not checked against it: they run without the ceiling and without approval, from any chat. Add only MCP servers you would let the agent use freely.
+
+**When changes apply.** From the agent's next turn. Ravi revokes the agent's live permission contexts when you change the ceiling, and the Bash check of a running turn reads the new ceiling at its next command. You do not need to restart the daemon or reset sessions.
+
+See what an agent holds right now:
 
 ```bash
-ravi permissions grant agent:dev execute group:agents_list    # Only agents list
-ravi permissions grant agent:dev execute group:daemon_restart # Only daemon restart
+ravi permissions materialize --subject-type agent --subject-id main
 ```
 
-### Open Groups (No Grant Required)
+### The bootstrap floor
 
-These groups work for any agent without explicit permissions:
+A `bootstrap` agent holds:
 
-- `sessions` (open) — but modification commands check session scope inline
-- `media`, `react`, `tools`, `transcribe`, `video`, `whatsapp.dm` (open)
-- `cron`, `triggers` (resource) — check resource ownership
+- every tool the provider offers (`use:tool:*`, `use:toolgroup:*`), including file read and write tools;
+- the CLI groups `sessions`, `tasks`, `specs`, `skills`, `self` and `doctor`;
+- the executables `bun`, `cat`, `date`, `find`, `git`, `head`, `ls`, `nl`, `pwd`, `ravi`, `rg`, `sed`, `sort`, `tail`, `uniq`, `wc` and `xargs`;
+- `read_own_contacts:system:*`.
 
-## SDK Tools
+<Warning>
+The bootstrap floor is a convenience floor, not a sandbox. `bun -e` runs any code, and `find -exec` and `xargs` run other programs; the Bash check only sees `bun`, `find` and `xargs`. The provider's file read and write tools are allowed too. For agents that talk to untrusted people, use `chat-only` or `explicit-only`.
+</Warning>
 
-Control which SDK tools an agent can use with the `use` relation:
+## What a turn may do
+
+The turn's authority depends on who sent the message:
+
+| Sender | Authority of the turn |
+|---|---|
+| You, from the terminal (`ravi sessions send`) | The agent's ceiling |
+| Cron jobs, triggers and other automations | The agent's ceiling |
+| A sender who resolves to a contact, in a chat that is not governed | The agent's ceiling, whatever the contact's status (`pending`, `discovered`, even `blocked`) |
+| A sender who resolves to a contact, in a governed chat | The ceiling intersected with that contact's grants for the chat. Blocked or opted-out contacts get nothing. |
+| A sender with no contact | Nothing: no tools, no commands. The agent can still reply in text. |
+
+<Warning>
+With a `full-access` agent, anyone who reaches it and resolves to a contact can drive it with admin rights, unless the chat is governed. Contact tags do not restrict anyone. Keep strangers out with entry policies (`pairing` DMs, `allowlist` groups, explicit routes; see [Instances and routing](/guides/routing)), and govern group chats that include other people.
+</Warning>
+
+## Admin tags on contacts
+
+Three contact tags grant `admin:system:*`: `permission-admin`, `permission-owner` and `permission-superadmin`. They count only while the contact's status is `allowed` and the contact has not opted out.
 
 ```bash
-# Individual tools
-ravi permissions grant agent:dev use tool:Bash
-ravi permissions grant agent:dev use tool:Read
-ravi permissions grant agent:dev use tool:Edit
-
-# All tools (wildcard)
-ravi permissions grant agent:dev use tool:*
+ravi contacts tag <contact-id> permission-owner     # applies immediately, no dry-run
+ravi permissions materialize --subject-type contact --subject-id <contact-id>
 ```
 
-Available SDK tools: `Bash`, `Read`, `Edit`, `Write`, `Glob`, `Grep`, `WebFetch`, `WebSearch`, `Task`, `TaskOutput`, `TaskStop`, `TodoWrite`, `NotebookEdit`, `AskUserQuestion`, `EnterPlanMode`, `ExitPlanMode`, `EnterWorktree`, `Skill`, `TeamCreate`, `TeamDelete`, `SendMessage`, `LSP`, `ToolSearch`.
+The second command prints `admin system:* (contact-policy:contact:<id>:admin-tag)`.
 
-## Tool Groups
+The tag does two things:
 
-Instead of granting tools one by one, use tool groups for bulk access:
+1. It makes the contact an **approver** on every channel where its identity is linked.
+2. It gives the contact admin inside **governed chats**.
+
+It does not raise the agent's ceiling, and it does not limit anyone else.
+
+## Governed chats
+
+A chat becomes governed as soon as any contact holds a grant scoped to it. In a governed chat, each sender gets the agent's ceiling intersected with their own grants; members without a grant (and without an admin tag or a `--force` profile) get no tools. Threads inherit their chat.
+
+<Steps>
+  <Step title="Find the chat id">
+    The chat must already exist in Ravi's chat ledger, so send one message there first.
+
+    ```bash
+    ravi chats list --type group --json
+    ```
+
+    `--chat` accepts the canonical chat id, or the platform id (for example a Slack `C...` id) when it matches only one chat. Inside an agent turn, `--chat current` means the turn's chat.
+  </Step>
+  <Step title="Plan the grant">
+    ```bash
+    ravi permissions allow chat-admin --to contact:<owner-id> --chat <chat-id> \
+      --agent main --capabilities 'admin:system:*'
+    ```
+
+    Without `--apply` this prints a plan (`permission allow plan`) and the exact apply command. Nothing is written.
+  </Step>
+  <Step title="Apply and check">
+    ```bash
+    ravi permissions allow chat-admin --to contact:<owner-id> --chat <chat-id> \
+      --agent main --capabilities 'admin:system:*' --apply
+    ravi permissions list --chat <chat-id>
+    ```
+  </Step>
+</Steps>
+
+Grant other members their own profiles the same way, with only the capabilities they need. Revoke with `deny`; when the last grant in a chat is gone, the chat is no longer governed:
 
 ```bash
-ravi permissions grant agent:dev use toolgroup:read-only
-ravi permissions grant agent:dev use toolgroup:execute
+ravi permissions deny chat-admin --to contact:<id> --chat <chat-id> --apply
 ```
 
-| Group | Tools |
-|-------|-------|
-| `read-only` | Read, Glob, Grep, WebFetch, WebSearch, LSP, ToolSearch |
-| `write` | Edit, Write, NotebookEdit |
-| `execute` | Bash, Task, TaskOutput, TaskStop |
-| `plan` | EnterPlanMode, ExitPlanMode, AskUserQuestion, TodoWrite |
-| `teams` | TeamCreate, TeamDelete, SendMessage |
-| `navigate` | EnterWorktree, Skill |
+<Warning>
+Use a profile name other than `owner` for chat grants. The profile name becomes a tag with a `permission-` prefix, so `allow owner` targets `permission-owner`. If you created that tag with `ravi contacts tag`, it is a plain user tag and `ravi permissions allow owner ...` fails with `Command failed unexpectedly.`
+</Warning>
 
-Tool groups combine with individual grants. An agent with `toolgroup:read-only` and `tool:Bash` has access to all read-only tools plus Bash.
+Notes on the flags:
 
-When the engine checks `can(agent:dev, use, tool, Read)`, if no direct `tool:Read` grant exists, it checks whether any granted `toolgroup` includes `Read`.
+- `--to contact:<id>` requires a scope: `--chat`, `--chat-tag` or `--force`. Without one the command refuses (`CHAT_SCOPE_REQUIRED`).
+- `--chat-tag <tag>` covers every chat carrying that tag. Tag a chat with `ravi tags attach <tag> --chat <chat-id>`.
+- `--force` grants the profile in every chat by adding the profile tag to the contact. Like the admin tags, it counts only while the contact is `allowed`. Use it only when you mean "everywhere".
+- `--agent <id>` makes sure the agent's ceiling includes the profile's capabilities. If they are not in the agent's explicit list, `--apply` adds them, which can raise a `bootstrap` agent to admin. Leave `--agent` out if you do not want the ceiling touched.
+- Chat-scoped grants work for any contact that is not blocked or opted out. Global tags need status `allowed`.
 
-## System Executables
+## Recurring access for an agent
 
-Control which system binaries an agent can invoke through Bash:
+To give an agent one more capability for good, create a named profile and apply it to the agent:
 
 ```bash
-ravi permissions grant agent:dev execute executable:git
-ravi permissions grant agent:dev execute executable:node
-ravi permissions grant agent:dev execute executable:*     # All executables
+ravi permissions allow cron-ops --to agent:main --capabilities execute:group:cron
+ravi permissions allow cron-ops --to agent:main --capabilities execute:group:cron --apply
 ```
 
-## Templates
+This creates the provider-owned profile `permission-cron-ops` and adds its capability to the agent's ceiling. Like `deny` and `resolve`, `allow` writes only with `--apply` (not `--execute`); without it, it prints the plan and exits 0.
 
-Templates apply a preset of permissions in one command:
+## Inspecting
+
+| Command | Answers |
+|---|---|
+| `ravi permissions status` | Which providers and materializers are active |
+| `ravi permissions materialize --subject-type agent --subject-id <id>` | Everything an agent holds, with the source of each capability |
+| `ravi permissions materialize --subject-type contact --subject-id <id>` | A contact's global capabilities (admin tags, `--force` profiles) |
+| `ravi permissions list --chat <chat-id>` | Contact grants in a chat. `--chat-tag <tag>` or `--force` for the other scopes. |
+| `ravi permissions check --permission <p> --object-type <t> --object-id <id>` | Whether the current runtime context allows something |
+
+`check` evaluates the context it runs in, so it is meant for agents inside a turn. From your own shell it reports `denied` with a note to use `materialize`. `--local-operator` evaluates the request as the local operator (you, at the terminal).
+
+All `ravi permissions` subcommands accept `--json`.
+
+## Approvals
+
+When a turn needs a capability it does not hold, Ravi can post an approval request in the chat the turn came from. Only agents on the Pi and Grok providers ask. On Claude and Codex, a shell command outside the ceiling is refused at once, and on every provider a `ravi` command group outside it is refused without asking.
+
+- **Who can approve:** a contact (or agent) that the clicker's or reactor's identity is linked to, and whose global capabilities include the requested capability or `admin:system:*`. An owner tagged `permission-owner` can approve anything. Chat-scoped grants do not make anyone an approver. Clicks or reactions from anyone else are ignored.
+- **Slack:** use the **Approve** or **Reject** button. Reactions and replies are ignored.
+- **WhatsApp and other channels:** react with 👍 or ❤️ to approve. Any other reaction, or a reply to the request message, rejects it.
+- **Timeout:** after 5 minutes without a decision, the request is denied.
+- **Scope:** an approved capability lasts for that turn only. For recurring access, use `ravi permissions allow` or `resolve`.
+- **Shell commands:** approving one does not make it run today; it is still refused. To let the agent run an executable, add it to the agent's ceiling.
+- **No approvals in the terminal.** A turn started with `ravi sessions send` has no chat to ask in, so the request is denied at once. Terminal turns work with the agent's ceiling only. A `chat-only` agent's tool requests are denied without asking.
+
+## The Bash check
+
+Before every Bash command, Ravi checks it against the turn's capabilities. These are always blocked, under every profile, and cannot be approved:
+
+- shells and string execution: `bash`, `sh`, `zsh`, `dash`, `ksh`, `csh`, `fish`, `tcsh`, `eval`, `exec`, `source`, `.`;
+- command substitution (`$(...)`, backticks), process substitution and here-documents;
+- piping into a shell, or into `python`, `python3`, `node`, `perl` or `ruby` as the last command (code read from stdin);
+- inline code: `python -c`, `python3 -c`, `node -e`, `perl -e`, `ruby -e`, `php -r`.
+
+Below `full-access`, two more rules apply: redirecting output to a file needs `use:tool:Write` (the bootstrap floor includes it), and commands that set `RAVI_*` environment variables are refused.
+
+## Denials and audit
+
+Every denial is recorded and published on the NATS topic `ravi.audit.denied`. The payload includes `type`, `agentId`, `denied`, `reason` and `dedupeKey`, plus `command`, `context`, `blockType` and `denialId` when they apply.
+
+Watch them live, or route them to an agent:
 
 ```bash
-# Individual SDK tool grants (one relation per tool)
-ravi permissions init agent:dev sdk-tools
-
-# Wildcard SDK tool access (tool:*)
-ravi permissions init agent:dev all-tools
-
-# All tool groups (read-only, write, execute, plan, teams, navigate)
-ravi permissions init agent:dev tool-groups
-
-# Safe system executables (git, node, bun, grep, etc.)
-ravi permissions init agent:dev safe-executables
-
-# Full access: all tools + all executables
-ravi permissions init agent:dev full-access
+ravi events stream --only audit
+ravi triggers add "Permission alert" --topic ravi.audit.denied \
+  --message "A permission was denied. Explain what happened and whether I need to act." --cooldown 1m
 ```
 
-`ravi agents permissions <id> full-access` is the break-glass runtime profile. It materializes `admin system:*`, `execute executable:*`, `use tool:*`, `use toolgroup:*`, and `use skill:*` (read any skill Ravi knows) for that agent. On the next Bash/tool PreToolUse check, a resolved WhatsApp/`turn-runtime` turn rereads that executor ceiling — you do not need to reset the session. Contact `permission.admin` tags are not the Bash execute path.
-
-`full-access` only answers the Ravi REBAC question. A command can still be denied later by provider-native hooks, workspace hooks, external PreToolUse filters, unconditional dangerous-pattern blocks (`bash`/`sh`/`eval`/…), or other runtime policies outside the REBAC store. When `ravi permissions check` says allowed but Bash still fails, inspect the denial source before changing more permissions.
-
-### Safe Executables List
-
-The `safe-executables` template grants access to commonly needed development binaries: `ls`, `cat`, `head`, `tail`, `find`, `mkdir`, `cp`, `mv`, `touch`, `git`, `grep`, `rg`, `awk`, `sed`, `jq`, `node`, `npm`, `bun`, `python3`, `make`, `cargo`, `go`, `jest`, `vitest`, `eslint`, `prettier`, `echo`, `date`, `pwd`, `which`, and others.
-
-## Config-Synced Permissions
-
-Some permissions are automatically derived from agent configuration fields and synced on daemon boot. These use `source=config` and are regenerated by `ravi permissions sync`.
-
-| Agent Config | Generated Relation |
-|--------------|--------------------|
-| Agent ID is `main` | `(agent:main, admin, system:*)` |
-| `contactScope: "all"` | `(agent:<id>, write_contacts, system:*)` |
-| `contactScope: "own"` | `(agent:<id>, read_own_contacts, system:*)` |
-| `contactScope: "tagged:leads"` | `(agent:<id>, read_tagged_contacts, system:leads)` |
-| `allowedSessions: ["dev-*"]` | `(agent:<id>, access, session:dev-*)` |
-
-Manual grants (`source=manual`) are never affected by sync.
-
-## Relation Sources
-
-Every relation has a source that indicates how it was created:
-
-| Source | Description |
-|--------|-------------|
-| `config` | Auto-generated from agent configuration. Regenerated on boot and `sync`. |
-| `manual` | Created via CLI. Persists across restarts and syncs. |
-
-## Audit Events
-
-When a permission check fails, an audit event is published to the NATS topic `ravi.audit.denied`:
-
-```json
-{
-  "type": "scope",
-  "agentId": "dev",
-  "denied": "group:daemon",
-  "reason": "Permission denied: agent:dev requires execute on group:daemon",
-  "command": "daemon restart"
-}
-```
-
-You can subscribe to these events for monitoring:
+Turn a denial into a fix with its `denialId`:
 
 ```bash
-nats sub "ravi.audit.denied" --server nats://127.0.0.1:4223
+ravi permissions resolve <denial-id>          # plan
+ravi permissions resolve <denial-id> --apply  # apply
 ```
 
-Or create a trigger to react to denied events:
+`resolve` proposes a profile that holds the missing capability. For an ordinary denial it adds the profile to the agent's ceiling. For a denial in a governed chat it grants the profile to that contact in that chat only, and makes sure the agent's ceiling includes it. `--profile` and `--capabilities` override the suggestion, and `--chat`, `--chat-tag` or `--force` override the scope.
 
-```bash
-ravi triggers add "Permission Alert" \
-  --topic "ravi.audit.denied" \
-  --message "A permission was denied. Review the event and notify me if it needs attention."
-```
-
-## CLI Reference
-
-### Grant a permission
-
-```bash
-ravi permissions grant <subject> <relation> <object>
-
-# Examples
-ravi permissions grant agent:dev execute group:contacts
-ravi permissions grant agent:dev use tool:Bash
-ravi permissions grant agent:dev access session:dev-*
-```
-
-### Revoke a permission
-
-```bash
-ravi permissions revoke <subject> <relation> <object>
-
-# Examples
-ravi permissions revoke agent:dev execute group:contacts
-ravi permissions revoke agent:dev use toolgroup:write
-```
-
-### Check a permission
-
-Evaluates the full resolution chain (superadmin, direct, wildcard, pattern, tool group):
-
-```bash
-ravi permissions check <subject> <permission> <object>
-
-# Examples
-ravi permissions check agent:dev execute group:daemon
-# -> DENIED: (agent:dev) execute (group:daemon)
-
-ravi permissions check agent:main admin system:*
-# -> ALLOWED: (agent:main) admin (system:*)
-
-ravi permissions check agent:dev use tool:Read
-# -> ALLOWED (if agent has toolgroup:read-only)
-```
-
-### List relations
-
-```bash
-# All relations
-ravi permissions list
-
-# Filter by subject
-ravi permissions list --subject agent:dev
-
-# Filter by object
-ravi permissions list --object group:contacts
-
-# Filter by relation type
-ravi permissions list --relation access
-
-# Filter by source
-ravi permissions list --source manual
-```
-
-### Sync from agent configs
-
-Regenerates `source=config` relations from current agent settings. Manual relations are preserved.
-
-```bash
-ravi permissions sync
-```
-
-### Apply a template
-
-```bash
-ravi permissions init agent:dev full-access
-ravi permissions init agent:dev sdk-tools
-ravi permissions init agent:dev tool-groups
-ravi permissions init agent:dev safe-executables
-ravi permissions init agent:dev all-tools
-```
-
-### Clear relations
-
-```bash
-# Clear manual relations only
-ravi permissions clear
-
-# Clear ALL relations (run sync afterwards to restore config relations)
-ravi permissions clear --all
-ravi permissions sync
-```
-
-## Practical Examples
-
-### Full Admin Agent
-
-An agent with unrestricted access to everything:
-
-```bash
-ravi permissions grant agent:main admin system:*
-```
-
-### Restricted Developer Agent
-
-An agent that can read files, run git, and manage its own sessions:
-
-```bash
-# Tool groups for safe development
-ravi permissions grant agent:dev use toolgroup:read-only
-ravi permissions grant agent:dev use tool:Bash
-
-# Only safe executables
-ravi permissions init agent:dev safe-executables
-
-# Access to its own sessions
-ravi permissions grant agent:dev access session:dev-*
-ravi permissions grant agent:dev modify session:dev-*
-
-# Can view contacts but not modify
-ravi permissions grant agent:dev read_own_contacts system:*
-```
-
-### Read-Only Observer Agent
-
-An agent that can only read files, search, and view data:
-
-```bash
-ravi permissions grant agent:observer use toolgroup:read-only
-ravi permissions grant agent:observer execute group:agents_list
-ravi permissions grant agent:observer execute group:contacts
-```
-
-### Sales Agent with Limited Scope
-
-An agent that manages tagged contacts with limited operational scope:
-
-```bash
-ravi permissions init agent:vendas tool-groups
-ravi permissions init agent:vendas safe-executables
-ravi permissions grant agent:vendas execute group:contacts
-ravi permissions grant agent:vendas read_tagged_contacts system:leads
-ravi permissions grant agent:vendas access session:vendas-*
-```
-
-## Troubleshooting
-
-### "Permission denied" errors
-
-1. **Check what permission is required** — the error message tells you:
-   ```
-   Permission denied: agent:dev requires execute on group:daemon
-   ```
-
-2. **Verify current permissions:**
-   ```bash
-   ravi permissions list --subject agent:dev
-   ```
-
-3. **Check with the engine:**
-   ```bash
-   ravi permissions check agent:dev execute group:daemon
-   ```
-
-4. **Grant the missing permission:**
-   ```bash
-   ravi permissions grant agent:dev execute group:daemon
-   ```
-
-### Common Mistakes
-
-**Wrong object type for CLI groups:**
-```bash
-# WRONG — engine checks group:daemon, not system:daemon
-ravi permissions grant agent:dev execute system:daemon
-
-# CORRECT
-ravi permissions grant agent:dev execute group:daemon
-```
-
-**Using `admin` for specific groups:**
-```bash
-# WRONG — admin only works with system:*
-ravi permissions grant agent:dev admin group:daemon
-
-# CORRECT — use execute for groups
-ravi permissions grant agent:dev execute group:daemon
-```
-
-**Confusing `group` and `executable`:**
-```bash
-# These are different object types
-ravi permissions grant agent:dev execute group:*        # CLI command groups
-ravi permissions grant agent:dev execute executable:*   # System binaries
-```
-
-**Wrong relation for executables:**
-```bash
-# WRONG — "use" is for SDK tools
-ravi permissions grant agent:dev use executable:git
-
-# CORRECT — executables use "execute"
-ravi permissions grant agent:dev execute executable:git
-```
-
-### Redundant grants
-
-The CLI warns about redundant grants:
-
-```bash
-ravi permissions grant agent:dev use tool:*
-# -> Granted: (agent:dev) use (tool:*)
-# -> 5 individual relation(s) are now redundant (covered by wildcard)
-```
-
-### Permissions not applying after config change
-
-Config-synced permissions are regenerated on daemon boot. If you changed an agent's `contactScope` or `allowedSessions`:
-
-```bash
-ravi permissions sync
-```
+See [Triggers](/guides/triggers) and [Events](/reference/nats-events) for more on topics.

@@ -1,0 +1,287 @@
+---
+title: Configuration
+description: Every place Ravi reads configuration from, the environment variables it uses, the settings and agent keys you can change, and where its files and processes live.
+icon: settings
+---
+
+By the end of this page you will know which file or command controls each part of Ravi, which `~/.ravi/.env` variables the code actually reads, how to change settings and agent properties, and where Ravi keeps its data and processes.
+
+## Where configuration lives
+
+| What | Where | How you change it |
+|---|---|---|
+| Secrets and process environment | `~/.ravi/.env` | `ravi daemon env`, `ravi runtime env set`, or any editor |
+| Agents, instances, routes, channels, global settings | `~/.ravi/ravi.db` | `ravi agents`, `ravi instances`, `ravi channels`, `ravi settings` |
+| Slack tokens and other provider credentials | The credential broker (macOS Keychain or Vault) | `ravi credentials` |
+| Agent instructions | `AGENTS.md` in the agent's working directory | Any editor |
+| Omni (WhatsApp bridge and NATS) | `~/.omni/` | `omni` CLI |
+
+Changes made with `ravi agents`, `ravi instances` and `ravi settings` apply to the running daemon without a restart. Changes to `.env`, and to a Slack channel's credentials or defaults, need a restart of the process that reads them.
+
+## The `.env` file
+
+### How it is loaded
+
+The daemon and the CLI both read `~/.ravi/.env`, but not the same way:
+
+- **The daemon** (`ravi` under PM2) loads the file at start and **overrides** any value already in its environment. The file wins.
+- **The CLI** (`ravi` in your shell) loads the file but **only fills keys that are not already set**. A variable exported in your shell wins over the file.
+- **The channel runner** (`ravi-channels`) runs the CLI, so it reads the file the CLI way. It also inherits the environment of the shell that ran `ravi channels start` or `ravi channels restart`, so a variable exported in that shell wins over the file.
+
+Apply a change with:
+
+```bash
+ravi daemon restart -m "env change"   # -m (the restart reason) is required
+ravi channels restart                 # only if the change is for Slack
+```
+
+To edit the file:
+
+```bash
+ravi daemon env      # creates a commented template if missing, then opens $EDITOR (default nano)
+```
+
+To set a provider credential without an editor or TTY, use the allowlisted writer. It writes atomically with mode `0600` and never prints the value:
+
+```bash
+printf '%s' "sk-ant-oat01-..." | ravi runtime env set CLAUDE_CODE_OAUTH_TOKEN --stdin
+ravi runtime env get CLAUDE_CODE_OAUTH_TOKEN     # shows whether it is set, value redacted
+ravi runtime env unset ANTHROPIC_API_KEY
+```
+
+`ravi runtime env set` accepts only `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CODEX_HOME`, `GROK_HOME` and `GROK_DISABLE_AUTOUPDATER`.
+
+<Warning>
+`RAVI_STATE_DIR` moves Ravi's databases and state, and `ravi runtime env set` then writes to `$RAVI_STATE_DIR/.env`. The daemon and the CLI still read `~/.ravi/.env`. If you set `RAVI_STATE_DIR`, edit `~/.ravi/.env` directly so the daemon sees your change.
+</Warning>
+
+<Note>
+Slack tokens never come from `.env`. The Slack runner reads them only from the credential broker. See [Slack](/channels/slack).
+</Note>
+
+### Model providers
+
+| Variable | Used for |
+|---|---|
+| `CLAUDE_CODE_OAUTH_TOKEN` | Claude provider, subscription token (`sk-ant-oat01-...`, from `claude setup-token`). |
+| `ANTHROPIC_API_KEY` | Claude provider, API key (`sk-ant-api...`). Use this or the OAuth token. |
+| `CODEX_HOME` | Codex provider state directory. `ravi runtime` device login uses `~/.ravi/codex` by default. |
+| `XAI_API_KEY` | Grok provider. You can use `grok login` instead. |
+| `RAVI_PI_COMMAND` | Command used to run the `pi` provider. Default `pi`. |
+| `RAVI_GROK_COMMAND` | Command used to run the `grok` provider. Default `grok`. |
+| `RAVI_MODEL` | Fallback model when the `runtime.defaultModel` setting is unset. Built-in default `sonnet`. |
+
+The Codex provider always runs `codex` from `PATH`.
+
+### Infrastructure
+
+| Variable | Default | Used for |
+|---|---|---|
+| `NATS_URL` | `nats://127.0.0.1:4222` | The NATS JetStream server. The daemon retries for about a minute at start, then fails. |
+| `OMNI_API_URL` | from `~/.omni/config.json` | Omni API base URL. Set it together with `OMNI_API_KEY`. |
+| `OMNI_API_KEY` | from `~/.omni/config.json` | Omni API key. If either Omni variable is missing, Ravi reads both from Omni's config file. |
+| `RAVI_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. |
+| `RAVI_STATE_DIR` | `~/.ravi` | Where databases and state live. See the warning above. |
+
+### HTTP gateway and SDK
+
+The HTTP server is off unless `RAVI_HTTP_PORT` is set. See [SDK and HTTP gateway](/guides/sdk).
+
+| Variable | Default | Used for |
+|---|---|---|
+| `RAVI_HTTP_PORT` | unset (off) | Port for the HTTP server. The `.env` template suggests `4211`. `RAVI_WEBHOOK_PORT` is an alias. |
+| `RAVI_HTTP_HOST` | `127.0.0.1` | Bind address. |
+| `RAVI_GATEWAY_NETWORK_AUTHORIZED` | unset | Must be `1` to bind a non-loopback host. Without it the daemon refuses to start. |
+| `RAVI_SDK_GATEWAY_DISABLE` | unset | Set to `1` to serve webhooks but not the SDK API (`/api/v1/*`). |
+| `RAVI_CORS_ORIGINS` | unset | Exact browser origins allowed to call the gateway, comma-separated. |
+| `RAVI_CORS_LOCALHOST` | unset | `1` allows `http://localhost:<port>` and `http://127.0.0.1:<port>`. |
+| `ELEVENLABS_WEBHOOK_SECRET` | unset | Verifies ElevenLabs webhooks on the HTTP server. |
+
+Boolean variables accept `1`, `true` or `yes`. The gateway never answers with `Access-Control-Allow-Origin: *`; `chrome-extension://` origins are always allowed.
+
+### Media
+
+| Variable | Used for |
+|---|---|
+| `GROQ_API_KEY` | Audio transcription (preferred, Whisper large v3 turbo). |
+| `OPENAI_API_KEY` | Transcription fallback (whisper-1) and OpenAI image generation. |
+| `GEMINI_API_KEY` | Video analysis and Gemini image generation. |
+| `ELEVENLABS_API_KEY` | Text to speech. |
+| `ELEVENLABS_VOICE_ID` | Default voice for text to speech. |
+| `RAVI_IMAGE_PROVIDER` | Last-resort image provider (`gemini` or `openai`). |
+| `RAVI_IMAGE_MODEL` | Last-resort image model. |
+
+The image provider is chosen by, in order: the command flag, the agent's `image_provider` default, the instance's default, the `image.provider` setting, then `RAVI_IMAGE_PROVIDER`. See [Media](/reference/media).
+
+### Slack runner
+
+These are read by the `ravi-channels` runner. Apply them with `ravi channels restart`.
+
+| Variable | Default | Values or effect |
+|---|---|---|
+| `RAVI_SLACK_SUBSCRIPTION_SCOPE` | `thread` | `thread`, `chat`, `chat_and_thread` |
+| `RAVI_SLACK_THREAD_REPLY_MODE` | `same_thread` | `same_thread`, `channel_root`, `policy_default` |
+| `RAVI_SLACK_ROOT_REPLY_MODE` | `channel_root` | `channel_root`, `new_thread`, `policy_default` |
+| `RAVI_SLACK_ASSISTANT_STATUS` | on | `off`, `0`, `false` or `no` turns off the "is working..." thread status and uses a reaction instead. |
+| `RAVI_SLACK_ASSISTANT_STATUS_TEXT` | `is working...` | Text of the thread status. |
+| `RAVI_SLACK_REACTION_PRESENCE` | `off` | `always` adds the working reaction even when the thread status is on. |
+| `RAVI_SLACK_WORKING_REACTION` | `hourglass_flowing_sand` | Emoji name used as the working reaction. |
+
+A Slack channel's own `defaults` win over these variables, per channel:
+
+```bash
+ravi channels set slack-main defaults '{"subscriptionScope":"chat_and_thread","threadReplyMode":"same_thread"}'
+ravi channels restart
+```
+
+`defaults` takes the whole JSON object; pass every key you want to keep.
+
+<Note>
+`ravi channels restart` keeps the previous value of `RAVI_SLACK_SUBSCRIPTION_SCOPE`, `RAVI_SLACK_THREAD_REPLY_MODE`, `RAVI_SLACK_ROOT_REPLY_MODE` and `RAVI_SLACK_WORKING_REACTION` when your shell no longer sets them. To drop a value, remove it, then run `ravi channels stop` and `ravi channels start`.
+</Note>
+
+### Credentials and sandbox
+
+| Variable | Used for |
+|---|---|
+| `VAULT_ADDR`, `VAULT_TOKEN` | The Vault backend of the credential broker (`ravi credentials connections add ... --backend vault`). |
+| `E2B_API_KEY` | `ravi sandbox run`. |
+| `GITHUB_TOKEN` | `ravi sandbox run`, only to clone private `https://github.com/...` repos. |
+
+### Not used
+
+Older docs list `OMNI_DIR`, `DATABASE_URL`, `OMNI_API_PORT` and `NATS_PORT`. Ravi does not read them. Omni's database and ports are Omni's configuration; Ravi reaches NATS through `NATS_URL`.
+
+## Global settings
+
+Settings live in `ravi.db` and apply immediately.
+
+```bash
+ravi settings list                    # every known key, its value and what it does
+ravi settings get defaultTimezone
+ravi settings set defaultTimezone America/Sao_Paulo
+ravi settings delete defaultTimezone --execute   # braked: dry-run without --execute
+```
+
+| Key | Default | What it does |
+|---|---|---|
+| `runtime.defaultProvider` | `codex` | Provider for agents and sessions that set none: `claude`, `codex`, `pi` or `grok`. |
+| `runtime.defaultModel` | `sonnet` | Model for agents and sessions that set none. `RAVI_MODEL` is used only when this is unset. |
+| `runtime.defaultEffort` | `xhigh` | Effort for agents and sessions that set none. |
+| `defaultAgent` | `main` | Agent that answers when no route matches. |
+| `defaultDmScope` | `per-peer` | DM scope for agents that set none. See [DM scopes](#dm-scopes). |
+| `defaultTimezone` | unset | Timezone for cron expressions. |
+| `announceCompaction` | `false` | Post a notice in the chat when a session's context is compacted. |
+| `image.provider`, `image.model`, `image.mode`, `image.quality`, `image.format` | `image.mode` is `fast` | Image generation defaults. |
+| `tasks.sessionTtl` | `1d` | How long task work sessions are kept (`12h`, `1d`, `off`). |
+
+`ravi settings list` also shows `runtime.model_broker.required`, the superadmin-only `permissions.*` keys and `tasks.sessionTtl.knowledgeEngineer`.
+
+<Warning>
+`whatsapp.dmPolicy` and `whatsapp.groupPolicy` are listed and written by `ravi setup`, but nothing reads them at runtime. Set policies on the instance instead:
+
+```bash
+ravi instances set wa-main dmPolicy pairing       # open | pairing | closed
+ravi instances set wa-main groupPolicy allowlist  # open | allowlist | closed
+```
+
+See [Routing](/guides/routing).
+</Warning>
+
+## Agent properties
+
+```bash
+ravi agents show main
+ravi agents set main provider claude
+ravi agents set main model sonnet
+ravi agents debounce main 2000       # debounce has its own command
+```
+
+| Key | Value |
+|---|---|
+| `name` | Display name. |
+| `cwd` | Working directory (holds `AGENTS.md`). |
+| `provider` | `claude`, `codex`, `pi` or `grok`. |
+| `model` | Model selector for the provider. |
+| `modelPreset` | A runtime model preset (`ravi runtime presets`). Clear it before setting a provider that does not match. |
+| `effort` | `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra`, or `clear`. |
+| `mode` | `active` (replies) or `sentinel` (observes without replying). |
+| `dmScope` | DM scope for this agent. See [DM scopes](#dm-scopes). |
+| `groupDebounceMs` | Debounce for group messages, in ms (`0` to disable). Falls back to the agent's debounce. |
+| `systemPromptAppend` | Text appended to the system prompt. |
+| `settingSources` | JSON array of `user` and `project` (Claude provider settings sources). |
+| `defaults` | JSON object of per-agent defaults, for example `{"image_mode":"fast"}`. |
+| `remote` | Run turns on a remote host: a VM id, a host, or `worker:<id>`. |
+| `remoteUser` | Unix user for `remote`. |
+| `matrixAccount` | Matrix account bound to the agent. |
+
+When you change `provider`, `model` or `modelPreset`, sessions without their own override switch on their next turn. Sessions pinned with `ravi sessions set-provider` or `ravi sessions set-model` keep their pin; add `--force` to clear those pins too.
+
+## DM scopes
+
+The DM scope decides which direct messages share a session.
+
+| Scope | Session key | Effect |
+|---|---|---|
+| `main` | `agent:main:main` | Every DM on every channel shares one session. |
+| `per-peer` (default) | `agent:main:dm:<peer>` | One session per person, across channels. |
+| `per-channel-peer` | `agent:main:<channel>:dm:<peer>` | One session per person per channel. |
+| `per-account-channel-peer` | `agent:main:<channel>:<account>:dm:<peer>` | One session per person per channel account. |
+
+Groups always get their own session, `agent:main:<channel>:<account>:group:<id>`, with `:thread:<id>` added for threads.
+
+The scope is chosen by: the matching route's `dmScope`, then the agent's `dmScope`, then the `defaultDmScope` setting.
+
+<Note>
+`ravi instances set <name> dmScope <scope>` is accepted and stored, but routing does not use it. Set the scope on the route or the agent.
+</Note>
+
+## Files on disk
+
+| Path | Contents |
+|---|---|
+| `~/.ravi/.env` | Process environment, read by the daemon and the CLI. |
+| `~/.ravi/ravi.db` | Agents, instances, routes, channels, sessions, settings, cron jobs, triggers, chats and more (SQLite). |
+| `~/.ravi/chat.db` | Contacts, platform identities, contact policies and messages. |
+| `~/.ravi/credentials.db` | Credential broker metadata. The secrets themselves live in the Keychain or Vault. |
+| `~/.ravi/credentials.json` | Runtime context keys (`rctx_...`) for the SDK, mode `0600`. |
+| `~/.ravi/cloud-auth/` | Console login. |
+| `~/.ravi/codex/` | Codex provider state from `ravi runtime` device login. |
+| `~/.ravi/artifacts/` | Artifact blobs. |
+| `~/.ravi/tasks/`, `~/.ravi/jobs/` | Task work files and background job logs. |
+| `~/.ravi/sandbox-runs/` | Output of `ravi sandbox run`. |
+| `~/.ravi/cli-gateway.sock` | Local socket that sandboxed provider CLIs use to call `ravi`. |
+| `~/ravi/<agent>/` | Agent working directory. The `main` agent uses `~/ravi/main`; `ravi agents create <id> <cwd>` uses the path you give. |
+| `<agent cwd>/attachments/` | Media received on Slack and WhatsApp, named `<timestamp>-<messageId>.<ext>`, up to 20 MB each. |
+| `~/.omni/` | Omni's config, data and logs. |
+
+Ravi's logs are PM2's logs:
+
+```bash
+ravi daemon logs -t 100     # last 100 lines of the ravi daemon
+ravi daemon logs -f         # follow
+ravi daemon logs --path     # print the PM2 log file paths
+ravi channels logs          # the ravi-channels runner
+```
+
+## PM2 processes
+
+| Process | What it runs | Started by |
+|---|---|---|
+| `ravi` | The daemon: sessions, routing, cron, triggers, gateway | `ravi daemon start` (also run by `ravi setup`) |
+| `ravi-channels` | The native channel runner (Slack) | `ravi channels start` |
+| `omni-api` | Omni API on port 8882 (WhatsApp bridge) | `omni install` / `omni start` |
+| `omni-nats` | NATS with JetStream on port 4222 | `omni install` / `omni start` |
+
+If you run NATS yourself instead of through Omni, it is your own PM2 process (for example `nats`). See [Install](/start/install).
+
+`ravi daemon start` starts only `ravi`. `ravi daemon status` shows `ravi`, `omni-nats` and `omni-api`; check the runner with `ravi channels status` or `pm2 ls`. `ravi update` restarts both `ravi` and `ravi-channels`.
+
+To bring everything back after a reboot:
+
+```bash
+pm2 startup   # prints a command; run it once
+pm2 save      # run again whenever PM2 gets a new process
+```
+
+`ravi daemon install` saves the PM2 process list and suggests the startup command.

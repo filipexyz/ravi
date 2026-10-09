@@ -1,0 +1,185 @@
+---
+title: Log in to the Console
+description: Create a Ravi Console account, organization and project, then link your local Ravi CLI to it with `ravi login`.
+icon: log-in
+---
+
+At the end of this page you will have a Ravi Console account, an organization, a project with its own Pages host, and a local `ravi` CLI that is logged in and pointed at that project. From there you can [publish pages](/console/pages) and [build interactive pages with Bases](/console/bases).
+
+## What the Console is
+
+The Ravi Console at [console.ravi.bot](https://console.ravi.bot) is the hosted side of Ravi. Your daemon, agents and channels stay on your machine. The Console holds what needs a public address or shared storage:
+
+- **Organization.** Owns members and projects. Every member has a role.
+- **Project.** Holds your Pages and Bases. Each project has one default Pages host, `<org-slug>-<project-slug>.ravi.page`. Every page you publish is a route on that host, such as `https://acme-website.ravi.page/report`.
+- **Roles.** `owner`, `admin` and `developer` can create projects and publish. `viewer` and `billing` cannot. Only `owner` and `admin` can rename the organization or add members.
+
+`ravi login` links your local CLI to your Console user. It has nothing to do with your model provider: Claude or Codex credentials are configured separately, see [Install Ravi](/start/install).
+
+Logging in and publishing from your own terminal do not need the daemon. Agents publishing on your behalf do, see [Let your agent publish](/console/pages#let-your-agent-publish).
+
+## Create your account and organization
+
+Organizations are created, and members are invited, only in the web Console. The CLI has no command for either.
+
+<Steps>
+  <Step title="Sign up">
+    Open [console.ravi.bot/sign-up](https://console.ravi.bot/sign-up). The sign-in screen is hosted by WorkOS AuthKit and offers email, Google, GitHub and SSO.
+
+    If someone already added your email to their organization, sign up with that same email and you land in their organization. Skip to step 4.
+  </Step>
+  <Step title="Create your organization">
+    A new account with no organization sees **Create your organization**. Follow it to finish the organization setup, then come back to `console.ravi.bot`.
+  </Step>
+  <Step title="Rename the organization slug before anything else">
+    Open `/org/settings`, set **Name** and **Slug** (for example `acme`), and save.
+
+    <Warning>
+    A self-serve organization starts with a slug like `workos-01k7...`. Pages refuses host names built from it, so your first project fails with **This slug is unavailable.** on the *project* slug field, even when the project slug is fine. Rename the organization slug first. This needs the `owner` or `admin` role.
+    </Warning>
+  </Step>
+  <Step title="Check your role">
+    The members list on `/org/settings` shows each member's role. You need `owner`, `admin` or `developer` to create a project and publish.
+
+    <Warning>
+    If you are `viewer`, you cannot rename the organization, create a project or publish, and private pages of a project are hidden from you unless you are a member of that project. Ask an `owner` or `admin` of the organization to change your role. If you created the organization yourself and still show as `viewer`, nobody in the organization can fix it from the Console: ask the Console operator to make you an owner.
+    </Warning>
+  </Step>
+  <Step title="Create a project">
+    Open `/projects/new` and fill **Name**, **Slug**, **Description** and **Default visibility** (`private`, `public` or `protected link`; `private` is preselected). The form shows the host it will create, `<org-slug>-<project-slug>.ravi.page`.
+
+    Pick `public` if the first pages on this project are meant for anyone. The host default caps every route on it, so a `private` host keeps even a `public` route private. See [Visibility](/console/pages#visibility).
+  </Step>
+</Steps>
+
+To add teammates, an `owner` or `admin` opens `/org/settings`, enters an **Email** and a **Role**, and clicks **Add member**. The person does not need an account yet.
+
+You can also create the project from the terminal once you are logged in (next section):
+
+```bash
+ravi cloud projects create website --name "Website" --visibility public --default-page-site            # plan only, exit 3
+ravi cloud projects create website --name "Website" --visibility public --default-page-site --execute  # creates it
+ravi cloud projects list
+```
+
+Pass `--default-page-site` without a value. The host is always `<org-slug>-<project-slug>`, and the Console rejects any other name. Without `--default-page-site`, the first `ravi pages ship` creates the host with the visibility of that ship.
+
+## Link your CLI
+
+<Steps>
+  <Step title="Log in">
+    ```bash
+    ravi login
+    ```
+
+    The CLI opens your browser and prints the same link and a code:
+
+    ```text
+    Ravi Cloud login: https://console.ravi.bot
+    Opening browser for authentication...
+    Verification URL: https://console.ravi.bot/cli/authorize?user_code=ABCD-EF23
+    Code: ABCD-EF23
+    ```
+
+    In the browser, **Authorize local Ravi** asks which organization this terminal should work in. Pick it, wait for **Ravi CLI approved**, and return to the terminal:
+
+    ```text
+    ✓ Logged in to https://console.ravi.bot as you@example.com
+    Run `ravi whoami` to inspect the linked CLI session.
+    ```
+
+    The code is valid for 10 minutes. The CLI waits up to 300 seconds; raise it with `--timeout-seconds 600`.
+
+    On a server or over SSH, use `ravi login --no-open`. It prints the URL and code without opening a browser, and you approve from any other device.
+  </Step>
+  <Step title="Check who you are">
+    ```bash
+    ravi whoami
+    ```
+
+    It prints `Console`, `User`, `Organization`, `Installation`, `Scopes` and `Access token expires`. It does not show your role or the selected project; use `/org/settings` for the role and `ravi cloud scope show` for the project.
+  </Step>
+  <Step title="Choose the default project">
+    ```bash
+    ravi cloud projects list
+    ravi cloud scope set --global --project website
+    ravi cloud scope show
+    ```
+
+    If your account sees exactly one project when you log in, `ravi login` saves it as the global default for you. With two or more projects, `ravi pages` and `ravi bases` commands fail until you set a default or pass `--project`.
+  </Step>
+</Steps>
+
+### Project scope
+
+The default project can be set at four levels:
+
+```bash
+ravi cloud scope set --global --project website              # this Ravi installation
+ravi cloud scope set --workspace --project website           # the current directory (or pass a path)
+ravi cloud scope set --agent main --project website          # one agent
+ravi cloud scope set --session <session> --project website   # one session
+ravi cloud scope clear --global                              # remove a saved default
+```
+
+Any `ravi pages` or `ravi bases` command also takes `--project <slug>`, which wins over everything. Otherwise Ravi uses `RAVI_CONSOLE_PROJECT_REF` if it is set, then the saved defaults (session, agent, workspace, global), then the only project your account can see. `ravi cloud scope explain` prints the whole chain.
+
+There is no separate command that links a local folder to a Console project: the scope is the link. `ravi link` is something else. It binds the chat contact of an agent turn to your Console user, and you do not need it for Pages or Bases.
+
+## Log in again when scopes change
+
+The Console decides which permissions (scopes) your CLI gets at the moment you log in. A login made before a feature existed does not gain its scopes later. Look at the `Scopes:` line of `ravi whoami`:
+
+| Feature | Scopes it needs |
+|---|---|
+| Bases | `console.bases.read`, `console.bases.write` |
+| Agent Inbox (Bases row events reaching your triggers) | `console.inbox.read`, `console.inbox.subscribe`, `console.inbox.deliver`, `console.inbox.ack` |
+
+If any are missing, run `ravi login` again. Symptoms of an old login:
+
+- `ravi bases ...` fails with `PROJECT_ACCESS_DENIED` (or `ORG_ACCESS_DENIED`) and suggests `run 'ravi login' again so this installation gets console.bases.read and console.bases.write`.
+- Bases row events never reach the agent. The daemon skips Inbox polling without an error when the inbox scopes are missing.
+
+The daemon reads credentials on every call, so you do not need to restart it after logging in again.
+
+## Where the login lives
+
+Credentials are stored under `~/.ravi/cloud-auth/`: `active.json` points to the active user, and `users/<user-id>/credentials.json` holds the tokens (file mode `0600`). `RAVI_STATE_DIR` moves `~/.ravi`. The access token lasts 15 minutes and refreshes on its own; the refresh token lasts 30 days.
+
+Your agents publish through the daemon, which reads the daemon's `~/.ravi`. Run `ravi login` as the same OS user as the daemon (same `HOME`, or the same `RAVI_STATE_DIR`). On a VM or container, run `ravi login --no-open` there and approve in your own browser.
+
+A login belongs to one organization, the one you picked on **Authorize local Ravi**. To work in another organization, run `ravi login` again and pick it. Saved project defaults are kept per organization.
+
+## Log out
+
+```bash
+ravi logout
+```
+
+It revokes the login in the Console and removes the local credentials.
+
+<Warning>
+If more than one Console user has logged in on this machine, `ravi logout` switches to another stored user instead of leaving you logged out. Run `ravi whoami` afterwards, and repeat `ravi logout` until `ravi whoami` says `AUTH_REQUIRED`.
+</Warning>
+
+## Common problems
+
+<AccordionGroup>
+  <Accordion title="The browser says No organization available">
+    Your account is not a member of any organization yet. Open [console.ravi.bot](https://console.ravi.bot), create your organization (or ask an owner to add you), then run `ravi login` again.
+  </Accordion>
+  <Accordion title="Login code expired">
+    The code lasts 10 minutes. Run `ravi login` again for a new one.
+  </Accordion>
+  <Accordion title="ravi login --json shows no URL or code">
+    With `--json`, the URL and code are not printed while the CLI waits; they only reach the browser it opens. On a headless machine that leaves you no way to approve. Log in without `--json`.
+  </Accordion>
+  <Accordion title="pages ship says Missing Console project, but you never logged in">
+    Without a login and without `--project`, `ravi pages` reports `PAYLOAD_INVALID: Missing Console project` instead of asking you to log in. Run `ravi whoami`; if it says `AUTH_REQUIRED`, run `ravi login` first, then set the project scope.
+  </Accordion>
+  <Accordion title="You renamed the organization slug after logging in">
+    Run `ravi login` again before your first `ravi pages ship`. Until its next token refresh (up to 15 minutes), the CLI can still build the project host name from the old slug when it has to create that host.
+  </Accordion>
+</AccordionGroup>
+
+Next: [Publish pages](/console/pages).

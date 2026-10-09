@@ -1,529 +1,353 @@
 ---
-title: Media Pipeline
-description: Audio generation, transcription, image generation, video analysis, and media delivery across channels.
+title: Media
+description: Generate voice notes and images, transcribe audio, analyze videos, send files to Slack or WhatsApp, and find the files people send to your agent.
+icon: image
 ---
 
-## Overview
+This page covers every media command in Ravi: what each one needs, what it prints, and how its output reaches a conversation. At the end you will be able to generate audio and images, send any file into a chat, and read the files people send to your agent.
 
-Ravi provides a full media pipeline: generate audio from text (TTS), transcribe audio to text, generate images from prompts, analyze videos, and send any media file through connected channels. Each capability is available as a CLI command and as an agent tool.
+## Before you start
 
-## Audio Generation (TTS)
-
-Generate speech from text using the ElevenLabs Text-to-Speech API.
-
-### Environment Variables
-
-| Variable | Required | Description |
-|---|---|---|
-| `ELEVENLABS_API_KEY` | Yes | ElevenLabs API key |
-| `ELEVENLABS_VOICE_ID` | No | Default voice ID (overrides built-in default) |
-
-### Models
-
-| Model | Description |
-|---|---|
-| `eleven_multilingual_v2` | Default. High quality, supports multiple languages, more expressive |
-| `eleven_turbo_v2_5` | Faster generation, lower latency, less expressive |
-
-### CLI Usage
+Put API keys in `~/.ravi/.env` (open it with `ravi daemon env`), then restart the daemon so it picks them up:
 
 ```bash
-# Basic generation
-ravi audio generate "Hello, this is a test message"
-
-# Specify voice and speed
-ravi audio generate "Fast narration" --voice JBFqnCBsd6RMkjVDRZzb --speed 1.5
-
-# Force language for better pronunciation
-ravi audio generate "Bom dia a todos" --lang pt
-
-# Generate and send directly to the current chat
-ravi audio generate "Voice message content" --send --execute
-
-# With custom caption when sending
-ravi audio generate "Important update" --send --caption "Listen to this" --execute
-
-# Use turbo model for faster output
-ravi audio generate "Quick response" --model eleven_turbo_v2_5
-
-# Save to specific directory
-ravi audio generate "Narration" -o /tmp/audios
+ravi daemon restart -m "media keys added"
 ```
 
-### Options
+| Feature | Keys | System tools |
+|---|---|---|
+| Audio generation | `ELEVENLABS_API_KEY` (optional `ELEVENLABS_VOICE_ID`) | `ffmpeg` to turn audio into a voice note |
+| Transcription | `GROQ_API_KEY` or `OPENAI_API_KEY` | `ffmpeg` and `ffprobe` for audio longer than 10 minutes |
+| Image generation | `OPENAI_API_KEY` or `GEMINI_API_KEY` | none |
+| Video analysis | `GEMINI_API_KEY` | `yt-dlp` for YouTube subtitles |
+| Sending to WhatsApp | none (uses your Omni setup) | the `omni` CLI on `PATH` |
+
+Install the system tools with `brew install ffmpeg yt-dlp` (macOS) or your Linux package manager.
+
+Two rules apply to every command below:
+
+- **Generating is immediate. Delivering to a chat is not.** Anything that posts into a conversation (`--send`, `ravi media send`, `ravi stickers send`) is a dry-run without `--execute`: it prints the plan and exits with code 3. Add `--execute` to send.
+- **"The current chat" means the chat of the session that runs the command.** When your agent runs `--send` while answering a Slack thread or a WhatsApp group, the file goes back there. From your own terminal there is no current chat, so use `ravi media send` with explicit `--to` and `--account`.
+
+On Slack, files are uploaded natively through the Slack Web API into the same channel or thread. On WhatsApp (and other Omni channels), Ravi calls `omni send` and reports success only after Omni accepts the request.
+
+## Audio generation (text to speech)
+
+Ravi turns text into speech with ElevenLabs.
+
+```bash
+# Generate an MP3 in the system temp directory
+ravi audio generate "Hello, this is a test message"
+
+# Pick a voice, speed and language
+ravi audio generate "Bom dia a todos" --voice JBFqnCBsd6RMkjVDRZzb --speed 1.2 --lang pt
+
+# Read the text from a file (relative .md or .txt path)
+ravi audio generate --text-file notes/update.md
+
+# Generate and send to the current chat as a voice note
+ravi audio generate "Voice message content" --send --execute
+
+# Same, with your own caption
+ravi audio generate "Important update" --send --caption "Listen to this" --execute
+
+# Faster model, custom output directory
+ravi audio generate "Quick response" --model eleven_turbo_v2_5 -o ./audio
+
+# List the voices on your ElevenLabs account
+ravi audio voices --search narrator
+```
 
 | Flag | Description | Default |
 |---|---|---|
-| `--voice <id>` | ElevenLabs voice ID | `ELEVENLABS_VOICE_ID` env or built-in default |
-| `--model <model>` | TTS model | `eleven_multilingual_v2` |
-| `--speed <speed>` | Speech speed (0.5 to 2.0) | `1.0` |
-| `--lang <code>` | ISO 639-1 language code (`pt`, `en`, `es`) | Auto-detect |
-| `--format <fmt>` | Output format: `mp3_44100_128`, `mp3_22050_32`, `pcm_16000` | `mp3_44100_128` |
-| `-o, --output <dir>` | Output directory | `/tmp` |
-| `--send` | Send to the current chat automatically | `false` |
-| `--caption <text>` | Caption when using `--send` | First 100 chars of text |
+| `[text]` or `--text-file <path>` | Text to speak (one or the other) | required |
+| `--voice <id>` | ElevenLabs voice ID | agent `tts_voice`, then `ELEVENLABS_VOICE_ID`, then a built-in voice |
+| `--model <model>` | `eleven_multilingual_v2`, `eleven_turbo_v2_5`, ... | agent `tts_model`, then `eleven_multilingual_v2` |
+| `--speed <speed>` | 0.5 to 2.0 | agent `tts_speed`, then the voice default |
+| `--lang <code>` | Language hint (`pt`, `en`, `es`, ...) | agent `tts_lang`, then `pt-br` |
+| `--format <fmt>` | `mp3_44100_128`, `mp3_22050_32`, `pcm_16000` | `mp3_44100_128` |
+| `-o, --output <path>` | Output directory | system temp directory |
+| `--send` | Send to the current chat | off |
+| `--caption <text>` | Caption when sending | first 100 characters of the text |
+| `--execute` | Confirm delivery when `--send` is used | off (dry-run) |
+| `--json` | Print the JSON result | off |
 
-### Voice Note (PTT) Mode
+<Note>
+The language defaults to Portuguese (`pt-br`). Pass `--lang en` for English, or set `tts_lang` in the agent defaults (see [Defaults](#agent-instance-and-global-defaults)).
+</Note>
 
-When `--send` is used, the audio is automatically converted to OGG/Opus format for WhatsApp Push-to-Talk (voice note) delivery. This requires `ffmpeg` installed on the system.
-
-The conversion pipeline:
-1. ElevenLabs generates MP3
-2. ffmpeg converts to OGG/Opus (64kbps, 48kHz, mono)
-3. Original MP3 is deleted
-4. OGG file is sent as a voice note
-
-If ffmpeg is not available, the original MP3 is sent as a regular audio attachment instead.
-
-### Output
+Output:
 
 ```
 Generating audio...
 
-✓ Audio saved: /tmp/ravi-audio-1709123456789.mp3
-  Send to chat: ravi media send "/tmp/ravi-audio-1709123456789.mp3" --execute
+✓ Audio saved: /tmp/ravi-audio-1760013000000.mp3
+  Send to chat: ravi media send "/tmp/ravi-audio-1760013000000.mp3" --execute
 
 Text: Hello, this is a test message
 ```
 
-When `--send` is used, Ravi now calls `omni send` directly and only reports success after the channel delivery request is accepted. The JSON output includes the resolved `instanceId`, optional `threadId`, and delivery metadata such as `messageId` when available.
+With `--send`, Ravi converts the MP3 to OGG/Opus (64 kbps, 48 kHz, mono) with `ffmpeg` and sends the `.ogg`. WhatsApp shows it as a voice note; Slack shows it as an audio file. If `ffmpeg` is missing or fails, the MP3 is sent as a regular audio file.
 
-## Audio Transcription
+## Transcription
 
-Transcribe audio files to text using Groq (preferred) or OpenAI Whisper.
+Ravi transcribes audio with Whisper. It uses Groq when `GROQ_API_KEY` is set, otherwise OpenAI. There is no fallback between them: if the chosen provider fails, the transcription fails.
 
-### Environment Variables
-
-| Variable | Required | Description |
+| Order | Provider | Model |
 |---|---|---|
-| `GROQ_API_KEY` | No* | Groq API key (preferred provider) |
-| `OPENAI_API_KEY` | No* | OpenAI API key (fallback provider) |
-
-<Note>
-At least one of `GROQ_API_KEY` or `OPENAI_API_KEY` must be configured. Groq is preferred when both are available due to faster inference.
-</Note>
-
-### Provider Selection
-
-| Priority | Provider | Model | Notes |
-|---|---|---|---|
-| 1 | Groq | `whisper-large-v3-turbo` | Faster, preferred |
-| 2 | OpenAI | `whisper-1` | Fallback |
-
-### Supported Formats
-
-| Extension | MIME Type |
-|---|---|
-| `.ogg` | `audio/ogg` |
-| `.opus` | `audio/ogg; codecs=opus` |
-| `.mp3` | `audio/mpeg` |
-| `.m4a` | `audio/mp4` |
-| `.mp4` | `audio/mp4` |
-| `.wav` | `audio/wav` |
-| `.webm` | `audio/webm` |
-
-### Auto-Chunking for Long Audio
-
-Audio files longer than **10 minutes** (600 seconds) are automatically split into overlapping chunks for transcription:
-
-- **Chunk duration:** 10 minutes each
-- **Overlap:** 15 seconds between chunks (prevents word loss at boundaries)
-- **Splitting tool:** ffmpeg (required for chunking)
-- **Duration detection:** ffprobe
-
-The chunks are transcribed individually and joined into a single continuous transcript.
-
-### CLI Usage
+| 1 | Groq (`GROQ_API_KEY`) | `whisper-large-v3-turbo` |
+| 2 | OpenAI (`OPENAI_API_KEY`) | `whisper-1` |
 
 ```bash
-# Transcribe a local audio file
-ravi transcribe file /path/to/recording.ogg
-
-# Transcribe an MP3
-ravi transcribe file /tmp/meeting-recording.mp3
+ravi transcribe file ./recording.ogg
+ravi transcribe file ./meeting.mp3 --lang en
+ravi transcribe file ./meeting.mp3 --lang en --json
 ```
 
-### Output
+`--lang` defaults to `pt`. Supported formats: `.ogg`, `.opus`, `.mp3`, `.m4a`, `.mp4`, `.wav`, `.webm`.
+
+Audio longer than 10 minutes is split with `ffmpeg` into 10-minute chunks that overlap by 15 seconds, transcribed chunk by chunk and joined.
 
 ```
-Transcribing /tmp/recording.ogg (2.5MB, audio/ogg)...
+Transcribing /home/you/recording.ogg (audio/ogg)...
 
 ✓ Transcribed (45s)
 
 The transcribed text appears here...
 ```
 
-For chunked transcriptions:
+### Voice messages your agent receives
 
-```
-✓ Transcribed in 3 chunks (1800s total)
+Voice notes and audio files that arrive on Slack or WhatsApp are transcribed automatically, and the transcript goes into the agent's prompt (see [Files people send to your agent](#files-people-send-to-your-agent)). This uses the same provider order, with Portuguese (`pt`) as the language hint. There is no setting to change that hint today; for audio in another language, transcribe the saved file again with `ravi transcribe file <path> --lang <code>`.
 
-The full combined transcript...
-```
+## Image generation
 
-### Inbound Auto-Transcription
+Ravi generates and edits images with OpenAI or Gemini.
 
-Voice messages received through WhatsApp, Telegram, or other channels are automatically transcribed. The transcript is included in the agent's prompt:
+### Choose a provider first
 
-```
-[+5511999 30/01/2026, 14:30]
-[Audio]
-Transcript:
-The transcribed text from the voice message
-```
-
-## Image Generation
-
-Generate images from text prompts using the configured image provider. Ravi supports Gemini and OpenAI image models.
-There is no automatic provider fallback: if the selected provider fails, the command fails. Retry explicitly with another `--provider` if needed.
-
-### Environment Variables
-
-| Variable | Required | Description |
-|---|---|---|
-| `GEMINI_API_KEY` | Gemini only | Google Gemini API key |
-| `GEMINI_IMAGE_MODEL` | No | Override Gemini model selection |
-| `OPENAI_API_KEY` | OpenAI only | OpenAI API key |
-| `OPENAI_IMAGE_MODEL` | No | Override OpenAI model selection |
-| `RAVI_IMAGE_PROVIDER` | No | Global env default provider (`gemini` or `openai`) |
-| `RAVI_IMAGE_MODEL` | No | Global env default model |
-
-### Models
-
-| Mode | Model | Description |
-|---|---|---|
-| `fast` (default) | `gemini-3.1-flash-image-preview` | Fast generation, good for iteration |
-| `quality` | `gemini-3-pro-image-preview` | Higher detail, slower |
-
-OpenAI can be selected with `--provider openai --model gpt-image-2` or via defaults.
-
-### CLI Usage
+There is no built-in default provider. Without one, `ravi image generate` fails with `IMAGE_PROVIDER_NOT_CONFIGURED`. Set a global default once:
 
 ```bash
-# Basic generation
-ravi image generate "a purple cat floating in space"
-
-# OpenAI Image2
-ravi image generate "a diagram of Ravi image generation" --provider openai --model gpt-image-2
-
-# Quality mode (slower, more detail)
-ravi image generate "product photo of sneakers" --mode quality
-
-# Set aspect ratio and size
-ravi image generate "instagram story background" --aspect 9:16 --size 2K
-
-# 4K landscape wallpaper
-ravi image generate "mountain landscape at sunset" --aspect 16:9 --size 4K
-
-# Edit an existing image
-ravi image generate "remove the background and add a sunset" --source /tmp/photo.png
-
-# Generate and send to chat
-ravi image generate "coffee shop interior" --send --execute
-
-# Save to specific directory
-ravi image generate "product mockup" -o /tmp/mockups
+ravi settings set image.provider openai     # or gemini
 ```
 
-### Options
+Ravi picks each value in this order: the command flag, the agent defaults, the instance defaults, the global setting (`image.provider`, `image.model`, `image.mode`, `image.quality`, `image.format`), then the environment (`RAVI_IMAGE_PROVIDER`, `RAVI_IMAGE_MODEL`). If the selected provider fails, the command fails; retry with another `--provider` yourself.
+
+| Provider | Key | Default model | Model override |
+|---|---|---|---|
+| `openai` | `OPENAI_API_KEY` | `gpt-image-2` | `--model`, or `OPENAI_IMAGE_MODEL` |
+| `gemini` | `GEMINI_API_KEY` | `gemini-3.1-flash-image-preview` (`--mode fast`), `gemini-3-pro-image-preview` (`--mode quality`) | `--model`, or `GEMINI_IMAGE_MODEL` |
+
+### Generate
+
+```bash
+# Queue a generation (returns at once)
+ravi image generate "a purple cat floating in space" --provider openai
+
+# Wait for the result instead
+ravi image generate "product photo of sneakers" --provider gemini --mode quality --sync
+
+# Aspect ratio and size
+ravi image generate "mountain landscape at sunset" --aspect 16:9 --size 4K
+
+# Edit or reference an existing image (PNG, JPEG, WebP, GIF)
+ravi image generate "turn this photo into a watercolor painting" --source ./photo.jpg
+
+# Generate and send to the current chat
+ravi image generate "coffee shop interior" --send --execute
+```
+
+Generation is asynchronous by default. The command records an image [artifact](/reference/artifacts), starts a background worker and prints:
+
+```
+✓ Image generation queued: art_...
+  Hint: No polling needed: this artifact emits lifecycle events. Use events only for manual inspection or debugging.
+  Debug: ravi artifacts show art_...
+```
+
+`ravi artifacts show <id>` gives the file path once the artifact is `completed`. When the command runs inside a session, that session is told when the image completes or fails, so the agent does not need to poll.
+
+With `--sync`, the command waits and prints the result:
+
+```
+✓ Image saved: /tmp/ravi-image-1760013000000.png
+  Artifact: art_...
+  Send to chat: ravi media send "/tmp/ravi-image-1760013000000.png" --execute
+
+Prompt: product photo of sneakers
+Provider: gemini | Model: gemini-3-pro-image-preview | Mode: quality | Aspect: auto | Size: auto
+```
+
+<Warning>
+When the command runs in a session that belongs to a chat, the image is always sent back to that chat when it is ready, even without `--send`. That is why your agent needs `--execute` there. `ravi image generate` has no target flags; to send an image anywhere else, generate it and use `ravi media send`.
+</Warning>
 
 | Flag | Description | Default |
 |---|---|---|
-| `--provider <provider>` | `gemini` or `openai` | Session/instance/global/env default |
-| `--model <model>` | Provider model override | Provider default |
-| `--mode <type>` | `fast` (Flash) or `quality` (Pro) | `fast` |
-| `--source <path>` | Source image for editing | -- |
-| `--aspect <ratio>` | `1:1`, `2:3`, `3:2`, `3:4`, `4:3`, `9:16`, `16:9`, `21:9` | Auto |
-| `--size <size>` | `1K`, `2K`, `4K` | `1K` |
-| `--quality <quality>` | OpenAI quality: `low`, `medium`, `high`, `auto` | Mode/provider default |
-| `--format <format>` | OpenAI output: `png`, `jpeg`, `webp` | `png` |
-| `--compression <0-100>` | OpenAI jpeg/webp compression | Provider default |
-| `--background <mode>` | OpenAI background: `transparent`, `opaque`, `auto` | Provider default |
-| `-o, --output <dir>` | Output directory | `/tmp` |
-| `--send` | Send to the current chat | `false` |
-| `--caption <text>` | Caption when using `--send` | The prompt text |
+| `--provider <provider>` | `openai` or `gemini` | see the order above |
+| `--model <model>` | Provider model | provider default |
+| `--mode <type>` | `fast` or `quality` (picks the Gemini model) | `fast` |
+| `--source <path>` | Image to edit or use as reference | none |
+| `--aspect <ratio>` | `1:1`, `2:3`, `3:2`, `3:4`, `4:3`, `9:16`, `16:9`, `21:9` | provider default |
+| `--size <size>` | `1K`, `2K`, `4K` | provider default |
+| `--quality <quality>` | OpenAI: `low`, `medium`, `high`, `auto` | provider default |
+| `--format <format>` | OpenAI: `png`, `jpeg`, `webp` | `png` |
+| `--compression <0-100>` | OpenAI jpeg/webp compression | provider default |
+| `--background <mode>` | OpenAI: `transparent`, `opaque`, `auto` | provider default |
+| `-o, --output <path>` | Output directory | system temp directory |
+| `--sync` | Wait for the provider before returning | off |
+| `--send` | Send to the current chat | off (on in a chat session) |
+| `--caption <text>` | Caption when sending | the prompt |
+| `--execute` | Confirm delivery to a chat | off (dry-run) |
+| `--json` | Print the JSON result | off |
 
-### Defaults
+## Video analysis
 
-Configure an instance default so agents in that instance do not need to pass provider/model flags:
-
-```bash
-ravi instances set main defaults '{"image_provider":"openai","image_model":"gpt-image-2","image_quality":"auto","image_format":"png"}'
-```
-
-### Source Image Editing
-
-Pass an existing image with `--source` to use it as a reference for editing. Supported input formats: PNG, JPEG, WebP, GIF.
+`ravi video analyze` turns a YouTube URL or a local video into a Markdown file. With the default strategy (`auto`), YouTube videos use their subtitles through `yt-dlp` and fall back to Gemini when there are none. Local files always use Gemini.
 
 ```bash
-ravi image generate "make this photo look like a watercolor painting" --source /tmp/photo.jpg
-```
-
-The source image is sent to the selected provider alongside the text prompt, allowing the model to transform, edit, or use the image as reference.
-
-### Output
-
-```
-Generating image (fast)...
-
-✓ Image saved: /tmp/ravi-image-1709123456789.png
-  Send to chat: ravi media send "/tmp/ravi-image-1709123456789.png" --execute
-
-Prompt: a purple cat floating in space
-Mode: fast | Aspect: auto | Size: 1K
-```
-
-When `--send` is used, Ravi delivers the generated image through `omni send` directly instead of queueing a background NATS event. Success now means the send request reached Omni successfully.
-
-## Video Analysis
-
-Analyze videos from YouTube URLs or local files. YouTube uses subtitles/captions first via `yt-dlp` for fast transcripts and falls back to Google Gemini when subtitles are unavailable or analysis is forced. Local files use Gemini. Extracts title, duration, transcript, and when Gemini is used, summary, topics, and timestamped visual descriptions.
-
-### Environment Variables
-
-| Variable | Required | Description |
-|---|---|---|
-| `GEMINI_API_KEY` | For Gemini | Google Gemini API key |
-| `GEMINI_VIDEO_MODEL` | No | Override the default model |
-
-The default model is `gemini-2.5-flash`.
-YouTube subtitle extraction requires `yt-dlp` in the runtime environment and does not require `GEMINI_API_KEY` when subtitles are found.
-
-### CLI Usage
-
-```bash
-# Analyze a YouTube video
 ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID"
-
-# Save to specific file
 ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID" -o ./analysis.md
-
-# Custom analysis prompt
 ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID" -p "Focus on the technical arguments"
-
-# Force Gemini analysis instead of the subtitles-first path
-ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID" --strategy gemini
-
-# Require subtitles and fail instead of falling back to Gemini
-ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID" --strategy subtitles
-
-# Analyze a local video file
-ravi video analyze /path/to/video.mp4
+ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID" --strategy subtitles   # fail if no subtitles
+ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID" --force-analyze       # always use Gemini
+ravi video analyze ./demo.mp4
 ```
 
-### Supported Formats
+| Flag | Description | Default |
+|---|---|---|
+| `--strategy <strategy>` | `auto`, `subtitles` or `gemini` | `auto` |
+| `--force-analyze` | Same as `--strategy gemini` | off |
+| `-p, --prompt <text>` | Custom prompt for Gemini | built-in prompt |
+| `-o, --output <path>` | Output file | a new `.md` file in the current directory |
+| `--json` | Print the JSON result | off |
 
-**YouTube:** Public videos only (private and unlisted are not supported).
+The Gemini model is `gemini-2.5-flash` unless you set `GEMINI_VIDEO_MODEL`. The subtitles path does not need `GEMINI_API_KEY`. Local files (`.mp4`, `.mpeg`, `.mpg`, `.mov`, `.avi`, `.flv`, `.webm`, `.wmv`, `.3gpp`) are uploaded to the Gemini Files API. YouTube videos must be public.
 
-**Local files:**
+The Markdown file has the title, duration, strategy, transcript and chapters. When Gemini is used it also has a summary, topics and timestamped visual descriptions.
 
-| Extension | MIME Type |
-|---|---|
-| `.mp4` | `video/mp4` |
-| `.mpeg` | `video/mpeg` |
-| `.mov` | `video/mov` |
-| `.avi` | `video/avi` |
-| `.flv` | `video/x-flv` |
-| `.webm` | `video/webm` |
-| `.wmv` | `video/wmv` |
-| `.3gpp` | `video/3gpp` |
+## Send any file
 
-Local files are uploaded to the Gemini Files API before analysis.
-
-### Output Structure
-
-The analysis is saved as a markdown file with these sections:
-
-- **Title** -- Video title or auto-generated descriptive title
-- **Duration** -- Estimated duration in MM:SS format
-- **Strategy** -- `subtitles` or `gemini`
-- **Summary** -- 2-3 paragraph comprehensive summary when Gemini is used
-- **Topics** -- Bullet list of main topics covered when Gemini is used
-- **Transcript** -- Complete transcription of spoken content with speaker labels
-- **Chapters** -- YouTube chapters when available
-- **Visual Description** -- Timestamped descriptions of visual content (`[MM:SS-MM:SS]` format) when Gemini is used
-
-The output language matches the video's spoken language.
-
-### Limitations
-
-- YouTube videos must be public
-- Videos longer than 1 hour may exceed token limits or take a long time
-- Analysis quality depends on video clarity and audio quality
-
-## Sending Media
-
-Send any media file (image, video, audio, document) through a connected channel.
-`ravi media send` is synchronous and uses `omni send` under the hood, so it returns a real delivery ack/error instead of only queueing `ravi.media.send`.
-
-### CLI Usage
+`ravi media send` delivers an image, video, audio file or document and waits for the channel to accept it.
 
 ```bash
-# Send from a chat context (channel auto-detected)
-ravi media send "/tmp/ravi-image-123.png" --execute
+# From an agent session: back to the current chat
+ravi media send ./report.pdf --caption "Weekly report" --execute
 
-# With caption
-ravi media send "/tmp/photo.jpg" --caption "Check this out" --execute
+# WhatsApp from your terminal: instance name and chat ID
+ravi media send ./photo.jpg --account wa-main --to "5511999999999@s.whatsapp.net" --execute
 
-# Send as voice note (audio only)
-ravi media send "/tmp/recording.ogg" --ptt --execute
+# WhatsApp voice note
+ravi media send ./note.ogg --account wa-main --to "5511999999999@s.whatsapp.net" --ptt --execute
 
-# Explicit target (when not in a chat context)
-ravi media send "/tmp/report.pdf" \
-  --account default \
-  --to "5511999999999@s.whatsapp.net" \
-  --execute
+# Slack from your terminal: --channel slack is required, plus the channel config name and Slack channel ID
+ravi media send ./chart.png --channel slack --account slack-main --to C0123456789 --execute
 
-# Preserve forum/thread context explicitly
-ravi media send "/tmp/report.pdf" \
-  --account telegram-bot \
-  --to "chat_123" \
-  --thread-id "topic-55" \
-  --execute
+# Slack thread
+ravi media send ./chart.png --channel slack --account slack-main --to C0123456789 \
+  --thread-id 1760013000.123456 --execute
 ```
-
-### Options
 
 | Flag | Description |
 |---|---|
-| `--caption <text>` | Caption for the media |
-| `--channel <channel>` | Optional channel hint for Ravi output/context |
-| `--to <chatId>` | Target chat ID |
-| `--account <id>` | Ravi account / instance alias |
-| `--thread-id <id>` | Thread/topic override for channels that support it |
-| `--ptt` | Send audio as voice note (PTT) |
+| `--caption <text>` | Caption or message text |
+| `--to <chatId>` | Target chat: a WhatsApp JID (`...@s.whatsapp.net`, `...@g.us`) or a Slack channel ID |
+| `--account <id>` | Instance (WhatsApp) or Slack channel config name |
+| `--channel <channel>` | Channel. Pass `slack` to deliver through Slack; otherwise Omni is used |
+| `--thread-id <id>` | Thread or topic, for channels that have them |
+| `--ptt` | Send audio as a voice note (WhatsApp) |
+| `--execute` | Actually send. Without it: dry-run, exit 3 |
+| `--json` | Print the JSON result |
 
-### Supported File Types
+The type comes from the extension: `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp` are images; `.mp4`, `.mov`, `.avi`, `.mkv` are videos; `.mp3`, `.ogg`, `.wav`, `.m4a`, `.opus` are audio; anything else (including `.pdf`) is sent as a document.
 
-The media type is auto-detected from the file extension:
+## Stickers (WhatsApp)
 
-| Type | Extensions |
-|---|---|
-| Image | `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp` |
-| Video | `.mp4`, `.mov`, `.avi`, `.mkv` |
-| Audio | `.mp3`, `.ogg`, `.wav`, `.m4a`, `.opus` |
-| Document | `.pdf` (and any other extension) |
-
-## Sticker Library
-
-Ravi has an official typed sticker catalog for channels that explicitly support stickers. Initial outbound support is WhatsApp only.
-
-The sticker catalog is stored outside the system prompt at:
+Ravi keeps a sticker catalog at `~/.ravi/stickers/catalog.json`. Only WhatsApp supports outbound stickers today. The agent never sees sticker files; when stickers are enabled for it, its prompt gets a short list of sticker IDs and when to use them.
 
 ```bash
-~/.ravi/stickers/catalog.json
-```
-
-The prompt never receives sticker media, base64, local paths, or JSON. When stickers are available, the agent only receives a short Markdown section with sticker IDs and natural usage descriptions.
-
-### Enable Stickers For An Agent
-
-Sticker prompt instructions are opt-in per agent:
-
-```bash
-ravi agents set main defaults '{"stickers":{"enabled":true}}'
-```
-
-Advanced runtime launchers can also opt in for one session with `runtimeSessionParams.stickers.enabled=true`.
-
-### Manage Stickers
-
-```bash
-ravi stickers add wave "/path/to/wave.webp" \
+ravi stickers add wave ./wave.webp \
   --label "Wave" \
   --description "Use for a friendly quick hello." \
-  --avoid "Do not use during serious incidents." \
-  --channels whatsapp
+  --avoid "Do not use during serious incidents."
 
-ravi stickers list --json
-ravi stickers show wave --json
-ravi stickers remove wave --json --execute
+ravi stickers list
+ravi stickers show wave
+ravi stickers remove wave --execute
+
+# From a WhatsApp session, to the current chat
+ravi stickers send wave --execute
+
+# Explicit target
+ravi stickers send wave --channel whatsapp --account wa-main --to "5511999999999@s.whatsapp.net" --execute
 ```
 
-Catalog fields:
+`stickers add` also takes `--channels <csv>` (default `whatsapp`), `--agents <csv>` (default: all agents), `--disabled` and `--overwrite`. `stickers send` and `stickers remove` are dry-runs without `--execute`. Sending queues the sticker for the daemon to deliver.
 
-| Field | Description |
-|---|---|
-| `id` | Stable lowercase ID used by agents and operators |
-| `label` | Human label |
-| `description` | Natural usage description shown in prompts |
-| `avoid` | When not to use the sticker |
-| `channels` | Channel allowlist; only `whatsapp` supports outbound stickers initially |
-| `agents` | Agent allowlist; empty means all agents |
-| `media` | File media reference kept outside prompts |
-| `enabled` | Whether the sticker can be offered and sent |
+Stickers are opt-in per agent: set `"stickers": {"enabled": true}` in the agent defaults (next section).
 
-### Send A Sticker
+## Agent, instance and global defaults
 
-From a routed WhatsApp session:
+Instead of passing flags every time, store defaults:
+
+| Where | Keys | Command |
+|---|---|---|
+| Agent | `tts_voice`, `tts_model`, `tts_speed`, `tts_lang`, `image_provider`, `image_model`, `image_mode`, `image_aspect`, `image_size`, `image_quality`, `image_format`, `image_compression`, `image_background`, `stickers` | `ravi agents set <agent> defaults '<json>'` |
+| Instance | the `image_*` keys | `ravi instances set <instance> defaults '<json>'` |
+| Global | `image.provider`, `image.model`, `image.mode`, `image.quality`, `image.format` | `ravi settings set <key> <value>` |
 
 ```bash
-ravi stickers send wave --json --execute
+ravi settings set image.provider openai
+ravi instances set wa-main defaults '{"image_provider":"openai","image_model":"gpt-image-2","image_format":"png"}'
 ```
 
-With an explicit target:
+<Warning>
+`defaults` replaces the whole JSON object, and the agent's defaults also hold its runtime permissions (`runtimePermissions`). Writing `ravi agents set main defaults '{"tts_lang":"en"}'` would drop the agent's permission profile. Read the current object first and write back the merged version:
 
 ```bash
-ravi stickers send wave \
-  --channel whatsapp \
-  --account main \
-  --to "5511999999999@s.whatsapp.net" \
-  --json \
-  --execute
+ravi agents show main --json | jq -c '.agent.defaults + {"tts_lang":"en","stickers":{"enabled":true}}'
+ravi agents set main defaults '<paste the JSON printed above>'
+ravi agents permissions main    # confirm the profile is still there
 ```
+</Warning>
 
-Sticker sending uses the omni media path with sticker media type. Non-WhatsApp channels are rejected before enqueueing.
+## Files people send to your agent
 
-## Inbound Media
+When a message with a file arrives on Slack or WhatsApp, Ravi downloads it into the agent's working directory and puts the local path in the prompt, so the agent can open it with its tools.
 
-When a message arrives with media (images, videos, documents, stickers, audio), ravi automatically downloads the file and includes the local path in the agent's prompt.
+- **Location:** `<agent cwd>/attachments/`, for example `~/ravi/main/attachments/`.
+- **Name:** `{timestamp}-{messageId}.{ext}`.
+- **Size limit:** 20 MB. A larger file, or one that fails to download, still appears in the prompt, but without a file path.
+- **Audio:** saved and transcribed (see [Transcription](#voice-messages-your-agent-receives)).
 
-### Download Behavior
-
-- **Download location:** Agent's `attachments/` directory under its CWD (e.g., `~/ravi/main/attachments/`)
-- **Max file size:** 20 MB (larger files are skipped with a note)
-- **Naming convention:** `{timestamp}-{messageId}.{ext}`
-- **Supported types:** Images, videos, PDFs, documents, audio, stickers
-
-### Prompt Format
-
-Downloaded media appears in the agent's prompt with the local file path:
+The message body the agent sees for a WhatsApp image with a caption, and for a voice note:
 
 ```
-[+5511999 30/01/2026, 14:30]
-[Image: /home/user/ravi/main/attachments/1706619000000-ABC123.jpg]
-```
+[Image: /home/you/ravi/main/attachments/1760013000000-3EB0C4A1B2.jpg]
+Look at this
 
-Voice messages include the transcription:
-
-```
-[+5511999 30/01/2026, 14:30]
 [Audio]
 Transcript:
-The transcribed content of the voice message
+Can you send me the report?
+file: /home/you/ravi/main/attachments/1760013000000-3EB0C4A1B3.ogg
 ```
 
-## Environment Variables Summary
+The message body for Slack files:
 
-| Variable | Used By | Required |
-|---|---|---|
-| `ELEVENLABS_API_KEY` | Audio generation (TTS) | For TTS |
-| `ELEVENLABS_VOICE_ID` | Audio generation (TTS) | No |
-| `GROQ_API_KEY` | Audio transcription | For transcription* |
-| `OPENAI_API_KEY` | Audio transcription (fallback) | For transcription* |
-| `GEMINI_API_KEY` | Image generation, video analysis | For image/video |
-| `GEMINI_IMAGE_MODEL` | Image generation | No |
-| `GEMINI_VIDEO_MODEL` | Video analysis | No |
+```
+[Attachment: report.pdf, application/pdf, 1.2 MB]
+file: /home/you/ravi/main/attachments/1760013000512-1760013000_123456-F0123456789.pdf
 
-<Note>
-*At least one of `GROQ_API_KEY` or `OPENAI_API_KEY` is required for transcription. Both audio generation and image generation require their respective API keys independently.
-</Note>
+[Audio: voice-note.m4a, audio/mp4, 220.4 KB]
+Transcript:
+Can you send me the report?
+file: /home/you/ravi/main/attachments/1760013000731-1760013000_123456-F0123456790.m4a
+```
 
-### System Dependencies
+## Related
 
-| Dependency | Used By | Required |
-|---|---|---|
-| `ffmpeg` | PTT conversion, audio chunking | For voice notes and long audio transcription |
-| `ffprobe` | Audio duration detection | For chunked transcription |
-
-Install with: `brew install ffmpeg` (macOS) or `apt install ffmpeg` (Linux).
+- [Artifacts](/reference/artifacts): every generated image is recorded there.
+- [Skills](/reference/skills): the first `ravi audio`, `ravi image`, `ravi video` or `ravi stickers` call in an agent session loads the matching skill.
+- [Connect Slack](/channels/slack) and [Connect WhatsApp](/channels/whatsapp): the channels media is delivered to.
+- [Configuration](/reference/configuration): everything `~/.ravi/.env` can hold.

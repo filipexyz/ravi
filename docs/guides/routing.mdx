@@ -1,0 +1,229 @@
+---
+title: Instances and routing
+description: How a channel message reaches an agent, through instances, entry policies, routes, the pending queue and DM scopes, plus WhatsApp group management.
+icon: route
+---
+
+By the end of this page you will know how Ravi decides who may reach an agent on a channel and which agent and session answer, how to approve what is waiting, and how to check the live result before you trust it. The last section covers managing WhatsApp groups from the CLI.
+
+Examples use the instance names `wa-main` (WhatsApp) and `slack-main` (Slack) and the agent `main`.
+
+## How a message is routed
+
+1. **Instance.** The message arrives on an instance, the record of one channel account. A disabled WhatsApp instance ignores it.
+2. **Agent.** A route on that instance that matches the chat picks the agent. Without a matching route, the instance's own agent answers. With neither, the message is saved as pending.
+3. **Policy.** The DM or group policy decides whether the sender or group may reach the agent. Rejected messages are dropped or saved as pending.
+4. **Session.** The agent, the chat and the DM scope give the session key, and the agent runs a turn in that session.
+
+What the agent may do in that turn is decided by permissions, not routing. See [Permissions](/guides/permissions).
+
+## Instances
+
+An instance holds the default agent, the DM and group policies, the contact intake mode and, for Omni channels, the Omni instance id.
+
+- **WhatsApp** runs through Omni. `ravi instances connect` creates the instance in Omni and in Ravi and shows the pairing QR. See [Connect WhatsApp](/channels/whatsapp). Telegram and Discord also arrive through Omni; these docs only walk through WhatsApp.
+- **Slack** is native and is set up with `ravi channels`. See [Connect Slack](/channels/slack). Policies, routes and pending review work the same way, with the Slack differences noted under [Policies](#policies) and [Pending review](#pending-review).
+
+```bash
+ravi instances list
+ravi instances show wa-main
+ravi instances status wa-main          # live Omni state, agent, policies, contact intake
+ravi instances get wa-main dmPolicy
+ravi instances set wa-main agent main
+ravi instances disable wa-main         # Ravi ignores its messages; Omni stays connected
+ravi instances enable wa-main
+ravi instances disconnect wa-main      # disconnect the account in Omni
+ravi instances delete wa-main          # soft delete, immediate
+ravi instances deleted
+ravi instances restore wa-main
+```
+
+`ravi instances set` accepts `agent`, `dmPolicy`, `groupPolicy`, `contactIntakeMode`, `defaultContactTags`, `dmScope`, `instanceId`, `channel`, `enabled` and `defaults`. Use `-` as the value to clear `agent`, `dmScope`, `instanceId`, `defaults` or `defaultContactTags`. The instance `dmScope` is stored but routing does not read it; set DM scope on the agent or on a route.
+
+<Warning>
+Never run `ravi instances create` on a name that already exists. It overwrites the whole record: the Omni instance id is cleared, and the agent and policies are replaced by the flags you pass (no agent and `open` when you pass none). The instance then stops receiving messages and the daemon logs `Unknown instanceId — not registered in ravi, skipping`. Change an existing instance with `ravi instances set`. For WhatsApp you never need `create`, because `connect` creates the instance.
+</Warning>
+
+## Policies
+
+| `dmPolicy` | Direct messages |
+|---|---|
+| `open` (default) | Anyone reaches the agent |
+| `pairing` | Only contacts with status `allowed`; everyone else is saved as pending |
+| `closed` | No DMs |
+
+| `groupPolicy` | Groups and channels |
+|---|---|
+| `open` (default) | Every group the account is in reaches the agent |
+| `allowlist` | Only groups with an explicit route; others are saved as pending |
+| `closed` | No groups, except those with an explicit route |
+
+- The policy comes from the matching route's `--policy` first, then the instance, then `open`.
+- **An explicit route admits a group whatever the group policy**, `closed` included. Any pattern other than `*` counts as explicit. Adding a group route is the same as approving the group.
+- On Slack, an explicit route also admits DMs, and under `pairing` it is the only way in: Slack does not check the contact status for DMs. On WhatsApp, `pairing` admits `allowed` contacts.
+- The sender's contact status is only checked for WhatsApp DMs under `pairing` (`allowlist` checks the group, not the sender). Under `open`, in an admitted group, and on native Slack, a blocked contact still reaches the agent.
+
+<Warning>
+The defaults are `open`, and `ravi instances connect` rewrites the instance record every time it runs: policies go back to `open`, contact intake to `off`, and `defaultContactTags` and `defaults` are cleared. Set `pairing` and `allowlist` right after each connect. The WhatsApp policy questions in `ravi setup` do not configure instances.
+</Warning>
+
+**Contact intake** (`contactIntakeMode`) decides what happens to an unknown DM sender:
+
+- `off` (default): no contact is created. The agent still answers under `open`, but the turn runs with no tools.
+- `discovered` or `pending`: Ravi creates a contact with that status.
+
+In a chat without per-chat grants, any sender who resolves to a contact gets the agent's full permission ceiling, whatever the contact's status. Do not combine intake with `dmPolicy open` on an agent that has `full-access`.
+
+## Which agent answers
+
+1. **A route** on the receiving instance that matches the chat. Thread routes are tried first, then the group or sender.
+2. **The instance's agent**, set with `--agent` on connect or `ravi instances set <instance> agent <id>`.
+3. **Nothing.** The message is saved as pending for that instance and the log says `No route for message, saved as pending`.
+
+The global `defaultAgent` setting only applies to messages that arrive without an instance, so it never rescues an instance that has no agent. `ravi instances status` shows the agent of such an instance as `(default)`, but its messages still go to pending.
+
+Routes are scoped to their instance. A route on `wa-main` never matches a message on another instance.
+
+A chat attached to a session with `ravi sessions attach` goes to that session even when a route points elsewhere. `ravi routes explain` warns about it as `Sticky attach`.
+
+## Routes
+
+```bash
+ravi instances routes add wa-main group:120363012345678901 main
+ravi instances routes add wa-main "5511*" sales --priority 10
+ravi instances routes add wa-main group:120363012345678901 main --session team-ops
+ravi instances routes list wa-main
+ravi instances routes show wa-main group:120363012345678901
+ravi instances routes set wa-main "5511*" agent support
+ravi instances routes remove wa-main "5511*"      # soft delete, immediate
+ravi instances routes deleted
+ravi instances routes restore wa-main "5511*"
+ravi routes list                                  # routes on every instance
+```
+
+| Pattern | Matches |
+|---|---|
+| `5511987654321` | One sender (exact) |
+| `5511*` | Senders starting with `5511`; `*` works anywhere in a pattern |
+| `group:120363012345678901` | One WhatsApp group (its id without `@g.us`) |
+| `group:C0123ABCD` | One Slack channel (`G...` ids of private channels work too) |
+| `U0123ABCD` | One Slack member's DMs |
+| `thread:<id>` | One thread, checked before group routes |
+| `lid:<id>` | One WhatsApp sender by privacy id (LID) |
+| `*` | Everything on the instance; does not count as explicit for the group policy |
+
+Ravi takes the **first** matching route, not the most specific one: higher `--priority` first, then the older route. Give specific routes a higher priority than a `*` catch-all.
+
+| Option | Effect |
+|---|---|
+| `--policy <policy>` | Overrides the instance policy for chats this route matches (`open`, `pairing`, `closed`, `allowlist`) |
+| `--session <name>` | Names the session of the matching chat; if a session with that name already exists, the chat joins it, so several chats can share one session |
+| `--dm-scope <scope>` | DM scope for this route |
+| `--priority <n>` | Higher wins (default 0) |
+
+Route mutations refuse to run when the CLI is a different build from the running daemon. `ravi instances target wa-main` shows both. Use the same install, or pass `--allow-runtime-mismatch` knowing that the daemon may read the change differently.
+
+## Pending review
+
+Pending holds DMs from non-allowed senders under `pairing`, groups without a route under `allowlist`, and every message on an instance with no agent and no matching route.
+
+```bash
+ravi instances pending list wa-main
+ravi instances pending approve wa-main 5511987654321
+ravi instances pending approve wa-main group:120363012345678901 --agent main
+ravi instances pending reject wa-main 5511987654321              # dry-run, exits 3
+ravi instances pending reject wa-main 5511987654321 --execute
+```
+
+- **Approving a contact** marks it `allowed`. It does not create a route, so it does not fix `No route for message`; set the instance agent for that.
+- **Approving a chat** creates a route from the chat to `--agent` (or the instance agent) and removes it from pending.
+- The first message is not replayed. Send a new one after approving.
+- **Slack:** do not use `pending approve` with Slack channel ids; it builds a broken route pattern. Approve a Slack channel with a route instead: `ravi instances routes add slack-main group:C0123ABCD main`. Under `pairing`, a Slack DM also needs a route (`ravi instances routes add slack-main U0123ABCD main`). See [Connect Slack](/channels/slack).
+
+## DM scopes
+
+DM scope decides how direct messages are grouped into sessions. Groups and channels always get their own session.
+
+| Scope | Session key | Effect |
+|---|---|---|
+| `main` | `agent:main:main` | Every DM shares one session |
+| `per-peer` (default) | `agent:main:dm:<peer>` | One session per person |
+| `per-channel-peer` | `agent:main:whatsapp:dm:<peer>` | One per person per channel |
+| `per-account-channel-peer` | `agent:main:whatsapp:wa-main:dm:<peer>` | One per person per instance |
+
+```bash
+ravi agents set main dmScope per-channel-peer
+ravi instances routes add wa-main "5511*" main --dm-scope main
+ravi settings set defaultDmScope per-peer          # agents without their own scope
+```
+
+The route scope wins over the agent scope, which wins over the setting. More in [Sessions](/guides/sessions).
+
+## Check live routing
+
+```bash
+ravi routes explain wa-main group:120363012345678901
+ravi instances target wa-main --pattern group:120363012345678901
+```
+
+Both print which CLI build and database you are targeting, the configured route for the pattern, and its live effect: which route and agent win for that pattern in the live router. Run one before and after every route change. If the live winner is not the route you configured, the change is not done. The winner check covers `group:`, `lid:` and phone-number patterns; for other patterns, such as a Slack member id, it says the check was skipped.
+
+## WhatsApp groups
+
+`ravi whatsapp group` talks to the Omni API directly, so Omni must be configured and the instance must have an Omni id. Group ids work as `group:120363425628305127` or `120363425628305127@g.us`.
+
+Pass `--account <instance>` when you have more than one instance. Without it, an agent running the command inside a chat uses that chat's instance, and your terminal uses the first enabled instance in alphabetical order (`slack-main` comes before `wa-main`). The examples below assume a single WhatsApp instance.
+
+| Kind | Commands |
+|---|---|
+| Read only | `list`, `info`, `invite` |
+| Dry-run unless `--execute` (exit 3) | `create`, `add`, `remove`, `promote`, `revoke-invite`, `join`, `leave`, `rename`, `description`, `settings`, `send` |
+| Immediate | `demote` |
+
+**Find and inspect groups**
+
+```bash
+ravi whatsapp group list
+ravi whatsapp group info group:120363425628305127
+ravi whatsapp group invite group:120363425628305127
+```
+
+**Create a group routed to an agent**
+
+```bash
+ravi contacts add 5511999999999 "Alice"
+ravi contacts add 5511888888888 "Bruno"
+ravi whatsapp group create "Project Alpha" "5511999999999,5511888888888" --agent main --execute
+```
+
+Every participant must already be a contact; the command lists unknown numbers and stops. With `--agent`, Ravi registers the chat, adds the route `group:<id> → main`, creates the session (named after the group, here `project-alpha`) and asks the agent to introduce itself, which starts a turn right away. Without `--agent`, route the group yourself with `ravi instances routes add`.
+
+Contacts tagged `admin` who are in the group are promoted to group admin; `--skip-tagged-admins` turns that off. `--admin <phones>` adds those numbers and promotes them. `--create-agent` creates the `--agent` first when it does not exist.
+
+**Manage members**
+
+```bash
+ravi whatsapp group add group:120363425628305127 "5511999999999,5511888888888" --execute
+ravi whatsapp group remove group:120363425628305127 "5511999999999" --execute
+ravi whatsapp group promote group:120363425628305127 "5511999999999" --execute
+ravi whatsapp group demote group:120363425628305127 "5511999999999"
+```
+
+`add` checks that every number is a contact. `demote` only reduces authority, so it runs immediately.
+
+**Settings, invites and messages**
+
+```bash
+ravi whatsapp group settings group:120363425628305127 announcement --execute     # only admins send
+ravi whatsapp group settings group:120363425628305127 not_announcement --execute
+ravi whatsapp group settings group:120363425628305127 locked --execute           # only admins edit info
+ravi whatsapp group settings group:120363425628305127 unlocked --execute
+ravi whatsapp group rename group:120363425628305127 "New name" --execute
+ravi whatsapp group description group:120363425628305127 "What this group is for" --execute
+ravi whatsapp group revoke-invite group:120363425628305127 --execute             # prints the new link
+ravi whatsapp group join "https://chat.whatsapp.com/ABC123" --execute
+ravi whatsapp group leave group:120363425628305127 --execute
+ravi whatsapp group send group:120363425628305127 "Deploy is done" --execute
+```
+
+`send` posts your literal text as the WhatsApp number; `--mention <target>` mentions a participant by name, phone or id. Direct messages have their own group: `ravi whatsapp dm send`, `read` and `ack`.

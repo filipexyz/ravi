@@ -1,0 +1,207 @@
+---
+title: Install Ravi
+description: Install Ravi from npm, run the setup wizard, choose a model provider and talk to your first agent from the terminal.
+icon: download
+---
+
+At the end of this page the Ravi daemon runs under PM2, the `main` agent answers you in the terminal with the provider you chose, and everything comes back after a reboot.
+
+## Before you start
+
+You need a macOS or Linux machine with:
+
+- **Bun 1.0 or newer**, with `~/.bun/bin` on your `PATH`. Install it from [bun.sh](https://bun.sh), then open a new shell. Ravi runs on Bun, and the setup wizard installs global tools with `bun add -g`, which puts them in `~/.bun/bin`.
+- **Node.js 18 or newer.** Ravi runs its processes under PM2, and PM2 requires Node.js 18 or newer.
+- **A model credential.** For Claude: a Claude Code OAuth token (`sk-ant-oat01-...`, printed by `claude setup-token` in Claude Code) or an Anthropic API key. For Codex: the `codex` CLI on your `PATH`.
+- **PostgreSQL for Omni.** Ravi needs a NATS server with JetStream, and `ravi setup` gets one by installing Omni, which also bridges WhatsApp. Omni keeps its data in PostgreSQL. By default `omni install` uses an embedded server (`pgserve`, installed by autopg); when that is not on your `PATH`, it falls back to `postgresql://postgres:postgres@localhost:5432/omni`. Either install autopg with the command Omni suggests, or have PostgreSQL reachable at that URL:
+
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/automagik-dev/autopg/main/install.sh -o autopg-install.sh
+  less autopg-install.sh    # read it before you run it
+  bash autopg-install.sh && rm autopg-install.sh
+  ```
+
+- **Free ports** 4222 (NATS) and 8882 (Omni API).
+
+Only using Slack? You can skip Omni and PostgreSQL. See [Run without Omni](#run-without-omni-slack-only) at the end of this page.
+
+<Note>
+These docs follow the `next` release channel (`ravi.bot@next`). The `latest` channel is older and lacks Bases, the one-command `ravi pages ship`, the `explicit-only` permission profile and governed chats.
+</Note>
+
+## Install
+
+<Steps>
+  <Step title="Install the CLI">
+    ```bash
+    bun add -g ravi.bot@next
+    ravi --version
+    ```
+
+    If Ravi is already installed, `ravi update --next` moves it to the `next` channel.
+  </Step>
+  <Step title="Run the setup wizard">
+    ```bash
+    ravi setup
+    ```
+
+    The wizard asks its questions in Portuguese and runs five steps:
+
+    | Step | What it does |
+    |---|---|
+    | 1. Omni Infrastructure | Installs PM2 (`bun add -g pm2`) and Omni (`bun add -g @automagik/omni`) if they are missing, then runs `omni install`. Omni starts two PM2 processes: `omni-nats` (NATS with JetStream on port 4222) and `omni-api` (port 8882). |
+    | 2. Ambiente | Creates `~/.ravi/.env` and asks for a Claude credential. Type `OAuth token` in full to paste a Claude Code token; any other answer means `API key`. Then it asks for an optional OpenAI key (audio transcription) and a model (`sonnet`, `haiku` or `opus`). |
+    | 3. Agente | Ravi creates the `main` agent on first run, so this step only lists it. |
+    | 4. Configurações | Asks your time zone, then WhatsApp DM and group policies. The policy answers are saved as global settings and do not change any instance. You set the real policies per instance on the channel pages. |
+    | 5. Daemon | Starts the daemon under PM2 (`ravi daemon start`) and runs `pm2 save`. |
+
+    The wizard prints "Configuração completa!" even when a step failed, so read any warning lines above it. Its final hint, `ravi agents chat main`, is not a real command. Use the commands in [Talk to your agent](#talk-to-your-agent) instead.
+  </Step>
+  <Step title="Create the agent's instructions file">
+    ```bash
+    ravi agents sync-instructions --agent main --materialize-missing
+    ```
+
+    This creates `~/ravi/main/AGENTS.md`, a stub you edit to tell the agent who it is and how to work, plus a `CLAUDE.md` bridge that points to it.
+  </Step>
+</Steps>
+
+## Choose the model provider
+
+The built-in default provider is `codex`, but the wizard collects a Claude credential. Until you change it, `ravi agents show main` prints `Provider: codex (runtime_default)` and the Claude credential goes unused. We recommend Claude.
+
+<Tabs>
+  <Tab title="Claude (recommended)">
+    With a Claude Code OAuth token, store it as the agent's credential. `read -rs` keeps the token out of your shell history:
+
+    ```bash
+    read -rs CLAUDE_TOKEN    # paste the sk-ant-oat01-... token, then press Enter
+    printf '%s' "$CLAUDE_TOKEN" | ravi runtime providers claude configure --stdin --set-provider
+    unset CLAUDE_TOKEN
+    ```
+
+    This writes `CLAUDE_CODE_OAUTH_TOKEN` to `~/.ravi/.env` and attaches it as a runtime credential for `main`.
+
+    With an Anthropic API key, there is nothing to store if you gave it to the wizard. Otherwise:
+
+    ```bash
+    read -rs ANTHROPIC_KEY
+    printf '%s' "$ANTHROPIC_KEY" | ravi runtime env set ANTHROPIC_API_KEY --stdin
+    unset ANTHROPIC_KEY
+    ```
+
+    In both cases, finish with:
+
+    ```bash
+    ravi agents set main provider claude
+    ravi daemon restart -m "main uses claude"
+    ```
+
+    `ravi agents set` also moves existing sessions of `main` to the new provider. The restart makes the daemon reload `~/.ravi/.env`. `ravi daemon restart` always needs `-m` with a reason.
+
+    <Note>
+    The OAuth credential is limited to the agents listed in `--agents` (default `main`). When you add more agents that use Claude, run the configure command again with `--agents main,<other-agent>`.
+    </Note>
+  </Tab>
+  <Tab title="Codex">
+    Install OpenAI's Codex CLI so that `codex` is on your `PATH`. Then log in through Ravi:
+
+    ```bash
+    ravi runtime providers codex login start
+    ```
+
+    It prints a login id, a `url=` and a `code=`. Open the URL, enter the code, and when the login is authorized:
+
+    ```bash
+    ravi runtime providers codex login status <login-id>
+    ravi runtime providers codex login complete <login-id> --set-provider
+    ravi agents set main provider codex
+    ravi daemon restart -m "main uses codex"
+    ```
+
+    The login is stored in `~/.ravi/codex` and attached as a runtime credential for `main`.
+  </Tab>
+</Tabs>
+
+## Check that it runs
+
+```bash
+ravi daemon status
+ravi agents show main
+ravi doctor
+```
+
+`ravi daemon status` should list `ravi`, `omni-nats` and `omni-api` as `online`. `ravi agents show main` should show `Provider:      claude (agent_default)`, or `codex` if you chose Codex.
+
+`ravi doctor` inspects the whole install. On a new install it reports errors for parts you have not set up yet:
+
+| Finding | What to do |
+|---|---|
+| `instances.main` | Expected until you connect a channel. This check looks for an instance named `main`, so with the names used in these guides (`slack-main`, `wa-main`) it keeps reporting `main instance is missing`. You can ignore it. |
+| `runtime.daemon` | The daemon is not running. Look at `ravi daemon logs`. |
+| `codex.bash-hook` | On the first run, doctor writes Ravi's shell check into `~/.codex/hooks.json` and reports that rewrite as an error. Run `ravi doctor` again; it should pass. |
+| `agents.instructions` | Run the `ravi agents sync-instructions` command from the install steps. The `--all` flag the hint mentions does not exist. |
+
+<Warning>
+The daemon looks for Omni only when it starts. If you install or fix Omni after the daemon is running (for example, after setting up PostgreSQL), run `ravi daemon restart -m "omni ready"` and check that `ravi daemon logs` shows `Omni connection resolved`.
+</Warning>
+
+## Talk to your agent
+
+```bash
+ravi sessions send main "hi" -a main -w
+```
+
+This creates a session named `main` for the agent `main`, sends the prompt and waits for the reply. `-a main` is required the first time, because the session does not exist yet.
+
+Turns you start from the terminal run with the agent's whole permission ceiling, and nothing in them can ask for approval. The [next page](/start/owner) explains the ceiling and how to raise it.
+
+## Keep it running after a reboot
+
+PM2 restarts Ravi's processes if they crash. To start them again after a reboot:
+
+```bash
+pm2 startup    # prints a command; run that command (it usually needs sudo)
+pm2 save       # or: ravi daemon install
+```
+
+Run `pm2 save` again whenever PM2 gets a new process, for example after `ravi channels start` when you connect Slack.
+
+## Update
+
+```bash
+ravi update --next
+```
+
+This installs the newest `next` build, remembers the channel, and restarts the Ravi processes in PM2 (add `--no-restart` to skip that). Once you have run it with `--next`, a plain `ravi update` stays on `next`. Before that, a plain `ravi update` installs `latest`. `ravi update --stable` switches to `latest`, and `--version <version>` installs one exact release.
+
+## Run without Omni (Slack only)
+
+<Accordion title="Run your own NATS server instead of Omni">
+  Ravi only needs a NATS server with JetStream at `NATS_URL` (default `nats://127.0.0.1:4222`). Omni is one way to get it. If you will only use Slack, you can run NATS yourself and skip Omni and PostgreSQL. This is an advanced path.
+
+  `ravi setup` always tries to install Omni, whose `omni-nats` would compete for port 4222, so run these commands in place of the wizard (step 2 above):
+
+  ```bash
+  bun add -g pm2
+  # Install nats-server: `brew install nats-server` on macOS, or a release
+  # binary from https://github.com/nats-io/nats-server/releases on Linux.
+  mkdir -p ~/.ravi/jetstream
+  pm2 start "$(command -v nats-server)" --name nats --interpreter none -- -js -sd ~/.ravi/jetstream -a 127.0.0.1 -p 4222
+  ravi settings set defaultTimezone America/Sao_Paulo   # your time zone
+  ravi daemon start
+  pm2 save
+  ```
+
+  Then continue with step 3 and [Choose the model provider](#choose-the-model-provider). `-js` turns on JetStream, which Ravi requires.
+
+  The daemon logs `Omni not configured` and `Creating gateway without omni`. Slack does not go through Omni, so you can ignore both. `ravi daemon status` shows `omni-nats` and `omni-api` as `not managed by PM2`; use `pm2 ls` to see your `nats` process.
+
+  If NATS runs on another host or port, add `NATS_URL=nats://<host>:<port>` to `~/.ravi/.env` (or open it with `ravi daemon env`) and run `ravi daemon restart -m "nats url"`.
+</Accordion>
+
+## Next
+
+<Card title="Make yourself the owner" icon="shield-check" href="/start/owner">
+  Set the agent's permission ceiling and make your own contact the one that can do everything and approve requests.
+</Card>

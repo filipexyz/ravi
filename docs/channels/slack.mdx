@@ -1,0 +1,239 @@
+---
+title: Connect Slack
+description: Create a Slack app, keep its tokens in Ravi's credential broker, and talk to your agent in DMs, channels and threads.
+icon: hash
+---
+
+By the end of this page, a Slack app is connected to Ravi through Socket Mode, the agent `main` answers you in a DM, in a channel and in threads, and only you and the channels you choose can reach it.
+
+Slack is the recommended channel. Ravi connects to Slack itself: messages do not go through Omni, and you need no phone and no public URL.
+
+Below, `slack-main` names both the channel config and the instance, `main` is the agent, `U0123ABCD` is your Slack member ID and `C0123ABCD` a channel ID.
+
+## Before you start
+
+- **Ravi installed and answering in the terminal** ([Install Ravi](/start/install); its *Run without Omni* section skips Omni and PostgreSQL for Slack-only use):
+
+  ```bash
+  ravi daemon status                        # ravi: online
+  ravi sessions send main "hi" -a main -w   # the agent answers
+  ```
+
+- **PM2** (`ravi setup` installs it) and **permission to install apps** in your Slack workspace.
+- **A place for the tokens:** the macOS Keychain, or a HashiCorp Vault server (KV version 2) on Linux. Ravi reads Slack tokens only from its credential broker, never from `~/.ravi/.env`.
+
+The channel config `slack-main` points to the tokens (credential connection `slack:main`). The channel runner, a separate PM2 process called `ravi-channels`, reads it and connects to Slack, then routes each message through the instance with the **same name**, which holds the agent, the policies and the routes. If the names differ, every message is held for review. `ravi daemon start` does not start the runner; `ravi channels start` does.
+
+## Set it up
+
+<Steps>
+<Step title="Create the Slack app">
+
+At [api.slack.com/apps](https://api.slack.com/apps), choose **Create New App > From scratch**. Ravi does not ship an app manifest, so set these by hand:
+
+1. **Socket Mode:** turn it on and create the app-level token with the `connections:write` scope. Copy it (`xapp-...`).
+2. **Event Subscriptions:** turn it on and subscribe to the bot events `message.im`, `message.channels`, `message.groups`, `message.mpim` and `app_mention` (plus `reaction_added` for reaction triggers).
+3. **Interactivity & Shortcuts:** turn it on. Approval buttons need it.
+4. **App Home:** turn on the **Messages Tab** and allow users to send messages from it, or you cannot DM the app.
+5. **OAuth & Permissions:** add the bot scopes below. Leave token rotation off: Ravi does not refresh tokens.
+6. **Install to Workspace** and copy the **Bot User OAuth Token** (`xoxb-...`).
+
+| Bot scopes | Used for |
+|---|---|
+| `chat:write` | Replies and approval messages |
+| `im:history`, `im:read`, `mpim:history`, `mpim:read` | DMs and group DMs |
+| `channels:history`, `channels:read`, `groups:history`, `groups:read` | Public and private channels |
+| `app_mentions:read`, `users:read` | Mentions, sender names |
+| `reactions:write` | The hourglass "working" reaction |
+| `files:read`, `files:write` | Files in both directions |
+
+Optional: `reactions:read` (reaction events), `canvases:read`/`canvases:write` (`ravi slack canvas-*`), `channels:manage`/`groups:write` (`ravi slack channels-create`), `links:read`/`links:write` (unfurls), `assistant:write` ([Working indicator](#working-indicator)).
+
+After changing scopes or events, reinstall the app, store the bot token again if it changed, and run `ravi channels restart`.
+
+</Step>
+<Step title="Store the tokens">
+
+<Tabs>
+<Tab title="macOS">
+
+The tokens go to your login Keychain. The CLI, the channel runner and the daemon (which posts approval messages) read them from there, so run Ravi as your own user.
+
+</Tab>
+<Tab title="Linux">
+
+The CLI, the daemon and the channel runner all need the Vault address and token. Add them to `~/.ravi/.env` and restart the daemon before you store the tokens or start the runner:
+
+```bash
+cat >> ~/.ravi/.env <<'EOF'
+VAULT_ADDR=https://vault.example.com:8200
+VAULT_TOKEN=hvs.your-vault-token
+EOF
+ravi daemon restart -m "vault env"
+```
+
+The tokens land in `secret/ravi/credentials/slack/main`, key `token`, on a KV v2 engine (see `--vault-mount`, `--vault-path`, `--vault-key`). A `vault server -dev` keeps data in memory only. When the Vault token changes, update `~/.ravi/.env` and restart the daemon and the runner.
+
+</Tab>
+</Tabs>
+
+Paste the tokens at a hidden prompt, which keeps them out of your shell history:
+
+```bash
+read -rs SLACK_APP_TOKEN   # paste xapp-..., press Enter
+read -rs SLACK_BOT_TOKEN   # paste xoxb-..., press Enter
+printf 'SLACK_APP_TOKEN=%s\nSLACK_BOT_TOKEN=%s\n' "$SLACK_APP_TOKEN" "$SLACK_BOT_TOKEN" \
+  | ravi credentials connections add --provider slack --connection main --backend keychain --secret-stdin   # Linux: --backend vault
+unset SLACK_APP_TOKEN SLACK_BOT_TOKEN
+ravi credentials broker exec --provider slack --connection main --action socket_mode.connect --execute
+```
+
+You should see `Stored connection slack:main (keychain)` (or `vault`), then `executed: slack:main socket_mode.connect` and `secretResolved=yes`. That proves the secret is readable, not that Slack accepts it; step 4 checks that.
+
+If `connections add` prints only `Command failed unexpectedly.`, check that you passed `--backend`, and that `VAULT_ADDR` and `VAULT_TOKEN` are set and valid (Linux) or the `security` tool exists (macOS).
+
+</Step>
+<Step title="Create the channel config and the instance">
+
+```bash
+ravi channels create slack-main --provider slack --credential-connection main
+ravi instances create slack-main --channel slack --agent main --dm-policy pairing --group-policy allowlist
+ravi instances show slack-main
+```
+
+`show` should list `Agent: main`, `DM Policy: pairing` and `Group Policy: allowlist`. These policies hold every DM and channel until you route it. With the default `open`, anyone in the workspace who DMs the app, and every human message in any channel it is in, reaches the agent.
+
+<Warning>
+Run each `create` once. Both overwrite the whole record: `ravi instances create slack-main` without its flags clears the agent and resets the policies to `open`, and `ravi channels create slack-main` without `--credential-connection` drops the tokens. To change one field, use `ravi instances set slack-main <key> <value>` or `ravi channels set slack-main <key> <value>`.
+</Warning>
+
+</Step>
+<Step title="Start the channel runner">
+
+```bash
+ravi channels start
+ravi channels status
+ravi daemon install                                # pm2 save, so the runner survives a reboot
+ravi slack permissions-list --channel slack-main   # asks Slack; prints your scopes
+```
+
+A healthy runner looks like this:
+
+```
+Ravi Channels Status
+--------------------
+  ravi-channels: online (PID 48211)
+  health: ready
+  slack:slack-main:slack-main: connected
+```
+
+- The first `channels start` does not save PM2's process list, hence `ravi daemon install` (and `pm2 startup`, see [Install Ravi](/start/install)).
+- `permissions-list` tests only the bot token. A wrong app token shows as an adapter that never gets to `connected`.
+- Run `ravi channels restart` after `channels create` or `channels set`, after storing new tokens, and after changing Slack settings in `~/.ravi/.env`. Instances, routes and contacts reload on their own.
+- `ravi daemon status` does not list the runner; `ravi daemon status --json` does.
+- `ravi channels logs` follows the log until Ctrl+C. For a one-off read: `pm2 logs ravi-channels --nostream --lines 200`.
+- Do not run `ravi channels probe` while the runner is up: it opens a second Slack connection.
+
+</Step>
+<Step title="Make yourself the owner">
+
+Find your member ID in Slack: open your profile, click **⋮** (More) and choose **Copy member ID**. It starts with `U`.
+
+```bash
+ravi agents permissions main full-access --execute     # skip if done on the owner page
+ravi contacts add U0123ABCD "Your Name" --channel slack --instance slack-main
+ravi contacts tag <contact-id> permission-owner
+ravi instances routes add slack-main U0123ABCD main
+```
+
+- `contacts add` prints the `<contact-id>`. `--instance` must be exactly `slack-main`. A typo is accepted silently, and then your messages do not resolve to you: the agent answers without tools. `ravi contacts check U0123ABCD --json` must show `"instanceId": "slack-main"`.
+- Already have an owner contact, for example from WhatsApp? Link your Slack ID to it instead: `ravi contacts link <contact-id> --channel slack --id U0123ABCD --instance slack-main`.
+- The route is what lets your DMs through `pairing`. On Slack, an `allowed` contact alone is not enough.
+
+[Make yourself the owner](/start/owner) explains the ceiling, the `permission-owner` tag and the risks.
+
+</Step>
+<Step title="Add a channel">
+
+In Slack, invite the app to the channel, public or private: `/invite @Ravi` (your app's name). It never joins on its own. Find the channel ID at the bottom of the channel's **About** tab, or with `ravi slack channels-list --channel slack-main`. Then:
+
+```bash
+ravi instances routes add slack-main group:C0123ABCD main
+ravi routes explain slack-main group:C0123ABCD    # Winning route: group:c0123abcd
+```
+
+- Keep the `group:` prefix: a bare `C0123ABCD` route never matches. Private channels with `G...` IDs work the same way.
+- In a channel with other people, every member who resolves to a contact gets the agent's whole ceiling. Govern it first ([Make yourself the owner](/start/owner)).
+
+<Warning>
+Do not use `ravi instances pending approve` with Slack IDs. For a channel it stores a broken route made of the ID's digits, and for a member it can create a stray phone contact. The table from `ravi instances pending list slack-main` shows that broken pattern too; take the `chatId` from `--json` and add the route yourself.
+</Warning>
+
+</Step>
+</Steps>
+
+## How the agent behaves in Slack
+
+| You write | Session | The agent answers |
+|---|---|---|
+| In a DM | `agent:main:dm:U0123ABCD` | In the DM |
+| At a channel root | `agent:main:slack:slack-main:group:C0123ABCD` | At the channel root |
+| In a channel thread | Its own child session, ending in `:thread:<ts>` | In the thread |
+| In a DM thread | The DM session | In the thread |
+
+- With `--session <name>` on the DM route, your DMs go to that session and each DM thread gets a child session. To make a routed channel feed a session that already exists, run `ravi sessions attach main --chat C0123ABCD` ([Sessions](/guides/sessions)).
+- To answer channel root messages in a new thread: `ravi channels set slack-main defaults '{"rootReplyMode":"new_thread"}'`, then `ravi channels restart`. This replaces the whole `defaults` object.
+- There is no mention-only mode: every human message in a routed channel starts a turn. Other bots are ignored unless they mention your app.
+- Edited messages are ignored. Send a new one.
+- `ravi contacts block` does not stop Slack messages, and reply mode is not enforced. Keep people out with policies and routes ([Instances and routing](/guides/routing)).
+
+<Note>
+Questions with options (polls, the agent's `AskUserQuestion`) do not work on Slack: Ravi cannot post a poll there (`Polls are not supported on Slack`), so the agent gets an error instead of your answer. Ask the agent to ask in plain text.
+</Note>
+
+### Working indicator
+
+By default Ravi sets Slack's assistant status ("is working...") while the agent works. Slack shows it only for apps with the **Agents & AI Apps** feature and the `assistant:write` scope. If you see nothing, use a reaction instead:
+
+```bash
+echo 'RAVI_SLACK_ASSISTANT_STATUS=off' >> ~/.ravi/.env
+ravi channels restart
+```
+
+The agent then puts an hourglass reaction on your message and removes it when done. `RAVI_SLACK_REACTION_PRESENCE=always` shows both.
+
+## Approvals
+
+When a turn asks for something the agent's ceiling does not cover and the request goes to approval, Ravi posts a message with **Approve** and **Reject** buttons in the chat the request came from. Only agents on the Pi and Grok providers ask. On Claude and Codex, a shell command outside the ceiling is refused at once, and on every provider a `ravi` command group outside it is refused without asking.
+
+- Approving a shell command does not make it run today: it is still refused. To let the agent run an executable, add it to the agent's ceiling.
+- Only clicks count; reactions and text replies are ignored.
+- Only a contact whose capabilities cover the request, or who has `admin:system:*` (your `permission-owner` tag), can decide. Other clicks are ignored without any message in Slack.
+- No click within 5 minutes means not approved.
+- Buttons need **Interactivity** on. The daemon posts the message, so it must read the tokens too (Keychain, or the Vault variables in `~/.ravi/.env`).
+
+At `full-access` few requests need approval. See [Permissions](/guides/permissions).
+
+## Smoke test
+
+```bash
+ravi daemon status                                 # ravi: online
+ravi channels status                               # health: ready ... connected
+```
+
+1. **DM.** In the app's Messages tab, send `hi`; the agent answers. Ask it to run `ravi agents list`; it runs, because you are the owner.
+2. **Channel.** In the routed channel, send `@Ravi hi`. The answer appears at the channel root.
+3. **Thread.** Reply in a thread under that answer. The agent answers in the thread, and `ravi sessions list --agent main` shows a new session for the thread: its name contains `-t-` followed by the thread timestamp without the dot, and its key ends in `:thread:<ts>`.
+4. **Ceiling.** Lower the ceiling with `ravi agents permissions main bootstrap` (it applies at once) and ask the agent in the DM to run `uname -a`. The command is refused, because `uname` is outside `bootstrap` (on Pi or Grok, Ravi first posts **Approve** and **Reject** buttons; click **Reject**). Restore it with `ravi agents permissions main full-access --execute`.
+
+## If it does not answer
+
+- **`health: stopped (not_running)`:** run `ravi channels start`.
+- **Adapter `slack:slack-main` is `failed`:** the runner cannot read the tokens. Repeat the `broker exec` check from step 2 (on Linux, check the Vault variables), then `ravi channels restart`.
+- **Adapter stuck in `reconnecting (open_failed)`:** the app token is wrong or revoked, or Socket Mode is off.
+- **Log says `Slack inbound held for owner review`:** the chat has no route, or the instance name differs from the channel config. Check `ravi routes explain slack-main group:C0123ABCD`.
+- **Nothing in the log:** the app is not in the channel, an event subscription is missing, or the app was not reinstalled after a scope change.
+- **Answers without tools:** your Slack ID is not linked to your contact on `slack-main`. Check with `ravi contacts check <your contact>`.
+- **Approve does nothing:** Interactivity is off in the Slack app, or the request was for a shell command, which approving does not unblock today (see [Approvals](#approvals)).
+
+More in [Troubleshooting](/guides/troubleshooting).

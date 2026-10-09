@@ -1,43 +1,56 @@
 ---
-title: Ravi
-description: The daemon that gives Claude a life.
+title: Introduction
+description: A local daemon that runs AI agents with persistent sessions, connects them to your chat channels, and runs their automation.
+icon: house
 ---
 
+Ravi runs AI agents on your own machine. Each agent keeps persistent sessions, answers in the chat channels you connect (Slack natively, WhatsApp, Telegram and Discord through the Omni bridge), and runs automation on its own: scheduled prompts (cron), event triggers and a periodic heartbeat. Every agent has a permission ceiling, and Ravi decides who can reach it and what a message from each person can make it do.
+
+Ravi also connects to the Ravi Console. After `ravi login`, your agents can publish pages on `ravi.page` and build interactive pages backed by Bases, the typed tables of a Console project.
+
+## How the pieces fit
+
+| Piece | What it is |
+|---|---|
+| `ravi` | The daemon, a PM2 process. It runs agent sessions, delivers replies, and runs cron jobs, triggers and heartbeats. |
+| `ravi-channels` | The native channel runner, a separate PM2 process started with `ravi channels start`. It connects Slack. |
+| Omni | The bridge for WhatsApp, Telegram and Discord. It runs as two PM2 processes, `omni-api` and `omni-nats`, and stores its data in PostgreSQL. |
+| NATS JetStream | The event bus between all processes, at `NATS_URL` (default `nats://127.0.0.1:4222`). The default install gets it from Omni's `omni-nats`. |
+| `~/.ravi/ravi.db`, `~/.ravi/chat.db` | SQLite databases. `ravi.db` holds agents, sessions, instances, routes, settings and tags; `chat.db` holds contacts and their identities. |
+| Providers | The model runtime behind each agent: `codex` (the built-in default), `claude`, `pi` or `grok`. You choose one per agent. |
+
+You manage all of it with the `ravi` CLI. Agents use the same CLI as their tools, within the permissions you give them.
+
+## Get started
+
+Follow these pages in order. Connect one channel (Slack is the recommended one) and skip the other.
+
 <CardGroup cols={2}>
-
-<Card title="Quick Start" href="/start/quickstart">
-  Install and run Ravi in minutes.
-</Card>
-
-<Card title="CLI Reference" href="/cli/overview">
-  Full command reference for the ravi CLI.
-</Card>
-
-<Card title="Architecture" href="/architecture">
-  How the daemon, NATS, omni, and agents fit together.
-</Card>
-
-<Card title="Features" href="/features/overview">
-  Heartbeat, cron, triggers, TTS, and more.
-</Card>
-
+  <Card title="1. Install Ravi" icon="download" href="/start/install">
+    Install the CLI, run the setup wizard, pick a provider and talk to your agent in the terminal.
+  </Card>
+  <Card title="2. Make yourself the owner" icon="shield-check" href="/start/owner">
+    Give the agent its permission ceiling and make your own contact the one that can approve.
+  </Card>
+  <Card title="3. Connect Slack (recommended)" icon="hash" href="/channels/slack">
+    Create a Slack app, connect it natively and talk to your agent in DMs, channels and threads.
+  </Card>
+  <Card title="3. Or connect WhatsApp" icon="message-circle" href="/channels/whatsapp">
+    Pair a dedicated number through Omni and use it in DMs and groups.
+  </Card>
+  <Card title="4. Log in to the Console" icon="log-in" href="/console/login">
+    Link your local Ravi to your Console organization and project.
+  </Card>
+  <Card title="5. Publish pages" icon="globe" href="/console/pages">
+    Publish pages as routes on your project's `ravi.page` host.
+  </Card>
+  <Card title="6. Interactive pages with Bases" icon="database" href="/console/bases">
+    Build pages that read and write Bases, and send row changes to your agent.
+  </Card>
 </CardGroup>
 
-## Quick Start
+## Where to go next
 
-```bash
-# Install dependencies
-bun install
-
-# Run setup wizard
-ravi setup
-
-# Start daemon
-ravi daemon start
-
-# Connect a WhatsApp instance
-ravi instances connect main
-
-# Check status
-ravi daemon status
-```
+- **Guides** cover day-to-day work: [sessions](/guides/sessions), [contacts](/guides/contacts), [instances and routing](/guides/routing), [cron jobs](/guides/cron-jobs), [triggers](/guides/triggers), [heartbeat](/guides/heartbeat) and [permissions](/guides/permissions).
+- The [CLI reference](/cli/overview) explains the command groups and conventions such as `--json`, dry-runs and `--execute`.
+- [Architecture](/architecture) describes the processes, the message flow and storage in detail.

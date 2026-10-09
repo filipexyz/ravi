@@ -77,7 +77,7 @@ single braked op of the domain.
 
 `src/plugins/internal/ravi-system/skills/settings/SKILL.md` (name:
 `settings-manager`) teaches this surface and MUST carry `--execute` on the
-delete example. `docs/cli/overview.mdx` and `docs/start/configuration.mdx`
+delete example. `docs/cli/overview.mdx` and `docs/reference/configuration.mdx`
 mirror the same command list. AGENTS.md teaches only `ravi settings set ...`
 (unbraked) and needs no change.
 

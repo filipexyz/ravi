@@ -1,0 +1,152 @@
+---
+title: Heartbeat
+description: Let an agent wake up on its own at a fixed interval, act on the pending items in its HEARTBEAT.md file, and stay quiet when there is nothing to do.
+icon: heart-pulse
+---
+
+By the end of this page your agent will check in every few minutes, read a checklist you control, act on what is pending, and post nothing when everything is fine.
+
+## How it works
+
+1. Every interval, the daemon checks the agent's active hours. Outside them, it skips the run.
+2. It looks for `HEARTBEAT.md` in the agent's working directory. If the file is missing or empty, it skips the run.
+3. It sends a heartbeat prompt to the agent's main session. The prompt tells the agent to read `HEARTBEAT.md` and do what is pending.
+4. If the reply ends with `HEARTBEAT_OK`, Ravi posts nothing. Any other reply goes to the chat where the main session last talked.
+
+You change what the agent checks by editing the file. No restart is needed: the file is read on every run.
+
+## Set it up
+
+<Steps>
+  <Step title="Find the agent's working directory">
+    ```bash
+    ravi heartbeat show main
+    ```
+    `Workspace` is the agent's working directory (the same `cwd` as in `ravi agents show main`). The file goes there, for example `~/ravi/main/HEARTBEAT.md`.
+  </Step>
+  <Step title="Write HEARTBEAT.md">
+    ```markdown
+    # Heartbeat
+
+    ## Check
+    - Requests in the requests base with status New for more than 1 hour
+    - Failed cron jobs (ravi cron list --json, lastStatus "error")
+
+    ## Report
+    - Only report what changed since the last check, in one short message.
+    - If there is nothing to report, answer exactly HEARTBEAT_OK.
+    ```
+    An empty file turns the heartbeat off in practice: every run is skipped.
+  </Step>
+  <Step title="Enable it">
+    ```bash
+    ravi heartbeat enable main 30m
+    ```
+    Without an interval, `enable` keeps the current one (30 minutes if it was never set). The first run happens one interval after you enable it.
+  </Step>
+  <Step title="Limit it to working hours (optional)">
+    ```bash
+    ravi heartbeat set main active-hours 09:00-22:00
+    ```
+  </Step>
+  <Step title="Run it once now">
+    ```bash
+    ravi heartbeat trigger main            # dry-run when the file has content: exit 3, sends nothing
+    ravi heartbeat trigger main --execute  # sends the heartbeat prompt now
+    ravi daemon logs -f
+    ```
+  </Step>
+</Steps>
+
+## The prompt the agent receives
+
+Every run sends this fixed prompt (it is in Portuguese) to the agent's main session:
+
+```text
+[Sistema Heartbeat]
+Leia o arquivo HEARTBEAT.md no seu workspace.
+Execute as tarefas pendentes conforme instruído.
+CRITICAL: Se não houver nada a fazer, responda EXATAMENTE "HEARTBEAT_OK" — nada antes, nada depois. Qualquer texto adicional será enviado como mensagem pro usuário.
+```
+
+In English: read `HEARTBEAT.md` in your workspace, do the pending tasks, and if there is nothing to do, answer exactly `HEARTBEAT_OK`; anything else is sent to the user. Put your own instructions in `HEARTBEAT.md`, not in the prompt.
+
+## Staying quiet with HEARTBEAT_OK
+
+Ravi drops any reply whose text ends with `HEARTBEAT_OK`, including the text before it. The agent either reports something or answers `HEARTBEAT_OK`, never both. The daemon log shows `Heartbeat OK` for a dropped reply.
+
+<Warning>
+The check applies to every reply of every session, not only heartbeat runs. Do not ask an agent to end normal messages with `HEARTBEAT_OK`.
+</Warning>
+
+## Where the reply goes
+
+A scheduled run goes to the agent's main session and replies in the chat where that session last talked. `ravi heartbeat set main account <name>` picks the channel account when you have more than one.
+
+If the main session never talks in a chat (for example, when each DM has its own session), the reply stays in the session. Read it with `ravi sessions read <session-name>`, or tell the agent in `HEARTBEAT.md` how to report, for example `Report with: ravi sessions inform <your-chat-session> "<summary>"`.
+
+## Manual runs
+
+```bash
+ravi heartbeat trigger main --execute
+```
+
+- If `HEARTBEAT.md` is missing or empty, `trigger` does nothing and exits 0 with `status: "skipped"` (`--json`). No `--execute` is needed for that check.
+- If the file has content, `trigger` without `--execute` is a dry-run: it exits 3 and shows the plan.
+- With `--execute`, the prompt is sent right away, even when the heartbeat is disabled or outside active hours.
+- A manual run has no chat attached to the prompt, so its reply goes to the main session's attached chat, if it has one, and otherwise stays in the session.
+
+## Settings
+
+| Command | Effect |
+|---|---|
+| `ravi heartbeat enable <agent> [interval]` | Turn on; optionally set the interval |
+| `ravi heartbeat disable <agent>` | Turn off; settings are kept |
+| `ravi heartbeat set <agent> interval <n><s\|m\|h>` | Interval: a positive integer with `s`, `m` or `h` (`90m`, `2h`). Days are not accepted. |
+| `ravi heartbeat set <agent> active-hours HH:MM-HH:MM` | Only run inside this window |
+| `ravi heartbeat set <agent> active-hours always` | Remove the window (`-` also works) |
+| `ravi heartbeat set <agent> account <name>` | Delivery account (`-` for automatic) |
+| `ravi heartbeat set <agent> model <model>` | Saved and shown, but not applied today (see below) |
+
+Active hours use the clock of the machine running the daemon. The start is inclusive and the end is exclusive. A window that crosses midnight works: `22:00-06:00`.
+
+Changes take effect right away. A changed interval restarts that agent's timer, and restarting the daemon restarts every timer, so the next run comes one full interval later.
+
+<Note>
+`heartbeat set <agent> model` is stored and shown by `ravi heartbeat show`, but the current runtime does not use it: heartbeat runs use the main session's model. If a periodic check must run on a cheaper model, use a [cron job](/guides/cron-jobs) with `--isolated` and set the model of its session with `ravi sessions set-model <session> haiku` after the first run. An isolated job never posts to a chat, so tell it in the message how to report.
+</Note>
+
+## Check status
+
+```bash
+ravi heartbeat status                 # every agent: ENABLED, INTERVAL, ACTIVE HOURS, LAST RUN
+ravi heartbeat status --fields agent,heartbeat --json
+ravi heartbeat show main              # one agent, with its workspace
+```
+
+## Heartbeat or cron job?
+
+| | Heartbeat | Cron job |
+|---|---|---|
+| What runs | One checklist file per agent | One prompt or shell command per job |
+| Schedule | Fixed interval plus active hours | Cron expression, interval or one-shot |
+| Session | The agent's main session | The creating chat's session, the main session, or a dedicated one |
+| Silence | `HEARTBEAT_OK` | `@@SILENT@@` |
+
+Use a heartbeat for an open-ended "look around and tell me if something needs me". Use [cron jobs](/guides/cron-jobs) for specific tasks at specific times, and [triggers](/guides/triggers) to react to events as they happen.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="The heartbeat never runs">
+    1. `ravi heartbeat show main`: `Enabled: yes`, the interval, and active hours that include the current time on the daemon machine.
+    2. `HEARTBEAT.md` exists in the workspace shown there and is not empty.
+    3. `ravi daemon status`: the daemon is running. Only one daemon runs heartbeats when several share the same setup.
+    4. `ravi daemon logs -f`: a run logs `Triggering heartbeat`.
+  </Accordion>
+  <Accordion title="It runs, but nothing is posted">
+    1. `Heartbeat OK` in the daemon log means the agent answered `HEARTBEAT_OK`.
+    2. `ravi sessions read <main-session>` shows what the agent replied.
+    3. See [Where the reply goes](#where-the-reply-goes) if the main session has no chat.
+  </Accordion>
+</AccordionGroup>

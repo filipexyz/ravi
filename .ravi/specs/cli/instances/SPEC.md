@@ -104,7 +104,7 @@ bundle/database.
 only on `instances pending reject`; delete/route-remove examples stay
 brake-free. The `architect` skill's teardown recipe must likewise remove the
 obsolete flag from `instances routes remove`. `docs/cli/overview.mdx`,
-`docs/guides/instances.mdx`, `docs/start/configuration.mdx` and
+`docs/guides/routing.mdx`, `docs/reference/configuration.mdx` and
 `docs/plan-instances.md` teach the same flags. Runtime consumers resolve routes
 through `src/router` (`matchRoute`), not through the CLI, so the brake does not
 affect live message routing.

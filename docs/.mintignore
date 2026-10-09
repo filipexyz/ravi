@@ -1,2 +1,4 @@
-cross-send-acl.md
-plan-instances.md
+# Internal design and planning notes live next to the code, not on docs.ravi.bot.
+# Every published page is .mdx; plain .md files in docs/ are internal.
+*.md
+reference/workflows/

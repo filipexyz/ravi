@@ -122,8 +122,8 @@ const executeInstructions = [
     instruction: "ravi heartbeat trigger <agent> --execute",
   },
   {
-    name: "heartbeat feature guide",
-    path: "docs/features/overview.mdx",
+    name: "heartbeat guide",
+    path: "docs/guides/heartbeat.mdx",
     instruction: "ravi heartbeat trigger main --execute",
   },
   {
@@ -185,12 +185,12 @@ const obsoleteExecuteConsumers = [
   {
     name: "WhatsApp demote CLI overview",
     path: "docs/cli/overview.mdx",
-    obsolete: "ravi whatsapp.group demote <groupId> <participants> --execute",
-    current: "ravi whatsapp.group demote <groupId> <participants>",
+    obsolete: "ravi whatsapp group demote <groupId> <participants> --execute",
+    current: "ravi whatsapp group demote <groupId> <participants>",
   },
   {
-    name: "WhatsApp demote guide",
-    path: "docs/guides/whatsapp-groups.mdx",
+    name: "WhatsApp demote routing guide",
+    path: "docs/guides/routing.mdx",
     obsolete: 'ravi whatsapp group demote group:120363425628305127 "5511999999999" --execute',
     current: 'ravi whatsapp group demote group:120363425628305127 "5511999999999"',
   },
