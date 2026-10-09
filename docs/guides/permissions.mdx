@@ -89,7 +89,7 @@ A `bootstrap` agent holds:
 - `read_own_contacts:system:*`.
 
 <Warning>
-The bootstrap floor is a convenience floor, not a sandbox. `bun -e` runs any code, and `find -exec` and `xargs` run other programs; the Bash check only sees `bun`, `find` and `xargs`. File tools can read and write anything the Ravi process can. For agents that talk to untrusted people, use `chat-only` or `explicit-only`.
+The bootstrap floor is a convenience floor, not a sandbox. `bun -e` runs any code, and `find -exec` and `xargs` run other programs; the Bash check only sees `bun`, `find` and `xargs`. The provider's file read and write tools are allowed too. For agents that talk to untrusted people, use `chat-only` or `explicit-only`.
 </Warning>
 
 ## What a turn may do
@@ -128,7 +128,7 @@ It does not raise the agent's ceiling, and it does not limit anyone else.
 
 ## Governed chats
 
-A chat becomes governed as soon as any contact holds a grant scoped to it. In a governed chat, each sender gets the agent's ceiling intersected with their own grants; members without a grant (and without an admin tag) get no tools. Threads inherit their chat.
+A chat becomes governed as soon as any contact holds a grant scoped to it. In a governed chat, each sender gets the agent's ceiling intersected with their own grants; members without a grant (and without an admin tag or a `--force` profile) get no tools. Threads inherit their chat.
 
 <Steps>
   <Step title="Find the chat id">
@@ -184,7 +184,7 @@ ravi permissions allow cron-ops --to agent:main --capabilities execute:group:cro
 ravi permissions allow cron-ops --to agent:main --capabilities execute:group:cron --apply
 ```
 
-This adds the capability to the agent's ceiling under the provider-owned profile `permission-cron-ops`.
+This creates the provider-owned profile `permission-cron-ops` and adds its capability to the agent's ceiling. Like `deny` and `resolve`, `allow` writes only with `--apply` (not `--execute`); without it, it prints the plan and exits 0.
 
 ## Inspecting
 
@@ -196,7 +196,7 @@ This adds the capability to the agent's ceiling under the provider-owned profile
 | `ravi permissions list --chat <chat-id>` | Contact grants in a chat. `--chat-tag <tag>` or `--force` for the other scopes. |
 | `ravi permissions check --permission <p> --object-type <t> --object-id <id>` | Whether the current runtime context allows something |
 
-`check` evaluates the context it runs in, so it is meant for agents inside a turn. From your own shell it reports `denied` with a note to use `materialize`. `--local-operator` checks the local operator path instead.
+`check` evaluates the context it runs in, so it is meant for agents inside a turn. From your own shell it reports `denied` with a note to use `materialize`. `--local-operator` evaluates the request as the local operator (you, at the terminal).
 
 All `ravi permissions` subcommands accept `--json`.
 
@@ -209,7 +209,7 @@ When a turn needs a capability it does not hold, Ravi posts an approval request 
 - **WhatsApp and other channels:** react with 👍 or ❤️ to approve. Any other reaction, or a reply to the request message, rejects it.
 - **Timeout:** after 5 minutes without a decision, the request is denied.
 - **Scope:** an approved capability lasts for that turn only. For recurring access, use `ravi permissions allow` or `resolve`.
-- **No approvals** from the terminal (`ravi sessions send`, `ravi tui`): there is no chat to ask in, so the request is denied. A `chat-only` agent's tool requests are denied without asking.
+- **No approvals in the terminal.** A turn started with `ravi sessions send` has no chat to ask in, so the request is denied at once, and `ravi tui` has no approval prompt. Terminal turns work with the agent's ceiling only. A `chat-only` agent's tool requests are denied without asking.
 
 ## The Bash check
 
@@ -220,7 +220,7 @@ Before every Bash command, Ravi checks it against the turn's capabilities. These
 - piping into a shell, or into `python`, `python3`, `node`, `perl` or `ruby`;
 - inline code: `python -c`, `python3 -c`, `node -e`, `perl -e`, `ruby -e`, `php -r`.
 
-Below `full-access`, two more rules apply: redirecting output to a file needs `use:tool:Write`, and setting `RAVI_*` environment variables in a command is refused.
+Below `full-access`, two more rules apply: redirecting output to a file needs `use:tool:Write` (the bootstrap floor includes it), and commands that set `RAVI_*` environment variables are refused.
 
 ## Denials and audit
 
@@ -241,6 +241,6 @@ ravi permissions resolve <denial-id>          # plan
 ravi permissions resolve <denial-id> --apply  # apply
 ```
 
-`resolve` proposes a profile that holds the missing capability. For an agent denial it raises the agent's ceiling; for a denial in a governed chat it grants the profile to that contact in that chat only. `--profile` and `--capabilities` override the suggestion, and `--chat`, `--chat-tag` or `--force` override the scope.
+`resolve` proposes a profile that holds the missing capability. For an ordinary denial it adds the profile to the agent's ceiling. For a denial in a governed chat it grants the profile to that contact in that chat only, and makes sure the agent's ceiling includes it. `--profile` and `--capabilities` override the suggestion, and `--chat`, `--chat-tag` or `--force` override the scope.
 
 See [Triggers](/guides/triggers) and [Events](/reference/nats-events) for more on topics.

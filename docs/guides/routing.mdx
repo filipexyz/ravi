@@ -22,7 +22,7 @@ What the agent may do in that turn is decided by permissions, not routing. See [
 An instance holds the default agent, the DM and group policies, the contact intake mode and, for Omni channels, the Omni instance id.
 
 - **WhatsApp** runs through Omni. `ravi instances connect` creates the instance in Omni and in Ravi and shows the pairing QR. See [Connect WhatsApp](/channels/whatsapp). Telegram and Discord also arrive through Omni; these docs only walk through WhatsApp.
-- **Slack** is native and is set up with `ravi channels`. See [Connect Slack](/channels/slack). Policies, routes and pending review work the same way, with one exception noted under [Pending review](#pending-review).
+- **Slack** is native and is set up with `ravi channels`. See [Connect Slack](/channels/slack). Policies, routes and pending review work the same way, with the Slack differences noted under [Policies](#policies) and [Pending review](#pending-review).
 
 ```bash
 ravi instances list
@@ -80,7 +80,7 @@ In a chat without per-chat grants, any sender who resolves to a contact gets the
 2. **The instance's agent**, set with `--agent` on connect or `ravi instances set <instance> agent <id>`.
 3. **Nothing.** The message is saved as pending for that instance and the log says `No route for message, saved as pending`.
 
-The global `defaultAgent` setting only applies to messages that arrive without an instance, so it never rescues an instance that has no agent. `ravi instances status` prints `Agent: (default)` for such an instance, but its messages still go to pending.
+The global `defaultAgent` setting only applies to messages that arrive without an instance, so it never rescues an instance that has no agent. `ravi instances status` shows the agent of such an instance as `(default)`, but its messages still go to pending.
 
 Routes are scoped to their instance. A route on `wa-main` never matches a message on another instance.
 
@@ -166,7 +166,7 @@ ravi routes explain wa-main group:120363012345678901
 ravi instances target wa-main --pattern group:120363012345678901
 ```
 
-Both print which CLI build and database you are targeting, the configured route for the pattern, and the live effect: the route and agent the running daemon would pick. Run one before and after every route change. If the live winner is not the route you configured, the change is not done.
+Both print which CLI build and database you are targeting, the configured route for the pattern, and its live effect: which route and agent win for that pattern in the live router. Run one before and after every route change. If the live winner is not the route you configured, the change is not done.
 
 ## WhatsApp groups
 
@@ -192,6 +192,7 @@ ravi whatsapp group invite group:120363425628305127
 
 ```bash
 ravi contacts add 5511999999999 "Alice"
+ravi contacts add 5511888888888 "Bruno"
 ravi whatsapp group create "Project Alpha" "5511999999999,5511888888888" --agent main --execute
 ```
 

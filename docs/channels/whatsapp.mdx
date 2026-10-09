@@ -77,12 +77,12 @@ ravi instances set wa-main groupPolicy allowlist
 ravi instances status wa-main
 ```
 
-`status` should show `Connected: true`, `Agent: main`, `DM Policy: pairing` and `Group Policy: allowlist`.
+In the `status` output, check that Connected is `true`, Agent is `main`, DM Policy is `pairing` and Group Policy is `allowlist`.
 
 - `pairing`: only contacts with status `allowed` reach the agent in DMs. Everyone else is saved for your review.
 - `allowlist`: only groups you approved (an explicit route) reach the agent. Other groups are saved for review.
 
-With `open`, anyone who messages the number, and any group someone adds it to, reaches the agent. The WhatsApp policy questions in `ravi setup` do not configure instances; only the instance setting counts. Policies are also what makes `ravi contacts block` work: under `open`, a blocked contact still reaches the agent.
+With `open`, anyone who messages the number, and any group someone adds it to, reaches the agent. The WhatsApp policy questions in `ravi setup` do not configure instances. Policies are also what makes `ravi contacts block` work: under `open`, a blocked contact still reaches the agent. Change an existing instance with `ravi instances set`; re-running `ravi instances create` on it wipes its Omni id, agent and policies.
 
 </Step>
 <Step title="Make yourself the owner">

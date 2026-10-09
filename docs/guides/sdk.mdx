@@ -1,91 +1,103 @@
 ---
-title: SDK Gateway
-description: Use the generated Ravi SDK clients against the authenticated gateway.
+title: SDK and HTTP gateway
+description: Turn on Ravi's HTTP gateway, issue a context key, and call Ravi from TypeScript, Dart or Swift.
+icon: code
 ---
 
-## Overview
+Ravi exposes its commands over an authenticated HTTP gateway under `/api/v1/*`. At the end of this page you will have the gateway running on the daemon host, a scoped context key for your app, and a client in TypeScript, Dart or Swift calling Ravi and streaming its events.
 
-Ravi exposes a typed SDK gateway under `/api/v1/*`. The gateway is generated from
-the decorated CLI registry, so SDK clients mirror Ravi commands without
-hand-maintained API wrappers.
+The gateway and the SDKs are generated from the same command registry as the CLI (`src/cli/registry-snapshot.ts`), so every command you can run as `ravi <group> <command>` has the same name, arguments and return shape in the SDKs. The repository also keeps an OpenAPI snapshot of it in `docs/openapi.json`.
 
-The current SDK surfaces are:
+| SDK | Package | Source |
+|---|---|---|
+| TypeScript | `@ravi-os/sdk` on npm | `packages/ravi-os-sdk` |
+| Dart | `ravi_sdk` on pub.dev | `packages/ravi-os-dart-sdk` |
+| Swift | `RaviSDK` (Swift Package, not published) | `packages/ravi-os-swift-sdk` |
 
-- TypeScript package: `packages/ravi-os-sdk`
-- Swift package: `packages/ravi-os-swift-sdk`
-- OpenAPI snapshot: `docs/openapi.json`
+## Turn on the gateway
 
-The source of truth is `src/cli/registry-snapshot.ts`. OpenAPI, TypeScript, and
-Swift are deterministic projections of that registry.
-
-## Start the Gateway
-
-The SDK gateway is mounted on Ravi's webhook HTTP server. The daemon starts that
-server only when an HTTP port is configured:
+<Steps>
+<Step title="Add the HTTP settings to ~/.ravi/.env">
+Open the file with `ravi daemon env` and add:
 
 ```bash
 RAVI_HTTP_PORT=7777
 RAVI_HTTP_HOST=127.0.0.1
 ```
 
-The gateway shares the same listener as webhooks. Requests go to:
-
-```text
-http://127.0.0.1:7777/api/v1/...
+The daemon reads `~/.ravi/.env` when it starts, and values there override the shell environment. Typing `RAVI_HTTP_PORT=7777` on its own line before `ravi daemon start` does not reach the daemon.
+</Step>
+<Step title="Restart the daemon">
+```bash
+ravi daemon restart -m "enable SDK gateway"
+```
+</Step>
+<Step title="Check that it is listening">
+```bash
+ravi daemon logs -t 200 | grep "Webhook HTTP server"
 ```
 
-If `RAVI_HTTP_HOST` is not loopback, Ravi refuses to start unless
-`RAVI_GATEWAY_NETWORK_AUTHORIZED=1` is set. This keeps the SDK gateway private
-by default even when bearer auth is configured.
+You should see `Webhook HTTP server ready` with the URL. `Webhook HTTP server disabled (set RAVI_HTTP_PORT to enable)` means the port was not picked up. Requests now go to `http://127.0.0.1:7777/api/v1/...`.
+</Step>
+</Steps>
 
-Set `RAVI_SDK_GATEWAY_DISABLE=1` to disable SDK routes while leaving the HTTP
-server available for webhook handlers.
+The gateway shares its listener with Ravi's webhook handlers. These variables control it, all in `~/.ravi/.env`:
 
-## Context Keys
+| Variable | Effect | Default |
+|---|---|---|
+| `RAVI_HTTP_PORT` | Starts the HTTP server on this port (`RAVI_WEBHOOK_PORT` also works) | unset: server off |
+| `RAVI_HTTP_HOST` | Bind address (`RAVI_WEBHOOK_HOST` also works) | `127.0.0.1` |
+| `RAVI_GATEWAY_NETWORK_AUTHORIZED` | `1` allows a host other than `127.0.0.1`, `localhost` or `::1` | unset |
+| `RAVI_SDK_GATEWAY_DISABLE` | `1` removes `/api/v1/*` but keeps the webhook handlers | unset |
+| `RAVI_SDK_GATEWAY_ALLOW_SUPERADMIN` | `1` lets superadmin-scoped commands through the gateway | unset: refused with 403 |
+| `RAVI_CORS_ORIGINS` | Comma-separated exact origins a browser page may call from | none (closed) |
+| `RAVI_CORS_LOCALHOST` | `1` allows `http://localhost:<port>` and `http://127.0.0.1:<port>` | unset |
 
-Non-open SDK routes require a runtime context key (`rctx_*`) in the bearer auth
-header. Bootstrap the first admin key on the daemon host:
+<Warning>
+If `RAVI_HTTP_HOST` is not a loopback address and `RAVI_GATEWAY_NETWORK_AUTHORIZED=1` is missing, the daemon refuses to start and exits. Bearer auth alone does not make a network-exposed gateway safe; keep it on loopback unless you have a reason not to.
+</Warning>
+
+CORS is closed by default and never answers with `Access-Control-Allow-Origin: *`. `chrome-extension://` origins are always allowed.
+
+## Get a context key
+
+Most routes need a runtime context key (`rctx_*`) as a bearer token. Create the first admin key on the daemon host:
 
 ```bash
 ravi daemon init-admin-key
 ```
 
-For external apps, issue a narrower child context:
+It prints the key once (`rctx: rctx_...`), with its context ID and expiry, and saves it as the default in `~/.ravi/credentials.json` (mode 0600). Pass `--print-only` to skip saving. The command refuses to run if a live admin context already exists; revoke that one first with `ravi context revoke <id>`.
+
+Do not ship the admin key in an app. Issue a narrower child key instead:
 
 ```bash
 ravi context issue dashboard \
   --ttl 2h \
-  --allow view:system:events,view:system:tasks \
+  --allow view:system:events,view:system:tasks,access:session:main \
   --json
 ```
 
-The `--allow` format is:
+The JSON has the new `contextKey`, its `contextId`, `expiresAt` and `capabilities`. `--ttl` defaults to `1h` and cannot outlive the parent key. Each `--allow` entry is `permission:objectType:objectId`, for example:
 
-```text
-permission:objectType:objectId
-```
+- `view:system:events`, `view:system:tasks`, `view:system:audit` for the event, task and audit streams;
+- `access:session:main` for one session;
+- `view:chat:<chatId>` and `view:instance:<instanceId>` for the chat and instance streams.
 
-Examples:
+Revoke a key you no longer need with `ravi context revoke <contextId>`. See [Permissions](/guides/permissions) for the permission model.
 
-- `view:system:events` for the events stream
-- `view:system:tasks` for the tasks stream
-- `view:system:audit` for the audit stream
-- `access:session:ravi-web` for one session stream
-
-## TypeScript Client
-
-Install:
+## TypeScript
 
 ```bash
-bun add @ravi-os/sdk
+bun add @ravi-os/sdk zod
 ```
 
-Create a client:
+The package is ESM-only, needs `zod` 4 as a peer dependency, and runs anywhere `fetch` exists (Bun, Node 18+, browsers, Deno, edge runtimes).
 
 ```ts
 import { RaviClient, createHttpTransport } from "@ravi-os/sdk";
 
-const client = new RaviClient(
+const ravi = new RaviClient(
   createHttpTransport({
     baseUrl: "http://127.0.0.1:7777",
     contextKey: process.env.RAVI_CONTEXT_KEY!,
@@ -93,255 +105,25 @@ const client = new RaviClient(
   }),
 );
 
-const agents = await client.agents.list();
+const agents = await ravi.agents.list();
+const reply = await ravi.sessions.send("main", "Summarize the current work.", { wait: true });
+const history = await ravi.sessions.read("main", { count: "10" });
+const contacts = await ravi.contacts.list({ status: "allowed", limit: "50" });
 ```
 
-Generated method names follow the CLI shape:
+Method names follow the CLI. Groups become nested objects and kebab-case becomes camelCase: `ravi instances routes add` is `ravi.instances.routes.add(...)`, `ravi daemon init-admin-key` is `ravi.daemon.initAdminKey()`. Positional arguments come first, then one options object. Contact statuses are `allowed`, `pending`, `blocked` and `discovered`.
+
+<Warning>
+Commands that are dry-runs on the CLI are dry-runs in the SDK too. `agents.delete`, `agents.reset`, `sessions.delete`, `sessions.reset` and the other destructive calls only return a plan until you pass `execute: true`:
 
 ```ts
-await client.daemon.status();
-await client.sessions.read("ravi-web");
-await client.instances.routes.add("main", "group:120363428558776322", "ravi-web", {
-  channel: "whatsapp",
-  session: "ravi-web",
-});
-await client.sdk.client.check();
+await ravi.agents.reset("support", undefined, { execute: true });
+await ravi.agents.delete("support", { execute: true });
+await ravi.sessions.reset("support", { execute: true });
 ```
+</Warning>
 
-Kebab-case commands become camelCase methods. For example,
-`daemon init-admin-key` becomes `client.daemon.initAdminKey()`.
-
-## Native Channel Backends
-
-Use the provider-neutral channel backend client when an adapter needs to accept
-an external message into a local Ravi agent without depending on a provider
-payload:
-
-```ts
-import {
-  RaviClient,
-  createChannelBackendClient,
-  createHttpTransport,
-} from "@ravi-os/sdk";
-
-const ravi = new RaviClient(
-  createHttpTransport({
-    baseUrl: "http://127.0.0.1:7777",
-    contextKey: process.env.RAVI_CONTEXT_KEY!,
-  }),
-);
-const backend = createChannelBackendClient(ravi);
-
-const result = await backend.ingress({
-  protocol: "ravi.channel.backend",
-  schemaVersion: 1,
-  requestId: "request-01",
-  idempotencyKey: "provider-message-01",
-  localActorId: "actor-01",
-  channelInstanceId: "custom-main",
-  agentId: "support",
-  external: {
-    channelKind: "custom",
-    connectionId: "connection-01",
-    conversationId: "conversation-01",
-    senderId: "sender-01",
-    messageId: "message-01",
-  },
-  content: [{ type: "text", text: "Hello" }],
-  receivedAt: new Date().toISOString(),
-});
-```
-
-Ingress requires a concrete `mutate:agent:<agentId>` capability. Ravi persists
-one canonical local message and one stable chat/session/turn binding for each
-channel-instance idempotency key. A retry with the same semantic request
-returns `duplicate` and the original binding; conflicting reuse fails closed.
-The local permission decision remains authoritative.
-
-The projected JSON Schema and fixtures live under
-`packages/ravi-os-sdk/src/generated` and
-`packages/ravi-os-sdk/src/__tests__/fixtures/channel-backend-core`.
-Adapters can implement `ChannelOutputSink` to consume validated,
-provider-neutral assistant or safe-error envelopes. Runtime lifecycle streams
-use the separate `ravi.channel.runtime-events` contract:
-
-```ts
-import {
-  createChannelRuntimeClient,
-} from "@ravi-os/sdk/channel-runtime-events";
-
-const runtime = createChannelRuntimeClient(ravi);
-const state = await runtime.readback({
-  protocol: "ravi.channel.runtime-events",
-  schemaVersion: 1,
-  requestId: "readback-01",
-  binding: result.binding!,
-});
-
-await runtime.interrupt({
-  protocol: "ravi.channel.runtime-events",
-  schemaVersion: 1,
-  requestId: "interrupt-01",
-  idempotencyKey: "interrupt-turn-01",
-  binding: result.binding!,
-  requestedAt: new Date().toISOString(),
-});
-```
-
-The adapter-side runtime bridge consumes the event contract through
-`ChannelRuntimeEventSink`:
-
-```ts
-import type { ChannelRuntimeEventSink } from "@ravi-os/sdk/channel-runtime-events";
-
-const sink: ChannelRuntimeEventSink = {
-  async emit(event, target) {
-    console.log(event.sequence, event.kind, target?.conversationId);
-  },
-};
-```
-
-Lifecycle events use a monotonically increasing sequence per local turn and
-cover state, policy-approved phase-tagged assistant messages, tool summaries,
-approvals, and terminal output. Raw deltas remain internal until whole-message
-response policy can classify them. Commentary remains a separate lifecycle
-event; provider delivery records its transport metadata without creating a
-canonical Chat Message. Completed terminal output contains only the final
-assistant response and attaches provider identity to the assistant Message
-already persisted for the accepted Turn. The durable job carries that Turn's
-canonical Chat identity, so a later Session rebind cannot move the delivery.
-Missing or mismatched terminal state fails closed before handoff; a structural
-mismatch discovered after a successful provider send emits a provider-sent,
-canonical-rejected delivery record and terminalizes the durable receipt before
-acknowledgement. A transient bookkeeping retry never calls the provider again.
-The optional sink target preserves compatibility with one-argument sinks; the
-host registry supplies it whenever an event is dispatched. Readback remains
-available after reconnects, including the canonical assistant message id and
-exact durable terminal event after successful completion. A completed Turn
-whose output was intentionally suppressed has terminal state without a
-`terminalEvent`, so consumers must treat the state itself as authoritative.
-The current and last-event runtime generation ids let a caller distinguish a
-live nonterminal turn from state orphaned by a process restart without
-assuming that retry is safe. Interrupt publication is idempotent and requires
-the same concrete local-agent authorization boundary as ingress.
-Provider-native payloads and diagnostics are not part of this contract.
-
-Tool summaries may include a runtime-authored `presentation` with the
-registered description, canonical category, operation, risk, bounded safe
-parameters and invocation summary. Terminal summaries may also include
-`durationMs`. These fields are already sanitized at the runtime boundary;
-clients should render them directly and must not derive labels by splitting or
-translating `toolName`. Raw tool input, output, credentials and local paths are
-not part of the presentation contract.
-
-The projected runtime schema and fixtures live beside the backend capsule under
-`packages/ravi-os-sdk/src/generated` and
-`packages/ravi-os-sdk/src/__tests__/fixtures/channel-runtime-events`.
-
-## Native Channel Drivers
-
-An installed provider can run inside the channel runner through the versioned
-`NativeChannelDriver` ABI. The driver receives a channel-scoped host for
-ingress, runtime readback and interrupt, output sinks, and lifecycle event
-sinks. Optional text delivery, chat actions, and presence surfaces join the
-same outbound consumers as built-in channels.
-
-Each module must expose the named `nativeChannelDriver` export:
-
-```ts
-import type {
-  NativeChannelDriver,
-} from "@ravi-os/sdk/native-channel-driver";
-
-export const nativeChannelDriver: NativeChannelDriver = {
-  descriptor: {
-    protocol: "ravi.channel.native-driver",
-    schemaVersion: 1,
-    driverId: "example.native",
-    provider: "example",
-    capabilities: ["inbound"],
-  },
-  createRuntime({ channel }) {
-    return {
-      descriptor: {
-        protocol: "ravi.channel.native-driver",
-        schemaVersion: 1,
-        driverId: "example.native",
-        provider: "example",
-        runtimeId: channel.name,
-        channelInstanceId: channel.name,
-        capabilities: ["inbound"],
-      },
-      start() {},
-      stop() {},
-      health: () => ({ status: "connected" }),
-    };
-  },
-};
-```
-
-Operators declare local modules explicitly:
-
-```bash
-RAVI_NATIVE_CHANNEL_DRIVERS='[
-  {
-    "protocol": "ravi.channel.native-driver",
-    "schemaVersion": 1,
-    "provider": "example",
-    "moduleSpecifier": "@example/native-channel-driver"
-  }
-]'
-```
-
-Installed package names and absolute `file:///` URLs are accepted. Ravi never
-derives a module name from the provider, searches for plugins, or downloads
-driver code. ABI version, provider ownership, runtime identity, capabilities,
-and optional surfaces are validated before start. Duplicate or incompatible
-drivers fail closed.
-
-Drivers start sequentially with enabled channel instances and stop in reverse
-order. Health projection includes only lifecycle state, stable reason codes,
-timestamps, and reconnect counts; provider payloads, secrets, and thrown error
-details are excluded. The ABI introduces no new Ravi capability. Local driver
-code runs inside the channel runner, so installation remains an explicit
-operator trust decision.
-
-The generated driver schema and neutral fixtures live under
-`packages/ravi-os-sdk/src/generated` and
-`packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver`.
-
-## Wire Contract
-
-Every command call is a POST:
-
-```text
-POST /api/v1/<group-segments>/<command>
-```
-
-The request body is flat JSON. Positional arguments and options are merged at
-the top level:
-
-```json
-{
-  "name": "main",
-  "pattern": "group:120363428558776322",
-  "agent": "ravi-web",
-  "channel": "whatsapp",
-  "session": "ravi-web"
-}
-```
-
-Generated clients must not send `{ "args": ..., "options": ... }` wrappers.
-
-The HTTP transport sends:
-
-- `Authorization: Bearer <rctx_key>`
-- `x-ravi-sdk-version`
-- `x-ravi-registry-hash`
-
-## Streaming
-
-Use `@ravi-os/sdk/streaming` for server-sent event streams:
+### Streams
 
 ```ts
 import { createStreamClient } from "@ravi-os/sdk/streaming";
@@ -351,107 +133,164 @@ const stream = createStreamClient({
   contextKey: process.env.RAVI_CONTEXT_KEY!,
 });
 
-for await (const event of stream.events({ subject: "ravi.session.>", noClaude: true })) {
+for await (const event of stream.session("main", { timeout: 60 })) {
   console.log(event.event, event.data);
+}
+
+for await (const event of stream.events({ subject: "ravi.session.>", noClaude: true })) {
+  console.log(event.data.topic, event.data.type);
 }
 ```
 
-Available streams:
-
-| SDK method | Gateway route | Required scope |
-| --- | --- | --- |
+| Method | Route | Scope needed |
+|---|---|---|
 | `events()` | `GET /api/v1/_stream/events` | `view:system:events` |
 | `tasks()` | `GET /api/v1/_stream/tasks` | `view:system:tasks` |
 | `session(name)` | `GET /api/v1/_stream/sessions/<name>` | `access:session:<name>` |
+| `chat(chatId)` | `GET /api/v1/_stream/chats/<chatId>` | `view:chat:<chatId>` |
+| `instance(instanceId)` | `GET /api/v1/_stream/instances/<instanceId>` | `view:instance:<instanceId>` |
 | `audit()` | `GET /api/v1/_stream/audit` | `view:system:audit` |
 
-Streams always require a valid context key, even when ordinary open commands do
-not.
+Streams always need a valid context key.
 
-## Binary Responses
+### Errors and binary responses
 
-Commands marked with `@Returns.binary()` return a raw `Response` on successful
-2xx calls. Error responses still map to typed SDK errors.
-
-```ts
-const response = await client.artifacts.blob("art_123");
-const bytes = await response.arrayBuffer();
-```
-
-## Error Handling
-
-All transports throw the same error hierarchy:
-
-- `RaviAuthError` for 401 responses
-- `RaviPermissionError` for 403 responses
-- `RaviValidationError` for 4xx validation failures, with `issues[]`
-- `RaviInternalError` for 5xx responses
-- `RaviTransportError` for network, timeout, or transport failures
+Every transport throws the same classes from `@ravi-os/sdk/errors`: `RaviAuthError` (401), `RaviPermissionError` (403), `RaviValidationError` (other 4xx, with `issues[]`), `RaviInternalError` (5xx) and `RaviTransportError` (network or timeout), all subclasses of `RaviError`.
 
 ```ts
 import { RaviError, RaviValidationError } from "@ravi-os/sdk/errors";
 
 try {
-  await client.artifacts.show("missing");
+  await ravi.artifacts.show("missing");
 } catch (error) {
-  if (error instanceof RaviValidationError) {
-    console.error(error.issues);
-  } else if (error instanceof RaviError) {
-    console.error(error.status, error.command, error.message);
-  }
+  if (error instanceof RaviValidationError) console.error(error.issues);
+  else if (error instanceof RaviError) console.error(error.status, error.command, error.message);
 }
 ```
 
-## Codegen
-
-Regenerate the TypeScript client from the live registry:
-
-```bash
-bun run sdk:generate
-```
-
-Check committed generated files for drift:
-
-```bash
-bun run sdk:check
-```
-
-Generate the OpenAPI snapshot:
-
-```bash
-bun run docs:openapi
-```
-
-Generate the Swift SDK:
-
-```bash
-bun src/cli/index.ts sdk swift generate
-```
-
-Generated TypeScript files live in `packages/ravi-os-sdk/src`:
-
-- `client.ts`
-- `schemas.ts`
-- `types.ts`
-- `version.ts`
-
-Hand-written SDK files contain transports, error mapping, streaming helpers, and
-package integration code.
-
-## Published Exports
-
-The published TypeScript package exports:
+Commands that return bytes, such as `artifacts.blob`, give you a raw `Response` on success:
 
 ```ts
-import { RaviClient } from "@ravi-os/sdk/client";
-import { createChannelBackendClient } from "@ravi-os/sdk/channel-backend";
-import { createChannelRuntimeClient } from "@ravi-os/sdk/channel-runtime-events";
-import type { NativeChannelDriver } from "@ravi-os/sdk/native-channel-driver";
-import { createHttpTransport } from "@ravi-os/sdk/transport/http";
-import { createStreamClient } from "@ravi-os/sdk/streaming";
-import { RaviError } from "@ravi-os/sdk/errors";
+const bytes = await (await ravi.artifacts.blob("art_123")).arrayBuffer();
 ```
 
-The repo contains an in-process transport at
-`packages/ravi-os-sdk/src/transport/in-process.ts`, but it is monorepo-internal
-and is not exported by the published package.
+### Scripts your agent runs
+
+A script that an agent runs inside its session can reuse the session's own context instead of a stored key. `createInheritedClient` reads `RAVI_CONTEXT_KEY` and the gateway address (`RAVI_BASE_URL`, `RAVI_GATEWAY_URL`, or `RAVI_HTTP_HOST` + `RAVI_HTTP_PORT`) from the environment:
+
+```ts
+import { createInheritedClient } from "@ravi-os/sdk/inherit";
+
+const { client } = await createInheritedClient();
+```
+
+### Exports
+
+`@ravi-os/sdk`, `@ravi-os/sdk/client`, `@ravi-os/sdk/transport/http`, `@ravi-os/sdk/streaming`, `@ravi-os/sdk/errors`, `@ravi-os/sdk/types`, `@ravi-os/sdk/schemas`, `@ravi-os/sdk/inherit`, `@ravi-os/sdk/channel-backend`, `@ravi-os/sdk/channel-runtime-events` and `@ravi-os/sdk/native-channel-driver`.
+
+## Dart
+
+`ravi_sdk` is pure Dart (no Flutter dependency), HTTP-only, and works on the Dart VM and the web.
+
+```yaml
+dependencies:
+  ravi_sdk: ^0.1.0
+```
+
+```dart
+import 'package:ravi_sdk/ravi_sdk.dart';
+
+final client = RaviClient(
+  HttpTransport(
+    baseUrl: Uri.parse('http://127.0.0.1:7777'),
+    contextKey: const String.fromEnvironment('RAVI_CONTEXT_KEY'),
+  ),
+);
+
+final whoami = await client.context.whoami();
+final history = await client.sessions.read('main', const SessionsReadOptions(count: '10'));
+final reply = await client.sessions.send(
+  'main',
+  'Summarize the current work.',
+  const SessionsSendOptions(wait: true),
+);
+```
+
+Streams use `RaviStreamClient`, with the same six channels as TypeScript:
+
+```dart
+final stream = RaviStreamClient(
+  baseUrl: Uri.parse('http://127.0.0.1:7777'),
+  contextKey: const String.fromEnvironment('RAVI_CONTEXT_KEY'),
+);
+
+await for (final event in stream.session('main', const SessionStreamOptions(timeout: 60))) {
+  print('${event.event} ${event.data}');
+}
+```
+
+Errors are the same classes as TypeScript, plus `RaviContractError` when the gateway returns a contract envelope or a response that does not match the declared return shape. Destructive calls take an options object with `execute: true`, for example `client.agents.delete('support', const AgentsDeleteOptions(execute: true))`.
+
+## Swift
+
+The Swift package lives in the Ravi repository at `packages/ravi-os-swift-sdk` and is not published to a registry. Add it to your app as a local package from a clone, and depend on the `RaviSDK` product (iOS 16+, macOS 13+).
+
+```swift
+import RaviSDK
+
+let client = RaviClient(
+  transport: HTTPTransport(
+    baseURL: URL(string: "http://127.0.0.1:7777")!,
+    contextKey: ProcessInfo.processInfo.environment["RAVI_CONTEXT_KEY"]!
+  )
+)
+
+let agents = try await client.agents.list()
+```
+
+## Wire contract
+
+Use this if you call the gateway without an SDK. Every command is a POST:
+
+```text
+POST /api/v1/<group-segments>/<command>
+```
+
+The body is flat JSON: positional arguments and options side by side at the top level, never wrapped in `{ "args": ..., "options": ... }`. For `ravi instances routes add main group:120363428558776322 ravi-web --channel whatsapp`:
+
+```bash
+curl -s http://127.0.0.1:7777/api/v1/instances/routes/add \
+  -H "Authorization: Bearer $RAVI_CONTEXT_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"main","pattern":"group:120363428558776322","agent":"ravi-web","channel":"whatsapp"}'
+```
+
+The SDKs also send `x-ravi-sdk-version` and `x-ravi-registry-hash`, which identify the SDK release and the registry it was generated from.
+
+## Custom channels (advanced)
+
+The TypeScript package also carries the contracts for connecting a channel Ravi does not support natively. These are for adapter authors; the types and fixtures in `packages/ravi-os-sdk/src/generated` and `src/__tests__/fixtures/` are the reference.
+
+- **Channel backend** (`@ravi-os/sdk/channel-backend`, protocol `ravi.channel.backend`): `createChannelBackendClient(ravi).ingress(...)` hands an external message to a local agent. Each request carries an `idempotencyKey`; a retry with the same request returns `duplicate` and the original binding, and conflicting reuse fails. It needs a `mutate:agent:<agentId>` capability.
+- **Runtime events** (`@ravi-os/sdk/channel-runtime-events`, protocol `ravi.channel.runtime-events`): `createChannelRuntimeClient(ravi)` gives `readback(...)` to read a turn's state after a reconnect and `interrupt(...)` to stop it. Adapters receive lifecycle events (state, assistant messages, tool summaries, approvals, terminal output) through a `ChannelRuntimeEventSink`.
+- **Native drivers** (`@ravi-os/sdk/native-channel-driver`, protocol `ravi.channel.native-driver`): a module that exports `nativeChannelDriver` runs inside Ravi's channel runner. You declare it explicitly in `~/.ravi/.env`:
+
+```bash
+RAVI_NATIVE_CHANNEL_DRIVERS='[{"protocol":"ravi.channel.native-driver","schemaVersion":1,"provider":"example","moduleSpecifier":"@example/native-channel-driver"}]'
+```
+
+Ravi never searches for or downloads driver code: it loads the installed package name or absolute `file:///` URL you list, validates the ABI version and capabilities, and fails closed on duplicates or mismatches. A driver runs with the channel runner's access, so installing one is a trust decision.
+
+## Regenerating the clients
+
+For contributors working in the Ravi repository:
+
+```bash
+bun run sdk:generate                         # TypeScript client
+bun run sdk:check                            # fail on drift
+bun run docs:openapi                         # docs/openapi.json
+bun src/cli/index.ts sdk dart generate       # and: sdk dart check
+bun src/cli/index.ts sdk swift generate      # and: sdk swift check
+```
+
+Never edit generated files by hand; change the command in the registry and regenerate.

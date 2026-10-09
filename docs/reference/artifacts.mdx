@@ -139,6 +139,6 @@ To find the local artifact a `ravi pages ship` created, look for its title in `r
 | `publish <target>` | Upload to Console and optionally release to Pages (dry-run without `--execute`) |
 | `release activate <id>` | Re-activate a recorded Pages release (dry-run without `--execute`) |
 
-Every command accepts `--json`. Run `ravi artifacts <command> --help` for all flags, or `ravi skills show artifacts` for the agent-facing guide.
+All commands except `blob` accept `--json`. Run `ravi artifacts <command> --help` for all flags, or `ravi skills show artifacts` for the agent-facing guide.
 
 There is no automatic provider fallback for anything that generates artifacts: if the chosen provider fails, the command fails, and you retry with another `--provider` yourself.

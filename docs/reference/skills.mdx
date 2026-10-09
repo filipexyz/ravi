@@ -1,96 +1,143 @@
-# Skills
+---
+title: Skills
+description: Read the system skills that ship with Ravi, copy their reference files, understand how agents load them, and install or grant your own.
+icon: book-open
+---
 
-`ravi skills` installs, lists and inspects Ravi skills.
+A skill is a guide (`SKILL.md` plus optional files under `references/`) that teaches an agent how to use one part of Ravi. At the end of this page you will know how to list and read the skills that ship with Ravi, copy reference files such as the Pages skeletons, why an agent's first command in a group returns a skill instead of running, and how to install and grant skills of your own.
 
-The default source is the official Ravi skill catalog generated from:
+## System skills
 
-```text
-src/plugins/internal/**/skills/*/SKILL.md
-```
-
-External sources are explicit and use `--source`. A source can be a GitHub shorthand, GitHub URL, git URL, or local path.
-
-## List Catalog Skills
+System skills ship inside the Ravi package, so they always match the CLI you have installed. They are the most detailed reference for each command group, often more current than these docs, and you can read them yourself. They are written in Portuguese.
 
 ```bash
-ravi skills list
-ravi skills list --json
+ravi skills list                 # name, first line of the description, source
+ravi skills show pages           # the full SKILL.md, then the list of its files
+ravi skills show triggers        # the directory name works...
+ravi skills show trigger-manager # ...and so does the skill name
 ```
 
-## List Installed Skills
+`ravi skills list` pages at 50 items; pass `--limit 500` to see everything, or `--json` and follow `pagination.nextCommand`.
+
+<Note>
+This page describes `ravi.bot@next`. In `@latest` (3.260927.5) the `bases` and `solucoes` skills do not exist and `ravi skills show` has no `--file` or `--raw`. Install `@next` with `bun add -g ravi.bot@next`, or switch with `ravi update --next`.
+</Note>
+
+## Read and copy reference files
+
+Longer material lives in each skill's `references/` folder. The end of `ravi skills show <skill>` lists the files; open one with `--file`:
 
 ```bash
-ravi skills list --installed
-ravi skills list --installed --codex --json
+ravi skills show pages --file references/data-pages.md
+ravi skills show bases --file references/views-access-forms.md
 ```
 
-## List Skills In A Source
+Add `--raw` to print only the file's bytes, with no header or file list, so you can copy it straight into your project. This is how you start a data page from the Pages skeletons:
 
 ```bash
-ravi skills list --source vercel-labs/skills
-ravi skills list --source https://github.com/vercel-labs/skills/tree/main/skills/find-skills
+mkdir -p site
+ravi skills show pages --file references/esqueletos/_client.js.txt --raw > site/client.js
+ravi skills show pages --file references/esqueletos/board.html.txt --raw > site/index.html
 ```
 
-## Show A Skill
+The skeletons are `esqueletos/board.html.txt` (a table or board), `esqueletos/formulario.html.txt` (a form) and `esqueletos/_client.js.txt` (the client every data page uses). [Interactive pages with Bases](/console/bases) walks through using them.
+
+`--file` takes a relative path from the skill's file list. Anything else fails with `SKILL_FILE_NOT_FOUND` (the error lists the valid files) or `SKILL_FILE_INVALID` (absolute path or `..`). With `--json`, `show` returns `{ skill, files[] }`, plus `file { path, content }` when you pass `--file`.
+
+## Skills you will use most
+
+You can pass either column to `ravi skills show`.
+
+| Directory | Skill name | Covers |
+|---|---|---|
+| `solucoes` | `solucoes` | Start here to build anything with several pieces: members vs outsiders, six verbs (capture, store, show, react, act, report), eight rules |
+| `pages` | `pages` | `ravi pages ship`, routes on the project host, data pages, `--uses`, skeletons |
+| `bases` | `bases` | Typed tables, views as access contracts, rows, forms, row events, charts, import/export |
+| `triggers` | `trigger-manager` | Event triggers (agent prompt or shell), named and templated sessions, Bases row events |
+| `cron` | `cron-manager` | Scheduled prompts and jobs |
+| `heartbeat` | `heartbeat-manager` | Proactive runs from `HEARTBEAT.md` |
+| `sessions` | `sessions` | Sessions, send/ask/inform/answer, reset, trace |
+| `permissions` | `permissions-manager` | Runtime profiles, contact grants, governed chats, denials |
+| `contacts` | `contacts-manager` | Contacts, identities, status, tags, approvals |
+| `agents` | `agents-manager` | Creating and configuring agents and providers |
+| `channels` | `channels-manager` | Native channel config, instances, policies |
+| `slack` | `slack` | Operating Slack: channels, messages, Block Kit, modals, Canvas, threads |
+| `whatsapp` | `whatsapp-manager` | WhatsApp groups and DMs through Omni |
+| `instances` | `instances-manager` | Instances, DM and group policies, pending chats |
+| `routes` | `routes-manager` | Routes and their priority |
+| `events` | `events` | Event topics, `ravi events stream` and `replay` |
+| `artifacts` | `artifacts` | The artifact ledger ([Artifacts](/reference/artifacts)) |
+| `audio`, `image`, `video`, `stickers` | same | Media commands ([Media](/reference/media)) |
+| `daemon` | `daemon-manager` | Starting, stopping and inspecting the daemon |
+| `settings` | `settings-manager` | Global settings and runtime defaults |
+| `skills` | `skill-creator` | Writing, installing and granting skills |
+| `skill-gates` | `skill-gates` | The rules that load skills automatically |
+
+Others in the catalog: `automation-recipes`, `crm`, `tasks`, `tasks-eval`, `projects`, `observers`, `meetings`, `commands`, `apps`, `tag-rules`, `specs`, `prox-calls`, plus developer skills from the `ravi-dev` plugin (`app-creator`, `cli-creator`, `context-cli`, `prompt-builder`, `ravi-architecture`, `ravi-rules`). `architect`, `cross`, `matrix` and `tasks-manager` are deprecated stubs that point to their replacements.
+
+## How agents load skills (skill gates)
+
+Inside an agent session, Ravi makes sure the agent has read the right skill before it uses a command group. The first time the agent runs, for example, `ravi pages ship ...`, the call does not run. Instead the tool result is:
+
+```
+RAVI_SKILL_REQUIRED: Bash requires skill ravi-system-pages.
+The skill has been delivered and marked as loaded for this session. Read it, then retry the original tool call.
+
+<the full SKILL.md of the pages skill>
+```
+
+The agent reads it and runs the same command again, which now goes through. This happens once per skill per session. Running `ravi skills show <skill>` in the session also counts as loading it. For `bases`, `pages`, `triggers` and `cron`, the delivered skill ends with a pointer to `solucoes` until that one is loaded too.
+
+These command groups are gated by default: `agents`, `apps`, `artifacts`, `audio`, `bases`, `commands`, `contacts`, `context`, `cron`, `daemon`, `eval`, `events`, `heartbeat`, `image`, `instances` (`instances routes` loads the routes skill), `meetings`, `observers`, `pages`, `permissions`, `projects`, `prox calls`, `routes`, `sessions`, `settings`, `skill-gates`, `skills`, `slack`, `specs`, `stickers`, `tasks`, `triggers`, `video` and `whatsapp`. Other groups, such as `channels` and `media`, are not.
+
+Gates only apply inside agent sessions. Commands you type in your own terminal run directly.
+
+If the agent is not allowed to see the skill, the call fails with `RAVI_SKILL_GATE_CONFIG_ERROR` and names the fix: grant the skill (`ravi skills grant <agent> <skill>`) or give the agent the `use:skill:<skill>` capability. To change the rules themselves, use `ravi skill-gates list`, `show`, `set`, `disable`, `enable`, `rm` and `reset` (`rm` and `reset` are dry-runs without `--execute`).
+
+## Who can see which skill
+
+Each agent sees the union of a baseline, the skills its permissions imply, and explicit grants. An agent with no skill configuration at all sees everything.
 
 ```bash
-ravi skills show image
-ravi skills show image --installed
-ravi skills show find-skills --source vercel-labs/skills
+ravi skills inspect main          # the resolved list and where each skill comes from
+ravi skills grant main bases      # give one skill to one agent (takes effect at once)
+ravi skills revoke main bases
+ravi skills who bases             # agents with an explicit grant
+ravi skills who --agent main      # explicit grants of one agent
 ```
 
-## Install
+`ravi skills grant-batch` and `ravi skills revoke-batch` do the same in bulk; preview with `--dry-run`.
 
-`skills install` uses a small risk-based matrix:
+Skills that ship with Ravi need no install: grant them directly, or give the agent `use:skill:<skill>`. `use:skill:*` (which the `full-access` profile includes) and `admin:system:*` let an agent read any catalog or installed skill on demand. Run a grant as its own command: a shell line that also reads the denied skill is rejected as a whole, so the grant on that line never runs.
+
+## Install your own skills
+
+`ravi skills install` copies a skill from the catalog, a local folder or a Git source into `~/ravi/plugins/ravi-user-skills/skills/<skill>` (change the bucket with `--plugin`). Whether it runs at once depends on the risk:
 
 | Situation | Without `--execute` | Next step |
 |---|---|---|
-| Additive install from the official catalog or a local path (no `--overwrite`) | installs immediately (exit 0) | verify the result; do not repeat with `--execute` |
-| Git source (GitHub shorthand/URL or git URL) | minimal dry-run (exit 3) before resolving the remote source | review the plan, then repeat with `--execute` |
-| Any source with `--overwrite` | minimal dry-run (exit 3) before replacing files | review the plan, then repeat with `--execute` |
-
-`sourceLabel` is a controlled category: exactly `catalog`, `local`, or `git`, never a label derived from the input. The plan does not repeat a URL, local path, source/repository/skill name, or content. Git selection is intentionally deferred until the confirmed run.
+| From the catalog or a local path, without `--overwrite` | installs now (exit 0) | check the result; do not repeat with `--execute` |
+| From a Git source (GitHub shorthand, GitHub URL, git URL) | dry-run (exit 3) before fetching anything | review the plan, repeat with `--execute` |
+| Any source with `--overwrite` | dry-run (exit 3) before replacing files | review the plan, repeat with `--execute` |
 
 ```bash
-ravi skills install image                         # additive catalog install: runs now
-ravi skills install my-skill --source ./my-skills # additive local install: runs now
-ravi skills install --source ~/.agents/skills/find-skills # single local skill: runs now, no name needed
-ravi skills install find-skills --source vercel-labs/skills # Git: dry-run (exit 3)
+ravi skills list --source vercel-labs/skills                 # what a source offers
+ravi skills show find-skills --source vercel-labs/skills     # read before installing
 ravi skills install find-skills --source vercel-labs/skills --execute
-ravi skills install image --overwrite             # overwrite: dry-run (exit 3)
-ravi skills install image --overwrite --execute
+ravi skills install --source ./my-skills/report-writer       # a folder with one SKILL.md: no name needed
+ravi skills list --installed
 ```
 
-If a catalog/source contains multiple skills, installation is explicit: pass a skill name or `--all` (otherwise `SKILL_SELECTION_REQUIRED`, exit 2, with the candidate names in `suggestions`). A source holding exactly one skill (the directory containing `SKILL.md`, or the `SKILL.md` file itself) installs without a name. Relative local paths resolve against the caller's working directory, and `~/...` is the caller's home directory, not a GitHub shorthand.
+A source with several skills needs a skill name or `--all`; otherwise the command fails with `SKILL_SELECTION_REQUIRED` and lists the candidates. Relative paths resolve against your current directory, and `~/...` is your home directory, not a GitHub shorthand.
 
-Source failures come back as typed errors instead of a generic `COMMAND_FAILED`: `SKILL_SOURCE_NOT_FOUND`, `SKILL_SOURCE_EMPTY`, `SKILL_SOURCE_INVALID`, `SKILL_SOURCE_UNAVAILABLE` (retryable Git clone failure), and `SKILL_ALREADY_INSTALLED`. None of them repeat the raw source path or URL.
-
-## Install, Then Grant
-
-Installing a skill does not make it visible to agents that have a skill allowlist. A skill that only exists on disk (for example one a harness discovers under `~/.agents/skills`) stays denied with `SKILL_NOT_AUTHORIZED: Skill '<skill>' is not authorized for agent '<agent>'.` until it is installed into Ravi and granted:
+Installing does not make a skill visible to an agent that has a skill allowlist. Grant it afterwards:
 
 ```bash
 ravi skills install --source ~/.agents/skills/find-skills
-ravi skills grant <agent> find-skills
-ravi skills inspect <agent>
+ravi skills grant main find-skills
+ravi skills inspect main
 ```
 
-`skills grant` on a skill that is not installed fails with `SKILL_NOT_FOUND` and points to `ravi skills install --source <skill-dir>`.
+Install also refreshes the skills Ravi materializes for the Codex runtime, unless you pass `--skip-codex-sync`. Run `ravi skills sync` after editing skill files on disk.
 
-Skills that ship with Ravi (the catalog, for example `bases`) need no install: grant them directly, or give the agent a `use:skill:<skill>` capability. `use:skill:*` (which the `full-access` profile materializes) and `admin:system:*` let an agent read any catalog or installed skill on demand, without adding it to the catalog the agent sees in its prompt. The `SKILL_NOT_AUTHORIZED` message names the right remedy for the skill's origin. Run a grant as its own command: a shell line that also reads the denied skill is rejected as a whole, so a grant on that line never runs.
-
-Installed operator skills live in:
-
-```text
-~/ravi/plugins/ravi-user-skills/skills/<skill>
-```
-
-After install, the CLI syncs materialized Codex skills automatically unless `--skip-codex-sync` is passed.
-
-## Sync
-
-```bash
-ravi skills sync
-```
-
-Use this when plugin skill files changed on disk and you want the materialized skills directory refreshed immediately.
+Install errors come back typed: `SKILL_SOURCE_NOT_FOUND`, `SKILL_SOURCE_EMPTY`, `SKILL_SOURCE_INVALID`, `SKILL_SOURCE_UNAVAILABLE` (a Git clone failure you can retry), `SKILL_ALREADY_INSTALLED` and, for `grant`, `SKILL_NOT_FOUND`.

@@ -1,351 +1,193 @@
 ---
 title: Contacts
-description: Managing contacts, identities, tags, approval workflows, and agent scoping.
+description: Register the people your agents talk to, link their identities across channels, and manage status, tags and pending approvals.
+icon: users
 ---
 
-## Overview
+By the end of this page you will be able to add a person as a contact, link their Slack and WhatsApp identities to one record, find and tag contacts, approve or block someone, and decide whether Ravi creates contacts on its own.
 
-Contacts are the core identity layer in Ravi. Every person or group that interacts with your agents is tracked as a contact, with one or more identities (phone numbers, WhatsApp LIDs, Telegram IDs, etc.) linked to a single record. Contacts control who can message your agents, how messages are routed, and what level of access each person has.
+## What a contact is
 
-## Contact Lifecycle
+A contact is a person or an organization. Groups, channels, threads and sessions are not contacts; they are chats (see [Instances and routing](/guides/routing)).
 
-Every contact follows a status lifecycle:
+Each contact has:
 
-| Status | Description |
-|---|---|
-| `discovered` | Seen in a group or mentioned, but never messaged directly. Created automatically when Ravi encounters unknown participants. |
-| `pending` | Sent a message but hasn't been approved yet. Awaiting manual approval. |
-| `allowed` | Approved to interact with agents normally. |
-| `blocked` | Blocked. All messages from this contact are silently ignored. |
+- an **id**, 12 hex characters, for example `37d471eab289`;
+- one or more **identities**: a phone number, a WhatsApp LID, a Slack member id (`U...`), a Telegram id, an email;
+- a **status**: `allowed`, `pending`, `blocked` or `discovered`;
+- **tags**, and properties such as name, email, notes and opt-out.
 
-The typical flow is:
+Contacts matter because a message is tied to a person only when the sender's identity is linked to a contact. A sender without a contact gets no tools in that turn, and a contact can hold permission tags and grants. See [Permissions](/guides/permissions).
 
+## Add a contact
+
+<Tabs>
+  <Tab title="Slack">
+    ```bash
+    ravi contacts add U0123ABCD "Ana Souza" --channel slack --instance slack-main
+    ```
+
+    `--instance` is the name of your Slack instance. Without `--channel slack`, Ravi refuses a Slack id and tells you to add the flags.
+  </Tab>
+  <Tab title="WhatsApp or phone">
+    ```bash
+    ravi contacts add 5511999999999 "Ana Souza"
+    ```
+
+    Use the full international number, digits only.
+  </Tab>
+</Tabs>
+
+The command prints the new id:
+
+```text
+✓ Contact added: 37d471eab289 (Ana Souza) — slack:U0123ABCD
 ```
-discovered -> pending -> allowed
-                      -> blocked
-```
 
-- **Discovered contacts** are created automatically when Ravi encounters group members it hasn't seen before. They have `source: "discovered"`.
-- **Pending contacts** are created when someone sends a message and Ravi doesn't have them as allowed. They have `source: "inbound"`.
-- **Manually added contacts** skip directly to `allowed` with `source: "manual"`.
+`add` creates the contact with status `allowed`. Other options: `--kind person|org`, `--agent <ids>` (see [Restricting to agents](#restricting-to-agents)), and `--channel telegram|email|whatsapp|phone`. Telegram ids also need `--instance`.
 
-## Multi-Identity System
+<Warning>
+`contacts add --instance` does not check that the instance exists. A typo leaves the identity attached to an instance that never receives messages, and the person is not recognized. Check the name with `ravi instances list` first.
+</Warning>
 
-A single contact can have multiple identities across platforms. This allows Ravi to recognize the same person whether they message from a phone number, a WhatsApp LID, or a group.
+## Link more identities
 
-### Supported Platforms
-
-| Platform | Format | Example |
-|---|---|---|
-| `phone` | International number | `5511999999999` |
-| `whatsapp_lid` | WhatsApp Linked ID | `lid:12345678901234` |
-| `whatsapp_group` | WhatsApp Group | `group:120363425628305127` |
-| `telegram` | Telegram user ID | *(platform-specific)* |
-| `matrix` | Matrix user ID | *(platform-specific)* |
-
-### Managing Identities
-
-Add an identity to link a new platform to an existing contact:
+Link every identity a person uses to the same contact, so their tags and grants follow them across channels:
 
 ```bash
-# Link a WhatsApp LID to an existing phone contact
-ravi contacts identity-add 5511999999999 whatsapp_lid "lid:12345678901234"
+# Created from Slack: add their WhatsApp number
+ravi contacts link 37d471eab289 --channel whatsapp --id 5511999999999
 
-# Link a group identity
-ravi contacts identity-add 5511999999999 whatsapp_group "group:120363425628305127"
+# Created from a phone number: add their Slack member id
+ravi contacts link <contact-id> --channel slack --id U0123ABCD --instance slack-main
+
+ravi contacts info 37d471eab289
 ```
 
-Remove an identity:
+`--channel whatsapp` with a number stores a phone identity; a WhatsApp LID is passed as `lid:<digits>`. `contacts info` lists every identity, and `contacts check` is the same command.
+
+To detach an identity, or to fold a duplicate record into another:
 
 ```bash
-ravi contacts identity-remove whatsapp_lid "lid:12345678901234"
+ravi contacts unlink U0123ABCD --channel slack
+ravi contacts duplicates
+ravi contacts merge <source-id> <target-id>            # dry-run, exit 3
+ravi contacts merge <source-id> <target-id> --execute  # moves identities, deletes the source
 ```
 
-### Auto-Linking
-
-When Ravi detects that a phone number and a WhatsApp LID belong to the same person (e.g., from message metadata), it automatically links them. If both exist as separate contacts, Ravi merges them -- keeping the contact with the higher-priority status (`allowed` > `pending` > `discovered` > `blocked`).
-
-### Viewing Identities
-
-Use `info` to see all identities for a contact:
+## Find and inspect
 
 ```bash
-ravi contacts info 5511999999999
-```
-
-Output includes all linked identities with their platform and primary marker.
-
-## Contact Properties
-
-Each contact has the following fields:
-
-| Field | Type | Description |
-|---|---|---|
-| `id` | string | Auto-generated 12-character UUID |
-| `name` | string | Contact name |
-| `email` | string | Email address |
-| `status` | enum | `allowed`, `pending`, `blocked`, `discovered` |
-| `reply_mode` | enum | `auto` or `mention` |
-| `tags` | string[] | Array of arbitrary tags |
-| `notes` | object | Free-form JSON metadata |
-| `opt_out` | boolean | Whether the contact has opted out |
-| `source` | enum | `inbound`, `outbound`, `manual`, `discovered` |
-| `allowed_agents` | string[] | Restrict which agents can interact (null = all) |
-| `interaction_count` | number | Total message count (inbound + outbound) |
-| `last_inbound_at` | datetime | Timestamp of last received message |
-| `last_outbound_at` | datetime | Timestamp of last sent message |
-
-### Setting Properties
-
-```bash
-ravi contacts set 5511999999999 name "Joao Silva"
-ravi contacts set 5511999999999 email "joao@example.com"
-ravi contacts set 5511999999999 mode mention
-ravi contacts set 5511999999999 tags '["lead","vip"]'
-ravi contacts set 5511999999999 notes '{"empresa":"TechCorp","cargo":"CTO"}'
-ravi contacts set 5511999999999 opt-out true
-ravi contacts set 5511999999999 source outbound
-ravi contacts set 5511999999999 allowed-agents '["main","vendas"]'
-```
-
-Use `-` to clear a field:
-
-```bash
-ravi contacts set 5511999999999 email -
-ravi contacts set 5511999999999 allowed-agents -
-```
-
-## Reply Modes
-
-Each contact has a reply mode that controls when the agent responds:
-
-| Mode | Behavior |
-|---|---|
-| `auto` | Agent responds to every message from this contact (default) |
-| `mention` | Agent only responds when explicitly mentioned in the message |
-
-This is particularly useful for groups where you don't want the agent to respond to every message:
-
-```bash
-# Set a contact to mention-only
-ravi contacts set 5511999999999 mode mention
-
-# Or set it during approval
-ravi contacts approve abc123def456 mention
-```
-
-## Approval Workflow
-
-When a new contact messages your bot and is not yet registered, Ravi creates them as `pending`. You can review and approve pending contacts:
-
-### List Pending Contacts
-
-```bash
-ravi contacts pending
-```
-
-This shows two sections:
-- **Global pending**: Contacts awaiting approval across all accounts
-- **Account pending**: Contacts that messaged a specific account but no route matched
-
-### Approve a Contact
-
-```bash
-# Simple approval
-ravi contacts approve abc123def456
-
-# Approve with mention-only mode
-ravi contacts approve abc123def456 mention
-
-# Approve and restrict to specific agents
-ravi contacts approve abc123def456 --agent main,vendas
-```
-
-### Block a Contact
-
-```bash
-# Blocks the contact immediately.
-ravi contacts block abc123def456
-```
-
-### Allow a Previously Blocked Contact
-
-```bash
-ravi contacts allow abc123def456
-```
-
-## Tags and Search
-
-Tags are arbitrary string labels attached to contacts. They are used for filtering, grouping, and REBAC-based contact scoping.
-
-### Adding and Removing Tags
-
-```bash
-# Add a tag
-ravi contacts tag 5511999999999 lead
-ravi contacts tag 5511999999999 vip
-
-# Remove a tag
-ravi contacts untag 5511999999999 lead
-
-# Set all tags at once (replaces existing)
-ravi contacts set 5511999999999 tags '["lead","vip","enterprise"]'
-```
-
-### Group-Specific Tags
-
-You can assign per-group tags to a contact. This lets you label someone differently in each group they belong to (e.g., "manager" in one group, "observer" in another):
-
-```bash
-# Set a tag for a contact within a specific group
-ravi contacts group-tag 5511999999999 group:120363425628305127 manager
-
-# Remove a group-specific tag
-ravi contacts group-untag 5511999999999 group:120363425628305127
-```
-
-Group tags are stored in the contact's `notes.groupTags` object.
-
-### Searching
-
-```bash
-# Search by tag
-ravi contacts find lead --tag
-
-# Search by name, email, or identity
-ravi contacts find "Joao"
-ravi contacts find "techcorp"
-```
-
-## Agent Assignment and Contact Scoping
-
-### Restricting Contacts to Agents
-
-Use `allowed_agents` to restrict which agents can interact with a contact. When set, only the listed agents will receive messages from that contact:
-
-```bash
-# Restrict to specific agents
-ravi contacts set 5511999999999 allowed-agents '["vendas","suporte"]'
-
-# Remove restriction (all agents can interact)
-ravi contacts set 5511999999999 allowed-agents -
-```
-
-### Contact Scoping via REBAC
-
-Agents have scoped visibility into the contacts database, controlled by REBAC permissions:
-
-| Permission | Effect |
-|---|---|
-| `write_contacts` | Full read/write access to all contacts |
-| `read_own_contacts` | Can see contacts routed to this agent's sessions |
-| `read_tagged_contacts` | Can see contacts with a specific tag |
-| `read_contact` | Can see a specific contact by ID |
-
-Configure with:
-
-```bash
-# Agent can see all contacts routed to it
-ravi permissions grant agent:vendas read_own_contacts system:*
-
-# Agent can see contacts tagged "lead"
-ravi permissions grant agent:vendas read_tagged_contacts system:lead
-
-# Agent can see a specific contact
-ravi permissions grant agent:vendas read_contact contact:abc123def456
-```
-
-### Routing Priority
-
-When a message arrives, the agent is resolved in this order:
-
-1. `contact.allowed_agents` -- if set, only these agents receive the message
-2. Route match via `ravi instances routes` -- pattern-based routing
-3. Account-agent mapping -- from `ravi whatsapp connect --agent`
-4. Default agent -- fallback
-
-## Merging Duplicate Contacts
-
-When the same person exists as two separate contacts (e.g., one created from a phone number and another from a WhatsApp LID), you can merge them:
-
-```bash
-# Run once without --execute to preview the merge plan (dry-run, exit 3),
-# then confirm with --execute.
-ravi contacts merge <source-id> <target-id> --execute
-```
-
-This operation:
-- Moves all identities from the source contact to the target
-- Fills in blank fields on the target (name, email) from the source
-- Merges tags and notes if the target has none
-- Sums interaction counts
-- Deletes the source contact
-
-The target contact is preserved; the source contact is removed.
-
-## CLI Reference
-
-### Core Commands
-
-```bash
-# List all contacts
 ravi contacts list
 ravi contacts list --status pending
-
-# Add a contact (immediately allowed)
-ravi contacts add 5511999999999 "Joao Silva"
-ravi contacts add 5511999999999 "Joao" --agent main,vendas
-
-# View contact details
-ravi contacts info 5511999999999
-ravi contacts check 5511999999999   # alias for info
-
-# Remove a contact entirely (without --execute it is a dry-run, exit 3)
-ravi contacts remove abc123def456 --execute
+ravi contacts list --fields id,name,status --json
+ravi contacts find "Ana"
+ravi contacts find vip --tag
+ravi contacts info <contact>
+ravi contacts timeline <contact>
 ```
 
-### Status Management
+Every command that takes `<contact>` accepts the contact id or any of its identities. `list` ends with a count by status, for example `Total: 2 (2 returned, limit 50, offset 0; 2 allowed, 0 pending, 0 blocked, 0 discovered)`.
+
+## Tags, notes and properties
 
 ```bash
-ravi contacts approve abc123def456
-ravi contacts approve abc123def456 mention --agent vendas
-ravi contacts allow abc123def456
-ravi contacts block abc123def456             # blocks immediately
+ravi contacts tag <contact> vip
+ravi contacts untag <contact> vip
+ravi contacts set <contact> tags '["lead","vip"]'        # replaces all tags
+ravi contacts set <contact> email ana@example.com
+ravi contacts set <contact> notes '{"company":"Acme"}'
+ravi contacts note <contact> "Asked for a callback on Monday"
 ```
 
-### Tags
+`set` accepts `name`, `email`, `tags`, `notes`, `opt-out`, `source`, `allowed-agents` and `mode`. Use `-` to clear `name`, `email`, `source` or `allowed-agents`. `note` appends an entry to the contact's timeline.
+
+Tags are labels. The only tags that grant authority are `permission-admin`, `permission-owner` and `permission-superadmin`, which give `admin:system:*` while the contact is `allowed`. They apply immediately, with no dry-run, so tag carefully. See [Make yourself the owner](/start/owner).
+
+## Status
+
+| Status | How a contact gets it | What it changes today |
+|---|---|---|
+| `allowed` | `add`, `approve`, `allow` | Passes WhatsApp DMs under `pairing`. Required for admin tags to count and for approving requests. |
+| `pending` | Contact intake in `pending` mode, or `contacts backfill` | Listed by `ravi contacts pending`. Treated as not allowed. |
+| `discovered` | Contact intake in `discovered` mode, or `contacts backfill` | Known but not waiting for review. Treated as not allowed. |
+| `blocked` | `block` | Loses every permission tag and chat grant. Held for review like any non-allowed sender in WhatsApp DMs under `pairing`. |
+
+All status changes apply immediately:
 
 ```bash
-ravi contacts tag 5511999999999 lead
-ravi contacts untag 5511999999999 lead
-ravi contacts group-tag 5511999999999 group:120363 manager
-ravi contacts group-untag 5511999999999 group:120363
+ravi contacts approve <contact>    # status allowed
+ravi contacts allow <contact>      # status allowed
+ravi contacts block <contact>      # status blocked
 ```
 
-### Search
+These commands refuse group and chat ids. Approve a chat with `ravi instances pending approve` or add a route instead.
+
+<Warning>
+Blocking does not keep someone out on its own. Under an `open` policy a blocked contact's messages still start turns, and native Slack never looks at contact status. In a chat that is not governed, a blocked contact who reaches the agent still gets the agent's full ceiling. To keep people out, use entry policies and explicit routes ([Instances and routing](/guides/routing)); on Slack, keep DMs on `pairing` and route only the people you trust.
+</Warning>
+
+## Pending approvals
+
+People land in review in two ways: contact intake creates them as `pending`, or a `pairing` policy holds their DM. Groups held by an `allowlist` policy show up in the same list as pending chats; approve those as described in [Instances and routing](/guides/routing).
 
 ```bash
-ravi contacts find "Joao"
-ravi contacts find lead --tag
+ravi contacts pending                               # everything waiting, all instances
+ravi instances pending list wa-main                 # one instance
+ravi instances pending approve wa-main 5511999999999
+ravi instances pending reject wa-main 5511999999999 --execute
+ravi contacts approve <contact>                     # a contact created by intake
 ```
 
-### Identity Management
+`instances pending approve` marks the sender `allowed`, which releases WhatsApp DMs under `pairing`. `reject` is a dry-run (exit 3) until you pass `--execute`.
+
+<Note>
+On native Slack, approving a held DM sender does not release their DMs: the `pairing` gate there needs an explicit route. See [Connect Slack](/channels/slack).
+</Note>
+
+## Contact intake
+
+By default Ravi does not create contacts from incoming messages: an instance's `contactIntakeMode` is `off`. Turn it on per instance:
 
 ```bash
-ravi contacts identity-add abc123 whatsapp_lid "lid:12345"
-ravi contacts identity-remove whatsapp_lid "lid:12345"
-ravi contacts merge <source-id> <target-id> --execute   # without --execute it is a dry-run (exit 3)
+ravi instances set wa-main contactIntakeMode discovered     # or pending, or off
+ravi instances set wa-main defaultContactTags new-contact   # tags for contacts intake creates
 ```
 
-### Properties
+With intake on, a new sender becomes a contact with status `discovered` or `pending` and their identity is linked. On WhatsApp this covers DMs, and group senders whose phone number the provider resolves. Default tags apply only when intake creates the contact.
+
+<Warning>
+Intake makes strangers resolvable. In a chat that is not governed, any sender who resolves to a contact gets the agent's full ceiling, whatever their status. With intake `off`, unknown senders get no tools. Turn intake on only where entry policies already keep strangers out, or where the agent's ceiling is narrow.
+</Warning>
+
+To create contacts for DMs that arrived before intake was on, run a backfill. It previews by default:
 
 ```bash
-ravi contacts set 5511999999999 name "New Name"
-ravi contacts set 5511999999999 email "new@email.com"
-ravi contacts set 5511999999999 mode mention
-ravi contacts set 5511999999999 tags '["tag1","tag2"]'
-ravi contacts set 5511999999999 notes '{"key":"value"}'
-ravi contacts set 5511999999999 opt-out true
-ravi contacts set 5511999999999 source manual
-ravi contacts set 5511999999999 allowed-agents '["main"]'
+ravi contacts backfill --instance wa-main --mode discovered
+ravi contacts backfill --instance wa-main --mode discovered --apply
+```
+
+Backfill never creates contacts for groups, and never changes the status of `allowed` or `blocked` contacts.
+
+## Restricting to agents
+
+`--agent` on `add` or `approve`, or `set allowed-agents`, stores a list of agents for the contact:
+
+```bash
+ravi contacts approve <contact> --agent sales,support
+ravi contacts set <contact> allowed-agents '["sales"]'
+ravi contacts set <contact> allowed-agents -              # clear
+```
+
+Only DMs that arrive through Omni, such as WhatsApp, check this list: a message from an `allowed` contact routed to an agent that is not on the list is dropped. Native Slack ignores it. To choose which agent answers whom, use routes ([Instances and routing](/guides/routing)).
+
+## Reply mode
+
+`approve <contact> mention` and `set <contact> mode mention` store a reply mode, shown as `Mode` in `contacts info`. No channel enforces it today: the agent does not filter replies by mention. In groups, whether the agent speaks up is left to its instructions, and on Slack every human message in a routed channel starts a turn.
+
+## Removing a contact
+
+```bash
+ravi contacts remove <contact>             # dry-run, exit 3
+ravi contacts remove <contact> --execute
 ```
