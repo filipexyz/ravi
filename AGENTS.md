@@ -370,13 +370,21 @@ ravi sandbox template build                    # [name] --ref dev --cpu 2 --memo
 
 # Per task
 ravi sandbox run --repo https://github.com/owner/repo.git --task "..." \
-  [--branch b] [--title t] [--model sonnet] [--timeout-min 55] [--keep] [--output dir] [--json]
+  [--branch b] [--title t] [--model sonnet] [--timeout-min 55] [--keep] [--follow] [--output dir] [--json]
+ravi sandbox logs <sandbox-id> [--output dir] [--json]   # E2B's process log, events and metrics
 ```
 
 - Credentials come from the environment: `E2B_API_KEY`, plus `CLAUDE_CODE_OAUTH_TOKEN` or
   `ANTHROPIC_API_KEY` (the `RAVI_`-prefixed names also work, for hosts that hide the standard ones).
   `GITHUB_TOKEN` is used only to clone private repos, and only for `https://github.com/...` URLs.
 - Outputs default to `~/.ravi/sandbox-runs/<sandbox-id>/`. Exit code is 1 unless the task ends `done`.
+- To see what happened inside, the same folder holds `run.log` (step timeline), the full `daemon.log`
+  (copied live, kept even if the sandbox dies), `sessions/<name>.trace.txt|.jsonl` (`ravi sessions trace`
+  per session, task session included), `transcripts/` (Claude Code JSONL) and `e2b/`: `processes.txt`
+  (every command E2B ran, with exit status), `logs.jsonl`, `events.json` (created/paused/killed, kill reason),
+  `metrics.csv` (CPU/memory/disk every 5 s) and `summary.json`. Credentials are masked in all of them.
+- `--follow` prints the daemon log live. `ravi sandbox logs <sandbox-id>` re-fetches the `e2b/` part for any
+  sandbox E2B still remembers (about 7 days), e.g. when its logs were still being ingested at the end of a run.
 - `changes.patch` holds everything the task changed, committed or not, minus the `AGENTS.md`/`CLAUDE.md`
   scaffolding Ravi adds to the worker's cwd. Apply it with `git apply`.
 - `--keep` pauses the sandbox instead of killing it. Ctrl-C kills (or, with `--keep`, pauses) it too.

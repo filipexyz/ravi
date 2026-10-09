@@ -177,6 +177,8 @@ ravi sandbox template build
 ravi sandbox run --repo https://github.com/owner/repo.git --task "Fix the failing test in src/foo"
 ```
 
+Each run also saves what happened inside the sandbox: the full daemon log (copied live, so it survives a crash), Ravi's session traces, the Claude transcripts, and what E2B itself recorded (every process with its command and exit status, lifecycle events with the kill reason, CPU/memory/disk every 5 s). Add `--follow` to watch the daemon log while the task runs. E2B keeps its part for about 7 days, so `ravi sandbox logs <sandbox-id>` fetches it again for any sandbox.
+
 ### Build against the SDK
 
 The decorated CLI registry is the source of truth for gateway routes, OpenAPI, and generated clients.
