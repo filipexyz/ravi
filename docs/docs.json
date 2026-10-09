@@ -57,6 +57,12 @@
               "console/pages",
               "console/bases"
             ]
+          },
+          {
+            "group": "Build on Ravi",
+            "pages": [
+              "guides/sdk"
+            ]
           }
         ]
       },
@@ -89,12 +95,6 @@
             "group": "Operations",
             "pages": [
               "guides/troubleshooting"
-            ]
-          },
-          {
-            "group": "Build on Ravi",
-            "pages": [
-              "guides/sdk"
             ]
           }
         ]

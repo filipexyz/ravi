@@ -8,7 +8,7 @@
 
 <p align="center">
   <strong>Local-first runtime for long-lived AI agents.</strong><br />
-  Run agents on your own machine, reach them from Slack, WhatsApp or the terminal, and publish what they build as pages.
+  Run agents on your own machine, reach them from Slack, WhatsApp or the terminal, publish what they build as pages, and build your own frontends on SDKs generated from the CLI.
 </p>
 
 <p align="center">
@@ -27,6 +27,7 @@ Documentation: **[docs.ravi.bot](https://docs.ravi.bot)**
 ## What you get
 
 - **Any provider, same behavior.** Claude Code, Codex, Pi and Grok Build are adapters. Ravi owns queueing, permissions, traces and delivery, so switching providers does not change how an agent works.
+- **SDKs generated from the CLI.** Every public `ravi` command is also an HTTP endpoint on the daemon and a typed method in the TypeScript, Dart and Swift SDKs, all generated from the same command registry. The pre-push hook and CI compare the SDKs with a fresh generation and fail on any difference, so they never drift from the CLI. Build any frontend for your Ravi (a dashboard, a mobile app, a browser extension, an internal tool) while authentication, permissions, dry-runs and audit stay in Ravi.
 - **Channels.** Slack runs natively (Socket Mode: DMs, channels, threads, files, Block Kit). WhatsApp, Telegram and Discord go through the Omni bridge. The terminal works too, with `ravi sessions send`.
 - **Durable sessions.** By default each DM, group and thread gets its own named session, cron jobs and triggers can run in sessions of their own, and sessions can send, ask, inform and answer each other. People can steer a busy agent from chat: `>>message` waits for the current turn to end, and `!!message` is recorded without starting a turn.
 - **Automation.** Cron jobs, event triggers on NATS topics, heartbeats driven by the agent's `HEARTBEAT.md`, and background jobs (`ravi jobs run`) whose result comes back to the session. When an agent creates or edits a pull request with `gh`, Ravi follows the PR and its CI and wakes the session when something changes.
@@ -96,6 +97,30 @@ ravi pages ship --title "Hello" --body "<h1>Hello</h1>" --json
 `ravi pages ship` publishes immediately, and a new route is `private` unless you pass `--visibility`. See [Log in to the Console](https://docs.ravi.bot/console/login) and [Publish pages](https://docs.ravi.bot/console/pages).
 
 Bases are typed tables in a Console project. A page reads and writes them through a view, live for signed-in organization members on `private` or `protected_link` routes, and new rows can wake your agent through a trigger. See [Interactive pages with Bases](https://docs.ravi.bot/console/bases).
+
+## Build on Ravi
+
+Turn on the daemon's HTTP gateway by adding `RAVI_HTTP_PORT=7777` to `~/.ravi/.env` (`ravi daemon env` opens it), then restart and create a context key:
+
+```bash
+ravi daemon restart -m "sdk gateway"
+ravi daemon init-admin-key     # prints an rctx_ key for RAVI_CONTEXT_KEY; narrower keys: ravi context issue
+```
+
+Then call your agents from any app:
+
+```ts
+import { RaviClient, createHttpTransport } from "@ravi-os/sdk";
+
+const ravi = new RaviClient(
+  createHttpTransport({ baseUrl: "http://127.0.0.1:7777", contextKey: process.env.RAVI_CONTEXT_KEY! }),
+);
+
+const agents = await ravi.agents.list();
+const reply = await ravi.sessions.send("main", "Summarize today's work.", { wait: true });
+```
+
+Method names follow the CLI: `ravi instances routes add` is `ravi.instances.routes.add(...)`. Sessions, tasks and events also stream live over SSE. Dart (`ravi_sdk` on pub.dev) and Swift (`RaviSDK`) have the same surface, and the daemon serves its OpenAPI 3.1 spec at `/api/v1/_meta/openapi.json` for any other language. See [SDKs and HTTP gateway](https://docs.ravi.bot/guides/sdk).
 
 ## Learn more
 

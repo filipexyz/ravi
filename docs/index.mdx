@@ -8,6 +8,8 @@ Ravi runs AI agents on your own machine. Each agent keeps persistent sessions, a
 
 Ravi also connects to the Ravi Console. After `ravi login`, your agents can publish pages on `ravi.page` and build interactive pages backed by Bases, the typed tables of a Console project.
 
+Everything the CLI does is open to your own code too. The daemon serves every public command over HTTP, and typed SDKs for TypeScript, Dart and Swift are generated from the CLI itself, so they never drift from it. You can build any frontend for your Ravi: a dashboard, a mobile app, a browser extension or an internal tool.
+
 ## How the pieces fit
 
 | Piece | What it is |
@@ -19,7 +21,7 @@ Ravi also connects to the Ravi Console. After `ravi login`, your agents can publ
 | `~/.ravi/ravi.db`, `~/.ravi/chat.db` | SQLite databases. `ravi.db` holds agents, sessions, instances, routes, settings and tags; `chat.db` holds contacts and their identities. |
 | Providers | The model runtime behind each agent: `codex` (the built-in default), `claude`, `pi` or `grok`. You choose one per agent. |
 
-You manage all of it with the `ravi` CLI. Agents use the same CLI as their tools, within the permissions you give them.
+You manage all of it with the `ravi` CLI. Agents use the same CLI as their tools, within the permissions you give them, and your apps reach the same commands through the SDKs.
 
 ## Get started
 
@@ -48,6 +50,12 @@ Follow these pages in order. Connect one channel (Slack is the recommended one) 
     Build pages that read and write Bases, and send row changes to your agent.
   </Card>
 </CardGroup>
+
+## Build on Ravi
+
+<Card title="SDKs and HTTP gateway" icon="code" href="/guides/sdk">
+  Call any Ravi command from TypeScript, Dart or Swift, stream sessions and events, and build your own frontend. The SDKs are generated from the CLI, so they match it command for command.
+</Card>
 
 ## Where to go next
 

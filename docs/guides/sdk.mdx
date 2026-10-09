@@ -1,18 +1,30 @@
 ---
-title: SDK and HTTP gateway
-description: Turn on Ravi's HTTP gateway, issue a context key, and call Ravi from TypeScript, Dart or Swift.
+title: SDKs and HTTP gateway
+description: Every Ravi command as a typed method in TypeScript, Dart and Swift, generated from the CLI with no drift, so you can build any frontend for your Ravi.
 icon: code
 ---
 
-Ravi exposes its commands over an authenticated HTTP gateway under `/api/v1/*`. At the end of this page you will have the gateway running on the daemon host, a scoped context key for your app, and a client in TypeScript, Dart or Swift calling Ravi and streaming its events.
+Every public `ravi` command is also an HTTP endpoint on the daemon and a typed method in the TypeScript, Dart and Swift SDKs. Use them to build any frontend for your Ravi: a dashboard over sessions, tasks and contacts, a mobile or desktop app that talks to your agents, a browser extension, an internal tool or a test harness. Authentication, permissions, dry-runs and audit stay in Ravi, so your app does not reimplement them.
 
-The gateway and the SDKs are generated from the same command registry as the CLI (`src/cli/registry-snapshot.ts`), so every `ravi <group> <command>` that is not marked CLI-only (a few long-running or terminal-bound commands such as `ravi channels logs`) has the same name, arguments and return shape in the SDKs. The repository also keeps an OpenAPI snapshot of it in `docs/openapi.json`.
+At the end of this page you will have the gateway running on the daemon host, a scoped context key for your app, and a client in TypeScript, Dart or Swift calling Ravi and streaming its events.
 
 | SDK | Package | Source |
 |---|---|---|
 | TypeScript | `@ravi-os/sdk` on npm | `packages/ravi-os-sdk` |
 | Dart | `ravi_sdk` on pub.dev | `packages/ravi-os-dart-sdk` |
 | Swift | `RaviSDK` (Swift Package, not published) | `packages/ravi-os-swift-sdk` |
+
+## Generated from the CLI, with no drift
+
+The CLI, the HTTP gateway, the three SDKs and the OpenAPI spec come from one source: the command registry, built from the decorated command classes in `src/cli/commands/`.
+
+- **The gateway** builds its routes from the registry when the daemon starts, so every command in the build the daemon runs is reachable over HTTP with the same name, arguments, options, return shape, permission check and dry-run. Only a short list of CLI-only commands stays off it, long-running or terminal-bound ones such as `ravi channels logs` and `ravi sandbox run`.
+- **The SDKs and the OpenAPI spec** are generated code, kept in the repository next to the CLI. The pre-push hook and every CI run compare them with a fresh generation from the registry and fail on any difference (`ravi sdk client check`, `sdk dart check`, `sdk swift check`, `sdk openapi check`). A command cannot change without its SDK methods, types and schemas changing with it.
+- **Return types** come from the return schema each command declares, so the SDKs know what a call returns, not just what it takes.
+
+<Note>
+The npm and pub.dev packages are released separately from the CLI, so a published SDK can be older than the `ravi.bot@next` you run: commands added after its release are not in it yet. The packages under `packages/` in the repository always match the CLI of the same commit.
+</Note>
 
 ## Turn on the gateway
 
@@ -247,6 +259,10 @@ let client = RaviClient(
 
 let agents = try await client.agents.list()
 ```
+
+## Any other language
+
+The daemon serves the OpenAPI 3.1 spec of its own registry at `GET /api/v1/_meta/openapi.json`, without a key, and `ravi sdk openapi emit --out ravi-openapi.json` writes the same spec from the CLI. Give it to any OpenAPI generator to get a client in another language. Each operation maps to one `ravi <group> <command>`, and the API tab of these docs renders the spec of the `dev` branch.
 
 ## Wire contract
 
