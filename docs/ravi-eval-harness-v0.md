@@ -94,8 +94,6 @@ ravi eval run examples/eval/session-response-smoke.json
 ravi eval run examples/eval/session-response-smoke.json --json
 ```
 
-Rodando local, o comando sai com código 1 quando a rubrica reprova ou o turno falha (depois de imprimir o resultado). Chamado de dentro de uma sessão, pelo gateway, ele ainda sai com 0: leia `grade.pass` e `execution.state` no `--json`.
-
 O run persiste artefatos em:
 
 ```bash

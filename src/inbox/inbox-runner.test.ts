@@ -293,6 +293,65 @@ describe("inbox runner pending lease recovery", () => {
     });
   });
 
+  it("publishes bases.row.* items with the row values read through the Bases API", async () => {
+    writeCloudCredentials(makeCredentials());
+    const rowReads: string[] = [];
+    const published: Array<Record<string, unknown>> = [];
+    globalThis.fetch = mock(async (input: string | URL | Request) => {
+      const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
+      if (url.pathname === "/api/cli/inbox/subscriptions/global") {
+        return jsonResponse({ subscription: makeSubscription() });
+      }
+      if (url.pathname === "/api/cli/inbox/pulse") {
+        return jsonResponse(
+          makePendingPulse({ latestSequence: 1, subscription: makeSubscription({ lastDeliveredSequence: 0 }) }),
+        );
+      }
+      if (url.pathname === "/api/cli/inbox/poll") {
+        return jsonResponse(
+          makePoll({
+            items: [
+              makeInboxItem(1, {
+                eventType: "bases.row.created",
+                category: "bases",
+                payload: { baseId: "base_1", projectId: "proj_1", rowId: "row_c1", version: 1, surface: "page" },
+              }),
+            ],
+          }),
+        );
+      }
+      if (url.pathname === "/api/cli/projects/proj_1/bases/base_1/rows/row_c1") {
+        rowReads.push(url.pathname + url.search);
+        return jsonResponse({
+          row: { rowId: "row_c1", version: 1, values: { topic_id: ["row_t1"] }, body: "x", archivedAt: null },
+          users: {},
+          idempotentReplay: false,
+        });
+      }
+      if (url.pathname === "/api/cli/inbox/ack") return jsonResponse({ acked: 1 });
+      throw new Error(`Unexpected inbox request: ${url.pathname}`);
+    }) as unknown as typeof fetch;
+
+    const runner = new InboxRunner({
+      nats: {
+        publish: async (_subject, payload) => {
+          published.push(payload as Record<string, unknown>);
+        },
+        flush: async () => {},
+      },
+    });
+    await runner.tickOnce();
+
+    expect(rowReads).toEqual(["/api/cli/projects/proj_1/bases/base_1/rows/row_c1"]);
+    expect(published[0]?.payload).toMatchObject({
+      rowId: "row_c1",
+      row: { rowId: "row_c1", version: 1, values: { topic_id: ["row_t1"] }, archivedAt: null },
+      rowEnrichment: { status: "ok" },
+    });
+    const publishedPayload = published[0]?.payload as { row: Record<string, unknown> } | undefined;
+    expect(publishedPayload?.row).not.toHaveProperty("body");
+  });
+
   it("retries only the ack for an already-delivered item without rewriting or enriching it", async () => {
     writeCloudCredentials(makeCredentials());
     seedExistingSubscription({ subscriptionId: "sub_1", generation: 6, sequence: 10 });

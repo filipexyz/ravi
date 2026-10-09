@@ -33,6 +33,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/slack/socket-mode.test.ts",
     // `channels start` liveness: PM2-online runner probed on its PID health subject, stale ones bounced.
     "src/channels/runner-liveness.test.ts",
+    // `sessions attach` seeds a routed Slack channel's chat before its first message.
+    "src/channels/slack/route-seeded-chat.test.ts",
   ],
   "src/omni/": [
     "src/omni/consumer-context.test.ts",
@@ -56,6 +58,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/router/router-db.announce-compaction.test.ts",
     // Daemon restart ledger records resume vs notice, only for published events.
     "src/router/router-db.daemon-restart.test.ts",
+    // Trigger session migration: drops the legacy main|isolated CHECK, keeps rows and indexes.
+    "src/router/router-db.trigger-session-check.test.ts",
     // Crash-recovery storage covers both the router schema and its typed runtime DAO.
     "src/runtime/crash-recovery-store.test.ts",
     "src/runtime/session-goals.test.ts",
@@ -142,6 +146,9 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     // deleted triggers that must not fire on a removed topic.
     "src/triggers/__tests__/runner-filter.test.ts",
     "src/triggers/__tests__/runner-delete.test.ts",
+    // Named/templated trigger sessions: one session per resolved name, skip, per-session cooldown.
+    "src/triggers/__tests__/runner-named-session.test.ts",
+    "src/triggers/__tests__/session-target.test.ts",
   ],
   "src/approval/": ["src/approval/service.test.ts", "src/approval/grantor.test.ts", "src/approval/decision.test.ts"],
   "src/apps/": ["src/apps/router.test.ts"],

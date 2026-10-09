@@ -42,6 +42,7 @@ import {
 import { getTriggerTopicWarnings } from "../../triggers/topic-policy.js";
 import { validateFilter } from "../../triggers/filter.js";
 import { resolveTriggerActivation } from "../../triggers/activation.js";
+import { sessionTargetError, type SessionTarget } from "../../triggers/types.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 
 function printJson(payload: unknown): void {
@@ -467,8 +468,9 @@ export class TriggersCommands {
     })
     cooldown?: string,
     @Option({
-      flags: "--session <type>",
-      description: "Session: main or isolated (default: isolated)",
+      flags: "--session <name>",
+      description:
+        "Session to run in, by name; may be a template resolved per event (e.g. issue-{{data.payload.row.values.topic_id.0}}) for one session per value; an event whose name does not resolve is skipped, never sent to another session. Created when missing. Default: the current session, or the agent main session outside one. The reserved values main and isolated keep their old meaning (the agent main session; one session per trigger)",
     })
     session?: string,
     @Option({
@@ -539,17 +541,16 @@ export class TriggersCommands {
       }
     }
 
-    // Validate session
-    let sessionTarget: "main" | "isolated" = "isolated";
-    if (session) {
-      if (session !== "main" && session !== "isolated") {
-        fail(`Invalid session: ${session}. Valid: main, isolated`);
-      }
-      sessionTarget = session;
-    }
-
     // Resolve agent: explicit flag > caller agent (from session context)
     const ctx = getContext();
+
+    // Session: explicit name/template, else the caller's current session.
+    // Outside a session there is no current one; the agent main session is it.
+    if (session !== undefined) {
+      const error = sessionTargetError(session);
+      if (error) fail(error);
+    }
+    const sessionTarget: SessionTarget = session?.trim() || ctx?.sessionName || ctx?.sessionKey || "main";
     const resolvedAgent = agent ?? ctx?.agentId;
 
     // Resolve account in this order:
@@ -831,14 +832,12 @@ export class TriggersCommands {
         }
 
         case "session": {
-          const validValues = ["main", "isolated"];
-          if (!validValues.includes(value)) {
-            fail(`Invalid session value: ${value}. Valid: ${validValues.join(", ")}`);
-          }
-          updated = dbUpdateTrigger(id, {
-            session: value as "main" | "isolated",
-          });
-          logHuman(`✓ Session set: ${id} -> ${value}`);
+          const error = sessionTargetError(value);
+          if (error) fail(error);
+          const session = value.trim();
+          updated = dbUpdateTrigger(id, { session });
+          normalizedValue = session;
+          logHuman(`✓ Session set: ${id} -> ${session}`);
           break;
         }
 

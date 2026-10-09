@@ -47,7 +47,7 @@ ravi bases rows update publicacoes <row> --set msg_ids=<messageId> --expected-ve
 
 ravi triggers add "aprovação por reação" \
   --topic "ravi.inbound.reaction" \
-  --filter 'data.emoji includes "👍"' --cooldown 1s \
+  --filter 'data.emoji includes "👍"' --cooldown 1s --session publicacoes-aprovacao \
   --message "Reação em {{data.targetMessageId}}. Ache em publicacoes a linha com msg_ids contendo esse id. Sem linha ou publicado marcado: @@SILENT@@. Senão publique uma vez e marque publicado com --expected-version e --idempotency-key pub:<row>:publicar."
 ```
 

@@ -51,6 +51,16 @@ class GatewayDemoCommands {
     };
   }
 
+  @Command({ name: "collide", description: "Arg and option share one name" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "collide", risk: "low", input: ["channel"] })
+  @Returns(z.object({ channel: z.string(), configName: z.string().nullable() }))
+  collide(
+    @Arg("channel", { description: "Provider conversation id" }) channel: string,
+    @Option({ flags: "--channel <name>", description: "Config name" }) configName?: string,
+  ) {
+    return { channel, configName: configName ?? null };
+  }
+
   @Command({ name: "redacted", description: "Redact sensitive command input from audits" })
   @CommandAccess({
     kind: "read",
@@ -372,6 +382,17 @@ describe("dispatch — body shape (flat-only)", () => {
       shout: true,
       limit: "5",
     });
+  });
+
+  it("gives a body key to the arg when an option shares its name", async () => {
+    const result = await dispatch(
+      findCmd("demo.collide"),
+      { channel: "C0PRIVATE1" },
+      {},
+      { contextRecord: demoContext, emitAudit: captureAudits().emit },
+    );
+    expect(result.response.status).toBe(200);
+    expect(await result.response.json()).toEqual({ channel: "C0PRIVATE1", configName: null });
   });
 
   it("redacts command-declared fields from gateway audits", async () => {

@@ -44,7 +44,7 @@ Verbo vazio vale "—". Algum vazio? Diga por quê.
 - CAPTAR: de fora, rota de agente (`ravi instances routes add`), Ravi Mail (`ravi.inbox.mail.received`), modal do Slack, ligação (`ravi prox calls request`). Membro: formulário. Máquina: `ravi watch create`, `ravi cron add --shell`, `ravi bases rows import`. Calado: `ravi observers rules set`.
 - GUARDAR: base por entidade; `ref` liga contato, chat, artifact. Só agente: `ravi crm`. Arquivo: URL de artifact.
 - MOSTRAR: membro, página de dados. De fora: mensagem ou snapshot. Slack: Canvas.
-- REAGIR: linha, `ravi bases subscribe` + trigger em `ravi.console.inbox.item`. Reação, resposta, botão: `ravi.inbound.reaction|reply|interaction`. E-mail, reunião, task: tópico próprio. Sem julgamento: `--shell`.
+- REAGIR: linha, `ravi bases subscribe` + trigger em `ravi.console.inbox.item`. Reação, resposta, botão: `ravi.inbound.reaction|reply|interaction`. E-mail, reunião, task: tópico próprio. Sem julgamento: `--shell`. Sem `--session` o trigger roda na sessão de quem o criou: dê um nome (`--session tarefas-fila`) ou um template por item.
 - AGIR: `ravi whatsapp dm send <contato> "<texto>" --account <inst> --execute` (contato posicional, sem `--to`), `ravi whatsapp group send`, `ravi sessions send <s> "<p>" --channel <c> --to <chat>`, `ravi slack messages-send`, `ravi mail providers ravi-mail send`, `ravi image generate` (com chat, envia sozinho), `ravi audio generate`, `ravi media send` (sem chat: `--account`, `--to`), `ravi tasks create`, `ravi bases rows update --expected-version`.
 - RELATAR: `ravi cron add --shell` (fala só em erro) ou `--message --isolated`; `--at` com offset (ali `--tz` não vale). Heartbeat; `ravi sessions followups add`.
 

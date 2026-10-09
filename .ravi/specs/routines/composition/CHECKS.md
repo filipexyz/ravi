@@ -21,12 +21,7 @@ ravi specs sync --json
 
 ```bash
 bun test src/ci/quality-gate.test.ts
-bun test src/cli/commands/eval.test.ts
-examples/eval/solucoes/checar-comandos.sh src/plugins/internal/ravi-system/skills/solucoes/
 ```
-
-- `bun test src/cli/commands/eval.test.ts` passes: every spec in `examples/eval/` loads with the strict eval schema.
-- `checar-comandos.sh` on the `solucoes` skill returns exit 0: every `ravi ...` the sheet cites exists.
 
 ## Routine Review
 

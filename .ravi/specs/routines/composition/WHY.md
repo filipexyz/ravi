@@ -17,10 +17,10 @@ Agents building a solution with Bases and Pages assemble the same parts: a row e
 
 ## Failure Modes Observed
 
-1. **Trigger taken for context.** A row event carries ids only. A routine that acts on the event without reading the row works on stale or missing data.
+1. **Trigger taken for context.** A row event carries ids and, at most, the values read when it was delivered, never the body or later changes. A routine that acts on the event without reading the row works on stale or missing data.
 2. **Approval without a recorded message id.** The reaction arrives, and the routine cannot tell which object it approves.
 3. **Retries that duplicate effects.** Writes without processed markers or idempotency keys post, send, or charge twice when a turn is retried.
-4. **Live pages for outsiders.** "A portal where customers follow their orders" gets built as a live data page. Pages has no viewer identity for people outside the org, so the page is either public with live data or unreadable by the people it was built for. The solutions eval measures this as item R1.
+4. **Live pages for outsiders.** "A portal where customers follow their orders" gets built as a live data page. Pages has no viewer identity for people outside the org, so the page is either public with live data or unreadable by the people it was built for.
 5. **One trigger, unrelated outcomes.** A single trigger tries to both notify and update, and every change to one outcome breaks the other.
 
 ## Design Choice

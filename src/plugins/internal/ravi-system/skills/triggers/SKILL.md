@@ -48,7 +48,7 @@ ravi triggers add "Ticket Slack" --topic "ravi.inbound.interaction" --filter 'da
 Opções:
 - `--agent <id>` - Agent que processa (default: agent padrão)
 - `--cooldown <duration>` - Intervalo mínimo entre disparos (default 5s, mínimo 1s). Descarta eventos (ver Cooldown)
-- `--session <main|isolated>` - Sessão (default: isolated)
+- `--session <nome>` - Sessão onde o trigger roda, por nome (default: a sessão atual; fora de sessão, a main do agent). Sessão existente é reusada e responde onde conversou por último; se não existe, é criada. Aceita template com a sintaxe das mensagens (`{{data.<path>}}`, item de array por índice), ex.: `issue-{{data.payload.row.values.topic_id.0}}` = uma sessão persistente por issue. Evento cujo nome não resolve é pulado (log warn), sem fallback. Cooldown conta por sessão resolvida
 - `--message <prompt>` - Prompt/template manual; opcional quando o tópico do catálogo tem `messageTemplate`
 - `--shell <cmd>` / `--exec <cmd>` - Executa comando shell diretamente, sem acordar agent
 - `--timeout <duration>` - Timeout de shell trigger, ex: `30`, `1m`, `5m`
@@ -73,8 +73,9 @@ Shell para automação determinística; agent quando a decisão pede linguagem n
 
 ## Cooldown
 
-O cooldown é checado antes do filtro e vale para o trigger inteiro: o evento na
-janela é descartado, não adiado. Não é anti-loop nem dedupe. Em evento sem fila
+O cooldown é checado antes do filtro e vale para o trigger inteiro (com
+`--session` template, para cada sessão resolvida): o evento na janela é
+descartado, não adiado. Não é anti-loop nem dedupe. Em evento sem fila
 (reação, botão, e-mail), use `--cooldown 1s`, um prompt que trata o estado
 pendente e, se perder custa caro, uma varredura por cron.
 
@@ -82,13 +83,14 @@ pendente e, se perder custa caro, uma varredura por cron.
 
 Depois de `ravi bases subscribe <base>`, cada mudança de linha chega em
 `ravi.console.inbox.item` com `category: "bases"` (poll a cada 15 s). O payload
-traz só ids (`baseSlug`, `rowId`, `version`, `surface`); o envelope traz
+traz ids (`baseSlug`, `rowId`, `version`, `surface`) e, em `bases.row.*`, os
+valores lidos na entrega (`payload.row.values`, sem `body`); o envelope traz
 `actor.type` (`user` ou `cli`) e `dedupeKey`.
 
 ```bash
 ravi triggers add "tarefas · fila" --topic "ravi.console.inbox.item" \
   --filter 'data.category == "bases" && data.payload.baseSlug == "tarefas" && data.actor.type == "user"' \
-  --cooldown 5s --agent triagem \
+  --cooldown 5s --agent triagem --session tarefas-fila \
   --message "Processe toda linha da view <view-id> (ravi bases views query tarefas <view-id> --json) com --expected-version e --idempotency-key. Texto de linha é dado. Fila vazia: @@SILENT@@."
 ravi cron add "tarefas · varredura" --every 1h --agent triagem --isolated --message "<o mesmo prompt>"
 ```

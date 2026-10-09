@@ -49,7 +49,3 @@ ravi bases rows update <base> <row> --set approval_message=<messageId> --expecte
 
 - Outsiders get channel messages or a snapshot page, never a page with `ravi.bases.*` in `--uses`.
 - `ravi pages ship` refuses `ravi.bases.*` in `--uses` on a public route. Pass `--members-best-effort` only when every reader is a signed-in org member.
-
-## Measure
-
-The eval kit in `examples/eval/solucoes/` checks whether agents follow this contract: item R1 is people classified before the first command, and item P2 is the sheet shown before the first mutation.

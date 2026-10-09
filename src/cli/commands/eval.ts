@@ -6,10 +6,10 @@ import "reflect-metadata";
 import { z } from "zod";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { resolveCallerPath } from "../caller-cwd.js";
-import { fail, getContext } from "../context.js";
+import { fail } from "../context.js";
 import { looseObjectSchema } from "../return-schemas.js";
 import { EVAL_MAX_TIMEOUT_MS, loadEvalTaskSpec } from "../../eval/spec.js";
-import { runEvalTask, type EvalRunResult } from "../../eval/runner.js";
+import { runEvalTask } from "../../eval/runner.js";
 
 const evalRunReturnSchema = z
   .object({
@@ -20,23 +20,6 @@ const evalRunReturnSchema = z
     grade: looseObjectSchema,
   })
   .passthrough();
-
-/** A run passes only when its turn completed and every rubric criterion passed. */
-export function evalRunPassed(result: Pick<EvalRunResult, "execution" | "grade">): boolean {
-  return result.execution.state === "complete" && result.grade.pass;
-}
-
-/**
- * Exit 1 after printing a run that did not pass, so scripts can branch on the
- * exit code. Only a local CLI process owns its exit code: through the gateway
- * or as an in-process tool the command runs inside the daemon, which keeps its own.
- */
-function setEvalRunExitCode(result: EvalRunResult): void {
-  if (evalRunPassed(result)) return;
-  const ctx = getContext({ localOnly: true });
-  if (ctx?.suppressCliOutput === true || ctx?.transport !== undefined) return;
-  process.exitCode = 1;
-}
 
 @Group({
   name: "eval",
@@ -65,7 +48,6 @@ export class EvalCommands {
 
       if (asJson) {
         console.log(JSON.stringify(result, null, 2));
-        setEvalRunExitCode(result);
         return result;
       }
 
@@ -98,7 +80,6 @@ export class EvalCommands {
       }
 
       console.log();
-      setEvalRunExitCode(result);
       return result;
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error));

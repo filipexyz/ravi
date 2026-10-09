@@ -84,6 +84,7 @@ import { nativeChannelCredentialConfigured } from "../../channels/account-resolu
 import { overlayMediaSendAvailability, resolveRuntimeMediaSendCapabilities } from "../media-send-access.js";
 import { buildChannelChatActionJob } from "../../channels/outbound-stream.js";
 import { publishChannelOutboundJobDurably } from "../../channels/outbound-publish-outbox.js";
+import { resolveRouteSeededSlackChat } from "../../channels/slack/route-seeded-chat.js";
 import {
   createSlackThreadLifecycle,
   findSlackThreadLifecycleByChildSession,
@@ -6055,7 +6056,7 @@ export class SessionCommands {
       fail("--chat is required");
       return;
     }
-    const chat = resolveAttachChat(chatRef);
+    const chat = resolveAttachChat(chatRef) ?? seedRoutedSlackChat(chatRef, session.sessionKey);
     if (!chat) {
       fail(`Chat not found: ${chatRef}`);
       return;
@@ -6884,6 +6885,27 @@ function resolveAttachChat(ref: string): ReturnType<typeof dbGetChat> {
   const direct = dbGetChat(ref);
   if (direct) return direct;
   return dbFindChatByRef({ ref });
+}
+
+/**
+ * A routed Slack channel that has not received a message yet has no canonical
+ * chat. Seed it with the identity the Slack inbound will use, so the first
+ * message lands on the chat this attach created.
+ */
+function seedRoutedSlackChat(ref: string, sessionKey: string): ReturnType<typeof dbGetChat> {
+  const seed = resolveRouteSeededSlackChat(loadRouterConfig(), ref);
+  if (!seed) return null;
+  return (
+    dbFindChat({ channel: "slack", instanceId: seed.instanceId, platformChatId: seed.platformChatId }) ??
+    dbUpsertChat({
+      channel: "slack",
+      instanceId: seed.instanceId,
+      platformChatId: seed.platformChatId,
+      chatType: seed.chatType,
+      title: seed.platformChatId,
+      rawProvenance: { source: "ravi.sessions.attach", sessionKey },
+    })
+  );
 }
 
 export interface NormalizedTranscriptMessage {
