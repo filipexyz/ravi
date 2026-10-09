@@ -21,6 +21,10 @@ import {
 } from "../../runtime/runtime-defaults.js";
 import { DEFAULT_RUNTIME_PROVIDER_ID, listRegisteredRuntimeProviderIds } from "../../runtime/provider-registry.js";
 import { validateRuntimeModelSelector } from "../../runtime/model-validation.js";
+import {
+  parseSlackImmediateModalRules,
+  SLACK_IMMEDIATE_MODALS_SETTING,
+} from "../../channels/slack/immediate-modals.js";
 import { getScopeContext, isScopeEnforced } from "../../permissions/scope.js";
 import {
   PERMISSION_PROVIDER_IDS_SETTING,
@@ -251,6 +255,13 @@ const KNOWN_SETTINGS: Record<string, { description: string; validate?: (value: s
       const normalized = value.trim().toLowerCase();
       if (["off", "false", "disabled", "none", "0"].includes(normalized)) return;
       parseDurationMs(normalized);
+    },
+  },
+  [SLACK_IMMEDIATE_MODALS_SETTING]: {
+    description:
+      "JSON array of Slack modals opened directly on a button click: [{ actionId?, blockId?, callbackId?, accountId?, view }]",
+    validate: (value: string) => {
+      parseSlackImmediateModalRules(value);
     },
   },
   "whatsapp.groupPolicy": {

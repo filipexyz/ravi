@@ -186,15 +186,67 @@ Regras:
   modal no handler deterministico, sem esperar julgamento de agent.
 - Guarde apenas ponteiros curtos em `private_metadata` (por exemplo `requestId`
   ou `stateKey`). O CLI redige `private_metadata` em outputs, mas o valor ainda
-  vai para o Slack.
-- Use `view.hash` recebido no evento ao chamar `modals-update --hash`; isso
-  protege contra update velho sobrescrevendo modal novo.
+  vai para o Slack. Interacoes dentro de um modal trazem esse valor em
+  `viewPrivateMetadata`.
+- Use o `viewHash` recebido no evento (`view.hash`) ao chamar
+  `modals-update --hash`; isso protege contra update velho sobrescrevendo modal
+  novo.
 - `view_submission` e `view_closed` chegam como interacoes normais. Extraia
   inputs de `stateValues`.
 - Erros por campo em `view_submission`, `response_action: clear/update/push` e
   respostas de `block_suggestion` dependem de ACK rico no Socket Mode. Isso fica
   fora deste primitive CLI e deve ser implementado no dispatcher antes de usar
   para validacao sincrona ou selects dinamicos.
+
+### Modal imediato (`slack.immediateModals`)
+
+Quando o modal e estatico (o mesmo view JSON para todo clique), nao dependa do
+caminho trigger -> shell -> `modals-open`: ele pode passar dos ~3s do
+`triggerId` e falhar com `expired_trigger_id`. Configure uma regra e o Socket
+Mode chama `views.open` direto, antes de publicar a interacao. Se o clique
+vier de dentro de um modal aberto, Ravi usa `views.push` (empilha o novo view
+sobre o modal atual); cliques em mensagens e na App Home usam `views.open`:
+
+```bash
+ravi settings set slack.immediateModals "$(cat .ravi/workflows/demo/immediate-modals.json)"
+```
+
+```json
+[
+  {
+    "actionId": "workflow_open",
+    "blockId": "workflow_actions",
+    "accountId": "hana-slack",
+    "view": {
+      "type": "modal",
+      "callback_id": "workflow_submit",
+      "title": { "type": "plain_text", "text": "Novo pedido" },
+      "submit": { "type": "plain_text", "text": "Enviar" },
+      "blocks": []
+    }
+  }
+]
+```
+
+- `view.title` e obrigatorio: `plain_text` com 1-24 caracteres (limite do
+  Slack); a regra e rejeitada em `ravi settings set` se faltar.
+- Casa apenas `block_actions` com `triggerId`. Exige `actionId` ou `blockId`;
+  `callbackId` (callback_id da view onde o botao esta) e `accountId` sao
+  filtros opcionais. `accountId` e o id da conta Slack no Ravi (o mesmo
+  `accountId` do payload em `ravi.inbound.interaction`), nao o team id `T...`
+  do Slack. Todos os campos presentes precisam bater; vale a primeira
+  regra.
+- Se o view nao tiver `private_metadata`, Ravi preenche com o contexto do
+  clique (`channelId`, `messageTs`, `threadTs`, `userId`, `actionId`, `blockId`,
+  `value`) em JSON; o `view_submission` recebe isso em `viewPrivateMetadata`.
+- A interacao continua sendo publicada em `ravi.inbound.interaction` com
+  `modalOpened: true`, `openedViewId` e `openedViewHash`. Se `views.open`
+  (ou `views.push`) falhar, ela sai com `modalOpened: false` e `modalOpenError`; o trigger pode
+  usar isso como fallback. No trigger que abre o modal via shell, adicione
+  `&& !(data.modalOpened == "true")` ao filtro para nao abrir duas vezes.
+- Para modais que dependem de estado dinamico, abra um modal imediato de
+  "carregando" e atualize com `modals-update <openedViewId> --hash
+  <openedViewHash>` no handler.
 
 ## Trigger Split
 

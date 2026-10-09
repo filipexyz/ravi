@@ -27,6 +27,7 @@ import {
   dbGetContext,
   dbLegacySessionChatBindingsTableExists,
   dbListChatParticipants,
+  dbSetSetting,
   dbUpsertChat,
   dbUpsertInstance,
   getDb,
@@ -67,6 +68,7 @@ import {
   markSlackThreadRootDelivered,
 } from "./thread-lifecycle-store.js";
 import type { SlackRoutingPolicy, SlackSocketEnvelope } from "./types.js";
+import { SLACK_IMMEDIATE_MODALS_SETTING, type SlackImmediateModalRule } from "./immediate-modals.js";
 
 class FakeSlackWebSocket extends EventEmitter {
   readyState = 0;
@@ -4608,5 +4610,199 @@ describe("Slack Socket Mode instance alias canonicalization", () => {
       reason: "ambiguous_instance_alias",
     });
     expect(actorResolutionForSource(secondSource, secondContext)).toBe("missing_contact");
+  });
+});
+
+describe("Slack Socket Mode immediate modals", () => {
+  let stateDir: string | null = null;
+
+  const immediateModalView = {
+    type: "modal",
+    callback_id: "workflow_submit",
+    title: { type: "plain_text", text: "Novo pedido" },
+    blocks: [],
+  };
+  const immediateModalRule: SlackImmediateModalRule = {
+    actionId: "workflow_open",
+    blockId: "workflow_actions",
+    view: immediateModalView,
+  };
+
+  function blockActionsEnvelope(envelopeId: string, view?: Record<string, unknown>) {
+    return {
+      envelope_id: envelopeId,
+      payload: {
+        type: "block_actions",
+        team: { id: "T1" },
+        user: { id: "U123" },
+        channel: { id: "C123" },
+        trigger_id: "trigger-1",
+        container: { type: view ? "view" : "message", channel_id: "C123", message_ts: "1713000000.000100" },
+        message: { ts: "1713000000.000100" },
+        ...(view ? { view } : {}),
+        actions: [{ type: "button", block_id: "workflow_actions", action_id: "workflow_open", value: "req-42" }],
+      },
+    };
+  }
+
+  type ViewsCall = { triggerId: string; view: Record<string, unknown> };
+
+  function createService(options: {
+    rules?: SlackImmediateModalRule[];
+    viewsOpen?: (input: ViewsCall) => Promise<unknown>;
+    viewsPush?: (input: ViewsCall) => Promise<unknown>;
+  }) {
+    const order: string[] = [];
+    const calls: ViewsCall[] = [];
+    const interactions: Array<{ topic: string; payload: Record<string, unknown> }> = [];
+    const respond = (method: string, impl?: (input: ViewsCall) => Promise<unknown>) => async (input: ViewsCall) => {
+      order.push(method);
+      calls.push(input);
+      return impl ? impl(input) : { ok: true, view: { id: `V-${method}`, hash: `hash-${method}` } };
+    };
+    const service = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "acct-1",
+      ...(options.rules ? { getImmediateModalRules: () => options.rules ?? [] } : {}),
+      publishPrompt: async () => {},
+      publishInteraction: async (topic, payload) => {
+        order.push("publish");
+        interactions.push({ topic, payload });
+      },
+      webClient: {
+        viewsOpen: respond("viewsOpen", options.viewsOpen),
+        viewsPush: respond("viewsPush", options.viewsPush),
+      } as never,
+    });
+    return { service, order, calls, interactions };
+  }
+
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-slack-immediate-modal-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  it("opens the configured modal before publishing a message click", async () => {
+    const { service, order, calls, interactions } = createService({ rules: [immediateModalRule] });
+
+    await expect(service.handleEnvelope(blockActionsEnvelope("env-1"))).resolves.toBe("processed");
+
+    expect(order).toEqual(["viewsOpen", "publish"]);
+    expect(calls[0]?.triggerId).toBe("trigger-1");
+    expect(calls[0]?.view).toMatchObject({ type: "modal", callback_id: "workflow_submit" });
+    expect(interactions[0]).toEqual({
+      topic: "ravi.inbound.interaction",
+      payload: expect.objectContaining({
+        actionId: "workflow_open",
+        triggerId: "trigger-1",
+        modalOpened: true,
+        openedViewId: "V-viewsOpen",
+        openedViewHash: "hash-viewsOpen",
+      }),
+    });
+  });
+
+  it("pushes the configured modal when the click comes from inside an open modal", async () => {
+    const { service, order, calls, interactions } = createService({ rules: [immediateModalRule] });
+
+    await service.handleEnvelope(
+      blockActionsEnvelope("env-push", { id: "V-parent", type: "modal", callback_id: "parent_view", hash: "h0" }),
+    );
+
+    expect(order).toEqual(["viewsPush", "publish"]);
+    expect(calls[0]?.triggerId).toBe("trigger-1");
+    expect(interactions[0]?.payload).toMatchObject({
+      viewId: "V-parent",
+      viewType: "modal",
+      modalOpened: true,
+      openedViewId: "V-viewsPush",
+      openedViewHash: "hash-viewsPush",
+    });
+  });
+
+  it("uses views.open for clicks on the App Home view", async () => {
+    const { service, order } = createService({ rules: [immediateModalRule] });
+
+    await service.handleEnvelope(blockActionsEnvelope("env-home", { id: "V-home", type: "home" }));
+
+    expect(order).toEqual(["viewsOpen", "publish"]);
+  });
+
+  it("falls back to a plain publish flagged with the error when views.push fails", async () => {
+    const { service, order, interactions } = createService({
+      rules: [immediateModalRule],
+      viewsPush: async () => {
+        throw new Error("Slack views.push failed: push_limit_reached");
+      },
+    });
+
+    await service.handleEnvelope(blockActionsEnvelope("env-push-fail", { id: "V-parent", type: "modal" }));
+
+    expect(order).toEqual(["viewsPush", "publish"]);
+    expect(interactions[0]?.payload).toMatchObject({
+      modalOpened: false,
+      modalOpenError: "Slack views.push failed: push_limit_reached",
+    });
+  });
+
+  it("falls back to a plain publish flagged with the error when views.open fails", async () => {
+    const { service, order, interactions } = createService({
+      rules: [immediateModalRule],
+      viewsOpen: async () => {
+        throw new Error("Slack views.open failed: expired_trigger_id");
+      },
+    });
+
+    await expect(service.handleEnvelope(blockActionsEnvelope("env-2"))).resolves.toBe("processed");
+
+    expect(order).toEqual(["viewsOpen", "publish"]);
+    expect(interactions[0]?.payload).toMatchObject({
+      actionId: "workflow_open",
+      modalOpened: false,
+      modalOpenError: "Slack views.open failed: expired_trigger_id",
+    });
+  });
+
+  it("reads rules from the slack.immediateModals setting by default", async () => {
+    dbSetSetting(
+      SLACK_IMMEDIATE_MODALS_SETTING,
+      JSON.stringify([{ actionId: "workflow_open", view: immediateModalView }]),
+    );
+    const { service, order, interactions } = createService({});
+
+    await service.handleEnvelope(blockActionsEnvelope("env-3"));
+
+    expect(order).toEqual(["viewsOpen", "publish"]);
+    expect(interactions[0]?.payload.modalOpened).toBe(true);
+  });
+
+  it("publishes unmatched interactions untouched and normalizes view metadata", async () => {
+    const { service, order, interactions } = createService({ rules: [] });
+
+    await service.handleEnvelope(
+      blockActionsEnvelope("env-4", {
+        id: "V-existing",
+        type: "modal",
+        callback_id: "workflow_submit",
+        private_metadata: '{"requestId":"req-42"}',
+        hash: "hash-existing",
+      }),
+    );
+
+    expect(order).toEqual(["publish"]);
+    expect(interactions[0]?.payload).toMatchObject({
+      containerType: "view",
+      viewId: "V-existing",
+      viewType: "modal",
+      viewCallbackId: "workflow_submit",
+      viewPrivateMetadata: '{"requestId":"req-42"}',
+      viewHash: "hash-existing",
+    });
+    expect(interactions[0]?.payload).not.toHaveProperty("modalOpened");
   });
 });

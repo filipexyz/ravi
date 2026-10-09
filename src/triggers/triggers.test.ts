@@ -45,6 +45,21 @@ describe("triggers native automation support", () => {
     expect(entry?.examples.some((example) => example.includes("--shell"))).toBe(true);
   });
 
+  it("documents Slack modal view and immediate-modal fields on interactions", () => {
+    const entry = findTriggerTopicCatalogEntry("ravi.inbound.interaction");
+    const fields = new Map(entry?.schema?.fields.map((field) => [field.path, field]));
+
+    for (const path of ["viewType", "viewCallbackId", "viewPrivateMetadata", "viewHash"]) {
+      expect(fields.get(path)?.type).toBe("string");
+    }
+    expect(fields.get("modalOpened")?.type).toBe("boolean");
+    expect(fields.get("modalOpened")?.description).toContain("slack.immediateModals");
+    expect(fields.get("modalOpened")?.description).toContain("views.push");
+    for (const path of ["openedViewId", "openedViewHash", "modalOpenError"]) {
+      expect(fields.get(path)?.type).toBe("string");
+    }
+  });
+
   it("catalogs Slack thread creation as a first-class trigger event", () => {
     const entry = findTriggerTopicCatalogEntry("ravi.inbound.thread.created");
     const fields = new Set(entry?.schema?.fields.map((field) => field.path));
