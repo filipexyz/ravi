@@ -176,6 +176,14 @@ is the escape hatch. Chat-attached `-w` still means delivered.
 
 - `attach` adds/reactivates the subscription and selects it as the default
   output.
+- `attach` resolves `--chat` against existing canonical chats first. A Slack
+  channel id (`C…`/`G…`, or `group:<id>`) with no canonical chat yet MAY be
+  seeded when exactly one exact `group:<id>` route names it on a Slack
+  account. The seeded chat MUST use the identity the Slack inbound upserts
+  (`channel=slack`, canonical instance of the route account, platform chat id,
+  `chatType=group`) so the first message lands on it. Glob routes, DMs, other
+  providers, and routes on several Slack accounts MUST NOT seed; attach then
+  fails `Chat not found`.
 - `detach` removes the subscription and clears it as default.
 - `subscriptions` lists active chats and the default marker.
 - `--json` attach/detach MUST report the final state: session identity/name,

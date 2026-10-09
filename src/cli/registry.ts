@@ -225,7 +225,10 @@ function registerCommand(
         const optName = extractOptionName(optAtIndex.flags);
         const optionValue = resolveOptionValue(options, optAtIndex.flags, optionsMeta, cmd);
         finalArgs.push(optionValue);
-        if (optionValue !== undefined) {
+        // An option that shares its name with an arg must not overwrite the
+        // arg's value in the flat input (and the remote gateway body built
+        // from it); the arg owns that key, as in the gateway dispatcher.
+        if (optionValue !== undefined && !argsMeta.some((arg) => arg.name === optName)) {
           input[optName] = optionValue;
         }
       }

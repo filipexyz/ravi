@@ -33,6 +33,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/slack/socket-mode.test.ts",
     // `channels start` liveness: PM2-online runner probed on its PID health subject, stale ones bounced.
     "src/channels/runner-liveness.test.ts",
+    // `sessions attach` seeds a routed Slack channel's chat before its first message.
+    "src/channels/slack/route-seeded-chat.test.ts",
   ],
   "src/omni/": [
     "src/omni/consumer-context.test.ts",

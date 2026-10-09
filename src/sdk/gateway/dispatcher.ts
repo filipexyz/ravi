@@ -454,8 +454,12 @@ function validateAndPack(cmd: CommandRegistryEntry, input: NormalizedInput): Pac
     }
   }
 
+  // A body key names one field. When an option shares its name with an arg
+  // (`slack messages-send <channel> --channel <name>`), the arg owns the key,
+  // as in the OpenAPI and SDK shapes; the option stays unset over the gateway.
+  const argNames = new Set(cmd.args.map((arg) => arg.name));
   for (const opt of cmd.options) {
-    const value = input.named[opt.name];
+    const value = argNames.has(opt.name) ? undefined : input.named[opt.name];
     const out = applySchema(opt.schema, value);
     if (out.ok) {
       callArgs[opt.index] = out.value;

@@ -27,6 +27,10 @@
   the persisted user prompt.
 - `sessions.send` input MUST NOT grow a `from` field. `[from:]` remains
   only `callerSessionKey` inside `[System] Inform:`.
+- `sessions attach` with the id of a routed Slack channel that has no
+  canonical chat yet MUST seed the chat the first inbound will reuse, and
+  MUST refuse when no exact Slack route (or more than one Slack account)
+  names it.
 - Detaching the output chat MUST clear output for that session.
 - Detach MUST remain detached after repeated database initialization. A
   leftover `session_chat_bindings` row MUST NOT resurrect the subscription
