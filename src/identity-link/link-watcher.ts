@@ -16,6 +16,7 @@
 import {
   deleteCachedActorBinding,
   listCachedActorBindings,
+  readCachedActorBinding,
   writeCachedActorBinding,
 } from "../cloud-auth/actor-bindings.js";
 import { isCloudAuthError } from "../cloud-auth/errors.js";
@@ -89,8 +90,10 @@ export async function processPendingLinkRequests(deps: LinkWatcherDeps = {}): Pr
               completeLocalLinkRequest(request.id, "approved", now());
               break;
             }
-            writeCachedActorBinding(status.binding, env);
+            // Claim the request before caching: an unlink that cancelled it while
+            // this poll was in flight must not see the binding come back.
             if (completeLocalLinkRequest(request.id, "approved", now())) {
+              writeCachedActorBinding(status.binding, env);
               await confirmApproved(messenger, request);
             }
             break;
@@ -136,6 +139,8 @@ export async function revalidateCachedBindings(deps: LinkWatcherDeps = {}): Prom
         if (binding.installationId !== credentials.installationId) continue;
         try {
           const current = await client.resolveActorBinding({ contactId: binding.contactId }, credentials.accessToken);
+          // An unlink or a new link may have changed the entry while this call was in flight.
+          if (readCachedActorBinding(binding.contactId, env)?.consoleUserId !== binding.consoleUserId) continue;
           if (current && current.consoleUserId === binding.consoleUserId) {
             writeCachedActorBinding(current, env);
             result.kept += 1;

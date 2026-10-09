@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { readCachedActorBinding, writeCachedActorBinding } from "../cloud-auth/actor-bindings.js";
+import {
+  deleteCachedActorBinding,
+  readCachedActorBinding,
+  writeCachedActorBinding,
+} from "../cloud-auth/actor-bindings.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   CONSOLE_URL,
@@ -10,7 +14,7 @@ import {
   linkDeps,
   requestPayload,
 } from "./fake-console.fixture.js";
-import { getLocalLinkRequest, insertLocalLinkRequest } from "./link-requests-db.js";
+import { completeLocalLinkRequest, getLocalLinkRequest, insertLocalLinkRequest } from "./link-requests-db.js";
 import { processPendingLinkRequests, revalidateCachedBindings } from "./link-watcher.js";
 
 const NOW = Date.parse("2026-10-09T12:00:00.000Z");
@@ -118,6 +122,23 @@ describe("processPendingLinkRequests", () => {
     expect(sent).toHaveLength(0);
   });
 
+  it("does not cache a binding for a request an unlink cancelled while the poll was in flight", async () => {
+    recordPending();
+    const fake = createFakeConsole();
+    fake.on((call) => {
+      if (call.method !== "GET" || call.path !== "/api/cli/link/requests/lr_1") return undefined;
+      completeLocalLinkRequest("lr_1", "cancelled", NOW);
+      return { body: { version: 1, request: requestPayload("approved"), binding: bindingPayload() } };
+    });
+    const { messenger, sent } = createFakeMessenger();
+
+    await processPendingLinkRequests(linkDeps(fake, createMemoryCredentials(), messenger));
+
+    expect(getLocalLinkRequest("lr_1")?.status).toBe("cancelled");
+    expect(readCachedActorBinding("contact_luis")).toBeNull();
+    expect(sent).toHaveLength(0);
+  });
+
   it("keeps waiting while the request is pending", async () => {
     recordPending();
     const fake = createFakeConsole();
@@ -183,5 +204,21 @@ describe("revalidateCachedBindings", () => {
     expect(readCachedActorBinding("contact_ana")).toBeNull();
     // Bindings of another installation are not this session's to check.
     expect(readCachedActorBinding("contact_old")).not.toBeNull();
+  });
+
+  it("does not bring back a binding an unlink removed while the check was in flight", async () => {
+    writeCachedActorBinding({ ...bindingPayload(), platformIdentity: null });
+    const fake = createFakeConsole();
+    fake.on((call) => {
+      if (call.path !== "/api/cli/link?contactId=contact_luis") return undefined;
+      deleteCachedActorBinding("contact_luis");
+      return { body: { version: 1, binding: bindingPayload() } };
+    });
+    const { messenger } = createFakeMessenger();
+
+    const result = await revalidateCachedBindings(linkDeps(fake, createMemoryCredentials(), messenger));
+
+    expect(result).toEqual({ kept: 0, removed: 0 });
+    expect(readCachedActorBinding("contact_luis")).toBeNull();
   });
 });

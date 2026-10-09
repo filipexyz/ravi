@@ -47,6 +47,11 @@ title: "ravi link checks"
   hour after they expire.
 - Revalidation MUST drop cached bindings the Console no longer reports and
   MUST NOT touch bindings of another installation.
+- `approved` with no binding (revoked right after approval) MUST close the
+  request without caching or confirming.
+- An unlink MUST win over a poll or a revalidation already in flight: the
+  watcher claims the request before caching, and revalidation never rewrites
+  an entry that changed or disappeared during its call.
 
 ## Validation
 
