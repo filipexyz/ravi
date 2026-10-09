@@ -82,7 +82,14 @@ export async function processPendingLinkRequests(deps: LinkWatcherDeps = {}): Pr
           case "pending":
             break;
           case "approved": {
-            if (status.binding) writeCachedActorBinding(status.binding, env);
+            if (!status.binding) {
+              // The Console omits the binding only once it is no longer active
+              // (revoked right after approval), so there is nothing to confirm.
+              log.warn("Approved link request has no active binding", { requestId: request.id });
+              completeLocalLinkRequest(request.id, "approved", now());
+              break;
+            }
+            writeCachedActorBinding(status.binding, env);
             if (completeLocalLinkRequest(request.id, "approved", now())) {
               await confirmApproved(messenger, request);
             }

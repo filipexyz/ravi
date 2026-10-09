@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { readCachedActorBinding, writeCachedActorBinding } from "../cloud-auth/actor-bindings.js";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 import { resolveLinkRequester } from "../cloud-auth/link-identity.js";
-import { dbGetContext } from "../router/router-db.js";
+import { dbGetContext, getDb } from "../router/router-db.js";
 import { createRuntimeContext } from "../runtime/context-registry.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
@@ -198,6 +198,36 @@ describe("requestIdentityLink", () => {
     expect(error.message).not.toContain("U0LUIS");
     expect(fake.linkCalls()).toEqual(["POST /api/cli/link/requests", "DELETE /api/cli/link/requests/lr_1"]);
     expect(getLocalLinkRequest("lr_1")).toBeNull();
+  });
+
+  it("cancels the Console request when the local record cannot be written", async () => {
+    const fake = createFakeConsole();
+    fake.on((call) => {
+      if (call.method === "POST" && call.path === "/api/cli/link/requests") {
+        return {
+          status: 201,
+          body: { version: 1, status: "pending", request: requestPayload("pending"), approveUrl: APPROVE_URL },
+        };
+      }
+      if (call.method === "DELETE" && call.path === "/api/cli/link/requests/lr_1") {
+        return { body: { version: 1, request: requestPayload("cancelled"), binding: null } };
+      }
+      return undefined;
+    });
+    const { messenger } = createFakeMessenger({ dmChatId: "D0LUIS" });
+    const send = messenger.send.bind(messenger);
+    messenger.send = async (...args) => {
+      const delivered = await send(...args);
+      // The local table goes away after the DM, so recording the request fails.
+      getDb().exec("DROP TABLE cloud_link_requests");
+      return delivered;
+    };
+
+    await expect(
+      requestIdentityLink(slackTurnContext(), linkDeps(fake, createMemoryCredentials(), messenger)),
+    ).rejects.toThrow("cloud_link_requests");
+
+    expect(fake.linkCalls()).toEqual(["POST /api/cli/link/requests", "DELETE /api/cli/link/requests/lr_1"]);
   });
 
   it("replaces the previous pending request when asked again", async () => {

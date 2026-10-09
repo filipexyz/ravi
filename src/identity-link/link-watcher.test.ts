@@ -105,6 +105,19 @@ describe("processPendingLinkRequests", () => {
     expect(readCachedActorBinding("contact_luis")).toBeNull();
   });
 
+  it("closes an approved request whose link was already revoked without confirming it", async () => {
+    recordPending();
+    const fake = createFakeConsole();
+    answerPoll(fake, { version: 1, request: requestPayload("approved"), binding: null });
+    const { messenger, sent } = createFakeMessenger();
+
+    expect(await processPendingLinkRequests(linkDeps(fake, createMemoryCredentials(), messenger))).toBe(0);
+
+    expect(getLocalLinkRequest("lr_1")?.status).toBe("approved");
+    expect(readCachedActorBinding("contact_luis")).toBeNull();
+    expect(sent).toHaveLength(0);
+  });
+
   it("keeps waiting while the request is pending", async () => {
     recordPending();
     const fake = createFakeConsole();

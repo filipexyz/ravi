@@ -108,19 +108,26 @@ export async function requestIdentityLink(
       throw new CloudAuthError("LINK_DM_FAILED", "Ravi could not send the private message to the person who asked.");
     }
 
-    // Console replaced any earlier pending request for this person; mirror that locally.
-    supersedeLocalRequests(requester.contactId, "cancelled");
-    insertLocalLinkRequest({
-      id: created.request.id,
-      consoleUrl: credentials.consoleUrl,
-      installationId: credentials.installationId,
-      contactId: requester.contactId,
-      displayName: requester.displayName,
-      origin: requester.origin,
-      dm: { channel: route.channel, accountId: route.accountId, chatId: dmChatId },
-      expiresAt: Number.isFinite(expiresAtMs) ? expiresAtMs : now() + 10 * 60_000,
-      now: now(),
-    });
+    try {
+      // Console replaced any earlier pending request for this person; mirror that locally.
+      supersedeLocalRequests(requester.contactId, "cancelled");
+      insertLocalLinkRequest({
+        id: created.request.id,
+        consoleUrl: credentials.consoleUrl,
+        installationId: credentials.installationId,
+        contactId: requester.contactId,
+        displayName: requester.displayName,
+        origin: requester.origin,
+        dm: { channel: route.channel, accountId: route.accountId, chatId: dmChatId },
+        expiresAt: Number.isFinite(expiresAtMs) ? expiresAtMs : now() + 10 * 60_000,
+        now: now(),
+      });
+    } catch (error) {
+      // Without the local row nobody would watch the request, so it must not stay approvable.
+      log.warn("Link request persistence failed", { requestId: created.request.id, error: errorText(error) });
+      await client.cancelLinkRequest(created.request.id, credentials.accessToken).catch(() => undefined);
+      throw error;
+    }
     return { success: true, status: "dm_sent", linked: false, expiresAt: created.request.expiresAt };
   });
 }
