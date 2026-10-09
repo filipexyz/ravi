@@ -103,7 +103,7 @@ ravi artifacts publish ./site --project my-project --site <site-slug> --route /l
 The target can be a local `art_*` ID, a file, or a directory with an `index.html`. A file or directory is first stored as a new local artifact. On success the command prints the Console artifact, version, publish and release IDs, the URL, and `Local: recorded on art_... v1`.
 
 <Warning>
-`ravi artifacts publish` (like `ravi pages publish`) sends no `--uses` list. On a host that serves data pages backed by Bases, publishing this way clears the host's connector list and breaks those pages. Use `ravi pages ship` with the full `--uses` list on those hosts. See [Interactive pages with Bases](/console/bases).
+`ravi artifacts publish` (like `ravi pages publish`) cannot declare `--uses`, so a data page backed by Bases that you republish with it loses its actions. On hosts with data pages, use `ravi pages ship` with the full `--uses` list. See [Interactive pages with Bases](/console/bases).
 </Warning>
 
 ### Re-activate an older release

@@ -182,7 +182,7 @@ ravi sessions detach <session> --chat <chat-id>
 - `--chat` takes Ravi's chat id or the platform id (for Slack, the channel id `C...`).
 
 <Warning>
-Attach does not change which agent answers the chat. Create the route to the right agent first, for example `ravi instances routes add slack-main group:C0ABC123 main --channel slack --session <session>`, then attach. A chat already attached to another session must be detached from it first.
+Attach does not change which agent answers the chat. Create the route to the right agent first, for example `ravi instances routes add slack-main group:C0ABC123 main --session <session>`, then attach. A chat already attached to another session must be detached from it first.
 </Warning>
 
 ## When something goes wrong

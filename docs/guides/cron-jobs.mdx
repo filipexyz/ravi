@@ -34,8 +34,9 @@ Jobs run inside the daemon, so `ravi daemon start` must be running.
   <Step title="Run it once now">
     ```bash
     ravi cron run <id>            # dry-run: exit 3, shows the plan, fires nothing
-    ravi cron run <id> --execute  # runs the real job now; the schedule is not affected
+    ravi cron run <id> --execute  # runs the real job now
     ```
+    A manual run counts as a run: an `--every` job's next run moves one interval later, and a one-shot (`--at` or `--delete-after`) job is deleted afterwards, as after a scheduled run.
   </Step>
   <Step title="Read the result">
     ```bash
@@ -69,13 +70,13 @@ Pass exactly one of these:
 | `*/15 9-18 * * 1-5` | Every 15 minutes, 09:00 to 18:59, weekdays |
 | `0 0 1 * *` | First day of the month at midnight |
 
-`--tz` applies only to `--cron`. Without it, the job uses the `defaultTimezone` setting, and without that setting, the timezone of the machine running the daemon:
+`--tz` applies only to `--cron`. Without it, the job stores the `defaultTimezone` setting in effect when you add it (changing the setting later does not move existing jobs), and without that setting, it uses the timezone of the machine running the daemon:
 
 ```bash
 ravi settings set defaultTimezone America/Sao_Paulo
 ```
 
-**Intervals** take one positive integer and one unit: `s`, `m`, `h` or `d` (`30s`, `90m`, `2d`). Combined values such as `1h30m` are rejected. The next run is computed from the scheduled time, not from when the run finished, so intervals do not drift.
+**Intervals** take one positive integer and one unit: `s`, `m`, `h` or `d` (`30s`, `90m`, `2d`). Combined values such as `1h30m` are rejected. The next run is computed from the scheduled time, not from when the run finished, so intervals do not drift. The flip side: after the daemon was down, an interval job fires once for every interval it missed, back to back, until it catches up. A cron-expression job fires once and moves on.
 
 **One-shot times** are ISO 8601. A value without an offset (`2026-11-03T14:45`) is read in the local time of the machine where you run the command. Add `Z` or an offset (`2026-11-03T14:45:00-03:00`) to be exact.
 
@@ -88,21 +89,22 @@ Ravi posts an agent's answer only to a chat that is attached to the session runn
 | By the agent, during a chat | That chat's session. The answer goes back to that chat. | A dedicated session, `agent:<agent>:cron:<jobId>`. It has no chat of its own. |
 | From your terminal | The agent's main session. The answer goes to the main session's chat, if it has one. | Same dedicated session, no chat. |
 
-When there is no chat to post to, the answer stays in the session. Read it with:
+When there is no chat to post to, the answer stays in the session and the daemon logs `Response target unresolved — dropping emit`. Read the answer with:
 
 ```bash
 ravi sessions read <session-name>
+ravi sessions read agent:<agent>:cron:<jobId>   # an --isolated job's session
 ```
 
-For background work in a dedicated session, tell the agent in the message how to deliver the result. For example, end the message with `Send the summary with: ravi sessions inform <your-chat-session> "<summary>"`. The session you name then answers in its own chat.
+An `--isolated` job never posts to a chat, even when it has a reply session: a chat belongs to one session at a time, and the dedicated session is not that session. For background work in a dedicated session, tell the agent in the message how to deliver the result. For example, end the message with `Send the summary with: ravi sessions inform <your-chat-session> "<summary>"`. The session you name then answers in its own chat.
 
-To move an existing job's answers to another chat, point it at the session of that chat. A default (non-isolated) job then runs in that session:
+`ravi cron add` has no reply-session flag. A job the agent creates records the agent's session as its reply session; a job created from your terminal has none. To move an existing default (non-isolated) job's answers to another chat, set its reply session to the session of that chat. The job then runs in that session:
 
 ```bash
-ravi cron set <id> reply-session <session-name>
+ravi cron set <id> reply-session <session-name>   # - clears it
 ```
 
-`--account` (or `ravi cron set <id> account <name>`) picks the channel account used for delivery when you have more than one. Check the result with `ravi cron show <id>` before you rely on it.
+`--account` (or `ravi cron set <id> account <name>`) only replaces the account on the routing source when there is one. It does not create routing on its own, and the answer still goes to the chat attached to the session. `ravi cron show <id>` shows the result under `Routing`.
 
 ### What the agent receives
 
@@ -147,7 +149,7 @@ For agent jobs, the status comes from the agent turn, not from sending the promp
 - When the turn completes, the status becomes `ok`. When it fails or is interrupted, it becomes `error` with the runtime error in `lastError`.
 - If the prompt cannot be sent at all, the job is marked `error` right away.
 
-One-shot agent jobs are deleted as soon as their prompt is sent, so they never show an outcome. Use the daemon log or `ravi sessions read` to see how they went.
+One-shot agent jobs (`--at` or `--delete-after`) are deleted as soon as their prompt is sent, so they never show an outcome. Use the daemon log or `ravi sessions read` to see how they went.
 
 ## Manage jobs
 
@@ -200,8 +202,8 @@ Scripts and other agents that create jobs on retries should pass `--idempotency-
     3. `ravi daemon logs -f`: `Response target unresolved — dropping emit` means the session that ran the turn has no chat to post to. See [Where the answer goes](#where-the-answer-goes).
     4. If the agent answered `@@SILENT@@`, nothing is posted by design.
   </Accordion>
-  <Accordion title="A one-shot job shows (expired)">
-    Its time has passed and it will not run again. Delete it with `ravi cron rm <id> --execute`.
+  <Accordion title="A one-shot job shows (expired) in ravi cron list">
+    Its time has passed without a successful run (the run failed, or the time was already past when you added it), and it will not run again. Delete it with `ravi cron rm <id> --execute`.
   </Accordion>
 </AccordionGroup>
 

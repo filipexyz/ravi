@@ -34,7 +34,7 @@ Bases need `ravi.bot@next` (3.261009.2 or later): `bun add -g ravi.bot@next`, or
 
 A data page reads the base live, as the person viewing it. It works only for **signed-in members of your organization who can read the project**, on a `private` (the default) or `protected_link` route. Both make the visitor sign in to the Console first.
 
-- Organization `owner`, `admin` and `developer` can open it. `viewer` and `billing` cannot, unless they are members of the project, so [add teammates](/console/login#create-your-account-and-organization) as `developer` or `admin`. A `developer` can read every row through the CLI: "each person sees their own" holds on the page, not between developers.
+- Organization `owner`, `admin` and `developer` can open it. `viewer` cannot unless they are a member of the project, and `billing` never gets live data, so [add teammates](/console/login#create-your-account-and-organization) as `developer` or `admin`. A `developer` can read every row through the CLI: "each person sees their own" holds on the page, not between developers.
 - Someone in several organizations must switch to yours in the Console before opening the link, or sign-in fails with `workspace_selection_required`.
 - Anonymous visitors, people who only have a route password, and people outside the organization never get live data (`connector_session_required`).
 
@@ -329,4 +329,4 @@ Each viewer gets 120 calls per minute on a site (600 per site, 1,200 per organiz
 | `ravi bases views show requests <VIEW_ID> --json` | `valid: true` and the `page_viewer` site |
 | `ravi bases rows history requests <rowId> --json` | Who wrote each version (`user` from the page, `cli` from the agent) |
 
-On the page, `client.js` adds the `x-request-id` to unexpected errors; keep it when you ask for support. More in [Triggers](/guides/triggers) and [Publish pages](/console/pages).
+On the page, `client.js` adds the `x-request-id` to the error banner when the response has one; keep it when you ask for support. More in [Triggers](/guides/triggers) and [Publish pages](/console/pages).

@@ -1,453 +1,228 @@
 ---
-title: CLI Reference
-description: Complete command reference for the ravi CLI — all groups, subcommands, arguments, and options extracted from source.
+title: CLI reference
+description: How to find any ravi command, the conventions every command follows, and a map of all command groups.
+icon: terminal
 ---
 
-## Output Contract
+Everything in Ravi is a `ravi` command: you, your agents and the SDK all use the same CLI. This page shows you how to look up any command, what `--json`, exit codes and `--execute` mean, and what each of the 80-odd command groups is for. Flags and arguments live in `--help`, which is always current.
 
-`stdout` is reserved for the command payload only.
-
-- Human-readable command results and `--json` payloads are written to `stdout`.
-- User-facing CLI commands suppress infrastructure `INFO/WARN/DEBUG` logs by default.
-- When explicitly enabled for diagnosis, infrastructure logs and internal diagnostics go to `stderr`.
-- Set `RAVI_CLI_LOG_LEVEL=info` to opt into verbose CLI diagnostics temporarily.
-- Machine-readable modes like `ravi stream` also reserve `stdout` for protocol frames only.
-
-## Setup
+## Find a command
 
 ```bash
-ravi setup                                    # Interactive setup wizard (omni, env, agent, settings, daemon)
+ravi --help                      # every root command, plus the live runtime context
+ravi sessions --help             # the subcommands of one group
+ravi sessions send --help        # arguments, flags and defaults of one command
+ravi tools search "send media"   # search commands by intent
 ```
 
-## Daemon
+Many commands print more than flags: `USE`, `DO NOT USE`, `EXAMPLES` and `ON ERROR` sections that say when to pick that command and what to do when it fails. Read them before running something unfamiliar.
 
-Manage the ravi daemon process via PM2.
+Most groups also have a skill: a longer guide written for agents, which you can read too. Most are written in Portuguese.
 
 ```bash
-ravi daemon start                             # Start daemon via PM2
-ravi daemon stop                              # Stop daemon
-ravi daemon restart -m "reason"               # Restart daemon with required reason
-ravi daemon restart --build -m "reason"       # Build before restarting
-ravi daemon status                            # Show daemon + infra status (ravi, omni-nats, omni-api)
-ravi daemon logs                              # Show last 50 lines
-ravi daemon logs -f                           # Follow log output
-ravi daemon logs -t 100                       # Show last 100 lines
-ravi daemon logs --clear --execute            # Flush PM2 logs (without --execute it is a dry-run, exit 3)
-ravi daemon logs --path                       # Print PM2 log file path
-ravi daemon env                               # Edit ~/.ravi/.env in $EDITOR
-ravi daemon install                           # Save PM2 process list (pm2 save + startup hint)
-ravi daemon uninstall                         # Remove ravi from PM2
-ravi daemon run                               # Run daemon in foreground (used by PM2 internally)
-ravi daemon dev                               # Dev mode — watch src/ and auto-rebuild on changes
+ravi skills list                                   # every system skill
+ravi skills show pages                             # the full guide for one area
+ravi skills show pages --file references/<file>    # one reference file of a skill
+ravi skills show pages --file references/<file> --raw > out.txt   # copy a file as-is
 ```
 
-## Agents
+`ravi skills show` lists the skill's reference files at the end of its output. See [Skills](/reference/skills).
 
-Agent lifecycle and configuration.
+## Conventions
+
+### Output
+
+- Add `--json` to get a machine-readable result on stdout. Use it in scripts instead of parsing the text output.
+- With `--json`, a failure is also JSON on stdout, never plain text:
+
+  ```json
+  {
+    "success": false,
+    "op": "settings delete",
+    "error": {
+      "code": "SETTING_NOT_FOUND",
+      "message": "Setting not found: defaultTimezone",
+      "retryable": false,
+      "suggestedAction": "Check the setting key (see suggestions) or run `ravi settings list`"
+    }
+  }
+  ```
+
+- List commands accept `--limit` and `--offset`, and many accept `--fields a,b,c` to keep only some fields.
+
+### Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Success. |
+| `1` | The command ran and failed: not found, provider error, permission denied. |
+| `2` | Usage error or refused input: unknown flag, bad argument, or a combination the command refuses. The JSON error lists the accepted flags. |
+| `3` | Dry-run. A braked command printed its plan and wrote nothing. Not an error. |
+
+### Braked vs immediate
+
+Commands whose effect is irreversible, visible outside your machine, or that start an agent run are **braked**. Without `--execute` they print the planned input, write nothing and exit `3`. Run them again with `--execute` to do it.
 
 ```bash
-ravi agents list                              # List all agents
-ravi agents show <id>                         # Show agent details (model, mode, permissions, defaults)
-ravi agents create <id> <cwd>                 # Create a new agent
-ravi agents delete <id> --execute             # Delete an agent (without --execute: dry-run, exit 3)
-ravi agents set <id> <key> <value>            # Set property (name, cwd, model, effort, dmScope, mode, defaults, ...)
-ravi agents debounce <id> [ms]                # Set/show message debounce (0 to disable)
-ravi agents spec-mode <id> [true|false]       # Enable/disable spec mode
-ravi agents session <id>                      # Show all sessions for agent
-ravi agents reset <id> [nameOrKey|all] --execute  # Reset session (omit for main, "all" for all; without --execute: dry-run, exit 3)
-ravi agents debug <id> [nameOrKey] [-n count] # Show last N turns of a session transcript
+ravi sessions delete <nameOrKey> --execute   # deletes a session permanently
+ravi sessions reset <nameOrKey> --execute    # clears a session's context
+ravi cron run <id> --execute                 # runs a scheduled job now
+ravi triggers test <id> --execute            # fires a trigger with fake event data
+ravi media send <filePath> --execute         # sends a file to a chat
+ravi agents permissions main full-access --execute   # raises an agent's permission ceiling
+ravi heartbeat trigger <id> --execute        # queues a heartbeat run
 ```
 
-**Agent `set` keys:** `name`, `cwd`, `model`, `dmScope`, `systemPromptAppend`, `matrixAccount`, `settingSources`, `mode` (active|sentinel), `groupDebounceMs`, `defaults` (JSON object).
+Some brakes are conditional. `ravi heartbeat trigger` is braked only when the agent's `HEARTBEAT.md` has content; with no file or an empty file it does nothing and says so. `ravi agents permissions` is braked only when the new profile grants more than the current one. `ravi pages visibility` is braked only when switching to `public`.
 
-## Instances
-
-Central configuration entity for channels/accounts. Each instance maps to one omni connection.
+Reversible local changes run **immediately**, with no `--execute`:
 
 ```bash
-ravi instances list                           # List all instances with status
-ravi instances show <name>                    # Show instance details + routes
-ravi instances create <name>                  # Create instance
-  --channel <channel>                         #   Channel type (default: whatsapp)
-  --agent <id>                                #   Default agent
-  --dm-policy <open|pairing|closed>           #   DM policy (default: open)
-  --group-policy <open|allowlist|closed>      #   Group policy (default: open)
-ravi instances get <name> <key>               # Get instance property
-ravi instances set <name> <key> <value>       # Set instance property (agent, dmPolicy, groupPolicy, dmScope, instanceId, channel)
-ravi instances delete <name>                  # Soft-delete instance immediately
-ravi instances restore <name>                 # Restore soft-deleted instance
-ravi instances deleted                        # List soft-deleted instances
-ravi instances connect <name>                 # Connect to omni (QR code for WhatsApp)
-  --channel <channel>                         #   Channel type
-  --agent <id>                                #   Agent to route messages to
-ravi instances disconnect <name>              # Disconnect from omni
-ravi instances status <name>                  # Show connection status
+ravi contacts block <contact>
+ravi instances delete <name>
+ravi instances routes remove <name> <pattern>
+ravi whatsapp group demote <groupId> <participants>
 ```
 
-## Routes
+`ravi instances delete` and `ravi instances routes remove` are soft deletes: `ravi instances deleted` and `ravi instances routes deleted` list what was removed, and `ravi instances restore` and `ravi instances routes restore` bring it back. `ravi contacts tag` is immediate too, including the `permission-owner` tag, which grants full authority on its own (see [Make yourself the owner](/start/owner)). `ravi pages ship` publishes in one call; a leftover `--execute` on it is ignored.
 
-Read route config and live routing without drilling into the `instances` subtree.
+When unsure, run the command without `--execute` first. If it is braked, you get the plan and exit `3`.
+
+### Console-scoped commands
+
+Commands that work with the Ravi Console (`pages`, `bases`, `connectors`, `bridges`, `bug`, `feedback`, `cloud projects`) need `ravi login` first; without it they fail with `AUTH_REQUIRED`. Commands that act on a Console project take `--project <ref>`, a project id or slug. `ravi pages` and `ravi bases` fall back to a saved default project when you omit it:
 
 ```bash
-ravi routes list [name]                       # List routes across all instances or for one instance
-ravi routes show <name> <pattern>             # Show route details
-ravi routes explain <name> <pattern>          # Explain config vs live route winner
-  --channel <channel>                         #   Optional channel hint for live route inspection
+ravi cloud scope set --global --project <ref>   # default project for this install
+ravi cloud scope show                           # what the next command will use
+ravi bases list --project <ref>                 # one-off override
 ```
 
-Use `ravi instances routes ...` when you need to mutate route config.
-
-### Instance Routes
-
-Per-instance routing rules that map patterns to agents. Use this subtree for mutations; use `ravi routes ...` for discovery/read paths.
-
-```bash
-ravi instances routes list <name>             # List routes for instance
-ravi instances routes show <name> <pattern>   # Show route details
-ravi instances routes add <name> <pattern> <agent>  # Add route
-  --priority <n>                              #   Route priority (default: 0)
-  --policy <open|pairing|closed|allowlist>    #   Policy override
-  --session <name>                            #   Force session name
-  --dm-scope <scope>                          #   DM scope override
-  --channel <channel>                         #   Limit to specific channel
-ravi instances routes remove <name> <pattern>            # Soft-delete route immediately
-ravi instances routes restore <name> <pattern># Restore soft-deleted route
-ravi instances routes deleted [name]          # List soft-deleted routes
-ravi instances routes set <name> <pattern> <key> <value>  # Set route property (agent, priority, dmScope, session, policy, channel)
-```
-
-### Instance Pending
-
-Manage unrouted contacts/groups waiting for approval.
-
-```bash
-ravi instances pending list <name>            # List pending contacts/groups
-ravi instances pending approve <name> <contact>  # Approve pending contact
-ravi instances pending reject <name> <contact> --execute  # Reject and remove pending contact (without --execute: dry-run, exit 3)
-```
-
-## Contacts
-
-Contact management with multi-platform identities.
-
-```bash
-ravi contacts list [--status <status>]        # List all contacts (filter by status)
-ravi contacts pending [-a <account>]          # List pending contacts (global + per-account)
-ravi contacts add <identity> [name]           # Add/allow a contact (phone, LID, or group ID)
-  --agent <ids>                               #   Restrict to agent(s), comma-separated
-ravi contacts approve <contact> [mode]        # Approve pending contact (mode: auto|mention)
-  --agent <ids>                               #   Restrict to agent(s)
-ravi contacts remove <contact> --execute      # Remove a contact (without --execute it is a dry-run, exit 3)
-ravi contacts allow <contact>                 # Allow a contact
-ravi contacts block <contact>                 # Block a contact immediately
-ravi contacts info <contact>                  # Show contact details with all identities
-ravi contacts check <contact>                 # Alias for info
-ravi contacts find <query> [--tag]            # Search by name/phone or by tag
-ravi contacts set <contact> <key> <value>     # Set property (mode, email, name, tags, notes, opt-out, source, allowed-agents)
-ravi contacts tag <contact> <tag>             # Add tag
-ravi contacts untag <contact> <tag>           # Remove tag
-ravi contacts group-tag <contact> <group> <tag>    # Set tag in a specific group
-ravi contacts group-untag <contact> <group>        # Remove tag from a specific group
-ravi contacts identity-add <contact> <platform> <value>  # Add identity (phone, whatsapp_lid, whatsapp_group, matrix, telegram)
-ravi contacts identity-remove <platform> <value>         # Remove identity
-ravi contacts merge <source> <target> --execute  # Merge contacts (move identities, delete source; without --execute it is a dry-run, exit 3)
-```
-
-## Sessions
-
-Manage agent sessions, cross-session messaging, and ephemeral TTLs.
-
-```bash
-ravi sessions list [--agent <id>] [--ephemeral]  # List sessions
-ravi sessions info <nameOrKey>                    # Show session details
-ravi sessions rename <nameOrKey> <displayName>    # Set display name
-ravi sessions set-model <nameOrKey> <model>       # Set model override (sonnet, opus, haiku, clear)
-ravi sessions set-effort <nameOrKey> <level>      # Set effort (none..ultra, clear)
-ravi sessions set-thinking <nameOrKey> <level>    # Set thinking level (off, normal, verbose, clear)
-ravi sessions reset <nameOrKey> --execute         # Reset session (fresh start)
-ravi sessions delete <nameOrKey> --execute        # Delete session permanently
-ravi sessions read <nameOrKey> [-n count]         # Read message history (default: 20)
-ravi sessions recap <nameOrKey> [-n count]        # Bounded computed recap (default: 8)
-```
-
-### Ephemeral Sessions
-
-```bash
-ravi sessions set-ttl <nameOrKey> <duration>      # Make session ephemeral (e.g. 5h, 30m, 1d)
-ravi sessions extend <nameOrKey> [duration]       # Extend TTL (default: 5h)
-ravi sessions keep <nameOrKey>                    # Make ephemeral session permanent
-```
-
-### Cross-Session Messaging
-
-```bash
-ravi sessions send <nameOrKey> [prompt]           # Send prompt (fire-and-forget)
-  -w, --wait                                      #   Wait for and stream response
-  -i, --interactive                               #   Interactive chat mode
-  -a, --agent <id>                                #   Agent for creating new session
-  --channel <channel>                             #   Override delivery channel
-  --to <chatId>                                   #   Override delivery target
-ravi sessions ask <target> <message> [sender]     # Ask a question to another session
-ravi sessions answer <target> <message> [sender]  # Answer a question from another session
-ravi sessions execute <target> <message>          # Send execute command to another session
-ravi sessions inform <target> <message>           # Send informational message to another session
-```
-
-## Settings
-
-Global configuration stored in SQLite.
-
-```bash
-ravi settings list                            # List live settings; legacy account.* is hidden by default
-ravi settings list --legacy                   # Inspect legacy account.* rows shadowed by instances
-ravi settings get <key>                       # Get a setting value
-ravi settings set <key> <value>               # Set a setting value
-ravi settings delete <key>                    # Dry-run: shows the delete plan (exit 3)
-ravi settings delete <key> --execute          # Actually delete the setting
-```
-
-**Known settings:** `defaultAgent`, `defaultDmScope`, `defaultTimezone`, `whatsapp.groupPolicy`, `whatsapp.dmPolicy`. Legacy `account.*` rows are shadowed by `instances` and should not be used as live config.
-
-## Permissions
-
-REBAC (Relation-Based Access Control) permission management.
-
-```bash
-ravi permissions grant <subject> <relation> <object>   # Grant a relation
-ravi permissions revoke <subject> <relation> <object>  # Revoke a relation
-ravi permissions check <subject> <permission> <object> # Check if allowed
-ravi permissions list                                  # List all relations
-  --subject <s>                                        #   Filter by subject
-  --object <o>                                         #   Filter by object
-  --relation <r>                                       #   Filter by relation
-  --source <src>                                       #   Filter by source (config|manual)
-ravi permissions init <subject> <template>             # Apply template (sdk-tools, all-tools, safe-executables, full-access, tool-groups)
-ravi permissions sync                                  # Re-sync relations from agent configs
-ravi permissions clear [--all]                         # Clear manual relations (--all includes config)
-```
-
-**Entity format:** `type:id` (e.g. `agent:dev`, `tool:Bash`, `group:contacts`, `system:*`).
-
-**Relations:** `admin`, `use`, `execute`, `access`, `modify`, `write_contacts`, `read_own_contacts`, `read_tagged_contacts`, `read_contact`, `view`.
-
-**Entity types:** `agent`, `system`, `group`, `session`, `contact`, `cron`, `trigger`, `team`, `tool`, `executable`, `toolgroup`.
-
-## Cron
-
-Scheduled job management.
-
-```bash
-ravi cron list                                # List all jobs
-ravi cron show <id>                           # Show job details
-ravi cron add <name>                          # Add a new job
-  --cron <expr>                               #   Cron expression (e.g. "0 9 * * *")
-  --every <interval>                          #   Interval (e.g. 30m, 1h)
-  --at <datetime>                             #   One-shot ISO datetime
-  --tz <timezone>                             #   Timezone (for --cron)
-  --message <text>                            #   Prompt message (required)
-  --agent <id>                                #   Target agent
-  --account <name>                            #   Account for channel delivery
-  --isolated                                  #   Run in isolated session
-  --delete-after                              #   Delete job after first run
-  --description <text>                        #   Job description
-ravi cron enable <id>                         # Enable a job
-ravi cron disable <id>                        # Disable a job
-ravi cron set <id> <key> <value>              # Set property (name, message, cron, every, tz, agent, account, description, session, reply-session, delete-after)
-ravi cron run <id> --execute                  # Manually trigger a job (dry-run without --execute)
-ravi cron rm <id> --execute                   # Delete a job (dry-run without --execute)
-```
-
-## Heartbeat
-
-Proactive agent runs that check HEARTBEAT.md for pending tasks.
-
-```bash
-ravi heartbeat status                         # Show status for all agents
-ravi heartbeat show <id>                      # Show config for an agent
-ravi heartbeat enable <id> [interval]         # Enable heartbeat (e.g. 30m, 1h)
-ravi heartbeat disable <id>                   # Disable heartbeat
-ravi heartbeat set <id> <key> <value>         # Set property (interval, model, account, active-hours)
-ravi heartbeat trigger <id> --execute         # Manually trigger pending heartbeat work
-```
-
-## Triggers
-
-Event-driven triggers that subscribe to NATS topics and fire agent prompts.
-
-```bash
-ravi triggers list                            # List all triggers
-ravi triggers show <id>                       # Show trigger details
-ravi triggers add <name>                      # Add a new trigger
-  --topic <pattern>                           #   NATS topic pattern (required)
-  --message <text>                            #   Prompt message (required)
-  --agent <id>                                #   Target agent
-  --account <name>                            #   Account for channel delivery
-  --cooldown <duration>                       #   Cooldown between fires (default: 5s)
-  --session <main|isolated>                   #   Session type (default: isolated)
-  --filter <expression>                       #   Filter expression
-ravi triggers enable <id>                     # Enable trigger
-ravi triggers disable <id>                    # Disable trigger
-ravi triggers set <id> <key> <value>          # Set property (name, message, topic, agent, account, session, cooldown, filter)
-ravi triggers test <id> --execute             # Test with fake event data
-ravi triggers rm <id> --execute               # Delete trigger (dry-run without --execute)
-```
-
-## WhatsApp Groups
-
-WhatsApp group management (requires connected instance).
-
-```bash
-ravi whatsapp.group list [--account <id>]                    # List all groups
-ravi whatsapp.group info <groupId> [--account <id>]          # Show group metadata + participants
-ravi whatsapp.group create <name> <participants> --execute   # Create group (comma-separated phones)
-  --account <id>                                             #   WhatsApp account
-  --agent <id>                                               #   Auto-route to agent
-ravi whatsapp.group add <groupId> <participants> --execute     # Add participants
-ravi whatsapp.group remove <groupId> <participants> --execute  # Remove participants
-ravi whatsapp.group promote <groupId> <participants> --execute # Promote to admin
-ravi whatsapp.group demote <groupId> <participants>           # Demote from admin immediately
-ravi whatsapp.group invite <groupId>                         # Get invite link (read-only)
-ravi whatsapp.group revoke-invite <groupId> --execute        # Revoke invite link
-ravi whatsapp.group join <code> --execute                    # Join group via invite
-ravi whatsapp.group leave <groupId> --execute                # Leave group
-ravi whatsapp.group rename <groupId> <name> --execute        # Rename group
-ravi whatsapp.group description <groupId> <text> --execute   # Update description
-ravi whatsapp.group settings <groupId> <setting> --execute   # Update settings (announcement, not_announcement, locked, unlocked)
-```
-
-Every risky external mutation above is dry-run by default: without `--execute` it exits 3 and only prints the plan (nothing reaches WhatsApp). `demote` reduces authority and executes immediately. `list`, `info`, and `invite` are read-only and take no `--execute`.
-
-## WhatsApp DMs
-
-Send direct messages and manage read receipts.
-
-```bash
-ravi whatsapp.dm send <contact> <message> --execute  # Send a DM (resolves LID or phone; without --execute it is a dry-run, exit 3)
-  --account <id>                              #   WhatsApp account
-ravi whatsapp.dm read <contact>               # Read local history; never sends a receipt
-  --last <n>                                  #   Number of messages (default: 10)
-  --account <id>                              #   WhatsApp account
-ravi whatsapp.dm ack <contact> <messageId> --execute  # Send a receipt (without --execute it is a dry-run, exit 3)
-  --account <id>                              #   WhatsApp account
-```
-
-`dm read` is always read-only and never sends a receipt. To send a blue-tick receipt intentionally, use `dm ack <contact> <messageId> --execute`.
-
-## Media
-
-Send media files through connected channels.
-
-```bash
-ravi media send <filePath> --execute          # Send media file (image, video, audio, document)
-  --caption <text>                            #   Caption for media
-  --channel <channel>                         #   Target channel
-  --to <chatId>                               #   Target chat ID
-  --account <id>                              #   Account ID
-  --ptt                                       #   Send audio as voice note (PTT)
-```
-
-## Audio
-
-Generate speech via ElevenLabs TTS.
-
-```bash
-ravi audio generate <text>                    # Generate speech from text
-  --voice <id>                                #   ElevenLabs voice ID
-  --model <model>                             #   TTS model (eleven_multilingual_v2, eleven_turbo_v2_5, etc.)
-  --speed <0.5-2.0>                           #   Speech speed (default: 1.0)
-  --lang <code>                               #   Language code (default: pt-br)
-  --format <format>                           #   Output format (mp3_44100_128, mp3_22050_32, pcm_16000)
-  -o, --output <path>                         #   Output directory (default: /tmp)
-  --send                                      #   Auto-send to current chat
-  --caption <text>                            #   Caption when sending
-```
-
-## Image
-
-Generate images via Gemini.
-
-```bash
-ravi image generate <prompt>                  # Generate image from text prompt
-  --mode <fast|quality>                       #   Model: fast (Flash) or quality (Pro). Default: fast
-  --source <path>                             #   Source image for editing/reference
-  -o, --output <path>                         #   Output directory (default: /tmp)
-  --aspect <ratio>                            #   Aspect ratio (1:1, 2:3, 3:2, 3:4, 4:3, 9:16, 16:9, 21:9)
-  --size <1K|2K|4K>                           #   Image size (default: 1K)
-  --send                                      #   Auto-send to current chat
-  --caption <text>                            #   Caption when sending
-```
-
-## Video
-
-Analyze videos via Gemini API.
-
-```bash
-ravi video analyze <url>                      # Analyze YouTube URL or local file
-  -o, --output <path>                         #   Output file path (default: auto-generated)
-  -p, --prompt <text>                         #   Custom analysis prompt
-```
-
-## Transcribe
-
-Audio transcription via OpenAI Whisper.
-
-```bash
-ravi transcribe file <path>                   # Transcribe a local audio file
-  --lang <code>                               #   Language code (default: pt)
-```
-
-Supported formats: `.ogg`, `.opus`, `.mp3`, `.m4a`, `.mp4`, `.wav`, `.webm`.
-
-## React
-
-Emoji reactions on messages.
-
-```bash
-ravi react send <messageId> <emoji>           # Send emoji reaction (messageId from [mid:ID] tags)
-```
-
-## Events
-
-Live stream of NATS events for debugging.
-
-```bash
-ravi events stream                            # Stream all events in real-time
-  -f, --filter <pattern>                      #   Topic glob filter (e.g. "ravi.session.*")
-  --no-claude                                 #   Hide raw Claude SDK events
-  --no-heartbeat                              #   Hide heartbeat events
-  --only <type>                               #   Only show: prompt, response, tool, claude, cli, audit
-```
-
-## Copilot
-
-Bridge ravi to Claude Code team mailboxes.
-
-```bash
-ravi copilot send <teamName> <message>        # Send message to a team inbox
-  --from <name>                               #   Sender name (default: ravi)
-  --summary <text>                            #   Short summary title
-  --color <color>                             #   Message color
-ravi copilot teams                            # List discovered Claude Code teams
-```
-
-## Tools
-
-Inspect and export CLI tools as SDK tool definitions.
-
-```bash
-ravi tools list                               # List all available CLI tools (as SDK tools)
-ravi tools show <name>                        # Show tool details + JSON schema
-ravi tools manifest                           # Export as JSON manifest
-ravi tools schema                             # Export as JSON Schema
-ravi tools test <name> [argsJson]             # Test a tool execution
-```
-
-## Service
-
-Low-level bot service management.
-
-```bash
-ravi service start                            # Start bot server (foreground)
-ravi service tui [session]                    # Start TUI interface
-ravi service wa                               # (Deprecated) Use "ravi daemon start" instead
-```
+`ravi cloud scope set` also takes `--agent`, `--session` or `--workspace` instead of `--global`. See [Log in to the Console](/console/login).
+
+### Who runs the command
+
+Commands you type in your own shell run as the local operator, with full authority. The same commands run by an agent are checked against that agent's permissions, and a denial is published on `ravi.audit.denied`. See [Permissions](/guides/permissions).
+
+Some commands that change agents, instances and routes refuse to run when the `ravi` you call is a different build from the running daemon (`CLI/runtime mismatch detected`). Use the same install the daemon runs, or restart the daemon after an update.
+
+## Command map
+
+Each line is one root command. Run `ravi <group> --help` for its subcommands.
+
+### Install and operate
+
+| Command | What it is for |
+|---|---|
+| `setup` | Interactive first-run wizard (PM2, Omni, `~/.ravi/.env`, daemon). |
+| `update` | Update the CLI to an exact release or switch channel (`--next`, `--stable`); restarts the Ravi processes. |
+| `doctor` | Check runtime, database, provider and contract health. |
+| `daemon` | Start, stop, restart, inspect and log the `ravi` daemon under PM2; edit `~/.ravi/.env`. |
+| `channels` | Configure native channels (Slack) and run the `ravi-channels` runner. |
+| `settings` | Global settings stored in `ravi.db`. |
+| `events` | Stream live NATS events or replay persisted ones. |
+| `db` | Inspect `ravi.db` locks, WAL and holders. |
+| `adapters` | Inspect session adapters and their debug snapshots. |
+| `costs` | Token and cost tracking per agent and session. |
+| `metrics` | Daily metrics rollup and reports. |
+| `service` | Start the bot server or TUI directly (`service wa` is deprecated; use `daemon start`). |
+| `tui` | Open the terminal UI for a session: `ravi tui <session>`. |
+| `stream` | Run the JSONL stdio stream server. |
+
+### Agents, sessions and runtime
+
+| Command | What it is for |
+|---|---|
+| `agents` | Create agents, set properties, permission profiles, debounce, reset sessions. |
+| `sessions` | List, send to, ask, inform, trace, reset and delete sessions. |
+| `self` | Read the current agent, session, chat and permissions (inside an agent turn). |
+| `runtime` | Model providers (`claude`, `codex`, `pi`, `grok`), credential pools, presets and allowlisted `.env` keys. |
+| `context` | Runtime context keys: issue, inspect, check, revoke. |
+| `permissions` | Inspect and grant runtime authorization: `status`, `check`, `allow`, `deny`, `list`, `resolve`, `materialize`. |
+| `skills` | List, show, install and grant skills. |
+| `skill-gates` | Rules that make a tool or command load a required skill first. |
+| `commands` | Prompt commands: list, validate and render. |
+| `rules` | Import provider prompt rules into `.ravi/rules`. |
+| `hooks` | Runtime hooks on session events (start, tool use, stop) that inject context or send events. |
+| `tools` | List, search and inspect the CLI as agent tools. |
+| `tasks` | Tracked work dispatched to agents, with progress, done, block and fail. |
+| `jobs` | Run a long command in the background and deliver the result to the session. |
+| `threads` | Ravi-owned threads with comments, notes and handoff briefs. |
+| `eval` | Reproducible evaluation runs. |
+| `sandbox` | Run one task in a disposable E2B cloud sandbox and collect its patch. |
+
+### Channels, people and routing
+
+| Command | What it is for |
+|---|---|
+| `instances` | Channel accounts: create, connect (WhatsApp QR), policies, pending approvals, routes. |
+| `routes` | Read-only view of routes and of which route wins for a chat. |
+| `contacts` | People: add, approve, block, tag, link identities, find. |
+| `chats` | Canonical chats, their messages and reading queues. |
+| `slack` | Native Slack operations: channels, messages, Block Kit, modals, Canvas, topology. |
+| `whatsapp` | WhatsApp group and DM operations through Omni (`group`, `dm`). |
+| `credentials` | The credential broker: provider connections (Slack tokens) and policies. |
+| `react` | Send an emoji reaction to a message. |
+| `media` | Send a file to a chat. |
+| `stickers` | Sticker library and sending. |
+| `crm` | Contacts, accounts, opportunities and pipelines. |
+
+### Automation
+
+| Command | What it is for |
+|---|---|
+| `cron` | Scheduled prompts and jobs. |
+| `heartbeat` | Proactive runs driven by an agent's `HEARTBEAT.md`. |
+| `triggers` | Run an agent prompt when a NATS event matches. `ravi triggers topics` lists known topics. |
+| `watch` | Watches on external sources, wired to triggers. |
+| `workflows` | Workflow specs and runs. |
+| `observers` | Observation Plane bindings, profiles and rules. |
+| `tags` | Unified tags for Ravi assets. |
+| `tag-rules` | Deterministic tag classification rules. |
+
+### Ravi Console
+
+| Command | What it is for |
+|---|---|
+| `login` | Link this CLI to the Console (default `https://console.ravi.bot`). |
+| `whoami` | Show the linked Console identity. |
+| `logout` | Remove the local Console credentials and revoke them when possible. |
+| `link` / `unlink` | Bind the current contact to the active Console user, from inside an agent turn. |
+| `cloud` | Console projects and the default organization/project scope. |
+| `pages` | Publish pages to your project host (`ravi pages ship`), visibility, passwords, domains. |
+| `bases` | Typed project tables: schema, rows, views, charts, row-event subscriptions. |
+| `artifacts` | Artifact ledger and lineage; `artifacts publish` is the advanced upload behind Pages. |
+| `connectors` | Connect external services (Gmail, Calendar, ...) through the Console. |
+| `bridges` | MCP bridges managed through the Console. |
+| `inbox` | Local inbox and the Console agent-inbox poller. |
+| `sync` | Local-first sync outbox and inbox with the Console. |
+| `bug` | File and follow Ravi bug reports. |
+| `feedback` | Send structured feedback. |
+
+### Media, content and integrations
+
+| Command | What it is for |
+|---|---|
+| `audio` | Text-to-speech generation. |
+| `transcribe` | Transcribe an audio file. |
+| `image` | Image generation. |
+| `video` | Video analysis. |
+| `meetings` | Meeting artifacts and providers. |
+| `mail` | Local-first mail accounts, mailboxes, threads and sending. |
+| `calendars` | Local-first calendars and availability. |
+| `gmail` | Gmail through a connected Google connector. |
+| `yt` | YouTube Data and Analytics APIs. |
+| `insights` | Operational insights with lineage. |
+| `specs` | Versioned specs under `.ravi/specs`. |
+| `projects` | Project context, resources, tasks and workflows. |
+| `apps` | Discover, validate and run Ravi app manifests. |
+| `work-objects` | Resolve and act on Work Objects through domain adapters. |
+| `devin` | Devin authentication and remote sessions. |
+| `prox` | Voice follow-up calls for prox.city. |
+| `sdk` | SDK code generation (TypeScript, Swift, Dart) and the OpenAPI snapshot. |
+
+## Related
+
+- [SDK and HTTP gateway](/guides/sdk): the same commands over HTTP.
+- [Events](/reference/nats-events): the topics commands and agents publish.
+- [Troubleshooting](/guides/troubleshooting): `ravi doctor`, logs and traces.

@@ -17,7 +17,7 @@ This page describes `ravi.bot@next`. In `@latest` (3.260927.5), `ravi pages ship
 - A project has one default host: `<org-slug>-<project-slug>.ravi.page`, for example `acme-website.ravi.page`.
 - A page is a route on that host. `/` is the project home; `/report` and `/docs` are other pages.
 - `--title` is the page title. It never creates a host.
-- Do not create one host per page. Host names starting with `ravi` or `ravi-` are reserved and cannot be created.
+- Do not create one host per page. The host name `ravi` and names starting with `ravi-` are reserved and cannot be created.
 
 ## Publish your first page
 
@@ -41,6 +41,7 @@ This page describes `ravi.bot@next`. In `@latest` (3.260927.5), `ravi pages ship
       ...
       Route      /hello
       Visibility private
+      Artifact   ...
       URL        https://acme-website.ravi.page/hello
       Comments   ...
     ```
@@ -89,7 +90,7 @@ For `private` pages, the visitor's active organization in the Console must be th
 
 Two settings decide what a visitor gets:
 
-- The **host default**, set when the project was created (the **Default visibility** field, or `--visibility` on `ravi cloud projects create`).
+- The **host default**, set when the host was created: the **Default visibility** field, `--visibility` on `ravi cloud projects create --default-page-site`, or the `--visibility` of the first ship when that ship created the host.
 - The **route policy**, set by every ship (`--visibility`, default `private`).
 
 If the route is not `public`, the route policy applies. If the route is `public`, the host default applies. So a page is public only when both the route and the host default are `public`.
@@ -158,11 +159,11 @@ The CLI cannot list or mark comments as read, and opening the bar does not mark 
 
 ## Releases and restore
 
-Every publish creates a release of the whole host: the map of all its routes. Restoring a release brings **every route** on the host back to that state, not just one page. Restore from the operator bar (**Restaurar**). The project's Pages screen in the Console lists the release history but has no restore button.
+Every publish creates a release of the whole host: the map of all its routes. Restoring a release brings **every route** on the host back to that state, not just one page. Restore from the operator bar (**Restaurar**). An unread comment on any route in that release blocks the restore. The project's Pages screen in the Console lists the release history but has no restore button.
 
 To roll back a single page, ship its previous content to the same route again.
 
-`ravi artifacts release activate` only works for content published from a local artifact (`art_*`). Pages published with `ship` have no local artifact id, so use the bar.
+`ship` also records each publish on a local artifact (`art_*`), so `ravi artifacts release activate` can re-activate a recorded release from the terminal. The `artifactId` that `ship` prints is the Console's id, not the local one; see [Artifacts](/reference/artifacts) for how to find it. The bar is the simpler path.
 
 ## Let your agent publish
 
@@ -190,7 +191,7 @@ Pages that read and write a Base (`--uses ravi.bases.*`) work only for signed-in
 | Command | What it does |
 |---|---|
 | `ravi pages create <host>` | Creates a host record only, no content. Dry-run without `--execute` (exit 3). |
-| `ravi pages publish <project> <host> <source>` | Uploads to an existing host, or publishes a local `art_*`. Dry-run without `--execute` (exit 3). On a host with data pages it clears the `--uses` list. |
+| `ravi pages publish <project> <host> <source>` | Uploads to an existing host, or publishes a local `art_*`. Dry-run without `--execute` (exit 3). It cannot declare `--uses`, so a data page republished with it loses its actions; use `ship` on hosts with data pages. |
 | `ravi pages domains <host> <hostname> --execute` | Binds a custom domain to the host. |
 | `ravi pages ship <slug> ...` | Ships to a legacy extra host named `<slug>.ravi.page`. |
 

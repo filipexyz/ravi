@@ -66,7 +66,7 @@ Ravi publishes events on its event bus (NATS, `nats://127.0.0.1:4222` by default
 | `--reply-session <name>` | Session whose chat receives the answer. See [Where the answer goes](#where-the-answer-goes). |
 | `--filter <expression>` | Only fire when the event matches. See [Filters](#filters). |
 | `--cooldown <duration>` | Minimum time between fires. Default `5s`. See [Cooldown](#cooldown). |
-| `--account <name>` | Channel account used for delivery, when you have more than one. |
+| `--account <name>` | Account set on the reply source, when you have more than one. It does not route the answer to another chat. |
 | `--timeout`, `--env-file`, `--on-error` | Shell triggers only. |
 | `--json` | Machine-readable output. |
 
@@ -158,7 +158,7 @@ The `Data:` block is the whole event as JSON. When a trigger uses a topic's defa
 | (not given) | The session that created the trigger. If the agent creates it during a chat, that chat's session. From your terminal, the agent's main session. |
 | `requests-queue` | The session with that name. If none exists, Ravi creates it. |
 | `issue-{{data.payload.row.values.topic_id.0}}` | A template: one session per value, resolved for each event. |
-| `main` | Legacy value: the agent's main session. |
+| `main` | Legacy value: the agent's main session. If the trigger has a reply session, it runs in the reply session instead. |
 | `isolated` | Legacy value: one session per trigger. |
 
 Template rules:
@@ -173,14 +173,19 @@ Change it later with `ravi triggers set <id> session <name>`.
 
 The trigger picks a chat for the answer in this order:
 
-1. The chat where `--reply-session` last talked. When the agent creates the trigger during a chat, the reply session is set to its own session automatically.
+1. The chat where the reply session last talked. `--reply-session` sets it; when the agent creates the trigger during a chat, it is set to the agent's own session automatically.
 2. Only when there is no reply session and no frozen creator chat: the chat where the target session last talked.
-3. The creator's chat, recorded when the trigger was created.
+3. The creator's chat, recorded when the trigger was created. Clearing the reply session does not clear it.
 
-Ravi then posts the answer only if that chat is attached to the session running the turn. In practice:
+A chat belongs to one session at a time, and Ravi posts the answer only if the chosen chat belongs to the session running the turn. Otherwise the answer stays in that session and the daemon logs `Response target unresolved — dropping emit`. In practice:
 
 - **No `--session`, created by the agent in a chat**: the trigger runs in that chat's session and answers in that chat. This is the simplest setup.
-- **A new named session** (for example a queue worker): that session has no chat, so its answers stay in the session. Read them with `ravi sessions read <name>`. If someone must be told, say so in the message, for example: `Then report with: ravi sessions inform <owner-session> "<summary>"`.
+- **No `--session`, created from your terminal**: the trigger runs in the agent's main session and answers where that session last talked.
+- **`--session main` with a reply session**: the trigger runs in the reply session and answers in its chat.
+- **Any other named session** (for example a queue worker): it answers in a chat only if that session already owns one and either `--reply-session` names the same session or the trigger has no reply session and no creator chat (created from your terminal). A session the trigger creates owns no chat, so its answers stay in it.
+- **`isolated`**: never answers in a chat.
+
+Read answers that stayed in a session with `ravi sessions read <name>`. If someone must be told, say so in the message, for example: `Then report with: ravi sessions inform <owner-session> "<summary>"`.
 
 Change the reply session with `ravi triggers set <id> replySession <name>` (`-` clears it).
 
