@@ -55,7 +55,7 @@ Restarting the daemon does not restart the runner, and the other way around. `ra
 
 Every Ravi process talks through one NATS server with JetStream, at `NATS_URL` (default `nats://127.0.0.1:4222`). Ravi does not ship a NATS server. It uses the one Omni installs, or one you run yourself.
 
-The daemon creates and owns these streams:
+Ravi creates these streams itself: the daemon creates `SESSION_PROMPTS` and `RAVI_EVENTS` at start, and the channel runner creates `CHANNEL_OUTBOUND`.
 
 | Stream | Carries | Notes |
 |---|---|---|

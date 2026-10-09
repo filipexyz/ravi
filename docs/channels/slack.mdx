@@ -233,6 +233,7 @@ ravi channels status                               # health: ready ... connected
 - **Adapter stuck in `reconnecting (open_failed)`:** the app token is wrong or revoked, or Socket Mode is off.
 - **Log says `Slack inbound held for owner review`:** the chat has no route, or the instance name differs from the channel config. Check `ravi routes explain slack-main group:C0123ABCD`.
 - **Nothing in the log:** the app is not in the channel, an event subscription is missing, or the app was not reinstalled after a scope change.
-- **Answers without tools, or Approve does nothing:** your Slack ID is not linked to your contact on `slack-main`, or Interactivity is off.
+- **Answers without tools:** your Slack ID is not linked to your contact on `slack-main`. Check with `ravi contacts check <your contact>`.
+- **Approve does nothing:** Interactivity is off in the Slack app, or the request was for a shell command, which approving does not unblock today (see [Approvals](#approvals)).
 
 More in [Troubleshooting](/guides/troubleshooting).

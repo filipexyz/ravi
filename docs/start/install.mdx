@@ -137,6 +137,7 @@ ravi doctor
 |---|---|
 | `instances.main` | Expected until you connect a channel. This check looks for an instance named `main`, so with the names used in these guides (`slack-main`, `wa-main`) it keeps reporting `main instance is missing`. You can ignore it. |
 | `runtime.daemon` | The daemon is not running. Look at `ravi daemon logs`. |
+| `codex.bash-hook` | On the first run, doctor writes Ravi's shell check into `~/.codex/hooks.json` and reports that rewrite as an error. Run `ravi doctor` again; it should pass. |
 | `agents.instructions` | Run the `ravi agents sync-instructions` command from the install steps. The `--all` flag the hint mentions does not exist. |
 
 <Warning>

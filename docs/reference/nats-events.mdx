@@ -158,7 +158,7 @@ When you are logged in to the Console, the daemon polls the agent inbox every 15
   target, payload, links, delivery: { ... }, occurredAt, createdAt }
 ```
 
-Watch items are also published as `ravi.watch.<connector>.<eventType>`, for example `ravi.watch.console.page.comment.created`.
+Watch items are also published as `ravi.watch.<connector>.<eventType>`, for example `ravi.watch.console.bug.status` for a bug report you follow.
 
 **Bases row events** have `category: "bases"`. Turn them on per base with `ravi bases subscribe <base>`.
 

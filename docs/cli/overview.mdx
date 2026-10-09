@@ -75,7 +75,7 @@ ravi heartbeat trigger <id> --execute        # queues a heartbeat run
 
 Some brakes are conditional. `ravi heartbeat trigger` is braked only when the agent's `HEARTBEAT.md` has content; with no file or an empty file it does nothing and says so. `ravi agents permissions` is braked only when the new profile grants more than the current one. `ravi pages visibility` is braked only when switching to `public`.
 
-Reversible local changes run **immediately**, with no `--execute`:
+Reversible changes run **immediately**, with no `--execute`, even demoting a WhatsApp group admin:
 
 ```bash
 ravi contacts block <contact>
@@ -84,7 +84,7 @@ ravi instances routes remove <name> <pattern>
 ravi whatsapp group demote <groupId> <participants>
 ```
 
-`ravi instances delete` and `ravi instances routes remove` are soft deletes: `ravi instances deleted` and `ravi instances routes deleted` list what was removed, and `ravi instances restore` and `ravi instances routes restore` bring it back. `ravi contacts tag` is immediate too, including the `permission-owner` tag, which grants full authority on its own (see [Make yourself the owner](/start/owner)). `ravi pages ship` publishes in one call; a leftover `--execute` on it is ignored.
+`ravi instances delete` and `ravi instances routes remove` are soft deletes: `ravi instances deleted` and `ravi instances routes deleted` list what was removed, and `ravi instances restore` and `ravi instances routes restore` bring it back. `ravi contacts tag` is immediate too, including the `permission-owner` tag, which grants full authority to an `allowed` contact (see [Make yourself the owner](/start/owner)). `ravi pages ship` publishes in one call; a leftover `--execute` on it is ignored.
 
 When unsure, run the command without `--execute` first. If it is braked, you get the plan and exit `3`.
 
@@ -137,7 +137,7 @@ Each line is one root command. Run `ravi <group> --help` for its subcommands.
 | `sessions` | List, send to, ask, inform, trace, reset and delete sessions. |
 | `self` | Read the current agent, session, chat and permissions (inside an agent turn). |
 | `runtime` | Model providers (`claude`, `codex`, `pi`, `grok`), credential pools, presets and allowlisted `.env` keys. |
-| `context` | Runtime context keys: issue, inspect, check, revoke. |
+| `context` | Runtime context keys: issue, list, check, revoke. |
 | `permissions` | Inspect and grant runtime authorization: `status`, `check`, `allow`, `deny`, `list`, `resolve`, `materialize`. |
 | `skills` | List, show, install and grant skills. |
 | `skill-gates` | Rules that make a tool or command load a required skill first. |
