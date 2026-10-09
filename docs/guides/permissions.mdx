@@ -71,6 +71,8 @@ ravi agents permissions main bootstrap --capabilities execute:executable:curl,vi
 
 **`--capabilities` replaces the list.** Repeat the capabilities the agent already has. The seeded `main` agent starts with one explicit capability, `view:agent:*`. `--clear-capabilities` drops the list and keeps the profile.
 
+**What the ceiling covers.** The runtime's built-in tools (`Read`, `Edit`, `Bash`, `WebFetch` and the rest), shell commands and `ravi` commands. Tools from MCP servers that the runtime loads from its own configuration, such as a Claude `.mcp.json` in the agent's `cwd`, are not checked against it: they run without the ceiling and without approval, from any chat. Add only MCP servers you would let the agent use freely.
+
 **When changes apply.** From the agent's next turn. Ravi revokes the agent's live permission contexts when you change the ceiling, and the Bash check of a running turn reads the new ceiling at its next command. You do not need to restart the daemon or reset sessions.
 
 See what an agent holds right now:
@@ -98,7 +100,7 @@ The turn's authority depends on who sent the message:
 
 | Sender | Authority of the turn |
 |---|---|
-| You, from the terminal (`ravi sessions send`, `ravi tui`) | The agent's ceiling |
+| You, from the terminal (`ravi sessions send`) | The agent's ceiling |
 | Cron jobs, triggers and other automations | The agent's ceiling |
 | A sender who resolves to a contact, in a chat that is not governed | The agent's ceiling, whatever the contact's status (`pending`, `discovered`, even `blocked`) |
 | A sender who resolves to a contact, in a governed chat | The ceiling intersected with that contact's grants for the chat. Blocked or opted-out contacts get nothing. |
@@ -210,7 +212,7 @@ When a turn needs a capability it does not hold, Ravi can post an approval reque
 - **Timeout:** after 5 minutes without a decision, the request is denied.
 - **Scope:** an approved capability lasts for that turn only. For recurring access, use `ravi permissions allow` or `resolve`.
 - **Shell commands:** approving one does not make it run today; it is still refused. To let the agent run an executable, add it to the agent's ceiling.
-- **No approvals in the terminal.** A turn started with `ravi sessions send` has no chat to ask in, so the request is denied at once, and `ravi tui` has no approval prompt. Terminal turns work with the agent's ceiling only. A `chat-only` agent's tool requests are denied without asking.
+- **No approvals in the terminal.** A turn started with `ravi sessions send` has no chat to ask in, so the request is denied at once. Terminal turns work with the agent's ceiling only. A `chat-only` agent's tool requests are denied without asking.
 
 ## The Bash check
 

@@ -73,7 +73,7 @@ You can pass either column to `ravi skills show`.
 | `skills` | `skill-creator` | Writing, installing and granting skills |
 | `skill-gates` | `skill-gates` | The rules that load skills automatically |
 
-Others in the catalog: `automation-recipes`, `crm`, `tasks`, `tasks-eval`, `projects`, `observers`, `meetings`, `commands`, `apps`, `tag-rules`, `specs`, `prox-calls`, plus developer skills from the `ravi-dev` plugin (`app-creator`, `cli-creator`, `context-cli`, `prompt-builder`, `ravi-architecture`, `ravi-rules`). `architect`, `cross`, `matrix` and `tasks-manager` are deprecated stubs that point to their replacements.
+Others in the catalog: `automation-recipes`, `crm`, `tasks`, `projects`, `observers`, `meetings`, `commands`, `apps`, `tag-rules`, `specs`, `prox-calls`, plus developer skills from the `ravi-dev` plugin (`app-creator`, `cli-creator`, `context-cli`, `prompt-builder`, `ravi-architecture`, `ravi-rules`). `architect`, `cross`, `matrix` and `tasks-manager` are deprecated stubs that point to their replacements.
 
 ## How agents load skills (skill gates)
 
@@ -88,7 +88,7 @@ The skill has been delivered and marked as loaded for this session. Read it, the
 
 The agent reads it and runs the same command again, which now goes through. This happens once per skill per session. Running `ravi skills show <skill>` in the session also counts as loading it. For `bases`, `pages`, `triggers` and `cron`, the delivered skill ends with a pointer to `solucoes` until that one is loaded too.
 
-These command groups are gated by default: `agents`, `apps`, `artifacts`, `audio`, `bases`, `commands`, `contacts`, `context`, `cron`, `daemon`, `eval`, `events`, `heartbeat`, `image`, `instances` (`instances routes` loads the routes skill), `meetings`, `observers`, `pages`, `permissions`, `projects`, `prox calls`, `routes`, `sessions`, `settings`, `skill-gates`, `skills`, `slack`, `specs`, `stickers`, `tasks`, `triggers`, `video` and `whatsapp`. Other groups, such as `channels` and `media`, are not.
+These command groups are gated by default: `agents`, `apps`, `artifacts`, `audio`, `bases`, `commands`, `contacts`, `context`, `cron`, `daemon`, `events`, `heartbeat`, `image`, `instances` (`instances routes` loads the routes skill), `meetings`, `observers`, `pages`, `permissions`, `projects`, `prox calls`, `routes`, `sessions`, `settings`, `skill-gates`, `skills`, `slack`, `specs`, `stickers`, `tasks`, `triggers`, `video` and `whatsapp`. Other groups, such as `channels` and `media`, are not.
 
 Gates only apply inside agent sessions. Commands you type in your own terminal run directly.
 

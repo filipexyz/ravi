@@ -67,7 +67,7 @@ ravi sessions send main "hi, what can you do?" -a main -w
 - `-w` waits for this turn's reply and prints it. Without `-w`, `send` returns as soon as the prompt is published.
 - `-i` opens an interactive loop. Inside it, `/reset`, `/info` and `/exit` work.
 
-When you run `send` from your shell, the agent receives your text as is. If the session came from a chat, the reply is also posted in that chat. A session created from the terminal has no chat: read its replies with `-w`, `ravi sessions read` or `ravi tui <name>`.
+When you run `send` from your shell, the agent receives your text as is. If the session came from a chat, the reply is also posted in that chat. A session created from the terminal has no chat: read its replies with `-w` or `ravi sessions read`.
 
 `send` prompts a session. It does not post your literal text into a chat. To make the agent say something in a channel, ask it to.
 

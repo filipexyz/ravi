@@ -31,7 +31,6 @@ Other ways to run code from the checkout:
 
 ```bash
 bun src/cli/index.ts agents list    # the CLI straight from source, no bundle
-./bin/ravi tui main                 # in a checkout the TUI runs from src/tui/index.tsx
 ./bin/ravi daemon start             # registers this checkout's bundle as the PM2 process "ravi"
 ./bin/ravi daemon dev               # rebuilds on every src/ change; apply with ravi daemon restart -m "<reason>"
 ```

@@ -27,7 +27,7 @@ Documentation: **[docs.ravi.bot](https://docs.ravi.bot)**
 ## What you get
 
 - **Any provider, same behavior.** Claude Code, Codex, Pi and Grok Build are adapters. Ravi owns queueing, permissions, traces and delivery, so switching providers does not change how an agent works.
-- **Channels.** Slack runs natively (Socket Mode: DMs, channels, threads, files, Block Kit). WhatsApp, Telegram and Discord go through the Omni bridge. The terminal works too, with `ravi sessions send` and `ravi tui`.
+- **Channels.** Slack runs natively (Socket Mode: DMs, channels, threads, files, Block Kit). WhatsApp, Telegram and Discord go through the Omni bridge. The terminal works too, with `ravi sessions send`.
 - **Durable sessions.** By default each DM, group and thread gets its own named session, cron jobs and triggers can run in sessions of their own, and sessions can send, ask, inform and answer each other. People can steer a busy agent from chat: `>>message` waits for the current turn to end, and `!!message` is recorded without starting a turn.
 - **Automation.** Cron jobs, event triggers on NATS topics, heartbeats driven by the agent's `HEARTBEAT.md`, and background jobs (`ravi jobs run`) whose result comes back to the session. When an agent creates or edits a pull request with `gh`, Ravi follows the PR and its CI and wakes the session when something changes.
 - **Permissions you can reason about.** Each agent has a runtime profile (`bootstrap`, `chat-only`, `explicit-only`, `full-access`) and optional explicit capabilities. In a governed chat, each person gets their own grants intersected with the agent's ceiling; in any other chat, every sender who resolves to a contact gets the whole ceiling, so entry policies and routes decide who gets in. Approvals can be resolved from Slack with buttons that only authorized people can click, and every denial is published on `ravi.audit.denied`.
@@ -63,7 +63,7 @@ ravi doctor                              # an instances.main error is expected; 
 ravi sessions send main "hi" -a main -w  # -a creates the session the first time
 ```
 
-`ravi tui main` opens a full-screen chat. To start the conversation over, run `ravi sessions reset main --execute`; without `--execute` it only prints the plan and exits 3. To use Codex instead, see the Codex tab in [Install Ravi](https://docs.ravi.bot/start/install).
+To start the conversation over, run `ravi sessions reset main --execute`; without `--execute` it only prints the plan and exits 3. To use Codex instead, see the Codex tab in [Install Ravi](https://docs.ravi.bot/start/install).
 
 The `ravi.bot@latest` channel is older: it lacks Bases, the one-command `ravi pages ship` and the `explicit-only` profile. These docs follow `@next`.
 

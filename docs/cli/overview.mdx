@@ -125,8 +125,7 @@ Each line is one root command. Run `ravi <group> --help` for its subcommands.
 | `adapters` | Inspect session adapters and their debug snapshots. |
 | `costs` | Token and cost tracking per agent and session. |
 | `metrics` | Daily metrics rollup and reports. |
-| `service` | Start the bot server or TUI directly (`service wa` is deprecated; use `daemon start`). |
-| `tui` | Open the terminal UI for a session: `ravi tui <session>`. |
+| `service` | Start the bot server directly (`service wa` is deprecated; use `daemon start`). |
 | `stream` | Run the JSONL stdio stream server. |
 
 ### Agents, sessions and runtime
@@ -148,7 +147,6 @@ Each line is one root command. Run `ravi <group> --help` for its subcommands.
 | `tasks` | Tracked work dispatched to agents, with progress, done, block and fail. |
 | `jobs` | Run a long command in the background and deliver the result to the session. |
 | `threads` | Ravi-owned threads with comments, notes and handoff briefs. |
-| `eval` | Reproducible evaluation runs. |
 | `sandbox` | Run one task in a disposable E2B cloud sandbox and collect its patch. |
 
 ### Channels, people and routing

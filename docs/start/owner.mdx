@@ -10,7 +10,7 @@ At the end of this page the `main` agent can do everything Ravi allows, your own
 
 Three things decide what a message can make the agent do:
 
-1. **The agent's ceiling.** A permission profile on the agent sets the most it can ever do. Every turn runs inside it.
+1. **The agent's ceiling.** A permission profile on the agent sets the most it can ever do. Every turn runs inside it. The one exception is tools from MCP servers that the runtime loads from its own configuration, which the ceiling does not check ([Permissions](/guides/permissions#agent-ceilings)).
 2. **Who sent the message.** Ravi resolves the sender's chat identity to a contact.
    - In a chat that is not governed, a sender that resolves to any contact gets the agent's whole ceiling.
    - A sender with no contact gets no tools. The agent still replies in text.
@@ -19,7 +19,7 @@ Three things decide what a message can make the agent do:
 
 There is no special owner field. The owner is a contact with status `allowed` and the tag `permission-owner`. The tag gives that contact `admin:system:*`, which makes it an approver and keeps its full power inside governed chats.
 
-In the terminal you are always the owner: turns you start with `ravi sessions send` or `ravi tui` run with the agent's whole ceiling, and the `ravi` commands you type yourself run as the local operator.
+In the terminal you are always the owner: turns you start with `ravi sessions send` run with the agent's whole ceiling, and the `ravi` commands you type yourself run as the local operator.
 
 ## Set the agent's ceiling
 

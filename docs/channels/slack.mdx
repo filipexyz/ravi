@@ -223,7 +223,7 @@ ravi channels status                               # health: ready ... connected
 
 1. **DM.** In the app's Messages tab, send `hi`; the agent answers. Ask it to run `ravi agents list`; it runs, because you are the owner.
 2. **Channel.** In the routed channel, send `@Ravi hi`. The answer appears at the channel root.
-3. **Thread.** Reply in a thread under that answer. The agent answers in the thread, and `ravi sessions list --agent main` shows a new session whose name contains `-t-` and the thread timestamp.
+3. **Thread.** Reply in a thread under that answer. The agent answers in the thread, and `ravi sessions list --agent main` shows a new session for the thread: its name contains `-t-` followed by the thread timestamp without the dot, and its key ends in `:thread:<ts>`.
 4. **Ceiling.** Lower the ceiling with `ravi agents permissions main bootstrap` (it applies at once) and ask the agent in the DM to run `uname -a`. The command is refused, because `uname` is outside `bootstrap` (on Pi or Grok, Ravi first posts **Approve** and **Reject** buttons; click **Reject**). Restore it with `ravi agents permissions main full-access --execute`.
 
 ## If it does not answer
