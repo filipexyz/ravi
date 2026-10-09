@@ -28,6 +28,8 @@ applies_to:
   - src/cli/skill-gates.ts
   - src/plugins/internal/ravi-system/skills/bases/SKILL.md
   - src/plugins/internal/ravi-system/skills/bases/references/pages.md
+  - src/plugins/internal/ravi-system/skills/pages/references/data-pages.md
+  - src/plugins/internal/ravi-system/skills/solucoes/SKILL.md
 owners:
   - ravi-dev
 status: active
@@ -70,6 +72,10 @@ writes only through a view, via the `ravi.bases.*` Pages connector actions
    `idempotencyKey` in the body. The key is generated per call unless
    `--idempotency-key` overrides it. Keys MUST match
    `^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$`.
+   Inside an agent session, `rows add` and `rows update` without
+   `--idempotency-key` still write, and MUST add `warnings: [string]` to the
+   payload (a `warning:` line in human output): a retry would get a new
+   generated key and could duplicate the write.
 6. Inside an agent session (runtime tool or gateway invocation), row writes
    and row archive/restore MUST carry `clientHint {agentId?, sessionKey?, sdk}`.
    The hint is untrusted ledger metadata and MUST NOT be sent outside an
@@ -111,12 +117,15 @@ writes only through a view, via the `ravi.bases.*` Pages connector actions
 16. CLI output (help text, plan `effect`, `suggestedAction`, messages) and the
     `bases` skill MUST NOT send people to a Console UI for Bases. Destructive
     plans name the generated Pages and charts that stop working.
-17. The skill MUST tell agents to ship generated pages with `--uses` listing
+17. The `bases` and `pages` skills MUST tell agents to ship generated pages with `--uses` listing
     the union of the `ravi.bases.*` ids called by every page on the same host
     (the allowlist is the host's active release, so each ship replaces it for
     every route), and MUST NOT tell pages to embed row data, tokens, or
     Console API calls. When an agent adds a `page_viewer` principal, the skill
     MUST tell it to say which host gains which access to which view.
+    The data-page guide lives in the `pages` skill
+    (`ravi skills show pages --file references/data-pages.md`);
+    `bases/references/pages.md` is only a pointer to it.
 18. The default skill gate `bases` (`/^bases(?:[._]|$)/` → `ravi-system-bases`)
     MUST load the skill for `ravi bases …` and every `bases.*` subgroup and
     tool. Any identity that can run a `bases` command (`admin:system:*`,
@@ -203,6 +212,10 @@ actions are revision 1, take strict input, and act through a view that grants
   fails with `PROJECT_ACCESS_DENIED` until `ravi login` runs again.
 - A cursor is bound to its query. Changing `--filter` or `--sort` while
   passing `--cursor` fails with `cursor_invalid`.
+- `--sort` and `--group-by` take one comma-separated value
+  (`--sort prazo,horas:desc`, `--group-by status,prazo:month`). A placeholder
+  ending in `...` after a non-word character made the gateway schema an array
+  while commander passed a string, so both flags failed from agent sessions.
 - Re-running an import with a different `--batch` reuses keys with other
   bodies; the Console answers `CONFLICT` (`idempotency_conflict`) instead of
   creating duplicates.

@@ -578,6 +578,7 @@ async function buildRuntimeStartRequestInternal(
     cwd: sessionCwd,
     sessionRuntimeParams: session.runtimeSessionParams,
     runtimeContext,
+    allowedSkills,
   });
   const systemPromptSectionMetadata = buildRuntimeTracePromptSectionMetadata(systemPromptSections);
   const pluginNames = runtimePlugins.map((plugin) => plugin.path);

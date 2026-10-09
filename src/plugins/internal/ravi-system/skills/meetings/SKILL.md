@@ -11,6 +11,9 @@ description: |
 
 # Ravi Meetings
 
+> Verbos: CAPTAR (reunião vira artifact). Compõe com: triggers, bases.
+> Solução com mais de uma peça? `ravi skills show solucoes` primeiro.
+
 `ravi meetings` e a superficie nativa para agents entrarem em reunioes,
 capturarem contexto bruto e devolverem um artifact reutilizavel pelo Ravi.
 

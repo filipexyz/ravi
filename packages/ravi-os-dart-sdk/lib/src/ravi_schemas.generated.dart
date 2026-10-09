@@ -9036,11 +9036,8 @@ class RaviSchemas {
       "type": "string"
     },
     "groupBy": {
-      "description": "Group by up to 2 keys; dates need a unit: day|week|month|quarter|year",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
+      "description": "Comma-separated, up to 2 keys, e.g. created_time:month,status; dates need a unit: day|week|month|quarter|year",
+      "type": "string"
     },
     "project": {
       "description": "Console project id or slug; overrides the saved Console scope",
@@ -13780,6 +13777,12 @@ class RaviSchemas {
           "type": "null"
         }
       ]
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -14043,11 +14046,8 @@ class RaviSchemas {
       "type": "string"
     },
     "sort": {
-      "description": "Sort keys, e.g. amount:desc,created_time (max 3)",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
+      "description": "Comma-separated sort keys, key[:asc|desc], e.g. amount:desc,created_time (max 3)",
+      "type": "string"
     },
     "view": {
       "description": "Read or write through this view (its columns, filter, and access apply)",
@@ -14981,11 +14981,8 @@ class RaviSchemas {
       "type": "string"
     },
     "sort": {
-      "description": "Sort keys, e.g. amount:desc,created_time (max 3)",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
+      "description": "Comma-separated sort keys, key[:asc|desc], e.g. amount:desc,created_time (max 3)",
+      "type": "string"
     },
     "view": {
       "description": "Read or write through this view (its columns, filter, and access apply)",
@@ -15655,6 +15652,12 @@ class RaviSchemas {
           "type": "null"
         }
       ]
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -18283,11 +18286,8 @@ class RaviSchemas {
       "type": "string"
     },
     "sort": {
-      "description": "Sort keys, e.g. amount:desc,created_time (max 3)",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
+      "description": "Comma-separated sort keys, key[:asc|desc], e.g. amount:desc,created_time (max 3)",
+      "type": "string"
     },
     "view": {
       "description": "View id",
@@ -62346,6 +62346,10 @@ class RaviSchemas {
       "description": "Path to an HTML file to publish",
       "type": "string"
     },
+    "membersBestEffort": {
+      "description": "Ship ravi.bases.* uses on a public route anyway. Only org members already signed in get live data",
+      "type": "boolean"
+    },
     "project": {
       "description": "Console project id or slug; overrides saved Console scope",
       "type": "string"
@@ -62530,6 +62534,12 @@ class RaviSchemas {
     },
     "visibility": {
       "type": "string"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -80261,6 +80271,10 @@ class RaviSchemas {
 {
   "additionalProperties": false,
   "properties": {
+    "file": {
+      "description": "Print one file of the skill by its relative path (e.g. references/<file>); counts as loading it",
+      "type": "string"
+    },
     "installed": {
       "description": "Inspect only operator-installed/materialized skills",
       "type": "boolean"
@@ -80268,6 +80282,10 @@ class RaviSchemas {
     "name": {
       "description": "Catalog skill name, installed skill name, or source skill name",
       "type": "string"
+    },
+    "raw": {
+      "description": "Print only the file's bytes (SKILL.md without --file), e.g. to copy a skeleton with > client.js",
+      "type": "boolean"
     },
     "source": {
       "description": "Inspect skill from a GitHub URL, git URL or local path",
@@ -80285,6 +80303,28 @@ class RaviSchemas {
 {
   "additionalProperties": {},
   "properties": {
+    "file": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "content"
+      ],
+      "type": "object"
+    },
+    "files": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
     "skill": {
       "additionalProperties": {},
       "properties": {
@@ -80337,7 +80377,8 @@ class RaviSchemas {
     }
   },
   "required": [
-    "skill"
+    "skill",
+    "files"
   ],
   "type": "object"
 }

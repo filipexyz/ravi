@@ -5,6 +5,7 @@ import { z } from "zod";
 import {
   BASES_READ_SCOPE,
   BASES_WRITE_SCOPE,
+  currentBasesClientHint,
   missingBasesScopes,
   openBasesClient,
   type BasesClientDeps,
@@ -106,6 +107,10 @@ const IDEMPOTENCY_OPTION = {
   flags: "--idempotency-key <key>",
   description: "Idempotency key for safe retries (default: generated per call)",
 };
+// Agent sessions retry on their own; a generated key turns each retry into a new write.
+const MISSING_IDEMPOTENCY_KEY_WARNING =
+  "written without --idempotency-key: a retry would get a new generated key and could duplicate this write. " +
+  "Pass --idempotency-key <stable key>, e.g. <base>:<row>:<step>, and reuse it on every retry.";
 const VALUES_OPTION = {
   flags: "--values <json|@file>",
   description: "Row values as a JSON object keyed by property key, inline or @file",
@@ -125,7 +130,12 @@ const LAST_WRITE_WINS_OPTION = {
   description: "Overwrite concurrent changes instead of passing --expected-version (recorded in the ledger)",
 };
 const FILTER_OPTION = { flags: "--filter <json|@file>", description: "Query AST filter, inline JSON or @file" };
-const SORT_OPTION = { flags: "--sort <key:dir,...>", description: "Sort keys, e.g. amount:desc,created_time (max 3)" };
+// One comma-separated value. A placeholder ending in "..." would make the gateway
+// schema expect an array while commander passes one string.
+const SORT_OPTION = {
+  flags: "--sort <key:dir[,key:dir]>",
+  description: "Comma-separated sort keys, key[:asc|desc], e.g. amount:desc,created_time (max 3)",
+};
 const LIMIT_OPTION = { flags: "--limit <n>", description: "Rows per page, 1-500 (default 100)" };
 const CURSOR_OPTION = { flags: "--cursor <cursor>", description: "Opaque cursor from a previous page" };
 const ALL_OPTION = { flags: "--all", description: "Follow cursors until the end or --max-rows" };
@@ -378,10 +388,11 @@ export class BasesCommands {
   async aggregate(
     @Arg("base", { description: "Base id or slug" }) base: string,
     @Option({
-      flags: "--group-by <key[:unit]...>",
-      description: "Group by up to 2 keys; dates need a unit: day|week|month|quarter|year",
+      flags: "--group-by <key[:unit][,key[:unit]]>",
+      description:
+        "Comma-separated, up to 2 keys, e.g. created_time:month,status; dates need a unit: day|week|month|quarter|year",
     })
-    groupBy?: string[],
+    groupBy?: string,
     @Option({
       flags: "--agg <op:key:as...>",
       description: "Measures: count, count::n, sum:amount, avg:amount:avg_deal (default: count)",
@@ -815,14 +826,18 @@ export class BasesRowsCommands {
       const result = view
         ? await client.createViewRow(base, view, input, { idempotencyKey })
         : await client.createRow(base, input, { idempotencyKey });
+      const warnings = rowWriteWarnings(this.deps, idempotencyKey);
       const payload = {
         ...scope(client),
         baseRef: base,
         viewId: view ?? null,
         ...result.response,
         idempotencyKey: result.idempotencyKey,
+        ...(warnings.length > 0 ? { warnings } : {}),
       };
-      emit(payload, asJson, () => printRowWrite("created", result.response.row, result.response.idempotentReplay));
+      emit(payload, asJson, () =>
+        printRowWrite("created", result.response.row, result.response.idempotentReplay, warnings),
+      );
       return payload;
     });
   }
@@ -866,14 +881,18 @@ export class BasesRowsCommands {
       const result = view
         ? await client.updateViewRow(base, view, row, input, { idempotencyKey })
         : await client.updateRow(base, row, input, { idempotencyKey });
+      const warnings = rowWriteWarnings(this.deps, idempotencyKey);
       const payload = {
         ...scope(client),
         baseRef: base,
         viewId: view ?? null,
         ...result.response,
         idempotencyKey: result.idempotencyKey,
+        ...(warnings.length > 0 ? { warnings } : {}),
       };
-      emit(payload, asJson, () => printRowWrite("updated", result.response.row, result.response.idempotentReplay));
+      emit(payload, asJson, () =>
+        printRowWrite("updated", result.response.row, result.response.idempotentReplay, warnings),
+      );
       return payload;
     });
   }
@@ -2062,6 +2081,15 @@ function renderBasesError(error: ContractError, asJson: boolean | undefined): vo
 // ---------------------------------------------------------------------------
 // Output helpers
 
+/**
+ * Single-row writes from an agent session without --idempotency-key still run, with a
+ * warning. "Agent session" is the same check that attaches the ledger client hint.
+ */
+function rowWriteWarnings(deps: BasesCommandDeps, idempotencyKey: string | undefined): string[] {
+  if (idempotencyKey) return [];
+  return (deps.clientHint ?? currentBasesClientHint)() ? [MISSING_IDEMPOTENCY_KEY_WARNING] : [];
+}
+
 function scope(client: RaviBasesClient) {
   return { success: true as const, consoleUrl: client.consoleUrl, projectRef: client.projectRef };
 }
@@ -2162,8 +2190,9 @@ function printRow(row: BaseRow): void {
   if (row.body) console.log(`\n${row.body}`);
 }
 
-function printRowWrite(verb: string, row: BaseRow, replay: boolean): void {
+function printRowWrite(verb: string, row: BaseRow, replay: boolean, warnings: readonly string[] = []): void {
   console.log(`✓ Row ${verb}: ${row.rowId} v${row.version}${replay ? " (idempotent replay)" : ""}`);
+  for (const warning of warnings) console.log(`warning: ${warning}`);
 }
 
 function printPropertyMutation(verb: string, result: BasePropertyMutationResponse): void {
@@ -2298,6 +2327,12 @@ const rowWriteReturnSchema = z.object({
   idempotentReplay: z.boolean(),
 });
 
+const keyedRowWriteReturnSchema = rowWriteReturnSchema.extend({
+  idempotencyKey: z.string(),
+  /** Present when an agent session wrote without --idempotency-key. */
+  warnings: z.array(z.string()).optional(),
+});
+
 const propertyMutationReturnSchema = z.object({
   ...scopeShape,
   base: baseSummarySchema,
@@ -2371,8 +2406,8 @@ declareCommandReturns(BasesRowsCommands, {
     row: baseRowSchema,
     users: basesUsersSchema,
   }),
-  add: rowWriteReturnSchema.extend({ idempotencyKey: z.string() }),
-  update: rowWriteReturnSchema.extend({ idempotencyKey: z.string() }),
+  add: keyedRowWriteReturnSchema,
+  update: keyedRowWriteReturnSchema,
   archive: rowWriteReturnSchema,
   restore: rowWriteReturnSchema,
   purge: z.object({ ...scopeShape, baseRef: z.string(), purged: z.boolean(), rowId: z.string() }),

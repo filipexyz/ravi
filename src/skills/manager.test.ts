@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
@@ -8,7 +8,10 @@ import {
   installSkills,
   listCatalogSkills,
   listInstalledSkills,
+  listSkillFilePaths,
+  normalizeSkillFilePath,
   parseSkillSource,
+  readSkillFile,
   resolveSkillSource,
   SkillSourceError,
   selectSkills,
@@ -226,3 +229,51 @@ function skillFixture(name: string) {
   const resolved = resolveSkillSource(skillDir);
   return discoverSkills(resolved)[0];
 }
+
+describe("skill files", () => {
+  function diskSkill(): { dir: string; outside: string } {
+    const root = mkdtempSync(join(tmpdir(), "ravi-skill-files-"));
+    tempRoots.push(root);
+    const dir = join(root, "demo");
+    const outside = join(root, "outside");
+    mkdirSync(join(dir, "references", "nested"), { recursive: true });
+    mkdirSync(outside, { recursive: true });
+    writeFileSync(join(dir, "SKILL.md"), "---\nname: demo\ndescription: Demo\n---\n\n# Demo\n");
+    writeFileSync(join(dir, "references", "b.md"), "b\n");
+    writeFileSync(join(dir, "references", "nested", "a.txt"), "a\n");
+    writeFileSync(join(outside, "secret.md"), "secret\n");
+    symlinkSync(outside, join(dir, "references", "linked-dir"));
+    symlinkSync(join(outside, "secret.md"), join(dir, "references", "linked.md"));
+    return { dir, outside };
+  }
+
+  it("normalizes relative paths and refuses absolute or parent-relative ones", () => {
+    expect(normalizeSkillFilePath("./references//a.md")).toBe("references/a.md");
+    expect(normalizeSkillFilePath("references\\a.md")).toBe("references/a.md");
+    for (const unsafe of ["", "/etc/passwd", "../x.md", "references/../../x.md", "C:/x.md", "a\0b"]) {
+      expect(normalizeSkillFilePath(unsafe)).toBeNull();
+    }
+  });
+
+  it("lists disk skill files SKILL.md first, skipping links", () => {
+    const { dir } = diskSkill();
+    const [skill] = discoverSkills({ source: { type: "local", input: dir }, rootPath: dir });
+    expect(listSkillFilePaths(skill!)).toEqual(["SKILL.md", "references/b.md", "references/nested/a.txt"]);
+    expect(readSkillFile(skill!, "references/nested/a.txt")).toEqual({
+      path: "references/nested/a.txt",
+      content: "a\n",
+    });
+    expect(readSkillFile(skill!, "references/linked.md")).toBeNull();
+    expect(readSkillFile(skill!, "references/linked-dir/secret.md")).toBeNull();
+    expect(readSkillFile(skill!, "../outside/secret.md")).toBeNull();
+  });
+
+  it("serves catalog skill files from memory", () => {
+    const bases = listCatalogSkills().find((skill) => skill.name === "bases")!;
+    const paths = listSkillFilePaths(bases);
+    expect(paths[0]).toBe("SKILL.md");
+    expect(paths).toContain("references/views-access-forms.md");
+    expect(readSkillFile(bases, "SKILL.md")?.content).toBe(bases.content);
+    expect(readSkillFile(bases, "references/nope.md")).toBeNull();
+  });
+});

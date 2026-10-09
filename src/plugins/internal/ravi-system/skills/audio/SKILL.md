@@ -10,6 +10,9 @@ description: |
 
 # Audio Generation (TTS)
 
+> Verbos: AGIR (mídia). Compõe com: whatsapp, pages.
+> Solução com mais de uma peça? `ravi skills show solucoes` primeiro.
+
 Gera áudio a partir de texto usando ElevenLabs Text-to-Speech.
 
 ## Contrato Do CLI

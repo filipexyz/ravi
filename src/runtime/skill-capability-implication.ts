@@ -33,6 +33,26 @@ function isSemanticCommandCapability(capability: ContextCapability): boolean {
   return capability.permission === "read" || capability.permission === "mutate";
 }
 
+/**
+ * Capabilities that authorize `ravi skills show`, as `listCliCommandAccessCandidates`
+ * derives them for its `read skills.show` access (kept literal: importing the
+ * command-access module here would load the permission runtime at CLI init).
+ */
+export const SKILLS_SHOW_CAPABILITY_CANDIDATES: readonly Omit<ContextCapability, "source">[] = [
+  { permission: "read", objectType: "skills", objectId: "show" },
+  { permission: "read", objectType: "skills", objectId: "*" },
+  { permission: "read", objectType: "skills.show", objectId: "*" },
+  { permission: "execute", objectType: "group", objectId: "skills_show" },
+  { permission: "execute", objectType: "group", objectId: "skills" },
+];
+
+/** Whether a capability snapshot may run `ravi skills show`. */
+export function canRunSkillsShow(capabilities: readonly ContextCapability[]): boolean {
+  return SKILLS_SHOW_CAPABILITY_CANDIDATES.some((candidate) =>
+    canWithCapabilities([...capabilities], candidate.permission, candidate.objectType, candidate.objectId),
+  );
+}
+
 export function capabilityMatchesGroupRule(capability: ContextCapability, pattern: RegExp): boolean {
   if (capability.permission === "execute" && capability.objectType === "group") {
     return capability.objectId !== "*" && pattern.test(capability.objectId);

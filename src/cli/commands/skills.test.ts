@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -15,6 +15,7 @@ import { createRuntimeContext } from "../../runtime/context-registry.js";
 import { createRuntimeHostServices } from "../../runtime/host-services.js";
 import { authorizePiToolCall } from "../../runtime/pi-tool-permissions.js";
 import { formatSkillNotAuthorizedReason } from "../../runtime/skill-authorization.js";
+import { buildSkillVisibilitySnapshot, markLoadedFromRaviSkillToolCall } from "../../runtime/skill-visibility.js";
 import { contractErrorResponse } from "../../sdk/gateway/errors.js";
 import * as skillManager from "../../skills/manager.js";
 import type { ResolvedSkillSource } from "../../skills/manager.js";
@@ -714,7 +715,8 @@ describe("skills agent-first contract", () => {
       .listCatalogSkills()
       .find(
         (skill) =>
-          skill.name !== KNOWN_CATALOG_SKILL && !["sessions", "tasks", "specs", "skill-creator"].includes(skill.name),
+          skill.name !== KNOWN_CATALOG_SKILL &&
+          !["sessions", "tasks", "specs", "skill-creator", "solucoes"].includes(skill.name),
       );
     expect(deniedSkill).toBeDefined();
 
@@ -1195,5 +1197,175 @@ describe("skills install --source for a single on-disk skill (bug 2b7fcc09)", ()
     await expect(
       services.authorizeCommandExecution({ command: "cat ~/.agents/skills/find-skills/SKILL.md", input: {} }),
     ).resolves.toEqual({ approved: false, reason: formatSkillNotAuthorizedReason("find-skills", agentId) });
+  });
+});
+
+describe("skills show --file", () => {
+  const BASES_REFERENCE = "references/views-access-forms.md";
+
+  function catalogBases() {
+    const bases = skillManager.listCatalogSkills().find((skill) => skill.name === "bases");
+    expect(bases).toBeDefined();
+    return bases!;
+  }
+
+  it("prints one reference with the skill header first and the file list last", () => {
+    const reference = catalogBases().files!.find((file) => file.path === BASES_REFERENCE)!;
+    const output = captureLogs(() =>
+      runWithContext({}, () => new SkillsCommands().show("bases", undefined, undefined, false, BASES_REFERENCE)),
+    );
+    const lines = output.split("\n");
+    expect(lines.slice(0, 2)).toEqual(["# bases", `File: ${BASES_REFERENCE}`]);
+    expect(output).toContain(reference.content.trimEnd());
+    expect(output).not.toContain("name: bases");
+    const last = lines.at(-1)!;
+    expect(last).toStartWith("Files in this skill: SKILL.md, references/");
+    expect(last).toContain(BASES_REFERENCE);
+  });
+
+  it("prints only the file's bytes with --raw, so a skeleton can be copied with a redirect", () => {
+    const reference = catalogBases().files!.find((file) => file.path === BASES_REFERENCE)!;
+    const writes: string[] = [];
+    const originalWrite = process.stdout.write;
+    process.stdout.write = ((chunk: string | Uint8Array) => {
+      writes.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+      return true;
+    }) as typeof process.stdout.write;
+    let logs = "";
+    try {
+      logs = captureLogs(() =>
+        runWithContext({}, () =>
+          new SkillsCommands().show("bases", undefined, undefined, false, BASES_REFERENCE, true),
+        ),
+      );
+    } finally {
+      process.stdout.write = originalWrite;
+    }
+    expect(writes.join("")).toBe(reference.content);
+    expect(logs).toBe("");
+  });
+
+  it("adds files[] to --json and file{} with --file, keeping the skill record", () => {
+    const bases = catalogBases();
+    const plain = withoutLogs(() =>
+      runWithContext({}, () => new SkillsCommands().show("bases", undefined, undefined, true)),
+    );
+    expect(plain.skill.content).toBe(bases.content);
+    expect(plain.files[0]).toBe("SKILL.md");
+    expect(plain.files).toContain(BASES_REFERENCE);
+    expect(plain).not.toHaveProperty("file");
+
+    const payload = withoutLogs(() =>
+      runWithContext({}, () => new SkillsCommands().show("bases", undefined, undefined, true, `./${BASES_REFERENCE}`)),
+    );
+    expect(payload.skill).toMatchObject({ name: "bases", content: bases.content });
+    expect(payload.files).toEqual(plain.files);
+    expect(payload.file).toEqual({
+      path: BASES_REFERENCE,
+      content: bases.files!.find((file) => file.path === BASES_REFERENCE)!.content,
+    });
+  });
+
+  it("rejects an unknown file and lists the skill's files, also through the remote gateway", async () => {
+    const error = expectContractError(() =>
+      runWithContext({}, () =>
+        new SkillsCommands().show("bases", undefined, undefined, true, "references/nao-existe.md"),
+      ),
+    );
+    expect(error).toMatchObject({ code: "SKILL_FILE_NOT_FOUND", exitCode: 1, op: "skills show" });
+    const envelope = error.envelope().error;
+    expect(envelope.message).toBe("File not found in skill bases: references/nao-existe.md");
+    expect(envelope.files).toContain(BASES_REFERENCE);
+    const issueMessages = (envelope.issues as Array<{ message: string }>).map((issue) => issue.message);
+    expect(issueMessages.some((message) => message.startsWith("Files in this skill: SKILL.md, "))).toBe(true);
+    expect(issueMessages.join(" ")).toContain(BASES_REFERENCE);
+
+    const { remote } = await throughRemoteGateway(error);
+    expect(remote?.message).toBe("file: File not found in skill bases: references/nao-existe.md");
+    const remoteIssues = (remote?.envelope().error.issues ?? []) as Array<{ message: string }>;
+    expect(remoteIssues.map((issue) => issue.message).join(" ")).toContain(BASES_REFERENCE);
+  });
+
+  it("rejects absolute and parent-relative paths as usage errors", () => {
+    for (const path of ["/etc/passwd", "../pages/SKILL.md", "references/../../pages/SKILL.md", "C:\\x.md"]) {
+      const error = expectContractError(() =>
+        runWithContext({}, () => new SkillsCommands().show("bases", undefined, undefined, true, path)),
+      );
+      expect(error).toMatchObject({ code: "SKILL_FILE_INVALID", exitCode: 2 });
+      expect(error.envelope().error.files).toContain("SKILL.md");
+    }
+  });
+
+  it("reads a source skill from disk without following links out of it", () => {
+    const root = mkdtempSync(join(tmpdir(), "skills-show-file-"));
+    try {
+      const dir = writeSkillDir(root, "demo-files", "Demo with references");
+      mkdirSync(join(dir, "references"), { recursive: true });
+      writeFileSync(join(dir, "references", "guia.md"), "# Guia\n\nconteudo\n");
+      writeFileSync(join(dir, ".env"), "SECRET=1\n");
+      writeFileSync(join(root, "outside.md"), "outside\n");
+      symlinkSync(join(root, "outside.md"), join(dir, "references", "fora.md"));
+
+      const payload = withoutLogs(() =>
+        runWithContext({}, () => new SkillsCommands().show("demo-files", dir, undefined, true, "references/guia.md")),
+      );
+      expect(payload.files).toEqual(["SKILL.md", "references/guia.md"]);
+      expect(payload.file).toEqual({ path: "references/guia.md", content: "# Guia\n\nconteudo\n" });
+
+      for (const hidden of ["references/fora.md", ".env"]) {
+        const error = expectContractError(() =>
+          runWithContext({}, () => new SkillsCommands().show("demo-files", dir, undefined, true, hidden)),
+        );
+        expect(error).toMatchObject({ code: "SKILL_FILE_NOT_FOUND", exitCode: 1 });
+        expect(error.envelope().error.files).toEqual(["SKILL.md", "references/guia.md"]);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("checks the agent allowlist before reading a file", () => {
+    const agentId = "skills-show-file-agent";
+    dbCreateAgent({ id: agentId, cwd: "/tmp/skills-show-file-agent" });
+    withoutLogs(() =>
+      runWithContext({}, () => new SkillsCommands().grant(agentId, KNOWN_CATALOG_SKILL, undefined, true)),
+    );
+
+    const denied = expectContractError(() =>
+      runWithContext({ transport: "tool", agentId }, () =>
+        new SkillsCommands().show("bases", undefined, undefined, true, "references/nao-existe.md"),
+      ),
+    );
+    expect(denied.code).toBe("SKILL_NOT_AUTHORIZED");
+
+    const solucoes = withoutLogs(() =>
+      runWithContext({ transport: "tool", agentId }, () =>
+        new SkillsCommands().show("solucoes", undefined, undefined, true, "references/casos.md"),
+      ),
+    );
+    expect(solucoes.file?.path).toBe("references/casos.md");
+  });
+
+  it("marks the skill loaded from a --file read, text or JSON", () => {
+    const command = `ravi skills show bases --file ${BASES_REFERENCE}`;
+    const text = captureLogs(() =>
+      runWithContext({}, () => new SkillsCommands().show("bases", undefined, undefined, false, BASES_REFERENCE)),
+    );
+    const json = withoutLogs(() =>
+      runWithContext({}, () => new SkillsCommands().show("bases", undefined, undefined, true, BASES_REFERENCE)),
+    );
+    for (const [toolInput, output] of [
+      [{ command }, text],
+      [{ command: `${command} --json` }, JSON.stringify(json)],
+    ] as const) {
+      const loaded = markLoadedFromRaviSkillToolCall(buildSkillVisibilitySnapshot([], 1), {
+        provider: "grok",
+        toolName: "Bash",
+        toolInput,
+        output,
+        now: 2,
+      });
+      expect(loaded.loadedSkills).toEqual(["bases"]);
+    }
   });
 });

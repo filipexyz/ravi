@@ -3,9 +3,9 @@
 ## Importar
 
 ```bash
-ravi bases rows import pipeline deals.csv --json                       # dry-run: exit 3 com mapeamento e lotes
-ravi bases rows import pipeline deals.csv --map "Deal Name=name" --map "Notas=body" --map "Interno=-" --json
-ravi bases rows import pipeline deals.csv --map "Deal Name=name" --batch 200 --json --execute
+ravi bases rows import tarefas tarefas.csv --json                       # dry-run: exit 3 com mapeamento e lotes
+ravi bases rows import tarefas tarefas.csv --map "Tarefa=titulo" --map "Notas=body" --map "Interno=-" --json
+ravi bases rows import tarefas tarefas.csv --map "Tarefa=titulo" --batch 200 --json --execute
 ```
 
 Como funciona:
@@ -20,13 +20,13 @@ Como funciona:
    `,` `;` ou quebra de linha), `ref` (`tipo:id`), `date` (`2026-01-01` ou
    `2026-01-01/2026-01-31`). Selects vão pelo nome; o Console resolve o id.
 4. Qualquer célula inválida para o tipo falha com `PAYLOAD_INVALID` e
-   `issues` (linha, coluna) ANTES do freio. Corrija o CSV ou pule a coluna.
+   `issues` (linha, coluna) antes do freio. Corrija o CSV ou pule a coluna.
 5. Sem `--execute`: exit 3 com linhas, lotes, mapeamento e prefixo de chave.
 6. Com `--execute`: envia lotes de até 500 linhas (`--batch`, e no máximo
    ~900 KiB por request), em ordem.
 
 Idempotência: o lote `i` usa a chave `ravi-import:<hash do arquivo, projeto,
-base e mapeamento>:<i>`. Se a importação cair no meio, rode o MESMO comando:
+base e mapeamento>:<i>`. Se a importação cair no meio, rode o mesmo comando:
 lotes já gravados voltam como replay (`idempotentReplay: true`) e o resto é
 criado. Mudar `--batch` muda os lotes; o Console recusa com `CONFLICT`
 (`idempotency_conflict`) em vez de duplicar. Em falha, `error.importProgress`
@@ -38,9 +38,9 @@ de select (o Console aceita nomes de opção, mas nome desconhecido falha).
 ## Exportar
 
 ```bash
-ravi bases rows export pipeline --format csv --out pipeline.csv
-ravi bases rows export pipeline --view <view-id> --format json --out minha-view.json
-ravi bases rows export pipeline --filter @filtro.json --sort amount:desc --include-body --format csv
+ravi bases rows export tarefas --format csv --out tarefas.csv
+ravi bases rows export tarefas --view <view-id> --format json --out minha-view.json
+ravi bases rows export tarefas --filter @filtro.json --sort prazo,horas:desc --include-body --format csv
 ```
 
 - Segue todos os cursores até `--max-rows` (padrão e máximo 100.000) e marca

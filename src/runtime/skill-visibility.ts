@@ -707,10 +707,11 @@ function detectLoadedSkillFromRaviSkillToolCall(
   snapshot: RuntimeSkillVisibilitySnapshot,
   input: RaviSkillToolCallInput,
 ): LoadedSkillDescriptor | null {
-  const outputSkill = parseSkillFromShowOutput(input.output);
   const dedicatedToolSkill = extractDedicatedSkillShowName(input.toolName, input.toolInput);
   const command = extractCommandFromToolInput(input.toolInput);
   const commandSkill = command ? extractRaviSkillShowNameFromCommand(command) : null;
+  // `--raw` prints the file's own bytes, whose first heading is not the skill.
+  const outputSkill = command && RAVI_SKILLS_SHOW_RAW.test(command) ? null : parseSkillFromShowOutput(input.output);
   if (!dedicatedToolSkill && !commandSkill) {
     return null;
   }
@@ -831,6 +832,10 @@ const SHELL_SEGMENT_SEPARATOR = /\|\||&&|[;&|\r\n]/;
 const SHELL_EXPANSION_OR_REDIRECT = /[`$<>]/;
 const RAVI_SKILLS_SOURCE_COMMAND =
   /^\s*(?:\.\/)?(?:bin\/ravi|ravi|\/[^\s"'`]+\/bin\/ravi)\s+skills\s+(?:install|list)\s[^\n]*--source\b/;
+const RAVI_SKILLS_SHOW_COMMAND = /(?:^|[\s"'`])(?:\.\/)?(?:bin\/ravi|ravi|\/[^\s"'`]+\/bin\/ravi)\s+skills\s+show\b/;
+const RAVI_SKILLS_SHOW_RAW =
+  /(?:^|[\s"'`])(?:\.\/)?(?:bin\/ravi|ravi|\/[^\s"'`]+\/bin\/ravi)\s+skills\s+show\b[^;&|\n\r]*\s--raw\b/;
+const SKILL_SHOW_FILE_OPTION = /\s--file(?:=|\s+)("[^"]*"|'[^']*'|\S+)/g;
 
 /**
  * Every skill a shell line references, scanned per `;`/`&`/`&&`/`||`/`|`/newline
@@ -850,8 +855,14 @@ export function extractRequestedSkillsFromCommandLine(command: string): string[]
     if (!segment.trim()) continue;
     add(extractRaviSkillShowNameFromCommand(segment));
     if (RAVI_SKILLS_SOURCE_COMMAND.test(segment) && !SHELL_EXPANSION_OR_REDIRECT.test(segment)) continue;
-    add(extractSkillNameFromFilesystemPath(segment));
-    for (const token of shellishTokens(segment)) {
+    // `skills show <skill> --file <path>` reads a file of the skill it names;
+    // the path is relative to that skill, so it never names another one. A
+    // value that expands could read anything, so that one is still scanned.
+    const scanned = RAVI_SKILLS_SHOW_COMMAND.test(segment)
+      ? segment.replace(SKILL_SHOW_FILE_OPTION, (option, value: string) => (/[`$]/.test(value) ? option : " "))
+      : segment;
+    add(extractSkillNameFromFilesystemPath(scanned));
+    for (const token of shellishTokens(scanned)) {
       if (/SKILL\.md/i.test(token)) add(extractSkillNameFromFilesystemPath(token));
     }
   }
@@ -903,7 +914,12 @@ function resolveSkillNameFromKnownSkillPaths(normalizedPath: string): string | n
     if (normalizedPath === skillFile || normalizedPath === skillDir) {
       return skill.name;
     }
-    if (skillFile && (normalizedPath.endsWith(`/${skillFile}`) || skillFile.endsWith(`/${normalizedPath}`))) {
+    // A bare relative name such as `SKILL.md` names no skill.
+    if (
+      skillFile &&
+      (normalizedPath.endsWith(`/${skillFile}`) ||
+        (normalizedPath.includes("/") && skillFile.endsWith(`/${normalizedPath}`)))
+    ) {
       return skill.name;
     }
     if (skillDir && (normalizedPath === skillDir || normalizedPath.startsWith(`${skillDir}/`))) {
@@ -956,7 +972,7 @@ export function extractRaviSkillShowNameFromCommand(command: string): string | n
   }
 
   const tokens = shellishTokens(match[1] ?? "");
-  const optionsWithValue = new Set(["--source", "-s"]);
+  const optionsWithValue = new Set(["--source", "-s", "--file"]);
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index];
     if (!token) continue;
@@ -964,7 +980,7 @@ export function extractRaviSkillShowNameFromCommand(command: string): string | n
       index++;
       continue;
     }
-    if (token.startsWith("--source=")) {
+    if (token.startsWith("--source=") || token.startsWith("--file=")) {
       continue;
     }
     if (token.startsWith("-")) {

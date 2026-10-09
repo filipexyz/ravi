@@ -1,15 +1,18 @@
 ---
 name: crm-manager
 description: |
-  Opera o CRM nativo do Ravi sobre contatos. Use quando precisar:
-  - Ler ou atualizar card CRM de um contato
-  - Criar contas, oportunidades, stakeholders e follow-ups
-  - Propor, confirmar ou rejeitar facts de CRM com evidencia
-  - Ensinar agentes a trabalhar com relacionamento, pipeline e next actions
-  - Decidir quando escrever campo forte versus proposta revisavel
+  Opera o CRM local do Ravi sobre contatos (`ravi crm`): relacionamento, pipeline, facts e follow-ups que só agents usam. Use quando precisar:
+  - ler ou atualizar o card CRM de um contato
+  - criar contas, oportunidades, stakeholders e follow-ups
+  - propor, confirmar ou rejeitar facts com evidência
+  - decidir entre campo forte e proposta revisável
+  Pipeline que pessoas do time veem ou editam numa tela é Bases + Pages (skill bases; para decidir, skill solucoes). Um dono por campo: não espelhe CRM e base sem sync.
 ---
 
 # CRM Manager
+
+> Verbos: GUARDAR (local, só agentes). Compõe com: contacts, cron, bases.
+> Solução com mais de uma peça? `ravi skills show solucoes` primeiro.
 
 Voce opera o CRM nativo do Ravi. O CRM e a camada de relacionamento acima de
 `contacts`; ele nao substitui identidade, policy, chats, sessoes ou mensagens.
@@ -30,6 +33,12 @@ usar cada operacao, as regras do funil e as armadilhas do dominio.
 - `crm_events`: ledger append-only que explica por que o estado mudou.
 
 Nunca confunda policy status com lifecycle CRM.
+
+## Quando é Base
+
+- O CRM local é memória de agente, sem tela. Se gente do time vê ou edita o dado numa tela, ele vai para Bases + Pages (skill `bases`; para decidir, `solucoes`).
+- Um dono por campo: CRM ou base, nunca os dois, porque espelhar sem sync diverge calado.
+- Na linha, ligue o contato por `ref` (`{"type": "contact", "id": "<contact-id>"}`), não por nome copiado: a identidade fica no `contacts`.
 
 ## Contrato Do CLI
 
@@ -103,7 +112,7 @@ Use facts para memoria revisavel e evidenciada. Chaves boas:
 `opportunity.need` · `account.context` · `risk.objection` · `followup.commitment`
 
 Use `--status confirmed` so quando a confirmacao ja estiver clara no pedido ou na fonte;
-caso contrario deixe `proposed`. Fact confirmado NAO propaga para campo forte — aplique o
+caso contrario deixe `proposed`. Fact confirmado nao propaga para campo forte — aplique o
 campo forte separadamente quando essa for a decisao correta.
 
 ## Idempotencia
@@ -154,7 +163,7 @@ ravi cron add commitment-digest-morning --cron "0 8 * * *" \
 
 ### Quando o cliente muda de ideia
 
-Sempre atualize a row existente (mesma idempotency key), NUNCA crie nova:
+Sempre atualize a row existente (mesma idempotency key), nunca crie nova:
 
 - **Cancela**: `crm task cancel <id>` -> status `canceled`.
 - **Reagenda**: `crm task snooze <id> --until <novo-due>` -> status `snoozed` e o due_at
@@ -163,13 +172,13 @@ Sempre atualize a row existente (mesma idempotency key), NUNCA crie nova:
   cria/atualiza a oportunidade ganha.
 
 Cada mutacao emite `crm_events` correspondente — a timeline reconstroi o arco da
-negociacao. Para evitar dupla notificacao no mesmo dia, o cron MAY filtrar tarefas com
+negociacao. Para evitar dupla notificacao no mesmo dia, o cron pode filtrar tarefas com
 `metadata.last_digested_at` recente.
 
 ### Regras de ouro
 
 - Commitment E sempre uma row em `crm_tasks`. Nao e cron, nao e trigger, nao e fact.
-- Cancelamento/reschedule MUST atualizar a row existente, nao criar nova.
+- Desmarcar ou reagendar atualiza a row existente, nao cria nova.
 - Digest E read-only — observa, nao muta status.
 - Sem due concreto nao vira commitment. Promessa vaga ("te aviso quando puder") fica
   como `follow_up` (default) sem `--due`, e por isso nunca entra no digest.

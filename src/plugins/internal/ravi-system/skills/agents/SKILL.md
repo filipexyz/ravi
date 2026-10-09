@@ -324,12 +324,12 @@ Sem `--execute`, `reset` é dry-run (exit 3) e mostra no `plan` exatamente quais
 
 ### Enviar prompt
 ```bash
-ravi agents run <id> "prompt"
+ravi sessions send <session> "prompt" -a <id> -w   # cria a sessão com o agent <id> se não existir e espera a resposta
 ```
 
 ### Chat interativo
 ```bash
-ravi agents chat <id>
+ravi sessions send <session> -a <id> -i
 ```
 
 ## Receita Completa: Agent Pessoal com Grupo WhatsApp

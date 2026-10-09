@@ -103,6 +103,23 @@ automation must use `--stdin` with redirected input. Never put the password in
 an argument, environment variable, log, or JSON payload outside the command's
 authenticated HTTPS request body.
 
+## Bases and Pages
+
+Bases are typed tables of a Console project (`ravi bases`); the screen over them
+is a Ravi Page that reads a view. To build a solution (a screen, intake from a
+channel, an approval, an automation), start with the `solucoes` skill; syntax
+lives in the `bases` and `pages` skills.
+
+```bash
+ravi skills show solucoes   # who sees what, the six-verb sheet, the eight rules
+ravi skills show bases      # schema, views as access contracts, rows, row events
+ravi skills show pages      # ship, host-wide --uses, data pages
+```
+
+- Live data pages are for signed-in org members, on `private` or `protected_link` routes. Outsiders use a channel and get messages or snapshots. `ravi pages ship` refuses `ravi.bases.*` in `--uses` on a public route unless `--members-best-effort` is passed on purpose.
+- `--uses` covers the whole host: every ship lists the union of the ids all data pages on that host call.
+- Row changes arrive as `ravi.console.inbox.item` (`category: "bases"`) after `ravi bases subscribe <base>`. A trigger whose agent writes the same base filters `data.actor.type == "user"`.
+
 ## Topics
 
 For full topic reference with payloads, see the **events** skill (`src/plugins/internal/ravi-system/skills/events/SKILL.md`).
@@ -310,6 +327,7 @@ ravi triggers rm <id> --execute
 - `ravi.*.cli.{group}.{command}` - CLI command audit events emitted from an agent session
 - `ravi._cli.cli.{group}.{command}` - CLI command audit events emitted outside an agent session
 - `ravi.inbound.reaction` - Normalized emoji reactions
+- `ravi.console.inbox.item` - Console Agent Inbox items, including Bases row events (`category: "bases"`; payload has ids and, for `bases.row.*`, the row values read at delivery in `payload.row`; envelope has `actor.type` and `dedupeKey`). Enable per base with `ravi bases subscribe <base>`
 - `ravi.audit.denied` - Permission or policy denial events
 - The catalog is hints/templates, not a whitelist. Custom publisher subjects are allowed when emitted by local code or another NATS publisher.
 
@@ -429,25 +447,24 @@ ravi agents permissions dev explicit-only --capabilities use:tool:Bash,read:cryp
 ravi agents permissions dev none                  # Reset to bootstrap minimum immediately (not zero-authority)
 ```
 
-The legacy relation ledger remains available for audit/migration:
+Least privilege is an explicit capability list on the agent, in the form
+`permission:objectType:objectId`. `--capabilities` replaces the list, so repeat
+the capabilities the agent already has:
 
 ```bash
-ravi permissions grant agent:dev use tool:Bash
-ravi permissions grant agent:dev execute executable:git
-ravi permissions grant agent:dev execute group:contacts
-ravi permissions grant agent:dev access session:dev-*
-ravi permissions revoke agent:dev use tool:Bash
-ravi permissions check agent:dev execute group:contacts
-ravi permissions list --subject agent:dev
-ravi permissions init agent:dev sdk-tools        # Template: SDK tools only
-ravi permissions init agent:dev safe-executables # Template: safe CLIs only
-ravi permissions sync                            # Re-sync from config
-ravi permissions clear                           # Clear manual relations
+ravi agents permissions dev bootstrap --capabilities use:tool:Bash,execute:executable:git,execute:group:contacts,access:session:dev-* --execute
+ravi agents permissions dev --clear-capabilities                         # Drop the explicit list, keep the profile
+ravi permissions materialize --subject-type agent --subject-id dev --json  # What dev can do now
+ravi permissions check --permission execute --object-type group --object-id contacts --json
+ravi permissions allow <profile> --to agent:dev --capabilities <permission>:<objectType>:<objectId> --apply  # Shared profile
+ravi permissions status                                                  # Active permission chain
 ```
 
-**Relations:** `admin`, `use` (tools), `execute` (executables/CLI groups), `access`/`modify` (sessions), `write_contacts`, `read_own_contacts`, `read_tagged_contacts`, `read_contact`
+**Permissions:** `admin`, `use` (tools), `execute` (executables/CLI groups), `access`/`modify` (sessions), `write_contacts`, `read_own_contacts`, `read_tagged_contacts`, `read_contact`
 
-**Entity types:** `agent`, `system`, `group`, `session`, `contact`, `tool`, `executable`, `cron`, `trigger`, `team`
+**Object types:** `agent`, `system`, `group`, `session`, `contact`, `tool`, `executable`, `cron`, `trigger`, `team`
+
+Subcommand groups are their own objects: `ravi bases rows add` needs `execute:group:bases_rows` (or the semantic `mutate:bases.rows:add`), so `execute:group:bases` alone does not cover `ravi bases rows`.
 
 **Enforcement:** New agents start with bootstrap runtime permissions. Denied actions emit audit events to `ravi.audit.denied`.
 
@@ -572,8 +589,8 @@ ravi agents show <id>               # Show agent details
 ravi agents create <id> <cwd>       # Create agent
 ravi agents set <id> <key> <value>  # Set property
 ravi agents debounce <id> <ms>      # Set debounce
-ravi agents run <id> "prompt"       # Send prompt and stream response
-ravi agents chat <id>               # Interactive chat mode (/reset, /session, /exit)
+ravi sessions send <session> "prompt" -a <id> -w  # Send a prompt to a session of agent <id> and wait for the reply
+ravi sessions send <session> -a <id> -i           # Interactive mode
 ravi agents session <id>            # Check session status
 ravi agents reset <id> --execute              # Reset main session (sem --execute e dry-run, exit 3)
 ravi agents reset <id> <sessionKey> --execute # Reset specific session
@@ -644,14 +661,12 @@ ravi triggers set <id> <key> <value> # Set property
 ravi triggers test <id> --execute    # Test with fake event (dry-run without --execute)
 ravi triggers rm <id> --execute      # Delete trigger (dry-run sem --execute)
 
-# Permissions (REBAC)
-ravi permissions grant <subject> <relation> <object>
-ravi permissions revoke <subject> <relation> <object>
-ravi permissions check <subject> <permission> <object>
-ravi permissions list                # List all relations
-ravi permissions init <subject> <template>  # Apply template
-ravi permissions sync                # Re-sync from config
-ravi permissions clear               # Clear manual relations
+# Permissions (provider runtime)
+ravi agents permissions <id> <profile> [--capabilities <list>] --execute  # Profiles: bootstrap, chat-only, explicit-only, full-access, none
+ravi permissions status              # Active permission chain
+ravi permissions check --permission <p> --object-type <t> --object-id <id>
+ravi permissions list --chat <chat>  # Contact profile grants in a chat scope
+ravi permissions allow <profile> --to agent:<id> --apply
 
 # Reactions
 ravi react send <messageId> <emoji>  # Send emoji reaction
@@ -662,13 +677,12 @@ ravi react send <messageId> <emoji>  # Send emoji reaction
 Use the CLI to interact with agents directly (daemon must be running):
 
 ```bash
-# Send a single prompt
-ravi agents run main "lista os agentes"
-ravi agents run main "oi, tudo bem?"
+# Send a single prompt and wait for the reply (creates session teste-main for agent main)
+ravi sessions send teste-main "lista os agentes" -a main -w
+ravi sessions send teste-main "oi, tudo bem?" -w
 
-# Interactive chat mode
-ravi agents chat main
-# Commands: /reset, /session, /exit
+# Interactive mode
+ravi sessions send teste-main -i
 
 # Check session status
 ravi agents session main
@@ -689,12 +703,10 @@ agents_show      # ravi agents show <id>
 contacts_list    # ravi contacts list
 ```
 
-Tool and executable access is controlled via REBAC permissions:
+Tool and executable access is controlled by the agent's runtime permissions:
 
 ```bash
-ravi permissions grant agent:main use tool:Bash          # Allow SDK tool
-ravi permissions grant agent:main execute executable:git  # Allow CLI executable
-ravi permissions grant agent:main execute group:contacts  # Allow CLI command group
+ravi agents permissions main bootstrap --capabilities use:tool:Bash,execute:executable:git,execute:group:contacts --execute  # Explicit list; replaces the previous one
 ravi agents permissions main full-access --execute        # Full Ravi runtime profile (dry-run sem --execute)
 ravi agents permissions main chat-only                    # Reception agent (conversation only)
 ravi agents permissions main none                         # Reset overlay to bootstrap minimum

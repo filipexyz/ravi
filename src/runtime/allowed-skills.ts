@@ -42,12 +42,15 @@ export {
  * Kit essencial que todo agente recebe automaticamente (Invariant B).
  * Nomes usam o slug flat da tabela DEFAULT_RAVI_GROUP_SKILL_RULES; a
  * conversão para nome aceito por cada provider é feita em `expandSkillNames`.
+ * `solucoes` é só leitura (a porta de entrada para montar soluções): não tem
+ * grupo de comando nem regra default de gate.
  */
 export const BASELINE_SYSTEM_SKILL_SLUGS: readonly string[] = [
   "ravi-system-sessions",
   "ravi-system-tasks",
   "ravi-system-specs",
   "ravi-system-skill-creator",
+  "ravi-system-solucoes",
 ];
 
 export interface ResolvedAgentSkills {

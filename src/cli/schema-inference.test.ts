@@ -62,6 +62,11 @@ describe("parseFlags", () => {
     expect(parseFlags("--items [a...]")).toMatchObject({ name: "items", kind: "variadic" });
   });
 
+  it("matches commander: '...' after a non-word character is not variadic", () => {
+    expect(parseFlags("--sort <key:dir,...>")).toMatchObject({ name: "sort", kind: "required-value" });
+    expect(parseFlags("--group-by <key[:unit]...>")).toMatchObject({ name: "groupBy", kind: "required-value" });
+  });
+
   it("parses short + long flag with value", () => {
     expect(parseFlags("-l, --limit <n>")).toMatchObject({
       shortFlag: "-l",

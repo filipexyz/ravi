@@ -7,15 +7,16 @@ em modo `aggregate`.
 
 Não há tela de gráficos no Console. O agent cria o gráfico pelo CLI e o
 desenha numa Ravi Page gerada, com os dados de `ravi.bases.charts.data`
-(`pages.md`, seção Gráficos e dashboards).
+(`ravi skills show pages --file references/layouts.md`, seção Gráficos e
+dashboards).
 
 ```bash
-ravi bases charts list pipeline --json
-ravi bases charts create pipeline --view <view-id> --name "Pipeline por mês" --spec @chart.json --json
-ravi bases charts show pipeline <chart-id> --json
-ravi bases charts update pipeline <chart-id> --spec '{"spec":{"mark":"line","encoding":{...}}}' --json
-ravi bases charts data pipeline <chart-id> --json
-ravi bases charts archive pipeline <chart-id> --json --execute
+ravi bases charts list tarefas --json
+ravi bases charts create tarefas --view <view-id> --name "Horas por mês" --spec @chart.json --json
+ravi bases charts show tarefas <chart-id> --json
+ravi bases charts update tarefas <chart-id> --spec '{"spec":{"mark":"line","encoding":{...}}}' --json
+ravi bases charts data tarefas <chart-id> --json
+ravi bases charts archive tarefas <chart-id> --json --execute
 ```
 
 `--spec` aceita o corpo completo `{viewId, name, description?, spec: {mark, encoding, title?}}`
@@ -35,37 +36,37 @@ ou só `{mark, encoding, title?}` junto com `--view` e `--name`.
 | `stack` | em `y` de `bar`/`area`: `zero`, `normalize`, ou `null` (sem empilhar) |
 | `title` | rótulo do eixo/gráfico |
 
-Os canais sem `aggregate` viram dimensões (máximo 2, como no `--group-by`); os
-com `aggregate` viram medidas.
+Os canais sem `aggregate` viram dimensões (no máximo 2, como no `aggregate`);
+os com `aggregate` viram medidas.
 
 ## Exemplos
 
-Pipeline por mês, empilhado por estágio:
+Horas por mês de prazo, empilhadas por status:
 
 ```json
 { "mark": "bar",
   "encoding": {
-    "x": { "field": "close_date", "timeUnit": "month", "type": "temporal", "title": "Mês" },
-    "y": { "field": "amount", "aggregate": "sum", "type": "quantitative", "title": "Valor" },
-    "color": { "field": "stage", "type": "nominal" } } }
+    "x": { "field": "prazo", "timeUnit": "month", "type": "temporal", "title": "Mês" },
+    "y": { "field": "horas", "aggregate": "sum", "type": "quantitative", "title": "Horas" },
+    "color": { "field": "status", "type": "nominal" } } }
 ```
 
-Distribuição por estágio (donut):
+Distribuição por status (donut):
 
 ```json
 { "mark": { "type": "arc", "innerRadius": 60 },
   "encoding": {
     "theta": { "aggregate": "count", "type": "quantitative" },
-    "color": { "field": "stage", "type": "nominal" } } }
+    "color": { "field": "status", "type": "nominal" } } }
 ```
 
-Número único (total ganho):
+Número único (total de horas):
 
 ```json
-{ "mark": "text", "encoding": { "text": { "field": "amount", "aggregate": "sum", "type": "quantitative" } } }
+{ "mark": "text", "encoding": { "text": { "field": "horas", "aggregate": "sum", "type": "quantitative" } } }
 ```
 
-Para um total "só dos ganhos", o filtro vai na view do gráfico, não no spec.
+Para um total "só das entregues", o filtro vai na view do gráfico, não no spec.
 
 ## Dados
 
@@ -83,7 +84,7 @@ O connector `ravi.bases.charts.data` (input `{ chartId }`) devolve o mesmo com
 - `fields`: descritores das colunas usadas, por chave (nome, tipo, opções) para
   traduzir ids em rótulos. `users` traduz user ids.
 - `suppressedGroups`: grupos com menos de 5 linhas escondidos para quem lê em
-  modo `aggregate`.
+  modo `aggregate`. Num time pequeno, mostre linhas.
 
 ## Na Ravi Page
 
@@ -91,10 +92,12 @@ O connector `ravi.bases.charts.data` (input `{ chartId }`) devolve o mesmo com
    `"mode": "aggregate"` quando quem vê não pode ver linhas).
 2. `ravi bases charts create ...` e guarde o `id`.
 3. A página chama `ravi.bases.charts.data` com o `chartId` constante e desenha
-   em SVG puro com o renderizador de `pages.md` (barras empilhadas, linha,
-   área, pizza/donut, número único; os outros marks viram tabela).
+   em SVG puro com o renderizador de `layouts.md` (skill pages): barras
+   empilhadas, linha, área, pizza/donut, número único; os outros marks viram
+   tabela.
 4. Ship com `--uses ravi.bases.charts.data` (mais `ravi.bases.views.describe`
-   se a página ler o `layout.chartId` de uma view `chart`).
+   se a página ler o `layout.chartId` de uma view `chart`), somado aos ids das
+   outras páginas de dados do host.
 
 Use SVG próprio por padrão. Biblioteca de gráfico via CDN é opcional; a
 página continua sem token e sem dados embutidos. O spec salvo não serve direto

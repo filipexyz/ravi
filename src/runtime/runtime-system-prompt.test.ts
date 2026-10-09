@@ -1,9 +1,12 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "bun:test";
-import { buildRuntimeSystemPrompt } from "./runtime-system-prompt.js";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { buildRuntimeSystemPrompt, type RuntimeSystemPromptInput } from "./runtime-system-prompt.js";
 import { addSticker } from "../stickers/catalog.js";
+import { dbCreateAgent, dbUpdateAgent, type ContextCapability } from "../router/router-db.js";
+import { materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 
 describe("buildRuntimeSystemPrompt", () => {
   it("renders workspace and agent contexts as plain Markdown sections", async () => {
@@ -310,5 +313,118 @@ describe("buildRuntimeSystemPrompt stickers", () => {
       rmSync(cwd, { recursive: true, force: true });
       rmSync(stateDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("buildRuntimeSystemPrompt Building Solutions", () => {
+  const ROUTING_LINE =
+    "- A screen, intake or approval over shared data (more than one piece) → Building Solutions above; cron is one piece of it.";
+  let stateDir: string | null = null;
+  let cwd = "";
+
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-runtime-building-solutions-");
+    cwd = mkdtempSync(join(tmpdir(), "ravi-runtime-system-prompt-"));
+  });
+
+  afterEach(async () => {
+    rmSync(cwd, { recursive: true, force: true });
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  function profileCapabilities(agentId: string, profile?: "chat-only" | "full-access"): ContextCapability[] {
+    dbCreateAgent({ id: agentId, cwd });
+    if (profile) {
+      dbUpdateAgent(agentId, { defaults: { runtimePermissions: { profile } } });
+    }
+    return materializeSubjectCapabilities("agent", agentId);
+  }
+
+  async function promptFor(
+    capabilities: ContextCapability[] | null,
+    overrides: Partial<Pick<RuntimeSystemPromptInput, "allowedSkills">> & { mode?: "active" | "sentinel" } = {},
+  ) {
+    return buildRuntimeSystemPrompt({
+      cwd,
+      sessionName: "builder",
+      agent: { id: "builder", cwd, ...(overrides.mode ? { mode: overrides.mode } : {}) },
+      ctx: { channelId: "whatsapp-baileys", channelName: "WhatsApp", isGroup: false },
+      ...(capabilities
+        ? { runtimeContext: { contextId: "ctx_builder", kind: "agent-runtime", agentId: "builder", capabilities } }
+        : {}),
+      ...(overrides.allowedSkills ? { allowedSkills: overrides.allowedSkills } : {}),
+    });
+  }
+
+  function expectMounted(prompt: { text: string; sections: { id: string }[] }, mounted: boolean): void {
+    expect(prompt.sections.some((section) => section.id === "solutions.building")).toBe(mounted);
+    expect(prompt.text.includes("## Building Solutions\n\nWhen a request combines pieces")).toBe(mounted);
+    expect(prompt.text.includes(ROUTING_LINE)).toBe(mounted);
+  }
+
+  it("mounts the section and its Routing line for a full-access agent", async () => {
+    const prompt = await promptFor(profileCapabilities("builder", "full-access"));
+
+    expectMounted(prompt, true);
+    const ids = prompt.sections.map((section) => section.id);
+    expect(ids.indexOf("solutions.building")).toBe(ids.indexOf("automation.background_followups") - 1);
+    expect(prompt.text.indexOf("## Building Solutions")).toBeLessThan(
+      prompt.text.indexOf("## Background Followup Automation"),
+    );
+  });
+
+  it("mounts it for one specific bases, pages, triggers or cron capability, including subcommand groups", async () => {
+    const skillsShow = { permission: "read", objectType: "skills", objectId: "show" };
+    for (const capability of [
+      { permission: "execute", objectType: "group", objectId: "bases_rows" },
+      { permission: "execute", objectType: "group", objectId: "pages" },
+      { permission: "execute", objectType: "group", objectId: "triggers_add" },
+      { permission: "execute", objectType: "group", objectId: "cron" },
+    ]) {
+      expectMounted(await promptFor([capability, skillsShow]), true);
+    }
+    expectMounted(await promptFor([{ permission: "execute", objectType: "group", objectId: "*" }]), true);
+  });
+
+  it("leaves it out when the context cannot run ravi skills show", async () => {
+    expectMounted(
+      await promptFor([
+        { permission: "use", objectType: "tool", objectId: "Bash" },
+        { permission: "execute", objectType: "executable", objectId: "ravi" },
+        { permission: "execute", objectType: "group", objectId: "bases_rows" },
+      ]),
+      false,
+    );
+  });
+
+  it("leaves it out for a sentinel even with full access", async () => {
+    expectMounted(await promptFor(profileCapabilities("builder", "full-access"), { mode: "sentinel" }), false);
+  });
+
+  it("leaves it out for chat-only, bootstrap and unrelated capabilities", async () => {
+    expectMounted(await promptFor(profileCapabilities("reception", "chat-only")), false);
+    expectMounted(await promptFor(profileCapabilities("plain")), false);
+    expectMounted(
+      await promptFor([
+        { permission: "use", objectType: "tool", objectId: "Bash" },
+        { permission: "execute", objectType: "group", objectId: "sessions" },
+        { permission: "execute", objectType: "group", objectId: "contacts" },
+      ]),
+      false,
+    );
+  });
+
+  it("leaves it out when the context carries no capabilities at all", async () => {
+    expectMounted(await promptFor([]), false);
+    expectMounted(await promptFor(null), false);
+  });
+
+  it("follows solucoes visibility in the skill allowlist", async () => {
+    const capabilities = profileCapabilities("builder", "full-access");
+
+    expectMounted(await promptFor(capabilities, { allowedSkills: ["ravi-system-bases", "bases"] }), false);
+    expectMounted(await promptFor(capabilities, { allowedSkills: ["bases", "solucoes"] }), true);
+    expectMounted(await promptFor(capabilities, { allowedSkills: ["ravi-system-solucoes"] }), true);
   });
 });

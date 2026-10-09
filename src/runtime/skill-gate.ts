@@ -1,13 +1,21 @@
 import { basename } from "node:path";
 import {
   dbListSkillGateRules,
+  getAgent,
   getSession,
   resolveSession,
   updateProviderSession,
   updateRuntimeProviderState,
+  type ContextCapability,
   type ContextRecord,
 } from "../router/index.js";
-import { findInstalledSkill, findSkillByName, listCatalogSkills, type RaviSkill } from "../skills/manager.js";
+import {
+  findInstalledSkill,
+  findSkillByName,
+  listCatalogSkills,
+  listSkillFilePaths,
+  type RaviSkill,
+} from "../skills/manager.js";
 import { parseBashCommand } from "../bash/parser.js";
 import {
   inferRaviCommandSkillGate,
@@ -17,6 +25,7 @@ import {
 } from "../cli/skill-gates.js";
 import { nats } from "../nats.js";
 import type { SessionEntry } from "../router/types.js";
+import { canRunSkillsShow } from "./skill-capability-implication.js";
 import { isSkillAuthorizedForAgent } from "./skill-authorization.js";
 import { markLoadedFromSkillGate, readSkillVisibilityFromParams, skillIdentifiersMatch } from "./skill-visibility.js";
 import type { RuntimeSkillVisibilitySnapshot } from "./types.js";
@@ -182,7 +191,15 @@ export function evaluateSkillGate(input: EvaluateSkillGateInput): SkillGateDecis
     path: skill.skillFilePath,
     toolName: input.toolName,
   });
-  const reason = buildSoftGateMessage(input.toolName, input.gate.skill, skill);
+  const footer =
+    getAgent(session.agentId)?.mode === "sentinel"
+      ? null
+      : solutionsGateFooter(input.gate.skill, skill, {
+          agentId: session.agentId,
+          capabilities: input.context?.capabilities,
+          loadedSkills: snapshot.loadedSkills,
+        });
+  const reason = buildSoftGateMessage(input.toolName, input.gate.skill, skill, footer);
   persistSkillGateVisibility(
     session,
     nextSkillVisibility,
@@ -297,13 +314,69 @@ function emitSkillGateEvent(
     .catch(() => {});
 }
 
-function buildSoftGateMessage(toolName: string, skillName: string, skill: RaviSkill): string {
+function buildSoftGateMessage(toolName: string, skillName: string, skill: RaviSkill, footer?: string | null): string {
   return [
     `RAVI_SKILL_REQUIRED: ${toolName} requires skill ${skillName}.`,
     `The skill has been delivered and marked as loaded for this session. Read it, then retry the original tool call.`,
     "",
-    skill.content,
+    ...(footer ? [skill.content.trimEnd(), "", footer] : [skill.content]),
   ].join("\n");
+}
+
+/** Entry skill for solutions that combine bases, pages, triggers and cron. */
+const SOLUTIONS_SKILL = "ravi-system-solucoes";
+/** Gate skills whose delivery points at {@link SOLUTIONS_SKILL}: the pieces its sheet combines. */
+const SOLUTIONS_FOOTER_GATE_SKILLS = [
+  "ravi-system-bases",
+  "ravi-system-pages",
+  "ravi-system-trigger-manager",
+  "ravi-system-cron-manager",
+] as const;
+const REFERENCES_DIR = "references/";
+
+/**
+ * Footer appended to a soft-gate delivery of bases, pages, triggers or cron:
+ * read `solucoes` first when building something with several pieces, then the
+ * delivered skill's references. Only when the context may run `ravi skills
+ * show` and `solucoes` is authorized for the agent (otherwise the suggested
+ * commands fail), and `solucoes` is not loaded yet in this session
+ * (afterwards it is noise).
+ */
+export function solutionsGateFooter(
+  gateSkill: string,
+  skill: RaviSkill,
+  input: {
+    agentId: string;
+    capabilities?: readonly ContextCapability[];
+    loadedSkills: readonly string[];
+  },
+): string | null {
+  if (!SOLUTIONS_FOOTER_GATE_SKILLS.some((candidate) => skillIdentifiersMatch(gateSkill, candidate))) {
+    return null;
+  }
+  if (input.loadedSkills.some((loadedSkill) => loadedSkillMatchesGate(loadedSkill, SOLUTIONS_SKILL))) {
+    return null;
+  }
+  if (!canRunSkillsShow(input.capabilities ?? [])) {
+    return null;
+  }
+  if (!isSkillAuthorizedForAgent(input.agentId, SOLUTIONS_SKILL, { capabilities: input.capabilities })) {
+    return null;
+  }
+
+  const lines = [
+    "Building something with more than one piece (screen, intake, approval, automation)? Read first: ravi skills show solucoes",
+  ];
+  const references = listSkillFilePaths(skill)
+    .filter((path) => path.startsWith(REFERENCES_DIR))
+    .map((path) => path.slice(REFERENCES_DIR.length));
+  if (references.length > 0) {
+    lines.push(
+      `References (open only what you need): ravi skills show ${skill.name} --file ${REFERENCES_DIR}<file>`,
+      `  ${references.join(" · ")}`,
+    );
+  }
+  return lines.join("\n");
 }
 
 export function skillGateErrorPayload(decision: SkillGateDecision): Record<string, unknown> {

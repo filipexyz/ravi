@@ -68,26 +68,29 @@ O Console resolve a partir de quem chama, nunca do corpo do request:
 
 ## Ordenação, paginação, agregação
 
-- `--sort chave:desc,outra` — até 3 chaves em colunas ordenáveis (`text`, `url`,
-  `email`, `phone`, `number`, `checkbox`, `date`, `select`, `status`,
-  `created_time`, `updated_time`). Vazios vão por último. Padrão: `created_time` asc.
+- `--sort prazo,horas:desc`: até 3 chaves num valor só, separadas por vírgula,
+  em colunas ordenáveis (`text`, `url`, `email`, `phone`, `number`, `checkbox`,
+  `date`, `select`, `status`, `created_time`, `updated_time`). Vazios vão por
+  último. Padrão: `created_time` asc. Uma view com `query.sort` salvo já ordena
+  no `views query`.
 - `--limit` 1-500 (padrão 100). Cursor opaco, 15 minutos, preso à mesma
   consulta, view, schema e a quem chama (`cursor_invalid` se mudar).
-- `aggregate`: até 2 `--group-by` (`select`, `status`, `multi_select`,
-  `checkbox`, `person`, `created_by`, `updated_by`, `number`, e datas com unidade
-  `day|week|month|quarter|year`), medidas `count`, `count_values`, `sum`, `avg`,
+- `aggregate`: até 2 dimensões num valor só, separadas por vírgula
+  (`--group-by status,prazo:month`). Dimensões: `select`, `status`,
+  `multi_select`, `checkbox`, `person`, `created_by`, `updated_by`, `number`, e
+  datas com unidade `day|week|month|quarter|year`. Medidas `count`, `count_values`, `sum`, `avg`,
   `min`, `max` (`sum`/`avg` em `number`; `min`/`max` em `number` e datas), no
   máximo 8 medidas e 5.000 grupos (`aggregate_too_large`).
 
 ## Exemplos
 
-Meus deals abertos acima de 10 mil:
+Minhas tarefas abertas com 4 horas ou mais:
 
 ```json
 { "and": [
-  { "prop": "owner", "op": "contains", "value": "$viewer.raviUserId" },
-  { "not": { "prop": "stage", "op": "eq", "value": { "group": "done" } } },
-  { "prop": "amount", "op": "gte", "value": 10000 }
+  { "prop": "dono", "op": "contains", "value": "$viewer.raviUserId" },
+  { "not": { "prop": "status", "op": "eq", "value": { "group": "done" } } },
+  { "prop": "horas", "op": "gte", "value": 4 }
 ] }
 ```
 

@@ -2614,10 +2614,10 @@ public struct BasesAggregateOptions: Codable, Sendable {
   public var agg: [String]?
   public var console: String?
   public var filter: String?
-  public var groupBy: [String]?
+  public var groupBy: String?
   public var project: String?
 
-  public init(agg: [String]? = nil, console: String? = nil, filter: String? = nil, groupBy: [String]? = nil, project: String? = nil) {
+  public init(agg: [String]? = nil, console: String? = nil, filter: String? = nil, groupBy: String? = nil, project: String? = nil) {
     self.agg = agg
     self.console = console
     self.filter = filter
@@ -3808,8 +3808,9 @@ public struct BasesRowsAddReturn: Codable, Sendable {
   public var success: Bool
   public var users: [String: RaviJSON]
   public var viewId: RaviJSON
+  public var warnings: [String]?
 
-  public init(baseRef: String, consoleUrl: String, idempotencyKey: String, idempotentReplay: Bool, projectRef: String, row: RaviJSON, success: Bool, users: [String: RaviJSON], viewId: RaviJSON) {
+  public init(baseRef: String, consoleUrl: String, idempotencyKey: String, idempotentReplay: Bool, projectRef: String, row: RaviJSON, success: Bool, users: [String: RaviJSON], viewId: RaviJSON, warnings: [String]? = nil) {
     self.baseRef = baseRef
     self.consoleUrl = consoleUrl
     self.idempotencyKey = idempotencyKey
@@ -3819,6 +3820,7 @@ public struct BasesRowsAddReturn: Codable, Sendable {
     self.success = success
     self.users = users
     self.viewId = viewId
+    self.warnings = warnings
   }
 
   enum CodingKeys: String, CodingKey {
@@ -3831,6 +3833,7 @@ public struct BasesRowsAddReturn: Codable, Sendable {
     case success = "success"
     case users = "users"
     case viewId = "viewId"
+    case warnings = "warnings"
   }
 }
 
@@ -3917,10 +3920,10 @@ public struct BasesRowsExportOptions: Codable, Sendable {
   public var maxRows: String?
   public var out: String?
   public var project: String?
-  public var sort: [String]?
+  public var sort: String?
   public var view: String?
 
-  public init(console: String? = nil, filter: String? = nil, format: String? = nil, includeBody: Bool? = nil, maxRows: String? = nil, out: String? = nil, project: String? = nil, sort: [String]? = nil, view: String? = nil) {
+  public init(console: String? = nil, filter: String? = nil, format: String? = nil, includeBody: Bool? = nil, maxRows: String? = nil, out: String? = nil, project: String? = nil, sort: String? = nil, view: String? = nil) {
     self.console = console
     self.filter = filter
     self.format = format
@@ -4313,10 +4316,10 @@ public struct BasesRowsQueryOptions: Codable, Sendable {
   public var limit: String?
   public var maxRows: String?
   public var project: String?
-  public var sort: [String]?
+  public var sort: String?
   public var view: String?
 
-  public init(all: Bool? = nil, console: String? = nil, cursor: String? = nil, filter: String? = nil, format: String? = nil, includeArchived: Bool? = nil, includeBody: Bool? = nil, limit: String? = nil, maxRows: String? = nil, project: String? = nil, sort: [String]? = nil, view: String? = nil) {
+  public init(all: Bool? = nil, console: String? = nil, cursor: String? = nil, filter: String? = nil, format: String? = nil, includeArchived: Bool? = nil, includeBody: Bool? = nil, limit: String? = nil, maxRows: String? = nil, project: String? = nil, sort: String? = nil, view: String? = nil) {
     self.all = all
     self.console = console
     self.cursor = cursor
@@ -4579,8 +4582,9 @@ public struct BasesRowsUpdateReturn: Codable, Sendable {
   public var success: Bool
   public var users: [String: RaviJSON]
   public var viewId: RaviJSON
+  public var warnings: [String]?
 
-  public init(baseRef: String, consoleUrl: String, idempotencyKey: String, idempotentReplay: Bool, projectRef: String, row: RaviJSON, success: Bool, users: [String: RaviJSON], viewId: RaviJSON) {
+  public init(baseRef: String, consoleUrl: String, idempotencyKey: String, idempotentReplay: Bool, projectRef: String, row: RaviJSON, success: Bool, users: [String: RaviJSON], viewId: RaviJSON, warnings: [String]? = nil) {
     self.baseRef = baseRef
     self.consoleUrl = consoleUrl
     self.idempotencyKey = idempotencyKey
@@ -4590,6 +4594,7 @@ public struct BasesRowsUpdateReturn: Codable, Sendable {
     self.success = success
     self.users = users
     self.viewId = viewId
+    self.warnings = warnings
   }
 
   enum CodingKeys: String, CodingKey {
@@ -4602,6 +4607,7 @@ public struct BasesRowsUpdateReturn: Codable, Sendable {
     case success = "success"
     case users = "users"
     case viewId = "viewId"
+    case warnings = "warnings"
   }
 }
 
@@ -5077,9 +5083,9 @@ public struct BasesViewsQueryOptions: Codable, Sendable {
   public var limit: String?
   public var maxRows: String?
   public var project: String?
-  public var sort: [String]?
+  public var sort: String?
 
-  public init(all: Bool? = nil, console: String? = nil, cursor: String? = nil, filter: String? = nil, format: String? = nil, includeBody: Bool? = nil, limit: String? = nil, maxRows: String? = nil, project: String? = nil, sort: [String]? = nil) {
+  public init(all: Bool? = nil, console: String? = nil, cursor: String? = nil, filter: String? = nil, format: String? = nil, includeBody: Bool? = nil, limit: String? = nil, maxRows: String? = nil, project: String? = nil, sort: String? = nil) {
     self.all = all
     self.console = console
     self.cursor = cursor
@@ -18241,19 +18247,21 @@ public struct PagesShipOptions: Codable, Sendable {
   public var entrypoint: String?
   public var execute: Bool?
   public var html: String?
+  public var membersBestEffort: Bool?
   public var project: String?
   public var route: String?
   public var title: String?
   public var uses: [String]?
   public var visibility: String?
 
-  public init(body: String? = nil, console: String? = nil, dir: String? = nil, entrypoint: String? = nil, execute: Bool? = nil, html: String? = nil, project: String? = nil, route: String? = nil, title: String? = nil, uses: [String]? = nil, visibility: String? = nil) {
+  public init(body: String? = nil, console: String? = nil, dir: String? = nil, entrypoint: String? = nil, execute: Bool? = nil, html: String? = nil, membersBestEffort: Bool? = nil, project: String? = nil, route: String? = nil, title: String? = nil, uses: [String]? = nil, visibility: String? = nil) {
     self.body = body
     self.console = console
     self.dir = dir
     self.entrypoint = entrypoint
     self.execute = execute
     self.html = html
+    self.membersBestEffort = membersBestEffort
     self.project = project
     self.route = route
     self.title = title
@@ -18268,6 +18276,7 @@ public struct PagesShipOptions: Codable, Sendable {
     case entrypoint = "entrypoint"
     case execute = "execute"
     case html = "html"
+    case membersBestEffort = "membersBestEffort"
     case project = "project"
     case route = "route"
     case title = "title"
@@ -18293,6 +18302,9 @@ public struct PagesShipOptions: Codable, Sendable {
     }
     if let value = self.html {
       body["html"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.membersBestEffort {
+      body["membersBestEffort"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.project {
       body["project"] = try RaviJSON.fromEncodable(value)
@@ -18322,8 +18334,9 @@ public struct PagesShipReturn: Codable, Sendable {
   public var url: RaviJSON
   public var uses: [String]?
   public var visibility: String
+  public var warnings: [String]?
 
-  public init(artifactId: RaviJSON, commentFollow: RaviJSON, route: String, site: [String: RaviJSON], slug: String, success: Bool, url: RaviJSON, uses: [String]? = nil, visibility: String) {
+  public init(artifactId: RaviJSON, commentFollow: RaviJSON, route: String, site: [String: RaviJSON], slug: String, success: Bool, url: RaviJSON, uses: [String]? = nil, visibility: String, warnings: [String]? = nil) {
     self.artifactId = artifactId
     self.commentFollow = commentFollow
     self.route = route
@@ -18333,6 +18346,7 @@ public struct PagesShipReturn: Codable, Sendable {
     self.url = url
     self.uses = uses
     self.visibility = visibility
+    self.warnings = warnings
   }
 
   enum CodingKeys: String, CodingKey {
@@ -18345,6 +18359,7 @@ public struct PagesShipReturn: Codable, Sendable {
     case url = "url"
     case uses = "uses"
     case visibility = "visibility"
+    case warnings = "warnings"
   }
 }
 
@@ -25450,22 +25465,34 @@ public struct SkillsRevokeBatchReturn: Codable, Sendable {
 }
 
 public struct SkillsShowOptions: Codable, Sendable {
+  public var file: String?
   public var installed: Bool?
+  public var raw: Bool?
   public var source: String?
 
-  public init(installed: Bool? = nil, source: String? = nil) {
+  public init(file: String? = nil, installed: Bool? = nil, raw: Bool? = nil, source: String? = nil) {
+    self.file = file
     self.installed = installed
+    self.raw = raw
     self.source = source
   }
 
   enum CodingKeys: String, CodingKey {
+    case file = "file"
     case installed = "installed"
+    case raw = "raw"
     case source = "source"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.file {
+      body["file"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.installed {
       body["installed"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.raw {
+      body["raw"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.source {
       body["source"] = try RaviJSON.fromEncodable(value)
@@ -25474,13 +25501,19 @@ public struct SkillsShowOptions: Codable, Sendable {
 }
 
 public struct SkillsShowReturn: Codable, Sendable {
+  public var file: RaviJSON?
+  public var files: [String]
   public var skill: RaviJSON
 
-  public init(skill: RaviJSON) {
+  public init(file: RaviJSON? = nil, files: [String], skill: RaviJSON) {
+    self.file = file
+    self.files = files
     self.skill = skill
   }
 
   enum CodingKeys: String, CodingKey {
+    case file = "file"
+    case files = "files"
     case skill = "skill"
   }
 }

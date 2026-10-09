@@ -10,6 +10,9 @@ description: |
 
 # Sticker Library
 
+> Verbos: AGIR (mídia). Compõe com: whatsapp, pages.
+> Solução com mais de uma peça? `ravi skills show solucoes` primeiro.
+
 Stickers são uma surface separada de resposta no Ravi:
 
 - texto normal

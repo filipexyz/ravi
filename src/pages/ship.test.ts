@@ -5,12 +5,15 @@ import { join } from "node:path";
 import { runWithContext } from "../cli/context.js";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 import {
+  checkShipLiveData,
   isReservedPageHostSlug,
   materializeShipSource,
   projectOwnedHostSlug,
   requireShipTitle,
   resolveShipContentKind,
   selectProjectDefaultHost,
+  SHIP_LIVE_DATA_OVERRIDE_WARNING,
+  SHIP_LIVE_DATA_REFUSAL_LINES,
   slugifyPageTitle,
   validateShipSourceInput,
   wrapHtml5Document,
@@ -108,5 +111,42 @@ describe("pages ship helpers", () => {
       expect(error).toBeInstanceOf(CloudAuthError);
       expect((error as CloudAuthError).message).toBe("--html file was not found: ./ravi-pages-ship-missing-cwd.html");
     }
+  });
+
+  it("refuses ravi.bases.* uses on a public route and lets --members-best-effort override it", () => {
+    const uses = ["ravi.identity.assertion", "ravi.bases.views.describe", "ravi.bases.views.query"];
+
+    expect(checkShipLiveData({ uses, visibility: "public" })).toEqual({
+      status: "refused",
+      basesUses: ["ravi.bases.views.describe", "ravi.bases.views.query"],
+    });
+    expect(checkShipLiveData({ uses, visibility: "public", membersBestEffort: true })).toEqual({
+      status: "overridden",
+      basesUses: ["ravi.bases.views.describe", "ravi.bases.views.query"],
+      warning: SHIP_LIVE_DATA_OVERRIDE_WARNING,
+    });
+  });
+
+  it("leaves private, protected_link and non-bases public ships alone", () => {
+    const bases = ["ravi.bases.views.query"];
+    expect(checkShipLiveData({ uses: bases, visibility: "private" })).toEqual({ status: "ok" });
+    expect(checkShipLiveData({ uses: bases, visibility: "protected_link" })).toEqual({ status: "ok" });
+    expect(checkShipLiveData({ uses: ["ravi.identity.assertion"], visibility: "public" })).toEqual({ status: "ok" });
+    expect(checkShipLiveData({ uses: undefined, visibility: "public" })).toEqual({ status: "ok" });
+    // Only the ravi.bases. prefix counts, not a look-alike id.
+    expect(checkShipLiveData({ uses: ["ravi.basesx.query"], visibility: "public" })).toEqual({ status: "ok" });
+    // The override flag alone changes nothing when there is nothing to refuse.
+    expect(checkShipLiveData({ uses: bases, visibility: "private", membersBestEffort: true })).toEqual({
+      status: "ok",
+    });
+  });
+
+  it("keeps every refusal line under the 200-character issue cap and names both fixes and the override", () => {
+    for (const line of SHIP_LIVE_DATA_REFUSAL_LINES) expect(line.length).toBeLessThanOrEqual(200);
+    const text = SHIP_LIVE_DATA_REFUSAL_LINES.join("\n");
+    expect(text).toContain("route would be public");
+    expect(text).toContain("drop --visibility (private is the default)");
+    expect(text).toContain("no ravi.bases.* in --uses");
+    expect(text).toContain("--members-best-effort");
   });
 });

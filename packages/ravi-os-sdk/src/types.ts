@@ -1799,7 +1799,7 @@ export type BasesAggregateInput = {
   base: string;
   console?: string;
   filter?: string;
-  groupBy?: string[];
+  groupBy?: string;
   project?: string;
 };
 
@@ -2778,6 +2778,7 @@ export type BasesRowsAddReturn = {
     id: string;
   }>;
   viewId: string | null;
+  warnings?: string[];
 };
 
 /** Input shape for `bases.rows.archive`. */
@@ -2823,7 +2824,7 @@ export type BasesRowsExportInput = {
   maxRows?: string;
   out?: string;
   project?: string;
-  sort?: string[];
+  sort?: string;
   view?: string;
 };
 
@@ -2994,7 +2995,7 @@ export type BasesRowsQueryInput = {
   limit?: string;
   maxRows?: string;
   project?: string;
-  sort?: string[];
+  sort?: string;
   view?: string;
 };
 
@@ -3098,6 +3099,7 @@ export type BasesRowsUpdateReturn = {
     id: string;
   }>;
   viewId: string | null;
+  warnings?: string[];
 };
 
 /** Input shape for `bases.show`. */
@@ -3630,7 +3632,7 @@ export type BasesViewsQueryInput = {
   limit?: string;
   maxRows?: string;
   project?: string;
-  sort?: string[];
+  sort?: string;
   view: string;
 };
 
@@ -12045,6 +12047,7 @@ export type PagesShipInput = {
   entrypoint?: string;
   execute?: boolean;
   html?: string;
+  membersBestEffort?: boolean;
   project?: string;
   route?: string;
   title?: string;
@@ -12076,6 +12079,7 @@ export type PagesShipReturn = {
   url: string | null;
   uses?: string[];
   visibility: string;
+  warnings?: string[];
 };
 
 /** Input shape for `pages.update`. */
@@ -16099,13 +16103,20 @@ export type SkillsRevokeBatchReturn = {
 
 /** Input shape for `skills.show`. */
 export type SkillsShowInput = {
+  file?: string;
   installed?: boolean;
   name: string;
+  raw?: boolean;
   source?: string;
 };
 
 /** Return shape for `skills.show`. */
 export type SkillsShowReturn = {
+  file?: {
+    content: string;
+    path: string;
+  };
+  files: string[];
   skill: {
     content: string;
     description: string | null;

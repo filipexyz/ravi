@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { basename } from "node:path";
+import { basename, dirname } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { logger } from "../utils/logger.js";
 import type {
@@ -24,6 +24,7 @@ import type {
 import { coalesceAssistantTextBlocks } from "./assistant-transcript.js";
 import { createRuntimeTerminalEventTracker } from "./terminality.js";
 import { buildPluginSkillVisibilitySnapshot } from "./skill-visibility.js";
+import { discoverSkills } from "../skills/manager.js";
 import {
   materializeRuntimeModelBroker,
   resolveRuntimeModelBrokerLocalProviderId,
@@ -393,9 +394,12 @@ export function buildPiSkillCatalogSystemPrompt(
     return basePrompt;
   }
 
+  const baseline = piBaselineSkillSlugs();
   const catalog = skillVisibility.skills.map((skill) => {
     const alias = piManagedSkillAlias(skill);
-    return alias === skill.id ? `- ${alias}` : `- ${alias} (skill: ${skill.id})`;
+    const entry = alias === skill.id ? `- ${alias}` : `- ${alias} (skill: ${skill.id})`;
+    const summary = isPiBaselineSkill(skill, baseline) ? piSkillSummary(skill) : null;
+    return summary ? `${entry} — ${summary}` : entry;
   });
 
   return [
@@ -421,6 +425,47 @@ function piManagedSkillAlias(skill: RuntimeSkillVisibilitySnapshot["skills"][num
     return skill.id;
   }
   return `${piSkillSlug(sourceMatch[1] ?? "")}-${piSkillSlug(sourceMatch[2] ?? skill.id)}`;
+}
+
+function piBaselineSkillSlugs(): readonly string[] {
+  // Lazy: `allowed-skills` loads `router-db`, which command tests mock partially.
+  const { BASELINE_SYSTEM_SKILL_SLUGS } = require("./allowed-skills.js") as typeof import("./allowed-skills.js");
+  return BASELINE_SYSTEM_SKILL_SLUGS;
+}
+
+function isPiBaselineSkill(
+  skill: RuntimeSkillVisibilitySnapshot["skills"][number],
+  baseline: readonly string[],
+): boolean {
+  const sourceMatch = /^plugin:([^/]+)\/([^/]+)$/.exec(skill.source ?? "");
+  if (!sourceMatch) return false;
+  const plugin = piSkillSlug(sourceMatch[1] ?? "");
+  return [sourceMatch[2] ?? "", skill.id].some((name) => baseline.includes(`${plugin}-${piSkillSlug(name)}`));
+}
+
+const PI_SKILL_SUMMARY_MAX_LENGTH = 120;
+
+/**
+ * First sentence of the indexed SKILL.md description, for baseline skills
+ * only: this list is Pi's whole skill catalog, and a bare name rarely says
+ * when to load the skill.
+ */
+function piSkillSummary(skill: RuntimeSkillVisibilitySnapshot["skills"][number]): string | null {
+  const skillFile = skill.evidence?.find((evidence) => evidence.path)?.path;
+  if (!skillFile) return null;
+  try {
+    const skillDir = dirname(skillFile);
+    const [parsed] = discoverSkills({ source: { type: "local", input: skillDir }, rootPath: skillDir });
+    const line = parsed?.description?.split("\n")[0]?.trim();
+    if (!line) return null;
+    const end = line.search(/[.!?](?:\s|$)/);
+    const sentence = end >= 0 ? line.slice(0, end + 1) : line;
+    return sentence.length > PI_SKILL_SUMMARY_MAX_LENGTH
+      ? `${sentence.slice(0, PI_SKILL_SUMMARY_MAX_LENGTH - 3)}...`
+      : sentence;
+  } catch {
+    return null;
+  }
 }
 
 function piSkillSlug(value: string): string {

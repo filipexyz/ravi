@@ -12,6 +12,9 @@ description: |
 
 # Instances Manager
 
+> Verbos: CAPTAR. Compõe com: whatsapp, agents.
+> Solução com mais de uma peça? `ravi skills show solucoes` primeiro.
+
 Instâncias são a entidade central de configuração do Ravi. Cada instância representa uma conta conectada (WhatsApp, Matrix, etc) com seu próprio agent, policies e rotas.
 
 ## Contrato Do CLI

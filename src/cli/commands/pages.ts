@@ -51,11 +51,14 @@ import {
   type PageCommentFollowResult,
 } from "../../pages/comment-follow.js";
 import {
+  checkShipLiveData,
   isReservedPageHostSlug,
   materializeShipSource,
   projectOwnedHostSlug,
   requireShipTitle,
   selectProjectDefaultHost,
+  SHIP_LIVE_DATA_REFUSAL_LINES,
+  SHIP_MEMBERS_BEST_EFFORT_FLAG,
   validateShipSourceInput,
 } from "../../pages/ship.js";
 import { CONTRACT_EXIT_USAGE, ContractError, contractDryRun, contractFail, pickFields } from "../agent-contract.js";
@@ -96,13 +99,21 @@ Happy path:
   --uses ravi.identity.assertion opts the page into the Console viewer assertion.
   It does not embed a JWT. Register audiences with pages assertion audiences.
 
+Live data (ravi.bases.* in --uses):
+  Works only for signed-in org members on private or protected_link routes.
+  With --visibility public, ship refuses (exit 2) and publishes nothing.
+  Members: drop --visibility (private is the default). Outsiders: ship a
+  snapshot with the numbers inside the HTML and no ravi.bases.* in --uses.
+  --members-best-effort ships it public anyway, only when every reader is an
+  org member already signed in; the result carries a warning.
+
 Executes immediately:
   ship uploads and activates the release in the same call. --execute is
   accepted and ignored for compatibility. A failed ship returns the error; read
   it before retrying, and do not probe by re-shipping.
 
 JSON:
-  { url, site, slug, route, visibility, artifactId }
+  { url, site, slug, route, visibility, artifactId, uses?, warnings? }
 `;
 
 const PAGES_CREATE_HELP = `
@@ -349,6 +360,11 @@ export class PagesCommands {
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({
+      flags: "--members-best-effort",
+      description: "Ship ravi.bases.* uses on a public route anyway. Only org members already signed in get live data",
+    })
+    membersBestEffort?: boolean,
+    @Option({
       flags: "--execute",
       description: "Accepted and ignored for compatibility. pages ship always publishes",
     })
@@ -368,6 +384,15 @@ export class PagesCommands {
           `Host slug "${legacySlug}" is reserved. Prefixes ravi and ravi-* cannot be created from pages ship. Publish a route on the project default host instead.`,
         );
       }
+      // Refuse before any Console call: a public route never gets the Pages
+      // session that ravi.bases.* connectors require.
+      const liveData = checkShipLiveData({
+        membersBestEffort,
+        uses: normalizedUses,
+        visibility: normalizedVisibility,
+      });
+      if (liveData.status === "refused") failShipLiveDataOnPublicRoute(liveData.basesUses, asJson);
+      const warnings = liveData.status === "overridden" ? [liveData.warning] : [];
       // Ship is the agent happy path and executes immediately. --execute stays
       // accepted so callers that still pass it keep working.
       void execute;
@@ -433,6 +458,7 @@ export class PagesCommands {
           url: result.url,
           ...(normalizedUses ? { uses: normalizedUses } : {}),
           visibility: normalizedVisibility,
+          ...(warnings.length > 0 ? { warnings } : {}),
         };
         printPayload(payload, asJson, () => printShipResult(payload));
         return payload;
@@ -1462,6 +1488,7 @@ const pageShipReturnSchema = z.object({
   url: z.string().nullable(),
   uses: z.array(z.string()).optional(),
   visibility: z.string(),
+  warnings: z.array(z.string()).optional(),
 });
 
 const pageAssertionAudienceSchema = z.object({
@@ -1674,6 +1701,27 @@ async function resolveShipHost(
   return { site: created.site, slug: convention };
 }
 
+/**
+ * Exit 2 with the cause, the members fix, the outsiders fix and the override.
+ * Every line is an issue: text output prints them under the headline, and the
+ * remote CLI gateway keeps issues where it would replace a long message.
+ */
+function failShipLiveDataOnPublicRoute(basesUses: string[], asJson: boolean | undefined): never {
+  const [headline] = SHIP_LIVE_DATA_REFUSAL_LINES;
+  contractFail("pages ship", "LIVE_DATA_PUBLIC_ROUTE", headline, {
+    asJson,
+    exitCode: CONTRACT_EXIT_USAGE,
+    details: {
+      retryable: false,
+      suggestedAction: `Drop --visibility to keep the route private for members, or ship a snapshot without ravi.bases.* in --uses for outsiders. Pass ${SHIP_MEMBERS_BEST_EFFORT_FLAG} only when every reader is an org member already signed in`,
+      basesUses,
+      visibility: "public",
+      override: SHIP_MEMBERS_BEST_EFFORT_FLAG,
+      issues: SHIP_LIVE_DATA_REFUSAL_LINES.map((line) => ({ path: [], code: "LIVE_DATA_PUBLIC_ROUTE", message: line })),
+    },
+  });
+}
+
 function warnLegacyPageHost(slug: string): void {
   console.error(
     `Legacy Pages host "${slug}": publishing to an extra *.ravi.page host. The happy path publishes a route on the project default host. Do not create one host per page.`,
@@ -1735,6 +1783,7 @@ function printShipResult(result: {
   url: string | null;
   uses?: string[];
   visibility: string;
+  warnings?: string[];
 }): void {
   console.log("✓ Pages shipped");
   printSiteFields(result.site);
@@ -1745,6 +1794,7 @@ function printShipResult(result: {
   if (result.artifactId) console.log(`  Artifact   ${result.artifactId}`);
   console.log(`  URL        ${result.url ?? "not returned by Console"}`);
   printCommentFollow(result.commentFollow);
+  for (const warning of result.warnings ?? []) console.log(`warning: ${warning}`);
 }
 
 function printAssertionAudienceList(result: PageAssertionAudienceListResult): void {

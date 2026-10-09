@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { getOrCreateSession, type AgentConfig, type SessionEntry } from "../router/index.js";
-import { dbListContexts } from "../router/router-db.js";
+import { dbListContexts, dbUpdateAgent, dbUpsertSkillGrant } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { resolveRuntimeContext } from "./context-registry.js";
@@ -185,5 +185,77 @@ describe("runtime request first-turn context key", () => {
     streaming.done = true;
     streaming.onTurnComplete?.();
     await runtimeRequest.prompt.return(undefined);
+  });
+});
+
+describe("runtime request Building Solutions prompt", () => {
+  let stateDir: string | null = null;
+
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-runtime-request-building-solutions-");
+    getOrCreateSession(SESSION_KEY, AGENT_ID, stateDir);
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  // Without a prompt source the turn is the operator's own (no external actor to scope authority to).
+  async function buildSystemPromptAppend(promptSource?: RuntimeMessageTarget): Promise<string> {
+    const sessionCwd = stateDir!;
+    const streaming = streamingSession("monta um portal de pedidos");
+    const { runtimeRequest } = await buildRuntimeStartRequest({
+      runId: "run-building-solutions",
+      sessionName: SESSION_NAME,
+      prompt: { prompt: "monta um portal de pedidos", ...(promptSource ? { source: promptSource } : {}) },
+      session: session(sessionCwd),
+      agent: agent(sessionCwd),
+      runtimeProviderId: PROVIDER_ID,
+      runtimeProvider: {
+        id: PROVIDER_ID,
+        getCapabilities: () => capabilities,
+        startSession: () => emptyRuntimeSession(),
+      },
+      runtimeCapabilities: capabilities,
+      sessionCwd,
+      dbSessionKey: SESSION_KEY,
+      model: MODEL,
+      runtimeResolution: {
+        options: { model: MODEL },
+        sources: { model: "agent_default", effort: null, thinking: null },
+        hasTaskRuntimeContext: false,
+      },
+      storedRuntimeSessionParams: undefined,
+      canResumeStoredSession: false,
+      resolvedSource: source,
+      streamingSession: streaming,
+      stashedMessages: new Map(),
+      defaultRuntimeProviderId: "claude",
+      crashRecovery: crashRecovery(),
+    });
+    streaming.done = true;
+    await runtimeRequest.prompt.return(undefined);
+    return runtimeRequest.systemPromptAppend ?? "";
+  }
+
+  it("mounts the section from the agent's live capabilities and skill allowlist", async () => {
+    dbUpdateAgent(AGENT_ID, { defaults: { runtimePermissions: { profile: "full-access" } } });
+    dbUpsertSkillGrant({ agentId: AGENT_ID, skillName: "ravi-system-solucoes" });
+
+    expect(await buildSystemPromptAppend()).toContain("## Building Solutions\n\nWhen a request combines pieces");
+  });
+
+  it("leaves it out for the bootstrap floor, which runs no bases, pages, triggers or cron command", async () => {
+    dbUpsertSkillGrant({ agentId: AGENT_ID, skillName: "ravi-system-solucoes" });
+
+    expect(await buildSystemPromptAppend()).not.toContain("Building Solutions");
+  });
+
+  it("leaves it out when the launching turn's actor has no authority (unresolved WhatsApp sender)", async () => {
+    dbUpdateAgent(AGENT_ID, { defaults: { runtimePermissions: { profile: "full-access" } } });
+    dbUpsertSkillGrant({ agentId: AGENT_ID, skillName: "ravi-system-solucoes" });
+
+    expect(await buildSystemPromptAppend(source)).not.toContain("Building Solutions");
   });
 });

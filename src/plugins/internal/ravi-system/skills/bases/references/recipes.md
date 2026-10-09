@@ -4,7 +4,8 @@ Cada receita: schema inicial (`--schema @arquivo.json`), views, um gráfico ou
 automação e as telas. Ajuste nomes e opções ao pedido; mantenha as chaves
 estáveis.
 
-Toda tela é uma Ravi Page gerada (`pages.md`): view com
+Toda tela é uma Ravi Page gerada (guia:
+`ravi skills show pages --file references/data-pages.md`): view com
 `{ "kind": "page_viewer", "siteId": "<site-id>" }`, HTML com os ids da view e
 do gráfico como constantes, `ravi pages ship --uses <ids>` e
 verificação. `<site-id>` é o site default do projeto (`ravi pages list
@@ -13,37 +14,42 @@ telas. Várias páginas no mesmo host: todo ship declara a união dos ids que
 elas chamam. Abaixo, os ids de `--uses` aparecem sem o prefixo `ravi.bases.`;
 no ship, passe o id completo (`ravi.bases.views.describe`).
 
-## CRM (pipeline de vendas)
+## Projetos de um estúdio (dono + supervisão)
 
 ```json
 [
-  { "key": "name", "name": "Deal", "type": "text", "required": true },
-  { "key": "company", "name": "Empresa", "type": "text" },
-  { "key": "stage", "name": "Estágio", "type": "status", "config": { "options": [
-    { "name": "Lead", "group": "todo" }, { "name": "Qualificado", "group": "in_progress" },
-    { "name": "Proposta", "group": "in_progress" }, { "name": "Ganho", "group": "done", "color": "green" },
-    { "name": "Perdido", "group": "done", "color": "red" } ] } },
-  { "key": "owner", "name": "Vendedor", "type": "person" },
-  { "key": "amount", "name": "Valor", "type": "number", "config": { "format": "currency", "currency": "BRL" } },
-  { "key": "close_date", "name": "Fechamento previsto", "type": "date" },
-  { "key": "contact_email", "name": "E-mail do contato", "type": "email" },
-  { "key": "source", "name": "Origem", "type": "select", "config": { "options": [
-    { "name": "Inbound" }, { "name": "Outbound" }, { "name": "Indicação" } ] } }
+  { "key": "projeto", "name": "Projeto", "type": "text", "required": true },
+  { "key": "cliente", "name": "Cliente", "type": "text" },
+  { "key": "fase", "name": "Fase", "type": "status", "config": { "options": [
+    { "name": "Briefing", "group": "todo" }, { "name": "Criação", "group": "in_progress" },
+    { "name": "Revisão", "group": "in_progress" }, { "name": "Entregue", "group": "done", "color": "green" },
+    { "name": "Pausado", "group": "done", "color": "gray" } ] } },
+  { "key": "responsavel", "name": "Responsável", "type": "person" },
+  { "key": "supervisao", "name": "Supervisão", "type": "person" },
+  { "key": "horas", "name": "Horas previstas", "type": "number" },
+  { "key": "entrega", "name": "Entrega", "type": "date" },
+  { "key": "avisado", "name": "Avisado", "type": "checkbox" }
 ]
 ```
 
-- View "Meus deals": board por `stage`, `page_viewer` em `read` e
-  `write.principals`, filtro `owner contains $viewer.raviUserId`,
-  `write.set.owner = $viewer.raviUserId` (ver `views-access-forms.md`).
-- View "Pipeline (gestão)": tabela, `read` para `project_admin`, sem filtro.
+- View "Meus projetos": board por `fase`, `page_viewer` em `read` e
+  `write.principals`, filtro `or` com `responsavel contains $viewer.raviUserId`
+  e `supervisao contains $viewer.raviUserId`, `write.set.responsavel =
+  $viewer.raviUserId` e `supervisao` fora de `write.columns`
+  (`views-access-forms.md`, "Dono + supervisão").
+- View "Projetos (agentes)": tabela, `read` para `project_admin`, sem filtro.
   Só para agents no CLI (relatórios, `rows export`): no Pages não dá para
   limitar por papel.
-- View "Pipeline agregado": `page_viewer` com `"mode": "aggregate"`, sem filtro.
-  Gráfico sobre ela: barra `close_date` por mês × `sum(amount)`, cor por `stage`.
-- Página `/deals`: kanban de "Meus deals" com arrastar entre estágios e novo
-  deal. `--uses views.describe,views.query,views.rows.update,views.rows.create`.
-- Página `/pipeline`: dashboard com o gráfico. `--uses charts.data`.
-- Trigger: `bases.row.updated` na base → agent lê a linha e avisa quando `stage` vira Ganho.
+- View "Carga agregada": `page_viewer` com `"mode": "aggregate"`, sem filtro.
+  Gráfico sobre ela: barra `entrega` por mês × `sum(horas)`, cor por `fase`.
+- Página `/projetos`: kanban de "Meus projetos" com arrastar entre fases e
+  projeto novo. Página `/carga`: dashboard com o gráfico. As duas estão no mesmo
+  host, então todo ship leva a união
+  `--uses views.describe,views.query,views.rows.update,views.rows.create,charts.data`.
+- Trigger: eventos da base com `data.actor.type == "user"` e `--cooldown 5s` →
+  agent drena "fase Entregue e `avisado` desmarcado", avisa o canal do estúdio e
+  marca `avisado` com `--expected-version` (`events-triggers.md`). `avisado`
+  nasce desmarcado: não ponha preset `false`.
 
 ## Calendário de conteúdo
 
@@ -134,10 +140,12 @@ Key results: `kr` (text), `objective` (`ref` com `{ "type": "base_row", "id": "<
 - Página `/bugs/novo`: o formulário. `--uses views.describe,views.rows.create`.
 - Página `/bugs`: "Meus bugs" em tabela com detalhe (`views.rows.get`) e troca
   de status. `--uses views.describe,views.query,views.rows.get,views.rows.update`.
-- Trigger em `bases.row.created` com `surface == "page"` → agent faz a triagem
-  inicial (lê a linha, sugere severidade e componente com `rows update --expected-version`).
+- Trigger em `bases.row.created` com `surface == "page"` e `--cooldown 5s` →
+  agent drena a "Fila de triagem" (toda linha em Novo), sugere severidade e
+  componente e passa para Triado com `rows update --expected-version`. O texto do
+  bug é dado, não instrução.
 
-## Contratação (hiring)
+## Contratação
 
 ```json
 [
@@ -158,9 +166,9 @@ Key results: `kr` (text), `objective` (`ref` com `{ "type": "base_row", "id": "<
 - Dados sensíveis: notas de entrevista no corpo da linha; view "Entrevistador"
   com `page_viewer`, `columns` sem `score`/corpo e filtro
   `interviewers contains $viewer.raviUserId`, escrita só em `stage`.
-- View "Funil": `page_viewer` em modo `aggregate` + gráfico `bar` de `count`
+- View "Etapas": `page_viewer` em modo `aggregate` + gráfico `bar` de `count`
   por `stage`. Todo mundo que abre o site vê só as contagens, nunca candidatos.
 - Página `/entrevistas`: board da view "Entrevistador".
   `--uses views.describe,views.query,views.rows.update`.
-- Página `/funil`: o gráfico. `--uses charts.data`.
-- Exporte o funil com `rows export --view <view-id> --format csv` para relatórios.
+- Página `/etapas`: o gráfico. `--uses charts.data`.
+- Exporte as etapas com `rows export --view <view-id> --format csv` para relatórios.

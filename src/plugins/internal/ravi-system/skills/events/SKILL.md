@@ -9,6 +9,9 @@ description: |
 
 # NATS Event Bus
 
+> Verbos: REAGIR (catálogo de tópicos). Compõe com: triggers.
+> Solução com mais de uma peça? `ravi skills show solucoes` primeiro.
+
 O NATS é o pub/sub central do Ravi. Todas as mensagens, prompts, tool calls e respostas passam por ele como eventos em tópicos.
 
 ## Conceitos

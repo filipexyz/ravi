@@ -84,30 +84,34 @@ export function readBodyInput(body: string | undefined, bodyFile: string | undef
   return body;
 }
 
-/** `--sort amount:desc,created_time` → `[{prop, dir}]`. */
-export function parseSortOption(value: string | undefined): Array<{ prop: string; dir: "asc" | "desc" }> | undefined {
-  if (value === undefined || !value.trim()) return undefined;
-  const keys = value
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .map((part) => {
-      const [prop, dirRaw, extra] = part.split(":").map((piece) => piece.trim());
-      const dir = (dirRaw || "asc").toLowerCase();
-      if (!prop || extra !== undefined || (dir !== "asc" && dir !== "desc")) {
-        throw invalidInput(`--sort expects key[:asc|desc] items, got "${part}".`);
-      }
-      return { prop, dir: dir as "asc" | "desc" };
-    });
-  if (keys.length > BASES_SORT_KEYS_MAX) throw invalidInput(`--sort accepts at most ${BASES_SORT_KEYS_MAX} keys.`);
-  return keys;
+/**
+ * `--sort amount:desc,created_time` → `[{prop, dir}]`. The CLI passes one string;
+ * an array (from in-process callers) is joined the same way.
+ */
+export function parseSortOption(
+  value: string | readonly string[] | undefined,
+): Array<{ prop: string; dir: "asc" | "desc" }> | undefined {
+  const parts = splitList(value);
+  if (parts.length === 0) return undefined;
+  if (parts.length > BASES_SORT_KEYS_MAX) throw invalidInput(`--sort accepts at most ${BASES_SORT_KEYS_MAX} keys.`);
+  return parts.map((part) => {
+    const [prop, dirRaw, extra] = part.split(":").map((piece) => piece.trim());
+    const dir = (dirRaw || "asc").toLowerCase();
+    if (!prop || extra !== undefined || (dir !== "asc" && dir !== "desc")) {
+      throw invalidInput(`--sort expects key[:asc|desc] items, got "${part}".`);
+    }
+    return { prop, dir: dir as "asc" | "desc" };
+  });
 }
 
-/** `--group-by status --group-by created_time:month`, or comma-separated. */
+/**
+ * `--group-by created_time:month,status` → `[{prop, timeUnit?}]`. One comma-separated
+ * string from the CLI; an array is joined the same way.
+ */
 export function parseGroupByOption(
-  values: readonly string[] | undefined,
+  value: string | readonly string[] | undefined,
 ): Array<{ prop: string; timeUnit?: string }> | undefined {
-  const parts = splitList(values);
+  const parts = splitList(value);
   if (parts.length === 0) return undefined;
   if (parts.length > BASES_GROUP_BY_MAX) {
     throw invalidInput(`--group-by accepts at most ${BASES_GROUP_BY_MAX} dimensions.`);

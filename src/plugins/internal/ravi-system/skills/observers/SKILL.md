@@ -10,6 +10,9 @@ description: |
 
 # Observers
 
+> Verbos: CAPTAR (extrair calado). Compõe com: bases.
+> Solução com mais de uma peça? `ravi skills show solucoes` primeiro.
+
 Observers são sessões sidecar que recebem eventos canônicos de uma sessão fonte.
 Eles são assíncronos e isolados: não contaminam o prompt, permissões ou runtime
 da sessão observada.

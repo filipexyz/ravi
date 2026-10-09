@@ -10,6 +10,9 @@ description: |
 
 # Routes Manager
 
+> Verbos: CAPTAR. Compõe com: whatsapp, agents.
+> Solução com mais de uma peça? `ravi skills show solucoes` primeiro.
+
 Rotas direcionam mensagens para agents baseado em padrões. São sempre gerenciadas via `ravi instances routes <name>` — rotas pertencem a uma instância.
 
 ## Contrato Do CLI
