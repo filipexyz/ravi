@@ -1,3 +1,4 @@
+import { AGENT_CREATED_TOPIC, SESSION_CREATED_TOPIC } from "../events/lifecycle-events.js";
 import {
   PAGE_COMMENT_CREATED_MESSAGE,
   PAGE_COMMENT_CREATED_TOPIC,
@@ -918,6 +919,62 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
     },
     examples: ['ravi triggers add "Meeting transcript" --topic "ravi.meetings.transcript_available" --message "..."'],
     filters: ['data.artifactId != ""', 'data.originSessionName == "meetings"'],
+  },
+  {
+    id: "agents.created",
+    category: "custom",
+    pattern: AGENT_CREATED_TOPIC,
+    title: "Agent created",
+    description: "A new agent was persisted. Emitted once per agent, after the write succeeds.",
+    payload: "{ version, eventType, agentId, name, provider, mode, createdAt, occurredAt }",
+    schema: {
+      version: 1,
+      fields: [
+        { path: "version", type: "number", required: true, description: "Payload contract version." },
+        { path: "eventType", type: "string", required: true, description: "Always agent.created." },
+        { path: "agentId", type: "string", required: true, description: "Created agent id.", example: "support" },
+        { path: "name", type: ["string", "null"], description: "Agent display name." },
+        { path: "provider", type: ["string", "null"], description: "Runtime provider override, when set." },
+        { path: "mode", type: ["string", "null"], description: "Operating mode (active or sentinel), when set." },
+        { path: "createdAt", type: "number", required: true, description: "Creation timestamp in ms." },
+        { path: "occurredAt", type: "string", required: true, description: "ISO emission timestamp." },
+      ],
+    },
+    examples: [`ravi triggers add "Agent created" --topic "${AGENT_CREATED_TOPIC}" --message "..."`],
+    filters: ['data.provider == "codex"'],
+    notes: ["The payload never includes the agent cwd, model instructions or system prompt."],
+  },
+  {
+    id: "sessions.created",
+    category: "custom",
+    pattern: SESSION_CREATED_TOPIC,
+    title: "Session created",
+    description: "A new session row was inserted. Emitted once per session; reusing an existing session does not emit.",
+    payload:
+      "{ version, eventType, sessionKey, sessionName, agentId, channel, accountId, chatType, createdAt, occurredAt }",
+    schema: {
+      version: 1,
+      fields: [
+        { path: "version", type: "number", required: true, description: "Payload contract version." },
+        { path: "eventType", type: "string", required: true, description: "Always session.created." },
+        { path: "sessionKey", type: "string", required: true, description: "Canonical session key." },
+        { path: "sessionName", type: ["string", "null"], description: "Session name when known at creation." },
+        { path: "agentId", type: "string", required: true, description: "Owning agent id." },
+        { path: "channel", type: ["string", "null"], description: "Channel the session was created for." },
+        { path: "accountId", type: ["string", "null"], description: "Channel account id." },
+        { path: "chatType", type: ["string", "null"], description: "dm, group or channel." },
+        { path: "createdAt", type: "number", required: true, description: "Creation timestamp in ms." },
+        { path: "occurredAt", type: "string", required: true, description: "ISO emission timestamp." },
+      ],
+    },
+    examples: [
+      `ravi triggers add "Session created" --topic "${SESSION_CREATED_TOPIC}" --filter 'data.agentId == "main"' --message "..."`,
+    ],
+    filters: ['data.agentId == "main"', 'data.chatType == "group"'],
+    notes: [
+      "Published as ravi.sessions.created (plural): the trigger runner skips ravi.session.* subscriptions to prevent loops.",
+      "Sessions created for triggers carry _trigger: true and are skipped by the trigger runner, so a trigger cannot fire itself.",
+    ],
   },
   {
     id: "tags.rule.applied",

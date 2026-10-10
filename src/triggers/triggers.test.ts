@@ -9,6 +9,8 @@ import {
   sourceFromSessionEntry,
 } from "./runner.js";
 import { findTriggerTopicCatalogEntry } from "./topic-catalog.js";
+import { isBlockedTriggerTopic } from "./topic-policy.js";
+import { buildSessionCreatedEvent } from "../events/lifecycle-events.js";
 import { dbCreateTrigger, dbGetTrigger, dbRecordTriggerFilterRejects, dbUpdateTrigger } from "./triggers-db.js";
 
 let stateDir: string | null = null;
@@ -21,6 +23,34 @@ describe("triggers native automation support", () => {
   afterEach(async () => {
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+  });
+
+  it("catalogs agent and session creation events on subscribable topics", () => {
+    for (const topic of ["ravi.agents.created", "ravi.sessions.created"]) {
+      const entry = findTriggerTopicCatalogEntry(topic);
+      const fields = new Set(entry?.schema?.fields.map((field) => field.path));
+
+      expect(entry?.pattern, topic).toBe(topic);
+      expect(isBlockedTriggerTopic(topic), topic).toBe(false);
+      expect(fields).toContain("agentId");
+      expect(fields).toContain("createdAt");
+      expect(fields).not.toContain("cwd");
+    }
+    expect(findTriggerTopicCatalogEntry("ravi.sessions.created")?.schema?.fields.map((f) => f.path)).toContain(
+      "sessionKey",
+    );
+  });
+
+  it("skips session created events for trigger sessions to prevent self-fire loops", () => {
+    const triggerSession = buildSessionCreatedEvent({
+      sessionKey: "agent:main:trigger:abc123",
+      agentId: "main",
+      createdAt: 1,
+    });
+    const userSession = buildSessionCreatedEvent({ sessionKey: "agent:main:dm:5511", agentId: "main", createdAt: 1 });
+
+    expect(isTriggerOriginatedEvent("ravi.sessions.created", triggerSession)).toBe(true);
+    expect(isTriggerOriginatedEvent("ravi.sessions.created", userSession)).toBe(false);
   });
 
   it("catalogs native Slack reaction_added as a producer of ravi.inbound.reaction", () => {

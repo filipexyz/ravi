@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { dbUpsertChat } from "./router-db.js";
+import { dbUpsertChat, getDb } from "./router-db.js";
+import { SESSION_CREATED_TOPIC, setLifecycleEventPublisher } from "../events/lifecycle-events.js";
 import {
   attachChatToSession,
   detachChatFromSession,
@@ -27,6 +28,92 @@ describe("sessions store", () => {
   afterEach(async () => {
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+  });
+
+  describe("session created event", () => {
+    let emitted: Array<{ topic: string; data: Record<string, unknown> }>;
+
+    beforeEach(() => {
+      emitted = [];
+      setLifecycleEventPublisher(async (topic, data) => {
+        emitted.push({ topic, data });
+      });
+    });
+
+    afterEach(() => {
+      setLifecycleEventPublisher(null);
+    });
+
+    it("emits ravi.sessions.created exactly once on insert and never on reuse", () => {
+      const created = getOrCreateSession("agent:dev:whatsapp:group:123", "dev", "/tmp/dev-secret-cwd", {
+        name: "dev-group",
+        channel: "whatsapp",
+        accountId: "main",
+        chatType: "group",
+      });
+
+      expect(emitted).toHaveLength(1);
+      expect(emitted[0].topic).toBe(SESSION_CREATED_TOPIC);
+      expect(emitted[0].topic.startsWith("ravi.session.")).toBe(false);
+      expect(emitted[0].data).toMatchObject({
+        version: 1,
+        eventType: "session.created",
+        sessionKey: "agent:dev:whatsapp:group:123",
+        sessionName: "dev-group",
+        agentId: "dev",
+        channel: "whatsapp",
+        accountId: "main",
+        chatType: "group",
+        createdAt: created.createdAt,
+      });
+      expect(emitted[0].data._trigger).toBeUndefined();
+      expect(JSON.stringify(emitted[0].data)).not.toContain("/tmp/dev-secret-cwd");
+
+      getOrCreateSession("agent:dev:whatsapp:group:123", "dev", "/tmp/dev-secret-cwd");
+      getOrCreateSession("agent:dev:whatsapp:group:123", "other", "/tmp/other");
+
+      expect(emitted).toHaveLength(1);
+    });
+
+    it("does not emit when another writer inserts the same key first, even in the same millisecond", () => {
+      const sessionKey = "agent:dev:concurrent-insert";
+      // Simulate a concurrent writer: right before this call's INSERT, another
+      // writer creates the row with the same created_at.
+      getDb().exec(`
+        CREATE TEMP TRIGGER concurrent_session_insert BEFORE INSERT ON sessions
+        WHEN NEW.session_key = '${sessionKey}'
+          AND NOT EXISTS (SELECT 1 FROM sessions WHERE session_key = NEW.session_key)
+        BEGIN
+          INSERT INTO sessions (session_key, agent_id, agent_cwd, created_at, updated_at)
+          VALUES (NEW.session_key, 'dev', '/tmp/dev', NEW.created_at, NEW.created_at);
+        END;
+      `);
+      try {
+        const session = getOrCreateSession(sessionKey, "dev", "/tmp/dev", { name: "late-writer" });
+
+        expect(emitted).toHaveLength(0);
+        expect(session.name).toBe("late-writer");
+      } finally {
+        getDb().exec("DROP TRIGGER IF EXISTS concurrent_session_insert");
+      }
+    });
+
+    it("marks trigger sessions so the trigger runner skips them", () => {
+      getOrCreateSession("agent:dev:trigger:abc123", "dev", "/tmp/dev");
+
+      expect(emitted).toHaveLength(1);
+      expect(emitted[0].data._trigger).toBe(true);
+    });
+
+    it("does not fail the write when the publisher throws", () => {
+      setLifecycleEventPublisher(() => {
+        throw new Error("nats down");
+      });
+
+      const created = getOrCreateSession("agent:dev:publisher-failure", "dev", "/tmp/dev");
+
+      expect(getSession(created.sessionKey)?.agentId).toBe("dev");
+    });
   });
 
   it("persists effort overrides while preserving default fallback semantics", () => {

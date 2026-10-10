@@ -27,6 +27,7 @@ import {
   type SessionChatSubscriptionRecord,
 } from "./router-db.js";
 import { executeWrite } from "../db/write-retry.js";
+import { buildSessionCreatedEvent, emitSessionCreated } from "../events/lifecycle-events.js";
 import { logger } from "../utils/logger.js";
 
 const log = logger.child("router:sessions");
@@ -136,6 +137,7 @@ function rowToEntry(row: SessionRow): SessionEntry {
 
 interface SessionStatements {
   upsert: Statement;
+  insertNew: Statement;
   getByKey: Statement;
   getByName: Statement;
   getBySdkId: Statement;
@@ -254,6 +256,29 @@ function getStatements(): SessionStatements {
         total_tokens = sessions.total_tokens + excluded.total_tokens,
         updated_at = excluded.updated_at
     `),
+    insertNew: db.prepare(`
+      INSERT INTO sessions (
+        session_key, name, sdk_session_id, runtime_provider, runtime_provider_override, runtime_session_json, runtime_session_display_id, agent_id, agent_cwd,
+        chat_type, channel, account_id, group_id, subject, display_name,
+        last_channel, last_to, last_account_id, last_thread_id,
+        model_override, effort_override, thinking_level,
+        queue_mode, queue_debounce_ms, queue_cap,
+        input_tokens, output_tokens, total_tokens, context_tokens,
+        system_sent, aborted_last_run, compaction_count,
+        created_at, updated_at
+      ) VALUES (
+        ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?,
+        ?, ?, ?,
+        ?, ?, ?,
+        ?, ?, ?, ?,
+        ?, ?, ?,
+        ?, ?
+      )
+      ON CONFLICT(session_key) DO NOTHING
+      RETURNING session_key
+    `),
     getByKey: db.prepare("SELECT * FROM sessions WHERE session_key = ?"),
     getByName: db.prepare("SELECT * FROM sessions WHERE name = ?"),
     getBySdkId: db.prepare("SELECT * FROM sessions WHERE sdk_session_id = ? OR runtime_session_display_id = ?"),
@@ -344,7 +369,7 @@ export function getOrCreateSession(
   }
 
   const now = Date.now();
-  s.upsert.run(
+  const insertParams = [
     sessionKey,
     defaults?.name ?? null,
     defaults?.providerSessionId ?? defaults?.sdkSessionId ?? null,
@@ -379,11 +404,32 @@ export function getOrCreateSession(
     0,
     now,
     now,
-  );
+  ];
+  // Another writer can insert the same key between the SELECT above and this
+  // INSERT. Only the writer whose INSERT actually created the row emits; a
+  // loser merges its defaults into the existing row, as before.
+  const inserted = s.insertNew.get(...insertParams) != null;
+  if (!inserted) {
+    s.upsert.run(...insertParams);
+  }
 
-  log.debug("Created session", { sessionKey, agentId });
+  log.debug(inserted ? "Created session" : "Session created concurrently", { sessionKey, agentId });
 
-  return getOrCreateSession(sessionKey, agentId, agentCwd);
+  const created = getOrCreateSession(sessionKey, agentId, agentCwd);
+  if (inserted) {
+    emitSessionCreated(
+      buildSessionCreatedEvent({
+        sessionKey: created.sessionKey,
+        name: created.name ?? null,
+        agentId: created.agentId,
+        channel: created.channel ?? null,
+        accountId: created.accountId ?? null,
+        chatType: created.chatType ?? null,
+        createdAt: created.createdAt,
+      }),
+    );
+  }
+  return created;
 }
 
 /**

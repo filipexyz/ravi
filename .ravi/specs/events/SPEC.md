@@ -57,6 +57,14 @@ Events do NOT own:
 - New event subjects MUST follow the naming convention: `ravi.<domain>.<entity-or-action>[.<phase>]`.
 - The audit stream subject list and trigger topic catalog MUST NOT overlap with the session prompt workqueue (`ravi.session.*.prompt`).
 
+## Creation Lifecycle Events
+
+- `ravi.agents.created` MUST be emitted exactly once after a new agent row is persisted through `dbCreateAgent`; the bootstrap default agent inserted during schema setup does not emit.
+- `ravi.sessions.created` MUST be emitted exactly once when `getOrCreateSession` inserts a new row, and MUST NOT be emitted when an existing session is reused.
+- Both are `public-trigger` topics. They live under the plural `ravi.agents.*` / `ravi.sessions.*` namespaces because the trigger runner skips `ravi.session.*` subscriptions to prevent loops.
+- Sessions created for triggers (`:trigger:` in the session key) carry `_trigger: true` so the trigger runner never fires on its own session creation.
+- Emission is best-effort and fire-and-forget: a publish failure MUST NOT fail or roll back the write. Payloads carry ids and channel provenance only, never cwd, prompts or system prompt text.
+
 ## Validation
 
 - `bun test src/events/audit-stream.test.ts`

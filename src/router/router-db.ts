@@ -20,6 +20,7 @@ import { normalizePhone, normalizeRoutePattern } from "../utils/phone.js";
 import { normalizeLimitOffsetPage, type ListPage } from "../utils/pagination.js";
 import { timestampLikeToMs } from "../utils/provider-timestamp.js";
 import { executeWrite } from "../db/write-retry.js";
+import { buildAgentCreatedEvent, emitAgentCreated } from "../events/lifecycle-events.js";
 import {
   CLI_COMMAND_ACCESS_KIND_MIGRATION_KEYS,
   migrateAgentDefaultsRecord,
@@ -9051,7 +9052,17 @@ export function dbCreateAgent(input: z.input<typeof AgentInputSchema>): AgentCon
 
     log.info("Created agent", { id: validated.id });
     ensureAgentVisibilityMigration(getDb());
-    return dbGetAgent(validated.id)!;
+    const created = dbGetAgent(validated.id)!;
+    emitAgentCreated(
+      buildAgentCreatedEvent({
+        id: validated.id,
+        name: validated.name ?? null,
+        provider: validated.provider ?? null,
+        mode: validated.mode ?? null,
+        createdAt: now,
+      }),
+    );
+    return created;
   } catch (err) {
     if ((err as Error).message.includes("UNIQUE constraint failed")) {
       throw new Error(`Agent already exists: ${validated.id}`);

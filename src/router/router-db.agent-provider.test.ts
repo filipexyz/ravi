@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { dbCreateAgent, dbGetAgent, dbUpdateAgent } from "./router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { AGENT_CREATED_TOPIC, setLifecycleEventPublisher } from "../events/lifecycle-events.js";
 
 const TEST_AGENT_IDS = ["test-provider-agent-a", "test-provider-agent-b"];
 let stateDir: string | null = null;
@@ -86,5 +87,44 @@ describe("Agent provider persistence", () => {
     loaded = dbGetAgent("test-provider-agent-a");
     expect(loaded?.remote).toBe("10.10.10.201");
     expect(loaded?.remoteUser).toBe("root");
+  });
+
+  it("emits ravi.agents.created once after the agent is persisted", () => {
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    setLifecycleEventPublisher(async (topic, data) => {
+      emitted.push({ topic, data });
+    });
+    try {
+      dbCreateAgent({ id: "test-provider-agent-a", cwd: "/tmp/secret-agent-cwd", provider: "codex" });
+
+      expect(emitted).toHaveLength(1);
+      expect(emitted[0].topic).toBe(AGENT_CREATED_TOPIC);
+      expect(emitted[0].data).toMatchObject({
+        version: 1,
+        eventType: "agent.created",
+        agentId: "test-provider-agent-a",
+        provider: "codex",
+      });
+      expect(JSON.stringify(emitted[0].data)).not.toContain("/tmp/secret-agent-cwd");
+
+      expect(() => dbCreateAgent({ id: "test-provider-agent-a", cwd: "/tmp/secret-agent-cwd" })).toThrow(
+        "Agent already exists",
+      );
+      expect(emitted).toHaveLength(1);
+    } finally {
+      setLifecycleEventPublisher(null);
+    }
+  });
+
+  it("keeps the agent when the lifecycle publisher fails", () => {
+    setLifecycleEventPublisher(async () => {
+      throw new Error("nats down");
+    });
+    try {
+      dbCreateAgent({ id: "test-provider-agent-b", cwd: "/tmp/test-provider-agent-b" });
+      expect(dbGetAgent("test-provider-agent-b")?.id).toBe("test-provider-agent-b");
+    } finally {
+      setLifecycleEventPublisher(null);
+    }
   });
 });
