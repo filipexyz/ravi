@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Ravi — agents that work together in your Slack</title>
-<meta name="description" content="Ask in Slack for what you need. A team of AI agents plans it with you, builds the forms and trackers your team uses, and passes the work along until it's done. Ravi runs on a computer or server you control.">
+<meta name="description" content="A team of AI agents in your Slack that builds the trackers, forms and dashboards your team uses, and keeps them running. Runs on a computer or server you control.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://ravi.bot/">
 <meta property="og:title" content="Ravi — agents that work together in your Slack">
-<meta property="og:description" content="Ask in Slack. Your agents plan it, build one page your whole team opens, and bring the approval back to Slack.">
+<meta property="og:description" content="Ask in Slack. Your agents build the tools your team uses and keep the work moving.">
 <meta property="og:image" content="https://ravi.bot/og.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#0d0d0d">
@@ -52,41 +52,25 @@
       <span class="brand-word">ravi</span>
     </a>
     <nav class="hdr-nav" aria-label="Primary">
-      <a href="#ask">How it works</a>
-      <a href="#blockkit">In Slack</a>
+      <a href="#tools">Tools</a>
+      <a href="#slack">In Slack</a>
       <a href="#scale">Teams</a>
-      <a href="#sdk">For builders</a>
-      <a href="#install">Install</a>
-      <a href="https://github.com/filipexyz/ravi">GitHub</a>
+      <a href="#sdk">Builders</a>
+      <a href="https://github.com/filipexyz/ravi">GitHub <span aria-hidden="true">↗</span></a>
     </nav>
     <button class="hdr-menu js-only" type="button" aria-expanded="false" aria-controls="sheet">Menu</button>
   </div>
   <div class="sheet" id="sheet" hidden>
     <nav aria-label="Menu">
-      <a href="#ask">How it works</a>
-      <a href="#blockkit">In Slack</a>
+      <a href="#tools">Tools</a>
+      <a href="#slack">In Slack</a>
       <a href="#scale">Teams</a>
-      <a href="#sdk">For builders</a>
-      <a href="#install">Install</a>
-      <a href="https://github.com/filipexyz/ravi">GitHub</a>
+      <a href="#sdk">Builders</a>
+      <a href="https://github.com/filipexyz/ravi">GitHub <span aria-hidden="true">↗</span></a>
     </nav>
   </div>
 </header>
 
-<nav class="loopind" id="loopind" aria-label="Stations of the loop">
-  <div class="li-ring" aria-hidden="true">
-    <svg viewBox="0 0 64 64" focusable="false"><circle class="li-track" cx="32" cy="32" r="26"/><circle class="li-arc" cx="32" cy="32" r="26" pathLength="1"/></svg>
-  </div>
-  <ol class="li-ticks">
-    <li><a class="li-tick" href="#ask" data-st="ask" aria-label="Go to 01 Ask" title="01 Ask"><i></i><span>01 ASK</span></a></li>
-    <li><a class="li-tick" href="#build" data-st="build" aria-label="Go to 02 Build" title="02 Build"><i></i><span>02 BUILD</span></a></li>
-    <li><a class="li-tick" href="#share" data-st="share" aria-label="Go to 03 Share" title="03 Share"><i></i><span>03 SHARE</span></a></li>
-    <li><a class="li-tick" href="#wake" data-st="wake" aria-label="Go to 04 Pick up" title="04 Pick up"><i></i><span>04 PICK UP</span></a></li>
-    <li><a class="li-tick" href="#click" data-st="click" aria-label="Go to 05 Approve" title="05 Approve"><i></i><span>05 APPROVE</span></a></li>
-  </ol>
-  <p class="li-name" aria-hidden="true"><b>01</b> ASK</p>
-  <span class="li-prog" aria-hidden="true"></span>
-</nav>
 
 <p class="sr-only" role="status" aria-atomic="true" id="announcer"></p>
 
@@ -95,1749 +79,329 @@
 <!-- ===== 00-top.html ===== -->
 <section class="sec sec--top" id="top" aria-labelledby="top-h" data-auto="none">
   <div class="wrap top-in">
-    <p class="eyebrow"><span class="sr-only">00, Ravi</span><span aria-hidden="true">/ <b>00</b> — RAVI</span></p>
+    <p class="eyebrow">AGENTS FOR SLACK</p>
     <h1 class="hl hl--hero" id="top-h"><span class="mask"><span class="in">AGENTS THAT</span></span><span class="mask"><span class="in">WORK TOGETHER</span></span><span class="mask"><span class="in">IN YOUR SLACK.</span></span></h1>
 
     <div class="top-row">
       <div class="top-copy">
-        <!-- what it is and who sets it up (above the fold at 1440×900), then where to go and what it's for -->
         <div class="top-say">
-          <p class="lead top-lead">Ask in Slack for what you need, the way you'd ask a colleague. A team of AI agents plans it with you, builds the forms and trackers your team will use, and passes the work along until it's done. Ravi runs on a computer or server you control and joins your Slack as a bot you own.</p>
-          <p class="top-setup">Someone technical sets it up once. After that, your team works in Slack and a browser.</p>
+          <p class="lead top-lead">Ask the way you'd ask a colleague, and your agents split the work, build it and keep it running.</p>
         </div>
         <div class="top-go">
           <p class="top-links">
-            <a class="lnk lnk--go" href="#ask">See how it works <span aria-hidden="true">↓</span></a>
-            <a class="lnk" href="#install">Install <span aria-hidden="true">↓</span></a>
+            <a class="lnk lnk--go" href="#end">Try it <span aria-hidden="true">↓</span></a>
+            <a class="lnk" href="https://github.com/filipexyz/ravi">GitHub <span aria-hidden="true">↗</span></a>
           </p>
-          <div class="top-ex">
-            <p class="top-ex-l" id="top-ex-l">FOR EXAMPLE</p>
-            <ul class="top-ex-list" aria-labelledby="top-ex-l">
-              <li class="chip">Purchase requests</li>
-              <li class="chip">Bug reports</li>
-              <li class="chip">Hiring</li>
-              <li class="chip">Sales pipeline</li>
-              <li class="chip">Weekly spend</li>
-            </ul>
-          </div>
         </div>
       </div>
 
+      <!-- one Slack thread, every agent message from the one Ravi bot; the agents sit in the rail beside the window.
+           The authored HTML is the end state (whole thread, all three chips lit); js/00-top.js plays it in motion. -->
       <figure class="top-vis">
         <div class="tv">
-          <!-- horizontal composition loop (≥720px). 01 is the path start. -->
-          <svg class="tv-loop tv-loop--h" viewBox="0 0 640 560" aria-hidden="true" focusable="false">
-            <path class="tv-path" pathLength="1" d="M192 238 V128 Q192 110 210 110 H530 Q548 110 548 128 V452 Q548 470 530 470 H210 Q192 470 192 452 Z"/>
-            <circle class="tv-pk" r="4" transform="translate(192 238)"/>
-          </svg>
-          <!-- vertical loop (<720px): CSS border for no-JS, SVG path built by JS -->
-          <i class="tv-loop-css" aria-hidden="true"></i>
-          <svg class="tv-loop tv-loop--v" aria-hidden="true" focusable="false"><path class="tv-path" pathLength="1" d=""/><circle class="tv-pk" r="4"/></svg>
-          <!-- the packet's glow: an HTML element so its breathing runs on the compositor (JS moves the outer, CSS pulses the inner) -->
-          <i class="tv-glow" aria-hidden="true"><i class="tv-glow-in"></i></i>
-
-          <div class="tv-card tv-slack">
-            <span class="tv-tab">SLACK</span>
-            <div class="tv-sk">
-              <p class="tv-sk-hd"><b># office</b></p>
-              <div class="tv-sk-msg">
-                <span class="av av--ana" aria-hidden="true">A</span>
-                <p><b>Ana</b><span>We keep losing purchase requests in DMs…</span></p>
-              </div>
-              <i class="tv-sk-compose" aria-hidden="true"></i>
-            </div>
-          </div>
-
-          <div class="tv-card tv-base">
-            <span class="tv-tab">RAVI BASES · the table</span>
-            <table class="tv-tbl">
-              <thead><tr><th colspan="3">Item · Amount · Status</th></tr></thead>
-              <tbody>
-                <tr><td>Headset</td><td class="num">$120</td><td><span class="stc stc--req">Requested</span></td></tr>
-                <tr><td>Booth banner</td><td class="num">$340</td><td><span class="stc stc--app">Approved</span></td></tr>
-                <tr><td>Demo laptop</td><td class="num">$1,890</td><td><span class="stc stc--ord">Ordered</span></td></tr>
-              </tbody>
-            </table>
-          </div>
-
-          <div class="tv-card tv-page">
-            <span class="tv-tab">RAVI PAGES · the page</span>
-            <div class="tv-br" aria-hidden="true">
-              <div class="tv-br-chrome"><i></i><i></i><i></i><b></b></div>
-              <div class="tv-br-board">
-                <div class="tv-col"><i class="tv-col-h"></i><i class="tv-bc"></i></div>
-                <div class="tv-col"><i class="tv-col-h"></i><i class="tv-bc"></i></div>
-                <div class="tv-col"><i class="tv-col-h"></i><i class="tv-bc"></i></div>
-                <div class="tv-col"><i class="tv-col-h"></i></div>
-                <div class="tv-col"><i class="tv-col-h"></i></div>
-              </div>
-            </div>
-          </div>
-
-          <div class="tv-bar">
-            <p class="tv-bar-l"><span class="nw">YOUR AGENTS ·</span> <span class="nw">ON YOUR COMPUTER OR SERVER</span></p>
-            <p class="tv-chips">
-              <span class="chip" style="--dot:var(--a-reception)"><i></i><span>reception <span class="tv-role">· front desk</span></span></span>
-              <span class="chip" style="--dot:var(--a-dev)"><i></i><span>dev <span class="tv-role">· builds things</span></span></span>
-              <span class="chip" style="--dot:var(--a-ops)"><i></i><span>ops <span class="tv-role">· runs things</span></span></span>
-            </p>
-          </div>
-
-          <a class="st st--01 is-current" href="#ask"><i class="st-sq" aria-hidden="true"></i><span class="st-l"><b>01</b> ASK</span></a>
-          <a class="st st--02" href="#build"><i class="st-sq" aria-hidden="true"></i><span class="st-l"><b>02</b> BUILD</span></a>
-          <a class="st st--03" href="#share"><i class="st-sq" aria-hidden="true"></i><span class="st-l"><b>03</b> SHARE</span></a>
-          <a class="st st--04" href="#wake"><i class="st-sq" aria-hidden="true"></i><span class="st-l"><b>04</b> PICK UP</span></a>
-          <a class="st st--05" href="#click"><i class="st-sq" aria-hidden="true"></i><span class="st-l"><b>05</b> APPROVE</span></a>
-        </div>
-        <figcaption class="note tv-cap">One Slack message becomes a tool your whole team uses. Scroll to follow it.</figcaption>
-      </figure>
-    </div>
-  </div>
-</section>
-
-<!-- ===== 01-ask.html ===== -->
-<section class="sec sec--pin" id="ask" aria-labelledby="ask-h" data-static="frames">
-  <header class="wrap sec-head">
-    <p class="eyebrow"><span class="sr-only">01, Ask</span><span aria-hidden="true">/ <b>01</b> — ASK</span></p>
-    <h2 class="hl" id="ask-h"><span class="mask"><span class="in">IT STARTS AS</span></span><span class="mask"><span class="in">A SLACK MESSAGE.</span></span></h2>
-    <p class="intro" data-reveal>Ana needs a better way to handle purchase requests, so she asks in Slack. Each channel can have its own agent looking after it.</p>
-  </header>
-
-  <div class="stage-wrap">
-    <div class="scene">
-      <a class="skip-scene" href="#build">Skip this scene <span aria-hidden="true">↓</span></a>
-
-      <div class="scene-copy">
-        <ol class="beats" aria-label="Steps in this scene">
-          <li><div class="beat" data-label="ana"><span class="beat-n">01</span><span class="beat-t">Ana writes in #office. The reception agent, your front desk, looks after this channel.</span></div></li>
-          <li><div class="beat" data-label="plan"><span class="beat-n">02</span><span class="beat-t">It writes a plan and shows it as a card. Nothing gets built until someone says yes.</span></div></li>
-          <li><div class="beat" data-label="bruno"><span class="beat-n">03</span><span class="beat-t">Only people you've chosen can approve a plan. Bruno, from sales, isn't one, so his click does nothing.</span></div></li>
-          <li><div class="beat" data-label="carla"><span class="beat-n">04</span><span class="beat-t">Carla, their team lead, is. One click, and the plan is approved.</span></div></li>
-          <li><div class="beat" data-label="task"><span class="beat-n">05</span><span class="beat-t">Then reception hands the job to dev, the builder, who reports back when it's done or if it gets stuck.</span></div></li>
-        </ol>
-      </div>
-
-      <!-- static storyboard: reduced motion, no JS, frames mode -->
-      <figure class="frames ak-frames" aria-label="The scene in two frames">
-        <figure class="frame" data-reveal>
-          <figcaption>BEFORE</figcaption>
-          <div class="sk-win ak-fwin">
+          <div class="sk-win tv-win">
             <div class="sk-main">
-              <p class="sk-hd"><b># office</b><span>12 members</span></p>
-              <div class="sk-msgs">
-                <div class="sk-msg">
+              <p class="sk-hd"><b># office</b></p>
+              <div class="sk-msgs tv-msgs">
+                <div class="sk-msg tv-m tv-m--ana">
                   <span class="av av--ana" aria-hidden="true">A</span>
-                  <div><p class="sk-meta"><b>Ana</b><time datetime="2026-10-09T14:04:00Z">10:04 AM</time></p>
-                    <p class="sk-text">We keep losing purchase requests in DMs. Can we get one place where everyone files them, and finance approves?</p></div>
+                  <div><p class="sk-meta"><b>Ana</b></p><p class="sk-text"><span class="tv-type">We keep losing purchase requests in DMs.</span></p></div>
                 </div>
-                <div class="sk-msg ak-rec">
-                  <span class="av av--rec" aria-hidden="true">r</span>
-                  <div class="ak-rec-b"><p class="sk-meta"><b>reception</b><span class="app">APP</span><time datetime="2026-10-09T14:05:10Z">10:05 AM</time></p>
-                    <div class="bk ak-card ak-card--static">
-                      <p class="bk-header">Plan pending</p>
-                      <p class="bk-section ak-plan"><span class="ak-ln">Purchase requests: one place for everyone</span><span class="ak-ln">Who uses it: your team at acme, signed in; no one outside</span><span class="ak-ln">How requests come in: a form on a page</span><span class="ak-ln">Where they're kept: one table, a row per request</span><span class="ak-ln">Who sees what: everyone sees their own; supervisors see their team's</span><span class="ak-ln">When one comes in: ops posts it to #finance with Approve and Decline</span><span class="ak-ln">Every week: a spend summary in a Slack Canvas</span><span class="ak-ln">Who does it: dev builds it, ops runs it</span><span class="ak-ln">Can't do yet: alert ops when someone comments on the page. Instead: a feedback form.</span></p>
-                      <p class="bk-context">Agent: reception</p>
-                      <div class="bk-actions"><span class="bk-btn bk-btn--primary">Approve</span><span class="bk-btn bk-btn--danger">Reject</span><span class="tag tag--sand">Bruno can't approve plans</span></div>
-                    </div>
-                  </div>
+                <div class="sk-msg tv-m" data-ag="reception">
+                  <span class="av av--ravi" aria-hidden="true"></span>
+                  <div><p class="sk-meta"><b>Ravi</b><span class="app">APP</span></p><p class="sk-text">Got it. Handing this to dev.</p></div>
+                  <i class="tv-dots" aria-hidden="true"><i></i><i></i><i></i></i>
                 </div>
-              </div>
-            </div>
-          </div>
-          <p class="note ak-note">Every Slack window and page on this site is an illustration of what Ravi sends and shows. The dark panels that show what an agent is doing are a picture of the work, not a screen in Ravi. Acme and its people are made up.</p>
-        </figure>
-        <figure class="frame" data-reveal>
-          <figcaption>AFTER</figcaption>
-          <div class="sk-win ak-fwin">
-            <div class="sk-main">
-              <p class="sk-hd"><b># office</b><span>12 members</span></p>
-              <div class="sk-msgs">
-                <div class="sk-msg">
-                  <span class="av av--ana" aria-hidden="true">A</span>
-                  <div><p class="sk-meta"><b>Ana</b><time datetime="2026-10-09T14:04:00Z">10:04 AM</time></p>
-                    <p class="sk-text">We keep losing purchase requests in DMs. Can we get one place where everyone files them, and finance approves?</p></div>
+                <div class="sk-msg tv-m" data-ag="dev">
+                  <span class="av av--ravi" aria-hidden="true"></span>
+                  <div><p class="sk-meta"><b>Ravi</b><span class="app">APP</span></p><p class="sk-text">Done. Your purchase tracker is up.</p></div>
+                  <i class="tv-dots" aria-hidden="true"><i></i><i></i><i></i></i>
                 </div>
-                <div class="sk-msg ak-rec">
-                  <span class="av av--rec" aria-hidden="true">r</span>
-                  <div class="ak-rec-b"><p class="sk-meta"><b>reception</b><span class="app">APP</span><time datetime="2026-10-09T14:05:10Z">10:05 AM</time></p>
-                    <div class="bk ak-card ak-card--static">
-                      <div class="bk-final"><b>Plan pending</b><span class="ak-l2"><span>Approved</span><span class="tag tag--mint">Approved by Carla</span></span></div>
-                    </div>
-                  </div>
+                <div class="sk-msg tv-m" data-ag="ops">
+                  <span class="av av--ravi" aria-hidden="true"></span>
+                  <div><p class="sk-meta"><b>Ravi</b><span class="app">APP</span></p><p class="sk-text">New ones go to #finance. I'll post the spend every Monday.</p></div>
+                  <i class="tv-dots" aria-hidden="true"><i></i><i></i><i></i></i>
                 </div>
               </div>
             </div>
           </div>
-          <div class="ak-rt ak-rt--static">
-            <p class="ak-rt-l">YOUR AGENTS · <span class="nw">ON YOUR COMPUTER OR SERVER</span></p>
-            <div class="ak-dia">
-              <svg class="ak-fsvg" width="240" height="236" viewBox="0 0 240 236" aria-hidden="true" focusable="false">
-                <path class="wire" d="M15 32 V132 M15 168 V204"/>
-                <path class="wire ak-wire" d="M15 32 V132"/>
-                <path class="ak-ret" d="M206 150 H224 Q232 150 232 142 V22 Q232 14 224 14 H207"/>
-                <path class="ak-ret-h" d="M212.5 9.5 L207 14 L212.5 18.5"/>
-              </svg>
-              <div class="ak-chips">
-                <span class="chip is-lit ak-c-rec"><i style="--dot:var(--a-reception)"></i><span>reception <span class="ak-role">· front desk</span></span></span>
-                <span class="ak-devw">
-                  <span class="chip is-lit ak-c-dev"><i style="--dot:var(--a-dev)"></i><span>dev <span class="ak-role">· builds things</span></span></span>
-                  <span class="tag tag--mint ak-st">starting on it</span>
-                  <span class="ak-ticket"><span class="ak-tk-in"><b>Build purchase requests</b><span>from the approved plan</span></span></span>
-                </span>
-                <span class="chip chip--dim ak-c-ops"><i style="--dot:var(--a-ops)"></i><span>ops <span class="ak-role">· runs things</span></span></span>
-              </div>
-              <span class="ak-ret-l">reports back</span>
-            </div>
-          </div>
-        </figure>
+          <ul class="tv-rail">
+            <li class="chip chip--dim is-lit tv-ag" style="--dot:var(--a-reception)"><i></i>reception<span class="tv-hair" aria-hidden="true"></span></li>
+            <li class="chip chip--dim is-lit tv-ag" style="--dot:var(--a-dev)"><i></i>dev<span class="tv-hair" aria-hidden="true"></span></li>
+            <li class="chip chip--dim is-lit tv-ag" style="--dot:var(--a-ops)"><i></i>ops<span class="tv-hair" aria-hidden="true"></span></li>
+          </ul>
+          <i class="pkt tv-pk" aria-hidden="true"><i></i></i>
+        </div>
       </figure>
-
-      <!-- the pinned stage (desk) / the scene in flow with a short pin on the card (touch) -->
-      <div class="stage ak-stage">
-        <div class="sk-win sk-win--rail-opt ak-win wc">
-          <div class="sk-rail ak-rail">
-            <p class="sk-ws">acme</p>
-            <p class="sk-group">CHANNELS</p>
-            <ul class="ak-rows">
-              <li class="is-active"># office</li>
-              <li># finance</li>
-              <li># sales</li>
-              <li># eng</li>
-            </ul>
-            <p class="sk-group">APPS</p>
-            <ul class="ak-rows">
-              <li><span class="sq ak-sq-rec" aria-hidden="true">r</span>reception</li>
-              <li><span class="sq ak-sq-ops" aria-hidden="true">o</span>ops</li>
-            </ul>
-          </div>
-          <div class="sk-main">
-            <p class="sk-hd ak-hd"><b># office</b><span>12 members</span></p>
-            <div class="sk-msgs ak-msgs">
-              <div class="ak-feed">
-                <div class="sk-msg ak-ana">
-                  <span class="av av--ana ak-ana-av" aria-hidden="true">A</span>
-                  <div><p class="sk-meta ak-ana-meta"><b>Ana</b><time datetime="2026-10-09T14:04:00Z">10:04 AM</time></p>
-                    <p class="sk-text ak-words"><span>We</span> <span>keep</span> <span>losing</span> <span>purchase</span> <span>requests</span> <span>in</span> <span>DMs.</span> <span>Can</span> <span>we</span> <span>get</span> <span>one</span> <span>place</span> <span>where</span> <span>everyone</span> <span>files</span> <span>them,</span> <span>and</span> <span>finance</span> <span>approves?</span></p></div>
-                </div>
-                <div class="ak-panel">
-                  <div class="ak-pvp">
-                  <div class="sk-msg ak-rec ak-recm">
-                    <span class="av av--rec ak-rec-av" aria-hidden="true">r</span>
-                    <div class="ak-rec-b"><p class="sk-meta ak-rec-meta"><b>reception</b><span class="app">APP</span><time datetime="2026-10-09T14:05:10Z">10:05 AM</time></p>
-                      <div class="bk ak-card wc">
-                        <i class="ak-card-bg" aria-hidden="true"></i><i class="ak-card-btm" aria-hidden="true"></i>
-                        <div class="ak-req">
-                          <p class="bk-header"><span class="mask"><span class="in">Plan pending</span></span></p>
-                          <p class="bk-section ak-plan"><span class="ak-ln">Purchase requests: one place for everyone</span><span class="ak-ln">Who uses it: your team at acme, signed in; no one outside</span><span class="ak-ln">How requests come in: a form on a page</span><span class="ak-ln">Where they're kept: one table, a row per request</span><span class="ak-ln">Who sees what: everyone sees their own; supervisors see their team's</span><span class="ak-ln">When one comes in: ops posts it to #finance with Approve and Decline</span><span class="ak-ln">Every week: a spend summary in a Slack Canvas</span><span class="ak-ln">Who does it: dev builds it, ops runs it</span><span class="ak-ln">Can't do yet: alert ops when someone comments on the page. Instead: a feedback form.</span></p>
-                          <p class="bk-context">Agent: reception</p>
-                          <div class="bk-actions ak-acts"><span class="bk-btn bk-btn--primary ak-approve">Approve</span><span class="bk-btn bk-btn--danger ak-reject">Reject</span><span class="tag tag--sand ak-tag-ign">Bruno can't approve plans</span></div>
-                        </div>
-                        <div class="bk-final ak-final"><span class="mask"><span class="in"><b>Plan pending</b></span></span><span class="ak-l2"><span class="mask"><span class="in">Approved</span></span><span class="tag tag--mint ak-tag-ok">Approved by Carla</span></span></div>
-                      </div>
-                    </div>
-                  </div>
-                  </div>
-                  <div class="ak-caps" aria-hidden="true">
-                    <p class="ak-cap"><b>02</b> The reception agent writes a plan and shows it as a card. Nothing gets built until someone says yes.</p>
-                    <p class="ak-cap"><b>03</b> Only people you've chosen can approve a plan. Bruno, from sales, isn't one, so his click does nothing.</p>
-                    <p class="ak-cap"><b>04</b> Carla, their team lead, is. One click, and the plan is approved.</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <p class="note ak-note ak-note--stage">Every Slack window and page on this site is an illustration of what Ravi sends and shows. The dark panels that show what an agent is doing are a picture of the work, not a screen in Ravi. Acme and its people are made up.</p>
-
-        <div class="ak-rt wc">
-          <p class="ak-rt-l">YOUR AGENTS · <span class="nw">ON YOUR COMPUTER OR SERVER</span></p>
-          <div class="ak-dia">
-            <svg class="wires" aria-hidden="true" focusable="false">
-              <defs><mask id="ak-ret-m" maskUnits="userSpaceOnUse" x="-4000" y="-4000" width="8000" height="8000"><path class="ak-ret-mp" pathLength="1" d="M0 0"/></mask></defs>
-              <path class="wire ak-wire-all" d="M0 0"/>
-              <path class="wire ak-wire" pathLength="1" d="M0 0"/>
-              <path class="ak-ret" d="M0 0" mask="url(#ak-ret-m)"/>
-              <path class="ak-ret-h" d="M0 0"/>
-            </svg>
-            <i class="pk pk--read ak-pk" aria-hidden="true"></i>
-            <div class="ak-chips">
-              <span class="chip chip--dim ak-c-rec"><i style="--dot:var(--a-reception)"></i><span>reception <span class="ak-role">· front desk</span></span></span>
-              <i class="ak-sp" aria-hidden="true"></i>
-              <span class="ak-devw">
-                <span class="chip chip--dim ak-c-dev"><i style="--dot:var(--a-dev)"></i><span>dev <span class="ak-role">· builds things</span></span></span>
-                <span class="tag tag--mint ak-st">starting on it</span>
-                <span class="ak-ticket wc"><span class="ak-tk-in"><b>Build purchase requests</b><span>from the approved plan</span></span></span>
-              </span>
-              <i class="ak-sp" aria-hidden="true"></i>
-              <span class="chip chip--dim ak-c-ops"><i style="--dot:var(--a-ops)"></i><span>ops <span class="ak-role">· runs things</span></span></span>
-            </div>
-            <span class="ak-ret-l">reports back</span>
-          </div>
-        </div>
-        <div class="cur cur--bruno ak-cur-b" aria-hidden="true"><svg viewBox="0 0 28 40" focusable="false"><path d="M2 2 L2 33 L10 25.5 L15.5 38.5 L21 36 L15.6 23.4 L26.5 23.4 Z"/></svg><span class="cur-name">Bruno</span><i class="cur-ripple"></i></div>
-        <div class="cur cur--carla ak-cur-c" aria-hidden="true"><svg viewBox="0 0 28 40" focusable="false"><path d="M2 2 L2 33 L10 25.5 L15.5 38.5 L21 36 L15.6 23.4 L26.5 23.4 Z"/></svg><span class="cur-name">Carla</span><i class="cur-ripple"></i></div>
-      </div>
     </div>
-  </div>
-
-  <div class="wrap ak-small">
-    <p class="fine" data-reveal>Only people you allow can approve a plan. If nobody answers within five minutes, the card expires and the agent doesn't go ahead.</p>
   </div>
 </section>
 
-<!-- ===== 02-build.html ===== -->
-<section class="sec sec--pin" id="build" aria-labelledby="build-h" data-static="frames">
+<!-- ===== 01-tools.html ===== -->
+<section class="sec tl" id="tools" aria-labelledby="tools-h">
   <header class="wrap sec-head">
-    <p class="eyebrow"><span class="sr-only">02, Build</span><span aria-hidden="true">/ <b>02</b> — BUILD</span></p>
-    <h2 class="hl" id="build-h"><span class="mask"><span class="in">FIRST THE TABLE,</span></span> <span class="mask"><span class="in">THEN THE PAGE.</span></span></h2>
-    <p class="intro" data-reveal>The dev agent builds two things: the table that keeps every purchase request (Ravi Bases) and the page your team opens to file them (Ravi Pages). Nobody on your team writes code.</p>
+    <p class="eyebrow">RAVI PAGES + BASES</p>
+    <h2 class="hl" id="tools-h"><span class="mask"><span class="in">REAL TOOLS,</span></span> <span class="mask"><span class="in">BUILT FOR YOUR TEAM.</span></span></h2>
+    <p class="intro" data-reveal>Your agents build the trackers, forms, boards and dashboards your team works in, without anyone on the team writing code.</p>
   </header>
-
-  <div class="stage-wrap">
-    <div class="scene">
-      <a class="skip-scene" href="#share">Skip this scene <span aria-hidden="true">↓</span></a>
-
-      <div class="scene-copy">
-        <ol class="beats" aria-label="Steps in this scene">
-          <li><div class="beat" data-label="table"><span class="beat-n">01</span><span class="beat-t">First, dev builds the table from the approved plan: one row for each request.</span></div></li>
-          <li><div class="beat" data-label="rules"><span class="beat-n">02</span><span class="beat-t">Then the rules: each person sees their own requests, a supervisor sees the team's, and Ravi fills in who asked.</span></div></li>
-          <li><div class="beat" data-label="split"><span class="beat-n">03</span><span class="beat-t">Ravi Bases keeps the table, Ravi Pages shows it, and requests filed on the page are saved in the table.</span></div></li>
-          <li><div class="beat" data-label="page"><span class="beat-n">04</span><span class="beat-t">Then dev draws the page at your team's own link. Only people you've added to acme in Ravi can open it, after they sign in.</span></div></li>
-          <li><div class="beat" data-label="done"><span class="beat-n">05</span><span class="beat-t">When it's done, dev tells reception, the front desk, which posts the link in #office.</span></div></li>
-        </ol>
-      </div>
-
-      <!-- static view (reduced motion, no JS, frames): BUILDING, the split, READY -->
-      <figure class="frames bd-frames" aria-label="The scene in two frames">
-        <figure class="frame bd-fr bd-fr--a">
-          <figcaption>BUILDING</figcaption>
-          <div class="bd-fr-grid">
-            <div class="bd-agent bd-agent--fr">
-              <div class="bd-who">
-                <span class="av bd-av" aria-hidden="true">d</span>
-                <p class="bd-nm"><b>dev</b><span>builds things</span></p>
-              </div>
-              <p class="bd-tk"><b>Build purchase requests</b><span>from the approved plan</span></p>
-              <p class="bd-st" data-st="done"><i class="bd-st-d" aria-hidden="true"></i><span class="bd-st-t">done</span></p>
-              <ol class="bd-chk">
-                <li><svg class="bd-ck" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="8.5"/><path pathLength="1" d="M6 10.3l2.7 2.7L14.2 7.4"/></svg><span>The table</span></li>
-                <li><svg class="bd-ck" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="8.5"/><path pathLength="1" d="M6 10.3l2.7 2.7L14.2 7.4"/></svg><span>The rules</span></li>
-                <li><svg class="bd-ck" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="8.5"/><path pathLength="1" d="M6 10.3l2.7 2.7L14.2 7.4"/></svg><span>The page</span></li>
-              </ol>
-              <div class="bd-prog" aria-hidden="true"><i></i></div>
-            </div>
-            <div class="bd-cards">
-              <div class="bd-card bd-base light">
-                <p class="bd-tab">RAVI BASES</p>
-                <p class="bd-ttl">Purchase requests</p>
-                <div class="bd-ths">
-                  <div class="bd-th"><b>Item</b><span class="bd-hint">what's needed</span></div>
-                  <div class="bd-th"><b>Amount</b><span class="bd-hint">in dollars</span></div>
-                  <div class="bd-th bd-th--team"><b>Team</b><span class="bd-hint">Sales, Marketing, Engineering or Support</span></div>
-                  <div class="bd-th bd-th--st"><b>Status</b><span class="bd-stcs"><span class="stc stc--req">Requested</span><span class="stc stc--app">Approved</span><span class="stc stc--ord">Ordered</span><span class="stc stc--rec">Received</span><span class="stc stc--dec">Declined</span></span></div>
-                  <div class="bd-th"><b>Requested by</b><span class="bd-hint">from who's signed in</span></div>
-                  <div class="bd-th"><b>Supervisor</b><span class="bd-hint">filled in by ops</span></div>
-                  <div class="bd-th"><b>Needed by</b><span class="bd-hint">a date</span></div>
-                </div>
-                <div class="bd-rows" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-              </div>
-              <div class="bd-card bd-vcard light">
-                <p class="bd-vt">THE RULES</p>
-                <dl class="bd-vrows">
-                  <div class="bd-vr"><dt><svg class="bd-lk" viewBox="0 0 10 12" aria-hidden="true" focusable="false"><rect x="1" y="5" width="8" height="6.5" rx="1.3" fill="currentColor"/><path d="M3 5V3.6a2 2 0 0 1 4 0V5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>WHO CAN OPEN IT</dt><dd>People you've added to acme in Ravi, signed in</dd></div>
-                  <div class="bd-vr"><dt><svg class="bd-lk" viewBox="0 0 10 12" aria-hidden="true" focusable="false"><rect x="1" y="5" width="8" height="6.5" rx="1.3" fill="currentColor"/><path d="M3 5V3.6a2 2 0 0 1 4 0V5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>WHO SEES WHAT</dt><dd>Each person sees their own requests. A supervisor also sees the team's.</dd></div>
-                  <div class="bd-vr"><dt><svg class="bd-lk" viewBox="0 0 10 12" aria-hidden="true" focusable="false"><rect x="1" y="5" width="8" height="6.5" rx="1.3" fill="currentColor"/><path d="M3 5V3.6a2 2 0 0 1 4 0V5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>FILLED IN FOR YOU</dt><dd>Who asked, and the status (Requested)</dd></div>
-                  <div class="bd-vr"><dt><svg class="bd-lk" viewBox="0 0 10 12" aria-hidden="true" focusable="false"><rect x="1" y="5" width="8" height="6.5" rx="1.3" fill="currentColor"/><path d="M3 5V3.6a2 2 0 0 1 4 0V5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>WHAT PEOPLE CAN EDIT</dt><dd>Item, amount, team, needed by</dd></div>
-                  <div class="bd-vr bd-vr--no"><dt><svg class="bd-lk" viewBox="0 0 10 12" aria-hidden="true" focusable="false"><rect x="1" y="5" width="8" height="6.5" rx="1.3" fill="currentColor"/><path d="M3 5V3.6a2 2 0 0 1 4 0V5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>NOBODY ON THE PAGE CAN</dt><dd>File a request in someone else's name</dd></div>
-                </dl>
-                <p class="bd-vfoot">Ravi applies these rules every time someone opens the page or files a request.</p>
-              </div>
-            </div>
-          </div>
-        </figure>
-
-        <div class="bd-split bd-split--fr">
-          <div class="bd-split-in">
-            <div class="bd-sl"><p class="bd-sh"><span class="mask"><span class="in">RAVI BASES</span></span> <span class="mask"><span class="in">KEEPS THE TABLE.</span></span></p></div>
-            <div class="bd-sr"><p class="bd-sh"><span class="mask"><span class="in">RAVI PAGES</span></span> <span class="mask"><span class="in">SHOWS THE PAGE.</span></span></p></div>
-            <i class="bd-seam" aria-hidden="true"></i>
-            <span class="bd-pillwrap bd-pillwrap--r"><span class="pill-code bd-pill">the page shows the table</span></span>
-            <span class="bd-pillwrap bd-pillwrap--w"><span class="pill-code bd-pill bd-pill--w">new requests are saved to it</span></span>
-          </div>
-        </div>
-
-        <figure class="frame bd-fr bd-fr--b">
-          <figcaption>READY</figcaption>
-          <div class="rb-browser bd-br" role="group" aria-label="Purchase requests at acme-ops.ravi.page/requests">
-            <div class="rb-chrome">
-              <span class="rb-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-              <span class="rb-reload" aria-hidden="true">↻</span>
-              <div class="rb-url">
-                <svg class="rb-lock" viewBox="0 0 10 12" aria-hidden="true" focusable="false"><rect x="1" y="5" width="8" height="6.5" rx="1.3" fill="currentColor"/><path d="M3 5V3.6a2 2 0 0 1 4 0V5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
-                <span class="bd-urlt">acme-ops.ravi.page/requests</span>
-                <span class="rb-private">Private</span>
-              </div>
-            </div>
-            <div class="rb-page bd-pg">
-              <div class="bd-ph">
-                <span class="rb-mark" aria-hidden="true">r</span>
-                <div class="bd-ph-t"><p class="rb-title">Purchase requests</p><p class="rb-sub">acme</p></div>
-                <div class="bd-pubw">
-                  <span class="bd-pubsw"><span class="bd-sw" aria-hidden="true"><i class="bd-sw-on"></i><i class="bd-sw-k"></i></span><span>Make it public</span></span>
-                  <span class="tag tag--light tag--sand bd-ptag">Stays private: only people signed in to acme can see these requests.</span>
-                </div>
-              </div>
-              <div class="bd-pbar"><span class="btn btn--teal-o bd-new">+ New request</span></div>
-              <div class="bd-board5">
-                <div class="bd-col"><p class="bd-colh">REQUESTED</p></div>
-                <div class="bd-col"><p class="bd-colh">APPROVED</p></div>
-                <div class="bd-col"><p class="bd-colh">ORDERED</p></div>
-                <div class="bd-col"><p class="bd-colh">RECEIVED</p></div>
-                <div class="bd-col"><p class="bd-colh">DECLINED</p></div>
-              </div>
-            </div>
-          </div>
-          <div class="sk-win bd-sk">
-            <div class="sk-main">
-              <p class="sk-hd"># office</p>
-              <div class="sk-msgs">
-                <div class="sk-msg">
-                  <span class="av av--rec" aria-hidden="true">r</span>
-                  <div>
-                    <p class="sk-meta"><b>reception</b><span class="app">APP</span><time>10:52 AM</time></p>
-                    <p class="sk-text">Done. File purchase requests at <span class="bd-url"><span class="bd-up">https://acme-ops.ravi.page</span><span class="bd-up">/requests</span></span>. Sign in with your Ravi account.</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </figure>
-      </figure>
-
-      <!-- motion stage (desk pin 200%, touch on-enter) -->
-      <div class="stage">
-        <div class="bd-board">
-
-          <!-- dev status card: stays put for the whole pin -->
-          <div class="bd-agent wc">
-            <div class="bd-who">
-              <span class="av bd-av" aria-hidden="true">d</span>
-              <p class="bd-nm"><b>dev</b><span>builds things</span></p>
-            </div>
-            <p class="bd-tk"><b>Build purchase requests</b><span>from the approved plan</span></p>
-            <p class="bd-st" data-st="done"><i class="bd-st-d" aria-hidden="true"></i><span class="bd-st-t">done</span></p>
-            <ol class="bd-chk">
-              <li><svg class="bd-ck" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="8.5"/><path pathLength="1" d="M6 10.3l2.7 2.7L14.2 7.4"/></svg><span>The table</span></li>
-              <li><svg class="bd-ck" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="8.5"/><path pathLength="1" d="M6 10.3l2.7 2.7L14.2 7.4"/></svg><span>The rules</span></li>
-              <li><svg class="bd-ck" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="8.5"/><path pathLength="1" d="M6 10.3l2.7 2.7L14.2 7.4"/></svg><span>The page</span></li>
-            </ol>
-            <div class="bd-prog" aria-hidden="true"><i></i></div>
-          </div>
-
-          <div class="bd-area">
-
-            <!-- 1. the table and the rules -->
-            <div class="bd-cards">
-              <div class="bd-slot">
-                <div class="bd-card bd-base light wc">
-                  <p class="bd-tab">RAVI BASES</p>
-                  <p class="bd-ttl">Purchase requests</p>
-                  <div class="bd-ths">
-                    <div class="bd-th"><b>Item</b><span class="bd-hint">what's needed</span></div>
-                    <div class="bd-th"><b>Amount</b><span class="bd-hint">in dollars</span></div>
-                    <div class="bd-th bd-th--team"><b>Team</b><span class="bd-hint">Sales, Marketing, Engineering or Support</span></div>
-                    <div class="bd-th bd-th--st"><b>Status</b><span class="bd-stcs"><span class="stc stc--req">Requested</span><span class="stc stc--app">Approved</span><span class="stc stc--ord">Ordered</span><span class="stc stc--rec">Received</span><span class="stc stc--dec">Declined</span></span></div>
-                    <div class="bd-th bd-th--by"><b>Requested by</b><span class="bd-hint">from who's signed in</span></div>
-                    <div class="bd-th bd-th--sup"><b>Supervisor</b><span class="bd-hint">filled in by ops</span></div>
-                    <div class="bd-th"><b>Needed by</b><span class="bd-hint">a date</span></div>
-                  </div>
-                  <div class="bd-rows" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-                </div>
-              </div>
-              <div class="bd-slot">
-                <div class="bd-card bd-vcard light wc">
-                  <p class="bd-vt">THE RULES</p>
-                  <dl class="bd-vrows">
-                    <div class="bd-vr"><dt><svg class="bd-lk" viewBox="0 0 10 12" aria-hidden="true" focusable="false"><rect x="1" y="5" width="8" height="6.5" rx="1.3" fill="currentColor"/><path d="M3 5V3.6a2 2 0 0 1 4 0V5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg><span class="bd-vk">WHO CAN OPEN IT</span></dt><dd><span class="bd-vd">People you've added to acme in Ravi, signed in</span></dd></div>
-                    <div class="bd-vr"><dt><svg class="bd-lk" viewBox="0 0 10 12" aria-hidden="true" focusable="false"><rect x="1" y="5" width="8" height="6.5" rx="1.3" fill="currentColor"/><path d="M3 5V3.6a2 2 0 0 1 4 0V5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg><span class="bd-vk">WHO SEES WHAT</span></dt><dd><span class="bd-vd">Each person sees their own requests. A supervisor also sees the team's.</span></dd></div>
-                    <div class="bd-vr bd-vr--auto"><dt><svg class="bd-lk" viewBox="0 0 10 12" aria-hidden="true" focusable="false"><rect x="1" y="5" width="8" height="6.5" rx="1.3" fill="currentColor"/><path d="M3 5V3.6a2 2 0 0 1 4 0V5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg><span class="bd-vk">FILLED IN FOR YOU</span></dt><dd><span class="bd-vd">Who asked, and the status (Requested)</span></dd></div>
-                    <div class="bd-vr"><dt><svg class="bd-lk" viewBox="0 0 10 12" aria-hidden="true" focusable="false"><rect x="1" y="5" width="8" height="6.5" rx="1.3" fill="currentColor"/><path d="M3 5V3.6a2 2 0 0 1 4 0V5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg><span class="bd-vk">WHAT PEOPLE CAN EDIT</span></dt><dd><span class="bd-vd">Item, amount, team, needed by</span></dd></div>
-                    <div class="bd-vr bd-vr--no"><dt><svg class="bd-lk" viewBox="0 0 10 12" aria-hidden="true" focusable="false"><rect x="1" y="5" width="8" height="6.5" rx="1.3" fill="currentColor"/><path d="M3 5V3.6a2 2 0 0 1 4 0V5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg><span class="bd-vk">NOBODY ON THE PAGE CAN</span></dt><dd><span class="bd-vd">File a request in someone else's name</span></dd></div>
-                  </dl>
-                  <p class="bd-vfoot">Ravi applies these rules every time someone opens the page or files a request.</p>
-                </div>
-              </div>
-              <!-- the rules' wires: FILLED IN FOR YOU → Requested by, Supervisor -->
-              <svg class="wires bd-rw" aria-hidden="true" focusable="false"><path class="bd-rln" pathLength="1"/><path class="bd-rln" pathLength="1"/></svg>
-              <!-- the NOBODY ghost: tries to file in Carla's name, is refused -->
-              <span class="bd-ghost-at" aria-hidden="true"><span class="tag tag--light tag--rust bd-ghost">Requested by: Carla<svg class="bd-strike" viewBox="0 0 100 10" preserveAspectRatio="none" focusable="false"><path pathLength="1" d="M0 5H100"/></svg></span></span>
-            </div>
-
-            <!-- 2. the two-way split -->
-            <div class="bd-split">
-              <div class="bd-split-in">
-                <div class="bd-sl"><p class="bd-sh"><span class="mask"><span class="in">RAVI BASES</span></span> <span class="mask"><span class="in">KEEPS THE TABLE.</span></span></p></div>
-                <div class="bd-sr"><p class="bd-sh"><span class="mask"><span class="in">RAVI PAGES</span></span> <span class="mask"><span class="in">SHOWS THE PAGE.</span></span></p></div>
-                <i class="bd-seam" aria-hidden="true"></i>
-                <svg class="wires bd-swire" aria-hidden="true" focusable="false"><path class="bd-seamw bd-seamw--r" pathLength="1"/><path class="bd-seamw bd-seamw--w" pathLength="1"/></svg>
-                <i class="pk pk--read bd-pk-r" aria-hidden="true"></i>
-                <i class="pk pk--write bd-pk-w" aria-hidden="true"></i>
-                <span class="bd-pillwrap bd-pillwrap--r"><span class="pill-code bd-pill">the page shows the table</span></span>
-                <span class="bd-pillwrap bd-pillwrap--w"><span class="pill-code bd-pill bd-pill--w">new requests are saved to it</span></span>
-              </div>
-            </div>
-
-            <!-- 3. the page draws itself -->
-            <div class="rb-browser bd-br wc" role="group" aria-label="Purchase requests at acme-ops.ravi.page/requests">
-              <div class="rb-chrome">
-                <span class="rb-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-                <span class="rb-reload" aria-hidden="true">↻</span>
-                <div class="rb-url">
-                  <svg class="rb-lock" viewBox="0 0 10 12" aria-hidden="true" focusable="false"><rect x="1" y="5" width="8" height="6.5" rx="1.3" fill="currentColor"/><path d="M3 5V3.6a2 2 0 0 1 4 0V5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
-                  <span class="bd-urlt">acme-ops.ravi.page/requests</span>
-                  <span class="rb-private">Private</span>
-                </div>
-              </div>
-              <div class="rb-page bd-pg">
-                <div class="bd-ph">
-                  <span class="rb-mark" aria-hidden="true">r</span>
-                  <div class="bd-ph-t"><p class="rb-title"><span class="mask"><span class="in">Purchase requests</span></span></p><p class="rb-sub">acme</p></div>
-                  <div class="bd-pubw">
-                    <span class="bd-pubsw"><span class="bd-sw" aria-hidden="true"><i class="bd-sw-on"></i><i class="bd-sw-k"></i></span><span>Make it public</span></span>
-                    <span class="tag tag--light tag--sand bd-ptag">Stays private: only people signed in to acme can see these requests.</span>
-                  </div>
-                </div>
-                <div class="bd-pbar"><span class="btn btn--teal-o bd-new">+ New request</span></div>
-                <!-- someone tries the switch: the pointer that presses it (motion only) -->
-                <div class="cur bd-cur" aria-hidden="true"><svg viewBox="0 0 28 40" focusable="false"><path d="M2 2 L2 33 L10 25.5 L15.5 38.5 L21 36 L15.6 23.4 L26.5 23.4 Z"/></svg><i class="cur-ripple"></i></div>
-                <div class="bd-board5">
-                  <div class="bd-col"><p class="bd-colh">REQUESTED</p></div>
-                  <div class="bd-col"><p class="bd-colh">APPROVED</p></div>
-                  <div class="bd-col"><p class="bd-colh">ORDERED</p></div>
-                  <div class="bd-col"><p class="bd-colh">RECEIVED</p></div>
-                  <div class="bd-col"><p class="bd-colh">DECLINED</p></div>
-                </div>
-              </div>
-            </div>
-
-            <!-- 4. done: dev hands the news to reception, which posts the link in #office -->
-            <div class="bd-done">
-              <div class="bd-hrow">
-                <span class="chip bd-c-dev"><i style="--dot:var(--a-dev)"></i>dev · builds things</span>
-                <span class="chip bd-c-rec"><i style="--dot:var(--a-reception)"></i>reception · front desk</span>
-                <svg class="wires bd-hw" aria-hidden="true" focusable="false"><path class="bd-w-ans" pathLength="1"/></svg>
-                <span class="bd-hand-at" aria-hidden="true"><span class="tag tag--mint bd-hand">Done · the page is up</span></span>
-                <i class="pk pk--read bd-pk-ans" aria-hidden="true"></i>
-              </div>
-              <div class="sk-win bd-sk">
-                <div class="sk-main">
-                  <p class="sk-hd"># office</p>
-                  <div class="sk-msgs">
-                    <div class="sk-msg">
-                      <span class="av av--rec" aria-hidden="true">r</span>
-                      <div>
-                        <p class="sk-meta"><b>reception</b><span class="app">APP</span><time>10:52 AM</time></p>
-                        <p class="sk-text bd-reply"><span class="bd-rm"><span class="bd-ri">Done. File purchase requests at <span class="bd-url"><span class="bd-up"><i class="bd-url-hl" aria-hidden="true"></i>https://acme-ops.ravi.page</span><span class="bd-up"><i class="bd-url-hl" aria-hidden="true"></i>/requests</span></span>. Sign in with your Ravi account.</span></span></p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
+  <div class="wrap">
+    <!-- The table (left, or on top below 1024) and the page it feeds (right). The HTML is the end state: every card
+         sits in its column. In motion, js/01-tools.js draws the page's outline, flies each row's card from the table
+         into its column (the packet leads the first) and drops the three teammates' cards into REQUESTED. -->
+    <figure class="tl-fig">
+      <div class="tl-side tl-side--base">
+        <span class="tl-tab">RAVI BASES</span>
+        <div class="tl-base light">
+          <div class="tl-tbl" role="table">
+            <div class="tl-tr tl-th" role="row"><span role="columnheader">Item</span><span role="columnheader">Amount</span><span role="columnheader">Status</span></div>
+            <div class="tl-tr tl-row" role="row" data-to="ord"><i class="tl-hl" aria-hidden="true"></i><span role="cell">Headset</span><span class="tl-num" role="cell">$120</span><span role="cell"><span class="stc stc--ord">Ordered</span></span></div>
+            <div class="tl-tr tl-row" role="row" data-to="app"><i class="tl-hl" aria-hidden="true"></i><span role="cell">Monitor</span><span class="tl-num" role="cell">$230</span><span role="cell"><span class="stc stc--app">Approved</span></span></div>
+            <div class="tl-tr tl-row" role="row" data-to="req"><i class="tl-hl" aria-hidden="true"></i><span role="cell">Standing desk</span><span class="tl-num" role="cell">$480</span><span role="cell"><span class="stc stc--req">Requested</span></span></div>
           </div>
         </div>
       </div>
-    </div>
+
+      <div class="tl-side tl-side--page">
+        <span class="tl-tab">RAVI PAGES</span>
+        <div class="rb-browser tl-br">
+          <i class="tl-bg" aria-hidden="true"></i>
+          <div class="rb-chrome tl-chrome" aria-hidden="true"><span class="rb-dots"><i></i><i></i><i></i></span><span class="rb-url"></span></div>
+          <div class="rb-page tl-page">
+            <p class="rb-title tl-title">Purchase requests</p>
+            <div class="rb-board tl-board">
+              <div class="rb-col tl-col" data-col="req">
+                <p class="rb-col-h tl-colh"><i class="tl-dot tl-dot--req" aria-hidden="true"></i>REQUESTED</p>
+                <div class="tl-slot" data-row="req"><article class="rb-card tl-card"><p class="nm">Standing desk</p><p class="row"><span class="val">$480</span></p></article></div>
+                <div class="tl-slot"><article class="rb-card tl-card tl-new"><p class="nm">Webcam</p><p class="row"><span class="val">$90</span><span class="av av--sm av--ana" aria-hidden="true">A</span></p></article></div>
+                <div class="tl-slot"><article class="rb-card tl-card tl-new"><p class="nm">Desk lamp</p><p class="row"><span class="val">$45</span><span class="av av--sm av--bruno" aria-hidden="true">B</span></p></article></div>
+                <div class="tl-slot"><article class="rb-card tl-card tl-new"><p class="nm">Chair</p><p class="row"><span class="val">$210</span><span class="av av--sm av--carla" aria-hidden="true">C</span></p></article></div>
+              </div>
+              <div class="rb-col tl-col" data-col="app">
+                <p class="rb-col-h tl-colh"><i class="tl-dot tl-dot--app" aria-hidden="true"></i>APPROVED</p>
+                <div class="tl-slot" data-row="app"><article class="rb-card tl-card"><p class="nm">Monitor</p><p class="row"><span class="val">$230</span></p></article></div>
+              </div>
+              <div class="rb-col tl-col tl-col--ord" data-col="ord">
+                <p class="rb-col-h tl-colh"><i class="tl-dot tl-dot--ord" aria-hidden="true"></i>ORDERED</p>
+                <div class="tl-slot" data-row="ord"><article class="rb-card tl-card"><p class="nm">Headset</p><p class="row"><span class="val">$120</span></p></article></div>
+              </div>
+            </div>
+          </div>
+          <svg class="tl-ol" aria-hidden="true" focusable="false"><path pathLength="1"/></svg>
+        </div>
+      </div>
+
+      <i class="pkt tl-pk" aria-hidden="true"><i></i></i>
+    </figure>
   </div>
 </section>
 
-<!-- ===== 03-share.html ===== -->
-<section class="sec sh-sec" id="share" aria-labelledby="share-h">
+<!-- ===== 02-slack.html ===== -->
+<section class="sec ck" id="slack" aria-labelledby="slack-h">
   <header class="wrap sec-head">
-    <p class="eyebrow"><span class="sr-only">03, Share</span><span aria-hidden="true">/ <b>03</b> — SHARE</span></p>
-    <h2 class="hl" id="share-h"><span class="mask"><span class="in">ONE LINK</span></span> <span class="mask"><span class="in">FOR THE WHOLE TEAM.</span></span></h2>
-    <p class="intro" data-reveal>Everyone you've added to acme in Ravi opens the same link and gets the same page. What's on it depends on who's looking.</p>
-    <p class="note sh-acct" data-reveal>Each teammate signs in with their own Ravi account. You add them to acme in Ravi once.</p>
+    <p class="eyebrow">SLACK BLOCK KIT</p>
+    <h2 class="hl" id="slack-h"><span class="mask"><span class="in">APPROVE IN SLACK.</span></span><span class="mask"><span class="in">THE PAGE UPDATES.</span></span></h2>
+    <p class="intro" data-reveal>Your agents post real buttons, forms and Canvases in Slack, so requests and approvals happen without leaving it.</p>
   </header>
 
   <div class="wrap">
-
-    <!-- the board: one page, as each person sees it -->
-    <div class="sh-try" data-viewer="bruno" data-filed="1" data-gate="0" data-inset="1" data-toast="1">
-
-      <h3 class="sh-bh sh-bh--a" data-reveal="fade">TRY THE BOARD</h3>
-
-      <div class="sh-ctl" data-reveal>
-        <span class="sh-va-l" id="sh-va-l">Viewing as</span>
-        <div class="seg seg--full sh-seg sh-vseg" role="radiogroup" aria-labelledby="sh-va-l" aria-describedby="sh-vhint" title="On the real page there's no switch. You sign in and see what's yours.">
-          <input type="radio" name="sh-viewer" id="sh-v-ana" value="ana"><label for="sh-v-ana">Ana</label>
-          <input type="radio" name="sh-viewer" id="sh-v-bruno" value="bruno" checked><label for="sh-v-bruno">Bruno</label>
-          <input type="radio" name="sh-viewer" id="sh-v-carla" value="carla"><label for="sh-v-carla">Carla · supervisor</label>
-        </div>
-        <p class="sh-vhint" id="sh-vhint">On the real page there's no switch. You sign in and see what's yours.</p>
-      </div>
-
-      <ol class="sh-caps" aria-label="What the board shows">
-        <li data-cap="1"><span class="sh-cap-n" aria-hidden="true">01</span><p>Same link, same page. Each person signs in and sees their own requests.</p></li>
-        <li data-cap="2"><span class="sh-cap-n" aria-hidden="true">02</span><p>Carla leads Ana and Bruno, so she sees their requests too.</p></li>
-        <li data-cap="3"><span class="sh-cap-n" aria-hidden="true">03</span><p>Bruno files a request from the page. It's marked as his and set to Requested.</p></li>
-        <li data-cap="4"><span class="sh-cap-n" aria-hidden="true">04</span><p>Your team's page checks for changes every 30 seconds while it's on your screen. Other people's changes show up then.</p></li>
-      </ol>
-
-      <div class="sh-main">
-        <p class="tag tag--sand sh-later"><span class="sr-only">A week later</span><span aria-hidden="true">A WEEK LATER</span></p>
-
-        <!-- static modes (reduced motion, no JS, frames): three frames -->
-        <figure class="frames sh-frames" aria-label="The board in three frames">
-          <figure class="frame">
-            <figcaption>SIGNED OUT</figcaption>
-            <div class="sh-fr light">
-              <div class="sh-fr-gate">
-                <p>acme-ops.ravi.page is private to acme.</p>
-                <p>Sign in to continue.</p>
-                <span class="sh-fr-btn">Sign in</span>
-              </div>
-            </div>
-          </figure>
-          <figure class="frame">
-            <figcaption>ANA</figcaption>
-            <div class="sh-fr light">
-              <p class="sh-fr-fx">Showing: your requests</p>
-              <ul class="sh-fr-rows">
-                <li><span class="stc stc--req">Requested</span><span class="sh-fr-nm">Headset</span><span class="sh-fr-r"><span class="val">$120</span><span class="av av--sm av--ana" aria-hidden="true">A</span></span></li>
-                <li><span class="stc stc--app">Approved</span><span class="sh-fr-nm">Booth banner</span><span class="sh-fr-r"><span class="val">$340</span><span class="av av--sm av--ana" aria-hidden="true">A</span></span></li>
-              </ul>
-            </div>
-          </figure>
-          <figure class="frame">
-            <figcaption>CARLA · SUPERVISOR</figcaption>
-            <div class="sh-fr light">
-              <p class="sh-fr-fx">Showing: yours and your team's</p>
-              <ul class="sh-fr-rows">
-                <li><span class="stc stc--req">Requested</span><span class="sh-fr-nm">Headset</span><span class="sh-fr-r"><span class="val">$120</span><span class="av av--sm av--ana" aria-hidden="true">A</span></span></li>
-                <li><span class="stc stc--app">Approved</span><span class="sh-fr-nm">Booth banner</span><span class="sh-fr-r"><span class="val">$340</span><span class="av av--sm av--ana" aria-hidden="true">A</span></span></li>
-                <li><span class="stc stc--ord">Ordered</span><span class="sh-fr-nm">Demo laptop</span><span class="sh-fr-r"><span class="val">$1,890</span><span class="av av--sm av--bruno" aria-hidden="true">B</span></span></li>
-                <li><span class="stc stc--rec">Received</span><span class="sh-fr-nm">Label printer</span><span class="sh-fr-r"><span class="val">$210</span><span class="av av--sm av--carla" aria-hidden="true">C</span></span></li>
-              </ul>
-            </div>
-          </figure>
-        </figure>
-
-        <!-- touch motion: the sign-in gate and the loading board as a two-frame mini strip -->
-        <div class="sh-mini motion-only" aria-hidden="true">
-          <div class="sh-mf sh-mf--gate light">
-            <div class="sh-fr-gate">
-              <p>acme-ops.ravi.page is private to acme.</p>
-              <p>Sign in to continue.</p>
-              <span class="sh-fr-btn">Sign in</span>
-            </div>
-          </div>
-          <div class="sh-mf sh-mf--skel light">
-            <div class="sh-mskel"><i></i><i></i><i></i><i></i></div>
-            <span class="shimmer"></span>
-          </div>
-        </div>
-
-        <ul class="sh-hud" aria-label="What stays the same">
-          <li><b>SAME LINK</b> · acme-ops.ravi.page/requests</li>
-          <li><b>SAME PAGE</b> · for everyone you've added</li>
-          <li class="sh-hud-o"><b>OWN REQUESTS</b> · for each person</li>
-        </ul>
-
-        <div class="rb-browser sh-br" role="group" aria-label="Purchase requests at acme-ops.ravi.page/requests">
-          <div class="rb-chrome">
-            <span class="rb-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-            <span class="rb-reload sh-rl" aria-hidden="true">↻</span>
-            <div class="rb-url sh-url">
-              <svg class="rb-lock" viewBox="0 0 10 12" aria-hidden="true" focusable="false"><rect x="1" y="5" width="8" height="6.5" rx="1.3" fill="currentColor"/><path d="M3 5V3.6a2 2 0 0 1 4 0V5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
-              <span class="sh-urlt">acme-ops.ravi.page/requests</span>
-              <span class="rb-private">Private</span>
-            </div>
-          </div>
-
-          <div class="rb-page sh-page">
-            <div class="sh-head">
-              <span class="rb-mark" aria-hidden="true">r</span>
-              <div class="sh-ttl"><p class="rb-title">Purchase requests</p><p class="rb-sub">acme</p></div>
-              <p class="sh-every"><svg class="sh-dial" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle class="sh-dial-o" cx="10" cy="10" r="8"/><circle class="sh-dial-a" cx="10" cy="10" r="8" pathLength="1" transform="rotate(-90 10 10)"/><path class="sh-dial-h" d="M10 10V4.6"/><circle class="sh-dial-c" cx="10" cy="10" r="1.4"/></svg><span>↻ Refreshes every 30 s</span></p>
-            </div>
-
-            <div class="sh-bar">
-              <span class="sh-filter"><svg viewBox="0 0 14 14" aria-hidden="true" focusable="false"><path d="M1.5 2.5h11l-4.2 5v4l-2.6 1.2V7.5z"/></svg><span class="sh-fx"><span class="sh-fx-o">Showing: your requests</span><span class="sh-fx-t">Showing: yours and your team's</span></span></span>
-              <button class="btn btn--teal-o sh-new js-only" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="sh-drawer">+ New request</button>
-              <span class="btn btn--teal-o sh-new no-js-only" aria-hidden="true">+ New request</span>
-            </div>
-
-            <div class="sh-drawer" id="sh-drawer" role="dialog" aria-labelledby="sh-dw-t" hidden>
-              <div class="sh-dw-in">
-                <p class="sh-dw-t" id="sh-dw-t">New request</p>
-                <div class="sh-fld"><span class="sh-fl" id="sh-fl-1">Item</span><span class="sh-fv" aria-labelledby="sh-fl-1"><span class="sh-ft">Standing desk</span></span></div>
-                <div class="sh-fld"><span class="sh-fl" id="sh-fl-2">Amount (USD)</span><span class="sh-fv sh-fv--m" aria-labelledby="sh-fl-2"><span class="sh-ft">480</span></span></div>
-                <div class="sh-fld"><span class="sh-fl" id="sh-fl-3">Team</span><span class="sh-fv sh-fv--sel" aria-labelledby="sh-fl-3"><span class="sh-ft">Sales</span><span aria-hidden="true">▾</span></span></div>
-                <div class="sh-fld"><span class="sh-fl" id="sh-fl-4">Needed by</span><span class="sh-fv" aria-labelledby="sh-fl-4"><span class="sh-ft">Oct 30, 2026</span></span></div>
-                <div class="sh-dw-btns">
-                  <button class="btn btn--teal sh-file" type="button">File request</button>
-                  <button class="btn btn--light sh-cancel" type="button">Cancel</button>
-                </div>
-                <p class="sh-hint">Your name and the status are filled in for you.</p>
-              </div>
-            </div>
-
-            <div class="sh-board">
-              <div class="rb-col sh-col" data-st="req">
-                <p class="sh-col-h"><span class="sh-ch"><i class="sh-dot" aria-hidden="true"></i>REQUESTED</span><span class="n"><span data-c="ana">1</span><span data-c="bruno">1</span><span data-c="carla">1</span></span></p>
-                <article class="rb-card sh-card sh-card--new" data-v="bruno" data-k="desk">
-                  <p class="nm">Standing desk</p>
-                  <p class="row"><span class="val">$480</span><span class="av av--sm av--bruno" aria-hidden="true">B</span><span class="sr-only">Bruno</span></p>
-                  <p class="tag tag--light tag--teal sh-own"><span>Marked as Bruno's&nbsp;·</span> <span>automatically</span></p>
-                  <span class="sh-flash" aria-hidden="true"></span>
-                </article>
-                <article class="rb-card sh-card" data-v="ana carla" data-k="headset">
-                  <p class="nm">Headset</p>
-                  <p class="row"><span class="val">$120</span><span class="av av--sm av--ana" aria-hidden="true">A</span><span class="sr-only">Ana</span></p>
-                </article>
-              </div>
-              <div class="rb-col sh-col" data-st="app">
-                <p class="sh-col-h"><span class="sh-ch"><i class="sh-dot" aria-hidden="true"></i>APPROVED</span><span class="n"><span data-c="ana">1</span><span data-c="bruno">0</span><span data-c="carla">1</span></span></p>
-                <article class="rb-card sh-card" data-v="ana carla" data-k="banner">
-                  <p class="nm">Booth banner</p>
-                  <p class="row"><span class="val">$340</span><span class="av av--sm av--ana" aria-hidden="true">A</span><span class="sr-only">Ana</span></p>
-                </article>
-              </div>
-              <div class="rb-col sh-col" data-st="ord">
-                <p class="sh-col-h"><span class="sh-ch"><i class="sh-dot" aria-hidden="true"></i>ORDERED</span><span class="n"><span data-c="ana">0</span><span data-c="bruno">1</span><span data-c="carla">1</span></span></p>
-                <article class="rb-card sh-card" data-v="bruno carla" data-k="laptop">
-                  <p class="nm">Demo laptop</p>
-                  <p class="row"><span class="val">$1,890</span><span class="av av--sm av--bruno" aria-hidden="true">B</span><span class="sr-only">Bruno</span></p>
-                </article>
-              </div>
-              <div class="rb-col sh-col" data-st="rec">
-                <p class="sh-col-h"><span class="sh-ch"><i class="sh-dot" aria-hidden="true"></i>RECEIVED</span><span class="n"><span data-c="ana">0</span><span data-c="bruno">0</span><span data-c="carla">1</span></span></p>
-                <article class="rb-card sh-card" data-v="carla" data-k="printer">
-                  <p class="nm">Label printer</p>
-                  <p class="row"><span class="val">$210</span><span class="av av--sm av--carla" aria-hidden="true">C</span><span class="sr-only">Carla</span></p>
-                </article>
-              </div>
-              <div class="rb-col sh-col" data-st="dec">
-                <p class="sh-col-h"><span class="sh-ch"><i class="sh-dot" aria-hidden="true"></i>DECLINED</span><span class="n"><span data-c="ana">0</span><span data-c="bruno">0</span><span data-c="carla">0</span></span></p>
-              </div>
-
-              <div class="sh-skel" aria-hidden="true">
-                <div class="skel"><div class="skel-col"><i></i><i></i></div><div class="skel-col"><i></i></div><div class="skel-col"><i></i></div><div class="skel-col"><i></i></div><div class="skel-col"><i></i></div></div>
-                <span class="shimmer"></span>
-              </div>
-              <p class="toast sh-toast"><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3 8.5l3.2 3L13 4.5"/></svg>Request filed</p>
-            </div>
-
-            <!-- Carla's window: a second browser, after Bruno files -->
-            <div class="sh-inset light" role="group" aria-label="Carla · supervisor">
-              <p class="sh-in-chrome"><span class="sh-in-url">acme-ops.ravi.page/requests</span><span class="sh-in-who"><span class="av av--sm av--carla" aria-hidden="true">C</span>Carla · supervisor</span></p>
-              <div class="sh-in-col">
-                <p class="sh-col-h"><span class="sh-ch"><i class="sh-dot" aria-hidden="true"></i>REQUESTED</span><span class="n">1</span></p>
-                <article class="rb-card sh-in-card">
-                  <p class="nm">Headset</p>
-                  <p class="row"><span class="val">$120</span><span class="av av--sm av--ana" aria-hidden="true">A</span><span class="sr-only">Ana</span></p>
-                </article>
-                <div class="sh-in-slot"><p class="sh-in-tag">Not here yet: the ops agent adds Carla as supervisor next.</p></div>
-                <span class="sh-in-skel" aria-hidden="true"></span>
-              </div>
-            </div>
-
-            <!-- desk motion: the sign-in gate, and the people pressing things -->
-            <div class="sh-gate motion-only">
-              <div class="gate sh-gcard">
-                <p>acme-ops.ravi.page is private to acme.</p>
-                <p>Sign in to continue.</p>
-                <button class="btn btn--teal sh-signin" type="button">Sign in</button>
-              </div>
-            </div>
-            <div class="cur cur--ana sh-cur sh-cur-a" aria-hidden="true"><svg viewBox="0 0 28 40" focusable="false"><path d="M2 2 L2 33 L10 25.5 L15.5 38.5 L21 36 L15.6 23.4 L26.5 23.4 Z"/></svg><span class="cur-name">Ana</span><i class="cur-ripple"></i></div>
-            <div class="cur cur--bruno sh-cur sh-cur-b" aria-hidden="true"><svg viewBox="0 0 28 40" focusable="false"><path d="M2 2 L2 33 L10 25.5 L15.5 38.5 L21 36 L15.6 23.4 L26.5 23.4 Z"/></svg><span class="cur-name">Bruno</span><i class="cur-ripple"></i></div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- after the board: the fine line, the recap, and the bridge to 04 -->
-    <div class="sh-end">
-      <p class="fine sh-fine" data-reveal>If two people edit the same request at once, the second save is stopped and the request reloads, so that person redoes their change and nothing is overwritten by accident. Ravi keeps every change in the request's history.</p>
-
-      <ul class="sh-sum" aria-label="In short">
-        <li class="chip sh-chip"><svg class="sh-chk" viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path pathLength="1" d="M2.4 6.4l2.4 2.3 4.8-5.2"/></svg>Private to acme</li>
-        <li class="chip sh-chip"><svg class="sh-chk" viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path pathLength="1" d="M2.4 6.4l2.4 2.3 4.8-5.2"/></svg>Each person sees their own</li>
-        <li class="chip sh-chip"><svg class="sh-chk" viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path pathLength="1" d="M2.4 6.4l2.4 2.3 4.8-5.2"/></svg>Your agents show you the plan first</li>
-      </ul>
-
-      <div class="sh-bridge-w">
-        <p class="lede sh-bridge"><span class="mask"><span class="in">From here, your agents keep it running:</span></span> <span class="mask"><span class="in">new requests reach the ops agent on their own, and approvals happen in Slack.<i class="sh-bw-end" aria-hidden="true"></i></span></span></p>
-        <div class="sh-bw" aria-hidden="true">
-          <svg class="sh-bw-svg" width="12" height="120" focusable="false">
-            <defs><mask id="sh-bw-mask" maskUnits="userSpaceOnUse" x="-12" y="-12" width="36" height="160"><path class="sh-bw-m" pathLength="1" d="M6 0V112"/></mask></defs>
-            <path class="sh-bw-p" d="M6 0V112" mask="url(#sh-bw-mask)"/>
-            <circle class="sh-bw-dot" cx="6" cy="112" r="3"/>
-          </svg>
-          <i class="pk pk--read sh-bw-pk"></i>
-        </div>
-      </div>
-    </div>
-
-  </div>
-</section>
-
-<!-- ===== 04-wake.html ===== -->
-<section class="sec sec--pin" id="wake" aria-labelledby="wake-h">
-  <header class="wrap sec-head">
-    <p class="eyebrow"><span class="sr-only">04, Pick Up</span><span aria-hidden="true">/ <b>04</b> — PICK UP</span></p>
-    <h2 class="hl" id="wake-h"><span class="mask"><span class="in">NOBODY HAS TO</span></span> <span class="mask"><span class="in">FORWARD IT.</span></span></h2>
-    <p class="intro" data-reveal>Bruno files his request and gets on with his day. A new request reaches the ops agent on its own within moments, without anyone forwarding it.</p>
-  </header>
-
-  <div class="stage-wrap">
-    <div class="scene">
-      <a class="skip-scene" href="#click">Skip this scene <span aria-hidden="true">↓</span></a>
-
-      <div class="scene-copy">
-        <ol class="beats" aria-label="Steps in this scene">
-          <li><div class="beat" data-label="arrive"><span class="beat-n">01</span><span class="beat-t">Bruno files a request for a standing desk on the page.</span></div></li>
-          <li><div class="beat" data-label="match"><span class="beat-n">02</span><span class="beat-t">Ravi hands it to the ops agent, which is set up to watch for new requests from the page.</span></div></li>
-          <li><div class="beat" data-label="supervisor"><span class="beat-n">03</span><span class="beat-t">It knows Carla leads Bruno's team, so it adds her as supervisor. Her page shows the request on its next refresh.</span></div></li>
-          <li><div class="beat" data-label="card"><span class="beat-n">04</span><span class="beat-t">Then it posts the request to #finance, with Approve and Decline.</span></div></li>
-        </ol>
-      </div>
-
-      <div class="stage wk-stage">
-        <div class="wk-cam">
-
-          <!-- ARRIVES: the page, Ravi, what ops watches for, ops. Bruno's ticket rides from the page to ops.
-               Desk: a band across the top of the stage. Touch: a pinned panel. Static: the first frame. -->
-          <figure class="frame wk-ev pin-panel">
-            <figcaption class="static-only">ARRIVES</figcaption>
-            <div class="wk-pipe">
-              <div class="wk-node wk-n-page"><span class="wk-k">THE PAGE<span class="wk-sep"> ·</span></span> <span class="wk-v">Bruno's new request</span></div>
-              <div class="wk-node wk-n-ravi">
-                <svg class="wk-dial" viewBox="0 0 22 22" aria-hidden="true" focusable="false"><circle class="wk-dial-o" cx="11" cy="11" r="9.5"/><path class="wk-dial-arc" pathLength="1" d="M11 1.5 A9.5 9.5 0 1 1 10.99 1.5"/><g class="wk-hand"><line x1="11" y1="11" x2="11" y2="4.5"/><circle cx="11" cy="11" r="1.6"/></g></svg>
-                <span class="wk-txt"><span class="wk-k"><span class="wk-k0">RAVI<span class="wk-sep"> ·</span></span><span class="wk-k1" aria-hidden="true">RAVI<span class="wk-sep"> ·</span></span></span> <span class="wk-v">checks for new requests about every 15 seconds</span></span>
-              </div>
-              <div class="wk-node wk-watch">
-                <i class="wk-glow" aria-hidden="true"></i>
-                <p class="wk-wh">THE OPS AGENT WATCHES FOR</p>
-                <ul class="wk-cls">
-                  <li class="wk-cl"><span class="wk-chk" aria-hidden="true">✓</span><span class="wk-clt">A new request</span><i class="wk-cl-hi" aria-hidden="true"></i></li>
-                  <li class="wk-cl"><span class="wk-chk" aria-hidden="true">✓</span><span class="wk-clt">In the Purchase requests table</span><i class="wk-cl-hi" aria-hidden="true"></i></li>
-                  <li class="wk-cl"><span class="wk-chk" aria-hidden="true">✓</span><span class="wk-clt">Filed from the page</span><i class="wk-cl-hi" aria-hidden="true"></i></li>
-                </ul>
-              </div>
-              <div class="wk-node wk-n-ops"><span class="chip is-lit wk-ops"><i style="--dot:var(--a-ops)"></i>ops · runs things</span></div>
-              <div class="wk-ticket wc">
-                <p class="wk-tk-h">NEW REQUEST</p>
-                <p class="wk-tk-t">Standing desk · $480</p>
-                <p class="wk-tk-s">Sales · filed by Bruno</p>
-                <p class="wk-tk-d">Needed by Oct 30</p>
-              </div>
-            </div>
-            <svg class="wires wk-wires motion-only" aria-hidden="true" focusable="false">
-              <path class="wk-w" pathLength="1"/><path class="wk-w" pathLength="1"/><path class="wk-w" pathLength="1"/><path class="wk-w wk-w3" pathLength="1"/>
-            </svg>
-            <i class="pk pk--write wk-pk motion-only" aria-hidden="true"></i>
-          </figure>
-
-          <!-- POSTED: ops's work card, then the card in #finance -->
-          <figure class="frame wk-cd">
-            <figcaption class="static-only">POSTED</figcaption>
-
-            <div class="wk-work wc">
-              <div class="wk-whd">
-                <span class="chip is-lit wk-wchip"><i style="--dot:var(--a-ops)"></i>ops · runs things</span>
-                <span class="wk-wst is-done"><i class="wk-wst-d" aria-hidden="true"></i><span class="wk-wst-c"><span class="wk-wst-t">posted</span><span class="wk-wst-z motion-only" aria-hidden="true">looking at what's waiting</span></span></span>
-              </div>
-              <div class="wk-wslot motion-only" aria-hidden="true"></div>
-              <p class="wk-wlh">Every request still waiting</p>
-              <ul class="wk-wl">
-                <li class="wk-wr"><i class="wk-wr-hi" aria-hidden="true"></i><span class="wk-wn">Headset · $120 · Ana</span><span class="wk-ws">Supervisor: <span class="wk-sv">Carla ✓</span></span></li>
-                <li class="wk-wr wk-wr--new"><i class="wk-wr-hi" aria-hidden="true"></i><span class="wk-wn">Standing desk · $480 · Bruno</span><span class="wk-ws"><i class="wk-svd" aria-hidden="true"></i>Supervisor: <span class="wk-sv wk-sv--new">Carla ✓</span></span></li>
-              </ul>
-              <p class="wk-wnote">Carla's page shows it on its next refresh.</p>
-              <div class="wk-wcard">
-                <svg class="wk-mini" viewBox="0 0 56 40" aria-hidden="true" focusable="false">
-                  <defs><mask id="wk-mini-mask" maskUnits="userSpaceOnUse" x="-4" y="-4" width="64" height="48"><path class="wk-mk" pathLength="1" d="M5 1H51Q55 1 55 5V35Q55 39 51 39H5Q1 39 1 35V5Q1 1 5 1Z"/></mask></defs>
-                  <path class="wk-mo" d="M5 1H51Q55 1 55 5V35Q55 39 51 39H5Q1 39 1 35V5Q1 1 5 1Z" mask="url(#wk-mini-mask)"/>
-                  <g class="wk-mi"><rect class="wk-mi-h" x="7" y="7" width="26" height="4" rx="2"/><rect x="7" y="15" width="16" height="3" rx="1.5"/><rect x="29" y="15" width="16" height="3" rx="1.5"/><rect class="wk-mi-a" x="7" y="26" width="14" height="7" rx="2"/><rect class="wk-mi-d" x="24" y="26" width="14" height="7" rx="2"/></g>
-                </svg>
-                <span class="wk-wct">Card for #finance</span>
-                <span class="wk-wcs is-done"><span class="wk-wcs-t">posted ✓</span></span>
-              </div>
-            </div>
-
-            <div class="sk-win wk-fin wc">
-              <div class="sk-main">
-                <p class="sk-hd"># finance</p>
-                <div class="sk-msgs">
-                  <div class="sk-msg">
-                    <span class="av av--ops" aria-hidden="true">o</span>
-                    <div class="wk-fmsg">
-                      <p class="sk-meta"><b>ops</b><span class="app">APP</span><time>10:20 AM</time></p>
-                      <div class="bk wk-bk">
-                        <p class="bk-header wk-b">New purchase request</p>
-                        <div class="bk-fields wk-b">
-                          <p><b>Item</b>Standing desk</p>
-                          <p><b>Amount</b>$480</p>
-                          <p><b>Requested by</b>Bruno</p>
-                          <p><b>Team</b>Sales</p>
-                        </div>
-                        <div class="bk-actions wk-b">
-                          <span class="bk-btn bk-btn--primary wk-approve">Approve</span>
-                          <span class="bk-btn bk-btn--danger wk-decline">Decline</span>
-                          <span class="bk-btn">Open requests <span aria-hidden="true">↗</span></span>
-                        </div>
-                        <p class="bk-context wk-b">Needed by Oct 30</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </figure>
-
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ===== 05-click.html ===== -->
-<section class="sec ck" id="click" aria-labelledby="click-h">
-  <header class="wrap sec-head">
-    <p class="eyebrow"><span class="sr-only">05, Approve</span><span aria-hidden="true">/ <b>05</b> — APPROVE</span></p>
-    <h2 class="hl" id="click-h"><span class="mask"><span class="in">ONE CLICK</span></span> <span class="mask"><span class="in">CLOSES THE LOOP.</span></span></h2>
-    <p class="intro" data-reveal>Carla approves where she already works: in Slack.<span class="js-only"> Try it. You're Carla.</span></p>
-  </header>
-
-  <div class="wrap">
-    <!-- One DOM, three layouts:
-         desk motion: three columns (card + steps · ops's card + caution · Bruno's page), loop line underneath
-         touch motion: one column (card, ops's card, page, LOOP CLOSED, steps, caution)
-         static (reduced, no JS, frames): three captioned frames CARD · OPS · RESULT, all decided, then the steps;
-         with JS, Play it again brings the card back to its buttons (#click.is-try) and a press decides it again -->
+    <!-- The authored HTML is the decided state (the stamp, the card in APPROVED): reduced motion, frames and no JS
+         show it as it is. With JS the section carries data-st="wait" while the buttons wait for a press. -->
     <div class="ck-stage">
 
-      <div class="ck-col ck-c1">
-        <p class="ck-cap ck-cap1 static-only">CARD</p>
+      <div class="ck-hand">
+        <!-- two Block Kit surfaces fanned behind the card: a form and a Canvas -->
+        <div class="sl-ghost sl-ghost--form" aria-hidden="true">
+          <div class="gk-modal">
+            <p class="gk-md-hd">Report a bug</p>
+            <div class="gk-md-bd"><i class="gk-md-in"></i><i class="gk-md-in gk-md-in--tall"></i></div>
+            <div class="gk-md-ft"><span class="bk-btn bk-btn--primary">Submit</span></div>
+          </div>
+        </div>
+        <div class="sl-ghost sl-ghost--canvas" aria-hidden="true">
+          <div class="gk-doc">
+            <p class="gk-d1">Weekly spend</p>
+            <p class="gk-dp"><span class="gk-n">$3,450</span> approved</p>
+          </div>
+        </div>
 
         <div class="sk-win ck-win">
           <div class="sk-main">
             <p class="sk-hd"># finance</p>
             <div class="sk-msgs">
               <div class="sk-msg">
-                <span class="av av--ops" aria-hidden="true">o</span>
+                <span class="av av--ravi" aria-hidden="true"></span>
                 <div class="ck-msg">
-                  <p class="sk-meta ck-b"><b>ops</b><span class="app">APP</span><time datetime="2026-10-16T14:20:10Z">10:20 AM</time></p>
-                  <div class="ck-bks">
-                    <div class="bk ck-wait">
-                      <p class="bk-header ck-b">New purchase request</p>
-                      <div class="bk-fields ck-b">
-                        <p><b>Item</b>Standing desk</p>
-                        <p><b>Amount</b>$480</p>
-                        <p><b>Requested by</b>Bruno</p>
-                        <p><b>Team</b>Sales</p>
-                      </div>
-                      <p class="ck-bub js-only" id="ck-bub"><span class="ck-bub-in">You're Carla. Approve or decline.</span></p>
-                      <div class="bk-actions ck-acts ck-b">
-                        <button class="bk-btn bk-btn--primary ck-approve js-only" type="button" aria-describedby="ck-bub">Approve</button>
-                        <button class="bk-btn bk-btn--danger ck-decline js-only" type="button" aria-describedby="ck-bub" aria-haspopup="dialog">Decline</button>
-                        <span class="ck-open-w">
-                          <button class="bk-btn ck-open" type="button" aria-disabled="true" aria-describedby="ck-tip">Open requests <span aria-hidden="true">↗</span></button>
-                          <span class="ck-tip" id="ck-tip" role="tooltip">In the real card this opens the page.</span>
-                        </span>
-                      </div>
-                      <p class="bk-context ck-b">Needed by Oct 30</p>
+                  <p class="sk-meta"><b>Ravi</b><span class="app">APP</span></p>
+                  <div class="bk">
+                    <p class="bk-header">New purchase request</p>
+                    <div class="bk-fields">
+                      <p><b>Item</b>Standing desk</p>
+                      <p><b>Amount</b>$480</p>
                     </div>
-
-                    <div class="bk ck-done" tabindex="-1">
-                      <p class="bk-section ck-res-t"><b data-v="Approved|Declined">Approved</b> by <span class="ck-men">@Carla</span></p>
-                      <p class="bk-context ck-res-c">Needed by Oct 30</p>
-                      <div class="ck-thr">
-                        <p class="sk-thread ck-thr-l"><span class="av av--ops ck-thr-av" aria-hidden="true">o</span>1 reply</p>
-                        <div class="ck-reply">
-                          <span class="av av--ops ck-rav" aria-hidden="true">o</span>
-                          <div class="ck-rbody">
-                            <p class="sk-meta"><b>ops</b><span class="app">APP</span></p>
-                            <p class="sk-text"><span data-v="Approved|Declined">Approved</span> by <span class="ck-men">@Carla</span>. Bruno's page shows it on its next refresh.</p>
-                          </div>
-                        </div>
+                    <div class="ck-act">
+                      <div class="bk-actions ck-wait js-only">
+                        <button class="bk-btn bk-btn--primary ck-approve" type="button">Approve</button>
+                        <button class="bk-btn bk-btn--danger ck-decline" type="button">Decline</button>
                       </div>
+                      <p class="ck-done" tabindex="-1"><svg class="ck-mk" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="9"/><path class="ck-mk-ok" d="M5.8 10.3l2.8 2.8 5.6-5.8"/><path class="ck-mk-no" d="M6.8 6.8l6.4 6.4M13.2 6.8l-6.4 6.4"/></svg><span><b data-v="Approved|Declined">Approved</b> by <span class="ck-men">@Carla</span></span></p>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-
-          <div class="ck-dim" aria-hidden="true"></div>
-          <div class="ck-dlg" role="alertdialog" aria-modal="true" aria-labelledby="ck-dlg-h" aria-describedby="ck-dlg-t" hidden>
-            <p class="ck-dlg-h" id="ck-dlg-h">Decline request?</p>
-            <p class="ck-dlg-t" id="ck-dlg-t">Bruno will see Declined on his page.</p>
-            <div class="ck-dlg-b">
-              <button class="bk-btn ck-cancel" type="button">Cancel</button>
-              <button class="bk-btn ck-confirm" type="button">Decline</button>
-            </div>
-          </div>
         </div>
-
-        <ol class="ck-steps">
-          <li class="ck-step"><span class="ck-sn" aria-hidden="true">01</span><p class="ck-st">Carla presses <span data-v="Approve|Decline">Approve</span> in #finance.</p></li>
-          <li class="ck-step"><span class="ck-sn" aria-hidden="true">02</span><p class="ck-st">The ops agent checks it's Carla, marks the request <span data-v="Approved|Declined">Approved</span> and updates the card.</p></li>
-          <li class="ck-step"><span class="ck-sn" aria-hidden="true">03</span><p class="ck-st">Bruno's page shows <span data-v="Approved|Declined">Approved</span> on its next refresh.</p></li>
-        </ol>
       </div>
 
-      <div class="ck-col ck-c2">
-        <p class="ck-cap ck-cap2 static-only">OPS</p>
-
-        <div class="ck-ops">
-          <i class="ck-oglow" aria-hidden="true"></i>
-          <div class="ck-ohd">
-            <span class="av av--ops ck-oav" aria-hidden="true">o</span>
-            <span class="chip is-lit ck-ochip"><i style="--dot:var(--a-ops)"></i>ops · runs things</span>
-          </div>
-          <p class="ck-ost"><i class="ck-ost-d" aria-hidden="true"></i><span class="ck-ost-x ck-ost-wait">waiting for a click</span><span class="ck-ost-x ck-ost-work">working</span><span class="ck-ost-x ck-ost-done">done</span></p>
-          <ol class="ck-ols">
-            <li class="ck-ol"><span class="ck-olt">Checking who pressed: Carla approves purchases <span class="ck-ok">✓</span></span></li>
-            <li class="ck-ol"><span class="ck-olt">Marking the request <span data-v="Approved|Declined">Approved</span></span></li>
-            <li class="ck-ol"><span class="ck-olt">Updating the card in #finance</span></li>
-          </ol>
+      <div class="rb-browser ck-br">
+        <div class="rb-chrome">
+          <span class="rb-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="rb-url" aria-hidden="true"></span>
         </div>
-
-        <p class="caution ck-caut">Only Carla's click counts: the ops agent is set up to act on hers alone. Anyone else in #finance can press the buttons, but nothing changes.</p>
-      </div>
-
-      <div class="ck-col ck-c3">
-        <p class="ck-cap ck-cap3 static-only">RESULT<span class="no-js-only"> · APPROVE</span></p>
-
-        <div class="rb-browser ck-br">
-          <i class="ck-bring motion-only" aria-hidden="true"></i>
-          <div class="rb-chrome">
-            <span class="rb-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-            <span class="rb-reload" aria-hidden="true">↻</span>
-            <div class="rb-url">
-              <svg class="rb-lock" viewBox="0 0 10 12" aria-hidden="true" focusable="false"><rect x="1" y="5" width="8" height="6.5" rx="1.3" fill="currentColor"/><path d="M3 5V3.6a2 2 0 0 1 4 0V5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
-              <span>acme-ops.ravi.page/requests</span>
-              <span class="rb-private">Private</span>
+        <div class="rb-page ck-page">
+          <p class="rb-title">Purchase requests</p>
+          <div class="rb-board ck-board">
+            <div class="rb-col ck-col ck-colr">
+              <p class="rb-col-h"><span class="ck-ch"><i class="ck-dot ck-dot--req" aria-hidden="true"></i>REQUESTED</span><span class="n ck-nr">0</span></p>
+              <div class="ck-slot"><article class="rb-card ck-bc ck-bc--req"><p class="nm">Standing desk</p><p class="row"><span class="val">$480</span><span class="av av--sm av--bruno" aria-hidden="true">B</span></p></article></div>
             </div>
-          </div>
-          <div class="rb-page ck-page">
-            <div class="ck-ph">
-              <span class="rb-mark" aria-hidden="true">r</span>
-              <div class="ck-pt"><p class="rb-title">Purchase requests</p><p class="rb-sub ck-va">Viewing as <span class="av av--sm av--bruno" aria-hidden="true">B</span> Bruno</p></div>
-              <p class="ck-dial"><svg class="ck-dial-g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.4"/><path class="ck-hand" d="M8 8V3.4"/><circle class="ck-dial-c" cx="8" cy="8" r="1.2"/></svg><span>↻ 30 s</span></p>
-            </div>
-            <div class="rb-board ck-board">
-              <div class="rb-col ck-colr">
-                <p class="rb-col-h ck-colh"><span class="ck-ch"><i class="ck-dot ck-dot--req" aria-hidden="true"></i>REQUESTED</span><span class="n ck-nr">0</span></p>
-                <div class="ck-slot"><article class="rb-card ck-bc ck-bc-req"><p class="nm">Standing desk</p><p class="row"><span class="val">$480</span><span class="av av--sm av--bruno" aria-hidden="true">B</span></p></article></div>
-              </div>
-              <div class="rb-col ck-colo">
-                <p class="rb-col-h ck-colh"><span class="ck-ch"><i class="ck-dot ck-dot--out" aria-hidden="true"></i><span data-v="APPROVED|DECLINED">APPROVED</span></span><span class="n ck-no">1</span></p>
-                <div class="ck-slot"><article class="rb-card ck-bc ck-bc-out"><p class="nm">Standing desk</p><p class="row"><span class="val">$480</span><span class="av av--sm av--bruno" aria-hidden="true">B</span></p></article></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- no JS: the decline outcome as a second RESULT frame: the card in #finance and the same page -->
-        <div class="ck-res2 no-js-only">
-          <p class="ck-cap">RESULT · DECLINE</p>
-          <div class="sk-win ck-rwin">
-            <div class="sk-main">
-              <p class="sk-hd"># finance</p>
-              <div class="sk-msgs">
-                <div class="sk-msg">
-                  <span class="av av--ops" aria-hidden="true">o</span>
-                  <div class="ck-msg">
-                    <p class="sk-meta"><b>ops</b><span class="app">APP</span><time datetime="2026-10-16T14:20:10Z">10:20 AM</time></p>
-                    <div class="bk">
-                      <p class="bk-section"><b>Declined</b> by <span class="ck-men">@Carla</span></p>
-                      <p class="bk-context">Needed by Oct 30</p>
-                      <div class="ck-thr">
-                        <p class="sk-thread ck-thr-l"><span class="av av--ops ck-thr-av" aria-hidden="true">o</span>1 reply</p>
-                        <div class="ck-reply">
-                          <span class="av av--ops ck-rav" aria-hidden="true">o</span>
-                          <div class="ck-rbody">
-                            <p class="sk-meta"><b>ops</b><span class="app">APP</span></p>
-                            <p class="sk-text">Declined by <span class="ck-men">@Carla</span>. Bruno's page shows it on its next refresh.</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="rb-browser ck-br">
-            <div class="rb-chrome">
-              <span class="rb-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-              <span class="rb-reload" aria-hidden="true">↻</span>
-              <div class="rb-url">
-                <svg class="rb-lock" viewBox="0 0 10 12" aria-hidden="true" focusable="false"><rect x="1" y="5" width="8" height="6.5" rx="1.3" fill="currentColor"/><path d="M3 5V3.6a2 2 0 0 1 4 0V5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
-                <span>acme-ops.ravi.page/requests</span>
-                <span class="rb-private">Private</span>
-              </div>
-            </div>
-            <div class="rb-page ck-page">
-              <div class="ck-ph">
-                <span class="rb-mark" aria-hidden="true">r</span>
-                <div class="ck-pt"><p class="rb-title">Purchase requests</p><p class="rb-sub ck-va">Viewing as <span class="av av--sm av--bruno" aria-hidden="true">B</span> Bruno</p></div>
-                <p class="ck-dial"><svg class="ck-dial-g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.4"/><path d="M8 8V3.4"/><circle class="ck-dial-c" cx="8" cy="8" r="1.2"/></svg><span>↻ 30 s</span></p>
-              </div>
-              <div class="rb-board ck-board">
-                <div class="rb-col ck-colr">
-                  <p class="rb-col-h ck-colh"><span class="ck-ch"><i class="ck-dot ck-dot--req" aria-hidden="true"></i>REQUESTED</span><span class="n">0</span></p>
-                  <div class="ck-slot"></div>
-                </div>
-                <div class="rb-col ck-colo">
-                  <p class="rb-col-h ck-colh"><span class="ck-ch"><i class="ck-dot ck-dot--dec" aria-hidden="true"></i>DECLINED</span><span class="n">1</span></p>
-                  <div class="ck-slot"><article class="rb-card ck-bc"><p class="nm">Standing desk</p><p class="row"><span class="val">$480</span><span class="av av--sm av--bruno" aria-hidden="true">B</span></p></article></div>
-                </div>
-              </div>
+            <div class="rb-col ck-col ck-colo">
+              <p class="rb-col-h"><span class="ck-ch"><i class="ck-dot ck-dot--out" aria-hidden="true"></i><span data-vb="APPROVED|DECLINED">APPROVED</span></span><span class="n ck-no">1</span></p>
+              <div class="ck-slot"><article class="rb-card ck-bc ck-bc--out"><p class="nm">Standing desk</p><p class="row"><span class="val">$480</span><span class="av av--sm av--bruno" aria-hidden="true">B</span></p></article></div>
             </div>
           </div>
         </div>
       </div>
 
-      <div class="ck-end">
-        <button class="btn ck-again js-only" type="button">Play it again</button>
-        <p class="ck-lc"><span class="ck-lc-t" aria-hidden="true">LOOP CLOSED</span><span class="sr-only">Loop closed</span><i class="ck-ul" aria-hidden="true"></i></p>
-      </div>
-
-      <svg class="wires ck-wires motion-only" aria-hidden="true" focusable="false"><path class="ck-wpk"/><path class="ck-wloop" pathLength="1"/></svg>
-      <i class="ck-lsq motion-only" aria-hidden="true"></i>
-      <span class="pk pk--write ck-pk motion-only" aria-hidden="true"></span>
+      <i class="pkt ck-pk" aria-hidden="true"><i></i></i>
       <div class="cur cur--carla ck-cur motion-only" aria-hidden="true"><svg viewBox="0 0 28 40" focusable="false"><path d="M2 2 L2 33 L10 25.5 L15.5 38.5 L21 36 L15.6 23.4 L26.5 23.4 Z"/></svg><span class="cur-name">Carla</span><i class="cur-ripple"></i></div>
     </div>
   </div>
 </section>
 
-<!-- ===== 06-blockkit.html ===== -->
-<section class="sec" id="blockkit" aria-labelledby="blockkit-h">
-  <header class="wrap sec-head gk-head">
-    <p class="eyebrow"><span class="sr-only">06, Block Kit</span><span aria-hidden="true">/ <b>06</b> — BLOCK KIT</span></p>
-    <h2 class="hl gk-hl" id="blockkit-h"><span class="gk-hrow"><span class="mask"><span class="in">BUTTONS,</span></span> <span class="mask"><span class="in">FORMS</span></span></span> <span class="gk-hrow"><span class="mask"><span class="in">AND CARDS</span></span> <span class="mask"><span class="in">IN SLACK.</span></span></span></h2>
-    <p class="intro gk-lede" data-reveal>Your agents can post more than text: cards with buttons and forms (Slack calls these Block Kit), a Canvas they keep up to date, and task cards with their status.<span class="js-only"> Press anything.</span></p>
-  </header>
-
-  <div class="wrap">
-    <div class="gk-gal">
-      <!-- tab row: CSS radios (they work with JS off); arrow keys move between them -->
-      <div class="gk-tabbar">
-        <div class="seg seg--tabs gk-tabs" role="radiogroup" aria-label="Examples in Slack">
-          <input type="radio" name="gk-tab" id="gk-t-msg" value="msg" checked><label for="gk-t-msg" id="gk-tl-msg">Buttons</label>
-          <input type="radio" name="gk-tab" id="gk-t-modal" value="modal"><label for="gk-t-modal" id="gk-tl-modal">Form</label>
-          <input type="radio" name="gk-tab" id="gk-t-appr" value="appr"><label for="gk-t-appr" id="gk-tl-appr">Approval</label>
-          <input type="radio" name="gk-tab" id="gk-t-canvas" value="canvas"><label for="gk-t-canvas" id="gk-tl-canvas">Canvas</label>
-          <input type="radio" name="gk-tab" id="gk-t-wo" value="wo"><label for="gk-t-wo" id="gk-tl-wo">Task card</label>
-          <i class="gk-ind" aria-hidden="true"></i>
-        </div>
-        <i class="gk-rule" aria-hidden="true"></i>
-      </div>
-
-      <div class="gk-tabpanels">
-
-        <!-- ===================== 1 · BUTTONS ===================== -->
-        <div class="gk-tab gk-tab--msg is-on" data-tab="msg" role="group" aria-labelledby="gk-tl-msg">
-          <div class="gk-grid">
-            <div class="sk-win gk-frame gk-fr">
-              <div class="sk-main">
-                <p class="sk-hd"><b># finance</b></p>
-                <div class="sk-msgs">
-                  <div class="sk-msg">
-                    <span class="av av--ops gk-blk" aria-hidden="true">o</span>
-                    <div class="gk-mb">
-                      <p class="sk-meta gk-blk"><b>ops</b><span class="app">APP</span><time datetime="10:22">10:22 AM</time></p>
-                      <div class="bk gk-bk">
-                        <p class="bk-header gk-blk">Weekly supplies order</p>
-                        <p class="bk-section gk-blk">Ana put together this week's office order.</p>
-                        <div class="bk-fields gk-blk">
-                          <p><b>Items</b>12</p>
-                          <p><b>Total</b>$640</p>
-                          <p><b>Requested by</b>Ana</p>
-                          <p><b>Needed by</b>Fri, Oct 16</p>
-                        </div>
-                        <div class="bk-actions gk-blk gk-acts">
-                          <button type="button" class="bk-btn bk-btn--primary gk-x" data-x="approve" disabled>Approve</button>
-                          <button type="button" class="bk-btn bk-btn--danger gk-x" data-x="reject" aria-haspopup="dialog" disabled>Reject</button>
-                          <span class="gk-sel">
-                            <button type="button" class="bk-select gk-x gk-selbtn" data-x="select" aria-haspopup="listbox" aria-expanded="false" aria-controls="gk-menu" aria-label="Priority" disabled><span class="gk-selv">Priority</span><span class="gk-caret" aria-hidden="true">▾</span></button>
-                            <span class="gk-menu" id="gk-menu" role="listbox" aria-label="Priority" hidden>
-                              <span class="gk-opt" role="option" data-v="Low" aria-selected="false" tabindex="-1">Low</span>
-                              <span class="gk-opt" role="option" data-v="Medium" aria-selected="false" tabindex="-1">Medium</span>
-                              <span class="gk-opt" role="option" data-v="High" aria-selected="false" tabindex="-1">High</span>
-                            </span>
-                          </span>
-                        </div>
-                        <p class="bk-context gk-blk">Office supplies · ordered every Friday</p>
-                      </div>
-                      <p class="sk-thread gk-thr"><span class="av av--ops av--sm" aria-hidden="true">o</span><span class="gk-thr-n">1 reply</span></p>
-                    </div>
-                  </div>
-                </div>
-                <i class="gk-compose" aria-hidden="true"></i>
-              </div>
-              <i class="gk-dim" aria-hidden="true" hidden></i>
-              <div class="gk-dlg gk-confirm" role="alertdialog" aria-modal="true" aria-labelledby="gk-cf-t" aria-describedby="gk-cf-d" hidden>
-                <p class="gk-dlg-t" id="gk-cf-t">Reject this order?</p>
-                <p class="gk-dlg-b" id="gk-cf-d">Ana will see it was rejected.</p>
-                <div class="gk-dlg-f"><button type="button" class="bk-btn gk-cf-no">Cancel</button><button type="button" class="bk-btn gk-cf-yes">Reject</button></div>
-              </div>
-            </div>
-
-            <div class="gk-next" role="group" aria-labelledby="gk-nh-msg">
-              <div class="gk-nhd">
-                <h3 class="gk-nh" id="gk-nh-msg">WHAT HAPPENS NEXT</h3>
-                <span class="tag gk-nst" data-st="done"><i class="gk-nst-dot" aria-hidden="true"></i><span class="gk-nst-t">done</span></span>
-              </div>
-              <div class="gk-agent">
-                <span class="gk-avw" aria-hidden="true"><i class="gk-orb gk-orb--2"></i><i class="gk-orb gk-orb--1"></i><i class="gk-glow"></i><i class="gk-halo"></i><span class="av av--ops gk-nav">o</span></span>
-                <p class="gk-who"><b>ops</b> · runs things</p>
-              </div>
-              <p class="gk-ex no-js-only">Example: you press Approve</p>
-              <ol class="gk-log">
-                <li class="gk-ll"><span class="gk-lt">ops got your click: Approve</span></li>
-                <li class="gk-ll"><span class="gk-lt">Checking you can approve orders ✓</span></li>
-                <li class="gk-ll"><span class="gk-lt">Order approved. ops tells Ana in the thread.</span></li>
-              </ol>
-            </div>
-          </div>
-          <p class="gk-cap">Buttons can hand the click to an agent or run a fixed step with no AI. Anyone in the channel can press them; Ravi says who pressed, and you decide whose clicks count.</p>
-        </div>
-
-        <!-- ===================== 2 · FORM ===================== -->
-        <div class="gk-tab gk-tab--modal" data-tab="modal" role="group" aria-labelledby="gk-tl-modal">
-          <div class="gk-grid">
-            <div class="sk-win gk-frame gk-fr gk-fr--modal">
-              <div class="sk-main">
-                <p class="sk-hd"><b># finance</b></p>
-                <div class="sk-msgs">
-                  <div class="sk-msg">
-                    <span class="av av--ops gk-blk" aria-hidden="true">o</span>
-                    <div class="gk-mb">
-                      <p class="sk-meta gk-blk"><b>ops</b><span class="app">APP</span><time datetime="10:23">10:23 AM</time></p>
-                      <div class="bk gk-bk">
-                        <p class="bk-section gk-blk">Need something for work? File a purchase request.</p>
-                        <div class="bk-actions gk-blk"><button type="button" class="bk-btn gk-x" data-x="open" aria-haspopup="dialog" disabled>New request</button></div>
-                      </div>
-                    </div>
-                  </div>
-                  <div class="gk-modal" role="group" aria-labelledby="gk-md-t">
-                    <p class="gk-md-hd" id="gk-md-t">New purchase request</p>
-                    <div class="gk-md-bd">
-                      <div class="gk-md-f"><label class="gk-md-l" for="gk-md-item">Item</label><input class="gk-md-in" id="gk-md-item" type="text" value="Monitor" maxlength="32" autocomplete="off" spellcheck="false"></div>
-                      <div class="gk-md-f"><label class="gk-md-l" for="gk-md-amt">Amount (USD)</label><input class="gk-md-in" id="gk-md-amt" type="text" inputmode="decimal" value="230" maxlength="9" autocomplete="off"></div>
-                      <div class="gk-md-f"><label class="gk-md-l" for="gk-md-team">Team</label><span class="gk-md-sw"><select class="gk-md-in gk-md-sel" id="gk-md-team"><option>Sales</option><option>Marketing</option><option>Engineering</option><option selected>Support</option></select><span class="gk-caret" aria-hidden="true">▾</span></span></div>
-                      <div class="gk-md-f"><label class="gk-md-l" for="gk-md-by">Needed by</label><input class="gk-md-in" id="gk-md-by" type="text" value="Nov 2" maxlength="20" autocomplete="off"></div>
-                    </div>
-                    <div class="gk-md-ft"><button type="button" class="bk-btn gk-md-no" disabled>Cancel</button><button type="button" class="bk-btn bk-btn--primary gk-md-yes" disabled>File request</button></div>
-                  </div>
-                  <div class="sk-msg gk-thx">
-                    <span class="av av--ops" aria-hidden="true">o</span>
-                    <div class="gk-mb">
-                      <p class="sk-meta"><b>ops</b><span class="app">APP</span><time datetime="10:23">10:23 AM</time></p>
-                      <p class="sk-text gk-thx-t">Thanks! <span class="gk-thx-v">Monitor · $230</span> is filed.</p>
-                    </div>
-                  </div>
-                </div>
-                <i class="gk-compose" aria-hidden="true"></i>
-              </div>
-              <i class="gk-dim" aria-hidden="true" hidden></i>
-            </div>
-
-            <div class="gk-next" role="group" aria-labelledby="gk-nh-modal">
-              <div class="gk-nhd">
-                <h3 class="gk-nh" id="gk-nh-modal">WHAT HAPPENS NEXT</h3>
-                <span class="tag gk-nst" data-st="done"><i class="gk-nst-dot" aria-hidden="true"></i><span class="gk-nst-t">done</span></span>
-              </div>
-              <div class="gk-agent">
-                <span class="gk-avw" aria-hidden="true"><i class="gk-orb gk-orb--2"></i><i class="gk-orb gk-orb--1"></i><i class="gk-glow"></i><i class="gk-halo"></i><span class="av av--ops gk-nav">o</span></span>
-                <p class="gk-who"><b>ops</b> · runs things</p>
-              </div>
-              <p class="gk-ex no-js-only">Example: you file the form</p>
-              <ol class="gk-log">
-                <li class="gk-ll"><span class="gk-lt">ops got the form: Monitor · $230 · Support</span></li>
-                <li class="gk-ll"><span class="gk-lt">Adding it to the requests table</span></li>
-                <li class="gk-ll"><span class="gk-lt">Filed. ops thanks you in the channel.</span></li>
-              </ol>
-            </div>
-          </div>
-          <p class="gk-cap">A button can open a form right in Slack. What people type goes to the agent you choose.</p>
-        </div>
-
-        <!-- ===================== 3 · APPROVAL ===================== -->
-        <div class="gk-tab gk-tab--appr" data-tab="appr" role="group" aria-labelledby="gk-tl-appr">
-          <div class="gk-ctrls js-only">
-            <div class="gk-ctl">
-              <p class="gk-ctl-l" id="gk-who-l">Who presses Approve?</p>
-              <div class="gk-whorow">
-                <div class="seg gk-wseg" role="radiogroup" aria-labelledby="gk-who-l">
-                  <input type="radio" name="gk-who" id="gk-who-b" value="bruno" checked><label for="gk-who-b">Bruno</label>
-                  <input type="radio" name="gk-who" id="gk-who-c" value="carla"><label for="gk-who-c">Carla</label>
-                  <input type="radio" name="gk-who" id="gk-who-n" value="nobody"><label for="gk-who-n">Nobody</label>
-                </div>
-                <button class="btn gk-again" type="button">Play again</button>
-              </div>
-            </div>
-          </div>
-          <div class="gk-grid">
-            <div class="sk-win gk-frame gk-fr gk-fr--appr">
-              <div class="sk-main">
-                <p class="sk-hd"><b># office</b></p>
-                <div class="sk-msgs">
-                  <div class="sk-msg gk-ap">
-                    <span class="av av--rec gk-blk" aria-hidden="true">r</span>
-                    <div class="gk-mb">
-                      <p class="sk-meta gk-blk"><b>reception</b><span class="app">APP</span><time datetime="10:31">10:31 AM</time></p>
-                      <div class="bk gk-apcard gk-blk">
-                        <div class="gk-ap-pend" hidden>
-                          <p class="bk-header">Plan pending</p>
-                          <p class="bk-section gk-ap-body">Plan: post a weekly spend summary to the #finance Canvas every Monday at 9.</p>
-                          <p class="bk-context">Agent: reception</p>
-                          <div class="bk-actions gk-ap-acts"><button type="button" class="bk-btn bk-btn--primary gk-ap-ok" disabled>Approve</button><span class="bk-btn bk-btn--danger">Reject</span><span class="gk-ring" hidden><svg viewBox="0 0 36 36" aria-hidden="true" focusable="false"><circle class="gk-ring-t" cx="18" cy="18" r="15"/><circle class="gk-ring-a" cx="18" cy="18" r="15" pathLength="1"/></svg><b class="gk-ring-n" aria-hidden="true">5:00</b><span class="gk-ring-l">5 minutes, sped up</span></span></div>
-                          <p class="gk-ap-ign" hidden><span class="tag tag--sand">Nothing happens. Bruno can't approve plans.</span></p>
-                        </div>
-                        <div class="bk-final gk-ap-fin"><b>Plan pending</b><span class="gk-ap-l2"><span class="gk-ap-st">Approved</span><span class="tag tag--mint gk-ap-okt">Approved by Carla</span></span></div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <i class="gk-compose" aria-hidden="true"></i>
-              </div>
-              <div class="cur cur--bruno gk-cur gk-cur--b" aria-hidden="true"><svg viewBox="0 0 28 40" focusable="false"><path d="M2 2 L2 33 L10 25.5 L15.5 38.5 L21 36 L15.6 23.4 L26.5 23.4 Z"/></svg><span class="cur-name">Bruno</span><i class="cur-ripple"></i></div>
-              <div class="cur cur--carla gk-cur gk-cur--c" aria-hidden="true"><svg viewBox="0 0 28 40" focusable="false"><path d="M2 2 L2 33 L10 25.5 L15.5 38.5 L21 36 L15.6 23.4 L26.5 23.4 Z"/></svg><span class="cur-name">Carla</span><i class="cur-ripple"></i></div>
-            </div>
-
-            <div class="gk-next" role="group" aria-labelledby="gk-nh-appr">
-              <div class="gk-nhd">
-                <h3 class="gk-nh" id="gk-nh-appr">WHAT HAPPENS NEXT</h3>
-                <span class="tag gk-nst" data-st="go"><i class="gk-nst-dot" aria-hidden="true"></i><span class="gk-nst-t">going ahead</span></span>
-              </div>
-              <div class="gk-agent">
-                <span class="gk-avw" aria-hidden="true"><i class="gk-orb gk-orb--2"></i><i class="gk-orb gk-orb--1"></i><i class="gk-glow"></i><i class="gk-halo"></i><span class="av av--rec gk-nav">r</span></span>
-                <p class="gk-who"><b>reception</b> · front desk</p>
-              </div>
-              <p class="gk-ex no-js-only">Example: Carla presses Approve</p>
-              <ol class="gk-log">
-                <li class="gk-ll"><span class="gk-lt">reception goes ahead with the plan.</span></li>
-                <li class="gk-ll is-empty"><span class="gk-lt"></span></li>
-                <li class="gk-ll is-empty"><span class="gk-lt"></span></li>
-              </ol>
-            </div>
-          </div>
-          <!-- no JS: the three outcomes side by side (the card above shows Carla's, to match the panel's worked example;
-               Bruno's frame keeps the pending card with its plan) -->
-          <div class="gk-outs no-js-only">
-            <figure class="gk-out">
-              <figcaption>Bruno</figcaption>
-              <div class="gk-ocard">
-                <p class="bk-header">Plan pending</p>
-                <p class="bk-section">Plan: post a weekly spend summary to the #finance Canvas every Monday at 9.</p>
-                <div class="bk-actions"><span class="bk-btn bk-btn--primary">Approve</span><span class="bk-btn bk-btn--danger">Reject</span></div>
-                <span class="tag tag--sand">Nothing happens. Bruno can't approve plans.</span>
-              </div>
-            </figure>
-            <figure class="gk-out">
-              <figcaption>Carla</figcaption>
-              <div class="gk-ocard">
-                <div class="bk-final"><b>Plan pending</b><span>Approved</span></div>
-                <span class="tag tag--mint">Approved by Carla</span>
-              </div>
-            </figure>
-            <figure class="gk-out">
-              <figcaption>Nobody</figcaption>
-              <div class="gk-ocard">
-                <div class="bk-final"><b>Plan pending</b><span>Expired — no decision in 5 minutes.</span></div>
-              </div>
-            </figure>
-          </div>
-          <p class="gk-cap">When an agent asks for a yes on its plan, this is the card it posts. Only people you allow can approve.</p>
-        </div>
-
-        <!-- ===================== 4 · CANVAS ===================== -->
-        <div class="gk-tab gk-tab--canvas" data-tab="canvas" role="group" aria-labelledby="gk-tl-canvas">
-          <div class="gk-ctrls js-only">
-            <button class="btn gk-editbtn" type="button">ops updates it</button>
-          </div>
-          <div class="gk-grid">
-            <div class="sk-win gk-frame gk-fr gk-fr--doc">
-              <div class="sk-main">
-                <p class="sk-hd"><b># finance</b></p>
-                <div class="gk-docwrap">
-                  <div class="gk-doc">
-                    <p class="gk-d1">Weekly spend</p>
-                    <p class="gk-dp">Week of Oct 12: <span class="gk-n" data-a="6" data-b="7">7</span> requests approved, $<span class="gk-n" data-a="2970" data-b="3450">3,450</span>.</p>
-                    <table class="gk-dt">
-                      <thead><tr><th scope="col">Team</th><th scope="col">Approved</th></tr></thead>
-                      <tbody>
-                        <tr class="gk-dsales"><td>Sales</td><td>$<span class="gk-n" data-a="2370" data-b="2850">2,850</span></td></tr>
-                        <tr><td>Marketing</td><td>$340</td></tr>
-                        <tr><td>Support</td><td>$260</td></tr>
-                      </tbody>
-                    </table>
-                    <div class="gk-dsec">
-                      <i class="gk-dwash" aria-hidden="true"></i>
-                      <p class="gk-d2">Waiting</p>
-                      <div class="gk-wcell">
-                        <ul class="gk-dul gk-w-old" hidden><li>Headset · $120</li><li>Standing desk · Sales · $480</li><li>Monitor · Support · $230</li></ul>
-                        <ul class="gk-dul gk-w-new"><li>Headset · $120</li><li>Monitor · Support · $230</li></ul>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="gk-next" role="group" aria-labelledby="gk-nh-canvas">
-              <div class="gk-nhd">
-                <h3 class="gk-nh" id="gk-nh-canvas">WHAT HAPPENS NEXT</h3>
-                <span class="tag gk-nst" data-st="done"><i class="gk-nst-dot" aria-hidden="true"></i><span class="gk-nst-t">done</span></span>
-              </div>
-              <div class="gk-agent">
-                <span class="gk-avw" aria-hidden="true"><i class="gk-orb gk-orb--2"></i><i class="gk-orb gk-orb--1"></i><i class="gk-glow"></i><i class="gk-halo"></i><span class="av av--ops gk-nav">o</span></span>
-                <p class="gk-who"><b>ops</b> · runs things</p>
-              </div>
-              <p class="gk-ex no-js-only">Example: the ops agent updates the Canvas</p>
-              <ol class="gk-log">
-                <li class="gk-ll"><span class="gk-lt">ops updates the Canvas</span></li>
-                <li class="gk-ll"><span class="gk-lt">Standing desk approved: Sales is now $2,850</span></li>
-                <li class="gk-ll"><span class="gk-lt">Done. Slack shows the new version.</span></li>
-              </ol>
-            </div>
-          </div>
-          <p class="gk-cap">The ops agent keeps the Canvas up to date. It only goes one way: edits made by hand in Slack can be replaced the next time ops updates it.</p>
-        </div>
-
-        <!-- ===================== 5 · TASK CARD ===================== -->
-        <div class="gk-tab gk-tab--wo" data-tab="wo" role="group" aria-labelledby="gk-tl-wo">
-          <div class="gk-grid">
-            <div class="sk-win gk-frame gk-fr">
-              <div class="sk-main">
-                <p class="sk-hd"><b># finance</b></p>
-                <div class="sk-msgs">
-                  <div class="sk-msg">
-                    <span class="av av--ops gk-blk" aria-hidden="true">o</span>
-                    <div class="gk-mb">
-                      <p class="sk-meta gk-blk"><b>ops</b><span class="app">APP</span><time datetime="10:30">10:30 AM</time></p>
-                      <div class="gk-wo">
-                        <p class="gk-wo-p"><span class="gk-wo-mk" aria-hidden="true">R</span><b>Ravi</b><span class="gk-wo-ty">Task</span></p>
-                        <p class="gk-wo-t">Order: Standing desk</p>
-                        <p class="gk-wo-tags"><span class="gk-tagw"><button type="button" class="gk-wotag gk-wotag--blue" data-f="status" aria-describedby="gk-tip-status">open</button><span class="gk-tip" role="tooltip" id="gk-tip-status">Status: open</span></span><span class="gk-tagw"><button type="button" class="gk-wotag gk-wotag--red" data-f="priority" aria-describedby="gk-tip-priority">high</button><span class="gk-tip" role="tooltip" id="gk-tip-priority">Priority: high</span></span></p>
-                        <p class="gk-wo-u">https://acme-ops.ravi.page/requests</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <i class="gk-compose" aria-hidden="true"></i>
-              </div>
-            </div>
-
-            <div class="gk-next" role="group" aria-labelledby="gk-nh-wo">
-              <div class="gk-nhd">
-                <h3 class="gk-nh" id="gk-nh-wo">WHAT HAPPENS NEXT</h3>
-                <span class="tag gk-nst" data-st="done"><i class="gk-nst-dot" aria-hidden="true"></i><span class="gk-nst-t">done</span></span>
-              </div>
-              <div class="gk-agent">
-                <span class="gk-avw" aria-hidden="true"><i class="gk-orb gk-orb--2"></i><i class="gk-orb gk-orb--1"></i><i class="gk-glow"></i><i class="gk-halo"></i><span class="av av--ops gk-nav">o</span></span>
-                <p class="gk-who"><b>ops</b> · runs things</p>
-              </div>
-              <p class="gk-ex no-js-only">Example: the task card</p>
-              <ol class="gk-log">
-                <li class="gk-ll"><span class="gk-lt">ops posted this task with its status and priority.</span></li>
-                <li class="gk-ll is-empty"><span class="gk-lt"></span></li>
-                <li class="gk-ll is-empty"><span class="gk-lt"></span></li>
-              </ol>
-            </div>
-          </div>
-          <p class="gk-cap">A task card shows a request's status and priority right in Slack. Whoever sets up Ravi turns on one Slack setting for it.</p>
-        </div>
-
-      </div>
-
-      <svg class="gk-wires" aria-hidden="true" focusable="false"><path class="gk-wire" pathLength="1" d="M0 0"/><path class="gk-wire gk-wire2" pathLength="1" d="M0 0"/></svg>
-      <i class="pk pk--read gk-pk" aria-hidden="true"></i>
-      <i class="pk pk--write gk-pk gk-pk2" aria-hidden="true"></i>
-      <i class="gk-rip" aria-hidden="true"></i>
-    </div>
-  </div>
-</section>
-
-<!-- ===== 07-scale.html ===== -->
+<!-- ===== 03-scale.html ===== -->
 <section class="sec" id="scale" aria-labelledby="scale-h">
   <header class="wrap sec-head">
-    <p class="eyebrow"><span class="sr-only">07, Teams</span><span aria-hidden="true">/ <b>07</b> — TEAMS</span></p>
+    <p class="eyebrow">PERSONAL TO COMPANY</p>
     <h2 class="hl" id="scale-h"><span class="mask"><span class="in">ONE PERSON OR</span></span><span class="mask"><span class="in">THE WHOLE ORG.</span></span></h2>
-    <p class="intro" data-reveal>Start with an agent of your own. Grow into a team of agents for everyone at work.</p>
+    <p class="intro" data-reveal>Start with an agent of your own, then grow to agents for every team and the whole company on the same pages.</p>
   </header>
 
   <div class="wrap">
-    <!-- JS mirrors the checked radio on this element. With no JS the radios reorder the two panels through :has. -->
+    <!-- Motion: one wall of four slots under the toggle; Just me fills the first two, The whole org all four, and a
+         scroll-linked timeline flips between them (js/03-scale.js). Static (reduced, frames, no JS): the two panels
+         side by side, each with its heading and its own counters; the toggle is hidden there. -->
     <div class="sc" data-view="me">
-
-      <!-- ===== control bar: the toggle (CSS radios, work with JS off) + the counters (motion only; static panels carry their own) ===== -->
       <div class="sc-bar">
         <div class="seg sc-seg" role="radiogroup" aria-label="One person or the whole org">
           <input type="radio" name="sc-scale" id="sc-r-me" value="me" checked><label for="sc-r-me">Just me</label>
           <input type="radio" name="sc-scale" id="sc-r-org" value="org"><label for="sc-r-org">The whole org</label>
-          <i class="sc-thumb" aria-hidden="true"><i class="sc-thumb-in"><b>Just me</b><b>The whole org</b></i></i>
+          <i class="sc-thumb" aria-hidden="true"><i class="sc-thumb-in"><b data-t="Just me"></b><b data-t="The whole org"></b></i></i>
         </div>
         <dl class="sc-hud sc-hud--bar motion-only">
           <div class="sc-k"><dt>People</dt><dd class="sc-n" data-me="1" data-org="40">1</dd></div>
           <div class="sc-k"><dt>Agents</dt><dd class="sc-n" data-me="1" data-org="6">1</dd></div>
-          <div class="sc-k"><dt>Channels</dt><dd class="sc-n" data-me="1" data-org="6">1</dd></div>
-          <div class="sc-k"><dt>Pages</dt><dd class="sc-n" data-me="1" data-org="5">1</dd></div>
+          <div class="sc-k"><dt>Pages</dt><dd class="sc-n" data-me="1" data-org="12">1</dd></div>
         </dl>
       </div>
 
       <div class="sc-panels">
+        <div class="sc-slots motion-only" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
 
-        <!-- ================= JUST ME ================= -->
         <article class="sc-panel sc-panel--me" aria-labelledby="sc-h-me">
-          <h3 class="sc-ph" id="sc-h-me">Just me</h3>
+          <h3 class="sc-ph static-only" id="sc-h-me">Just me</h3>
           <dl class="sc-hud sc-hud--panel static-only">
             <div class="sc-k"><dt>People</dt><dd class="sc-n">1</dd></div>
             <div class="sc-k"><dt>Agents</dt><dd class="sc-n">1</dd></div>
-            <div class="sc-k"><dt>Channels</dt><dd class="sc-n">1</dd></div>
             <div class="sc-k"><dt>Pages</dt><dd class="sc-n">1</dd></div>
           </dl>
-
-          <div class="sc-copy sc-copy--me">
-            <p class="sc-p">Start with one agent for yourself, in a Slack DM or a channel of your own. Sign in to Ravi once. Pages your agent makes are private by default: only your organization can open them, so if that's just you, only you can.</p>
-          </div>
-
-          <!-- one node: Ana and her own agent -->
-          <div class="sc-node">
-            <div class="sc-row sc-row--me">
-              <span class="sc-src sc-who"><span class="av av--ana sc-av" aria-hidden="true">A</span>Ana</span>
-              <span class="sc-wire" aria-hidden="true"><i class="sc-ln"></i><i class="sc-dot"></i></span>
-              <span class="sc-dst"><span class="chip sc-chip"><i style="--dot:var(--mint)"></i>assistant · helps Ana</span></span>
-            </div>
-          </div>
-
-          <!-- sign-in card: the authored state is signed in; the "Sign in" face only shows while it plays -->
-          <div class="sc-login" role="group" aria-labelledby="sc-lg-ok">
-            <span class="sc-lg-mk" aria-hidden="true">R</span>
-            <div class="sc-lg-body">
-              <div class="sc-lg-a" aria-hidden="true">
-                <b class="sc-lg-t">Sign in to Ravi</b>
-                <span class="sc-lg-btn">Sign in<i class="cur-ripple"></i></span>
-              </div>
-              <div class="sc-lg-b">
-                <p class="sc-lg-ok" id="sc-lg-ok"><svg class="sc-lg-ck" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="9"/><path pathLength="1" d="M5.6 10.4l2.9 2.9 5.9-6.1"/></svg>Signed in as Ana</p>
-                <span class="sc-lg-chip"><svg viewBox="0 0 10 12" aria-hidden="true" focusable="false"><rect x="1" y="5" width="8" height="6.2" rx="1.2"/><path d="M3 5V3.6a2 2 0 0 1 4 0V5"/></svg>Private · just you</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- desk motion: a wire from the agent down to the page it made (drawn by JS; hidden in the static layout) -->
-          <svg class="sc-cwires" aria-hidden="true" focusable="false"><path class="sc-cw" pathLength="1" d="M0 0"/></svg>
-          <i class="pk pk--read sc-pk" aria-hidden="true"></i>
-
           <ul class="sc-tiles sc-tiles--me">
-            <li>
-              <div class="sc-tile sc-t--cal" role="group" aria-labelledby="sc-t0-l sc-t0-h">
-                <div class="sc-t-hd"><span class="sc-t-lab" id="sc-t0-l">Calendar</span><span class="sc-tags"><span class="sc-vis">Private</span></span></div>
+            <li class="sc-li">
+              <div class="sc-tile sc-t--cal">
+                <p class="sc-t-lab">Calendar</p>
                 <ul class="sc-t-art sc-cal">
-                  <li><b class="sc-cal-d">Tue</b><span class="sc-cal-s"> · </span>Dentist, 9:00</li>
-                  <li><b class="sc-cal-d">Thu</b><span class="sc-cal-s"> · </span>Invoices due</li>
-                  <li><b class="sc-cal-d">Sat</b><span class="sc-cal-s"> · </span>Dinner with Leo</li>
+                  <li><b class="sc-cal-d">Tue</b><span class="sc-cal-s"> · </span><span>Dentist, 9:00</span></li>
+                  <li><b class="sc-cal-d">Sat</b><span class="sc-cal-s"> · </span><span>Dinner with Leo</span></li>
                 </ul>
-                <p class="sc-t-url" id="sc-t0-h">ana-home.ravi.page/calendar</p>
+              </div>
+            </li>
+            <li class="sc-li">
+              <div class="sc-tile sc-t--brief">
+                <p class="sc-t-lab">Morning brief</p>
+                <div class="sc-t-art sc-dm">
+                  <span class="av av--ravi" aria-hidden="true"></span>
+                  <p class="sc-dm-t">3 meetings, 2 invoices due today.</p>
+                </div>
               </div>
             </li>
           </ul>
         </article>
 
-        <!-- ================= THE WHOLE ORG ================= -->
         <article class="sc-panel sc-panel--org" aria-labelledby="sc-h-org">
-          <h3 class="sc-ph" id="sc-h-org">The whole org</h3>
+          <h3 class="sc-ph static-only" id="sc-h-org">The whole org</h3>
           <dl class="sc-hud sc-hud--panel static-only">
             <div class="sc-k"><dt>People</dt><dd class="sc-n">40</dd></div>
             <div class="sc-k"><dt>Agents</dt><dd class="sc-n">6</dd></div>
-            <div class="sc-k"><dt>Channels</dt><dd class="sc-n">6</dd></div>
-            <div class="sc-k"><dt>Pages</dt><dd class="sc-n">5</dd></div>
+            <div class="sc-k"><dt>Pages</dt><dd class="sc-n">12</dd></div>
           </dl>
-
-          <ol class="sc-copy sc-copy--org">
-            <li class="sc-p"><span class="sc-pn" aria-hidden="true">01</span><span><span class="sc-p1">Give each team a channel and an agent.</span> Agents can share one Slack bot, or each get its own name and picture.</span></li>
-            <li class="sc-p"><span class="sc-pn" aria-hidden="true">02</span><span><span class="sc-p1">Each group gets its own link, like <span class="nw">acme-sales.ravi.page</span>, so the sales team's pages and the hiring team's pages stay apart.</span> Everyone who can open a link sees what's shared on it.</span></li>
-            <li class="sc-p"><span class="sc-pn" aria-hidden="true">03</span><span><span class="sc-p1">A page can show totals and charts without the entries behind them.</span> Any bar built from fewer than five entries is left out.</span></li>
-            <li class="sc-p sc-p--csv"><span class="sc-pn" aria-hidden="true">04</span><span><span class="sc-p1">Bring your spreadsheet as a CSV file; Ravi checks it before importing.</span> After that every change is kept, and your agents' changes are recorded under the Ravi account signed in on their computer.</span></li>
-            <li class="sc-p"><span class="sc-pn" aria-hidden="true">05</span><span><span class="sc-p1">People outside your org never open these pages.</span> They talk to an agent that can only chat, and get a message, a Canvas or a public page with just the numbers.</span></li>
-            <li class="sc-p"><span class="sc-pn" aria-hidden="true">06</span><span><span class="sc-p1">Each agent starts with a few basic abilities and gets only what else you allow; anything else is refused.</span> In Slack, it only hears the channels its bot is in and messages sent to it.</span></li>
-          </ol>
-
-          <!-- channel → agent map: six channels, six agents. Four channels share one Slack bot; #office and #finance
-               have their own; dev has no channel of its own (the other agents hand it the work) -->
-          <div class="sc-mapw">
-            <ul class="sc-map">
-              <li class="sc-row"><span class="sc-src sc-ch">#sales</span><span class="sc-wire" aria-hidden="true"><i class="sc-ln"></i><i class="sc-dot"></i></span><span class="sc-dst"><span class="chip sc-chip"><i style="--dot:var(--a-other)"></i>sales</span></span></li>
-              <li class="sc-row"><span class="sc-src sc-ch">#eng</span><span class="sc-wire" aria-hidden="true"><i class="sc-ln"></i><i class="sc-dot"></i></span><span class="sc-dst"><span class="chip sc-chip"><i style="--dot:var(--a-other)"></i>triage</span></span></li>
-              <li class="sc-row"><span class="sc-src sc-ch">#people</span><span class="sc-wire" aria-hidden="true"><i class="sc-ln"></i><i class="sc-dot"></i></span><span class="sc-dst"><span class="chip sc-chip"><i style="--dot:var(--a-other)"></i>recruiting</span></span></li>
-              <li class="sc-row sc-row--un"><span class="sc-src sc-ch">#random</span><span class="sc-wire" aria-hidden="true"><i class="sc-ln"></i><i class="sc-dot sc-dot--ign"></i></span><span class="sc-dst"><span class="sc-un">no agent</span></span></li>
-              <li class="sc-row sc-row--own"><span class="sc-src sc-ch">#office</span><span class="sc-wire" aria-hidden="true"><i class="sc-ln"></i><i class="sc-dot"></i></span><span class="sc-own tag tag--sand"><span class="sr-only">· </span>own name</span><span class="sc-dst"><span class="chip sc-chip"><i style="--dot:var(--a-reception)"></i>reception</span></span></li>
-              <li class="sc-row sc-row--own"><span class="sc-src sc-ch">#finance</span><span class="sc-wire" aria-hidden="true"><i class="sc-ln"></i><i class="sc-dot"></i></span><span class="sc-own tag tag--sand"><span class="sr-only">· </span>own name</span><span class="sc-dst"><span class="chip sc-chip"><i style="--dot:var(--a-ops)"></i>ops</span></span></li>
-              <li class="sc-row sc-row--nc"><span class="sc-src sc-nc">no channel</span><span class="sc-wire" aria-hidden="true"><i class="sc-ln"></i><i class="sc-dot"></i></span><span class="sc-dst"><span class="chip sc-chip"><i style="--dot:var(--a-dev)"></i>dev · builds things</span></span></li>
-            </ul>
-            <p class="note sc-mapnote">Most agents share one Slack bot. The reception and ops agents have their own, so they post under their own names.</p>
-          </div>
-
-          <!-- desk motion: the CSV chip's flight path, from paragraph 04 to the dashboard (drawn by JS) -->
-          <svg class="sc-fwires" aria-hidden="true" focusable="false"><path class="sc-fw" pathLength="1" d="M0 0"/></svg>
-
-          <figure class="sc-tilefig">
-            <ul class="sc-tiles sc-tiles--org">
-              <li>
-                <div class="sc-tile sc-t--kb" role="group" aria-labelledby="sc-t1-l sc-t1-h">
-                  <div class="sc-t-hd"><span class="sc-t-lab" id="sc-t1-l">Purchase requests</span><span class="sc-tags"><span class="sc-vis">Private</span></span></div>
-                  <div class="sc-t-art sc-kb">
-                    <span class="sc-kb-col sc-kb--req" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-                    <span class="sc-kb-col sc-kb--app"><span class="sc-kb-h">Approved</span><span class="sc-kb-card">Standing desk</span><i aria-hidden="true"></i><i aria-hidden="true"></i></span>
-                    <span class="sc-kb-col sc-kb--ord" aria-hidden="true"><i></i><i></i><i></i></span>
-                    <span class="sc-kb-col sc-kb--rec" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-                    <span class="sc-kb-col sc-kb--dec" aria-hidden="true"><i></i><i></i></span>
-                  </div>
-                  <p class="sc-t-url" id="sc-t1-h">acme-ops.ravi.page/requests</p>
+          <ul class="sc-tiles sc-tiles--org">
+            <li class="sc-li">
+              <div class="sc-tile sc-t--kb">
+                <p class="sc-t-lab">Purchase requests</p>
+                <div class="sc-t-art sc-kb" aria-hidden="true">
+                  <span class="sc-kb-col sc-kb--req"><i></i><i></i><i></i></span>
+                  <span class="sc-kb-col sc-kb--app"><i></i><i></i></span>
+                  <span class="sc-kb-col sc-kb--ord"><i></i></span>
                 </div>
-              </li>
-              <li class="sc-li--dash">
-                <div class="sc-tile sc-t--dash" role="group" aria-labelledby="sc-t2-l sc-t2-h">
-                  <div class="sc-t-hd"><span class="sc-t-lab" id="sc-t2-l">Sales pipeline</span><span class="sc-tags"><span class="sc-vis">Private</span></span></div>
-                  <div class="sc-t-art sc-dash">
-                    <span class="sc-cnt">totals only</span>
-                    <ul class="sc-bars">
-                      <li style="--w:1"><span class="sc-bl">Discovery</span><span class="sc-bt" aria-hidden="true"><i></i></span><b class="sc-bn">412</b></li>
-                      <li style="--w:.573"><span class="sc-bl">Proposal</span><span class="sc-bt" aria-hidden="true"><i></i></span><b class="sc-bn">236</b></li>
-                      <li style="--w:.238"><span class="sc-bl">Negotiation</span><span class="sc-bt" aria-hidden="true"><i></i></span><b class="sc-bn">98</b></li>
-                      <li style="--w:.153"><span class="sc-bl">Won</span><span class="sc-bt" aria-hidden="true"><i></i></span><b class="sc-bn">63</b></li>
-                    </ul>
-                    <span class="sc-foot">1 stage with fewer than 5 deals is hidden</span>
-                  </div>
-                  <p class="sc-t-url" id="sc-t2-h">acme-sales.ravi.page/pipeline</p>
-                </div>
-                <p class="sc-sheet"><i class="sc-grid" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></i><span class="sc-sh-n">Q3 pipeline · CSV</span><b class="sc-rows"><span class="sc-rn">812</span> rows</b></p>
-              </li>
-              <li>
-                <div class="sc-tile sc-t--form" role="group" aria-labelledby="sc-t3-l sc-t3-h" aria-describedby="sc-t3-n">
-                  <div class="sc-t-hd"><span class="sc-t-lab" id="sc-t3-l">Report a bug</span><span class="sc-tags"><span class="sc-vis">Private</span></span></div>
-                  <div class="sc-t-art sc-form" aria-hidden="true">
-                    <span class="sc-field"></span>
-                    <span class="sc-field sc-field--lg"></span>
-                    <span class="sc-send">Send</span>
-                  </div>
-                  <p class="sc-t-url" id="sc-t3-h">acme-product.ravi.page/bugs/new</p>
-                  <p class="sc-tnote" id="sc-t3-n">People can file a bug but can't read anyone's. Ravi fills in who sent it.</p>
-                </div>
-              </li>
-              <li>
-                <div class="sc-tile sc-t--fun" role="group" aria-labelledby="sc-t4-l sc-t4-h">
-                  <div class="sc-t-hd"><span class="sc-t-lab" id="sc-t4-l">Hiring</span><span class="sc-tags"><span class="sc-vis">Private</span></span></div>
-                  <div class="sc-t-art sc-funw">
-                    <span class="sc-cnt">totals only</span>
-                    <ul class="sc-fun">
-                      <li style="--w:1"><i aria-hidden="true"></i><span>Screening 18</span></li>
-                      <li style="--w:.61"><i aria-hidden="true"></i><span>Technical interview 11</span></li>
-                      <li style="--w:.33"><i aria-hidden="true"></i><span>Offer 6</span></li>
-                    </ul>
-                  </div>
-                  <p class="sc-t-url" id="sc-t4-h">acme-people.ravi.page/funnel</p>
-                </div>
-              </li>
-              <li>
-                <div class="sc-tile sc-t--cv" role="group" aria-labelledby="sc-t5-l" aria-describedby="sc-t5-n">
-                  <div class="sc-t-hd"><span class="sc-t-lab" id="sc-t5-l">#finance · Weekly spend</span></div>
-                  <div class="sc-t-art sc-cv" aria-hidden="true">
-                    <div class="sc-cv-tabs"><i></i><span class="sc-cv-tab"><b></b>Weekly spend</span></div>
-                    <div class="sc-cv-doc"><i class="m"></i><i></i><i></i><i class="s"></i></div>
-                  </div>
-                  <p class="sc-tnote" id="sc-t5-n">Ravi posts it into Slack. Edits made in Slack don't come back.</p>
-                </div>
-              </li>
-              <li>
-                <div class="sc-tile sc-t--snap" role="group" aria-labelledby="sc-t6-l sc-t6-h" aria-describedby="sc-t6-n">
-                  <div class="sc-t-hd"><span class="sc-t-lab" id="sc-t6-l">This week's spend</span><span class="sc-tags"><span class="sc-vis sc-vis--pub">Public</span></span></div>
-                  <div class="sc-t-art sc-snap"><b class="sc-snap-n">$2,970</b><span>approved this week</span></div>
-                  <p class="sc-t-url" id="sc-t6-h">acme-public.ravi.page/spend</p>
-                  <p class="sc-tnote" id="sc-t6-n">Just the numbers, with no table behind it. Anyone with the link can see it.</p>
-                </div>
-              </li>
-            </ul>
-            <figcaption class="sc-cap">Each of these started as a message in Slack. Your agents built them, starting from a basic board or form when one fits.</figcaption>
-          </figure>
+              </div>
+            </li>
+            <li class="sc-li">
+              <div class="sc-tile sc-t--dash">
+                <p class="sc-t-lab">Sales pipeline</p>
+                <div class="sc-t-art sc-dash" aria-hidden="true"><i style="--h:.42"></i><i style="--h:.58"></i><i style="--h:.5"></i><i style="--h:.74"></i><i style="--h:.66"></i><i style="--h:.92"></i></div>
+              </div>
+            </li>
+            <li class="sc-li">
+              <div class="sc-tile sc-t--form">
+                <p class="sc-t-lab">Report a bug</p>
+                <div class="sc-t-art sc-form" aria-hidden="true"><i class="sc-field"></i><i class="sc-field sc-field--lg"></i><i class="sc-send"></i></div>
+              </div>
+            </li>
+            <li class="sc-li">
+              <div class="sc-tile sc-t--fun">
+                <p class="sc-t-lab">Hiring</p>
+                <div class="sc-t-art sc-fun" aria-hidden="true"><i style="--w:1"></i><i style="--w:.66"></i><i style="--w:.38"></i></div>
+              </div>
+            </li>
+          </ul>
         </article>
-
       </div>
     </div>
   </div>
 </section>
 
-<!-- ===== 08-skills.html ===== -->
-<section class="sec" id="skills" aria-labelledby="skills-h">
-  <header class="wrap sec-head">
-    <p class="eyebrow"><span class="sr-only">08, Plan First</span><span aria-hidden="true">/ <b>08</b> — PLAN FIRST</span></p>
-    <h2 class="hl" id="skills-h"><span class="mask"><span class="in">THEY SHOW YOU</span></span><span class="mask"><span class="in">THE PLAN FIRST.</span></span></h2>
-    <p class="intro" data-reveal>For anything with several parts, your agents are told to read Ravi's playbook first. It walks them through six questions, and they show you the answers as a plan.</p>
-  </header>
-
-  <div class="wrap">
-    <div class="pb-grid">
-      <!-- the plan card (light, Block Kit look): one line per tile -->
-      <div class="pb-side">
-        <figure class="pb-plan" aria-labelledby="pb-plan-h">
-          <p class="bk-header pb-plan-h" id="pb-plan-h"><span class="pb-ph-in">Plan · purchase requests</span></p>
-          <ol class="pb-lines">
-            <li class="pb-ln"><span class="pb-ln-n" aria-hidden="true">1</span><span class="pb-ln-t">A form on the page.</span></li>
-            <li class="pb-ln"><span class="pb-ln-n" aria-hidden="true">2</span><span class="pb-ln-t">One table. Each request belongs to whoever filed it.</span></li>
-            <li class="pb-ln"><span class="pb-ln-n" aria-hidden="true">3</span><span class="pb-ln-t">Everyone sees their own. Supervisors see their team's.</span></li>
-            <li class="pb-ln"><span class="pb-ln-n" aria-hidden="true">4</span><span class="pb-ln-t">The ops agent, on its own.</span></li>
-            <li class="pb-ln"><span class="pb-ln-n" aria-hidden="true">5</span><span class="pb-ln-t">A card in #finance with Approve and Decline.</span></li>
-            <li class="pb-ln"><span class="pb-ln-n" aria-hidden="true">6</span><span class="pb-ln-t">A weekly spend summary in a Slack Canvas.</span></li>
-          </ol>
-        </figure>
-        <p class="note pb-note">When something isn't possible yet, the plan says so and offers what works instead.</p>
-      </div>
-
-      <!-- six tiles: the question, its answer, and the station of the loop where it happens -->
-      <ul class="pb-tiles" aria-label="Six questions, and where each answer shows up in the loop">
-        <li><a class="pb-tile" href="#share"><i class="pb-tf" aria-hidden="true"></i><span class="pb-tq"><span class="pb-tq-in">How do requests come in?</span></span><span class="pb-ta">A form on the page.</span><span class="pb-tl"><span aria-hidden="true">→</span> <b>03</b> SHARE</span></a></li>
-        <li><a class="pb-tile" href="#build"><i class="pb-tf" aria-hidden="true"></i><span class="pb-tq"><span class="pb-tq-in">Where are they kept, and whose are they?</span></span><span class="pb-ta">One table. Each request belongs to whoever filed it.</span><span class="pb-tl"><span aria-hidden="true">→</span> <b>02</b> BUILD</span></a></li>
-        <li><a class="pb-tile" href="#share"><i class="pb-tf" aria-hidden="true"></i><span class="pb-tq"><span class="pb-tq-in">Who sees what?</span></span><span class="pb-ta">Everyone sees their own. Supervisors see their team's.</span><span class="pb-tl"><span aria-hidden="true">→</span> <b>03</b> SHARE</span></a></li>
-        <li><a class="pb-tile" href="#wake"><i class="pb-tf" aria-hidden="true"></i><span class="pb-tq"><span class="pb-tq-in">Who hears about new ones?</span></span><span class="pb-ta">The ops agent, on its own.</span><span class="pb-tl"><span aria-hidden="true">→</span> <b>04</b> PICK UP</span></a></li>
-        <li><a class="pb-tile" href="#click"><i class="pb-tf" aria-hidden="true"></i><span class="pb-tq"><span class="pb-tq-in">What goes out?</span></span><span class="pb-ta">A card in #finance with Approve and Decline.</span><span class="pb-tl"><span aria-hidden="true">→</span> <b>05</b> APPROVE</span></a></li>
-        <li><a class="pb-tile" href="#blockkit" data-tab="Canvas"><i class="pb-tf" aria-hidden="true"></i><span class="pb-tq"><span class="pb-tq-in">What reports on its own?</span></span><span class="pb-ta">A weekly spend summary in a Slack Canvas.</span><span class="pb-tl"><span aria-hidden="true">→</span> <b>06</b> BLOCK KIT</span></a></li>
-      </ul>
-    </div>
-  </div>
-</section>
-
-<!-- ===== 08s-sdk.html ===== -->
+<!-- ===== 04-sdk.html ===== -->
 <section class="sec sd-sec" id="sdk" aria-labelledby="sdk-h">
   <header class="wrap sec-head">
-    <p class="eyebrow"><span class="sr-only">09, For Builders</span><span aria-hidden="true">/ <b>09</b> — FOR BUILDERS</span></p>
-    <h2 class="hl sd-hl" id="sdk-h"><span class="mask"><span class="in">BUILD YOUR</span></span> <br class="sd-br-p"><span class="mask"><span class="in">OWN APP</span></span><br class="sd-br-d"> <span class="mask"><span class="in">ON RAVI.</span></span></h2>
-    <p class="intro" data-reveal>Want your own app? Your developers can build a dashboard, an iPhone app or a Mac app on your agents and tables, with SDKs for TypeScript, Swift and Dart generated from the commands your agents use.</p>
+    <p class="eyebrow">FOR BUILDERS</p>
+    <h2 class="hl sd-hl" id="sdk-h"><span class="mask"><span class="in">BUILD ANY APP</span></span> <span class="mask"><span class="in">ON RAVI.</span></span></h2>
+    <p class="intro" data-reveal>SDKs for TypeScript, Swift and Dart, generated from the same commands your agents use and checked on every change.</p>
   </header>
 
   <div class="wrap">
     <!-- One Ravi in the middle, three apps around it. Grid areas move per layout:
          ≥1280 dash | hub | mac (low) | phone (high); 1024–1279 hub on top, apps in a row; ≤1023 hub, then the apps stacked on a spine.
-         JS draws the wires (.sd-wires) in every JS mode, reduced motion included; with no JS the .sd-nj lines stand in. -->
-    <figure class="sd-fig" aria-describedby="sd-fig-d">
-      <p class="sr-only" id="sd-fig-d">Ravi in the middle, connected to a team dashboard written in TypeScript, an iPhone app and a Mac app written in Swift. Dart and OpenAPI 3.1 are also available.</p>
-
+         JS draws the wires (.sd-wires) in every JS mode, reduced motion included; with no JS the .sd-nj lines stand in.
+         In motion one pulse leaves the hub down all three wires at once and lands in the three apps together (js/04-sdk.js). -->
+    <figure class="sd-fig">
       <div class="sd-hubc">
         <div class="sd-hub">
           <div class="sd-ring" aria-hidden="true">
             <svg viewBox="0 0 152 152" focusable="false"><g class="sd-dots"><circle cx="76" cy="3" r="2.4" class="sd-dot--b"/><circle cx="94.9" cy="5.5" r="1.5"/><circle cx="112.5" cy="12.8" r="1.5"/><circle cx="127.6" cy="24.4" r="1.5"/><circle cx="139.2" cy="39.5" r="1.5"/><circle cx="146.5" cy="57.1" r="1.5"/><circle cx="149" cy="76" r="2.4" class="sd-dot--b"/><circle cx="146.5" cy="94.9" r="1.5"/><circle cx="139.2" cy="112.5" r="1.5"/><circle cx="127.6" cy="127.6" r="1.5"/><circle cx="112.5" cy="139.2" r="1.5"/><circle cx="94.9" cy="146.5" r="1.5"/><circle cx="76" cy="149" r="2.4" class="sd-dot--b"/><circle cx="57.1" cy="146.5" r="1.5"/><circle cx="39.5" cy="139.2" r="1.5"/><circle cx="24.4" cy="127.6" r="1.5"/><circle cx="12.8" cy="112.5" r="1.5"/><circle cx="5.5" cy="94.9" r="1.5"/><circle cx="3" cy="76" r="2.4" class="sd-dot--b"/><circle cx="5.5" cy="57.1" r="1.5"/><circle cx="12.8" cy="39.5" r="1.5"/><circle cx="24.4" cy="24.4" r="1.5"/><circle cx="39.5" cy="12.8" r="1.5"/><circle cx="57.1" cy="5.5" r="1.5"/></g></svg>
           </div>
-          <p class="sd-hub-t"><span class="sd-mark">RAVI</span> <span class="sd-n"><span class="sd-num">750</span><span class="sd-plus">+</span> <span class="sd-unit">commands</span></span> <span class="sd-sub">the ones your agents use</span></p>
+          <p class="sd-hub-t"><span class="sd-mark">RAVI</span> <span class="sd-n"><span class="sd-num">750+</span> <span class="sd-unit">commands</span></span></p>
+          <!-- the stamp, pinned to the top of the hub's ring -->
+          <p class="sd-stampw"><span class="sd-stamp">ZERO DRIFT</span></p>
           <i class="sd-port sd-port--a" aria-hidden="true"></i><i class="sd-port sd-port--b" aria-hidden="true"></i><i class="sd-port sd-port--c" aria-hidden="true"></i>
           <!-- no JS: straight lines from the hub (≥1280) -->
           <i class="sd-nj sd-nj--a" aria-hidden="true"></i><i class="sd-nj sd-nj--b" aria-hidden="true"></i><i class="sd-nj sd-nj--c" aria-hidden="true"></i>
@@ -1857,10 +421,10 @@
           <div class="sd-dash-pg">
             <p class="sd-dash-t">Approved this week</p>
             <p class="sd-dash-n">$3,450</p>
-            <ul class="sd-bars">
-              <li class="sd-bar"><span class="sd-bar-l">Sales</span> <span class="sd-bar-v">$2,850</span><span class="sd-bar-tr" aria-hidden="true"><i class="sd-bar-f" style="--w:1"></i></span></li>
-              <li class="sd-bar"><span class="sd-bar-l">Marketing</span> <span class="sd-bar-v">$340</span><span class="sd-bar-tr" aria-hidden="true"><i class="sd-bar-f" style="--w:.119"></i></span></li>
-              <li class="sd-bar"><span class="sd-bar-l">Support</span> <span class="sd-bar-v">$260</span><span class="sd-bar-tr" aria-hidden="true"><i class="sd-bar-f" style="--w:.091"></i></span></li>
+            <ul class="sd-bars" aria-hidden="true">
+              <li class="sd-bar"><i class="sd-bar-f" style="--w:1"></i></li>
+              <li class="sd-bar"><i class="sd-bar-f" style="--w:.42"></i></li>
+              <li class="sd-bar"><i class="sd-bar-f" style="--w:.24"></i></li>
             </ul>
           </div>
         </div>
@@ -1873,24 +437,23 @@
         <div class="sd-win sd-mac light">
           <div class="sd-mac-bar"><span class="sd-tl" aria-hidden="true"><i></i><i></i><i></i></span><span class="sd-mac-t">Purchase requests</span></div>
           <ul class="sd-rows">
-            <li class="sd-row"><span class="sd-r-nm">Headset</span><span class="sd-r-s"> · </span><span class="sd-r-v">$120</span><span class="sd-r-s"> · </span><span class="stc stc--req">Requested</span></li>
-            <li class="sd-row"><span class="sd-r-nm">Monitor</span><span class="sd-r-s"> · </span><span class="sd-r-v">$230</span><span class="sd-r-s"> · </span><span class="stc stc--req">Requested</span></li>
-            <li class="sd-row"><span class="sd-r-nm">Standing desk</span><span class="sd-r-s"> · </span><span class="sd-r-v">$480</span><span class="sd-r-s"> · </span><span class="stc stc--app">Approved</span></li>
+            <li class="sd-row"><span class="sd-r-nm">Webcam</span><span class="sd-r-v">$90</span></li>
+            <li class="sd-row"><span class="sd-r-nm">Chair</span><span class="sd-r-v">$210</span></li>
           </ul>
         </div>
         <i class="sd-nj sd-nj--app" aria-hidden="true"></i>
       </div>
 
-      <!-- the iPhone app (Swift) -->
+      <!-- the phone app (Dart) -->
       <div class="sd-app sd-app--phone">
-        <p class="sd-app-l"><b>iPhone app</b> <span class="tag sd-tag">Swift</span></p>
+        <p class="sd-app-l"><b>Phone app</b> <span class="tag sd-tag">Dart</span></p>
         <div class="sd-win sd-phone">
           <div class="sd-ph-scr light">
             <i class="sd-ph-isl" aria-hidden="true"></i>
             <div class="sd-ph-hd"><span class="av av--ops av--sm" aria-hidden="true">o</span><b>ops</b></div>
             <div class="sd-ph-msgs">
-              <p class="sd-bub sd-bub--me">Summarize the open requests.</p>
-              <div class="sd-bub sd-bub--ops"><p class="sd-rep">2 waiting, $350 in total: Headset and Monitor.</p><span class="sd-wait" aria-hidden="true"><i></i><i></i><i></i></span></div>
+              <p class="sd-bub sd-bub--me">Anything waiting?</p>
+              <p class="sd-bub sd-bub--ops">Three requests, $345 in total.</p>
             </div>
             <div class="sd-ph-in" aria-hidden="true"><span></span><i></i></div>
           </div>
@@ -1898,104 +461,34 @@
         <i class="sd-nj sd-nj--app" aria-hidden="true"></i>
       </div>
 
-      <ul class="sd-langs" aria-label="Languages">
-        <li class="chip sd-lc"><i style="--dot:var(--mint)"></i>TypeScript</li>
-        <li class="chip sd-lc"><i style="--dot:var(--sand)"></i>Swift</li>
-        <li class="chip sd-lc"><i style="--dot:var(--teal-dk)"></i>Dart</li>
-        <li class="chip sd-lc sd-lc--oa"><i></i>OpenAPI 3.1 to make a client in another language</li>
-      </ul>
-
-      <svg class="wires sd-wires" aria-hidden="true" focusable="false"><path class="sd-w sd-w--mint" pathLength="1"/><path class="sd-w sd-w--mint" pathLength="1"/><path class="sd-w sd-w--mint" pathLength="1"/></svg>
-      <i class="pk pk--read sd-pk" aria-hidden="true"></i><i class="pk pk--read sd-pk" aria-hidden="true"></i><i class="pk pk--read sd-pk" aria-hidden="true"></i><i class="pk pk--write sd-pk" aria-hidden="true"></i><i class="pk pk--write sd-pk" aria-hidden="true"></i><i class="pk pk--write sd-pk" aria-hidden="true"></i>
+      <svg class="wires sd-wires" aria-hidden="true" focusable="false"><path class="sd-w" pathLength="1"/><path class="sd-w" pathLength="1"/><path class="sd-w" pathLength="1"/></svg>
+      <i class="pkt sd-pk" aria-hidden="true"><i></i></i><i class="pkt sd-pk" aria-hidden="true"><i></i></i><i class="pkt sd-pk" aria-hidden="true"><i></i></i>
     </figure>
-
-    <div class="sd-under">
-      <div class="sd-codeblk">
-        <div class="sd-codebox">
-          <pre class="code sd-line"><code><span class="sd-p sd-p1"><span class="k">await</span> ravi.sessions.send(<span class="s">"ops"</span>,</span> <span class="sd-p sd-p2"><span class="s">"Summarize the open requests."</span>,</span> <span class="sd-p sd-p3">{ agent: <span class="s">"ops"</span>, wait: <span class="k">true</span> })<i class="caret sd-caret" aria-hidden="true"></i></span></code></pre>
-          <button class="copy js-only sd-copy" type="button" data-copy='await ravi.sessions.send("ops", "Summarize the open requests.", { agent: "ops", wait: true })' aria-label="Copy the code line">[Copy]</button>
-          <span class="toast sd-toast" aria-hidden="true" hidden>Copied</span>
-        </div>
-        <p class="sd-cap">One line from your app asks ops, the same agent your team talks to in Slack, and waits for its answer.</p>
-      </div>
-
-      <div class="sd-claim">
-        <p class="sd-stamp"><span class="sd-stamp-t">ZERO DRIFT</span></p>
-        <p class="sd-claim-t">The SDK code in Ravi's repository is generated from the same list of commands your agents use. If the two ever differ by even one byte, the automated check fails.</p>
-      </div>
-
-      <p class="fine sd-fine" data-reveal>TypeScript: @ravi-os/sdk on npm. Swift (for iPhone and Mac) and Dart: from the GitHub repository. About 35 commands stay on the command line only, and many results aren't fully typed yet. The connection your apps use is off until you turn it on, listens only on your own machine until you allow more, and each app needs a key you create for it. To reach it from a phone, set up your own secure tunnel. Apps act as the Ravi account signed in on that machine; they don't sign in each user.</p>
-
-      <div class="sd-end" data-reveal>
-        <p class="btn-row sd-btns">
-          <a class="btn sd-btn" href="https://github.com/filipexyz/ravi">GitHub <span aria-hidden="true">↗</span></a>
-          <a class="btn sd-btn" href="https://www.npmjs.com/package/@ravi-os/sdk">@ravi-os/sdk on npm <span aria-hidden="true">↗</span></a>
-        </p>
-        <a class="lnk lnk--go sd-go" href="#install">Install Ravi <span aria-hidden="true">↓</span></a>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ===== 09-install.html ===== -->
-<section class="sec ins-sec" id="install" aria-labelledby="install-h">
-  <header class="wrap sec-head">
-    <p class="eyebrow"><span class="sr-only">10, Install</span><span aria-hidden="true">/ <b>10</b> — INSTALL</span></p>
-    <h2 class="hl" id="install-h"><span class="mask"><span class="in">TRY IT</span></span> <span class="mask"><span class="in">IN YOUR SLACK.</span></span></h2>
-    <p class="intro" data-reveal>Setup is a one-time job for someone comfortable with a terminal. After that, your team only uses Slack and a browser.</p>
-    <p class="note ins-pass" data-reveal>Not the one who sets things up? Send this page to whoever is.</p>
-  </header>
-
-  <div class="wrap">
-    <!-- three plain steps: three columns on desk, stacked below 1024 -->
-    <ol class="ins-steps" aria-label="Three steps">
-      <li class="ins-step">
-        <i class="ins-rule" aria-hidden="true"></i>
-        <p class="ins-n" aria-hidden="true">01</p>
-        <h3 class="ins-t">Install Ravi</h3>
-        <div class="term term--line ins-box">
-          <div class="ln cmd"><span class="p" aria-hidden="true">$</span><code>bun add -g ravi.bot</code><i class="caret ins-caret" aria-hidden="true"></i><button class="copy js-only ins-copy" type="button" data-copy="bun add -g ravi.bot" aria-label="Copy the install line">[Copy]</button></div>
-          <span class="toast ins-toast" aria-hidden="true" hidden>Copied</span>
-        </div>
-        <p class="ins-d">Needs Bun and Node.js. Then run ravi setup: it installs what Ravi needs, asks for your Claude login or Anthropic API key, and starts Ravi. Then switch your first agent to Claude; the README shows how. (Setup asks its questions in Portuguese for now.)</p>
-      </li>
-      <li class="ins-step">
-        <i class="ins-rule" aria-hidden="true"></i>
-        <p class="ins-n" aria-hidden="true">02</p>
-        <h3 class="ins-t">Connect your Slack</h3>
-        <p class="ins-d">Create a Slack app for your workspace and connect it to Ravi. You'll need permission to add an app to your Slack workspace. There's no one-click install yet; the README on GitHub links to the step-by-step guide. On Linux, Ravi keeps your Slack keys in Vault, so you'll need one.</p>
-      </li>
-      <li class="ins-step">
-        <i class="ins-rule" aria-hidden="true"></i>
-        <p class="ins-n" aria-hidden="true">03</p>
-        <h3 class="ins-t">Ask in Slack</h3>
-        <p class="ins-d">Give a channel to your first agent and choose what it may do, such as building pages and posting in Slack. Then ask, the way you'd ask a colleague. To publish pages and tables, sign in to Ravi once.</p>
-      </li>
-    </ol>
-
-    <p class="fine ins-fine" data-reveal>Your agents run on your own computer or server and use Claude over the internet, so they work while that computer is on. Pages and tables are hosted by Ravi online; pages open at ravi.page. Your agents use your own Claude login or Anthropic API key, so AI usage counts there. Plan cards need agents that run on Claude. Task cards need Work Object Previews turned on in your Slack app.</p>
-
-    <p class="btn-row ins-btns" data-reveal>
-      <a class="btn ins-btn" href="https://github.com/filipexyz/ravi">GitHub <span aria-hidden="true">↗</span></a>
-      <a class="btn ins-btn" href="https://www.npmjs.com/package/ravi.bot">npm <span aria-hidden="true">↗</span></a>
-    </p>
   </div>
 </section>
 </main>
 
 <footer class="foot" id="end" aria-labelledby="foot-h">
   <div class="wrap foot-in">
-    <p class="eyebrow"><span class="sr-only">11, End</span><span aria-hidden="true">/ <b>11</b> — END</span></p>
+    <p class="eyebrow">GET STARTED</p>
     <div class="foot-head">
       <i class="foot-sq" aria-hidden="true"></i>
-      <h2 class="hl hl--hero" id="foot-h"><span class="mask"><span class="in">ONE MESSAGE.</span></span><span class="mask"><span class="in">ONE LOOP.</span></span></h2>
+      <h2 class="hl hl--hero" id="foot-h"><span class="mask"><span class="in">TRY IT</span></span><span class="mask"><span class="in">IN YOUR SLACK.</span></span></h2>
     </div>
-    <nav class="foot-links" aria-label="Footer">
-      <a href="https://github.com/filipexyz/ravi">GitHub</a>
-      <a href="https://www.npmjs.com/package/ravi.bot">npm</a>
-      <a href="#top">Back to top</a>
-    </nav>
-    <p class="foot-small">ravi.bot</p>
+    <p class="lead foot-say">Ravi runs on a computer or server you control and joins your Slack as a bot you own.</p>
+    <!-- the install pill: .en-pk (the packet) drops onto .en-caret, .en-flash flashes the border (js/09-end.js) -->
+    <div class="foot-ins">
+      <code class="foot-cmd">bun add -g ravi.bot@next</code><i class="caret en-caret" aria-hidden="true"></i>
+      <button class="copy js-only foot-copy" type="button" data-copy="bun add -g ravi.bot@next" aria-label="Copy the install line">Copy</button>
+      <span class="toast foot-toast" aria-hidden="true" hidden>Copied</span>
+      <i class="en-flash" aria-hidden="true"></i>
+      <i class="pkt en-pk" aria-hidden="true"><i></i></i>
+    </div>
+    <p class="btn-row foot-btns">
+      <a class="btn foot-btn" href="https://github.com/filipexyz/ravi">GitHub <span aria-hidden="true">↗</span></a>
+      <a class="btn foot-btn" href="https://www.npmjs.com/package/ravi.bot">npm <span aria-hidden="true">↗</span></a>
+    </p>
+    <p class="foot-small"><a href="#top">Back to top</a><span class="foot-dot" aria-hidden="true">·</span><span>Screens on this site are illustrations.</span></p>
   </div>
 </footer>
 </body>
