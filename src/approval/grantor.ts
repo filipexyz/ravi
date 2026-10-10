@@ -42,7 +42,7 @@ export function actorCanGrantRequestedPermission(input: ApprovalGrantorInput): A
 
   const identity =
     input.channel.trim().toLowerCase() === "slack"
-      ? resolveSlackGrantorIdentity(senderId, input.instanceId, input.accountId)
+      ? resolveSlackGrantorIdentity(senderId, input.instanceId ?? input.accountId)
       : resolveGrantorIdentity(input.channel, senderId, [input.instanceId, input.accountId, ""]);
   if (
     !identity?.ownerType ||
@@ -78,7 +78,6 @@ export function actorCanGrantRequestedPermission(input: ApprovalGrantorInput): A
 function resolveSlackGrantorIdentity(
   senderId: string,
   instanceId: string | null | undefined,
-  accountId: string | undefined,
 ): Pick<PlatformIdentity, "ownerType" | "ownerId"> | null {
   let config: GrantorRouterConfig = null;
   try {
@@ -87,11 +86,9 @@ function resolveSlackGrantorIdentity(
     // Without config the lookup stays on the received instance (and the empty
     // legacy scope): narrower, never wider.
   }
-  // The account alias stands in only when the stored instance reference is not
-  // configured (e.g. stale); it names the same workspace, so the scope stays one.
-  const instanceAliases = resolveSlackInstanceAliases(config, instanceId ?? accountId);
-  const accountAliases = resolveSlackInstanceAliases(config, accountId);
-  const aliases = instanceAliases.configured || !accountAliases.configured ? instanceAliases : accountAliases;
+  // Only the request's own instance: the stored account id can be stale and name
+  // another workspace, so it is never used as a fallback scope.
+  const aliases = resolveSlackInstanceAliases(config, instanceId);
   const resolution = resolveScopedSlackIdentity(
     aliases,
     (scope) => resolvePlatformIdentity({ channel: "slack", instanceId: scope, platformUserId: senderId }),

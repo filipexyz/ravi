@@ -137,11 +137,13 @@ describe("approval grantor", () => {
     ).toMatchObject({ allowed: true, reason: "authorized_grantor" });
   });
 
-  it("falls back to the configured account when the stored Slack instance is unmapped", () => {
+  it("does not fall back to the account's workspace when the stored Slack instance is unmapped", () => {
+    // A stale account id can name another workspace; the request's instance is
+    // the only scope searched.
     const uuid = "6f9619ff-8b86-d011-b42d-00c04fc964ff";
     setApprovalGrantorRouterConfigForTest(() => ({
-      instances: { "slack-main": { instanceId: uuid } as never },
-      instanceToAccount: { [uuid]: "slack-main" },
+      instances: { "slack-other": { instanceId: uuid } as never },
+      instanceToAccount: { [uuid]: "slack-other" },
     }));
     seedApprovalContact({
       phone: APPROVAL_TEST_SLACK_OWNER_PHONE,
@@ -153,14 +155,14 @@ describe("approval grantor", () => {
     expect(
       actorCanGrantRequestedPermission({
         channel: "slack",
-        accountId: "slack-main",
-        instanceId: "stale-instance",
+        accountId: "slack-other",
+        instanceId: "unmapped-instance",
         senderId: APPROVAL_TEST_SLACK_OWNER_USER,
         permission: "execute",
         objectType: "group",
         objectId: "daemon",
       }),
-    ).toMatchObject({ allowed: true, reason: "authorized_grantor" });
+    ).toMatchObject({ allowed: false, reason: "unresolved_identity" });
   });
 
   it("denies a contact who lacks the requested capability", () => {
