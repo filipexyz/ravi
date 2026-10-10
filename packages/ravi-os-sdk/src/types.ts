@@ -6273,7 +6273,7 @@ export type ConnectorsListReturn = {
 export type ConnectorsModeInput = {
   agent: string;
   execute?: boolean;
-  mode?: string;
+  mode?: "owner" | "person-asking" | "person_asking" | "shared";
   provider: string;
 };
 
@@ -9201,7 +9201,11 @@ export type GmailSendInput = {
 export type GmailSendReturn = {
   capability: string;
   refreshed: boolean;
-  result?: unknown;
+  result?: {
+    labelIds?: string[];
+    messageId?: string;
+    threadId?: string;
+  };
 };
 
 /** Input shape for `heartbeat.disable`. */

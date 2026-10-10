@@ -220,6 +220,7 @@ export class GmailCommands {
         asJson,
         approvalId: approval,
         stepUp: true,
+        waitAtTerminal: true,
       });
 
       if (asJson) {
@@ -241,10 +242,22 @@ const gmailExecResultSchema = z.object({
   refreshed: z.boolean(),
 });
 
+const gmailSendResultSchema = z.object({
+  result: z
+    .object({
+      messageId: z.string().optional(),
+      threadId: z.string().optional(),
+      labelIds: z.array(z.string()).optional(),
+    })
+    .optional(),
+  capability: z.string(),
+  refreshed: z.boolean(),
+});
+
 declareCommandReturns(GmailCommands, {
   list: gmailExecResultSchema,
   read: gmailExecResultSchema,
-  send: gmailExecResultSchema,
+  send: gmailSendResultSchema,
 });
 
 /**
@@ -294,10 +307,11 @@ function stepUpPrompt(op: string, asJson: boolean | undefined): StepUpHandler {
 }
 
 /**
- * Run the action. When the owner must approve it first: at the operator's
- * own terminal (stdin and stdout are TTYs, no runtime context, no --json)
- * open the approval page, wait for the decision and run it once more with
- * the approval. Anywhere else the approval answer goes back to the caller
+ * Run the action. When the owner must approve it first: for a send at the
+ * operator's own terminal (stdin and stdout are TTYs, no runtime context, no
+ * --json) open the approval page, wait for the decision and run it once more
+ * with the approval. Anywhere else, and always for the read commands (which
+ * stay free of side effects), the approval answer goes back to the caller
  * (exit 3) with the link to send the owner and the `--approval <id>` to
  * re-run with. `stepUp` answers a step-up challenge (send only), keeping
  * the approval on the retry.
@@ -309,6 +323,7 @@ async function execWithApproval(
     asJson: boolean | undefined;
     approvalId?: string;
     stepUp?: boolean;
+    waitAtTerminal?: boolean;
   },
 ) {
   return execCapabilityWithApproval(
@@ -321,7 +336,7 @@ async function execWithApproval(
       ...(input.approvalId ? { approvalId: input.approvalId } : {}),
     },
     {},
-    isOperatorTerminal(input.asJson) ? { openExternal } : null,
+    input.waitAtTerminal && isOperatorTerminal(input.asJson) ? { openExternal } : null,
     input.stepUp ? stepUpPrompt("gmail send", input.asJson) : null,
   );
 }

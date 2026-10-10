@@ -288,9 +288,9 @@ instead of inventing local suggestions that would require extra remote calls.
     outside the id pattern fails `PAYLOAD_INVALID` before any call. Every
     gmail exec goes through `execCapabilityWithApproval`
     (`src/link/connectors.ts`):
-    - At the operator's terminal (stdin and stdout are TTYs, no runtime
-      context as defined by invariant 1, no `--json`), a required or pending
-      approval prints the page on stderr, opens the browser with the same
+    - For `gmail send` at the operator's terminal (stdin and stdout are
+      TTYs, no runtime context as defined by invariant 1, no `--json`), a
+      required or pending approval prints the page on stderr, opens the browser with the same
       helper as `ravi login` (`src/link/open-external.ts`, best effort),
       polls `GET /cli/approvals/:id` every 2 s for up to 10 minutes and, once
       `approved`, runs the same exec (same body) once more with the header.
@@ -299,8 +299,10 @@ instead of inventing local suggestions that would require extra remote calls.
       `CONNECTOR_APPROVAL_INVALID`; a retryable failure (5xx, 429) keeps
       waiting; an expired bearer is refreshed once; after 10 minutes the
       approval answer is returned (exit 3).
-    - Anywhere else the approval answer exits 3 with the details of
-      invariant 4 and is not polled.
+    - Anywhere else, and always for `gmail list` and `gmail read` (read
+      commands stay free of side effects: no browser, no polling), the
+      approval answer exits 3 with the details of invariant 4 and is not
+      polled.
     - A step-up challenge (Link `connector_stepup_required`) on `gmail send`
       is answered at the operator's own terminal only, and the step-up retry
       keeps the approval header: the Worker asks for the step-up before it
@@ -322,10 +324,11 @@ instead of inventing local suggestions that would require extra remote calls.
     NULL means a legacy job and runs as the operator. `cron show`/`list` JSON
     expose it as `ownerPrincipal`, and `cron show` prints it as "Runs as".
     When a turn that is not the operator changes a job with `cron set`, any
-    key except `name`, `description`,
+    key except `description`,
     `cron`, `every`, `tz`/`timezone`, `timeout` and `delete-after` (so
-    `message`, `shell`, `exec`, `agent`, `session`, `reply-session`,
-    `env-file`, `on-error`, `account` and any key added later), the job takes
+    `name`, which the runner puts in the prompt, `message`, `shell`, `exec`,
+    `agent`, `session`, `reply-session`, `env-file`, `on-error`, `account`
+    and any key added later), the job takes
     that turn's principal as its owner, in the same write as the edit. The
     owner is not part of the `cron add` idempotency fingerprint, so a key
     recorded before owners existed, or an observer replay, still matches.

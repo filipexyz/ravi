@@ -297,6 +297,7 @@ EXAMPLES
     @Arg("mode", {
       required: false,
       description: "owner (default) | person-asking | shared; omit to show the current mode",
+      schema: z.enum(["owner", "person-asking", "person_asking", "shared"]).optional(),
     })
     value?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,

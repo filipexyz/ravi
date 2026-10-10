@@ -75,7 +75,7 @@ In **Only when I ask** mode, your agent uses your accounts only for you:
 | You, in your terminal | Yes |
 | You, passing a message to the agent with `ravi sessions send` or `ravi sessions ask` from your terminal | Yes, when the answer comes back to your terminal or goes only to your own linked private chat. No when that session posts its answers into a group or someone else's chat. |
 | You, in your own private chat with the agent (WhatsApp, Slack), after you link it | Yes, when that chat has a session of its own (see the note on sessions below) |
-| A cron job or heartbeat you own, including the shell command of a cron job you own | Yes, if it posts nowhere or only into your own linked private chat (see the note below) |
+| A cron job you own, including its shell command, or the agent's heartbeat | Yes, if it posts nowhere or only into your own linked private chat (see the note below). Heartbeats have no owner yet: whoever gets the agent to edit `HEARTBEAT.md` changes what the heartbeat does with your accounts. |
 | Anyone else, in their own chat with the agent | No. The agent tells them: "I can't use <your name>'s Gmail for your request." |
 | Anyone in a group chat, including you | No. The agent says "I'll send this to you privately." and asks you to repeat the request in your private chat. |
 | Another agent passing a request along, triggers, observers, session goals and background jobs (`ravi jobs run`), including the commands they start | No |
@@ -84,7 +84,7 @@ In **Only when I ask** mode, your agent uses your accounts only for you:
 A refused request never reaches your account. Commands that are refused this way end with exit code `3` and tell the agent what to say. When your connection needs reconnecting, the agent tells only you, privately.
 
 <Note>
-A cron job or heartbeat that posts into a chat may use your accounts only when that chat is your own private chat with the agent and you have linked it (see below). A routine that posts into any other chat, or into a chat Ravi does not know, is treated like a group message and refused.
+A cron job you own, or the heartbeat, that posts into a chat may use your accounts only when that chat is your own private chat with the agent and you have linked it (see below). A routine that posts into any other chat, or into a chat Ravi does not know, is treated like a group message and refused.
 </Note>
 
 <Note>
@@ -103,7 +103,7 @@ A cron job remembers who created it. `ravi cron show <id>` prints it on the **Ru
 
 - Jobs created in your terminal or in your own private chat run as you (`operator`), and can use your accounts.
 - Jobs created before this change also run as you.
-- Jobs created by anyone else's request run as that person and cannot use your accounts. If someone else changes a job of yours with `ravi cron set`, anything other than its name, description, schedule, timeout or delete-after (for example its message, shell command, agent, env file, error target, reply session or account), the job becomes theirs.
+- Jobs created by anyone else's request run as that person and cannot use your accounts. If someone else changes a job of yours with `ravi cron set`, anything other than its description, schedule, timeout or delete-after (for example its name, message, shell command, agent, env file, error target, reply session or account), the job becomes theirs.
 - The shell command of a shell job runs as the job, so it can use your accounts only when the job runs as you.
 
 ## Approvals
@@ -176,7 +176,7 @@ ravi connectors mode main google owner                          # back to the de
 
 Only you change a mode, from your terminal or your own private chat with the agent. If anyone else asks the agent to change it, nothing changes and the agent says "Only <your name> can change that." If you ask in a group, nothing changes either, and the agent asks you to do it in your private chat. Switching to **The person asking** or **Shared account** lets other people's requests reach an account, so the command shows the plan and stops with exit code `3` until you add `--execute`. Going back to **Only when I ask** applies at once. `ravi settings set` and `ravi settings delete` do not change modes. When you delete an agent, its modes go with it: a new agent with the same id starts at **Only when I ask**.
 
-In every mode, your own requests, your cron jobs and your heartbeats keep using your own connection. `--connector <id>` names one of your own connections, so Gmail commands refuse it when the request uses someone else's account.
+In every mode, your own requests, your cron jobs and the agent's heartbeat keep using your own connection. `--connector <id>` names one of your own connections, so Gmail commands refuse it when the request uses someone else's account.
 
 ### The person asking
 
@@ -188,7 +188,7 @@ The agent uses the Gmail of the person writing to it, in their private chat with
 
 Sending mail always asks the person first, in their own Console, whatever their own tool settings say. Their approvals go to them, not to you. They see the agents they allowed under **Agents that can use your account** on their **Connectors** page, and can remove them there.
 
-Your own requests, your cron jobs and your heartbeats keep using your own connection. Groups stay refused: the agent says "I can only use your Gmail in a direct chat with me. Ask me there."
+Your own requests, your cron jobs and the agent's heartbeat keep using your own connection. Groups stay refused: the agent says "I can only use your Gmail in a direct chat with me. Ask me there."
 
 It works only in a private chat that has a session of its own. If the agent keeps several people's chats in one session (the `main` DM scope, a route that sends several chats to one session, or a chat attached to another person's session), what one person's Gmail returns could be read by the others, so the agent refuses: "I can't use your Gmail in this conversation." Give each person their own session (DM scope `per-peer`, the default) to allow it.
 
@@ -202,7 +202,7 @@ ravi connectors mode main google shared --execute
 
 From then on, people writing to the agent use the shared account, in the chats the admin chose, and so does a routine that posts into one of their chats. A shared account starts with reading blocked, except free or busy time, until an admin allows it, and sending always needs the manager's approval. Where it is not shared, the agent says: "I can't use a shared Gmail account in this conversation." If the admin disconnects or pauses that account, the agent says: "I can't use the shared Gmail account right now."
 
-Your own requests, your cron jobs and your heartbeats still use your own connection. To use the shared account for one of your own requests, ask the agent in your private chat with it (or in a group the account is shared for) to add `--shared` to the Gmail command. It works only there: the shared account is shared for chats, so `--shared` from your terminal, from `ravi sessions send` or in a routine that posts nowhere stops with exit code `2`.
+Your own requests, your cron jobs and the agent's heartbeat still use your own connection. To use the shared account for one of your own requests, ask the agent in your private chat with it (or in a group the account is shared for) to add `--shared` to the Gmail command. It works only there: the shared account is shared for chats, so `--shared` from your terminal, from `ravi sessions send` or in a routine that posts nowhere stops with exit code `2`.
 
 ### Groups
 

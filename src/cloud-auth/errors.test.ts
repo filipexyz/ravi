@@ -205,7 +205,7 @@ describe("cloudErrorToContractError", () => {
     ["CONNECTOR_APPROVAL_INVALID", "The approval does not match this action.", false],
     ["CONNECTOR_CONSENT_REQUIRED", "The person asking must allow this agent to use their account first.", false],
     ["CONNECTOR_NOT_LINKED", "The person asking is not linked to a Console user.", false],
-    ["CONNECTOR_CONNECTION_REQUIRED", "The person asking has no connected account for this service.", false],
+    ["CONNECTOR_CONNECTION_REQUIRED", "No connected account was found for this service.", false],
     ["CONNECTOR_REAUTH_REQUIRED", "The connection expired and must be reconnected.", false],
     [
       "CONNECTOR_PERMISSION_REQUIRED",

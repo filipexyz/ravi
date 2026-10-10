@@ -230,21 +230,13 @@ function cronJobRunsAs(job: Pick<CronJob, "ownerPrincipal">): string {
 
 /**
  * `cron set` keys that change neither what a job runs nor where its output
- * goes. Any other key (instructions, agent, env file, error target, reply
+ * goes. Any other key (name, which goes into the prompt and the isolated
+ * session's name, instructions, agent, env file, error target, reply
  * session, account, and any key added later) set from another person's turn
  * makes that person the job's owner, so the job cannot keep the operator's
  * connectors under somebody else's changes.
  */
-const CRON_OWNER_KEEP_KEYS = new Set([
-  "name",
-  "description",
-  "cron",
-  "every",
-  "tz",
-  "timezone",
-  "timeout",
-  "delete-after",
-]);
+const CRON_OWNER_KEEP_KEYS = new Set(["description", "cron", "every", "tz", "timezone", "timeout", "delete-after"]);
 
 /** Owner change that goes in the same write as a `cron set` edit, or nothing. */
 function cronOwnerUpdateForSet(key: string, job: CronJob): Pick<CronJob, "ownerPrincipal"> | Record<string, never> {

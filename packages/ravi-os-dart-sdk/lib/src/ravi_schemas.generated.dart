@@ -33421,6 +33421,12 @@ class RaviSchemas {
     },
     "mode": {
       "description": "owner (default) | person-asking | shared; omit to show the current mode",
+      "enum": [
+        "owner",
+        "person-asking",
+        "person_asking",
+        "shared"
+      ],
       "type": "string"
     },
     "provider": {
@@ -47064,43 +47070,6 @@ class RaviSchemas {
 
   static const gmailSendReturnSchema = r'''
 {
-  "$defs": {
-    "__schema0": {
-      "anyOf": [
-        {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        {
-          "items": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "type": "array"
-        },
-        {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        }
-      ]
-    }
-  },
   "additionalProperties": false,
   "properties": {
     "capability": {
@@ -47110,7 +47079,22 @@ class RaviSchemas {
       "type": "boolean"
     },
     "result": {
-      "$ref": "#/$defs/__schema0"
+      "additionalProperties": false,
+      "properties": {
+        "labelIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "messageId": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "type": "object"
     }
   },
   "required": [

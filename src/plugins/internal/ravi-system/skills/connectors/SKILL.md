@@ -26,8 +26,8 @@ agent). Esta seção vale para o modo `owner`.
 - Pode: o terminal do dono; o `ravi sessions send|ask` dele quando a resposta
   volta para o terminal ou vai só para o chat privado dele; o chat privado do
   dono com o agent depois do `ravi link`, quando esse chat tem uma sessão só
-  dele; e crons/heartbeat do dono que respondem em lugar nenhum ou só no chat
-  privado dele.
+  dele; e os crons do dono e o heartbeat do agent (que ainda não tem dono)
+  que respondem em lugar nenhum ou só no chat privado dele.
 - Não pode: outra pessoa (mesmo com tag de dono), grupo (nem o dono), o chat
   privado do dono numa sessão que outras pessoas compartilham (DM scope
   `main`, uma rota que manda vários chats para a mesma sessão, um chat
@@ -86,7 +86,7 @@ ravi connectors mode main google owner                      # volta ao padrão n
 
 Abrir para `person-asking` ou `shared` é dry-run (exit `3`) até `--execute`.
 Voltar para `owner` aplica na hora. Em todo modo, os pedidos do próprio dono e
-os crons/heartbeat dele continuam usando a conta dele. Para usar a
+os crons dele e o heartbeat do agent continuam usando a conta dele. Para usar a
 compartilhada num pedido do dono, acrescente `--shared` ao comando do Gmail,
 só quando ele pedir no chat privado dele com você (ou num grupo que a conta
 compartilhada cobre). No terminal, no `ravi sessions send`, numa rotina que não

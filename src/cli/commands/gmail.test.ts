@@ -120,7 +120,8 @@ describe("gmail default connection", () => {
         message:
           "You have no active Google connection. Run `ravi connectors connect google` first, or pass --connector <id>.",
         retryable: false,
-        suggestedAction: "ask the person to connect an account on the Console Connectors page",
+        suggestedAction:
+          "ask the account owner to connect one on the Console Connectors page (`ravi connectors connect google`)",
       },
     });
     expect(execCalls).toHaveLength(0);
@@ -248,6 +249,18 @@ describe("gmail send approvals", () => {
 
     expect(terminalArgs).toHaveLength(1);
     expect(terminalArgs[0]).toMatchObject({ openExternal: expect.any(Function) });
+  });
+
+  it("never waits at the operator's terminal for list and read: the approval answer comes back", async () => {
+    await withTerminal({ stdin: true, stdout: true }, {}, () =>
+      quietly(async () => {
+        await new GmailCommands().list(undefined, undefined, undefined, undefined, "conn_1", false);
+        await new GmailCommands().read("msg_1", undefined, "conn_1", false);
+      }),
+    );
+
+    expect(execCalls).toMatchObject([{ capability: "gmail.message.list" }, { capability: "gmail.message.read" }]);
+    expect(terminalArgs).toEqual([null, null]);
   });
 
   it.each([

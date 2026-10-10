@@ -155,7 +155,7 @@ function publicMessage(code: CloudAuthError["code"], sourceMessage: string): str
     case "CONNECTOR_NOT_LINKED":
       return "The person asking is not linked to a Console user.";
     case "CONNECTOR_CONNECTION_REQUIRED":
-      return "The person asking has no connected account for this service.";
+      return "No connected account was found for this service.";
     case "CONNECTOR_REAUTH_REQUIRED":
       return "The connection expired and must be reconnected.";
     case "CONNECTOR_PERMISSION_REQUIRED":
@@ -262,7 +262,7 @@ function suggestedAction(code: CloudAuthError["code"]): string {
     case "CONNECTOR_NOT_LINKED":
       return "run `ravi link` from the person's own chat turn; Ravi sends them a private approval link";
     case "CONNECTOR_CONNECTION_REQUIRED":
-      return "ask the person to connect an account on the Console Connectors page";
+      return "ask the account owner to connect one on the Console Connectors page (`ravi connectors connect google`)";
     case "CONNECTOR_REAUTH_REQUIRED":
       return "tell the account owner privately to reconnect it on the Console Connectors page";
     case "CONNECTOR_PERMISSION_REQUIRED":

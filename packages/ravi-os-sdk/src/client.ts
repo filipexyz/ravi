@@ -1936,7 +1936,7 @@ export class RaviClient {
       });
     },
     /** Show or set whose account an agent uses for a provider: owner, person-asking or shared */
-    mode: async (agent: string, provider: string, mode?: string, options?: {
+    mode: async (agent: string, provider: string, mode?: "owner" | "person-asking" | "person_asking" | "shared", options?: {
       execute?: boolean;
     }): Promise<ConnectorsModeReturn> => {
       return this.transport.call({
