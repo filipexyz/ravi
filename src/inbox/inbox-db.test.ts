@@ -5,6 +5,7 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-
 import {
   acquireInboxPollLock,
   countPendingItems,
+  deleteSubscription,
   ensureSubscriptionRow,
   getItemByItemId,
   getSubscriptionByOrg,
@@ -139,6 +140,50 @@ describe("console inbox delivery state", () => {
         organizationId: subscription.organizationId,
       }),
     ).toEqual({ undelivered: 1, unacked: 1 });
+  });
+
+  it("deletes mirrored items stored under the remote subscription id when the subscription is removed", () => {
+    const subscription = ensureSubscriptionRow({
+      consoleUrl: "https://console.ravi.bot",
+      organizationId: "org_1",
+      installationId: "ins_1",
+    });
+    const other = ensureSubscriptionRow({
+      consoleUrl: "https://console.ravi.bot",
+      organizationId: "org_2",
+      installationId: "ins_1",
+    });
+    for (const [owner, itemId] of [
+      [subscription, "item_1"],
+      [other, "item_other_org"],
+    ] as const) {
+      upsertDeliveredItem({
+        consoleUrl: owner.consoleUrl,
+        organizationId: owner.organizationId,
+        // Items carry the remote Console subscription id, never the local row id.
+        subscriptionId: `remote_${owner.organizationId}`,
+        itemId,
+        sequence: 1,
+        eventType: "task.created",
+        category: "task",
+        severity: "info",
+        dedupeKey: `task:${itemId}`,
+        natsSubject: "ravi.console.inbox.item",
+        natsPayloadJson: "{}",
+        deliveredAt: null,
+      });
+    }
+
+    expect(deleteSubscription(subscription.id)).toBe(true);
+
+    expect(getSubscriptionByOrg(subscription.consoleUrl, subscription.organizationId)).toBeNull();
+    expect(getItemByItemId(subscription.consoleUrl, subscription.organizationId, "item_1")).toBeNull();
+    expect(countPendingItems({ consoleUrl: subscription.consoleUrl, organizationId: "org_1" })).toEqual({
+      undelivered: 0,
+      unacked: 0,
+    });
+    expect(getItemByItemId(other.consoleUrl, other.organizationId, "item_other_org")).not.toBeNull();
+    expect(deleteSubscription(subscription.id)).toBe(false);
   });
 
   it("keeps a flushed item's payload and subscription provenance immutable on redelivery", () => {

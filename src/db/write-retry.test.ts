@@ -95,6 +95,23 @@ describe("executeWrite", () => {
     db.close();
   });
 
+  it("joins an enclosing transaction so a nested write rolls back with it", () => {
+    const { db } = openTempDb();
+    expect(() => {
+      executeWrite(db, (outer) => {
+        outer.exec("INSERT INTO items (value) VALUES ('outer')");
+        executeWrite(outer, (inner) => {
+          inner.exec("INSERT INTO items (value) VALUES ('inner')");
+        });
+        throw new Error("boom");
+      });
+    }).toThrow("boom");
+    expect(db.inTransaction).toBe(false);
+    const row = db.prepare("SELECT COUNT(*) AS n FROM items").get() as { n: number };
+    expect(row.n).toBe(0);
+    db.close();
+  });
+
   it("stats report attempts=1 and retried=false on happy path", () => {
     const { db } = openTempDb();
     const { value, stats } = executeWriteWithStats(db, () => "ok");

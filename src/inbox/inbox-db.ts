@@ -554,8 +554,28 @@ export function countPendingItems(input: { consoleUrl: string; organizationId: s
   };
 }
 
+/**
+ * Delete a local subscription row and its mirrored items.
+ *
+ * Items store the *remote* Console subscription id in `subscription_id`, not
+ * the local row id, so they are removed by the durable local mirror key
+ * `(console_url, organization_id)` — the same key used by the items UNIQUE
+ * constraint and by `countPendingItems`.
+ */
 export function deleteSubscription(id: string): boolean {
-  getDb().prepare(`DELETE FROM console_inbox_items WHERE subscription_id = ?`).run(id);
-  getDb().prepare(`DELETE FROM console_inbox_subscriptions WHERE id = ?`).run(id);
-  return getDbChanges() > 0;
+  const db = getDb();
+  let deleted = false;
+  db.transaction(() => {
+    const row = db
+      .prepare(`SELECT console_url, organization_id FROM console_inbox_subscriptions WHERE id = ?`)
+      .get(id) as { console_url: string; organization_id: string } | null;
+    if (!row) return;
+    db.prepare(`DELETE FROM console_inbox_items WHERE console_url = ? AND organization_id = ?`).run(
+      row.console_url,
+      row.organization_id,
+    );
+    db.prepare(`DELETE FROM console_inbox_subscriptions WHERE id = ?`).run(id);
+    deleted = getDbChanges() > 0;
+  })();
+  return deleted;
 }

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getDb, getRaviDbPath } from "../router/router-db.js";
+import { executeWrite } from "../db/write-retry.js";
 import type {
   CreateProjectInput,
   ProjectDetails,
@@ -404,6 +405,12 @@ export function dbListProjectLinks(query: ProjectLinkQuery): ProjectLink[] {
 
 export function dbUpsertProjectLink(input: UpsertProjectLinkInput): ProjectLink {
   ensureProjectSchema();
+  // Conflict check, primary-workflow demotion and the upsert commit together:
+  // a failed upsert must not leave the project without its previous primary.
+  return executeWrite(getDb(), () => upsertProjectLink(input), { label: "projects:upsertLink" });
+}
+
+function upsertProjectLink(input: UpsertProjectLinkInput): ProjectLink {
   const project = getProjectRow(input.projectRef);
   if (!project) {
     throw new Error(`Project not found: ${input.projectRef}`);

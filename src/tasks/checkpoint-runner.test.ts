@@ -31,8 +31,18 @@ mock.module("../omni/session-stream.js", () => ({
   }),
 }));
 
-const { TaskCheckpointRunner, createTask, dbDeleteTask, dbDispatchTask, dbGetActiveAssignment, dbListTaskEvents } =
-  await import("./index.js");
+const {
+  TASK_AUTOMATION_STALE_CLAIM_MS,
+  TaskCheckpointRunner,
+  createTask,
+  createTaskAutomation,
+  dbClaimTaskAutomationRun,
+  dbDeleteTask,
+  dbDispatchTask,
+  dbGetActiveAssignment,
+  dbListTaskEvents,
+  listTaskAutomationRuns,
+} = await import("./index.js");
 
 const createdTaskIds: string[] = [];
 let stateDir: string | null = null;
@@ -83,6 +93,35 @@ describe("task checkpoint runner backpressure", () => {
     expect(dbListTaskEvents(created.task.id).map((event) => event.type)).not.toContain("task.checkpoint.missed");
     const assignment = dbGetActiveAssignment(created.task.id)!;
     expect(assignment.checkpointOverdueCount ?? 0).toBe(0);
+  });
+});
+
+describe("task checkpoint runner automation recovery", () => {
+  it("settles stale claimed automation runs on each sweep", async () => {
+    const trigger = createTask({ title: "Trigger", instructions: "Trigger.", createdBy: "test" });
+    createdTaskIds.push(trigger.task.id);
+    const automation = createTaskAutomation({
+      name: "Sweep recovery",
+      eventTypes: ["task.done"],
+      titleTemplate: "QC",
+      instructionsTemplate: "QC",
+    });
+    dbClaimTaskAutomationRun({
+      automationId: automation.id,
+      triggerTaskId: trigger.task.id,
+      triggerEventId: 1,
+      triggerEventType: "task.done",
+    });
+
+    const runner = new TaskCheckpointRunner();
+    await runner.start();
+    try {
+      await runner.sweep(Date.now() + TASK_AUTOMATION_STALE_CLAIM_MS + 1_000);
+    } finally {
+      await runner.stop();
+    }
+
+    expect(listTaskAutomationRuns(automation.id, 10).map((run) => run.status)).toEqual(["failed"]);
   });
 });
 

@@ -17,6 +17,7 @@ import {
   dbListWorkflowSpecs,
   dbUpdateWorkflowNodeRun,
   dbUpdateWorkflowRun,
+  dbWorkflowWriteTransaction,
 } from "./workflow-db.js";
 import { dbGetActiveAssignment, dbGetTask, dbListTaskDependencies } from "../tasks/task-db.js";
 import { filterItemsByCanonicalTag } from "../tags/helpers.js";
@@ -604,6 +605,14 @@ export function startWorkflowRun(specId: string, input: StartWorkflowRunInput = 
     throw new Error(`Workflow spec not found: ${specId}`);
   }
 
+  // The run row, its node runs and edges are created atomically: a failure
+  // part-way must not leave a draft run with a partial DAG.
+  const run = dbWorkflowWriteTransaction("workflow:startRun", () => createWorkflowRunGraph(spec, input));
+  reconcileWorkflowRun(run.id);
+  return getWorkflowRunDetails(run.id)!;
+}
+
+function createWorkflowRunGraph(spec: WorkflowSpec, input: StartWorkflowRunInput): WorkflowRun {
   const run = dbCreateWorkflowRun(spec, input);
   const incoming = buildIncomingNodeKeys(spec);
   const now = Date.now();
@@ -640,9 +649,7 @@ export function startWorkflowRun(specId: string, input: StartWorkflowRunInput = 
       createdAt: now,
     })),
   );
-
-  reconcileWorkflowRun(run.id);
-  return getWorkflowRunDetails(run.id)!;
+  return run;
 }
 
 export function listWorkflowRuns(options: WorkflowRunListOptions = {}): WorkflowRun[] {

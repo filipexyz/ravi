@@ -14,14 +14,17 @@ import {
 import { getTaskDocPath } from "./task-doc.js";
 import { dbGetActiveAssignment, dbGetTask, dbListAssignments } from "./task-db.js";
 import {
+  dbBindTaskAutomationRunSpawnedTask,
   dbClaimTaskAutomationRun,
   dbCreateTaskAutomation,
   dbDeleteTaskAutomation,
   dbFinalizeTaskAutomationRun,
+  dbFindUnboundTaskAutomationChildTaskIds,
   dbGetTaskAutomation,
+  dbListStaleClaimedTaskAutomationRuns,
   dbListTaskAutomationRuns,
   dbListTaskAutomations,
-  dbRecordTaskAutomationFire,
+  dbRecoverClaimedTaskAutomationRun,
   dbUpdateTaskAutomation,
 } from "./automations-db.js";
 import type {
@@ -489,7 +492,7 @@ export async function executeTaskAutomation(
       });
     }
     if (!filter.evaluate(context.data)) {
-      const run = dbFinalizeTaskAutomationRun(claimedRun.id, {
+      const { run } = dbFinalizeTaskAutomationRun(claimedRun.id, {
         status: "skipped",
         message: filter.valid ? "Filter did not match." : `Filter is invalid: ${filter.error ?? "unknown error"}`,
       });
@@ -527,6 +530,9 @@ export async function executeTaskAutomation(
 
     const taskService = await import("./service.js");
     const created = taskService.createTask(taskInput);
+    // Bind the child before any await so a crash later in this run can be
+    // recovered by linking this task instead of spawning a duplicate.
+    dbBindTaskAutomationRunSpawnedTask(claimedRun.id, created.task.id);
     await taskService.emitTaskEvent(created.task, created.event);
 
     let spawnedTask = created.task;
@@ -559,13 +565,14 @@ export async function executeTaskAutomation(
       dispatchSessionName = dispatched.sessionName;
     }
 
-    dbRecordTaskAutomationFire(automation.id);
-    const run = dbFinalizeTaskAutomationRun(claimedRun.id, {
+    const { run } = dbFinalizeTaskAutomationRun(claimedRun.id, {
       status: "spawned",
       spawnedTaskId: spawnedTask.id,
       message: normalizedAgentId
         ? `Spawned ${spawnedTask.id} and dispatched to ${normalizedAgentId}/${dispatchSessionName ?? "-"}`
         : `Spawned ${spawnedTask.id}`,
+      // Counted only if this call settles the run: stale-claim recovery may have already.
+      recordFire: true,
     });
 
     return {
@@ -575,12 +582,77 @@ export async function executeTaskAutomation(
       ...(dispatchSessionName ? { dispatchSessionName } : {}),
     };
   } catch (error) {
-    const run = dbFinalizeTaskAutomationRun(claimedRun.id, {
+    const { run } = dbFinalizeTaskAutomationRun(claimedRun.id, {
       status: "failed",
       message: error instanceof Error ? error.message : String(error),
     });
     return { automation, run };
   }
+}
+
+/** A `claimed` run untouched for this long is treated as orphaned by a dead process. */
+export const TASK_AUTOMATION_STALE_CLAIM_MS = 15 * 60_000;
+/** Window after a claim in which a legacy (unbound) run could have created its child task. */
+const TASK_AUTOMATION_LEGACY_SPAWN_WINDOW_MS = 60_000;
+
+function resolveStaleRunChildTaskId(run: TaskAutomationRun): string | null {
+  if (run.spawnedTaskId) {
+    return dbGetTask(run.spawnedTaskId) ? run.spawnedTaskId : null;
+  }
+  // Runs claimed before the child id was bound early: link a child only when
+  // exactly one unbound candidate matches, otherwise never guess.
+  const automation = dbGetTaskAutomation(run.automationId);
+  if (!automation || !dbGetTask(run.triggerTaskId)) {
+    return null;
+  }
+  const candidates = dbFindUnboundTaskAutomationChildTaskIds({
+    automationId: run.automationId,
+    createdFrom: run.createdAt,
+    createdTo: run.createdAt + TASK_AUTOMATION_LEGACY_SPAWN_WINDOW_MS,
+    ...(automation.inheritParentTask ? { parentTaskId: run.triggerTaskId } : {}),
+  });
+  return candidates.length === 1 ? candidates[0]! : null;
+}
+
+/**
+ * Settle task automation runs left in `claimed` by a process that died between
+ * claim and finalize. Never spawns or dispatches anything: a run whose child
+ * task exists is linked as `spawned`, any other run is marked `failed`.
+ */
+export function recoverStaleTaskAutomationRuns(
+  opts: { now?: number; staleAfterMs?: number } = {},
+): TaskAutomationRun[] {
+  const now = opts.now ?? Date.now();
+  const staleAfterMs = Math.max(opts.staleAfterMs ?? TASK_AUTOMATION_STALE_CLAIM_MS, 0);
+  const recovered: TaskAutomationRun[] = [];
+
+  for (const run of dbListStaleClaimedTaskAutomationRuns(now - staleAfterMs)) {
+    const childTaskId = resolveStaleRunChildTaskId(run);
+    const next = childTaskId
+      ? dbRecoverClaimedTaskAutomationRun(run.id, {
+          status: "spawned",
+          spawnedTaskId: childTaskId,
+          message: `Recovered stale claim: ${childTaskId} was created before the process exited; dispatch not confirmed.`,
+          recordFireAt: now,
+        })
+      : dbRecoverClaimedTaskAutomationRun(run.id, {
+          status: "failed",
+          message: "Recovered stale claim: the process exited before a follow-up task was created; not re-spawned.",
+        });
+    if (!next) {
+      continue;
+    }
+    log.warn("Recovered stale task automation run", {
+      runId: run.id,
+      automationId: run.automationId,
+      triggerTaskId: run.triggerTaskId,
+      status: next.status,
+      spawnedTaskId: next.spawnedTaskId,
+    });
+    recovered.push(next);
+  }
+
+  return recovered;
 }
 
 export async function executeTaskAutomationsForEvent(
