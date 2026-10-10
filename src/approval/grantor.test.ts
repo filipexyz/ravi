@@ -137,6 +137,32 @@ describe("approval grantor", () => {
     ).toMatchObject({ allowed: true, reason: "authorized_grantor" });
   });
 
+  it("falls back to the configured account when the stored Slack instance is unmapped", () => {
+    const uuid = "6f9619ff-8b86-d011-b42d-00c04fc964ff";
+    setApprovalGrantorRouterConfigForTest(() => ({
+      instances: { "slack-main": { instanceId: uuid } as never },
+      instanceToAccount: { [uuid]: "slack-main" },
+    }));
+    seedApprovalContact({
+      phone: APPROVAL_TEST_SLACK_OWNER_PHONE,
+      name: "Slack Owner",
+      tags: ["permission.owner"],
+      slack: { userId: APPROVAL_TEST_SLACK_OWNER_USER, instanceId: uuid },
+    });
+
+    expect(
+      actorCanGrantRequestedPermission({
+        channel: "slack",
+        accountId: "slack-main",
+        instanceId: "stale-instance",
+        senderId: APPROVAL_TEST_SLACK_OWNER_USER,
+        permission: "execute",
+        objectType: "group",
+        objectId: "daemon",
+      }),
+    ).toMatchObject({ allowed: true, reason: "authorized_grantor" });
+  });
+
   it("denies a contact who lacks the requested capability", () => {
     dbCreateTagDefinition({
       slug: "permission-family",
