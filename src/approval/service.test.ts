@@ -759,6 +759,70 @@ describe("approval service", () => {
     );
   });
 
+  it("denies an unidentified external actor without sending an approval card", async () => {
+    // The turn came from a Slack DM whose sender resolved to no contact. The
+    // sender's Slack user is linked under another instance, so the grantor
+    // lookup alone would accept their click: the request must never be sent.
+    seedSlackOwner("old-slack");
+    subscribeEvents = [
+      {
+        topic: "ravi.inbound.interaction",
+        data: {
+          provider: "slack",
+          accountId: "slack-main",
+          instanceId: "slack-main",
+          channelId: "D123",
+          messageTs: "msg_1",
+          userId: OWNER_SLACK_USER,
+          actionId: SLACK_APPROVAL_ACTION_APPROVE,
+          value: "$requestId",
+        },
+      },
+    ];
+    getOrCreateSession("agent:main:slack:dm:U1", "main", "/tmp/main", { name: "main-slack-dm" });
+    const context = dbCreateContext({
+      contextId: "ctx_unresolved_actor",
+      contextKey: "rctx_unresolved_actor",
+      kind: "agent-runtime",
+      agentId: "main",
+      sessionKey: "agent:main:slack:dm:U1",
+      sessionName: "main-slack-dm",
+      capabilities: [],
+      source: { channel: "slack", accountId: "slack-main", chatId: "D123" },
+      metadata: {
+        authorityMode: "agent-identity",
+        actorPrincipal: "unknown",
+        actorResolution: "missing_contact",
+      },
+      createdAt: 1000,
+    });
+    createdContextIds.add(context.contextId);
+
+    const result = await authorizeRuntimeContext({
+      context,
+      permission: "use",
+      objectType: "tool",
+      objectId: "Bash",
+      timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
+      beforeExternalApproval: () => externalOrder.push("before-external-approval"),
+    });
+
+    expect(result).toMatchObject({ allowed: false, approved: false, inherited: false });
+    expect(result.reason ?? "").toMatch(/not identified/);
+    expect(deliveredRequests).toEqual([]);
+    expect(emitted).toEqual([]);
+    expect(externalOrder).toEqual([]);
+    expect(dbGetContext(context.contextId)?.capabilities).toEqual([]);
+    expect(listPermissionDenials({ subjectType: "agent", subjectId: "main", resolved: false })).toContainEqual(
+      expect.objectContaining({
+        contextId: "ctx_unresolved_actor",
+        relation: "use",
+        objectType: "tool",
+        objectId: "Bash",
+      }),
+    );
+  });
+
   it("fails closed when no approval source is available", async () => {
     dbCreateAgent({ id: "dev", cwd: "/tmp/dev" });
     getOrCreateSession("agent:dev:dev-main", "dev", "/tmp/dev", { name: "dev-main" });
