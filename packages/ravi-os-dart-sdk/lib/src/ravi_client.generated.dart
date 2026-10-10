@@ -5225,6 +5225,8 @@ class PagesNamespace {
 
   PagesAssertionNamespace get assertion => PagesAssertionNamespace(_transport);
 
+  PagesChatNamespace get chat => PagesChatNamespace(_transport);
+
   PagesPasswordNamespace get password => PagesPasswordNamespace(_transport);
 
   Future<PagesCreateReturn> create(List<String> args, [PagesCreateOptions options = const PagesCreateOptions()]) async {
@@ -5373,6 +5375,36 @@ class PagesAssertionAudiencesNamespace {
       command: "set",
       body: requestBody,
       decode: pagesAssertionAudiencesSetReturnFromJson,
+    );
+  }
+}
+
+class PagesChatNamespace {
+  const PagesChatNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<PagesChatSetReturn> set_(String site, [PagesChatSetOptions options = const PagesChatSetOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["site"] = RaviJson.from(site);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["pages", "chat"],
+      command: "set",
+      body: requestBody,
+      decode: pagesChatSetReturnFromJson,
+    );
+  }
+
+  Future<PagesChatShowReturn> show(String site, [PagesChatShowOptions options = const PagesChatShowOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["site"] = RaviJson.from(site);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["pages", "chat"],
+      command: "show",
+      body: requestBody,
+      decode: pagesChatShowReturnFromJson,
     );
   }
 }

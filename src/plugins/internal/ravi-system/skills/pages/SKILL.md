@@ -6,6 +6,7 @@ description: |
   - publicar uma página de dados sobre uma view de Bases (`--uses ravi.bases.*`, lista que vale para o host inteiro)
   - mudar visibilidade, senha ou domínio de uma rota sem reenviar arquivos
   - dar à página a asserção do viewer para chamar a sua própria API
+  - ligar ou ajustar o Page Chat (agente de voz da página) e registrar ações que ele pode executar
   page, pages, HTML, rota, URL, publicar, hospedar, landing, snapshot, site
   Página de dados só funciona para membros logados da org, em rota private ou protected_link; gente de fora recebe snapshot ou mensagem (skill solucoes).
   Não use para o ledger de artifacts (skill artifacts). Não crie um host *.ravi.page por página.
@@ -30,7 +31,7 @@ Rode com `--json` sempre que for decidir programaticamente. Com `--json`, falha 
 
 Exit: `0` sucesso · `1` erro de execução (`SITE_NOT_FOUND`, `ROUTE_NOT_FOUND`, `CONFLICT` de comentário não lido, auth/provider) · `2` uso (falta `--title`, `--body`/`--html`/`--dir` conflitantes, slug reservado) · `3` freio de escrita, não erro: nada foi enviado; o envelope traz `dryRun:true` e `plan`. Revise e repita com `--execute`.
 
-Exit 3 não se aplica a `pages ship`. O ship escreve na hora, e `--execute` nele é no-op (aceito por compatibilidade). O freio continua em `pages create`, `pages publish`, `password set/remove`, `domains`, `assertion audiences set/remove` e `visibility`/`update` para `public`.
+Exit 3 não se aplica a `pages ship`. O ship escreve na hora, e `--execute` nele é no-op (aceito por compatibilidade). O freio continua em `pages create`, `pages publish`, `password set/remove`, `domains`, `assertion audiences set/remove`, `visibility`/`update` para `public` e `chat set --enabled true`.
 
 `--json` de sucesso do ship. `slug` é o host do projeto. `route` é a página. O campo `site` é o registro desse host:
 
@@ -140,6 +141,39 @@ ravi pages ship --project <projeto> --title "App" --route /app --dir ./site --us
 ```
 
 `--uses` não grava token. A API verifica a assinatura no `jwksUrl` que `list`/`set`/`remove` devolvem (no Console padrão, `https://console.ravi.bot/api/public/pages/viewer-assertions/jwks`). Nunca grave a asserção, o access token ou o refresh token em log, argumento, env, HTML ou JSON.
+
+## Page Chat (agente de voz)
+
+Page Chat é um agente de voz dentro de toda Ravi Page. O viewer logado toca em "Falar" na barra do Pages e conversa com um agente que opera a página por ele. Aparece só quando o site está ligado e o feature da org `console.pages.chat` também. Nas orgs que já existiam quando ele foi lançado, vem ligado por padrão. `featureEnabled` no `chat show` diz se o feature da org está ligado; `settings.enabled`, se o site está.
+
+```bash
+ravi pages chat show <host> --json
+ravi pages chat set <host> --voice tempo --name "Lia" --language pt-BR --json
+ravi pages chat set <host> --instructions "Responda em uma frase." --json
+ravi pages chat set <host> --clear-name --clear-instructions
+ravi pages chat set <host> --enabled false
+ravi pages chat set <host> --enabled true --execute
+```
+
+`<host>` é o slug do host, o id do site ou o hostname. `set` muda só as flags passadas e aplica na hora. Exceção: `--enabled true` liga o agente para todo viewer do site e gasta voz medida, então sem `--execute` sai o plano (exit 3). Vozes: `bossa` (padrão, pt-BR feminina), `tempo` (pt-BR masculina), `marin`, `quartz`, `ripple`, `vesper`, `willow`, `stone`, `gleam`, `meridian`, `beacon`, `delta`, `cinder`. `--language` é BCP 47 (padrão `pt-BR`). `--name` até 60 caracteres, `--instructions` até 2000.
+
+O agente vê a página por um snapshot de acessibilidade: use rótulos reais, headings e `aria-label` nos controles, senão ele não acha o que operar. Ele age como o viewer logado e só como ele: o que o viewer não pode fazer, o agente também não pode.
+
+A página registra ações que o agente pode chamar. Use a forma `push`: funciona em qualquer site e o runtime lê a lista quando o Page Chat está ligado (`window.ravi.pageChat.action()` só existe nesses sites).
+
+```js
+window.ravi = window.ravi || {};
+window.ravi.pageChat = window.ravi.pageChat || { actions: [] };
+window.ravi.pageChat.actions.push({
+  name: "filtrar_pautas",
+  description: "Filtra a tabela de pautas por status",
+  parameters: { type: "object", properties: { status: { type: "string" } }, required: ["status"] },
+  kind: "read", // "write": o agente lê a mudança em voz alta e só roda depois de um "sim" falado
+  run: async ({ status }) => { /* ... */ return { ok: true }; },
+});
+```
+
+`name`: letras, dígitos, `_` e `-`, até 64 caracteres. `parameters` é JSON Schema. Ação `kind: "write"` só roda depois que o viewer confirma por voz. Na dúvida, marque `write`.
 
 ## Referências
 

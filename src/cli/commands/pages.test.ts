@@ -14,7 +14,7 @@ import { dbCreateAgent } from "../../router/router-db.js";
 import { dbListTriggers } from "../../triggers/triggers-db.js";
 import { pageCommentFilter } from "../../pages/comment-follow.js";
 import { SHIP_LIVE_DATA_OVERRIDE_WARNING, SHIP_LIVE_DATA_REFUSAL_LINES } from "../../pages/ship.js";
-import { PagesAssertionAudienceCommands, PagesCommands, PagesPasswordCommands } from "./pages.js";
+import { PagesAssertionAudienceCommands, PagesChatCommands, PagesCommands, PagesPasswordCommands } from "./pages.js";
 
 const tempDirs: string[] = [];
 let stateDir: string | null = null;
@@ -2141,6 +2141,202 @@ describe("pages agent-first contract", () => {
       "private",
       "protected_link",
     ]);
+  });
+});
+
+describe("pages chat", () => {
+  function chatResponse(overrides: Record<string, unknown> = {}) {
+    return {
+      success: true,
+      projectRef: "proj",
+      siteRef: "acme-website",
+      siteId: "site_1",
+      host: "acme-website.ravi.page",
+      featureEnabled: true,
+      settings: { enabled: true, assistantName: "Lia", voice: "tempo", language: "pt-BR", instructions: null },
+      voices: ["bossa", "tempo"],
+      ...overrides,
+    };
+  }
+
+  it("shows the settings of a site addressed by hostname", async () => {
+    const calls: Array<{ method: string; path: string; body: unknown }> = [];
+    const client = makeClient(async (method, path, body) => {
+      calls.push({ method, path, body });
+      return chatResponse();
+    });
+    const command = new PagesChatCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() => command.show("acme-website.ravi.page", "proj", undefined, true));
+
+    expect(calls).toEqual([
+      { method: "GET", path: "/api/cli/projects/proj/pages/acme-website.ravi.page/chat", body: undefined },
+    ]);
+    expect(JSON.parse(output)).toMatchObject({
+      featureEnabled: true,
+      host: "acme-website.ravi.page",
+      projectRef: "proj",
+      settings: { enabled: true, assistantName: "Lia", voice: "tempo", language: "pt-BR", instructions: null },
+      siteId: "site_1",
+      siteRef: "acme-website",
+      success: true,
+      voices: ["bossa", "tempo"],
+    });
+    expect(output).not.toContain("access-secret");
+  });
+
+  it("warns in text output when the org feature is off", async () => {
+    const client = makeClient(async () => chatResponse({ featureEnabled: false }));
+    const command = new PagesChatCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() => command.show("acme-website", "proj"));
+
+    expect(output).toContain("Status       off");
+    expect(output).toContain("console.pages.chat is off");
+  });
+
+  it("applies non-enabling changes immediately with only the set fields", async () => {
+    const calls: Array<{ method: string; path: string; body: unknown }> = [];
+    const client = makeClient(async (method, path, body) => {
+      calls.push({ method, path, body });
+      return chatResponse({ settings: { enabled: false, assistantName: null, voice: "tempo", language: "en-US" } });
+    });
+    const command = new PagesChatCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() =>
+      command.set(
+        "acme-website",
+        "proj",
+        "false",
+        "tempo",
+        undefined,
+        true,
+        "en-us",
+        undefined,
+        undefined,
+        undefined,
+        true,
+      ),
+    );
+
+    expect(calls).toEqual([
+      {
+        method: "PATCH",
+        path: "/api/cli/projects/proj/pages/acme-website/chat",
+        body: { enabled: false, assistantName: null, voice: "tempo", language: "en-US" },
+      },
+    ]);
+    expect(JSON.parse(output)).toMatchObject({
+      changed: ["enabled", "assistantName", "voice", "language"],
+      settings: { enabled: false, voice: "tempo", language: "en-US" },
+      success: true,
+    });
+  });
+
+  it("brakes --enabled true before Console and enables on --execute", async () => {
+    const calls: Array<{ method: string; path: string; body: unknown }> = [];
+    const client = makeClient(async (method, path, body) => {
+      calls.push({ method, path, body });
+      return chatResponse();
+    });
+    const command = new PagesChatCommands({ client, readCredentials: makeReadCredentials() });
+    const instructions = "Responda em uma frase.";
+    const set = (execute?: boolean) =>
+      command.set(
+        "acme-website",
+        "proj",
+        "true",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        instructions,
+        undefined,
+        undefined,
+        true,
+        execute,
+      );
+
+    const error = await expectContractError(() => set(), "WRITE_REQUIRES_EXECUTE", 3);
+    expect(error.details.plan).toMatchObject({
+      project: "proj",
+      site: "acme-website",
+      changes: { enabled: true, instructionsLength: instructions.length },
+    });
+    expect(JSON.stringify(error.envelope())).not.toContain(instructions);
+    expect(calls).toEqual([]);
+
+    const { output } = await captureConsole(() => set(true));
+    expect(calls).toEqual([
+      {
+        method: "PATCH",
+        path: "/api/cli/projects/proj/pages/acme-website/chat",
+        body: { enabled: true, instructions },
+      },
+    ]);
+    expect(JSON.parse(output)).toMatchObject({ changed: ["enabled", "instructions"], success: true });
+  });
+
+  it("rejects invalid input with exit 2 before the brake and before Console", async () => {
+    const client = makeClient(async () => {
+      throw new Error("console should not be called");
+    });
+    const command = new PagesChatCommands({ client, readCredentials: makeReadCredentials() });
+    const run = (...args: Parameters<PagesChatCommands["set"]>) =>
+      expectCloudError(() => runWithContext({}, () => command.set(...args)));
+
+    const badVoice = await run("demo", "proj", "true", "alloy");
+    expect(badVoice.code).toBe("PAYLOAD_INVALID");
+    expect(badVoice.message).toContain("--voice");
+
+    const badEnabled = await run("demo", "proj", "on");
+    expect(badEnabled.message).toContain("--enabled");
+
+    const nothing = await run("demo", "proj");
+    expect(nothing.message).toContain("Missing a setting to change");
+
+    const conflict = await run("demo", "proj", undefined, undefined, "Lia", true);
+    expect(conflict.message).toContain("Conflicting flags");
+
+    const longName = await run("demo", "proj", undefined, undefined, "x".repeat(61));
+    expect(longName.message).toContain("60");
+
+    const missingSite = await run("  ", "proj", undefined, "tempo");
+    expect(missingSite.message).toContain("Missing <site>");
+
+    expect(client.requestJson).not.toHaveBeenCalled();
+  });
+
+  it("maps a Console project denial and a missing site", async () => {
+    const denied = new PagesChatCommands({
+      client: makeClient(async () => {
+        throw new CloudAuthError("PROJECT_ACCESS_DENIED", "Project access denied.", { status: 403 });
+      }),
+      readCredentials: makeReadCredentials(),
+    });
+    const deniedError = await expectCloudError(() => denied.show("demo", "proj", undefined, true));
+    expect(deniedError.code).toBe("PROJECT_ACCESS_DENIED");
+
+    const missing = new PagesChatCommands({
+      client: makeClient(async () => {
+        throw new CloudAuthError("PAYLOAD_INVALID", "Pages site not found.", { status: 404 });
+      }),
+      readCredentials: makeReadCredentials(),
+    });
+    await expectContractError(() => missing.show("ghost", "proj", undefined, true), "SITE_NOT_FOUND", 1);
+  });
+
+  it("declares a conditional brake with --execute last", () => {
+    const commands = getCommandsMetadata(PagesChatCommands);
+    const set = commands.find((command) => command.name === "set");
+    expect(set?.helpAfter).toContain("ravi pages chat set acme-website --enabled true --execute");
+    expect(set?.helpAfter).toContain("--enabled false");
+    const options = getOptionsMetadata(new PagesChatCommands(), "set");
+    const last = options.reduce((max, option) => (option.index > max.index ? option : max));
+    expect(last.flags).toBe("--execute");
+    expect(getOptionsMetadata(new PagesChatCommands(), "show").map((option) => option.flags)).not.toContain(
+      "--execute",
+    );
   });
 });
 

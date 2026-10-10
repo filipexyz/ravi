@@ -17654,6 +17654,177 @@ public struct PagesAssertionAudiencesSetReturn: Codable, Sendable {
   }
 }
 
+public struct PagesChatSetOptions: Codable, Sendable {
+  public var clearInstructions: Bool?
+  public var clearName: Bool?
+  public var console: String?
+  public var enabled: String?
+  public var execute: Bool?
+  public var instructions: String?
+  public var language: String?
+  public var name: String?
+  public var project: String?
+  public var voice: String?
+
+  public init(clearInstructions: Bool? = nil, clearName: Bool? = nil, console: String? = nil, enabled: String? = nil, execute: Bool? = nil, instructions: String? = nil, language: String? = nil, name: String? = nil, project: String? = nil, voice: String? = nil) {
+    self.clearInstructions = clearInstructions
+    self.clearName = clearName
+    self.console = console
+    self.enabled = enabled
+    self.execute = execute
+    self.instructions = instructions
+    self.language = language
+    self.name = name
+    self.project = project
+    self.voice = voice
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case clearInstructions = "clearInstructions"
+    case clearName = "clearName"
+    case console = "console"
+    case enabled = "enabled"
+    case execute = "execute"
+    case instructions = "instructions"
+    case language = "language"
+    case name = "name"
+    case project = "project"
+    case voice = "voice"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.clearInstructions {
+      body["clearInstructions"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.clearName {
+      body["clearName"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.enabled {
+      body["enabled"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.instructions {
+      body["instructions"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.language {
+      body["language"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.name {
+      body["name"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.voice {
+      body["voice"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct PagesChatSetReturn: Codable, Sendable {
+  public var changed: [String]
+  public var consoleUrl: String
+  public var featureEnabled: Bool
+  public var host: RaviJSON
+  public var projectRef: String
+  public var settings: RaviJSON
+  public var siteId: RaviJSON
+  public var siteRef: String
+  public var success: Bool
+  public var voices: [String]
+
+  public init(changed: [String], consoleUrl: String, featureEnabled: Bool, host: RaviJSON, projectRef: String, settings: RaviJSON, siteId: RaviJSON, siteRef: String, success: Bool, voices: [String]) {
+    self.changed = changed
+    self.consoleUrl = consoleUrl
+    self.featureEnabled = featureEnabled
+    self.host = host
+    self.projectRef = projectRef
+    self.settings = settings
+    self.siteId = siteId
+    self.siteRef = siteRef
+    self.success = success
+    self.voices = voices
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case changed = "changed"
+    case consoleUrl = "consoleUrl"
+    case featureEnabled = "featureEnabled"
+    case host = "host"
+    case projectRef = "projectRef"
+    case settings = "settings"
+    case siteId = "siteId"
+    case siteRef = "siteRef"
+    case success = "success"
+    case voices = "voices"
+  }
+}
+
+public struct PagesChatShowOptions: Codable, Sendable {
+  public var console: String?
+  public var project: String?
+
+  public init(console: String? = nil, project: String? = nil) {
+    self.console = console
+    self.project = project
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case project = "project"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct PagesChatShowReturn: Codable, Sendable {
+  public var consoleUrl: String
+  public var featureEnabled: Bool
+  public var host: RaviJSON
+  public var projectRef: String
+  public var settings: RaviJSON
+  public var siteId: RaviJSON
+  public var siteRef: String
+  public var success: Bool
+  public var voices: [String]
+
+  public init(consoleUrl: String, featureEnabled: Bool, host: RaviJSON, projectRef: String, settings: RaviJSON, siteId: RaviJSON, siteRef: String, success: Bool, voices: [String]) {
+    self.consoleUrl = consoleUrl
+    self.featureEnabled = featureEnabled
+    self.host = host
+    self.projectRef = projectRef
+    self.settings = settings
+    self.siteId = siteId
+    self.siteRef = siteRef
+    self.success = success
+    self.voices = voices
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case consoleUrl = "consoleUrl"
+    case featureEnabled = "featureEnabled"
+    case host = "host"
+    case projectRef = "projectRef"
+    case settings = "settings"
+    case siteId = "siteId"
+    case siteRef = "siteRef"
+    case success = "success"
+    case voices = "voices"
+  }
+}
+
 public struct PagesCreateOptions: Codable, Sendable {
   public var console: String?
   public var defaultSite: Bool?

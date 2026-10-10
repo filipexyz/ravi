@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "11ea0db08771affb"
+    "version": "37a68bce96a2a755"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -72696,6 +72696,360 @@
         },
         "security": [],
         "summary": "Replace the https origins of this Pages site that may receive a viewer assertion for one audience",
+        "tags": [
+          "pages"
+        ]
+      }
+    },
+    "/api/v1/pages/chat/set": {
+      "post": {
+        "operationId": "pages.chat.set",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "clearInstructions": {
+                    "description": "Remove the extra instructions",
+                    "type": "boolean"
+                  },
+                  "clearName": {
+                    "description": "Remove the assistant name",
+                    "type": "boolean"
+                  },
+                  "console": {
+                    "description": "Console base URL",
+                    "type": "string"
+                  },
+                  "enabled": {
+                    "description": "Turn Page Chat on (true) or off (false) for this site",
+                    "type": "string"
+                  },
+                  "execute": {
+                    "description": "Required with --enabled true; every other change applies immediately",
+                    "type": "boolean"
+                  },
+                  "instructions": {
+                    "description": "Extra instructions for the agent (max 2000 chars)",
+                    "type": "string"
+                  },
+                  "language": {
+                    "description": "Spoken language as a BCP 47 tag, such as pt-BR",
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "Assistant name the agent uses (max 60 chars)",
+                    "type": "string"
+                  },
+                  "project": {
+                    "description": "Console project id or slug; overrides saved Console scope",
+                    "type": "string"
+                  },
+                  "site": {
+                    "description": "Pages host slug, site id, or hostname",
+                    "type": "string"
+                  },
+                  "voice": {
+                    "description": "Voice: bossa|tempo|marin|quartz|ripple|vesper|willow|stone|gleam|meridian|beacon|delta|cinder",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "site"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "changed": {
+                      "items": {
+                        "enum": [
+                          "enabled",
+                          "assistantName",
+                          "voice",
+                          "language",
+                          "instructions"
+                        ],
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "consoleUrl": {
+                      "type": "string"
+                    },
+                    "featureEnabled": {
+                      "type": "boolean"
+                    },
+                    "host": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "projectRef": {
+                      "type": "string"
+                    },
+                    "settings": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "assistantName": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "instructions": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "language": {
+                          "type": "string"
+                        },
+                        "voice": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "assistantName",
+                        "voice",
+                        "language",
+                        "instructions"
+                      ],
+                      "type": "object"
+                    },
+                    "siteId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "siteRef": {
+                      "type": "string"
+                    },
+                    "success": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "voices": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "consoleUrl",
+                    "projectRef",
+                    "siteRef",
+                    "siteId",
+                    "host",
+                    "featureEnabled",
+                    "settings",
+                    "voices",
+                    "changed"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Change a Pages site's Page Chat settings",
+        "tags": [
+          "pages"
+        ]
+      }
+    },
+    "/api/v1/pages/chat/show": {
+      "post": {
+        "operationId": "pages.chat.show",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "console": {
+                    "description": "Console base URL",
+                    "type": "string"
+                  },
+                  "project": {
+                    "description": "Console project id or slug; overrides saved Console scope",
+                    "type": "string"
+                  },
+                  "site": {
+                    "description": "Pages host slug, site id, or hostname",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "site"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "consoleUrl": {
+                      "type": "string"
+                    },
+                    "featureEnabled": {
+                      "type": "boolean"
+                    },
+                    "host": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "projectRef": {
+                      "type": "string"
+                    },
+                    "settings": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "assistantName": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "instructions": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "language": {
+                          "type": "string"
+                        },
+                        "voice": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "assistantName",
+                        "voice",
+                        "language",
+                        "instructions"
+                      ],
+                      "type": "object"
+                    },
+                    "siteId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "siteRef": {
+                      "type": "string"
+                    },
+                    "success": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "voices": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "consoleUrl",
+                    "projectRef",
+                    "siteRef",
+                    "siteId",
+                    "host",
+                    "featureEnabled",
+                    "settings",
+                    "voices"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Show a Pages site's Page Chat settings",
         "tags": [
           "pages"
         ]
