@@ -37,6 +37,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/slack/route-seeded-chat.test.ts",
     // Direct Slack sends: `ravi link` private links go out unfurl-free; author email lookup.
     "src/channels/slack/text-send.test.ts",
+    // Slack Web API client: `ok: false` answers become structured SLACK_<ERROR> errors.
+    "src/channels/slack/client.test.ts",
   ],
   "src/omni/": [
     "src/omni/consumer-context.test.ts",
