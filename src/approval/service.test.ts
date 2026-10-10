@@ -9,6 +9,7 @@ import {
   type ApprovalFinalizeSlackInput,
   type ApprovalServiceDependencies,
 } from "./service.js";
+import { setApprovalGrantorRouterConfigForTest } from "./grantor.js";
 import { SLACK_APPROVAL_ACTION_APPROVE, SLACK_APPROVAL_ACTION_REJECT } from "./slack-blocks.js";
 import {
   flushPermissionAuditEvents,
@@ -102,6 +103,7 @@ function hydrateEvent(event: { topic: string; data: Record<string, unknown> }): 
 describe("approval service", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-approval-service-test-");
+    setApprovalGrantorRouterConfigForTest(() => ({ instances: {}, instanceToAccount: {} }));
     requestReplyResult = { messageId: "msg_1" };
     subscribeEvents = [];
     emitted = [];
@@ -144,6 +146,7 @@ describe("approval service", () => {
 
   afterEach(async () => {
     setApprovalServiceDependenciesForTest();
+    setApprovalGrantorRouterConfigForTest();
     setPermissionAuditPublisherForTest();
     for (const contextId of createdContextIds) {
       dbDeleteContext(contextId);
@@ -760,10 +763,10 @@ describe("approval service", () => {
   });
 
   it("denies an unidentified external actor without sending an approval card", async () => {
-    // The turn came from a Slack DM whose sender resolved to no contact. The
-    // sender's Slack user is linked under another instance, so the grantor
-    // lookup alone would accept their click: the request must never be sent.
-    seedSlackOwner("old-slack");
+    // The turn came from a Slack DM whose sender resolved to no contact. Even
+    // with an authorized grantor clicking in that DM, the request must never be
+    // sent: the card would go back to the unidentified actor's own surface.
+    seedSlackOwner("slack-main");
     subscribeEvents = [
       {
         topic: "ravi.inbound.interaction",

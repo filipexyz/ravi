@@ -1,6 +1,17 @@
+import { resolveScopedSlackIdentity, resolveSlackInstanceAliases } from "../channels/slack/instance-alias.js";
+import { configStore } from "../config-store.js";
 import { getContact, getContactDetails, resolvePlatformIdentity, type PlatformIdentity } from "../contacts.js";
 import { canWithCapabilities } from "../permissions/capability-snapshot.js";
 import { materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
+
+type GrantorRouterConfig = Parameters<typeof resolveSlackInstanceAliases>[0];
+
+const defaultLoadGrantorRouterConfig = (): GrantorRouterConfig => configStore.getConfig();
+let loadGrantorRouterConfig = defaultLoadGrantorRouterConfig;
+
+export function setApprovalGrantorRouterConfigForTest(loader?: () => GrantorRouterConfig): void {
+  loadGrantorRouterConfig = loader ?? defaultLoadGrantorRouterConfig;
+}
 
 export interface ApprovalGrantorInput {
   readonly channel: string;
@@ -29,7 +40,10 @@ export function actorCanGrantRequestedPermission(input: ApprovalGrantorInput): A
     return { allowed: false, reason: "missing_actor" };
   }
 
-  const identity = resolveGrantorIdentity(input.channel, senderId, [input.instanceId, input.accountId, ""]);
+  const identity =
+    input.channel.trim().toLowerCase() === "slack"
+      ? resolveSlackGrantorIdentity(senderId, input.instanceId ?? input.accountId)
+      : resolveGrantorIdentity(input.channel, senderId, [input.instanceId, input.accountId, ""]);
   if (
     !identity?.ownerType ||
     !identity.ownerId ||
@@ -53,6 +67,32 @@ export function actorCanGrantRequestedPermission(input: ApprovalGrantorInput): A
     subjectType: identity.ownerType,
     subjectId: identity.ownerId,
   };
+}
+
+/**
+ * A Slack clicker resolves exactly like a Slack message author
+ * (`resolveSlackActorIdentity`): only the receiving instance's configured
+ * aliases, then the empty legacy scope. No cross-instance or cross-channel
+ * fallback, so a sender who is "unknown" to the turn cannot be an owner here.
+ */
+function resolveSlackGrantorIdentity(
+  senderId: string,
+  instanceId: string | null | undefined,
+): Pick<PlatformIdentity, "ownerType" | "ownerId"> | null {
+  let config: GrantorRouterConfig = null;
+  try {
+    config = loadGrantorRouterConfig();
+  } catch {
+    // Without config the lookup stays on the received instance (and the empty
+    // legacy scope): narrower, never wider.
+  }
+  const aliases = resolveSlackInstanceAliases(config, instanceId);
+  const resolution = resolveScopedSlackIdentity(
+    aliases,
+    (scope) => resolvePlatformIdentity({ channel: "slack", instanceId: scope, platformUserId: senderId }),
+    (identity) => (identity.ownerType && identity.ownerId ? `${identity.ownerType}:${identity.ownerId}` : null),
+  );
+  return resolution.identity;
 }
 
 function resolveGrantorIdentity(
