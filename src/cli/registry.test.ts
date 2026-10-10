@@ -100,6 +100,13 @@ class CollidingNameCommands {
     @Arg("channel", { description: "Provider conversation id" }) _channel: string,
     @Option({ flags: "--channel <name>", description: "Config name" }) _configName?: string,
   ) {}
+
+  @Command({ name: "list", description: "Optional positional project plus a same-meaning --project" })
+  @CommandAccess({ kind: "read", resource: "collide", action: "list", risk: "low", input: ["project"] })
+  list(
+    @Arg("project", { required: false, description: "Project ref" }) _project?: string,
+    @Option({ flags: "--project <ref>", description: "Project ref" }) _projectOption?: string,
+  ) {}
 }
 
 async function parseAsLocalOperator(program: CommanderCommand, argv: string[]): Promise<void> {
@@ -327,6 +334,49 @@ describe("registerCommands", () => {
     }
 
     expect(bodies).toEqual([{ channel: "C0PRIVATE1" }]);
+  });
+
+  it("lets an option fill the shared key when the positional is left out in the remote body", async () => {
+    const program = new CommanderCommand();
+    program.exitOverride();
+    registerCommands(program, [CollidingNameCommands]);
+
+    const previousGatewayUrl = process.env.RAVI_GATEWAY_URL;
+    const previousContextKey = process.env.RAVI_CONTEXT_KEY;
+    const previousSuppressAudit = process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+    const originalFetch = globalThis.fetch;
+    const originalLog = console.log;
+    const originalExit = process.exit;
+    const bodies: unknown[] = [];
+
+    process.env.RAVI_GATEWAY_URL = "https://gateway.example.test";
+    process.env.RAVI_CONTEXT_KEY = "rctx_remote_only";
+    process.env.RAVI_SUPPRESS_AUDIT_EVENTS = "1";
+    globalThis.fetch = (async (_input, init) => {
+      bodies.push(JSON.parse(String(init?.body ?? "{}")));
+      return Response.json({ ok: true });
+    }) as typeof fetch;
+    console.log = () => {};
+    process.exit = ((code?: number) => {
+      throw new Error(`unexpected process.exit(${code})`);
+    }) as typeof process.exit;
+
+    try {
+      await runWithContext({}, () => program.parseAsync(["node", "test", "collide", "list", "--project", "project-a"]));
+      await runWithContext({}, () => program.parseAsync(["node", "test", "collide", "list", "project-b"]));
+    } finally {
+      globalThis.fetch = originalFetch;
+      console.log = originalLog;
+      process.exit = originalExit;
+      if (previousGatewayUrl === undefined) delete process.env.RAVI_GATEWAY_URL;
+      else process.env.RAVI_GATEWAY_URL = previousGatewayUrl;
+      if (previousContextKey === undefined) delete process.env.RAVI_CONTEXT_KEY;
+      else process.env.RAVI_CONTEXT_KEY = previousContextKey;
+      if (previousSuppressAudit === undefined) delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+      else process.env.RAVI_SUPPRESS_AUDIT_EVENTS = previousSuppressAudit;
+    }
+
+    expect(bodies).toEqual([{ project: "project-a" }, { project: "project-b" }]);
   });
 
   it("renders a projected contract instead of a raw non-success remote body", async () => {

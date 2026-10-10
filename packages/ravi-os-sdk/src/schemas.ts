@@ -31757,6 +31757,43 @@ export const CloudScopeSetInputSchema = {
 
 /** JSON Schema for the return shape of `cloud.scope.set`. */
 export const CloudScopeSetReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": false,
   "properties": {
     "action": {
@@ -31768,6 +31805,25 @@ export const CloudScopeSetReturnSchema = {
       "properties": {
         "consoleUrl": {
           "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "metadata": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "organization": {
           "anyOf": [
@@ -31861,25 +31917,38 @@ export const CloudScopeSetReturnSchema = {
             }
           ]
         },
-        "source": {
+        "scopeKey": {
+          "type": "string"
+        },
+        "scopeKind": {
           "enum": [
-            "explicit",
-            "runtime_context",
-            "local_project_mapping",
-            "session_default",
-            "agent_default",
-            "workspace_default",
-            "global_default",
-            "cloud_credentials",
-            "env_compat",
-            "single_remote_project"
+            "session",
+            "agent",
+            "workspace",
+            "global"
           ],
           "type": "string"
+        },
+        "sourceNote": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "type": "number"
         }
       },
       "required": [
+        "scopeKind",
+        "scopeKey",
         "consoleUrl",
-        "source"
+        "createdAt",
+        "updatedAt"
       ],
       "type": "object"
     },

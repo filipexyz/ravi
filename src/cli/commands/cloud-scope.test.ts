@@ -4,6 +4,7 @@ import type { CloudCredentials } from "../../cloud-auth/types.js";
 import { closeConsoleScopeStore } from "../../console-scope/store.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { ContractError } from "../agent-contract.js";
+import { getReturnsMetadata } from "../decorators.js";
 import { CloudScopeCommands } from "./cloud-scope.js";
 
 let stateDir: string | null = null;
@@ -44,6 +45,10 @@ describe("cloud scope CLI commands", () => {
         },
       },
     });
+
+    // The gateway validates this payload against the declared return schema;
+    // a saved default has no resolved `source`.
+    expect(getReturnsMetadata(CloudScopeCommands).get("set")?.safeParse(setPayload).success).toBe(true);
 
     const { output: showOutput } = await captureConsole(() => command.show(undefined, true));
     const showPayload = JSON.parse(showOutput);
