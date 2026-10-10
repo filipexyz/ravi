@@ -21,4 +21,4 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           packageManager: npm
-          command: pages deploy site --project-name=ravi-landing --branch=${{ github.ref_name }}
+          command: pages deploy site --project-name=ravi-landing --branch=main
