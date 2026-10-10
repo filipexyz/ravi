@@ -1925,6 +1925,22 @@ class ConnectorsNamespace {
     );
   }
 
+  Future<ConnectorsModeReturn> mode(String agent, String provider, [String? mode, ConnectorsModeOptions options = const ConnectorsModeOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["agent"] = RaviJson.from(agent);
+    requestBody["provider"] = RaviJson.from(provider);
+    if (mode != null) {
+      requestBody["mode"] = RaviJson.from(mode);
+    }
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["connectors"],
+      command: "mode",
+      body: requestBody,
+      decode: connectorsModeReturnFromJson,
+    );
+  }
+
   Future<ConnectorsRevokeReturn> revoke(String id, [ConnectorsRevokeOptions options = const ConnectorsRevokeOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["id"] = RaviJson.from(id);

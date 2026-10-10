@@ -33407,6 +33407,80 @@ class RaviSchemas {
 }
 ''';
 
+  static const connectorsModeInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent id",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Actually switch to person-asking or shared; default is a dry-run that only shows the plan (exit 3). owner applies immediately",
+      "type": "boolean"
+    },
+    "mode": {
+      "description": "owner (default) | person-asking | shared; omit to show the current mode",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Provider id (google)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent",
+    "provider"
+  ],
+  "type": "object"
+}
+''';
+
+  static const connectorsModeReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "label": {
+      "type": "string"
+    },
+    "mode": {
+      "enum": [
+        "owner",
+        "person_asking",
+        "shared"
+      ],
+      "type": "string"
+    },
+    "previousMode": {
+      "enum": [
+        "owner",
+        "person_asking",
+        "shared"
+      ],
+      "type": "string"
+    },
+    "provider": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "agentId",
+    "provider",
+    "mode",
+    "previousMode",
+    "changed",
+    "label"
+  ],
+  "type": "object"
+}
+''';
+
   static const connectorsRevokeInputSchema = r'''
 {
   "additionalProperties": false,
@@ -46757,7 +46831,7 @@ class RaviSchemas {
       "type": "string"
     },
     "connector": {
-      "description": "Connection id (defaults to your default Google connection, else the newest active one)",
+      "description": "Your connection id (defaults to your default Google connection, else the newest active one); only on your own turns",
       "type": "string"
     },
     "cursor": {
@@ -46775,6 +46849,10 @@ class RaviSchemas {
     "q": {
       "description": "Gmail search query (same as the web search bar)",
       "type": "string"
+    },
+    "shared": {
+      "description": "In your own chat with this agent (or a group its shared account covers), use its shared account instead of yours (the agent must be in shared mode)",
+      "type": "boolean"
     }
   },
   "type": "object"
@@ -46849,7 +46927,7 @@ class RaviSchemas {
       "type": "string"
     },
     "connector": {
-      "description": "Connection id (defaults to your default Google connection, else the newest active one)",
+      "description": "Your connection id (defaults to your default Google connection, else the newest active one); only on your own turns",
       "type": "string"
     },
     "format": {
@@ -46859,6 +46937,10 @@ class RaviSchemas {
     "id": {
       "description": "Gmail message id (from `ravi gmail list`)",
       "type": "string"
+    },
+    "shared": {
+      "description": "In your own chat with this agent (or a group its shared account covers), use its shared account instead of yours (the agent must be in shared mode)",
+      "type": "boolean"
     }
   },
   "required": [
@@ -46948,7 +47030,7 @@ class RaviSchemas {
       "type": "string"
     },
     "connector": {
-      "description": "Connection id (defaults to your default Google connection, else the newest active one)",
+      "description": "Your connection id (defaults to your default Google connection, else the newest active one); only on your own turns",
       "type": "string"
     },
     "execute": {
@@ -46962,6 +47044,10 @@ class RaviSchemas {
     "inReplyTo": {
       "description": "Message-Id this email replies to",
       "type": "string"
+    },
+    "shared": {
+      "description": "In your own chat with this agent (or a group its shared account covers), use its shared account instead of yours (the agent must be in shared mode)",
+      "type": "boolean"
     },
     "subject": {
       "description": "Email subject",

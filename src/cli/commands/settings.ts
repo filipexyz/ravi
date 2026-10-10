@@ -27,6 +27,7 @@ import {
   listRegisteredPermissionProviderIds,
   parsePermissionProviderIds,
 } from "../../permissions/provider-registry.js";
+import { isConnectorModeSettingKey } from "../../link/connector-mode.js";
 import {
   EXTERNAL_AUTHORITY_ASSERTION_SETTING,
   EXTERNAL_AUTHORITY_AUDIENCE_SETTING,
@@ -45,6 +46,22 @@ function assertCanMutatePermissionSetting(key: string): void {
   if (isScopeEnforced(getScopeContext())) {
     fail(`Permission denied: ${key} requires admin on system:* (superadmin)`);
   }
+}
+
+/**
+ * `connectors.mode.*` decide whose account an agent uses. Only the operator
+ * changes them, through `ravi connectors mode`, which checks who is asking
+ * and brakes an expansion; `settings set` and `settings delete` would skip
+ * both. Reading them (`settings get`/`list`) stays open to whoever may run
+ * settings commands: the value only names a mode.
+ */
+function assertNotConnectorModeSetting(key: string, command: "set" | "delete"): void {
+  if (!isConnectorModeSettingKey(key)) return;
+  fail(
+    command === "set"
+      ? `${key} is set with \`ravi connectors mode <agent> <provider> <owner|person-asking|shared>\`, not settings set.`
+      : `${key} is changed with \`ravi connectors mode <agent> <provider> owner\`, not settings delete.`,
+  );
 }
 
 /** Notify gateway that config changed */
@@ -491,6 +508,7 @@ export class SettingsCommands {
       fail(`Legacy setting shadowed by instances: ${key}. ${legacyAccountSettingHint(key)}`);
     }
     assertCanMutatePermissionSetting(key);
+    assertNotConnectorModeSetting(key, "set");
 
     // Validate known settings (exact match first, then pattern-based)
     const meta = KNOWN_SETTINGS[key];
@@ -550,6 +568,7 @@ export class SettingsCommands {
     execute?: boolean,
   ) {
     assertCanMutatePermissionSetting(key);
+    assertNotConnectorModeSetting(key, "delete");
     const legacy = isLegacyAccountSetting(key);
     const currentValue = dbGetSetting(key);
     // Not-found fires BEFORE the brake (exit 1, never 3).

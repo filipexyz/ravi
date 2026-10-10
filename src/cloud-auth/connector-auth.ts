@@ -1,6 +1,12 @@
 import { rmSync } from "node:fs";
 
-import { resolveConnectorTurn, type ConnectorTurn, type ConnectorTurnDeps } from "../link/connector-turn.js";
+import {
+  resolveConnectorExecRoute,
+  resolveConnectorTurn,
+  type ConnectorExecRoute,
+  type ConnectorTurn,
+  type ConnectorTurnDeps,
+} from "../link/connector-turn.js";
 import { CloudAuthError } from "./errors.js";
 import {
   deleteCloudCredentials,
@@ -15,6 +21,11 @@ export interface ConnectorAuthOptions {
   readActive?: typeof readCloudCredentials;
   /** Turn classification inputs (tests). */
   turn?: ConnectorTurnDeps;
+  /**
+   * An exec: also apply the executing agent's mode for `provider`, so a
+   * contact's turn may go to agent exec instead of being refused.
+   */
+  exec?: { provider: string; useShared?: boolean };
 }
 
 /**
@@ -31,12 +42,19 @@ export interface ConnectorAuthOptions {
  * Without an active session there is nothing to protect, so the answer is
  * AUTH_REQUIRED for every turn: the owner writing from their own chat while
  * logged out must not be told they are someone else.
+ *
+ * With `exec`, the agent's mode may send a contact's turn to agent exec
+ * (`route.mode` other than `owner`). That call still uses the operator's
+ * session as the CLI bearer, but the account is the person's own or the
+ * shared one, picked by the Worker.
  */
 export function resolveConnectorCloudCredentials(options: ConnectorAuthOptions = {}): {
   turn: ConnectorTurn;
   credentials: CloudCredentials;
   /** Console user the turn was classified against (null for a legacy session without one). */
   activeUserId: string | null;
+  /** Where an exec goes (only with `exec`). */
+  route?: ConnectorExecRoute;
 } {
   const env = options.env ?? process.env;
   const readActive = options.readActive ?? readCloudCredentials;
@@ -46,7 +64,7 @@ export function resolveConnectorCloudCredentials(options: ConnectorAuthOptions =
   }
   const activeUserId =
     options.turn?.activeUserId !== undefined ? options.turn.activeUserId : resolveActiveUserId(env, active);
-  const result = resolveConnectorTurn({
+  const turnDeps: ConnectorTurnDeps = {
     env,
     ...options.turn,
     activeUserId,
@@ -55,18 +73,25 @@ export function resolveConnectorCloudCredentials(options: ConnectorAuthOptions =
       options.turn?.ownerName !== undefined
         ? options.turn.ownerName
         : (active.user?.name ?? active.user?.displayName ?? null),
-  });
-  if (!result.ok) {
-    // A contact cannot be told apart from the owner when the stored session
-    // does not say whose it is.
-    if (!activeUserId && result.actorPrincipal.startsWith("contact:")) {
-      throw new CloudAuthError(
-        "AUTH_REQUIRED",
-        "The stored Ravi Cloud login does not say which Console user it belongs to. Run `ravi login` again.",
-      );
-    }
-    throw result.error;
+  };
+  const result = options.exec
+    ? resolveConnectorExecRoute({ ...turnDeps, ...options.exec })
+    : resolveConnectorTurn(turnDeps);
+  const actorPrincipal = !result.ok
+    ? result.actorPrincipal
+    : "route" in result
+      ? result.route.turn.actorPrincipal
+      : result.turn.actorPrincipal;
+  // A contact cannot be told apart from the owner when the stored session
+  // does not say whose it is.
+  if (!activeUserId && actorPrincipal.startsWith("contact:")) {
+    throw new CloudAuthError(
+      "AUTH_REQUIRED",
+      "The stored Ravi Cloud login does not say which Console user it belongs to. Run `ravi login` again.",
+    );
   }
+  if (!result.ok) throw result.error;
+  if ("route" in result) return { turn: result.route.turn, credentials: active, activeUserId, route: result.route };
   return { turn: result.turn, credentials: active, activeUserId };
 }
 

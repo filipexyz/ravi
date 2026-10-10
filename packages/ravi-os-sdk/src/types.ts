@@ -6269,6 +6269,24 @@ export type ConnectorsListReturn = {
   };
 };
 
+/** Input shape for `connectors.mode`. */
+export type ConnectorsModeInput = {
+  agent: string;
+  execute?: boolean;
+  mode?: string;
+  provider: string;
+};
+
+/** Return shape for `connectors.mode`. */
+export type ConnectorsModeReturn = {
+  agentId: string;
+  changed: boolean;
+  label: string;
+  mode: "owner" | "person_asking" | "shared";
+  previousMode: "owner" | "person_asking" | "shared";
+  provider: string;
+};
+
 /** Input shape for `connectors.revoke`. */
 export type ConnectorsRevokeInput = {
   execute?: boolean;
@@ -9138,6 +9156,7 @@ export type GmailListInput = {
   label?: string;
   max?: string;
   q?: string;
+  shared?: boolean;
 };
 
 /** Return shape for `gmail.list`. */
@@ -9153,6 +9172,7 @@ export type GmailReadInput = {
   connector?: string;
   format?: string;
   id: string;
+  shared?: boolean;
 };
 
 /** Return shape for `gmail.read`. */
@@ -9172,6 +9192,7 @@ export type GmailSendInput = {
   execute?: boolean;
   html?: string;
   inReplyTo?: string;
+  shared?: boolean;
   subject?: string;
   to?: string;
 };

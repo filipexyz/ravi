@@ -4,6 +4,11 @@ import { join } from "node:path";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 import { contractErrorResponse } from "../sdk/gateway/errors.js";
 import { renderContractError } from "./agent-contract.js";
+import {
+  connectorConnectionRequiredError,
+  connectorConsentError,
+  connectorNotLinkedError,
+} from "../link/connectors.js";
 import { cloudErrorToContractError } from "./cloud-error-contract.js";
 import {
   FILE_NOT_FOUND_CODE,
@@ -1032,6 +1037,116 @@ describe("personal connector blocks over the gateway", () => {
         approvalLink: `http://localhost:3000/console/connectors/approvals/${APPROVAL_ID}`,
       })?.approvalLink,
     ).toBe(`http://localhost:3000/console/connectors/approvals/${APPROVAL_ID}`);
+  });
+
+  const CONSENT_TOKEN = "cst_0123456789abcdefXYZ";
+  const CONSENT_LINK = `https://console.ravi.bot/connectors/consent/${CONSENT_TOKEN}`;
+  const PERSON_ASKING = { consoleUrl: "https://console.ravi.bot", audience: "person_asking" as const, agentId: "main" };
+
+  it("keeps the consent link, its expiry and both chat lines for the person asking (exit 3)", async () => {
+    const { local, remote } = await relay(
+      "gmail list",
+      connectorConsentError(
+        new CloudAuthError("CONNECTOR_CONSENT_REQUIRED", "Ravi Link request failed (409): connector_consent_required", {
+          status: 409,
+          details: { consentRef: CONSENT_TOKEN, expiresAt: "2026-10-10T13:00:00.000Z" },
+        }),
+        PERSON_ASKING,
+      ),
+    );
+
+    expect(remote).toMatchObject({
+      code: "CONNECTOR_CONSENT_REQUIRED",
+      exitCode: 3,
+      message: local.message,
+      details: {
+        chatLine: `To use your Gmail here, approve it once: ${CONSENT_LINK}`,
+        chatLinePt: `Para eu usar o seu Gmail aqui, aprove uma vez: ${CONSENT_LINK}`,
+        replyTo: "same_chat",
+        consentLink: CONSENT_LINK,
+        expiresAt: "2026-10-10T13:00:00.000Z",
+      },
+    });
+    expect(remote?.envelope().error).toMatchObject({ consentLink: CONSENT_LINK });
+    expect(JSON.stringify(remote?.envelope())).not.toContain("REDACTED");
+  });
+
+  it("drops a consent link that is not a Console consent page", () => {
+    const relayed = (consentLink: string, code = "CONNECTOR_CONSENT_REQUIRED") =>
+      remoteGatewayErrorToContractError(
+        "gmail list",
+        result({
+          status: 409,
+          body: JSON.stringify({
+            success: false,
+            op: "gmail list",
+            exitCode: 3,
+            outcome: "blocked",
+            error: {
+              code,
+              message: "The person asking has not allowed agent main to use their own Gmail yet.",
+              retryable: false,
+              chatLine: "To use your Gmail here, approve it once.",
+              consentLink,
+              expiresAt: "2026-10-10T13:00:00.000Z",
+            },
+          }),
+        }),
+      )?.details;
+
+    for (const consentLink of [
+      `https://console.ravi.bot/connectors/consent/short`,
+      `https://console.ravi.bot/connectors/consent/${CONSENT_TOKEN}?next=https://x`,
+      `https://user:pw@console.ravi.bot/connectors/consent/${CONSENT_TOKEN}`,
+      `http://evil.example/connectors/consent/${CONSENT_TOKEN}`,
+      `javascript:alert(1)//connectors/consent/${CONSENT_TOKEN}`,
+      `https://console.ravi.bot/connectors/approvals/${CONSENT_TOKEN}`,
+    ]) {
+      const details = relayed(consentLink);
+      expect(details?.consentLink).toBeUndefined();
+      expect(details?.expiresAt).toBeUndefined();
+      expect(details?.chatLine).toBe("To use your Gmail here, approve it once.");
+    }
+    expect(relayed(CONSENT_LINK)?.consentLink).toBe(CONSENT_LINK);
+    // Only a consent answer carries a consent link.
+    expect(relayed(CONSENT_LINK, "CONNECTOR_SPEAKER_NOT_OWNER")?.consentLink).toBeUndefined();
+  });
+
+  it("keeps the ravi link line of a person who has not linked this chat (exit 3)", async () => {
+    const error = connectorNotLinkedError({ ...PERSON_ASKING, status: 403 });
+    const { local, remote } = await relay("gmail list", error);
+
+    expect(remote).toMatchObject({
+      code: "CONNECTOR_NOT_LINKED",
+      exitCode: 3,
+      message: local.message,
+      details: {
+        chatLine: error.details?.chatLine,
+        chatLinePt: error.details?.chatLinePt,
+        replyTo: "same_chat",
+      },
+    });
+    expect(remote?.message).toContain("`ravi link`");
+  });
+
+  it("keeps the connect line and the Connectors page for a person with no account connected (exit 3)", async () => {
+    const link = "https://console.ravi.bot/connectors";
+    const { local, remote } = await relay(
+      "gmail send",
+      connectorConnectionRequiredError({ ...PERSON_ASKING, status: 409 }),
+    );
+
+    expect(local.exitCode).toBe(3);
+    expect(remote).toMatchObject({
+      code: "CONNECTOR_CONNECTION_REQUIRED",
+      exitCode: 3,
+      message: local.message,
+      details: {
+        chatLine: `To use your Gmail here, connect it in Ravi Console first: ${link}`,
+        replyTo: "same_chat",
+        reconnectLink: link,
+      },
+    });
   });
 
   it("uses the catalog copy, not remote text, for connector failures without a chat line", async () => {

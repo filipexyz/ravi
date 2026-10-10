@@ -24,9 +24,20 @@ const stepUpArgs: Array<StepUpHandler | null> = [];
 let execFailure: Error | null = null;
 /** When set, the spy answers as a Worker asking for a step-up first. */
 let askStepUp = false;
+/** Whose account the turn uses, as `resolveConnectorExecPlan` would answer. */
+let plannedMode: "owner" | "person_asking" | "shared" = "owner";
+const planCalls: Array<Record<string, unknown>> = [];
+let listCalls = 0;
 mock.module("../../link/connectors.js", () => ({
   ...actualConnectorsModule,
-  listConnectors: async () => listedConnections,
+  resolveConnectorExecPlan: (options: Record<string, unknown>) => {
+    planCalls.push(options);
+    return { mode: plannedMode, agentId: plannedMode === "owner" ? null : "main" };
+  },
+  listConnectors: async () => {
+    listCalls += 1;
+    return listedConnections;
+  },
   execCapabilityWithApproval: async (
     input: Record<string, unknown>,
     _deps: unknown,
@@ -61,6 +72,9 @@ beforeEach(async () => {
   stepUpArgs.length = 0;
   execFailure = null;
   askStepUp = false;
+  plannedMode = "owner";
+  planCalls.length = 0;
+  listCalls = 0;
 });
 
 afterEach(async () => {
@@ -248,6 +262,69 @@ describe("gmail send approvals", () => {
   });
 });
 
+describe("gmail for the person asking or a shared account", () => {
+  it("lets the Worker pick the account: no connections list, no connection id, the planned mode pinned", async () => {
+    plannedMode = "person_asking";
+
+    await quietly(() => new GmailCommands().list(undefined, undefined, undefined, undefined, undefined, true));
+    await quietly(() => send(undefined, { connector: null }));
+
+    expect(listCalls).toBe(0);
+    expect(planCalls).toEqual([{ provider: "google" }, { provider: "google" }]);
+    expect(execCalls).toHaveLength(2);
+    for (const call of execCalls) {
+      expect(call.connectorId).toBeUndefined();
+      expect(call.expectedMode).toBe("person_asking");
+      expect(call.useShared).toBeUndefined();
+    }
+  });
+
+  it("refuses --connector, which would name one of the owner's own connections", async () => {
+    plannedMode = "shared";
+
+    const error = await captureCloudError(() => new GmailCommands().read("msg_1", undefined, "conn_1", true));
+
+    expect(error.code).toBe("PAYLOAD_INVALID");
+    expect(error.message).toContain("without --connector");
+    expect(execCalls).toHaveLength(0);
+  });
+
+  it("passes --shared to the plan and to the exec", async () => {
+    plannedMode = "shared";
+
+    await quietly(() => send(undefined, { connector: null, shared: true }));
+
+    expect(planCalls).toEqual([{ provider: "google", useShared: true }]);
+    expect(execCalls[0]).toMatchObject({ capability: "gmail.message.send", expectedMode: "shared", useShared: true });
+    expect(execCalls[0]?.connectorId).toBeUndefined();
+  });
+
+  it("keeps the owner's default connection and pins owner mode on the owner's own turn", async () => {
+    listedConnections = [{ id: "mine", provider: "google", status: "active", requiresReauth: false }];
+
+    await quietly(() => new GmailCommands().read("msg_1", undefined, undefined, true));
+
+    expect(listCalls).toBe(1);
+    expect(execCalls[0]).toMatchObject({ connectorId: "mine", expectedMode: "owner" });
+  });
+
+  it("still brakes send without --execute before it looks at the turn", async () => {
+    const error = await quietly(async () =>
+      new GmailCommands()
+        .send("bob@example.com", undefined, undefined, "Oi", "Corpo", undefined, undefined, undefined, true)
+        .then(
+          () => null,
+          (e: unknown) => e,
+        ),
+    );
+
+    expect(error).toBeInstanceOf(ContractError);
+    expect((error as ContractError).exitCode).toBe(3);
+    expect(planCalls).toHaveLength(0);
+    expect(execCalls).toHaveLength(0);
+  });
+});
+
 describe("gmail send for an agent, through the host gateway", () => {
   const APPROVAL_ID = "3f2c8a1e-5b6d-4c7e-9f00-1a2b3c4d5e6f";
   const agentContext: ContextRecord = {
@@ -406,7 +483,7 @@ async function runAgentCli(
   }
 }
 
-function send(approval?: string) {
+function send(approval?: string, options: { connector?: string | null; shared?: boolean } = {}) {
   return new GmailCommands().send(
     "bob@example.com",
     undefined,
@@ -415,9 +492,10 @@ function send(approval?: string) {
     "Corpo",
     undefined,
     undefined,
-    "conn_1",
+    options.connector === null ? undefined : (options.connector ?? "conn_1"),
     true,
     approval,
+    options.shared,
     true,
   );
 }
@@ -433,6 +511,7 @@ function sendHuman() {
     undefined,
     "conn_1",
     false,
+    undefined,
     undefined,
     true,
   );

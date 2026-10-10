@@ -4,7 +4,7 @@ description: Connect your own Gmail to Ravi through the Console, and control who
 icon: plug
 ---
 
-At the end of this page your Gmail is connected to Ravi, your agent can read and send mail for you, and you know exactly who can make it do that: only you.
+At the end of this page your Gmail is connected to Ravi, your agent can read and send mail for you, and you know exactly who can make it do that: only you, unless you choose otherwise for an agent.
 
 ## What a connection is
 
@@ -12,7 +12,7 @@ A connection is one of your own accounts, such as your Gmail. It belongs to you,
 
 Your provider tokens stay in Ravi's connector service. Your computer, your agents and the Console web app never see them: they ask the connector service to run an action, and it answers with the result.
 
-Every connection starts in the mode **Only when I ask**: it serves your own requests and nobody else's. See [Who can use your accounts](#who-can-use-your-accounts).
+Every agent starts in the mode **Only when I ask**: it uses your accounts for your own requests and nobody else's. See [Who can use your accounts](#who-can-use-your-accounts). You can change that for each agent; see [Choose whose account an agent uses](#choose-whose-account-an-agent-uses).
 
 ## Connect your account
 
@@ -152,7 +152,66 @@ Reading tools start as **Always allow**. If you set one to **Needs approval**, `
 
 Your organization's owners and admins can set limits for everyone: turn writing off, or require approval for a tool. Settings above that limit are turned off in the menu, with a note. When the organization turns Google off, the agent says so and nothing runs.
 
-## Coming next
+## Choose whose account an agent uses
 
-- **The person asking.** Other people who talk to the same agent will be able to use their own connected accounts, after they allow it once.
-- **Shared accounts.** Organizations will be able to share one account with chosen agents and chats.
+Each agent has a mode for Google. You choose it per agent:
+
+| Mode | In plain words | Whose Gmail the agent uses |
+|---|---|---|
+| **Only when I ask** (`owner`, the default) | The agent uses your accounts for your own requests, and refuses everyone else. | Yours, only when you ask |
+| **The person asking** (`person-asking`) | Each person who writes to the agent uses their own Gmail, never yours. Each person allows the agent once. | The Gmail of the person writing |
+| **Shared account** (`shared`) | The agent uses one organization account that an admin shared with it. | The organization's shared account |
+
+```bash
+ravi connectors mode main google                                # show the current mode
+ravi connectors mode main google person-asking                  # shows the plan, exit 3
+ravi connectors mode main google person-asking --execute        # switches
+ravi connectors mode main google shared --execute
+ravi connectors mode main google owner                          # back to the default, at once
+```
+
+Only you change a mode, from your terminal or your own private chat with the agent. If anyone else asks the agent to change it, nothing changes and the agent says "Only <your name> can change that." If you ask in a group, nothing changes either, and the agent asks you to do it in your private chat. Switching to **The person asking** or **Shared account** lets other people's requests reach an account, so the command shows the plan and stops with exit code `3` until you add `--execute`. Going back to **Only when I ask** applies at once. `ravi settings set` and `ravi settings delete` do not change modes. When you delete an agent, its modes go with it: a new agent with the same id starts at **Only when I ask**.
+
+In every mode, your own requests, your cron jobs and your heartbeats keep using your own connection. `--connector <id>` names one of your own connections, so Gmail commands refuse it when the request uses someone else's account.
+
+### The person asking
+
+The agent uses the Gmail of the person writing to it, in their private chat with the agent:
+
+1. **They link their chat once**, like you did: the agent sends them a private link (it runs `ravi link` in their chat) and they approve it in the Console. Until then, the agent says: "To use your Gmail here, first link this chat to your Ravi account. Want me to send you a private link to do it?"
+2. **They allow the agent once.** The first time, the agent sends them a link in that private chat: "To use your Gmail here, approve it once: <link>". They open it signed in to the Console as themselves, choose which of their connections the agent may use, and approve. The link works only for them and expires after 24 hours. After that, the agent uses their Gmail whenever they ask, without asking again. A different agent asks once too.
+3. **They need a connected Gmail** in their own Console. If they have none, the agent says: "To use your Gmail here, connect it in Ravi Console first: <link>". The approval page also offers to connect one.
+
+Sending mail always asks the person first, in their own Console, whatever their own tool settings say. Their approvals go to them, not to you. They see the agents they allowed under **Agents that can use your account** on their **Connectors** page, and can remove them there.
+
+Your own requests, your cron jobs and your heartbeats keep using your own connection. Groups stay refused: the agent says "I can only use your Gmail in a direct chat with me. Ask me there."
+
+It works only in a private chat that has a session of its own. If the agent keeps several people's chats in one session (the `main` DM scope, a route that sends several chats to one session, or a chat attached to another person's session), what one person's Gmail returns could be read by the others, so the agent refuses: "I can't use your Gmail in this conversation." Give each person their own session (DM scope `per-peer`, the default) to allow it.
+
+### Shared account
+
+An organization owner or admin sets up the shared account in the Console: they allow shared accounts for the organization, connect an organization account, and share it with this agent on this computer, choosing where it may be used: private chats, groups, or both. The member who manages that account approves what it sends. Then you turn the mode on:
+
+```bash
+ravi connectors mode main google shared --execute
+```
+
+From then on, people writing to the agent use the shared account, in the chats the admin chose, and so does a routine that posts into one of their chats. A shared account starts with reading blocked, except free or busy time, until an admin allows it, and sending always needs the manager's approval. Where it is not shared, the agent says: "I can't use a shared Gmail account in this conversation." If the admin disconnects or pauses that account, the agent says: "I can't use the shared Gmail account right now."
+
+Your own requests, your cron jobs and your heartbeats still use your own connection. To use the shared account for one of your own requests, ask the agent in your private chat with it (or in a group the account is shared for) to add `--shared` to the Gmail command. It works only there: the shared account is shared for chats, so `--shared` from your terminal, from `ravi sessions send` or in a routine that posts nowhere stops with exit code `2`.
+
+### Groups
+
+Personal accounts never answer in a group, where other people would read the answer: not yours in **Only when I ask**, and not the person's in **The person asking**. The same goes for a private chat whose session other people share. Only a shared account can be used in a group, and only when the admin shared it for groups.
+
+### What the agent is told
+
+These requests stop with exit code `3` and tell the agent what to say:
+
+| Code | What happened |
+|---|---|
+| `CONNECTOR_CONSENT_REQUIRED` | The person asking has not allowed this agent yet. The answer carries their approval link as `consentLink`. |
+| `CONNECTOR_NOT_LINKED` | The person asking has not linked their chat to a Ravi account (`ravi link`), or their account is not in this organization. |
+| `CONNECTOR_CONNECTION_REQUIRED` | The person asking has no Gmail connected, or the shared account was disconnected or paused. When it is your own connection that is missing, the code is the same but the exit is `1`. |
+| `CONNECTOR_FORBIDDEN` | The agent is in **Shared account** mode, but no account is shared with it for this conversation. |
+| `CONNECTOR_GROUP_BLOCKED` | A personal account was asked for in a group, or in a private chat whose session other people share. |

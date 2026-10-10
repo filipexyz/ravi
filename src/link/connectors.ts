@@ -7,6 +7,11 @@
  * back to it for somebody else's turn. Then each helper does one Link or
  * Console call, so command-layer code stays focused on UX and exits with
  * consistent errors when the bearer is missing or expired.
+ *
+ * An exec also applies the executing agent's mode (`connector-mode.ts`): a
+ * contact's turn of an agent in `person_asking` or `shared` mode goes to
+ * `POST /cli/agent-exec`, where the Worker picks the person's own account or
+ * the shared one. The operator's own turns keep `POST /cli/exec/:id`.
  */
 
 import { ConsoleApiClient, getMeWithAutoRefresh } from "../cloud-auth/client.js";
@@ -18,17 +23,22 @@ import {
 import { CloudAuthError, isRetryableCloudAuthError } from "../cloud-auth/errors.js";
 import { deleteCloudCredentials, readCloudCredentials, writeCloudCredentials } from "../cloud-auth/storage.js";
 import { DEFAULT_CONSOLE_URL, type CloudCredentials } from "../cloud-auth/types.js";
+import { sanitizePublicValue } from "../cli/redaction.js";
 
-import { APPROVAL_ID_PATTERN, LinkApiClient, LinkStepUpRequiredError } from "./client.js";
+import { APPROVAL_ID_PATTERN, CONSENT_REF_PATTERN, LinkApiClient, LinkStepUpRequiredError } from "./client.js";
+import type { ConnectorUseMode } from "./connector-mode.js";
 import {
+  buildAgentExecContext,
   buildExecContext,
   encodeExecContextHeader,
   EXEC_CONTEXT_HEADER,
+  type ConnectorExecRoute,
   type ConnectorTurn,
   type ConnectorTurnDeps,
 } from "./connector-turn.js";
 
 export const CONSOLE_CONNECT_START_PATH = "/api/cli/connectors/connect/start";
+export const AGENT_EXEC_PATH = "/cli/agent-exec";
 
 /** Header naming the owner's approval when an action is run again after it. */
 export const APPROVAL_HEADER = "X-Ravi-Approval";
@@ -106,16 +116,25 @@ export interface AuthenticatedLinkContext {
   consoleClient: ConsoleApiClient;
   accessToken: string;
   turn: ConnectorTurn;
+  /** Where an exec goes (exec only). */
+  route?: ConnectorExecRoute;
   consoleUrl: string;
   userEmail: string | null;
   ownerName: string | null;
 }
 
-async function authenticate(deps: ConnectorHelperDeps): Promise<AuthenticatedLinkContext> {
+async function authenticate(
+  deps: ConnectorHelperDeps,
+  exec?: { provider: string; useShared?: boolean },
+): Promise<AuthenticatedLinkContext> {
   const read = deps.readCredentials ?? readCloudCredentials;
   const write = deps.writeCredentials ?? writeCloudCredentials;
   const remove = deps.deleteCredentials ? () => deps.deleteCredentials?.() : () => deleteConnectorSession();
-  const { turn, credentials, activeUserId } = resolveConnectorCloudCredentials({ readActive: read, turn: deps.turn });
+  const { turn, route, credentials, activeUserId } = resolveConnectorCloudCredentials({
+    readActive: read,
+    turn: deps.turn,
+    ...(exec ? { exec } : {}),
+  });
   const consoleClient = deps.consoleClient ?? new ConsoleApiClient({ consoleUrl: credentials.consoleUrl });
   const { me, credentials: fresh } = await getMeWithAutoRefresh({
     client: consoleClient,
@@ -131,6 +150,7 @@ async function authenticate(deps: ConnectorHelperDeps): Promise<AuthenticatedLin
     consoleClient,
     accessToken: fresh.accessToken,
     turn,
+    ...(route ? { route } : {}),
     consoleUrl: fresh.consoleUrl,
     userEmail: stringValue(me?.user?.email) ?? stringValue(fresh.user?.email),
     ownerName:
@@ -229,42 +249,99 @@ export async function revokeConnector(id: string, deps: ConnectorHelperDeps = {}
 }
 
 export interface ExecCapabilityOptions {
-  connectorId: string;
+  /** The operator's own connection; required when the turn uses the owner's account. */
+  connectorId?: string;
   capability: string;
   parameters: unknown;
   stepUpToken?: string;
-  /** The owner's approval of this exact action, from an earlier approval answer. */
+  /** The account owner's approval of this exact action, from an earlier approval answer. */
   approvalId?: string;
+  /** The owner asks for the agent's shared account on their own turn (`--shared`). */
+  useShared?: boolean;
+  /**
+   * The mode the caller planned for (`resolveConnectorExecPlan`). When the
+   * turn resolves to another one now, nothing is sent.
+   */
+  expectedMode?: ConnectorUseMode;
+}
+
+/**
+ * Where an exec of `provider` would go for the current turn, without any
+ * remote call: `owner` (the operator's own connection, which the caller
+ * picks), or `person_asking` / `shared` (agent exec, where the Worker picks
+ * the connection). A turn that may not use any account throws here (exit 3).
+ */
+export function resolveConnectorExecPlan(
+  options: { provider: string; useShared?: boolean },
+  deps: ConnectorHelperDeps = {},
+): { mode: ConnectorUseMode; agentId: string | null } {
+  const { route } = resolveConnectorCloudCredentials({
+    readActive: deps.readCredentials ?? readCloudCredentials,
+    turn: deps.turn,
+    exec: options,
+  });
+  return { mode: route?.mode ?? "owner", agentId: route?.turn.agentId ?? null };
 }
 
 export async function execCapability(
   options: ExecCapabilityOptions,
   deps: ConnectorHelperDeps = {},
 ): Promise<ExecResult> {
-  const ctx = await authenticate(deps);
-  const headers: Record<string, string> = {
-    [EXEC_CONTEXT_HEADER]: encodeExecContextHeader(buildExecContext(ctx.turn)),
+  const provider = providerForCapability(options.capability);
+  const ctx = await authenticate(deps, { provider, ...(options.useShared ? { useShared: true } : {}) });
+  const mode = ctx.route?.mode ?? "owner";
+  if (options.expectedMode && options.expectedMode !== mode) {
+    throw new CloudAuthError(
+      "CONFLICT",
+      "The agent's connector mode changed while this command ran. Run the same command again.",
+    );
+  }
+  const answer = {
+    consoleUrl: ctx.consoleUrl,
+    ownerName: ctx.ownerName,
+    service: serviceForCapability(options.capability),
+    approvalId: options.approvalId,
+  };
+  const extraHeaders: Record<string, string> = {
     ...(options.stepUpToken ? { "X-Ravi-Step-Up": options.stepUpToken } : {}),
     ...(options.approvalId ? { [APPROVAL_HEADER]: options.approvalId } : {}),
   };
+  if (mode !== "owner") {
+    const turn = ctx.route?.turn ?? ctx.turn;
+    try {
+      return await ctx.link.request<ExecResult>(
+        "POST",
+        AGENT_EXEC_PATH,
+        ctx.accessToken,
+        { provider, capability: options.capability, parameters: options.parameters, mode },
+        {
+          headers: {
+            [EXEC_CONTEXT_HEADER]: encodeExecContextHeader(buildAgentExecContext(turn), { keepAgentId: true }),
+            ...extraHeaders,
+          },
+        },
+      );
+    } catch (error) {
+      throw connectorAnswerError(error, { ...answer, audience: mode, agentId: turn.agentId ?? null });
+    }
+  }
+  const connectorId = options.connectorId?.trim();
+  if (!connectorId) {
+    throw new CloudAuthError("PAYLOAD_INVALID", "--connector is required to use your own connection here.");
+  }
   try {
     return await ctx.link.request<ExecResult>(
       "POST",
-      `/cli/exec/${encodeURIComponent(options.connectorId)}`,
+      `/cli/exec/${encodeURIComponent(connectorId)}`,
       ctx.accessToken,
       {
         capability: options.capability,
         parameters: options.parameters,
       },
-      { headers },
+      { headers: { [EXEC_CONTEXT_HEADER]: encodeExecContextHeader(buildExecContext(ctx.turn)), ...extraHeaders } },
     );
   } catch (error) {
-    throw connectorAnswerError(error, {
-      consoleUrl: ctx.consoleUrl,
-      ownerName: ctx.ownerName,
-      service: serviceForCapability(options.capability),
-      approvalId: options.approvalId,
-    });
+    throw connectorAnswerError(error, answer);
   }
 }
 
@@ -363,12 +440,15 @@ function isApprovalAnswer(error: CloudAuthError): boolean {
  * A Link or Console answer that tells the agent what to say: the connector
  * codes the person can act on get local copy (`source: "connector-turn"`)
  * with the line to send. Anything else is returned as it came.
+ *
+ * `audience` is whose account the call ran on: the operator's own (`owner`,
+ * the default), the person asking's (`person_asking`: lines go to them in
+ * their own direct chat), or a shared one (`shared`: the person in the chat
+ * cannot fix the account, so lines only say what happened).
  */
-export function connectorAnswerError(
-  error: unknown,
-  input: { consoleUrl?: string | null; ownerName?: string | null; service?: string; approvalId?: string } = {},
-): unknown {
+export function connectorAnswerError(error: unknown, input: ConnectorAnswerInput = {}): unknown {
   if (!(error instanceof CloudAuthError)) return error;
+  const audience = input.audience ?? "owner";
   switch (error.code) {
     case "CONNECTOR_REAUTH_REQUIRED":
       return connectorReconnectError({ ...input, status: error.status });
@@ -389,44 +469,119 @@ export function connectorAnswerError(
         status: error.status,
         readOnly: error.details?.accessMode === "read_only",
       });
+    case "CONNECTOR_CONSENT_REQUIRED":
+      return audience === "person_asking" ? connectorConsentError(error, input) : error;
+    case "CONNECTOR_NOT_LINKED":
+      return audience === "person_asking"
+        ? connectorNotLinkedError({ ...input, status: error.status, reason: stringValue(error.details?.reason) })
+        : error;
+    case "CONNECTOR_CONNECTION_REQUIRED":
+      return audience === "person_asking"
+        ? connectorConnectionRequiredError({ ...input, status: error.status })
+        : error;
+    case "CONNECTOR_FORBIDDEN":
+      return audience === "shared" ? connectorSharedUnavailableError({ ...input, status: error.status }) : error;
+    case "CONNECTOR_GROUP_BLOCKED":
+      return audience === "owner" ? error : connectorAgentGroupBlockedError({ ...input, status: error.status });
+    case "SERVER_UNAVAILABLE":
+      // Not an outage: the shared account was revoked or paused, and every
+      // retry would get the same answer until an admin fixes it.
+      return audience === "shared" && error.details?.reason === "shared_connection_unavailable"
+        ? connectorSharedConnectionUnavailableError({ ...input, status: error.status })
+        : error;
     default:
       return error;
   }
 }
 
+/** Whose account an answer is about, and what the lines say. */
+export interface ConnectorAnswerInput {
+  consoleUrl?: string | null;
+  ownerName?: string | null;
+  service?: string;
+  approvalId?: string;
+  audience?: ConnectorUseMode;
+  /** The executing agent (agent exec). */
+  agentId?: string | null;
+}
+
+/** Who holds the account, and where lines about it go. */
+function accountHolder(input: Pick<ConnectorAnswerInput, "ownerName" | "audience">): {
+  /** "Luis", "the account owner", "the person asking". */
+  label: string;
+  /** Instruction for where the line goes, with a colon. */
+  tell: string;
+  replyTo: "owner_privately" | "same_chat";
+} {
+  if (input.audience === "person_asking") {
+    return {
+      label: "the person asking",
+      tell: "Tell them in this direct chat, never in a group:",
+      replyTo: "same_chat",
+    };
+  }
+  if (input.audience === "shared") {
+    return { label: "the manager of the shared account", tell: "Reply:", replyTo: "same_chat" };
+  }
+  const label = stringValue(input.ownerName) ?? "the account owner";
+  return { label, tell: `Tell ${label} privately, never in a group:`, replyTo: "owner_privately" };
+}
+
+function capitalize(value: string): string {
+  return value ? `${value[0]?.toUpperCase() ?? ""}${value.slice(1)}` : value;
+}
+
+function statusOption(status: number | undefined): { status?: number } {
+  return status !== undefined ? { status } : {};
+}
+
 /**
- * "The owner must approve this action first": the approval page goes to the
- * owner privately, and the same command runs again with `--approval <id>`.
+ * "The account owner must approve this action first": the approval page goes
+ * to them privately, and the same command runs again with `--approval <id>`.
  * The page is rebuilt from the Console this CLI is logged in to. Without an
- * approval id the Link answer keeps its catalog copy.
+ * approval id the Link answer keeps its catalog copy. On a shared account the
+ * manager approves in the Console, so the person in the chat only hears that
+ * it waits for an approval.
  */
-export function connectorApprovalError(
-  error: CloudAuthError,
-  input: { consoleUrl?: string | null; ownerName?: string | null; service?: string } = {},
-): CloudAuthError {
+export function connectorApprovalError(error: CloudAuthError, input: ConnectorAnswerInput = {}): CloudAuthError {
   const approvalId = stringValue(error.details?.approvalId);
   if (!approvalId || !APPROVAL_ID_PATTERN.test(approvalId)) return error;
   const service = input.service ?? "Gmail";
   const consoleUrl = consoleBase(input.consoleUrl);
   const approvalLink = `${consoleUrl}/connectors/approvals/${approvalId}`;
-  const ownerName = stringValue(input.ownerName);
   const retryWith = `--approval ${approvalId}`;
-  const chatLine = `Please approve this ${service} action: ${approvalLink}`;
-  const chatLinePt = `Aprove esta ação do ${service}: ${approvalLink}`;
-  const quotedLine = `Please approve this ${service} action: ${withoutScheme(approvalLink)}`;
   const expiresAt = stringValue(error.details?.expiresAt);
-  const message =
-    error.code === "CONNECTOR_APPROVAL_PENDING"
+  const pending = error.code === "CONNECTOR_APPROVAL_PENDING";
+  const holder = accountHolder(input);
+  let chatLine = `Please approve this ${service} action: ${approvalLink}`;
+  let chatLinePt = `Aprove esta ação do ${service}: ${approvalLink}`;
+  const quotedLine = `Please approve this ${service} action: ${withoutScheme(approvalLink)}`;
+  let message: string;
+  if (input.audience === "shared") {
+    chatLine = "This needs approval from the manager of the shared account first. I'll do it once it's approved.";
+    chatLinePt =
+      "Isso precisa ser aprovado antes por quem gerencia a conta compartilhada. Faço assim que for aprovado.";
+    message = pending
+      ? `The approval for this ${service} action is still waiting for the manager of the shared account (Ravi Console, Connectors, Waiting for you). Once it is approved, run the same command again with ${retryWith}.`
+      : `The manager of the shared ${service} account must approve this action first; they see it in Ravi Console under Connectors, Waiting for you. Reply: "${chatLine}" Once it is approved, run the same command again with ${retryWith}.`;
+  } else if (input.audience === "person_asking") {
+    message = pending
+      ? `The approval for this ${service} action is still waiting for the person asking. Once they approve, run the same command again with ${retryWith}. If they have not seen it, send them the link again in this direct chat: "${quotedLine}"`
+      : `The person asking must approve this ${service} action first, because it runs on their own account. Send them the link in this direct chat, never in a group: "${quotedLine}", then run the same command again with ${retryWith} once they approve.`;
+  } else {
+    const ownerName = stringValue(input.ownerName);
+    message = pending
       ? `The approval for this ${service} action is still waiting for ${ownerName ?? "the account owner"}. Once they approve, run the same command again with ${retryWith}. If they have not seen it, send them the link again privately, never in a group: "${quotedLine}"`
       : `${ownerName ?? "The account owner"} must approve this ${service} action first. Send them the link privately, never in a group: "${quotedLine}", then run the same command again with ${retryWith} once they approve.`;
+  }
   return new CloudAuthError(error.code, message, {
     exitCode: 3,
-    ...(error.status !== undefined ? { status: error.status } : {}),
+    ...statusOption(error.status),
     details: {
       source: "connector-turn",
       chatLine,
       chatLinePt,
-      replyTo: "owner_privately",
+      replyTo: holder.replyTo,
       approvalId,
       approvalLink,
       retryWith,
@@ -435,13 +590,13 @@ export function connectorApprovalError(
   });
 }
 
-/** The owner declined the action: it is not done, and the approval is not retried. */
+/** The account holder declined the action: it is not done, and the approval is not retried. */
 export function connectorApprovalDeniedError(
-  input: { ownerName?: string | null; service?: string; status?: number; atTerminal?: boolean } = {},
+  input: ConnectorAnswerInput & { status?: number; atTerminal?: boolean } = {},
 ): CloudAuthError {
   const service = input.service ?? "Gmail";
-  const owner = stringValue(input.ownerName) ?? "The account owner";
-  const options = { exitCode: 3, ...(input.status !== undefined ? { status: input.status } : {}) };
+  const holder = accountHolder(input);
+  const options = { exitCode: 3, ...statusOption(input.status) };
   if (input.atTerminal) {
     return new CloudAuthError(
       "CONNECTOR_APPROVAL_DENIED",
@@ -453,7 +608,7 @@ export function connectorApprovalDeniedError(
   const chatLinePt = "Certo, não fiz: a aprovação foi recusada.";
   return new CloudAuthError(
     "CONNECTOR_APPROVAL_DENIED",
-    `${owner} declined this ${service} action in Ravi Console, so it was not done. Do not run it again with this approval. Reply: "${chatLine}"`,
+    `${capitalize(holder.label)} declined this ${service} action in Ravi Console, so it was not done. Do not run it again with this approval. Reply: "${chatLine}"`,
     { ...options, details: { source: "connector-turn", chatLine, chatLinePt, replyTo: "same_chat" } },
   );
 }
@@ -463,17 +618,14 @@ export function connectorApprovalDeniedError(
  * the command changed). A new run without `--approval` asks again.
  */
 export function connectorApprovalInvalidError(
-  input: {
-    approvalId?: string;
-    ownerName?: string | null;
-    service?: string;
+  input: ConnectorAnswerInput & {
     status?: number;
     reason?: "expired" | "used" | "invalid" | "mismatch";
     atTerminal?: boolean;
   } = {},
 ): CloudAuthError {
   const service = input.service ?? "Gmail";
-  const owner = stringValue(input.ownerName) ?? "the account owner";
+  const holder = accountHolder(input);
   const approval =
     input.approvalId && APPROVAL_ID_PATTERN.test(input.approvalId)
       ? `The approval ${input.approvalId}`
@@ -486,85 +638,267 @@ export function connectorApprovalInvalidError(
         : "does not cover this action: it expired, was already used, or the command changed";
   const next = input.atTerminal
     ? "Run the same command again to ask for a new approval."
-    : `Run the same command again without --approval to ask ${owner} for a new approval.`;
+    : `Run the same command again without --approval to ask ${holder.label} for a new approval.`;
   return new CloudAuthError(
     "CONNECTOR_APPROVAL_INVALID",
     `${approval} ${why}, so this ${service} action was not done. ${next}`,
     {
       exitCode: 1,
-      ...(input.status !== undefined ? { status: input.status } : {}),
+      ...statusOption(input.status),
       details: { source: "connector-turn" },
     },
   );
 }
 
-/** The owner or the organization blocked this tool in the Console. */
-export function connectorToolBlockedError(
-  input: { consoleUrl?: string | null; ownerName?: string | null; service?: string; status?: number } = {},
-): CloudAuthError {
+/** The account holder or the organization blocked this tool in the Console. */
+export function connectorToolBlockedError(input: ConnectorAnswerInput & { status?: number } = {}): CloudAuthError {
   const service = input.service ?? "Gmail";
+  const options = { exitCode: 3, ...statusOption(input.status) };
+  if (input.audience === "shared") {
+    const chatLine = "I can't do that with the shared account: this action is blocked in Ravi Console.";
+    const chatLinePt = "Não posso fazer isso com a conta compartilhada: esta ação está bloqueada no Ravi Console.";
+    return new CloudAuthError(
+      "CONNECTOR_TOOL_BLOCKED",
+      `This ${service} action is blocked for the shared account in Ravi Console, by its manager or by the organization, so it was not run. Do not retry it with another flag. Reply: "${chatLine}"`,
+      { ...options, details: { source: "connector-turn", chatLine, chatLinePt, replyTo: "same_chat" } },
+    );
+  }
   const link = `${consoleBase(input.consoleUrl)}/connectors`;
-  const owner = stringValue(input.ownerName) ?? "the account owner";
+  const holder = accountHolder(input);
   const chatLine = `I can't do that: this ${service} action is blocked in your Ravi Console settings. You can review it under Connectors: ${link}`;
   const chatLinePt = `Não posso fazer isso: esta ação do ${service} está bloqueada nas suas configurações do Ravi Console. Você pode revisar em Connectors: ${link}`;
   return new CloudAuthError(
     "CONNECTOR_TOOL_BLOCKED",
-    `This ${service} action is blocked in Ravi Console, by ${owner} or by the organization, so it was not run. Do not retry it with another flag or connection. Tell ${owner} privately: "${chatLine.replace(link, withoutScheme(link))}"`,
+    `This ${service} action is blocked in Ravi Console, by ${holder.label} or by the organization, so it was not run. Do not retry it with another flag or connection. ${holder.tell} "${chatLine.replace(link, withoutScheme(link))}"`,
     {
-      exitCode: 3,
-      ...(input.status !== undefined ? { status: input.status } : {}),
-      details: { source: "connector-turn", chatLine, chatLinePt, replyTo: "owner_privately", reconnectLink: link },
+      ...options,
+      details: { source: "connector-turn", chatLine, chatLinePt, replyTo: holder.replyTo, reconnectLink: link },
     },
   );
 }
 
 /** The organization turned the provider off: only an organization owner or admin can turn it back on. */
-export function connectorDisabledByOrgError(
-  input: { ownerName?: string | null; service?: string; status?: number } = {},
-): CloudAuthError {
-  const owner = stringValue(input.ownerName) ?? "the account owner";
+export function connectorDisabledByOrgError(input: ConnectorAnswerInput & { status?: number } = {}): CloudAuthError {
   const service = input.service ?? "Gmail";
+  const options = { exitCode: 3, ...statusOption(input.status) };
+  if (input.audience === "shared") {
+    const chatLine = "I can't use the shared Google account right now.";
+    const chatLinePt = "Não consigo usar a conta compartilhada do Google agora.";
+    return new CloudAuthError(
+      "CONNECTOR_DISABLED_BY_ORG",
+      `The organization turned off Google connections in Ravi Console, so the shared ${service} account cannot be used. Do not retry. Reply: "${chatLine}"`,
+      { ...options, details: { source: "connector-turn", chatLine, chatLinePt, replyTo: "same_chat" } },
+    );
+  }
+  const holder = accountHolder(input);
   const chatLine =
     "Your organization turned off Google connections in Ravi Console. An organization owner or admin can turn them back on.";
   const chatLinePt =
     "Sua organização desligou as conexões do Google no Ravi Console. Um dono ou admin da organização pode religar.";
+  const whose = input.audience === "person_asking" ? "the person asking's" : `${holder.label}'s`;
   return new CloudAuthError(
     "CONNECTOR_DISABLED_BY_ORG",
-    `The organization turned off Google connections in Ravi Console, so ${owner}'s ${service} cannot be used. Do not retry. Tell ${owner} privately: "${chatLine}"`,
-    {
-      exitCode: 3,
-      ...(input.status !== undefined ? { status: input.status } : {}),
-      details: { source: "connector-turn", chatLine, chatLinePt, replyTo: "owner_privately" },
-    },
+    `The organization turned off Google connections in Ravi Console, so ${whose} ${service} cannot be used. Do not retry. ${holder.tell} "${chatLine}"`,
+    { ...options, details: { source: "connector-turn", chatLine, chatLinePt, replyTo: holder.replyTo } },
   );
 }
 
 /** The connection is read only, or misses a permission the action needs. */
 export function connectorPermissionError(
-  input: {
-    consoleUrl?: string | null;
-    ownerName?: string | null;
-    service?: string;
-    status?: number;
-    readOnly?: boolean;
-  } = {},
+  input: ConnectorAnswerInput & { status?: number; readOnly?: boolean } = {},
 ): CloudAuthError {
   const service = input.service ?? "Gmail";
+  const why = input.readOnly ? "is read only" : "is missing a permission this action needs";
+  if (input.audience === "shared") {
+    const chatLine = `The shared ${service} account doesn't allow that.`;
+    const chatLinePt = `A conta compartilhada do ${service} não permite isso.`;
+    return new CloudAuthError(
+      "CONNECTOR_PERMISSION_REQUIRED",
+      `The shared ${service} account ${why}, so it was not run; its manager can change that in Ravi Console. Do not retry as is. Reply: "${chatLine}"`,
+      {
+        ...statusOption(input.status),
+        details: { source: "connector-turn", chatLine, chatLinePt, replyTo: "same_chat" },
+      },
+    );
+  }
   const link = `${consoleBase(input.consoleUrl)}/connectors`;
-  const owner = stringValue(input.ownerName) ?? "the account owner";
+  const holder = accountHolder(input);
   const chatLine = input.readOnly
     ? `Your ${service} connection is read only, so I can't do that. To allow it, choose Allow writing in Ravi Console: ${link}`
     : `Your ${service} connection is missing a permission this needs. Reconnect it in Ravi Console: ${link}`;
   const chatLinePt = input.readOnly
     ? `Sua conexão do ${service} é só leitura, então não posso fazer isso. Para permitir, escolha Allow writing no Ravi Console: ${link}`
     : `Falta uma permissão na sua conexão do ${service} para isso. Reconecte no Ravi Console: ${link}`;
-  const why = input.readOnly ? "is read only" : "is missing a permission this action needs";
+  const whose =
+    input.audience === "person_asking"
+      ? "The person asking's"
+      : holder.label === "the account owner"
+        ? "The"
+        : `${holder.label}'s`;
   return new CloudAuthError(
     "CONNECTOR_PERMISSION_REQUIRED",
-    `${owner === "the account owner" ? "The" : `${owner}'s`} ${service} connection ${why}, so it was not run. Do not retry as is. Tell ${owner} privately: "${chatLine.replace(link, withoutScheme(link))}"`,
+    `${whose} ${service} connection ${why}, so it was not run. Do not retry as is. ${holder.tell} "${chatLine.replace(link, withoutScheme(link))}"`,
     {
-      ...(input.status !== undefined ? { status: input.status } : {}),
-      details: { source: "connector-turn", chatLine, chatLinePt, replyTo: "owner_privately", reconnectLink: link },
+      ...statusOption(input.status),
+      details: { source: "connector-turn", chatLine, chatLinePt, replyTo: holder.replyTo, reconnectLink: link },
+    },
+  );
+}
+
+/**
+ * "The person asking" must allow this agent once (agent exec, Link
+ * `connector_consent_required`). The consent page is rebuilt from the
+ * Console of the active login with the token of the page Link named; it goes
+ * only to that person, in their own direct chat, and carries their consent
+ * link, so the message refers to the chat line instead of quoting it.
+ */
+export function connectorConsentError(error: CloudAuthError, input: ConnectorAnswerInput = {}): CloudAuthError {
+  const service = input.service ?? "Gmail";
+  const agent = stringValue(input.agentId);
+  const who = agent ? `agent ${agent}` : "this agent";
+  const ref = stringValue(error.details?.consentRef);
+  const consentLink =
+    ref && CONSENT_REF_PATTERN.test(ref) ? `${consoleBase(input.consoleUrl)}/connectors/consent/${ref}` : null;
+  const chatLine = consentLink ? `To use your ${service} here, approve it once: ${consentLink}` : null;
+  const options = { exitCode: 3, ...statusOption(error.status) };
+  // A link the public sanitizer would change cannot be sent; asking again
+  // issues a new one.
+  if (!consentLink || !chatLine || sanitizePublicValue(chatLine, "chatLine") !== chatLine) {
+    return new CloudAuthError(
+      "CONNECTOR_CONSENT_REQUIRED",
+      `The person asking must allow ${who} to use their ${service} first, but no usable consent link came back. Run the same command again to get a new one.`,
+      { ...options, details: { source: "connector-turn" } },
+    );
+  }
+  const chatLinePt = `Para eu usar o seu ${service} aqui, aprove uma vez: ${consentLink}`;
+  const expiresAt = stringValue(error.details?.expiresAt);
+  return new CloudAuthError(
+    "CONNECTOR_CONSENT_REQUIRED",
+    `The person asking has not allowed ${who} to use their own ${service} yet. Send them the chat line (it carries their consent link) in this direct chat only, never in a group or to anyone else, then run the same command again after they approve. They approve once for this agent.`,
+    {
+      ...options,
+      details: {
+        source: "connector-turn",
+        chatLine,
+        chatLinePt,
+        replyTo: "same_chat",
+        consentLink,
+        ...(expiresAt ? { expiresAt } : {}),
+      },
+    },
+  );
+}
+
+/**
+ * The person asking has not linked this chat to a Console user (or that user
+ * is not a member of the organization), so their own account cannot be used.
+ */
+export function connectorNotLinkedError(
+  input: ConnectorAnswerInput & { status?: number; reason?: string | null } = {},
+): CloudAuthError {
+  const service = input.service ?? "Gmail";
+  const options = { exitCode: 3, ...statusOption(input.status) };
+  if (input.reason === "speaker_not_member") {
+    const chatLine = `I can't use your ${service} here: your Ravi account is not part of this organization.`;
+    const chatLinePt = `Não posso usar o seu ${service} aqui: sua conta Ravi não faz parte desta organização.`;
+    return new CloudAuthError(
+      "CONNECTOR_NOT_LINKED",
+      `The person asking is linked to a Console user who is not an active member of this organization, so their own ${service} cannot be used here. Do not retry. Reply: "${chatLine}"`,
+      { ...options, details: { source: "connector-turn", chatLine, chatLinePt, replyTo: "same_chat" } },
+    );
+  }
+  const chatLine = `To use your ${service} here, first link this chat to your Ravi account. Want me to send you a private link to do it?`;
+  const chatLinePt = `Para eu usar o seu ${service} aqui, primeiro vincule este chat à sua conta Ravi. Quer que eu te mande um link privado para isso?`;
+  return new CloudAuthError(
+    "CONNECTOR_NOT_LINKED",
+    `The person asking has not linked this chat to a Ravi Console account, so their own ${service} cannot be used yet. Reply: "${chatLine}" If they say yes, run \`ravi link\` in their turn (it sends them the private link); once they approve, run the same command again.`,
+    { ...options, details: { source: "connector-turn", chatLine, chatLinePt, replyTo: "same_chat" } },
+  );
+}
+
+/** The person asking allowed the agent but has no account connected: they connect one in their own Console. */
+export function connectorConnectionRequiredError(
+  input: ConnectorAnswerInput & { status?: number } = {},
+): CloudAuthError {
+  const service = input.service ?? "Gmail";
+  const link = `${consoleBase(input.consoleUrl)}/connectors`;
+  const chatLine = `To use your ${service} here, connect it in Ravi Console first: ${link}`;
+  const chatLinePt = `Para eu usar o seu ${service} aqui, conecte ele no Ravi Console primeiro: ${link}`;
+  return new CloudAuthError(
+    "CONNECTOR_CONNECTION_REQUIRED",
+    `The person asking has no ${service} account connected in Ravi Console. Ask them to connect one, in this direct chat: "${chatLine.replace(link, withoutScheme(link))}", then run the same command again.`,
+    {
+      exitCode: 3,
+      ...statusOption(input.status),
+      details: { source: "connector-turn", chatLine, chatLinePt, replyTo: "same_chat", reconnectLink: link },
+    },
+  );
+}
+
+/** Shared mode, but no shared account serves this agent in this conversation. */
+export function connectorSharedUnavailableError(
+  input: ConnectorAnswerInput & { status?: number } = {},
+): CloudAuthError {
+  const service = input.service ?? "Gmail";
+  const agent = stringValue(input.agentId);
+  const chatLine = `I can't use a shared ${service} account in this conversation.`;
+  const chatLinePt = `Não posso usar uma conta compartilhada do ${service} nesta conversa.`;
+  return new CloudAuthError(
+    "CONNECTOR_FORBIDDEN",
+    `${agent ? `Agent ${agent}` : "This agent"} is set to use a shared Google account, but none is shared with it for this conversation: an organization owner or admin shares one, and chooses its conversations, in Ravi Console. Do not retry. Reply: "${chatLine}"`,
+    {
+      exitCode: 3,
+      ...statusOption(input.status),
+      details: { source: "connector-turn", chatLine, chatLinePt, replyTo: "same_chat" },
+    },
+  );
+}
+
+/**
+ * Shared mode, and a grant exists, but the organization account it names was
+ * disconnected or paused (Link 503 `connector_unavailable`). Only an
+ * organization owner or admin can fix it, so the agent does not retry.
+ */
+export function connectorSharedConnectionUnavailableError(
+  input: ConnectorAnswerInput & { status?: number } = {},
+): CloudAuthError {
+  const service = input.service ?? "Gmail";
+  const agent = stringValue(input.agentId);
+  const chatLine = `I can't use the shared ${service} account right now.`;
+  const chatLinePt = `Não consigo usar a conta compartilhada do ${service} agora.`;
+  return new CloudAuthError(
+    "CONNECTOR_CONNECTION_REQUIRED",
+    `The shared Google account of ${agent ? `agent ${agent}` : "this agent"} was disconnected or paused in Ravi Console; an organization owner or admin must reconnect it or share another one. Do not retry. Reply: "${chatLine}"`,
+    {
+      exitCode: 3,
+      retryable: false,
+      ...statusOption(input.status),
+      details: { source: "connector-turn", chatLine, chatLinePt, replyTo: "same_chat" },
+    },
+  );
+}
+
+/** Link refused agent exec in a group (a shared account not shared for groups). */
+export function connectorAgentGroupBlockedError(
+  input: ConnectorAnswerInput & { status?: number } = {},
+): CloudAuthError {
+  const service = input.service ?? "Gmail";
+  const shared = input.audience === "shared";
+  const chatLine = shared
+    ? "I can't use the shared account in this group."
+    : `I can only use your ${service} in a direct chat with me. Ask me there.`;
+  const chatLinePt = shared
+    ? "Não posso usar a conta compartilhada neste grupo."
+    : `Só posso usar o seu ${service} numa conversa direta comigo. Me peça por lá.`;
+  return new CloudAuthError(
+    "CONNECTOR_GROUP_BLOCKED",
+    shared
+      ? `The shared ${service} account of this agent is not shared for group chats. Do not retry. Reply in the group: "${chatLine}"`
+      : `This agent uses the ${service} of the person asking, but never in a group chat. Reply in the group: "${chatLine}"`,
+    {
+      exitCode: 3,
+      ...statusOption(input.status),
+      details: { source: "connector-turn", chatLine, chatLinePt, replyTo: "same_chat" },
     },
   );
 }
@@ -642,28 +976,38 @@ export function pickDefaultConnector(
 }
 
 /**
- * "Your Gmail connection expired": a line for the owner only, sent privately.
- * The whole link travels in `chatLine`/`chatLinePt` and `reconnectLink`.
- * Public messages lose the path of any `scheme://` URL, so the line quoted in
- * the message names the page without its scheme.
+ * "Your Gmail connection expired": a line for the account holder only, sent
+ * privately (the owner, or the person asking in their own direct chat). The
+ * whole link travels in `chatLine`/`chatLinePt` and `reconnectLink`. Public
+ * messages lose the path of any `scheme://` URL, so the line quoted in the
+ * message names the page without its scheme. A shared account is reconnected
+ * by its manager, so the person in the chat only hears that it is down.
  */
-export function connectorReconnectError(
-  input: { consoleUrl?: string | null; ownerName?: string | null; status?: number; service?: string } = {},
-): CloudAuthError {
+export function connectorReconnectError(input: ConnectorAnswerInput & { status?: number } = {}): CloudAuthError {
   const service = input.service ?? "Gmail";
+  if (input.audience === "shared") {
+    const chatLine = `I can't use the shared ${service} account right now: it needs to be reconnected.`;
+    const chatLinePt = `Não consigo usar a conta compartilhada do ${service} agora: ela precisa ser reconectada.`;
+    return new CloudAuthError(
+      "CONNECTOR_REAUTH_REQUIRED",
+      `The shared ${service} account of this agent expired; its manager must reconnect it in Ravi Console. Reply: "${chatLine}"`,
+      {
+        ...statusOption(input.status),
+        details: { source: "connector-turn", chatLine, chatLinePt, replyTo: "same_chat" },
+      },
+    );
+  }
   const reconnectLink = `${consoleBase(input.consoleUrl)}/connectors`;
-  const owner = stringValue(input.ownerName) ?? "the account owner";
+  const holder = accountHolder(input);
   const chatLine = `Your ${service} connection expired. Reconnect: ${reconnectLink}`;
   const chatLinePt = `Sua conexão do ${service} expirou. Reconecte: ${reconnectLink}`;
   const quotedLine = `Your ${service} connection expired. Reconnect: ${withoutScheme(reconnectLink)}`;
-  return new CloudAuthError(
-    "CONNECTOR_REAUTH_REQUIRED",
-    `The ${service} connection expired. Tell ${owner} privately, never in a group: "${quotedLine}"`,
-    {
-      ...(input.status !== undefined ? { status: input.status } : {}),
-      details: { source: "connector-turn", chatLine, chatLinePt, replyTo: "owner_privately", reconnectLink },
-    },
-  );
+  const whose =
+    input.audience === "person_asking" ? `${service} connection of the person asking` : `${service} connection`;
+  return new CloudAuthError("CONNECTOR_REAUTH_REQUIRED", `The ${whose} expired. ${holder.tell} "${quotedLine}"`, {
+    ...statusOption(input.status),
+    details: { source: "connector-turn", chatLine, chatLinePt, replyTo: holder.replyTo, reconnectLink },
+  });
 }
 
 /** The service a capability acts on, for the lines the agent says. */
@@ -671,6 +1015,13 @@ export function serviceForCapability(capability: string): string {
   if (capability.startsWith("gmail.")) return "Gmail";
   if (capability.startsWith("gcal.")) return "Google Calendar";
   return "Google";
+}
+
+/** The provider whose mode and connection a capability uses. */
+export function providerForCapability(capability: string): string {
+  return capability.startsWith("gmail.") || capability.startsWith("gcal.")
+    ? "google"
+    : (capability.split(".")[0] ?? "");
 }
 
 /**

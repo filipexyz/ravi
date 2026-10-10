@@ -12,6 +12,13 @@
  * exec. The Worker cannot verify that header; it trusts the daemon holding
  * the operator session, which is why this side must never send an allowed
  * header for a turn it would block.
+ *
+ * An agent whose mode is not `owner` (`connector-mode.ts`) answers some of
+ * those turns with an account that is not the operator's, through
+ * `POST /cli/agent-exec` (`resolveConnectorExecRoute`): the Worker then
+ * decides from its own records (the `ravi link` binding, the person's
+ * consent, the shared grant), never from what this side says about who the
+ * person is.
  */
 
 import { createHash } from "node:crypto";
@@ -21,7 +28,16 @@ import { consoleIdentityFromBinding, readCachedActorBinding } from "../cloud-aut
 import { CloudAuthError, type CloudAuthErrorCode } from "../cloud-auth/errors.js";
 import { readActiveCloudAuthUserId, readCloudCredentials } from "../cloud-auth/storage.js";
 import { dbGetCronJob } from "../cron/cron-db.js";
-import { dbGetContext, dbListChatParticipants, dbListChatsByRef, type ContextRecord } from "../router/router-db.js";
+import {
+  dbGetAgent,
+  dbGetContext,
+  dbListChatParticipants,
+  dbListChatsByRef,
+  dbListRoutesBySessionName,
+  dbListSessionChatSubscriptions,
+  type ContextRecord,
+} from "../router/router-db.js";
+import { parseSessionKey } from "../router/session-key.js";
 import {
   ADMIN_BOOTSTRAP_AGENT_ID,
   ADMIN_BOOTSTRAP_KIND,
@@ -29,6 +45,7 @@ import {
   resolveRuntimeContext,
 } from "../runtime/context-registry.js";
 import { RAVI_AUTOMATION_PRINCIPAL_ENV, readSpawnedAutomationPrincipal } from "../runtime/turn-origin.js";
+import { connectorModeArg, readAgentConnectorMode, type ConnectorUseMode } from "./connector-mode.js";
 
 export type ConnectorSpeakerKind = "terminal" | "owner" | "contact" | "agent" | "automation";
 export type ConnectorConversation = "terminal" | "dm" | "group" | "automation";
@@ -48,6 +65,14 @@ export interface ConnectorTurn {
   turnKey?: string;
   /** `terminal` outside any runtime, else the turn's `actorPrincipal`. */
   actorPrincipal: string;
+  /** The agent's display name, shown on the consent page (agent exec only). */
+  agentDisplayName?: string;
+  /**
+   * A resolved contact's direct chat (candidates only): where the turn runs,
+   * so `person_asking` can check that the session is this person's alone.
+   * Never sent to Link.
+   */
+  directChat?: { chatId: string; sessionKey: string | null };
 }
 
 export type ConnectorTurnResult =
@@ -58,7 +83,17 @@ export type ConnectorTurnResult =
       actorPrincipal: string;
       /** The speaker is the owner, blocked only by where the answer would go (a group). */
       speakerIsOwner?: boolean;
+      /**
+       * The turn as it is, when only the owner's own accounts are refused
+       * here: a resolved contact (or the owner) in a direct chat or a group,
+       * or an allowed routine answering into a chat other than the owner's.
+       * An agent in `person_asking` or `shared` mode may still answer it
+       * through agent exec.
+       */
+      candidate?: ConnectorTurn;
     };
+
+type BlockedTurn = Extract<ConnectorTurnResult, { ok: false }>;
 
 /** The runtime context of the call: absent (terminal), or present and resolved or not. */
 export interface ConnectorRuntimeContext {
@@ -90,9 +125,27 @@ export interface ConnectorTurnDeps {
   /** The contact a direct chat is with, or null when the chat is not a known direct chat. */
   getDmChatContact?: (input: { chatId: string; channel: string | null }) => string | null;
   getContactBinding?: (contactId: string) => ContactConsoleIdentity | null;
+  /** An agent's mode for a provider (default: the settings table). */
+  getAgentMode?: (agentId: string, provider: string) => ConnectorUseMode;
+  /** An agent's display name (default: the agents table). */
+  getAgentDisplayName?: (agentId: string) => string | null;
+  /**
+   * Whether a contact's direct-chat session holds only that person's
+   * conversation (default: the router tables, `readIsPrivateDirectSession`).
+   */
+  isPrivateDirectSession?: (input: PrivateDirectSessionInput) => boolean;
   /** Service named in chat lines. */
   service?: string;
   now?: number;
+}
+
+export interface PrivateDirectSessionInput {
+  /** The session of the turn; null when unknown or when the turn's contexts disagree. */
+  sessionKey: string | null;
+  sessionName: string | null;
+  contactId: string;
+  /** The direct chat the message came from (its compartment id). */
+  chatId: string;
 }
 
 /** Cron owner value meaning "the operator" (also what a legacy NULL means). */
@@ -173,16 +226,38 @@ export function resolveConnectorTurn(deps: ConnectorTurnDeps = {}): ConnectorTur
 
   if (principalType === "contact" && principalId) {
     const consoleUserId = stringField(metadata, "consoleUserId");
-    const isOwner =
-      stringField(metadata, "actorResolution") === "resolved" &&
-      isOwnerUser(owner, consoleUserId, stringField(metadata, "consoleOrgId"));
+    const resolved = stringField(metadata, "actorResolution") === "resolved";
+    const isOwner = resolved && isOwnerUser(owner, consoleUserId, stringField(metadata, "consoleOrgId"));
+    const conversation = surface?.type === "chat" ? "group" : surface?.type === "dm" ? "dm" : null;
+    // Who this person is to the Console is never part of it: the Worker
+    // reads it from its own `ravi link` binding.
+    const candidate: ConnectorTurn | undefined =
+      resolved && conversation
+        ? {
+            ...base,
+            actorPrincipal,
+            speaker: { kind: isOwner ? "owner" : "contact", contactId: principalId },
+            conversation,
+            ...(conversation === "dm" && surface?.id
+              ? {
+                  directChat: {
+                    chatId: surface.id,
+                    sessionKey: sameSessionKey(actorContext.sessionKey, runtime.record.sessionKey),
+                  },
+                }
+              : {}),
+          }
+        : undefined;
     if (surface?.type === "chat") {
-      return isOwner
-        ? groupBlockedForOwner(actorPrincipal, owner)
-        : notOwnerContact(actorPrincipal, owner, false, "CONNECTOR_GROUP_BLOCKED");
+      return withCandidate(
+        isOwner
+          ? groupBlockedForOwner(actorPrincipal, owner)
+          : notOwnerContact(actorPrincipal, owner, false, "CONNECTOR_GROUP_BLOCKED"),
+        candidate,
+      );
     }
     if (!isOwner) {
-      return notOwnerContact(actorPrincipal, owner, !consoleUserId);
+      return withCandidate(notOwnerContact(actorPrincipal, owner, !consoleUserId), candidate);
     }
     if (surface?.type !== "dm") {
       return { ...notOwner(actorPrincipal, unknownTurnMessage(owner)), speakerIsOwner: true };
@@ -203,9 +278,230 @@ export function resolveConnectorTurn(deps: ConnectorTurnDeps = {}): ConnectorTur
   // A routine or an operator relay answering into a chat: only the owner's
   // own direct chat may receive what the operator's accounts return.
   if (!surfaceIsOwnersDirectChat(surface.id, readActorChannel(metadata), owner, deps)) {
-    return groupBlockedForAutomation(actorPrincipal, owner);
+    return withCandidate(groupBlockedForAutomation(actorPrincipal, owner), {
+      ...verdict.turn,
+      conversation: surface.type === "chat" ? "group" : "dm",
+    });
   }
   return { ok: true, turn: { ...verdict.turn, conversation: "dm" } };
+}
+
+// ---------------------------------------------------------------------------
+// Per-agent mode: whose account answers the turn
+// ---------------------------------------------------------------------------
+
+/**
+ * Where a connector exec goes. `owner`: the operator's own connection,
+ * `POST /cli/exec/:id`. `person_asking` and `shared`: `POST /cli/agent-exec`,
+ * where the Worker picks the connection.
+ */
+export interface ConnectorExecRoute {
+  mode: ConnectorUseMode;
+  turn: ConnectorTurn;
+}
+
+export type ConnectorExecRouteResult = { ok: true; route: ConnectorExecRoute } | BlockedTurn;
+
+export interface ConnectorExecRouteDeps extends ConnectorTurnDeps {
+  provider: string;
+  /** The owner asks for the agent's shared account on their own turn (`--shared`). */
+  useShared?: boolean;
+}
+
+/**
+ * Classify the turn, then apply the executing agent's mode for the provider:
+ *
+ * - Every turn the owner table allows (the terminal, the owner's own relay
+ *   and direct chat, routines the owner owns) is the owner's own request and
+ *   keeps the owner's connection in every mode. Only `useShared` (`--shared`,
+ *   in a chat) sends one of them to the shared account.
+ * - `owner` (default): nothing else.
+ * - `person_asking`: a resolved contact who is not the owner, in a direct
+ *   chat whose session is theirs alone, uses their own account through agent
+ *   exec (linked or not: the Worker answers `connector_not_linked`). Groups,
+ *   and direct chats that share a session with other people, stay blocked.
+ * - `shared`: a contact's turn (direct chat or group) and a routine answering
+ *   into a chat that is not the owner's go to the shared account with their
+ *   real conversation; the Worker decides by the grant's conversations.
+ *
+ * Turns blocked for any other reason (agents relaying, triggers, unknown or
+ * ended turns) stay blocked in every mode.
+ */
+export function resolveConnectorExecRoute(deps: ConnectorExecRouteDeps): ConnectorExecRouteResult {
+  const result = resolveConnectorTurn(deps);
+  const turn = result.ok ? result.turn : result.candidate;
+  if (!turn) return result as BlockedTurn;
+  const agentId = turn.agentId;
+  const mode: ConnectorUseMode = agentId
+    ? (deps.getAgentMode ?? readAgentConnectorMode)(agentId, deps.provider)
+    : "owner";
+  const ownTurn = turn.speaker.kind === "terminal" || turn.speaker.kind === "owner";
+
+  if (deps.useShared) {
+    // The owner's own choice: never a way to unblock anyone else's turn
+    // (in `shared` mode theirs goes to the shared account anyway).
+    if (!result.ok && !ownTurn) return mode === "shared" ? agentRoute("shared", turn, deps) : result;
+    if (mode !== "shared") return sharedNotSet(turn, mode, deps);
+    // A grant only lists chats (`dm`, `group`): the terminal, a relay or a
+    // routine that posts nowhere would always be refused.
+    if (turn.conversation !== "dm" && turn.conversation !== "group") return sharedNeedsChat(turn, deps);
+    return agentRoute("shared", turn, deps);
+  }
+  if (result.ok) return ownerRoute(result.turn);
+  if (mode === "shared" && !ownTurn) return agentRoute("shared", turn, deps);
+  if (mode === "person_asking" && turn.speaker.kind === "contact") {
+    const owner = resolveOwner(deps, deps.env ?? process.env);
+    if (turn.conversation !== "dm") return personAskingGroupBlocked(turn.actorPrincipal, owner);
+    if (!isPrivateDirectChat(turn, deps)) return personAskingSharedSessionBlocked(turn, owner);
+    return agentRoute("person_asking", turn, deps);
+  }
+  return result;
+}
+
+function isPrivateDirectChat(turn: ConnectorTurn, deps: ConnectorTurnDeps): boolean {
+  const contactId = turn.speaker.contactId;
+  if (!turn.directChat || !contactId) return false;
+  const input: PrivateDirectSessionInput = {
+    sessionKey: turn.directChat.sessionKey,
+    sessionName: turn.sessionName ?? null,
+    contactId,
+    chatId: turn.directChat.chatId,
+  };
+  try {
+    return (deps.isPrivateDirectSession ?? readIsPrivateDirectSession)(input);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether a contact's direct chat runs in a session of its own, so what
+ * their account returns stays in a transcript only they read: a direct-chat
+ * session key per person (never `dmScope: main`), no route that sends chats
+ * into it by name, and every chat attached to it (inbound routing attaches
+ * each chat it sends there) is this person's own direct chat. Anything
+ * unknown is not private.
+ */
+export function readIsPrivateDirectSession(input: PrivateDirectSessionInput): boolean {
+  const { sessionKey, sessionName, contactId, chatId } = input;
+  if (!sessionKey || !sessionName) return false;
+  const parsed = parseSessionKey(sessionKey);
+  if (!parsed || parsed.peerKind !== "dm" || parsed.dmScope === "main" || !parsed.peerId) return false;
+  try {
+    if (dbListRoutesBySessionName(sessionName).length > 0) return false;
+    for (const subscription of dbListSessionChatSubscriptions(sessionKey)) {
+      if (subscription.chatId === chatId) continue;
+      if (readDmChatContact({ chatId: subscription.chatId, channel: null }) !== contactId) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function ownerRoute(turn: ConnectorTurn): ConnectorExecRouteResult {
+  return { ok: true, route: { mode: "owner", turn } };
+}
+
+function agentRoute(mode: "person_asking" | "shared", turn: ConnectorTurn, deps: ConnectorTurnDeps) {
+  const agentDisplayName = turn.agentId ? readAgentDisplayName(turn.agentId, deps) : null;
+  return {
+    ok: true as const,
+    route: { mode, turn: { ...turn, ...(agentDisplayName ? { agentDisplayName } : {}) } },
+  };
+}
+
+function readAgentDisplayName(agentId: string, deps: ConnectorTurnDeps): string | null {
+  try {
+    const name = deps.getAgentDisplayName ? deps.getAgentDisplayName(agentId) : dbGetAgent(agentId)?.name;
+    const clean = cleanString(name);
+    return clean && clean.length <= 120 ? clean : null;
+  } catch {
+    return null;
+  }
+}
+
+/** `--shared` on a turn whose agent has no shared account: a usage error, nothing was called. */
+function sharedNotSet(turn: ConnectorTurn, mode: ConnectorUseMode, deps: ConnectorExecRouteDeps): BlockedTurn {
+  // Kept short: usage copy is cut at 200 characters on its way out.
+  const message = turn.agentId
+    ? `--shared needs agent ${turn.agentId} in shared mode for ${deps.provider} (now: ${connectorModeArg(mode)}). Drop --shared, or run: ravi connectors mode ${turn.agentId} ${deps.provider} shared --execute`
+    : "--shared works only in a chat with an agent in shared mode (it uses that agent's shared account). Drop it to use your own account.";
+  return usageBlocked(turn, message);
+}
+
+/** `--shared` outside a chat (the terminal, a relay, a routine that posts nowhere): no grant lists those. */
+function sharedNeedsChat(turn: ConnectorTurn, deps: ConnectorExecRouteDeps): BlockedTurn {
+  return usageBlocked(
+    turn,
+    `--shared works only in a chat: your direct chat with agent ${turn.agentId ?? "the agent"}, or a group its shared ${deps.provider} account covers. Drop it to use your own account.`,
+  );
+}
+
+function usageBlocked(turn: ConnectorTurn, message: string): BlockedTurn {
+  return {
+    ok: false,
+    actorPrincipal: turn.actorPrincipal,
+    error: new CloudAuthError("PAYLOAD_INVALID", message, { details: { source: "connector-turn" } }),
+  };
+}
+
+/**
+ * A direct chat whose session other people also write in (`dmScope: main`,
+ * a route that sends several chats to one session, an attached chat): the
+ * person's mail would stay in a transcript the others can ask about.
+ */
+function personAskingSharedSessionBlocked(turn: ConnectorTurn, owner: OwnerIdentity): BlockedTurn {
+  const chatLine = `I can't use your ${owner.service} in this conversation.`;
+  const chatLinePt = `Não posso usar o seu ${owner.service} nesta conversa.`;
+  return blocked(
+    "CONNECTOR_GROUP_BLOCKED",
+    turn.actorPrincipal,
+    `This agent uses the ${owner.service} of the person asking, but this direct chat shares its session with other people (dmScope main, a route that sends several chats to one session, or an attached chat), so they could read what it returns. Do not retry. Reply: "${chatLine}" ${owner.label} can give each person their own session (dmScope per-peer) to allow it.`,
+    { chatLine, chatLinePt, replyTo: "same_chat" },
+  );
+}
+
+function personAskingGroupBlocked(actorPrincipal: string, owner: OwnerIdentity): BlockedTurn {
+  const chatLine = `I can only use your ${owner.service} in a direct chat with me. Ask me there.`;
+  const chatLinePt = `Só posso usar o seu ${owner.service} numa conversa direta comigo. Me peça por lá.`;
+  return blocked(
+    "CONNECTOR_GROUP_BLOCKED",
+    actorPrincipal,
+    `This agent uses the ${owner.service} of the person asking, but never in a group chat, where other people would read the answer. Reply in the group: "${chatLine}"`,
+    { chatLine, chatLinePt, replyTo: "same_chat" },
+  );
+}
+
+/**
+ * The operator's own turn (the terminal, the owner's own linked direct chat,
+ * or the owner's own `ravi sessions send|ask`), for changes to how an agent
+ * uses connected accounts. Contacts, routines and agents never pass, in any
+ * mode.
+ */
+export function resolveOperatorTurn(deps: ConnectorTurnDeps & { action: string }): ConnectorTurnResult {
+  const result = resolveConnectorTurn(deps);
+  if (result.ok && (result.turn.speaker.kind === "terminal" || result.turn.speaker.kind === "owner")) return result;
+  const owner = resolveOwner(deps, deps.env ?? process.env);
+  if (!result.ok && (result.speakerIsOwner || result.candidate?.speaker.kind === "owner")) {
+    // The owner, only in the wrong place (a group): send them to their own chat.
+    const chatLine = "Ask me in our private chat and I'll change it.";
+    const chatLinePt = "Me peça no nosso chat privado que eu mudo.";
+    return blocked(
+      result.error.code === "CONNECTOR_GROUP_BLOCKED" ? "CONNECTOR_GROUP_BLOCKED" : "CONNECTOR_SPEAKER_NOT_OWNER",
+      result.actorPrincipal,
+      `${owner.label} asked outside their own direct chat with you. Only ${owner.label} can ${deps.action}, and only from their terminal or that direct chat, so nothing changes from this turn. Reply: "${chatLine}"`,
+      { chatLine, chatLinePt, replyTo: "same_chat" },
+    );
+  }
+  const chatLine = `Only ${owner.label} can change that.`;
+  const chatLinePt = `Só ${owner.namePt} pode mudar isso.`;
+  return blocked(
+    "CONNECTOR_SPEAKER_NOT_OWNER",
+    result.ok ? result.turn.actorPrincipal : result.actorPrincipal,
+    `Only ${owner.label} can ${deps.action}, from their terminal or their own direct chat with you. Do not retry from this turn. Reply: "${chatLine}"`,
+    { chatLine, chatLinePt, replyTo: "same_chat" },
+  );
 }
 
 /**
@@ -404,10 +700,31 @@ export function buildExecContext(turn: ConnectorTurn): ExecContextV1 {
   };
 }
 
-/** Base64url JSON, at most 2 KB: optional labels are dropped before anything that drives policy. */
-export function encodeExecContextHeader(context: ExecContextV1): string {
+/**
+ * The header of `POST /cli/agent-exec`: the executing agent and, for a
+ * contact, only the contact id. A Console user id is never sent here, so the
+ * Worker can only take the person from its own `ravi link` binding.
+ */
+export function buildAgentExecContext(turn: ConnectorTurn): ExecContextV1 {
+  const { consoleUserId: _ignored, ...speaker } = turn.speaker;
+  return {
+    ...buildExecContext(turn),
+    speaker,
+    ...(turn.agentDisplayName ? { agentDisplayName: turn.agentDisplayName } : {}),
+  };
+}
+
+/**
+ * Base64url JSON, at most 2 KB: optional labels are dropped before anything
+ * that drives policy. Agent exec needs `agentId` (`keepAgentId`): it is never
+ * dropped there, and a header still too large fails closed.
+ */
+export function encodeExecContextHeader(context: ExecContextV1, options: { keepAgentId?: boolean } = {}): string {
   const candidate: ExecContextV1 = { ...context };
-  for (const key of ["agentDisplayName", "sessionName", "agentId"] as const) {
+  const droppable = options.keepAgentId
+    ? (["agentDisplayName", "sessionName"] as const)
+    : (["agentDisplayName", "sessionName", "agentId"] as const);
+  for (const key of droppable) {
     const encoded = Buffer.from(JSON.stringify(candidate), "utf8").toString("base64url");
     if (encoded.length <= EXEC_CONTEXT_MAX_BYTES) return encoded;
     delete candidate[key];
@@ -436,6 +753,8 @@ interface OwnerIdentity {
   possessiveEn: string;
   /** For the Portuguese chat line ("de Luis", "do meu dono"). */
   ofPt: string;
+  /** The owner as a Portuguese subject ("Luis", "o meu dono"). */
+  namePt: string;
   /** Service named in chat lines. */
   service: string;
 }
@@ -468,6 +787,7 @@ function resolveOwner(deps: ConnectorTurnDeps, env: NodeJS.ProcessEnv): OwnerIde
     label: cleanName ?? "the account owner",
     possessiveEn: cleanName ? `${cleanName}'s` : "my owner's",
     ofPt: cleanName ? `de ${cleanName}` : "do meu dono",
+    namePt: cleanName ?? "o meu dono",
     service: cleanString(deps.service) ?? "Gmail",
   };
 }
@@ -609,6 +929,10 @@ function notOwnerContact(
   );
 }
 
+function withCandidate(result: BlockedTurn, candidate: ConnectorTurn | undefined): BlockedTurn {
+  return candidate ? { ...result, candidate } : result;
+}
+
 function notOwner(actorPrincipal: string, message: string): Extract<ConnectorTurnResult, { ok: false }> {
   return blocked("CONNECTOR_SPEAKER_NOT_OWNER", actorPrincipal, message, {});
 }
@@ -617,7 +941,7 @@ function terminalTurn(): ConnectorTurnResult {
   return { ok: true, turn: { speaker: { kind: "terminal" }, conversation: "terminal", actorPrincipal: "terminal" } };
 }
 
-function groupBlockedForOwner(actorPrincipal: string, owner: OwnerIdentity): ConnectorTurnResult {
+function groupBlockedForOwner(actorPrincipal: string, owner: OwnerIdentity): BlockedTurn {
   const chatLine = "I'll send this to you privately.";
   const chatLinePt = "Vou te mandar isso no privado.";
   return {
@@ -631,7 +955,7 @@ function groupBlockedForOwner(actorPrincipal: string, owner: OwnerIdentity): Con
   };
 }
 
-function groupBlockedForAutomation(actorPrincipal: string, owner: OwnerIdentity): ConnectorTurnResult {
+function groupBlockedForAutomation(actorPrincipal: string, owner: OwnerIdentity): BlockedTurn {
   return blocked(
     "CONNECTOR_GROUP_BLOCKED",
     actorPrincipal,
@@ -659,6 +983,12 @@ function blocked(
     actorPrincipal,
     error: new CloudAuthError(code, message, { exitCode: 3, details: { source: "connector-turn", ...details } }),
   };
+}
+
+/** The session of a turn, when its contexts name one and agree on it. */
+function sameSessionKey(...keys: Array<string | undefined>): string | null {
+  const named = new Set(keys.map((key) => cleanString(key)).filter((key): key is string => Boolean(key)));
+  return named.size === 1 ? ([...named][0] ?? null) : null;
 }
 
 function sha256Hex(value: string): string {

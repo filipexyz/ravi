@@ -12,7 +12,15 @@ import { TriggerRunner } from "../triggers/runner.js";
 import type { Trigger } from "../triggers/types.js";
 import type { ContextRecord } from "../router/router-db.js";
 import { writeCachedActorBinding } from "../cloud-auth/actor-bindings.js";
-import { dbCanonicalizeDmChatForContact, dbCreateAgent, dbGetAgent, dbUpsertChat } from "../router/router-db.js";
+import {
+  dbCanonicalizeDmChatForContact,
+  dbCreateAgent,
+  dbCreateRoute,
+  dbCreateSessionChatSubscription,
+  dbGetAgent,
+  dbUpsertChat,
+} from "../router/router-db.js";
+import { getOrCreateSession } from "../router/sessions.js";
 import {
   ADMIN_BOOTSTRAP_AGENT_ID,
   ADMIN_BOOTSTRAP_KIND,
@@ -23,15 +31,21 @@ import {
 import { buildSessionRelayTurnOrigin, spawnedAutomationEnv } from "../runtime/turn-origin.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
+  buildAgentExecContext,
   buildExecContext,
   classifyConnectorTurn,
   decodeExecContextHeader,
   encodeExecContextHeader,
   EXEC_CONTEXT_MAX_BYTES,
+  resolveConnectorExecRoute,
   resolveConnectorTurn,
   resolveCronOwnerPrincipalForCurrentTurn,
+  resolveOperatorTurn,
+  type ConnectorExecRouteDeps,
+  type ConnectorExecRouteResult,
   type ConnectorTurnDeps,
 } from "./connector-turn.js";
+import { readAgentConnectorMode, type ConnectorUseMode, writeAgentConnectorMode } from "./connector-mode.js";
 
 const OWNER = { activeUserId: "user_luis", activeOrgId: "org_1", ownerName: "Luis" } satisfies ConnectorTurnDeps;
 
@@ -973,6 +987,477 @@ describe("X-Ravi-Exec-Context", () => {
       speaker: { kind: "owner", contactId: "c_luis", consoleUserId: "user_luis" },
       conversation: "dm",
       turnKey: sha256("ctx_1"),
+    });
+  });
+});
+
+describe("per-agent connector mode", () => {
+  const LUIS_DM = {
+    actorPrincipal: "contact:c_luis",
+    consoleUserId: "user_luis",
+    consoleOrgId: "org_1",
+    agentIdentityCompartment: "dm:5511999999999@s.whatsapp.net",
+  };
+  const LUIS_GROUP = { ...LUIS_DM, agentIdentityCompartment: "chat:120363012345678901@g.us" };
+  const ANA_DM = {
+    actorPrincipal: "contact:c_ana",
+    consoleUserId: "user_ana",
+    consoleOrgId: "org_1",
+    agentIdentityCompartment: "dm:5511888888888@s.whatsapp.net",
+  };
+  const ANA_GROUP = { ...ANA_DM, agentIdentityCompartment: "chat:120363012345678901@g.us" };
+  const NEW_DM = { actorPrincipal: "contact:c_new", agentIdentityCompartment: "dm:5511777777777@s.whatsapp.net" };
+  const HEARTBEAT = { actorPrincipal: "automation:heartbeat", agentIdentityCompartment: "automation:heartbeat" };
+
+  const RELAY = {
+    actorPrincipal: "automation:operator:local",
+    agentIdentityCompartment: "workspace:default",
+    turnOrigin: buildSessionRelayTurnOrigin("send", undefined),
+  };
+
+  // The session check of `person_asking` has its own tests below, on the
+  // router tables; here every direct chat is the person's own session.
+  function route(
+    metadata: Record<string, unknown> | null,
+    mode: ConnectorUseMode,
+    extra: Partial<Pick<ConnectorExecRouteDeps, "useShared" | "isPrivateDirectSession">> = {},
+  ): ConnectorExecRouteResult {
+    return resolveConnectorExecRoute({
+      ...OWNER,
+      env: metadata ? envFor(turnContext(metadata)) : {},
+      provider: "google",
+      getAgentMode: () => mode,
+      getAgentDisplayName: () => "Main agent",
+      isPrivateDirectSession: () => true,
+      ...extra,
+    });
+  }
+
+  function expectRoute(result: ConnectorExecRouteResult, mode: ConnectorUseMode) {
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(`expected a route, got ${result.error.code}`);
+    expect(result.route.mode).toBe(mode);
+    return result.route.turn;
+  }
+
+  function expectRefused(result: ConnectorExecRouteResult, code: string): CloudAuthError {
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error(`expected a refusal, got ${result.route.mode}`);
+    expect(result.error.code).toBe(code as CloudAuthError["code"]);
+    return result.error;
+  }
+
+  describe("owner (default)", () => {
+    it("keeps the owner's table: the owner's turns and routines use the owner's connection", () => {
+      expectRoute(route(null, "owner"), "owner");
+      expect(expectRoute(route(LUIS_DM, "owner"), "owner").speaker).toMatchObject({
+        kind: "owner",
+        consoleUserId: "user_luis",
+      });
+      expectRoute(route(HEARTBEAT, "owner"), "owner");
+    });
+
+    it("refuses everyone else, in direct chats and in groups", () => {
+      expectRefused(route(ANA_DM, "owner"), "CONNECTOR_SPEAKER_NOT_OWNER");
+      expectRefused(route(NEW_DM, "owner"), "CONNECTOR_SPEAKER_NOT_OWNER");
+      expectRefused(route(ANA_GROUP, "owner"), "CONNECTOR_GROUP_BLOCKED");
+      expectRefused(route(LUIS_GROUP, "owner"), "CONNECTOR_GROUP_BLOCKED");
+    });
+  });
+
+  describe("person asking", () => {
+    it("sends a contact linked to another Console user to agent exec, without that user id", () => {
+      const turn = expectRoute(route(ANA_DM, "person_asking"), "person_asking");
+
+      expect(turn).toMatchObject({
+        agentId: "main",
+        agentDisplayName: "Main agent",
+        actorPrincipal: "contact:c_ana",
+        speaker: { kind: "contact", contactId: "c_ana" },
+        conversation: "dm",
+      });
+      expect(turn.speaker.consoleUserId).toBeUndefined();
+    });
+
+    it("sends an unlinked contact too: the Worker answers connector_not_linked", () => {
+      const turn = expectRoute(route(NEW_DM, "person_asking"), "person_asking");
+      expect(turn.speaker).toEqual({ kind: "contact", contactId: "c_new" });
+    });
+
+    it("keeps groups blocked, with the line for the person asking", () => {
+      const error = expectRefused(route(ANA_GROUP, "person_asking"), "CONNECTOR_GROUP_BLOCKED");
+
+      expect(error.exitCode).toBe(3);
+      expect(error.details).toMatchObject({
+        source: "connector-turn",
+        chatLine: "I can only use your Gmail in a direct chat with me. Ask me there.",
+        chatLinePt: "Só posso usar o seu Gmail numa conversa direta comigo. Me peça por lá.",
+        replyTo: "same_chat",
+      });
+    });
+
+    it("keeps the owner's own turns and routines on the owner's connection", () => {
+      expectRoute(route(null, "person_asking"), "owner");
+      expectRoute(route(LUIS_DM, "person_asking"), "owner");
+      expectRoute(route(HEARTBEAT, "person_asking"), "owner");
+      expectRefused(route(LUIS_GROUP, "person_asking"), "CONNECTOR_GROUP_BLOCKED");
+    });
+
+    it("refuses an unresolved sender", () => {
+      expectRefused(
+        route(
+          {
+            actorPrincipal: "unknown",
+            actorResolution: "missing_contact",
+            agentIdentityCompartment: NEW_DM.agentIdentityCompartment,
+          },
+          "person_asking",
+        ),
+        "CONNECTOR_SPEAKER_NOT_OWNER",
+      );
+      expectRefused(
+        route({ ...ANA_DM, actorResolution: "not_applicable" }, "person_asking"),
+        "CONNECTOR_SPEAKER_NOT_OWNER",
+      );
+    });
+
+    it("refuses a direct chat whose session is not the person's alone, with the line for them", () => {
+      const error = expectRefused(
+        route(ANA_DM, "person_asking", { isPrivateDirectSession: () => false }),
+        "CONNECTOR_GROUP_BLOCKED",
+      );
+
+      expect(error.exitCode).toBe(3);
+      expect(error.details).toMatchObject({
+        source: "connector-turn",
+        chatLine: "I can't use your Gmail in this conversation.",
+        chatLinePt: "Não posso usar o seu Gmail nesta conversa.",
+        replyTo: "same_chat",
+      });
+      expect(error.message).toContain("dmScope per-peer");
+    });
+  });
+
+  describe("person asking needs a session of the person's own", () => {
+    const ANA_KEY = "agent:main:whatsapp:wa-main:dm:5511888888888";
+    const ANA_JID = "5511888888888@s.whatsapp.net";
+    const BOB_JID = "5511777777777@s.whatsapp.net";
+
+    function askingRoute(input: {
+      sessionKey?: string;
+      sessionName?: string;
+      metadata?: Record<string, unknown>;
+    }): ConnectorExecRouteResult {
+      if (input.sessionKey) getOrCreateSession(input.sessionKey, "main", stateDir ?? "/tmp");
+      const context = createRuntimeContext({
+        kind: "turn-runtime",
+        agentId: "main",
+        ...(input.sessionKey ? { sessionKey: input.sessionKey } : {}),
+        sessionName: input.sessionName ?? "ana-dm",
+        metadata: { actorResolution: "resolved", executorAgentId: "main", ...(input.metadata ?? ANA_DM) },
+      });
+      return resolveConnectorExecRoute({
+        ...OWNER,
+        env: envFor(context),
+        provider: "google",
+        getAgentMode: () => "person_asking",
+        getAgentDisplayName: () => "Main agent",
+      });
+    }
+
+    function directChat(platformChatId: string, contactId: string) {
+      const chat = dbUpsertChat({ channel: "whatsapp", instanceId: "", platformChatId, chatType: "dm" });
+      return dbCanonicalizeDmChatForContact({ chatId: chat.id, contactId, platformChatId });
+    }
+
+    it("uses the person's account in a direct-chat session of their own", () => {
+      for (const sessionKey of [ANA_KEY, "agent:main:dm:5511888888888", "agent:main:whatsapp:dm:5511888888888"]) {
+        expectRoute(askingRoute({ sessionKey }), "person_asking");
+      }
+    });
+
+    it("refuses the session all direct chats share (dmScope main), a group key and an unknown session", () => {
+      for (const sessionKey of ["agent:main:main", "agent:main:whatsapp:group:120363", "custom-session", undefined]) {
+        const error = expectRefused(askingRoute({ sessionKey }), "CONNECTOR_GROUP_BLOCKED");
+        expect(error.details?.chatLine).toBe("I can't use your Gmail in this conversation.");
+      }
+    });
+
+    it("refuses a session a route sends chats into by name", () => {
+      dbCreateRoute({ pattern: "*", accountId: "wa-main", agent: "main", session: "team-inbox" });
+
+      expectRefused(askingRoute({ sessionKey: ANA_KEY, sessionName: "team-inbox" }), "CONNECTOR_GROUP_BLOCKED");
+      expectRoute(askingRoute({ sessionKey: ANA_KEY, sessionName: "ana-dm" }), "person_asking");
+    });
+
+    it("refuses a session another person's chat is attached to", () => {
+      getOrCreateSession(ANA_KEY, "main", stateDir ?? "/tmp");
+      const anaChat = directChat(ANA_JID, "c_ana");
+      dbCreateSessionChatSubscription({ sessionKey: ANA_KEY, chatId: anaChat.id, role: "primary" });
+
+      // Her own chat, named by its canonical id or by the platform id.
+      expectRoute(
+        askingRoute({ sessionKey: ANA_KEY, metadata: { ...ANA_DM, agentIdentityCompartment: `dm:${anaChat.id}` } }),
+        "person_asking",
+      );
+      expectRoute(askingRoute({ sessionKey: ANA_KEY }), "person_asking");
+
+      const bobChat = directChat(BOB_JID, "c_bob");
+      dbCreateSessionChatSubscription({ sessionKey: ANA_KEY, chatId: bobChat.id, role: "input" });
+      expectRefused(askingRoute({ sessionKey: ANA_KEY }), "CONNECTOR_GROUP_BLOCKED");
+    });
+
+    it("refuses when the turn's contexts name different sessions", () => {
+      getOrCreateSession(ANA_KEY, "main", stateDir ?? "/tmp");
+      getOrCreateSession("agent:main:whatsapp:wa-main:dm:5511777777777", "main", stateDir ?? "/tmp");
+      const parent = createRuntimeContext({
+        kind: "turn-runtime",
+        agentId: "main",
+        sessionKey: ANA_KEY,
+        sessionName: "ana-dm",
+        metadata: { actorResolution: "resolved", executorAgentId: "main", ...ANA_DM },
+      });
+      const child = createRuntimeContext({
+        kind: "cli-runtime",
+        agentId: "main",
+        sessionKey: "agent:main:whatsapp:wa-main:dm:5511777777777",
+        sessionName: "bob-dm",
+        metadata: { parentContextId: parent.contextId },
+      });
+
+      const error = expectRefused(
+        resolveConnectorExecRoute({
+          ...OWNER,
+          env: envFor(child),
+          provider: "google",
+          getAgentMode: () => "person_asking",
+        }),
+        "CONNECTOR_GROUP_BLOCKED",
+      );
+      expect(error.message).toContain("shares its session with other people");
+    });
+  });
+
+  describe("shared", () => {
+    it("sends contacts in direct chats and in groups to the shared account with the real conversation", () => {
+      expect(expectRoute(route(ANA_DM, "shared"), "shared")).toMatchObject({
+        speaker: { kind: "contact", contactId: "c_ana" },
+        conversation: "dm",
+      });
+      expect(expectRoute(route(NEW_DM, "shared"), "shared").conversation).toBe("dm");
+      expect(expectRoute(route(ANA_GROUP, "shared"), "shared").conversation).toBe("group");
+    });
+
+    it("keeps the owner's routines on the owner's connection, and sends routines into someone else's chat", () => {
+      expect(expectRoute(route(HEARTBEAT, "shared"), "owner")).toMatchObject({
+        speaker: { kind: "automation" },
+        conversation: "automation",
+        routine: { kind: "heartbeat" },
+      });
+      const job = dbCreateCronJob({
+        name: "inbox digest",
+        schedule: { type: "every", every: 3_600_000 },
+        message: "summarize my inbox",
+        ownerPrincipal: "operator",
+      });
+      const cron = {
+        actorPrincipal: `automation:cron:${job.id}`,
+        agentIdentityCompartment: `automation:cron:${job.id}`,
+      };
+      expect(expectRoute(route(cron, "shared"), "owner").routine).toEqual({ kind: "cron", id: job.id });
+
+      dbUpsertChat({ channel: "whatsapp", instanceId: "", platformChatId: "120363@g.us", chatType: "group" });
+      const intoGroup = { actorPrincipal: "automation:heartbeat", agentIdentityCompartment: "chat:120363@g.us" };
+      expect(expectRoute(route(intoGroup, "shared"), "shared").conversation).toBe("group");
+      // --shared changes nothing there: it already uses the shared account.
+      expect(expectRoute(route(intoGroup, "shared", { useShared: true }), "shared").conversation).toBe("group");
+      expect(expectRoute(route(ANA_DM, "shared", { useShared: true }), "shared").conversation).toBe("dm");
+    });
+
+    it("keeps the owner's own turns on their own connection unless they pass --shared in a chat", () => {
+      expectRoute(route(LUIS_DM, "shared"), "owner");
+      expectRoute(route(null, "shared"), "owner");
+      expectRoute(route(RELAY, "shared"), "owner");
+
+      const shared = expectRoute(route(LUIS_DM, "shared", { useShared: true }), "shared");
+      expect(shared.speaker).toEqual({ kind: "owner", contactId: "c_luis", consoleUserId: "user_luis" });
+      expect(buildAgentExecContext(shared).speaker).toEqual({ kind: "owner", contactId: "c_luis" });
+      expect(expectRoute(route(LUIS_GROUP, "shared", { useShared: true }), "shared").conversation).toBe("group");
+    });
+
+    it("refuses --shared where no grant can apply: the terminal, the operator's relay, a routine posting nowhere", () => {
+      expect(expectRefused(route(null, "shared", { useShared: true }), "PAYLOAD_INVALID").message).toContain(
+        "only in a chat",
+      );
+      for (const metadata of [RELAY, HEARTBEAT]) {
+        const error = expectRefused(route(metadata, "shared", { useShared: true }), "PAYLOAD_INVALID");
+        expect(error.message).toContain("works only in a chat");
+        expect(error.message.length).toBeLessThanOrEqual(200);
+      }
+    });
+  });
+
+  it.each(["owner", "person_asking", "shared"] as const)(
+    "in %s mode keeps agent relays, triggers and ended turns blocked",
+    (mode) => {
+      expectRefused(
+        route({ actorPrincipal: "agent:helper", agentIdentityCompartment: "workspace:default" }, mode),
+        "CONNECTOR_SPEAKER_NOT_OWNER",
+      );
+      expectRefused(
+        route({ actorPrincipal: "automation:trigger:tr_1", agentIdentityCompartment: "automation:trigger:tr_1" }, mode),
+        "CONNECTOR_SPEAKER_NOT_OWNER",
+      );
+      expectRefused(
+        resolveConnectorExecRoute({
+          ...OWNER,
+          env: { RAVI_CONTEXT_KEY: "rctx_missing" },
+          provider: "google",
+          getAgentMode: () => mode,
+        }),
+        "CONNECTOR_SPEAKER_NOT_OWNER",
+      );
+    },
+  );
+
+  it("--shared on an agent without a shared account is a usage error, and never unblocks a contact", () => {
+    const error = expectRefused(route(LUIS_DM, "owner", { useShared: true }), "PAYLOAD_INVALID");
+    expect(error.message).toContain("ravi connectors mode main google shared --execute");
+    expect(error.message.length).toBeLessThanOrEqual(200);
+
+    const terminal = expectRefused(route(null, "shared", { useShared: true }), "PAYLOAD_INVALID");
+    expect(terminal.message).toContain("only in a chat with an agent in shared mode");
+
+    expectRefused(route(ANA_DM, "owner", { useShared: true }), "CONNECTOR_SPEAKER_NOT_OWNER");
+    expectRefused(route(ANA_DM, "person_asking", { useShared: true }), "CONNECTOR_SPEAKER_NOT_OWNER");
+    expectRefused(route(HEARTBEAT, "owner", { useShared: true }), "PAYLOAD_INVALID");
+  });
+
+  it("reads the stored mode of the executing agent, and an unknown value is owner", () => {
+    // The isolated state already has the default agent `main`.
+    const agentName = dbGetAgent("main")?.name;
+    const context = turnContext(ANA_DM);
+    const deps = { ...OWNER, env: envFor(context), provider: "google", isPrivateDirectSession: () => true };
+
+    expectRefused(resolveConnectorExecRoute(deps), "CONNECTOR_SPEAKER_NOT_OWNER");
+
+    writeAgentConnectorMode("main", "google", "person_asking");
+    const turn = expectRoute(resolveConnectorExecRoute(deps), "person_asking");
+    expect(turn.agentDisplayName).toBe(agentName);
+    expect(readAgentConnectorMode("helper", "google")).toBe("owner");
+
+    writeAgentConnectorMode("main", "google", "owner");
+    expectRefused(resolveConnectorExecRoute(deps), "CONNECTOR_SPEAKER_NOT_OWNER");
+    expect(readAgentConnectorMode("main", "google", () => "everyone")).toBe("owner");
+    expect(
+      readAgentConnectorMode("main", "google", () => {
+        throw new Error("db closed");
+      }),
+    ).toBe("owner");
+  });
+
+  describe("who may change a mode", () => {
+    function operator(metadata: Record<string, unknown> | null) {
+      return resolveOperatorTurn({
+        ...OWNER,
+        env: metadata ? envFor(turnContext(metadata)) : {},
+        action: "change how this agent uses connected accounts",
+      });
+    }
+
+    it("is the terminal and the owner's own direct chat", () => {
+      expect(operator(null).ok).toBe(true);
+      expect(operator(LUIS_DM).ok).toBe(true);
+    });
+
+    it("sends the owner who asks in a group to their own chat", () => {
+      const result = operator(LUIS_GROUP);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe("CONNECTOR_GROUP_BLOCKED");
+      expect(result.error.exitCode).toBe(3);
+      expect(result.error.details).toMatchObject({
+        chatLine: "Ask me in our private chat and I'll change it.",
+        chatLinePt: "Me peça no nosso chat privado que eu mudo.",
+        replyTo: "same_chat",
+      });
+    });
+
+    it("is never a contact or a routine", () => {
+      for (const metadata of [ANA_DM, NEW_DM, HEARTBEAT, ANA_GROUP]) {
+        const result = operator(metadata);
+        expect(result.ok).toBe(false);
+        if (result.ok) continue;
+        expect(result.error.code).toBe("CONNECTOR_SPEAKER_NOT_OWNER");
+        expect(result.error.exitCode).toBe(3);
+        expect(result.error.details).toMatchObject({
+          chatLine: "Only Luis can change that.",
+          chatLinePt: "Só Luis pode mudar isso.",
+          replyTo: "same_chat",
+        });
+      }
+    });
+  });
+
+  describe("agent exec header", () => {
+    it("carries the agent and the contact id, never a Console user id", () => {
+      const header = encodeExecContextHeader(
+        buildAgentExecContext({
+          actorPrincipal: "contact:c_ana",
+          speaker: { kind: "contact", contactId: "c_ana", consoleUserId: "user_ana" },
+          conversation: "dm",
+          agentId: "main",
+          agentDisplayName: "Main agent",
+          sessionName: "main-session",
+          turnKey: sha256("ctx_1"),
+        }),
+        { keepAgentId: true },
+      );
+
+      const decoded = decodeExecContextHeader(header);
+      expect(decoded).toEqual({
+        v: 1,
+        agentId: "main",
+        sessionName: "main-session",
+        speaker: { kind: "contact", contactId: "c_ana" },
+        conversation: "dm",
+        turnKey: sha256("ctx_1"),
+        agentDisplayName: "Main agent",
+      });
+      expect(JSON.stringify(decoded)).not.toContain("consoleUserId");
+    });
+
+    it("never drops the agent id: a header still too large fails closed", () => {
+      const header = encodeExecContextHeader(
+        buildAgentExecContext({
+          actorPrincipal: "contact:c_ana",
+          speaker: { kind: "contact", contactId: "c_ana" },
+          conversation: "dm",
+          agentId: "main",
+          agentDisplayName: "Main agent",
+          sessionName: "s".repeat(3000),
+        }),
+        { keepAgentId: true },
+      );
+      expect(decodeExecContextHeader(header)).toEqual({
+        v: 1,
+        agentId: "main",
+        speaker: { kind: "contact", contactId: "c_ana" },
+        conversation: "dm",
+      });
+
+      expect(() =>
+        encodeExecContextHeader(
+          buildAgentExecContext({
+            actorPrincipal: "contact:c_ana",
+            speaker: { kind: "contact", contactId: "c_ana" },
+            conversation: "dm",
+            agentId: "a".repeat(3000),
+          }),
+          { keepAgentId: true },
+        ),
+      ).toThrow("too large");
     });
   });
 });

@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "ef5a34d68ed1a992"
+    "version": "edc146c6cfe42807"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -37404,6 +37404,106 @@
         ]
       }
     },
+    "/api/v1/connectors/mode": {
+      "post": {
+        "operationId": "connectors.mode",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "agent": {
+                    "description": "Agent id",
+                    "type": "string"
+                  },
+                  "execute": {
+                    "description": "Actually switch to person-asking or shared; default is a dry-run that only shows the plan (exit 3). owner applies immediately",
+                    "type": "boolean"
+                  },
+                  "mode": {
+                    "description": "owner (default) | person-asking | shared; omit to show the current mode",
+                    "type": "string"
+                  },
+                  "provider": {
+                    "description": "Provider id (google)",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "agent",
+                  "provider"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "agentId": {
+                      "type": "string"
+                    },
+                    "changed": {
+                      "type": "boolean"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "mode": {
+                      "enum": [
+                        "owner",
+                        "person_asking",
+                        "shared"
+                      ],
+                      "type": "string"
+                    },
+                    "previousMode": {
+                      "enum": [
+                        "owner",
+                        "person_asking",
+                        "shared"
+                      ],
+                      "type": "string"
+                    },
+                    "provider": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "agentId",
+                    "provider",
+                    "mode",
+                    "previousMode",
+                    "changed",
+                    "label"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Show or set whose account an agent uses for a provider: owner, person-asking or shared",
+        "tags": [
+          "connectors"
+        ]
+      }
+    },
     "/api/v1/connectors/revoke": {
       "post": {
         "operationId": "connectors.revoke",
@@ -54623,7 +54723,7 @@
                     "type": "string"
                   },
                   "connector": {
-                    "description": "Connection id (defaults to your default Google connection, else the newest active one)",
+                    "description": "Your connection id (defaults to your default Google connection, else the newest active one); only on your own turns",
                     "type": "string"
                   },
                   "cursor": {
@@ -54641,6 +54741,10 @@
                   "q": {
                     "description": "Gmail search query (same as the web search bar)",
                     "type": "string"
+                  },
+                  "shared": {
+                    "description": "In your own chat with this agent (or a group its shared account covers), use its shared account instead of yours (the agent must be in shared mode)",
+                    "type": "boolean"
                   }
                 },
                 "type": "object"
@@ -54741,7 +54845,7 @@
                     "type": "string"
                   },
                   "connector": {
-                    "description": "Connection id (defaults to your default Google connection, else the newest active one)",
+                    "description": "Your connection id (defaults to your default Google connection, else the newest active one); only on your own turns",
                     "type": "string"
                   },
                   "format": {
@@ -54751,6 +54855,10 @@
                   "id": {
                     "description": "Gmail message id (from `ravi gmail list`)",
                     "type": "string"
+                  },
+                  "shared": {
+                    "description": "In your own chat with this agent (or a group its shared account covers), use its shared account instead of yours (the agent must be in shared mode)",
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -54866,7 +54974,7 @@
                     "type": "string"
                   },
                   "connector": {
-                    "description": "Connection id (defaults to your default Google connection, else the newest active one)",
+                    "description": "Your connection id (defaults to your default Google connection, else the newest active one); only on your own turns",
                     "type": "string"
                   },
                   "execute": {
@@ -54880,6 +54988,10 @@
                   "inReplyTo": {
                     "description": "Message-Id this email replies to",
                     "type": "string"
+                  },
+                  "shared": {
+                    "description": "In your own chat with this agent (or a group its shared account covers), use its shared account instead of yours (the agent must be in shared mode)",
+                    "type": "boolean"
                   },
                   "subject": {
                     "description": "Email subject",
@@ -119926,7 +120038,7 @@
       "name": "feedback"
     },
     {
-      "description": "Operate your Gmail through your connected Google account",
+      "description": "Operate Gmail through a connected Google account (yours, the person asking's, or a shared one)",
       "name": "gmail"
     },
     {

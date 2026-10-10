@@ -106,3 +106,60 @@ Remote codes the person can act on (denied, blocked tool, connector turned
 off, read only) get local copy with the line to say, for the same reason as
 the turn blocks: the agent should tell the owner what happened and what they
 can change, not relay a code.
+
+## Agent modes
+
+Some agents answer other people: a team assistant, a support agent. For them
+"Only when I ask" refuses everyone, and the only way around it would be to
+let them use the operator's own Gmail, which is the hole the turn
+classification closed. The two other modes give such agents an account that
+is not the operator's: the person asking's own (they allow the agent once,
+in the Console, signed in as themselves), or an organization account an admin
+chose to share. The CLI does not pick that account: it sends Link the
+executing agent and, for a contact, only the contact id, and the Worker finds
+the person from its own `ravi link` binding. Sending the cached Console user
+id there would let a tampered or stale cache act as another member, so agent
+exec never carries it.
+
+Only the operator changes a mode, and expanding one is braked, because a mode
+decides whose account other people's requests reach. A contact asking the
+agent to switch its mode must get the same refusal as a contact asking to use
+the owner's Gmail. Going back to `owner` only narrows it, so it applies at
+once. The mode lives in the settings table, but `settings set` and
+`settings delete` refuse it so that the brake and the operator check cannot
+be skipped through a generic command. Deleting an agent deletes its modes:
+the Worker's grants are keyed by agent id, so a new agent with the same id
+would otherwise inherit the old one's mode, and every consent people gave the
+old agent, without anyone running the braked command for it.
+
+The owner's own requests keep the owner's connection in every mode: the
+owner asking from their own chat expects their own mailbox, and a "summarize
+my inbox" cron expects the owner's inbox, not the organization's. Their
+routines also post nowhere (`automation`), which a shared grant cannot list,
+so sending them to the shared account would only make them fail. `--shared`
+is the explicit way to use the shared account from the owner's turn, and only
+in a chat, the only place a grant covers; without it the answer would change
+under the owner the day an admin shares an account.
+Groups never get a personal account, in any mode, because everyone in the
+group would read the answer; a shared account is the only one that can serve
+a group, and only when the admin shared it for groups.
+
+`person-asking` also needs the direct chat to have a session of its own. A
+session keeps a transcript, and with `dmScope: main`, a route that sends
+several chats to one session, or another person's chat attached, the next
+person in that session can ask "what did you just read?" and get the first
+person's mail. The person consented to the agent using their Gmail for them,
+not for everyone who shares its transcript. The check is structural (the
+session key, routes by name, attached chats) because those decide who will
+write in that session, not only who has so far.
+
+The lines for the person asking go to the same chat, not "to the owner
+privately": in `person-asking` the turn is always that person's direct chat,
+and the account is theirs. The not-linked line names no command: the person
+is not the operator, so the agent offers the private link and runs `ravi
+link` itself. The consent page is rebuilt from the Console of
+the active login for the same reason as the approval page, and is called
+`consentLink` because the sanitizer cuts `*url` values. A connection missing
+for the person asking exits 3, not 1: it is the person's step to take, like
+consent, and the agent must stop and tell them, not treat it as its own
+failure.

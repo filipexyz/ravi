@@ -6,11 +6,13 @@ import { CONTRACT_EXIT_POLICY, ContractError, contractDryRun, contractFail } fro
 import { CloudAuthError, cloudAuthErrorFromUnknown } from "../../cloud-auth/errors.js";
 import { APPROVAL_ID_PATTERN } from "../../link/client.js";
 import { currentConnectorRuntimeContext } from "../../link/connector-turn.js";
+import type { ConnectorUseMode } from "../../link/connector-mode.js";
 import {
   connectorReconnectError,
   execCapabilityWithApproval,
   listConnectors,
   pickDefaultConnector,
+  resolveConnectorExecPlan,
   type StepUpHandler,
 } from "../../link/connectors.js";
 import { openExternal } from "../../link/open-external.js";
@@ -19,10 +21,14 @@ import { declareCommandReturns } from "./operational-return-schemas.js";
 
 const APPROVAL_FLAG_DESCRIPTION =
   "Approval id the account owner approved for this exact action (from a CONNECTOR_APPROVAL_REQUIRED answer)";
+const SHARED_FLAG_DESCRIPTION =
+  "In your own chat with this agent (or a group its shared account covers), use its shared account instead of yours (the agent must be in shared mode)";
+const CONNECTOR_FLAG_DESCRIPTION =
+  "Your connection id (defaults to your default Google connection, else the newest active one); only on your own turns";
 
 @Group({
   name: "gmail",
-  description: "Operate your Gmail through your connected Google account",
+  description: "Operate Gmail through a connected Google account (yours, the person asking's, or a shared one)",
   scope: "open",
 })
 export class GmailCommands {
@@ -34,17 +40,14 @@ export class GmailCommands {
     @Option({ flags: "--max <n>", description: "Max messages to return (1-100, default 25)" }) maxOpt?: string,
     @Option({ flags: "--cursor <token>", description: "Page token for the next page (Gmail nextPageToken)" })
     cursor?: string,
-    @Option({
-      flags: "--connector <id>",
-      description: "Connection id (defaults to your default Google connection, else the newest active one)",
-    })
-    connector?: string,
+    @Option({ flags: "--connector <id>", description: CONNECTOR_FLAG_DESCRIPTION }) connector?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--approval <id>", description: APPROVAL_FLAG_DESCRIPTION }) approval?: string,
+    @Option({ flags: "--shared", description: SHARED_FLAG_DESCRIPTION }) shared?: boolean,
   ) {
     return runGmailCommand(asJson, async () => {
       assertApprovalId(approval);
-      const connectorId = connector ?? (await resolveDefaultGoogleConnector());
+      const target = await resolveGmailTarget(connector, shared);
       const max = Math.min(Math.max(Number.parseInt(maxOpt ?? "25", 10) || 25, 1), 100);
       const labelIds = label
         ? label
@@ -53,7 +56,7 @@ export class GmailCommands {
             .filter(Boolean)
         : undefined;
       const exec = await execWithApproval({
-        connectorId,
+        ...target,
         capability: "gmail.message.list",
         parameters: { q: query, labelIds, maxResults: max, pageToken: cursor },
         asJson,
@@ -87,19 +90,16 @@ export class GmailCommands {
   async read(
     @Arg("id", { description: "Gmail message id (from `ravi gmail list`)" }) id: string,
     @Option({ flags: "--format <format>", description: "full | metadata | raw (default full)" }) format?: string,
-    @Option({
-      flags: "--connector <id>",
-      description: "Connection id (defaults to your default Google connection, else the newest active one)",
-    })
-    connector?: string,
+    @Option({ flags: "--connector <id>", description: CONNECTOR_FLAG_DESCRIPTION }) connector?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--approval <id>", description: APPROVAL_FLAG_DESCRIPTION }) approval?: string,
+    @Option({ flags: "--shared", description: SHARED_FLAG_DESCRIPTION }) shared?: boolean,
   ) {
     return runGmailCommand(asJson, async () => {
       assertApprovalId(approval);
-      const connectorId = connector ?? (await resolveDefaultGoogleConnector());
+      const target = await resolveGmailTarget(connector, shared);
       const exec = await execWithApproval({
-        connectorId,
+        ...target,
         capability: "gmail.message.read",
         parameters: { id, format: (format ?? "full") as "full" | "metadata" | "raw" },
         asJson,
@@ -147,7 +147,7 @@ export class GmailCommands {
     action: "send",
     risk: "high",
     requiresConfirmation: true,
-    input: ["to", "cc", "bcc", "subject", "body", "html", "connector", "approval"],
+    input: ["to", "cc", "bcc", "subject", "body", "html", "connector", "approval", "shared"],
     redactions: ["body", "html"],
   })
   async send(
@@ -160,13 +160,10 @@ export class GmailCommands {
     @Option({ flags: "--html <body>", description: "Optional HTML body" }) html?: string,
     @Option({ flags: "--in-reply-to <messageId>", description: "Message-Id this email replies to" })
     inReplyTo?: string,
-    @Option({
-      flags: "--connector <id>",
-      description: "Connection id (defaults to your default Google connection, else the newest active one)",
-    })
-    connector?: string,
+    @Option({ flags: "--connector <id>", description: CONNECTOR_FLAG_DESCRIPTION }) connector?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--approval <id>", description: APPROVAL_FLAG_DESCRIPTION }) approval?: string,
+    @Option({ flags: "--shared", description: SHARED_FLAG_DESCRIPTION }) shared?: boolean,
     @Option({
       flags: "--execute",
       description: "Actually send the email; default is a dry-run that only shows the plan (exit 3)",
@@ -205,7 +202,7 @@ export class GmailCommands {
         );
       }
 
-      const connectorId = connector ?? (await resolveDefaultGoogleConnector());
+      const target = await resolveGmailTarget(connector, shared);
       const parameters = {
         to: recipients,
         cc: parseAddressList(cc) || undefined,
@@ -217,7 +214,7 @@ export class GmailCommands {
       };
 
       const exec = await execWithApproval({
-        connectorId,
+        ...target,
         capability: "gmail.message.send",
         parameters,
         asJson,
@@ -305,19 +302,22 @@ function stepUpPrompt(op: string, asJson: boolean | undefined): StepUpHandler {
  * re-run with. `stepUp` answers a step-up challenge (send only), keeping
  * the approval on the retry.
  */
-async function execWithApproval(input: {
-  connectorId: string;
-  capability: string;
-  parameters: unknown;
-  asJson: boolean | undefined;
-  approvalId?: string;
-  stepUp?: boolean;
-}) {
+async function execWithApproval(
+  input: GmailTarget & {
+    capability: string;
+    parameters: unknown;
+    asJson: boolean | undefined;
+    approvalId?: string;
+    stepUp?: boolean;
+  },
+) {
   return execCapabilityWithApproval(
     {
-      connectorId: input.connectorId,
+      ...(input.connectorId ? { connectorId: input.connectorId } : {}),
       capability: input.capability,
       parameters: input.parameters,
+      expectedMode: input.mode,
+      ...(input.useShared ? { useShared: true } : {}),
       ...(input.approvalId ? { approvalId: input.approvalId } : {}),
     },
     {},
@@ -356,6 +356,34 @@ async function promptStepUpToken(asJson: boolean | undefined): Promise<string | 
   } finally {
     rl.close();
   }
+}
+
+interface GmailTarget {
+  mode: ConnectorUseMode;
+  /** The operator's own connection (owner mode only). */
+  connectorId?: string;
+  useShared?: boolean;
+}
+
+/**
+ * Whose account this call uses. On the operator's own turns (and in `owner`
+ * mode) it is the operator's connection: `--connector`, else the default.
+ * When the executing agent answers this turn with the person asking's own
+ * account or a shared one, the Worker picks the connection, so a connection
+ * id cannot be passed: it would name one of the operator's.
+ */
+async function resolveGmailTarget(connector: string | undefined, shared: boolean | undefined): Promise<GmailTarget> {
+  const plan = resolveConnectorExecPlan({ provider: "google", ...(shared ? { useShared: true } : {}) });
+  if (plan.mode !== "owner") {
+    if (connector !== undefined) {
+      throw new CloudAuthError(
+        "PAYLOAD_INVALID",
+        `--connector names one of your own connections, but this turn uses ${plan.mode === "shared" ? "the agent's shared account" : "the Gmail of the person asking"}. Run it again without --connector.`,
+      );
+    }
+    return { mode: plan.mode, ...(shared ? { useShared: true } : {}) };
+  }
+  return { mode: "owner", connectorId: connector ?? (await resolveDefaultGoogleConnector()) };
 }
 
 async function resolveDefaultGoogleConnector(): Promise<string> {

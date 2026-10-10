@@ -36,14 +36,40 @@
     send `error.chatLine` to the owner privately. The owner changes tool
     rules on the connection's Tools in Console > Connectors; an organization
     owner or admin turns Google back on in /org/connectors.
+8c. Agent modes. `ravi connectors mode <agent> google` shows whose account
+    the agent uses. For the person asking (`person-asking`), all exit 3 and
+    every line goes to that person in their own direct chat:
+    `CONNECTOR_CONSENT_REQUIRED`: send `error.chatLine` (it carries
+    `error.consentLink`), then run the same command again after they approve;
+    `CONNECTOR_NOT_LINKED`: say `error.chatLine` (it asks whether they want a
+    private link), and run `ravi link` in their turn if they say yes;
+    `CONNECTOR_CONNECTION_REQUIRED`: they connect a Gmail in their own
+    Console first; `CONNECTOR_GROUP_BLOCKED` in a direct chat: the chat
+    shares its session with other people (`dmScope: main`, a route with a
+    session name, or another person's chat attached to it); give each person
+    their own session (`dmScope: per-peer`, the default) and remove the
+    route's session name or detach the chat. For a shared account
+    (`shared`), `CONNECTOR_FORBIDDEN` means no account is shared with this
+    agent for this conversation: an organization owner or admin shares one in
+    /org/connectors; `CONNECTOR_CONNECTION_REQUIRED` means the shared account
+    was disconnected or paused there. The owner's cron jobs and heartbeats
+    keep the owner's connection in every mode. A `CONFLICT` from gmail means
+    the mode changed while the command ran: run it again. `PAYLOAD_INVALID`
+    with `--shared` means the agent is not in `shared` mode, or the turn is
+    not in a chat (terminal, `ravi sessions send`, a routine posting
+    nowhere); with `--connector`, drop the flag.
+    If a contact's request uses the owner's account in an agent mode, check
+    the turn as in step 5 (`actorPrincipal`, `agentIdentityCompartment`) and
+    `ravi settings get connectors.mode.<agent>.google`.
 9. `CONNECTOR_AUTH_REJECTED` after connect: the link was opened by another
    Console user, or the organization does not allow the connector. Start
    again and open the link signed in as the user of `ravi login`.
 10. `AUTH_REQUIRED`/`AUTH_EXPIRED` (exit 1): run `ravi login` and retry.
 11. A `--project is ignored` line on stderr is expected: connections are not
     project-scoped. Drop the flag before 2027-01-01.
-12. If `revoke` executed without `--yes`/`--execute`, the brake regressed:
-    check the `contractDryRun` call ordering in
+12. If `revoke` executed without `--yes`/`--execute`, or `connectors mode`
+    switched to `person-asking` or `shared` without `--execute`, the brake
+    regressed: check the `contractDryRun` call ordering in
     `src/cli/commands/connectors.ts`.
 13. If a brake exits 5 as `SERVER_UNAVAILABLE`, the ContractError rethrow guard
     in `runConnectorCommand` was lost.
@@ -52,7 +78,10 @@
 
 ```bash
 bun test src/link/ src/runtime/turn-origin.test.ts src/cloud-auth/connector-auth.test.ts
-bun test src/cli/commands/connectors.test.ts src/cli/commands/gmail.test.ts src/cli/commands/mail.test.ts src/cloud-auth/errors.test.ts src/cli/remote-gateway.test.ts
+# One file per run: their mock.module calls collide in one process.
+for f in connectors connectors-mode gmail mail settings; do bun test "src/cli/commands/$f.test.ts" || break; done
+bun test src/cloud-auth/errors.test.ts
+bun test src/cli/remote-gateway.test.ts
 bun test src/cron/ src/cli/commands/cron-commands.test.ts src/router/router.test.ts
 ```
 
@@ -65,6 +94,8 @@ ravi connectors list --fields id,provider --json     # expect compact items
 ravi connectors list --project x --json              # expect the --project line on stderr
 ravi connectors revoke conn_x --json                 # expect exit 3 + plan, nothing revoked
 ravi connectors connect google --no-open --json      # expect one started document (Console connect URL)
+ravi connectors mode main google --json              # expect mode owner, changed false
+ravi connectors mode main google person-asking --json   # expect exit 3 + plan, nothing changed
 ```
 
 From an agent turn in a group chat, `ravi gmail list --json` must exit 3 with

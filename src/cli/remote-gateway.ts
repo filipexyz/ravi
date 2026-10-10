@@ -447,7 +447,32 @@ function connectorTurnRemoteCopy(
   const reconnectLink = connectorConsoleLink(remote.reconnectLink, "/connectors");
   if (reconnectLink) details.reconnectLink = reconnectLink;
   Object.assign(details, connectorApprovalDetails(remote));
+  Object.assign(details, connectorConsentDetails(remote));
   return { message, details };
+}
+
+const CONNECTOR_CONSENT_PATH = /\/connectors\/consent\/([A-Za-z0-9_-]{16,256})$/;
+
+/**
+ * What a consent answer needs to be acted on: the person's consent page (only
+ * a Console `/connectors/consent/<token>` page, under the link rules below)
+ * and its expiry.
+ */
+function connectorConsentDetails(remote: CompleteContractErrorBody["error"]): ContractErrorDetails {
+  if (remote.code !== "CONNECTOR_CONSENT_REQUIRED" || typeof remote.consentLink !== "string") return {};
+  let pathname: string;
+  try {
+    pathname = new URL(remote.consentLink).pathname;
+  } catch {
+    return {};
+  }
+  const token = CONNECTOR_CONSENT_PATH.exec(pathname)?.[1];
+  const consentLink = token ? connectorConsoleLink(remote.consentLink, `/connectors/consent/${token}`) : undefined;
+  if (!consentLink) return {};
+  const details: ContractErrorDetails = { consentLink };
+  const expiresAt = connectorExpiresAt(remote.expiresAt);
+  if (expiresAt) details.expiresAt = expiresAt;
+  return details;
 }
 
 const CONNECTOR_EXPIRES_AT_MAX = 64;
@@ -465,16 +490,18 @@ function connectorApprovalDetails(remote: CompleteContractErrorBody["error"]): C
   const approvalLink = connectorConsoleLink(remote.approvalLink, `/connectors/approvals/${approvalId}`);
   if (approvalLink) details.approvalLink = approvalLink;
   if (remote.retryWith === `--approval ${approvalId}`) details.retryWith = remote.retryWith;
-  const expiresAt = remote.expiresAt;
-  if (
-    typeof expiresAt === "string" &&
-    expiresAt.length <= CONNECTOR_EXPIRES_AT_MAX &&
-    !hasControlCharacters(expiresAt) &&
-    Number.isFinite(Date.parse(expiresAt))
-  ) {
-    details.expiresAt = expiresAt;
-  }
+  const expiresAt = connectorExpiresAt(remote.expiresAt);
+  if (expiresAt) details.expiresAt = expiresAt;
   return details;
+}
+
+function connectorExpiresAt(value: unknown): string | undefined {
+  return typeof value === "string" &&
+    value.length <= CONNECTOR_EXPIRES_AT_MAX &&
+    !hasControlCharacters(value) &&
+    Number.isFinite(Date.parse(value))
+    ? value
+    : undefined;
 }
 
 /** A message, or a chat line under `detailKey` (sanitized as the envelope sanitizes that detail, links kept). */
@@ -494,7 +521,8 @@ function hasControlCharacters(value: string): boolean {
 
 /**
  * Only a Console page whose path ends with `suffix` (the connectors page, an
- * approval page): https (http on localhost), no credentials, query or fragment.
+ * approval or consent page): https (http on localhost), no credentials, query
+ * or fragment.
  */
 function connectorConsoleLink(value: unknown, suffix: string): string | undefined {
   if (typeof value !== "string" || value.length > 512) return undefined;

@@ -2,8 +2,28 @@ import "reflect-metadata";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option } from "../decorators.js";
-import { ContractError, contractDryRun, contractFail, pickFields } from "../agent-contract.js";
+import {
+  CONTRACT_EXIT_USAGE,
+  ContractError,
+  contractDryRun,
+  contractFail,
+  pickFields,
+  suggestSimilar,
+} from "../agent-contract.js";
 import { cloudAuthErrorFromUnknown } from "../../cloud-auth/errors.js";
+import {
+  CONNECTOR_MODE_ARGS,
+  CONNECTOR_MODE_PROVIDERS,
+  connectorModeArg,
+  connectorModeLabel,
+  isConnectorModeProvider,
+  parseConnectorModeArg,
+  readAgentConnectorMode,
+  writeAgentConnectorMode,
+  type ConnectorUseMode,
+} from "../../link/connector-mode.js";
+import { resolveOperatorTurn } from "../../link/connector-turn.js";
+import { dbGetAgent, dbListAgents } from "../../router/router-db.js";
 import {
   execCapability,
   getConnectStatus,
@@ -242,6 +262,118 @@ export class ConnectorsCommands {
       return payload;
     });
   }
+
+  @Command({
+    name: "mode",
+    description: "Show or set whose account an agent uses for a provider: owner, person-asking or shared",
+    helpAfter: `
+MODES
+  owner          Only when I ask (default): your own connection, only for your own requests.
+  person-asking  Each person who talks to the agent uses their own account, after allowing the agent once.
+  shared         An organization account an admin shared with this agent in Ravi Console.
+
+RULES
+  Only you change a mode: from your terminal or your own direct chat with the agent.
+  person-asking and shared are a dry-run (exit 3) until you add --execute; owner applies at once.
+  Your own requests and routines keep your own connection in every mode; in your direct chat
+  with the agent, gmail --shared uses the shared one.
+  person-asking works only where each person has a session of their own (dmScope per-peer).
+
+EXAMPLES
+  ravi connectors mode main google
+  ravi connectors mode main google person-asking --execute
+  ravi connectors mode main google owner`,
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "connectors",
+    action: "mode",
+    risk: "high",
+    requiresConfirmation: true,
+  })
+  async mode(
+    @Arg("agent", { description: "Agent id" }) agent: string,
+    @Arg("provider", { description: "Provider id (google)" }) provider: string,
+    @Arg("mode", {
+      required: false,
+      description: "owner (default) | person-asking | shared; omit to show the current mode",
+    })
+    value?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description:
+        "Actually switch to person-asking or shared; default is a dry-run that only shows the plan (exit 3). owner applies immediately",
+    })
+    execute?: boolean,
+  ) {
+    const op = "connectors mode";
+    return runConnectorCommand(asJson, async () => {
+      // Who may change it comes first: a contact, a routine or another agent
+      // never learns or changes how an agent uses accounts.
+      const operator = resolveOperatorTurn({
+        action: "change whose account an agent uses",
+        service: "Gmail",
+      });
+      if (!operator.ok) throw operator.error;
+
+      const agentId = agent.trim();
+      const providerId = provider.trim().toLowerCase();
+      if (!isConnectorModeProvider(providerId)) {
+        contractFail(op, "USAGE_ERROR", `Unknown provider: ${provider}. Providers with a mode: google.`, {
+          asJson,
+          exitCode: CONTRACT_EXIT_USAGE,
+          details: {
+            suggestedAction: "Pass a provider that has a mode (google)",
+            acceptedPositionals: [...CONNECTOR_MODE_PROVIDERS],
+          },
+        });
+      }
+      const next = value === undefined ? undefined : parseConnectorModeArg(value);
+      if (next === null) {
+        contractFail(op, "USAGE_ERROR", `Unknown mode: ${value}. Modes: owner, person-asking, shared.`, {
+          asJson,
+          exitCode: CONTRACT_EXIT_USAGE,
+          details: {
+            suggestedAction: "Pass owner, person-asking or shared, or omit the mode to show the current one",
+            acceptedPositionals: [...CONNECTOR_MODE_ARGS],
+          },
+        });
+      }
+      if (!dbGetAgent(agentId)) {
+        contractFail(op, "AGENT_NOT_FOUND", `Agent not found: ${agentId}`, {
+          asJson,
+          details: {
+            suggestedAction: "Check the agent id (see suggestions; list with: ravi agents list --json)",
+            suggestions: suggestSimilar(
+              agentId,
+              dbListAgents().map((item) => item.id),
+            ),
+          },
+        });
+      }
+
+      const before = readAgentConnectorMode(agentId, providerId);
+      if (next === undefined || next === before) {
+        const payload = modePayload(agentId, providerId, before, before, false);
+        printModeResult(payload, asJson);
+        return payload;
+      }
+      if (next !== "owner" && execute !== true) {
+        // Write brake: another person's account, or a shared one, starts
+        // answering this agent's turns. Going back to owner only narrows it.
+        contractDryRun(
+          op,
+          { agentId, provider: providerId, from: before, to: next, affects: modeEffect(next) },
+          { asJson },
+        );
+      }
+      writeAgentConnectorMode(agentId, providerId, next);
+      const payload = modePayload(agentId, providerId, before, next, true);
+      printModeResult(payload, asJson);
+      return payload;
+    });
+  }
 }
 
 const connectorListItemSchema = z.object({
@@ -280,7 +412,60 @@ declareCommandReturns(ConnectorsCommands, {
   }),
   show: z.object({ connection: connectorDetailSchema }),
   revoke: z.object({ revoked: z.literal(true), id: z.string() }),
+  mode: z.object({
+    agentId: z.string(),
+    provider: z.string(),
+    mode: z.enum(["owner", "person_asking", "shared"]),
+    previousMode: z.enum(["owner", "person_asking", "shared"]),
+    changed: z.boolean(),
+    label: z.string(),
+  }),
 });
+
+interface ModePayload {
+  agentId: string;
+  provider: string;
+  mode: ConnectorUseMode;
+  previousMode: ConnectorUseMode;
+  changed: boolean;
+  label: string;
+}
+
+function modePayload(
+  agentId: string,
+  provider: string,
+  previousMode: ConnectorUseMode,
+  mode: ConnectorUseMode,
+  changed: boolean,
+): ModePayload {
+  return { agentId, provider, mode, previousMode, changed, label: connectorModeLabel(mode) };
+}
+
+function modeEffect(mode: ConnectorUseMode): string {
+  return mode === "person_asking"
+    ? "people who talk to the agent in a direct chat of their own use their own account, after allowing the agent once"
+    : "the agent answers other people, and routines posting into their chats, with the account an admin shared with it";
+}
+
+function printModeResult(payload: ModePayload, asJson: boolean | undefined): void {
+  if (asJson) {
+    console.log(JSON.stringify(payload, null, 2));
+    return;
+  }
+  const arg = connectorModeArg(payload.mode);
+  if (payload.changed) {
+    console.log(`${payload.agentId} now uses ${payload.provider} as: ${arg} (${payload.label}).`);
+  } else {
+    console.log(`${payload.agentId} uses ${payload.provider} as: ${arg} (${payload.label}).`);
+  }
+  if (payload.mode === "person_asking") {
+    console.log("  Each person allows the agent once, from a private link the agent sends them.");
+  } else if (payload.mode === "shared") {
+    console.log("  An organization owner or admin chooses the shared account and its conversations in Ravi Console.");
+  }
+  if (payload.mode !== "owner")
+    console.log(`  Back to owner: ravi connectors mode ${payload.agentId} ${payload.provider} owner`);
+}
 
 async function pollUntilTerminal(pendingId: string, expiresAt: string) {
   const expiry = Date.parse(expiresAt);

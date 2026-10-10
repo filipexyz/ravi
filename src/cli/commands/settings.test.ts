@@ -208,6 +208,27 @@ describe("SettingsCommands", () => {
     );
     expect(settingsStore["account.main.dmPolicy"]).toBeUndefined();
   });
+
+  it("refuses connectors.mode.* keys, which only `ravi connectors mode` sets behind its brake", () => {
+    const commands = new SettingsCommands();
+
+    expect(() => commands.set("connectors.mode.main.google", "shared")).toThrow(
+      "connectors.mode.main.google is set with `ravi connectors mode <agent> <provider> <owner|person-asking|shared>`, not settings set.",
+    );
+    expect(settingsStore["connectors.mode.main.google"]).toBeUndefined();
+  });
+
+  it("refuses to delete connectors.mode.* keys, which only `ravi connectors mode` changes", () => {
+    settingsStore["connectors.mode.main.google"] = "person_asking";
+    const commands = new SettingsCommands();
+
+    for (const execute of [false, true]) {
+      expect(() => commands.delete("connectors.mode.main.google", false, execute)).toThrow(
+        "connectors.mode.main.google is changed with `ravi connectors mode <agent> <provider> owner`, not settings delete.",
+      );
+    }
+    expect(settingsStore["connectors.mode.main.google"]).toBe("person_asking");
+  });
 });
 
 describe("settings agent-first contract", () => {

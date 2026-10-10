@@ -14,11 +14,14 @@ tags:
   - write-brake
   - personal-connections
   - turn-classification
+  - agent-mode
 applies_to:
   - src/cli/commands/connectors.ts
   - src/cli/commands/gmail.ts
+  - src/cli/commands/settings.ts
   - src/link/connectors.ts
   - src/link/connector-turn.ts
+  - src/link/connector-mode.ts
   - src/link/client.ts
   - src/cloud-auth/connector-auth.ts
   - src/cloud-auth/errors.ts
@@ -39,9 +42,12 @@ normative: true
 Make `ravi connectors` and the commands built on it (`gmail`) safe and
 reliable for agent consumers. A connection is one person's own external
 account (today Google: Gmail and Calendar), owned by a Console user, never by a
-project. It serves only its owner's own requests ("Only when I ask"), so every
-connector call first classifies the current turn and refuses anyone else's
-turn before any Console or Link call. On top of that the commands keep the
+project. By default it serves only its owner's own requests ("Only when I
+ask"), so every connector call first classifies the current turn and refuses
+anyone else's turn before any Console or Link call. The operator can set an
+agent to use, instead, the account of the person asking or an organization
+account shared with that agent; those calls go to Link's agent exec, where the
+Worker picks the account. On top of that the commands keep the
 agent-first contract defined by `cli`: typed error envelopes, the 0/1/2/3 exit
 taxonomy, a write brake on the destructive revoke, and compact discovery.
 Connections are remote Console/Link resources, so the not-found surface stays
@@ -85,7 +91,9 @@ instead of inventing local suggestions that would require extra remote calls.
    present, wins over the marker.
 3. The table below is normative. "Allowed" means: use the active session.
    "Blocked" means: throw a CloudAuthError that exits `3` before any remote
-   call.
+   call. It is the whole table for `connect`, `list`, `show`, `revoke` and
+   for an exec in the default `owner` mode; invariant 23 says how an exec
+   routes when the agent's mode is `person_asking` or `shared`.
 
 | Turn | Result |
 |---|---|
@@ -156,13 +164,16 @@ instead of inventing local suggestions that would require extra remote calls.
      At the operator's terminal a denial or an expired/used approval carries
      no chat line: the operator decided it themselves.
 5. These local messages and detail keys (`chatLine`, `chatLinePt`, `replyTo`,
-   `reconnectLink`, `approvalId`, `approvalLink`, `expiresAt`, `retryWith`)
+   `reconnectLink`, `approvalId`, `approvalLink`, `expiresAt`, `retryWith`,
+   `consentLink`)
    reach the public envelope only for errors built locally
    (`details.source == "connector-turn"`). Link and Console errors with the
    same codes keep the fixed catalog copy. Human output prints the chat line
    when the message does not quote it. Detail keys never end in `url`: the
    public sanitizer cuts such values to their origin, so the approval page
-   travels as `approvalLink` (the Worker's `approvalUrl` is never kept).
+   travels as `approvalLink` (the Worker's `approvalUrl` is never kept) and
+   the consent page as `consentLink` (the Worker's `consentUrl` is never
+   kept).
 5a. The host-gateway relay (child CLIs with `RAVI_CONTEXT_KEY`) keeps that
    copy for `gmail *` and `connectors *`: a `CONNECTOR_*` error that carries a
    chat line keeps its sanitized message (at most 1200 characters, no control
@@ -173,7 +184,10 @@ instead of inventing local suggestions that would require extra remote calls.
    matching `[A-Za-z0-9_-]{1,128}`), `approvalLink` (only that id's Console
    `/connectors/approvals/<id>` page, under the same link rules),
    `retryWith` (only exactly `--approval <id>`) and `expiresAt` (only a
-   parseable date, at most 64 characters). Other cloud codes on those
+   parseable date, at most 64 characters). A `CONNECTOR_CONSENT_REQUIRED`
+   answer also keeps `consentLink` (only a Console
+   `/connectors/consent/<token>` page, token `[A-Za-z0-9_-]{16,256}`, under
+   the same link rules) and `expiresAt`. Other cloud codes on those
    commands take the local catalog message and next step; nothing else of
    the remote body is kept.
 6. `connect`, `list`, `show`, `revoke` follow the same table: no contact can
@@ -184,12 +198,15 @@ instead of inventing local suggestions that would require extra remote calls.
 
 7. `execCapability` MUST send `X-Ravi-Exec-Context`, the base64url JSON of
    `{ v: 1, agentId?, sessionName?, speaker: { kind, contactId?,
-   consoleUserId? }, conversation, routine?, turnKey? }` built from the same
-   classification. `turnKey` is the sha256 hex of the root turn context id
-   (the projected actor's source context when there is one). The header MUST
-   NOT exceed 2048 bytes: optional fields are dropped (`sessionName`, then
-   `agentId`) until it fits, and an impossible fit fails with
-   `PAYLOAD_INVALID`. It never carries message content.
+   consoleUserId? }, conversation, routine?, turnKey?, agentDisplayName? }`
+   built from the same classification. `turnKey` is the sha256 hex of the
+   root turn context id (the projected actor's source context when there is
+   one). The header MUST NOT exceed 2048 bytes: optional fields are dropped
+   (`agentDisplayName`, `sessionName`, then `agentId`) until it fits, and an
+   impossible fit fails with `PAYLOAD_INVALID`. It never carries message
+   content. On agent exec (invariant 23) `speaker.consoleUserId` is never
+   sent and `agentId` is never dropped: a header that does not fit without it
+   fails `PAYLOAD_INVALID`.
 8. `connectors connect` MUST start through the Console:
    `POST /api/cli/connectors/connect/start` with the CLI bearer and body
    `{ provider, accessMode?, reconnectConnectionId?, displayName? }`, then
@@ -296,12 +313,136 @@ instead of inventing local suggestions that would require extra remote calls.
     exit `3`; other provider/auth failures exit `1`. Link's snake_case codes
     (`connector_group_blocked`, ...) map onto the uppercase CLI codes.
 
+### Per-agent mode
+
+21. Each agent has one mode per provider (today only `google`), stored in the
+    settings table under `connectors.mode.<agentId>.<provider>`
+    (`src/link/connector-mode.ts`): `owner` ("Only when I ask", the default),
+    `person_asking` ("The person asking") or `shared` ("Shared account"). A
+    missing, unreadable or unknown value is `owner`. `owner` is stored as no
+    row.
+22. `ravi connectors mode <agent> <provider> [owner|person-asking|shared]`
+    shows the mode without a value and sets it with one (`person_asking` is
+    accepted too). In this order: the turn MUST be the operator's (the
+    terminal, the owner's own linked direct chat, or the owner's own
+    `ravi sessions send|ask`), otherwise exit 3 `CONNECTOR_SPEAKER_NOT_OWNER`
+    with the chat line "Only <owner> can change that." / "Só <dono> pode
+    mudar isso." and nothing is read or written. The owner asking outside
+    their direct chat (a group) is refused the same way, with
+    `CONNECTOR_GROUP_BLOCKED` in a group, and the chat line "Ask me in our
+    private chat and I'll change it." / "Me peça no nosso chat privado que eu
+    mudo."; then an unknown provider or
+    mode is exit 2 `USAGE_ERROR` with `acceptedPositionals`; an unknown agent
+    is exit 1 `AGENT_NOT_FOUND` with suggestions; setting the current value
+    changes nothing (exit 0, `changed: false`). Moving to `person-asking` or
+    `shared` is braked: without `--execute` it exits 3
+    `WRITE_REQUIRES_EXECUTE` with the plan `{agentId, provider, from, to,
+    affects}` and writes nothing. Moving to `owner` only narrows who reaches
+    an account and applies at once. The mode is read from SQLite on every
+    connector call, so no refresh event is needed. `ravi settings set` and
+    `ravi settings delete` MUST refuse `connectors.mode.*` keys, so neither
+    the operator check nor the brake can be skipped; `settings get|list` may
+    show them (the value only names a mode). Deleting an agent
+    (`dbDeleteAgent`) MUST delete its `connectors.mode.<agentId>.<provider>`
+    rows (exactly that agent's: `a` never takes `a.b`'s), so an agent created
+    again with the same id starts at `owner`.
+23. Routing (`resolveConnectorExecRoute`, used by `execCapability` and
+    `resolveConnectorExecPlan`): the turn is classified with the table of
+    invariant 3, then the executing agent's mode decides where an exec goes.
+    `owner` mode uses `POST /cli/exec/:connectorId`; the other modes use
+    `POST /cli/agent-exec` with body `{ provider, capability, parameters,
+    mode }`, where the Worker picks the connection.
+
+    Every turn the owner table allows is the owner's own request and keeps
+    the owner's connection in every mode; only `--shared` moves one of them.
+
+| Turn | `owner` | `person_asking` | `shared` |
+|---|---|---|---|
+| Terminal, operator relay (`ravi sessions send\|ask`) | own connection | own connection | own connection (`--shared`: `PAYLOAD_INVALID`) |
+| The owner's own direct chat | own connection | own connection | own connection; agent exec `shared`, conversation `dm`, with `gmail --shared` |
+| The owner in a group | `CONNECTOR_GROUP_BLOCKED` | `CONNECTOR_GROUP_BLOCKED` | `CONNECTOR_GROUP_BLOCKED`; agent exec `shared`, conversation `group`, with `--shared` |
+| A resolved contact (linked to another user, or not linked) in a direct chat with a session of their own | `CONNECTOR_SPEAKER_NOT_OWNER` | agent exec `person_asking` | agent exec `shared`, conversation `dm` |
+| A resolved contact in a direct chat whose session other people share | `CONNECTOR_SPEAKER_NOT_OWNER` | `CONNECTOR_GROUP_BLOCKED` ("I can't use your Gmail in this conversation.") | agent exec `shared`, conversation `dm` |
+| A resolved contact in a group | `CONNECTOR_GROUP_BLOCKED` | `CONNECTOR_GROUP_BLOCKED` ("I can only use your Gmail in a direct chat with me. Ask me there.") | agent exec `shared`, conversation `group` |
+| A routine the table allows (operator cron, heartbeat), posting nowhere or into the owner's direct chat | own connection | own connection | own connection (`--shared`: `PAYLOAD_INVALID` when it posts nowhere; agent exec `shared`, conversation `dm`, in the owner's direct chat) |
+| A routine answering into a chat that is not the owner's direct chat | `CONNECTOR_GROUP_BLOCKED` | `CONNECTOR_GROUP_BLOCKED` | agent exec `shared` with that conversation |
+| An unresolved sender, another agent, a trigger, observer, job, an ended or unknown turn | blocked | blocked | blocked |
+
+    A direct chat has a session of its own (`readIsPrivateDirectSession`)
+    when the turn's contexts name one session key, that key parses as a
+    direct-chat key (`peerKind: dm`, never `dmScope: main`), no active route
+    sends chats into it by name (`routes.session_name`), and every active
+    `session_chat_subscriptions` row of it (inbound routing attaches each
+    chat it sends there) is the speaker's own direct chat: the compartment's
+    chat, or a `dm` chat that resolves to the same contact. Anything else,
+    or a failed read, is not private: in `person_asking` the person's mail
+    would stay in a transcript other people can ask about.
+
+    `--shared` (on `gmail list|read|send`) works only on the owner's own
+    turns in a chat (conversation `dm` or `group`), because a shared grant
+    only lists chats. On an agent that is not in `shared` mode, with no agent
+    (the terminal), or on a turn whose conversation is `terminal` or
+    `automation` (the operator relay, a routine posting nowhere), it is
+    `PAYLOAD_INVALID` (exit 2); on anyone else's turn it never unblocks
+    anything. In agent modes `--connector` is refused with
+    `PAYLOAD_INVALID` (it names one of the owner's own connections), and the
+    exec pins the mode it planned: if the mode changed in between, the exec
+    fails `CONFLICT` before any call.
+24. The agent exec header carries `agentId`, `agentDisplayName` (the agent's
+    name, at most 120 characters), and for a contact only
+    `speaker.contactId`. It never carries `consoleUserId`: the Worker takes
+    the person from its own `ravi link` binding. The CLI bearer is still the
+    operator's session.
+25. Agent exec answers are rebuilt locally for the person in the chat, never
+    the owner (`replyTo: same_chat`). The consent, not-linked,
+    connection-required, forbidden, group-blocked, approval, denial,
+    tool-blocked and disabled-by-org answers exit 3; the permission and
+    reconnect answers keep exit 1 (invariant 4); an approval that no longer
+    matches stays `CONNECTOR_APPROVAL_INVALID` exit 1:
+    - `connector_consent_required` (409) → `CONNECTOR_CONSENT_REQUIRED`. Link
+      keeps only the token of `consentUrl` (path
+      `/connectors/consent/<[A-Za-z0-9_-]{16,256}>`) and `expiresAt`; the
+      page is rebuilt as `consentLink = <console>/connectors/consent/<token>`
+      from the Console of the active login. Chat line "To use your Gmail
+      here, approve it once: <link>" / "Para eu usar o seu Gmail aqui, aprove
+      uma vez: <link>". The message refers to the chat line instead of
+      quoting the link, says to send it only in that direct chat, and to run
+      the same command again after they approve. Without a usable token the
+      error has no chat line and says to run the command again.
+    - `connector_not_linked` (403) → `CONNECTOR_NOT_LINKED`: "To use your
+      Gmail here, first link this chat to your Ravi account. Want me to send
+      you a private link to do it?" (PT: "Para eu usar o seu Gmail aqui,
+      primeiro vincule este chat à sua conta Ravi. Quer que eu te mande um
+      link privado para isso?"). The chat line names no command; the message
+      tells the agent to run `ravi link` in their turn if they say yes. With
+      reason `speaker_not_member`: "I can't use your Gmail here: your Ravi
+      account is not part of this organization."
+    - `connector_connection_required` (409) → `CONNECTOR_CONNECTION_REQUIRED`
+      (exit 3 here, exit 1 for the owner's own missing connection): "To use
+      your Gmail here, connect it in Ravi Console first:
+      <console>/connectors", plus `reconnectLink`.
+    - `connector_forbidden` in `shared` → `CONNECTOR_FORBIDDEN`: "I can't use
+      a shared Gmail account in this conversation."
+    - `connector_unavailable` (503) with reason
+      `shared_connection_unavailable` in `shared` (the grant's organization
+      account was disconnected or paused) → `CONNECTOR_CONNECTION_REQUIRED`,
+      not retryable: "I can't use the shared Gmail account right now." Any
+      other 503 stays the retryable `SERVER_UNAVAILABLE`.
+    - `connector_group_blocked` → the person-asking group line, or for
+      `shared` "I can't use the shared account in this group."
+    - Approvals, denials, blocked tools, a disabled organization and
+      permission answers keep invariant 4's shape with the holder changed:
+      for `person_asking` the person asking, in this direct chat; for
+      `shared` the account's manager, and the chat line carries no link.
+
 ## Write classification (brake decision per op)
 
 | op | class | brake |
 |---|---|---|
 | revoke | destructive (deletes stored provider tokens) | dry-run + `--execute` (`--yes` = documented equivalent) |
 | connect | human-in-the-loop browser flow on the Console | not braked (declared interactive) |
+| mode → `person-asking` or `shared` | expands whose account answers an agent's turns | dry-run + `--execute` |
+| mode → `owner`, or no value | narrows to the default, or reads | immediate |
 
 ## Official error cases
 
@@ -314,9 +455,18 @@ instead of inventing local suggestions that would require extra remote calls.
 | tool blocked by the owner or the organization | `CONNECTOR_TOOL_BLOCKED` | 3 |
 | action needs the owner's approval / still pending / denied | `CONNECTOR_APPROVAL_REQUIRED` / `_PENDING` / `_DENIED` | 3 |
 | approval does not match the action | `CONNECTOR_APPROVAL_INVALID` | 1 |
-| person asking must consent first (phase 3) | `CONNECTOR_CONSENT_REQUIRED` | 3 |
-| person asking is not linked (phase 3) | `CONNECTOR_NOT_LINKED` | 3 |
-| no connection for the provider | `CONNECTOR_CONNECTION_REQUIRED` | 1 |
+| braked mode change without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
+| a mode change (or read) from a turn that is not the operator's | `CONNECTOR_SPEAKER_NOT_OWNER` | 3 |
+| unknown provider or mode for `connectors mode` | `USAGE_ERROR` | 2 |
+| unknown agent for `connectors mode` | `AGENT_NOT_FOUND` | 1 |
+| `--shared` without the agent in shared mode or outside a chat, `--connector` in an agent mode | `PAYLOAD_INVALID` | 2 |
+| the agent's mode changed while the command ran | `CONFLICT` | 1 |
+| person asking must consent first | `CONNECTOR_CONSENT_REQUIRED` + `consentLink` | 3 |
+| person asking is not linked, or not a member | `CONNECTOR_NOT_LINKED` | 3 |
+| person asking has no connection, or the shared account was disconnected or paused | `CONNECTOR_CONNECTION_REQUIRED` | 3 |
+| person asking in a direct chat whose session other people share | `CONNECTOR_GROUP_BLOCKED` | 3 |
+| no shared account for this agent and conversation | `CONNECTOR_FORBIDDEN` | 3 |
+| no connection for the provider (the owner's own) | `CONNECTOR_CONNECTION_REQUIRED` | 1 |
 | connection must be reconnected | `CONNECTOR_REAUTH_REQUIRED` | 1 |
 | connection is read only, or misses a provider permission (Link `connector_permission_required`) | `CONNECTOR_PERMISSION_REQUIRED` | 1 |
 | tool policy above the organization's limit (Link `connector_policy_above_ceiling`, Console only) | `CONNECTOR_POLICY_ABOVE_CEILING` | 1 |
@@ -329,8 +479,12 @@ instead of inventing local suggestions that would require extra remote calls.
 
 ## Internal consumers
 
-`gmail` wraps `execCapabilityWithApproval` and `listConnectors` from
-`src/link/connectors.ts`; it consumes the helpers, not the braked `revoke`.
+`gmail` wraps `execCapabilityWithApproval`, `resolveConnectorExecPlan` and
+`listConnectors` from `src/link/connectors.ts`; it consumes the helpers, not
+the braked `revoke`. It asks the plan first: in `owner` mode it picks the
+owner's connection (`--connector` or the default); in an agent mode it lists
+nothing and sends no connection id. `gmail send` keeps its brake before the
+plan.
 `gmail list`, `gmail read` and `gmail send` all have gateway routes: every
 agent turn carries `RAVI_CONTEXT_KEY` and so runs its commands through the
 host gateway, and an agent must be able to reach `gmail send` to get the
@@ -340,8 +494,10 @@ an approval answer is returned (exit 3), and the relay keeps its message,
 chat line and approval keys (invariant 5a).
 
 The shipped `connectors` skill (`ravi skills show connectors`) teaches agents
-who may use a connection, the `CONNECTOR_*` codes with what to say, and the
-approval loop. The Calendar tools (`gcal.event.list`, `gcal.freebusy.query`)
+who may use a connection, the agent modes and `ravi connectors mode`, the
+`CONNECTOR_*` codes with what to say (consent, not linked and connection
+required for the person asking), and the approval loop. The docs page
+`console/connectors` explains the three modes in plain words. The Calendar tools (`gcal.event.list`, `gcal.freebusy.query`)
 have no `ravi` command yet. The docs page `console/connectors` and the skill
 name them and point to the connection's Tools in the Console; they do not
 point to `connectors show`, whose `capabilities` list is whatever Link stores
@@ -353,10 +509,18 @@ for the row (empty for connections made with the current connect flow).
   green (classification rows, automation marker, lineage liveness, header
   encoding, connect via the Console, approvals, session pinning). `bun run
   test` runs `src/link/` and `src/runtime/turn-origin.test.ts`.
-- `bun test src/cli/commands/connectors.test.ts src/cli/commands/gmail.test.ts src/cli/commands/mail.test.ts src/cloud-auth/errors.test.ts src/cli/remote-gateway.test.ts`
-  green (contract describes, `--project` warning, flags, error mapping,
+- Each of `src/cli/commands/connectors.test.ts`,
+  `src/cli/commands/connectors-mode.test.ts`, `src/cli/commands/gmail.test.ts`,
+  `src/cli/commands/mail.test.ts`, `src/cli/commands/settings.test.ts`,
+  `src/cloud-auth/errors.test.ts` and `src/cli/remote-gateway.test.ts` green
+  in its own `bun test <file>` run, as `bun run test:cli-commands` runs them
+  (their `mock.module` calls collide when several share one process)
+  (contract describes, `--project` warning, flags, error mapping,
   default connection, gateway relay, the terminal check of the approval
-  wait). The approval flow itself runs against a fake Worker (the real
+  wait, the mode command's brake and operator check, the settings guard).
+  The routing table per mode and speaker and the agent exec header are in
+  `src/link/connector-turn.test.ts`; the agent exec request and its answers
+  against a fake Worker in `src/link/connectors.test.ts`. The approval flow itself runs against a fake Worker (the real
   `LinkApiClient` over a fake fetch) in `src/link/connectors.test.ts`.
 - `bun test src/cron/ src/cli/commands/cron-commands.test.ts src/router/router.test.ts`
   green (cron owner, shell cron marker, idempotency).
@@ -390,6 +554,21 @@ for the row (empty for connections made with the current connect flow).
   looked like the operator's own `ravi sessions send`.
 - Open policy gaps: heartbeat turns have no owner (HEARTBEAT.md can be edited
   from any turn), and legacy crons with a NULL owner run as the operator.
+- Before the fix, `shared` mode sent the owner's own routines to agent exec
+  with conversation `automation`, which no grant can list (grants hold only
+  `dm`/`group`), so every cron or heartbeat Gmail call failed. They now keep
+  the owner's connection; only `--shared` in a chat moves an owner's turn.
+- `person_asking` checks the session's structure (key, routes by name,
+  attached chats), not its history: a chat attached to the session later,
+  by the operator, is checked only from then on. Queued messages folded into
+  one turn take the last message's actor; in a per-person session they are
+  all that person's, but a relay from the operator or another agent folded
+  with them runs on the person's account.
+- Before the fix, `person_asking` accepted any direct chat, so with
+  `dmScope: main` (or a route that sends several chats to one session) one
+  person's mail landed in a transcript the others could ask about.
+- The Worker trusts the exec header (it cannot verify it): the CLI is what
+  keeps `consoleUserId` out of agent exec and the mode behind the operator.
 - Other cloud commands still use `getMeWithAutoRefresh` with the default
   delete, which promotes the next stored user after a failed refresh. A
   connector call after such a promotion treats the promoted user as the

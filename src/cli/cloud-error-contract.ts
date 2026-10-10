@@ -31,7 +31,7 @@ export function cloudErrorToContractError(op: string, error: CloudAuthError): Co
     connectorTurn?.message ?? publicMessage(error.code, error.message),
     error.code === "PAYLOAD_INVALID"
       ? CONTRACT_EXIT_USAGE
-      : isConnectorPolicyCode(error.code)
+      : isConnectorPolicyCode(error.code) || connectorTurn?.policy
         ? CONTRACT_EXIT_POLICY
         : CONTRACT_EXIT_ERROR,
     {
@@ -54,14 +54,20 @@ const CONNECTOR_TURN_DETAIL_KEYS = [
   "approvalLink",
   "expiresAt",
   "retryWith",
+  "consentLink",
 ] as const;
 
 /**
  * Connector errors built by the local turn classification (`src/link`) carry
  * their own agent-facing text: what to say in the chat and where. Errors from
  * Link or Console keep the fixed catalog copy, because their text is remote.
+ * A local error may also say it is a policy block (exit 3) when its code is
+ * not always one: "the person asking has no account connected" is, while the
+ * operator's own missing connection is a plain error.
  */
-function connectorTurnCopy(error: CloudAuthError): { message: string; details: ContractErrorDetails } | null {
+function connectorTurnCopy(
+  error: CloudAuthError,
+): { message: string; details: ContractErrorDetails; policy: boolean } | null {
   if (!error.code.startsWith("CONNECTOR_") || error.details?.source !== "connector-turn") return null;
   const message = sanitizePublicContractMessage(error.message);
   if (!message) return null;
@@ -70,7 +76,7 @@ function connectorTurnCopy(error: CloudAuthError): { message: string; details: C
     const value = error.details[key];
     if (typeof value === "string" && value.trim()) details[key] = value;
   }
-  return { message, details };
+  return { message, details, policy: error.exitCode === CONTRACT_EXIT_POLICY };
 }
 
 function publicMessage(code: CloudAuthError["code"], sourceMessage: string): string {

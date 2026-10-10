@@ -8122,6 +8122,51 @@ public struct ConnectorsListReturn: Codable, Sendable {
   }
 }
 
+public struct ConnectorsModeOptions: Codable, Sendable {
+  public var execute: Bool?
+
+  public init(execute: Bool? = nil) {
+    self.execute = execute
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case execute = "execute"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct ConnectorsModeReturn: Codable, Sendable {
+  public var agentId: String
+  public var changed: Bool
+  public var label: String
+  public var mode: String
+  public var previousMode: String
+  public var provider: String
+
+  public init(agentId: String, changed: Bool, label: String, mode: String, previousMode: String, provider: String) {
+    self.agentId = agentId
+    self.changed = changed
+    self.label = label
+    self.mode = mode
+    self.previousMode = previousMode
+    self.provider = provider
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agentId = "agentId"
+    case changed = "changed"
+    case label = "label"
+    case mode = "mode"
+    case previousMode = "previousMode"
+    case provider = "provider"
+  }
+}
+
 public struct ConnectorsRevokeOptions: Codable, Sendable {
   public var execute: Bool?
   public var yes: Bool?
@@ -13313,14 +13358,16 @@ public struct GmailListOptions: Codable, Sendable {
   public var label: String?
   public var max: String?
   public var q: String?
+  public var shared: Bool?
 
-  public init(approval: String? = nil, connector: String? = nil, cursor: String? = nil, label: String? = nil, max: String? = nil, q: String? = nil) {
+  public init(approval: String? = nil, connector: String? = nil, cursor: String? = nil, label: String? = nil, max: String? = nil, q: String? = nil, shared: Bool? = nil) {
     self.approval = approval
     self.connector = connector
     self.cursor = cursor
     self.label = label
     self.max = max
     self.q = q
+    self.shared = shared
   }
 
   enum CodingKeys: String, CodingKey {
@@ -13330,6 +13377,7 @@ public struct GmailListOptions: Codable, Sendable {
     case label = "label"
     case max = "max"
     case q = "q"
+    case shared = "shared"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
@@ -13350,6 +13398,9 @@ public struct GmailListOptions: Codable, Sendable {
     }
     if let value = self.q {
       body["q"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.shared {
+      body["shared"] = try RaviJSON.fromEncodable(value)
     }
   }
 }
@@ -13376,17 +13427,20 @@ public struct GmailReadOptions: Codable, Sendable {
   public var approval: String?
   public var connector: String?
   public var format: String?
+  public var shared: Bool?
 
-  public init(approval: String? = nil, connector: String? = nil, format: String? = nil) {
+  public init(approval: String? = nil, connector: String? = nil, format: String? = nil, shared: Bool? = nil) {
     self.approval = approval
     self.connector = connector
     self.format = format
+    self.shared = shared
   }
 
   enum CodingKeys: String, CodingKey {
     case approval = "approval"
     case connector = "connector"
     case format = "format"
+    case shared = "shared"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
@@ -13398,6 +13452,9 @@ public struct GmailReadOptions: Codable, Sendable {
     }
     if let value = self.format {
       body["format"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.shared {
+      body["shared"] = try RaviJSON.fromEncodable(value)
     }
   }
 }
@@ -13429,10 +13486,11 @@ public struct GmailSendOptions: Codable, Sendable {
   public var execute: Bool?
   public var html: String?
   public var inReplyTo: String?
+  public var shared: Bool?
   public var subject: String?
   public var to: String?
 
-  public init(approval: String? = nil, bcc: String? = nil, body: String? = nil, cc: String? = nil, connector: String? = nil, execute: Bool? = nil, html: String? = nil, inReplyTo: String? = nil, subject: String? = nil, to: String? = nil) {
+  public init(approval: String? = nil, bcc: String? = nil, body: String? = nil, cc: String? = nil, connector: String? = nil, execute: Bool? = nil, html: String? = nil, inReplyTo: String? = nil, shared: Bool? = nil, subject: String? = nil, to: String? = nil) {
     self.approval = approval
     self.bcc = bcc
     self.body = body
@@ -13441,6 +13499,7 @@ public struct GmailSendOptions: Codable, Sendable {
     self.execute = execute
     self.html = html
     self.inReplyTo = inReplyTo
+    self.shared = shared
     self.subject = subject
     self.to = to
   }
@@ -13454,6 +13513,7 @@ public struct GmailSendOptions: Codable, Sendable {
     case execute = "execute"
     case html = "html"
     case inReplyTo = "inReplyTo"
+    case shared = "shared"
     case subject = "subject"
     case to = "to"
   }
@@ -13482,6 +13542,9 @@ public struct GmailSendOptions: Codable, Sendable {
     }
     if let value = self.inReplyTo {
       body["inReplyTo"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.shared {
+      body["shared"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.subject {
       body["subject"] = try RaviJSON.fromEncodable(value)

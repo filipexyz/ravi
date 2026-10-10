@@ -18,7 +18,9 @@ let listResult: Array<Record<string, unknown>> = [];
 let listError: unknown = null;
 let connectStatus: "consumed" | "expired" | "rejected" = "consumed";
 
+const actualChildProcess = await import("node:child_process");
 mock.module("node:child_process", () => ({
+  ...actualChildProcess,
   spawn: () => {
     const child = {
       on(event: string, callback: () => void) {

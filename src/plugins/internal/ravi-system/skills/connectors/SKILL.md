@@ -6,7 +6,9 @@ description: |
   - conectar, reconectar, listar ou desconectar uma conta
   - entender um bloqueio exit 3 `CONNECTOR_*` (grupo, outra pessoa, aprovação, ferramenta bloqueada)
   - pedir a aprovação do dono e rodar o mesmo comando de novo com `--approval <id>`
-  gmail, email, e-mail, google, calendar, agenda, conector, conexão, aprovação
+  - ver ou mudar de quem é a conta que um agent usa (`ravi connectors mode`: dono, quem pede, conta compartilhada)
+  - pedir a quem está falando que libere o agent uma vez (`CONNECTOR_CONSENT_REQUIRED`) ou vincule o chat (`ravi link`)
+  gmail, email, e-mail, google, calendar, agenda, conector, conexão, aprovação, consentimento, conta compartilhada
 ---
 
 # Connectors
@@ -17,7 +19,9 @@ recebe o resultado. Precisa de `ravi login` (sem login: `AUTH_REQUIRED`).
 
 ## Quem pode usar
 
-Toda conexão começa em "Only when I ask": serve só aos pedidos do próprio dono.
+Todo agent começa no modo "Only when I ask" (`owner`): as contas do dono servem
+só aos pedidos do próprio dono. O dono pode mudar isso por agent (veja Modo do
+agent). Esta seção vale para o modo `owner`.
 
 - Pode: o terminal do dono, o `ravi sessions send|ask` dele, o chat privado do
   dono com o agent depois do `ravi link`, e crons/heartbeat do dono que
@@ -44,12 +48,59 @@ ravi gmail send --to a@x.com --subject "Oi" --body "..." --execute   # envia, ou
 ```
 
 Sem `--connector`, o Gmail usa a conexão marcada como padrão no Console, senão
-a Google ativa mais nova. A mesma conexão Google tem duas tools de agenda,
+a Google ativa mais nova. `--connector` só nomeia conexões do dono: quando o
+turno usa a conta de quem pede ou a compartilhada, o comando recusa
+`--connector` (`PAYLOAD_INVALID`); rode sem ele. A mesma conexão Google tem duas tools de agenda,
 `gcal.event.list` ("Read your calendar") e `gcal.freebusy.query` ("See when
 you're free or busy": horários ocupados entre duas datas, sem detalhes dos
 eventos). Elas ainda não têm comando `ravi`, então o agent não usa a agenda
 pelo CLI. As tools de cada conexão e a regra de cada uma ficam no Console, em
 Connectors, na conexão, em Tools.
+
+## Modo do agent
+
+Cada agent tem um modo para o Google. Só o dono muda, do terminal ou do chat
+privado dele com o agent; um contato que pedir isso recebe exit `3`
+`CONNECTOR_SPEAKER_NOT_OWNER` e nada muda. Se o dono pedir num grupo, também
+nada muda: responda com o `chatLine` ("Ask me in our private chat and I'll
+change it."). `ravi settings set` e `ravi settings delete` não mudam modo.
+
+| Modo | Em palavras simples | Conta usada |
+|---|---|---|
+| `owner` ("Only when I ask", padrão) | só os pedidos do dono usam as contas dele | a do dono |
+| `person-asking` ("The person asking") | cada pessoa usa o próprio Gmail, nunca o do dono, depois de liberar o agent uma vez | a de quem pede |
+| `shared` ("Shared account") | uma conta da organização que um admin compartilhou com o agent no Console | a compartilhada |
+
+```bash
+ravi connectors mode main google                            # mostra o modo atual
+ravi connectors mode main google person-asking              # plano, exit 3
+ravi connectors mode main google person-asking --execute    # muda
+ravi connectors mode main google shared --execute
+ravi connectors mode main google owner                      # volta ao padrão na hora
+```
+
+Abrir para `person-asking` ou `shared` é dry-run (exit `3`) até `--execute`.
+Voltar para `owner` aplica na hora. Em todo modo, os pedidos do próprio dono e
+os crons/heartbeat dele continuam usando a conta dele. Para usar a
+compartilhada num pedido do dono, acrescente `--shared` ao comando do Gmail,
+só quando ele pedir no chat privado dele com você (ou num grupo que a conta
+compartilhada cobre). No terminal, no `ravi sessions send`, numa rotina que não
+responde em chat nenhum, ou sem o agent em `shared`, `--shared` sai com
+`PAYLOAD_INVALID` (exit `2`).
+
+- `person-asking`: vale só para contatos no chat privado com o agent, quando
+  esse chat tem uma sessão só dele. Grupo continua bloqueado ("I can only use
+  your Gmail in a direct chat with me. Ask me there."), e também um chat
+  privado cuja sessão outras pessoas compartilham (DM scope `main`, uma rota
+  que manda vários chats para a mesma sessão, um chat anexado): "I can't use
+  your Gmail in this conversation." A pessoa precisa ter vinculado o chat
+  (`ravi link`), ter um Gmail conectado no Console dela e liberar o agent uma
+  vez pelo link de consentimento. Enviar sempre pede a aprovação dela, não a
+  do dono.
+- `shared`: contatos (no privado e nos grupos que o admin escolheu), e rotinas
+  que respondem no chat de outra pessoa, usam a conta compartilhada. Ler começa
+  bloqueado, menos livre/ocupado, até um admin liberar; enviar pede a
+  aprovação de quem gerencia a conta.
 
 ## Contrato do CLI
 
@@ -73,7 +124,24 @@ privado, nunca num grupo).
 | `CONNECTOR_DISABLED_BY_ORG` | a organização desligou o Google | só dono ou admin da organização religa; avise o dono no privado | 3 |
 | `CONNECTOR_PERMISSION_REQUIRED` | conexão só leitura, ou falta permissão | mande o `chatLine` ao dono no privado (Allow writing ou reconectar) | 1 |
 | `CONNECTOR_REAUTH_REQUIRED` | a conexão expirou | mande o `chatLine` ao dono no privado, com o link de reconectar | 1 |
-| `CONNECTOR_CONNECTION_REQUIRED` | não há conexão Google ativa | peça ao dono para conectar (`ravi connectors connect google` ou o Console) | 1 |
+| `CONNECTOR_CONNECTION_REQUIRED` | não há conexão Google ativa do dono | peça ao dono para conectar (`ravi connectors connect google` ou o Console) | 1 |
+
+No modo `person-asking`, as falas vão para quem pediu, neste chat privado
+(`replyTo: same_chat`), nunca para um grupo nem para outra pessoa:
+
+| Código | O que aconteceu | O que fazer | Exit |
+|---|---|---|---|
+| `CONNECTOR_CONSENT_REQUIRED` | a pessoa ainda não liberou este agent | mande o `chatLine` ("To use your Gmail here, approve it once: <link>"; o link está em `consentLink`) e rode o mesmo comando de novo depois que ela aprovar | 3 |
+| `CONNECTOR_NOT_LINKED` | o chat dela não está vinculado a uma conta Ravi | mande o `chatLine` (sem comando, pergunta se ela quer um link privado) e, se ela disser que sim, rode `ravi link` no turno dela | 3 |
+| `CONNECTOR_CONNECTION_REQUIRED` | ela não tem Gmail conectado | mande o `chatLine` com o link do Console | 3 |
+| `CONNECTOR_GROUP_BLOCKED` | pedido num grupo, ou num chat privado cuja sessão outras pessoas compartilham | responda com o `chatLine`; não repita | 3 |
+| `CONNECTOR_APPROVAL_REQUIRED` | o envio precisa da aprovação dela | mande o link a ela neste chat; depois rode com `--approval <id>` | 3 |
+
+No modo `shared`, `CONNECTOR_FORBIDDEN` (exit `3`) quer dizer que nenhuma conta
+está compartilhada com o agent nesta conversa, e `CONNECTOR_CONNECTION_REQUIRED`
+(exit `3`) que a conta compartilhada foi desconectada ou pausada: responda com
+o `chatLine` e não repita. Uma aprovação vai para quem gerencia a conta, no Console; responda com
+o `chatLine` e rode com `--approval <id>` depois que aprovarem.
 
 ## Aprovações
 

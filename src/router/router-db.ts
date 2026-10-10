@@ -9181,6 +9181,17 @@ export function dbDeleteAgent(id: string): boolean {
   const s = getStatements();
   // Clean up per-agent skill grants so a same-id recreation does not inherit orphans.
   s.deleteSkillGrantsForAgent.run(id);
+  // Same for its connector modes (`connectors.mode.<id>.<provider>`): a new
+  // agent with this id starts at `owner`, never at a mode set for the old one.
+  // An exact prefix match plus a provider with no dot, so `a` never takes
+  // `a.b`'s keys.
+  const modePrefix = `connectors.mode.${id}.`;
+  const modeKeys = getDb().prepare("SELECT key FROM settings WHERE key LIKE 'connectors.mode.%'").all() as Array<{
+    key: string;
+  }>;
+  for (const { key } of modeKeys) {
+    if (key.startsWith(modePrefix) && !key.slice(modePrefix.length).includes(".")) s.deleteSetting.run(key);
+  }
   s.deleteAgent.run(id);
   if (getDbChanges() > 0) {
     log.info("Deleted agent", { id });

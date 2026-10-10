@@ -168,6 +168,87 @@
 - Remote failures MUST keep their stable CloudAuthError codes while using the
   global exit map (`PAYLOAD_INVALID` → `2`; connector policy codes → `3`;
   other provider/auth failures → `1`).
-- `bun test src/link/ src/runtime/turn-origin.test.ts src/cloud-auth/connector-auth.test.ts src/cli/commands/connectors.test.ts src/cli/commands/gmail.test.ts src/cli/remote-gateway.test.ts`
+- `bun test src/link/ src/runtime/turn-origin.test.ts src/cloud-auth/connector-auth.test.ts`
+  and, each in its own `bun test <file>` run (their `mock.module` calls
+  collide in one process), `src/cli/commands/connectors.test.ts`,
+  `src/cli/commands/connectors-mode.test.ts`, `src/cli/commands/gmail.test.ts`,
+  `src/cli/commands/settings.test.ts` and `src/cli/remote-gateway.test.ts`
   SHOULD pass after any change to this contract surface; `bun run test` runs
   `src/link/`.
+
+### Per-agent mode
+
+- `ravi connectors mode main google` MUST show `owner` ("Only when I ask")
+  when no row exists, and MUST NOT write.
+- `ravi connectors mode main google person-asking` and `... shared` without
+  `--execute` MUST exit 3 `WRITE_REQUIRES_EXECUTE` with the plan `{agentId,
+  provider, from, to, affects}` and MUST NOT write the setting; with
+  `--execute` they MUST store `person_asking` / `shared`.
+- `ravi connectors mode main google owner` MUST apply without `--execute` and
+  remove the row.
+- From a contact's turn, every `connectors mode` call (read, owner, or an
+  expansion with `--execute`) MUST exit 3 `CONNECTOR_SPEAKER_NOT_OWNER` with
+  "Only <owner> can change that." and MUST NOT change the row. The owner
+  asking in a group MUST exit 3 `CONNECTOR_GROUP_BLOCKED` with "Ask me in our
+  private chat and I'll change it." and MUST NOT change the row. The owner's
+  own direct chat and the terminal MUST pass.
+- An unknown provider or mode MUST exit 2 with `acceptedPositionals`; an
+  unknown agent MUST exit 1 `AGENT_NOT_FOUND` with suggestions, both before
+  the brake.
+- `ravi settings set connectors.mode.<agent>.<provider> ...` and `ravi
+  settings delete connectors.mode.<agent>.<provider>` (with or without
+  `--execute`) MUST fail and MUST NOT write.
+- Deleting an agent and creating it again with the same id MUST read
+  `owner`; another agent whose id starts the same way (`a.b` for `a`) MUST
+  keep its mode.
+- A stored value other than `owner`, `person_asking` or `shared`, or an
+  unreadable store, MUST read as `owner`.
+- Routing MUST follow invariant 23's table in every cell: in
+  `person_asking`, a resolved contact (linked to another user or not linked)
+  in a direct chat with a session of their own goes to agent exec, in a
+  group exits 3 `CONNECTOR_GROUP_BLOCKED` with "I can only use your Gmail in
+  a direct chat with me. Ask me there.", and in a direct chat whose session
+  other people share exits 3 `CONNECTOR_GROUP_BLOCKED` with "I can't use
+  your Gmail in this conversation." before any call; in `shared`, contacts
+  in direct chats and groups and routines answering into someone else's
+  chat go to agent exec `shared` with their real conversation; every turn
+  the owner table allows (the terminal, the operator relay, the owner's
+  direct chat, the owner's cron jobs and heartbeats) stays on `/cli/exec/:id`
+  in every mode unless `--shared` in a chat; agent relays, triggers,
+  unresolved senders and ended turns stay blocked in every mode.
+- A direct chat MUST NOT count as the person's own session when the session
+  key is `agent:<id>:main` or not a direct-chat key, when the turn's
+  contexts name different sessions or none, when an active route names the
+  session, or when a chat of another contact is attached to it.
+- `--shared` on an agent not in `shared` mode, at the terminal, on the
+  operator relay or on a routine posting nowhere MUST be `PAYLOAD_INVALID`
+  and MUST NOT unblock a contact; `--connector` in an agent mode MUST be
+  `PAYLOAD_INVALID`; a mode that changed between the plan and the exec MUST
+  fail `CONFLICT` before any call.
+- `POST /cli/agent-exec` MUST carry `{provider, capability, parameters,
+  mode}` and an exec context with `agentId` and, for a contact, only
+  `speaker.contactId`: never `consoleUserId`. `agentId` MUST survive the 2 KB
+  limit or the call fails `PAYLOAD_INVALID`.
+- `connector_consent_required` MUST exit 3 `CONNECTOR_CONSENT_REQUIRED` with
+  `consentLink = <console>/connectors/consent/<token>` from the active
+  login's Console (never the Worker's host), the chat lines "To use your
+  Gmail here, approve it once: <link>" / "Para eu usar o seu Gmail aqui,
+  aprove uma vez: <link>", `replyTo: same_chat`, and a message that does not
+  quote the token. A consent URL without a valid token MUST yield no link and
+  no chat line.
+- `connector_not_linked` MUST exit 3 `CONNECTOR_NOT_LINKED` with a chat line
+  that names no command and a message that tells the agent to run `ravi
+  link` in their turn; `connector_connection_required` MUST exit 3 for the
+  person asking (with the Console connectors link) and stay exit 1 for the
+  owner's own connection.
+- `connector_forbidden` in `shared` MUST exit 3 with "I can't use a shared
+  Gmail account in this conversation."; an approval for a shared account MUST
+  carry a chat line without a link.
+- A 503 `connector_unavailable` with reason `shared_connection_unavailable`
+  in `shared` MUST exit 3 `CONNECTOR_CONNECTION_REQUIRED`, not retryable,
+  with "I can't use the shared Gmail account right now."; any other 503 MUST
+  stay the retryable `SERVER_UNAVAILABLE`.
+- The gateway relay MUST keep `consentLink` (only a Console
+  `/connectors/consent/<token>` page) and `expiresAt` of a consent answer,
+  and the chat lines of the not-linked and connection-required answers with
+  exit 3.

@@ -23,6 +23,8 @@ const gmailConnectorCalls: Array<Record<string, unknown>> = [];
 const gmailConnectorLookups: Array<Record<string, unknown> | undefined> = [];
 mock.module("../../link/connectors.js", () => ({
   ...actualConnectorsModule,
+  // The operator's own terminal turn: the operator's connection.
+  resolveConnectorExecPlan: () => ({ mode: "owner", agentId: null }),
   execCapability: async (input: Record<string, unknown>) => {
     gmailConnectorCalls.push(input);
     return {
@@ -514,6 +516,7 @@ describe("mail agent-first contract", () => {
         undefined,
         undefined,
         true,
+        undefined,
         undefined,
         true,
       ),
