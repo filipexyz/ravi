@@ -1,18 +1,28 @@
 <!doctype html>
-<html lang="en" class="no-js">
+<html lang="pt-BR" class="no-js">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Ravi — agents that work together in your Slack</title>
-<meta name="description" content="A team of AI agents in your Slack that builds the trackers, forms and dashboards your team uses, and keeps them running. Runs on a computer or server you control.">
+<title>Ravi — agentes que trabalham juntos, de qualquer lugar</title>
+<meta name="description" content="Uma equipe de agentes de IA que cria os controles, formulários e painéis que sua equipe usa, e cuida deles. Código aberto, num computador ou servidor que você controla.">
+<link rel="canonical" href="https://ravi.bot/">
+<link rel="alternate" hreflang="pt-BR" href="https://ravi.bot/">
+<link rel="alternate" hreflang="en" href="https://ravi.bot/en/">
+<link rel="alternate" hreflang="x-default" href="https://ravi.bot/">
 <meta property="og:type" content="website">
+<meta property="og:site_name" content="Ravi">
 <meta property="og:url" content="https://ravi.bot/">
-<meta property="og:title" content="Ravi — agents that work together in your Slack">
-<meta property="og:description" content="Ask in Slack. Your agents build the tools your team uses and keep the work moving.">
+<meta property="og:locale" content="pt_BR">
+<meta property="og:locale:alternate" content="en_US">
+<meta property="og:title" content="Ravi — agentes que trabalham juntos, de qualquer lugar">
+<meta property="og:description" content="Peça de onde estiver. Seus agentes criam as ferramentas da sua equipe e mantêm o trabalho andando.">
 <meta property="og:image" content="https://ravi.bot/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#0d0d0d">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Crect width='256' height='256' fill='%230d0d0d'/%3E%3Cpath d='M56 198V58h72c34 0 57 18 57 48 0 21-11 36-29 43l37 49h-44l-32-43H94v43H56Zm38-73h31c15 0 23-7 23-19 0-12-8-19-23-19H94v38Z' fill='%23f3f2ef'/%3E%3C/svg%3E">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2064%2064'%3E%20%3Crect%20width='64'%20height='64'%20rx='14'%20fill='%230891B2'/%3E%20%3Ctext%20x='32'%20y='45'%20text-anchor='middle'%20font-family='DM%20Sans,%20Arial,%20sans-serif'%20font-size='40'%20font-weight='700'%20fill='%23FFFFFF'%3Er%3C/text%3E%20%3C/svg%3E">
+<script>/* only on /: a visitor who chose EN goes to /en/; so does a first visit (no saved choice) from a browser not set to Portuguese. Storage blocked: no redirect. ?lang=pt (set by the switch when storage refused the write) stays here. */(function(){if(/[?&]lang=pt\b/.test(location.search))return;try{var s=localStorage.getItem('ravi.lang');if(s==='en'||(!s&&!/^pt/i.test(navigator.language||'')))location.replace('en/'+location.search+location.hash);}catch(e){}})();</script>
 <script>
 /* Boot gate (spec 1.3). Adds .motion before first paint when motion is likely, so hidden
    starting states never flash. main.js re-checks (GSAP loaded?) and removes it if not. */
@@ -43,31 +53,30 @@
 <script defer src="vendor/ScrollTrigger.min.js"></script>
 </head>
 <body>
-<a class="skip-link" href="#main">Skip to content</a>
+<a class="skip-link" href="#main">Pular para o conteúdo</a>
 
 <header class="hdr" id="hdr">
   <div class="hdr-in">
-    <a class="brand" href="#top" aria-label="ravi, back to top">
-      <svg class="brand-mark" viewBox="0 0 256 256" aria-hidden="true" focusable="false"><rect width="256" height="256" fill="#0d0d0d"/><path d="M56 198V58h72c34 0 57 18 57 48 0 21-11 36-29 43l37 49h-44l-32-43H94v43H56Zm38-73h31c15 0 23-7 23-19 0-12-8-19-23-19H94v38Z" fill="#f3f2ef"/></svg>
-      <span class="brand-word">ravi</span>
-    </a>
-    <nav class="hdr-nav" aria-label="Primary">
-      <a href="#tools">Tools</a>
-      <a href="#slack">In Slack</a>
-      <a href="#scale">Teams</a>
-      <a href="#sdk">Builders</a>
+    <a class="brand" href="#top" aria-label="Ravi, voltar ao topo"><svg class="logo-dark" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 155 58"><g fill="#22D3EE"><path transform="translate(8.03,11.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/><path transform="translate(24.10,11.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/><path transform="translate(32.14,11.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/><path transform="translate(48.20,11.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/><path transform="translate(56.24,11.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/><path transform="translate(72.31,11.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/><path transform="translate(80.34,11.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/><path transform="translate(88.37,11.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/><path transform="translate(120.51,11.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/><path transform="translate(128.54,11.00) scale(0.013000,-0.013000)" d="M377 780H467Q300 589 300 350Q300 111 467 -80H377Q305 1 262.0 113.5Q219 226 219 350Q219 474 262.0 586.5Q305 699 377 780Z"/><path transform="translate(136.58,11.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/><path transform="translate(144.61,11.00) scale(0.013000,-0.013000)" d="M241 -81H151Q318 110 318 349Q318 588 151 779H241Q313 698 356.0 585.5Q399 473 399 349Q399 225 356.0 112.5Q313 0 241 -81Z"/><path transform="translate(0.00,25.00) scale(0.013000,-0.013000)" d="M268 -80V779H350V-80Z"/><path transform="translate(16.07,25.00) scale(0.013000,-0.013000)" d="M258 548V699H360V548L333 390H285Z"/><path transform="translate(24.10,25.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/><path transform="translate(32.14,25.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/><path transform="translate(40.17,25.00) scale(0.013000,-0.013000)" d="M98 -80 435 794H520L183 -80Z"/><path transform="translate(56.24,25.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/><path transform="translate(64.27,25.00) scale(0.013000,-0.013000)" d="M359 592H299L150 740H263Z"/><path transform="translate(80.34,25.00) scale(0.013000,-0.013000)" d="M520 -80H435L98 794H183Z"/><path transform="translate(96.41,25.00) scale(0.013000,-0.013000)" d="M520 -80H435L98 794H183Z"/><path transform="translate(112.48,25.00) scale(0.013000,-0.013000)" d="M98 -80 435 794H520L183 -80Z"/><path transform="translate(128.54,25.00) scale(0.013000,-0.013000)" d="M98 -80 435 794H520L183 -80Z"/><path transform="translate(144.61,25.00) scale(0.013000,-0.013000)" d="M268 -80V779H350V-80Z"/><path transform="translate(0.00,39.00) scale(0.013000,-0.013000)" d="M268 -80V779H350V-80Z"/><path transform="translate(16.07,39.00) scale(0.013000,-0.013000)" d="M268 -80V779H350V-80Z"/><path transform="translate(32.14,39.00) scale(0.013000,-0.013000)" d="M268 -80V779H350V-80Z"/><path transform="translate(48.20,39.00) scale(0.013000,-0.013000)" d="M377 780H467Q300 589 300 350Q300 111 467 -80H377Q305 1 262.0 113.5Q219 226 219 350Q219 474 262.0 586.5Q305 699 377 780Z"/><path transform="translate(56.24,39.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/><path transform="translate(64.27,39.00) scale(0.013000,-0.013000)" d="M268 -80V779H350V-80Z"/><path transform="translate(80.34,39.00) scale(0.013000,-0.013000)" d="M268 -80V779H350V-80Z"/><path transform="translate(88.37,39.00) scale(0.013000,-0.013000)" d="M520 -80H435L98 794H183Z"/><path transform="translate(104.44,39.00) scale(0.013000,-0.013000)" d="M588 699 363 0H255L30 699H128L310 96L491 699Z"/><path transform="translate(120.51,39.00) scale(0.013000,-0.013000)" d="M98 -80 435 794H520L183 -80Z"/><path transform="translate(128.54,39.00) scale(0.013000,-0.013000)" d="M268 -80V779H350V-80Z"/><path transform="translate(144.61,39.00) scale(0.013000,-0.013000)" d="M268 -80V779H350V-80Z"/><path transform="translate(0.00,53.00) scale(0.013000,-0.013000)" d="M268 -80V779H350V-80Z"/><path transform="translate(8.03,53.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/><path transform="translate(16.07,53.00) scale(0.013000,-0.013000)" d="M268 -80V779H350V-80Z"/><path transform="translate(40.17,53.00) scale(0.013000,-0.013000)" d="M520 -80H435L98 794H183Z"/><path transform="translate(48.20,53.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/><path transform="translate(56.24,53.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/><path transform="translate(64.27,53.00) scale(0.013000,-0.013000)" d="M241 0V136H377V-35Q377 -95 343.5 -130.0Q310 -165 244 -165H226V-114H242Q321 -114 321 -38V0Z"/><path transform="translate(72.31,53.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/><path transform="translate(80.34,53.00) scale(0.013000,-0.013000)" d="M268 -80V779H350V-80Z"/><path transform="translate(96.41,53.00) scale(0.013000,-0.013000)" d="M520 -80H435L98 794H183Z"/><path transform="translate(104.44,53.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/><path transform="translate(112.48,53.00) scale(0.013000,-0.013000)" d="M98 -80 435 794H520L183 -80Z"/><path transform="translate(128.54,53.00) scale(0.013000,-0.013000)" d="M268 -80V779H350V-80Z"/><path transform="translate(136.58,53.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/><path transform="translate(144.61,53.00) scale(0.013000,-0.013000)" d="M268 -80V779H350V-80Z"/></g></svg></a>
+    <nav class="hdr-nav" aria-label="Principal">
+      <a href="#tools">Ferramentas</a>
+      <a href="#slack">Aprovações</a>
+      <a href="#scale">Equipes</a>
+      <a href="#sdk">Desenvolvedores</a>
       <a href="https://github.com/filipexyz/ravi">GitHub <span aria-hidden="true">↗</span></a>
     </nav>
+    <p class="lang-sw lang-sw--hdr" role="group" aria-label="Idioma"><a href="./" hreflang="pt-BR" lang="pt-BR" data-lang="pt-BR" aria-current="page">PT</a><span aria-hidden="true">|</span><a href="en/" hreflang="en" lang="en" data-lang="en">EN</a></p>
     <button class="hdr-menu js-only" type="button" aria-expanded="false" aria-controls="sheet">Menu</button>
   </div>
   <div class="sheet" id="sheet" hidden>
     <nav aria-label="Menu">
-      <a href="#tools">Tools</a>
-      <a href="#slack">In Slack</a>
-      <a href="#scale">Teams</a>
-      <a href="#sdk">Builders</a>
+      <a href="#tools">Ferramentas</a>
+      <a href="#slack">Aprovações</a>
+      <a href="#scale">Equipes</a>
+      <a href="#sdk">Desenvolvedores</a>
       <a href="https://github.com/filipexyz/ravi">GitHub <span aria-hidden="true">↗</span></a>
     </nav>
+    <p class="lang-sw lang-sw--sheet" role="group" aria-label="Idioma"><a href="./" hreflang="pt-BR" lang="pt-BR" data-lang="pt-BR" aria-current="page">PT</a><span aria-hidden="true">|</span><a href="en/" hreflang="en" lang="en" data-lang="en">EN</a></p>
   </div>
 </header>
 
@@ -79,17 +88,17 @@
 <!-- ===== 00-top.html ===== -->
 <section class="sec sec--top" id="top" aria-labelledby="top-h" data-auto="none">
   <div class="wrap top-in">
-    <p class="eyebrow">AGENTS FOR SLACK</p>
-    <h1 class="hl hl--hero" id="top-h"><span class="mask"><span class="in">AGENTS THAT</span></span><span class="mask"><span class="in">WORK TOGETHER</span></span><span class="mask"><span class="in">IN YOUR SLACK.</span></span></h1>
+    <p class="eyebrow">AGENTES DE IA PARA EQUIPES</p>
+    <h1 class="hl hl--hero" id="top-h" style="--hk:.79"><span class="mask"><span class="in">AGENTES QUE</span></span> <span class="mask"><span class="in">TRABALHAM JUNTOS,</span></span> <span class="mask"><span class="in">DE QUALQUER LUGAR.</span></span></h1>
 
     <div class="top-row">
       <div class="top-copy">
         <div class="top-say">
-          <p class="lead top-lead">Ask the way you'd ask a colleague, and your agents split the work, build it and keep it running.</p>
+          <p class="lead top-lead">Peça como pediria a um colega. Seus agentes dividem o trabalho, criam o que falta e cuidam de tudo.</p>
         </div>
         <div class="top-go">
           <p class="top-links">
-            <a class="lnk lnk--go" href="#end">Try it <span aria-hidden="true">↓</span></a>
+            <a class="lnk lnk--go" href="#end">Experimente <span aria-hidden="true">↓</span></a>
             <a class="lnk" href="https://github.com/filipexyz/ravi">GitHub <span aria-hidden="true">↗</span></a>
           </p>
         </div>
@@ -101,32 +110,32 @@
         <div class="tv">
           <div class="sk-win tv-win">
             <div class="sk-main">
-              <p class="sk-hd"><b># office</b></p>
+              <p class="sk-hd"><b># escritorio</b></p>
               <div class="sk-msgs tv-msgs">
                 <div class="sk-msg tv-m tv-m--ana">
                   <span class="av av--ana" aria-hidden="true">A</span>
-                  <div><p class="sk-meta"><b>Ana</b></p><p class="sk-text"><span class="tv-type">We keep losing purchase requests in DMs.</span></p></div>
+                  <div><p class="sk-meta"><b>Ana</b></p><p class="sk-text"><span class="tv-type">Vivemos perdendo pedidos de compra no privado.</span></p></div>
                 </div>
                 <div class="sk-msg tv-m" data-ag="reception">
                   <span class="av av--ravi" aria-hidden="true"></span>
-                  <div><p class="sk-meta"><b>Ravi</b><span class="app">APP</span></p><p class="sk-text">Got it. Handing this to dev.</p></div>
+                  <div><p class="sk-meta"><b>Ravi</b><span class="app">APP</span></p><p class="sk-text">Entendi. Vou passar para o dev.</p></div>
                   <i class="tv-dots" aria-hidden="true"><i></i><i></i><i></i></i>
                 </div>
                 <div class="sk-msg tv-m" data-ag="dev">
                   <span class="av av--ravi" aria-hidden="true"></span>
-                  <div><p class="sk-meta"><b>Ravi</b><span class="app">APP</span></p><p class="sk-text">Done. Your purchase tracker is up.</p></div>
+                  <div><p class="sk-meta"><b>Ravi</b><span class="app">APP</span></p><p class="sk-text">Pronto. O controle de compras está no ar.</p></div>
                   <i class="tv-dots" aria-hidden="true"><i></i><i></i><i></i></i>
                 </div>
                 <div class="sk-msg tv-m" data-ag="ops">
                   <span class="av av--ravi" aria-hidden="true"></span>
-                  <div><p class="sk-meta"><b>Ravi</b><span class="app">APP</span></p><p class="sk-text">New ones go to #finance. I'll post the spend every Monday.</p></div>
+                  <div><p class="sk-meta"><b>Ravi</b><span class="app">APP</span></p><p class="sk-text">Os novos vão para #financeiro. Toda segunda eu mando os gastos.</p></div>
                   <i class="tv-dots" aria-hidden="true"><i></i><i></i><i></i></i>
                 </div>
               </div>
             </div>
           </div>
           <ul class="tv-rail">
-            <li class="chip chip--dim is-lit tv-ag" style="--dot:var(--a-reception)"><i></i>reception<span class="tv-hair" aria-hidden="true"></span></li>
+            <li class="chip chip--dim is-lit tv-ag" style="--dot:var(--a-reception)"><i></i>recepção<span class="tv-hair" aria-hidden="true"></span></li>
             <li class="chip chip--dim is-lit tv-ag" style="--dot:var(--a-dev)"><i></i>dev<span class="tv-hair" aria-hidden="true"></span></li>
             <li class="chip chip--dim is-lit tv-ag" style="--dot:var(--a-ops)"><i></i>ops<span class="tv-hair" aria-hidden="true"></span></li>
           </ul>
@@ -141,8 +150,8 @@
 <section class="sec tl" id="tools" aria-labelledby="tools-h">
   <header class="wrap sec-head">
     <p class="eyebrow">RAVI PAGES + BASES</p>
-    <h2 class="hl" id="tools-h"><span class="mask"><span class="in">REAL TOOLS,</span></span> <span class="mask"><span class="in">BUILT FOR YOUR TEAM.</span></span></h2>
-    <p class="intro" data-reveal>Your agents build the trackers, forms, boards and dashboards your team works in, without anyone on the team writing code.</p>
+    <h2 class="hl" id="tools-h"><span class="mask"><span class="in">FERRAMENTAS REAIS,</span></span> <span class="mask"><span class="in">FEITAS PARA SUA EQUIPE.</span></span></h2>
+    <p class="intro" data-reveal>Seus agentes criam os controles, formulários, quadros e painéis que sua equipe usa, sem ninguém precisar programar.</p>
   </header>
   <div class="wrap">
     <!-- The table (left, or on top below 1024) and the page it feeds (right). The HTML is the end state: every card
@@ -153,10 +162,10 @@
         <span class="tl-tab">RAVI BASES</span>
         <div class="tl-base light">
           <div class="tl-tbl" role="table">
-            <div class="tl-tr tl-th" role="row"><span role="columnheader">Item</span><span role="columnheader">Amount</span><span role="columnheader">Status</span></div>
-            <div class="tl-tr tl-row" role="row" data-to="ord"><i class="tl-hl" aria-hidden="true"></i><span role="cell">Headset</span><span class="tl-num" role="cell">$120</span><span role="cell"><span class="stc stc--ord">Ordered</span></span></div>
-            <div class="tl-tr tl-row" role="row" data-to="app"><i class="tl-hl" aria-hidden="true"></i><span role="cell">Monitor</span><span class="tl-num" role="cell">$230</span><span role="cell"><span class="stc stc--app">Approved</span></span></div>
-            <div class="tl-tr tl-row" role="row" data-to="req"><i class="tl-hl" aria-hidden="true"></i><span role="cell">Standing desk</span><span class="tl-num" role="cell">$480</span><span role="cell"><span class="stc stc--req">Requested</span></span></div>
+            <div class="tl-tr tl-th" role="row"><span role="columnheader">Item</span><span role="columnheader">Valor</span><span role="columnheader">Situação</span></div>
+            <div class="tl-tr tl-row" role="row" data-to="ord"><i class="tl-hl" aria-hidden="true"></i><span role="cell">Fone</span><span class="tl-num" role="cell">R$ 120</span><span role="cell"><span class="stc stc--ord">Comprado</span></span></div>
+            <div class="tl-tr tl-row" role="row" data-to="app"><i class="tl-hl" aria-hidden="true"></i><span role="cell">Monitor</span><span class="tl-num" role="cell">R$ 230</span><span role="cell"><span class="stc stc--app">Aprovado</span></span></div>
+            <div class="tl-tr tl-row" role="row" data-to="req"><i class="tl-hl" aria-hidden="true"></i><span role="cell">Mesa regulável</span><span class="tl-num" role="cell">R$ 480</span><span role="cell"><span class="stc stc--req">Pedido</span></span></div>
           </div>
         </div>
       </div>
@@ -167,22 +176,22 @@
           <i class="tl-bg" aria-hidden="true"></i>
           <div class="rb-chrome tl-chrome" aria-hidden="true"><span class="rb-dots"><i></i><i></i><i></i></span><span class="rb-url"></span></div>
           <div class="rb-page tl-page">
-            <p class="rb-title tl-title">Purchase requests</p>
+            <p class="rb-title tl-title">Pedidos de compra</p>
             <div class="rb-board tl-board">
               <div class="rb-col tl-col" data-col="req">
-                <p class="rb-col-h tl-colh"><i class="tl-dot tl-dot--req" aria-hidden="true"></i>REQUESTED</p>
-                <div class="tl-slot" data-row="req"><article class="rb-card tl-card"><p class="nm">Standing desk</p><p class="row"><span class="val">$480</span></p></article></div>
-                <div class="tl-slot"><article class="rb-card tl-card tl-new"><p class="nm">Webcam</p><p class="row"><span class="val">$90</span><span class="av av--sm av--ana" aria-hidden="true">A</span></p></article></div>
-                <div class="tl-slot"><article class="rb-card tl-card tl-new"><p class="nm">Desk lamp</p><p class="row"><span class="val">$45</span><span class="av av--sm av--bruno" aria-hidden="true">B</span></p></article></div>
-                <div class="tl-slot"><article class="rb-card tl-card tl-new"><p class="nm">Chair</p><p class="row"><span class="val">$210</span><span class="av av--sm av--carla" aria-hidden="true">C</span></p></article></div>
+                <p class="rb-col-h tl-colh"><i class="tl-dot tl-dot--req" aria-hidden="true"></i>PEDIDOS</p>
+                <div class="tl-slot" data-row="req"><article class="rb-card tl-card"><p class="nm">Mesa regulável</p><p class="row"><span class="val">R$ 480</span></p></article></div>
+                <div class="tl-slot"><article class="rb-card tl-card tl-new"><p class="nm">Webcam</p><p class="row"><span class="val">R$ 90</span><span class="av av--sm av--ana" aria-hidden="true">A</span></p></article></div>
+                <div class="tl-slot"><article class="rb-card tl-card tl-new"><p class="nm">Luminária</p><p class="row"><span class="val">R$ 45</span><span class="av av--sm av--bruno" aria-hidden="true">B</span></p></article></div>
+                <div class="tl-slot"><article class="rb-card tl-card tl-new"><p class="nm">Cadeira</p><p class="row"><span class="val">R$ 210</span><span class="av av--sm av--carla" aria-hidden="true">C</span></p></article></div>
               </div>
               <div class="rb-col tl-col" data-col="app">
-                <p class="rb-col-h tl-colh"><i class="tl-dot tl-dot--app" aria-hidden="true"></i>APPROVED</p>
-                <div class="tl-slot" data-row="app"><article class="rb-card tl-card"><p class="nm">Monitor</p><p class="row"><span class="val">$230</span></p></article></div>
+                <p class="rb-col-h tl-colh"><i class="tl-dot tl-dot--app" aria-hidden="true"></i>APROVADOS</p>
+                <div class="tl-slot" data-row="app"><article class="rb-card tl-card"><p class="nm">Monitor</p><p class="row"><span class="val">R$ 230</span></p></article></div>
               </div>
               <div class="rb-col tl-col tl-col--ord" data-col="ord">
-                <p class="rb-col-h tl-colh"><i class="tl-dot tl-dot--ord" aria-hidden="true"></i>ORDERED</p>
-                <div class="tl-slot" data-row="ord"><article class="rb-card tl-card"><p class="nm">Headset</p><p class="row"><span class="val">$120</span></p></article></div>
+                <p class="rb-col-h tl-colh"><i class="tl-dot tl-dot--ord" aria-hidden="true"></i>COMPRADOS</p>
+                <div class="tl-slot" data-row="ord"><article class="rb-card tl-card"><p class="nm">Fone</p><p class="row"><span class="val">R$ 120</span></p></article></div>
               </div>
             </div>
           </div>
@@ -199,8 +208,8 @@
 <section class="sec ck" id="slack" aria-labelledby="slack-h">
   <header class="wrap sec-head">
     <p class="eyebrow">SLACK BLOCK KIT</p>
-    <h2 class="hl" id="slack-h"><span class="mask"><span class="in">APPROVE IN SLACK.</span></span><span class="mask"><span class="in">THE PAGE UPDATES.</span></span></h2>
-    <p class="intro" data-reveal>Your agents post real buttons, forms and Canvases in Slack, so requests and approvals happen without leaving it.</p>
+    <h2 class="hl" id="slack-h"><span class="mask"><span class="in">APROVE NO SLACK.</span></span> <span class="mask"><span class="in">A PÁGINA ACOMPANHA.</span></span></h2>
+    <p class="intro" data-reveal>Seus agentes mandam botões, formulários e Canvas de verdade no Slack, e pedidos e aprovações acontecem ali mesmo.</p>
   </header>
 
   <div class="wrap">
@@ -212,38 +221,38 @@
         <!-- two Block Kit surfaces fanned behind the card: a form and a Canvas -->
         <div class="sl-ghost sl-ghost--form" aria-hidden="true">
           <div class="gk-modal">
-            <p class="gk-md-hd">Report a bug</p>
+            <p class="gk-md-hd">Relatar um erro</p>
             <div class="gk-md-bd"><i class="gk-md-in"></i><i class="gk-md-in gk-md-in--tall"></i></div>
-            <div class="gk-md-ft"><span class="bk-btn bk-btn--primary">Submit</span></div>
+            <div class="gk-md-ft"><span class="bk-btn bk-btn--primary">Enviar</span></div>
           </div>
         </div>
         <div class="sl-ghost sl-ghost--canvas" aria-hidden="true">
           <div class="gk-doc">
-            <p class="gk-d1">Weekly spend</p>
-            <p class="gk-dp"><span class="gk-n">$3,450</span> approved</p>
+            <p class="gk-d1">Gastos da semana</p>
+            <p class="gk-dp"><span class="gk-n">R$ 3.450</span> aprovados</p>
           </div>
         </div>
 
         <div class="sk-win ck-win">
           <div class="sk-main">
-            <p class="sk-hd"># finance</p>
+            <p class="sk-hd"># financeiro</p>
             <div class="sk-msgs">
               <div class="sk-msg">
                 <span class="av av--ravi" aria-hidden="true"></span>
                 <div class="ck-msg">
                   <p class="sk-meta"><b>Ravi</b><span class="app">APP</span></p>
                   <div class="bk">
-                    <p class="bk-header">New purchase request</p>
+                    <p class="bk-header">Novo pedido de compra</p>
                     <div class="bk-fields">
-                      <p><b>Item</b>Standing desk</p>
-                      <p><b>Amount</b>$480</p>
+                      <p><b>Item</b>Mesa regulável</p>
+                      <p><b>Valor</b>R$ 480</p>
                     </div>
                     <div class="ck-act">
                       <div class="bk-actions ck-wait js-only">
-                        <button class="bk-btn bk-btn--primary ck-approve" type="button">Approve</button>
-                        <button class="bk-btn bk-btn--danger ck-decline" type="button">Decline</button>
+                        <button class="bk-btn bk-btn--primary ck-approve" type="button">Aprovar</button>
+                        <button class="bk-btn bk-btn--danger ck-decline" type="button">Recusar</button>
                       </div>
-                      <p class="ck-done" tabindex="-1"><svg class="ck-mk" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="9"/><path class="ck-mk-ok" d="M5.8 10.3l2.8 2.8 5.6-5.8"/><path class="ck-mk-no" d="M6.8 6.8l6.4 6.4M13.2 6.8l-6.4 6.4"/></svg><span><b data-v="Approved|Declined">Approved</b> by <span class="ck-men">@Carla</span></span></p>
+                      <p class="ck-done" tabindex="-1"><svg class="ck-mk" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="9"/><path class="ck-mk-ok" d="M5.8 10.3l2.8 2.8 5.6-5.8"/><path class="ck-mk-no" d="M6.8 6.8l6.4 6.4M13.2 6.8l-6.4 6.4"/></svg><span><b data-v="Aprovado|Recusado">Aprovado</b> por <span class="ck-men">@Carla</span></span></p>
                     </div>
                   </div>
                 </div>
@@ -259,15 +268,15 @@
           <span class="rb-url" aria-hidden="true"></span>
         </div>
         <div class="rb-page ck-page">
-          <p class="rb-title">Purchase requests</p>
+          <p class="rb-title">Pedidos de compra</p>
           <div class="rb-board ck-board">
             <div class="rb-col ck-col ck-colr">
-              <p class="rb-col-h"><span class="ck-ch"><i class="ck-dot ck-dot--req" aria-hidden="true"></i>REQUESTED</span><span class="n ck-nr">0</span></p>
-              <div class="ck-slot"><article class="rb-card ck-bc ck-bc--req"><p class="nm">Standing desk</p><p class="row"><span class="val">$480</span><span class="av av--sm av--bruno" aria-hidden="true">B</span></p></article></div>
+              <p class="rb-col-h"><span class="ck-ch"><i class="ck-dot ck-dot--req" aria-hidden="true"></i>PEDIDOS</span><span class="n ck-nr">0</span></p>
+              <div class="ck-slot"><article class="rb-card ck-bc ck-bc--req"><p class="nm">Mesa regulável</p><p class="row"><span class="val">R$ 480</span><span class="av av--sm av--bruno" aria-hidden="true">B</span></p></article></div>
             </div>
             <div class="rb-col ck-col ck-colo">
-              <p class="rb-col-h"><span class="ck-ch"><i class="ck-dot ck-dot--out" aria-hidden="true"></i><span data-vb="APPROVED|DECLINED">APPROVED</span></span><span class="n ck-no">1</span></p>
-              <div class="ck-slot"><article class="rb-card ck-bc ck-bc--out"><p class="nm">Standing desk</p><p class="row"><span class="val">$480</span><span class="av av--sm av--bruno" aria-hidden="true">B</span></p></article></div>
+              <p class="rb-col-h"><span class="ck-ch"><i class="ck-dot ck-dot--out" aria-hidden="true"></i><span data-vb="APROVADOS|RECUSADOS">APROVADOS</span></span><span class="n ck-no">1</span></p>
+              <div class="ck-slot"><article class="rb-card ck-bc ck-bc--out"><p class="nm">Mesa regulável</p><p class="row"><span class="val">R$ 480</span><span class="av av--sm av--bruno" aria-hidden="true">B</span></p></article></div>
             </div>
           </div>
         </div>
@@ -282,9 +291,9 @@
 <!-- ===== 03-scale.html ===== -->
 <section class="sec" id="scale" aria-labelledby="scale-h">
   <header class="wrap sec-head">
-    <p class="eyebrow">PERSONAL TO COMPANY</p>
-    <h2 class="hl" id="scale-h"><span class="mask"><span class="in">ONE PERSON OR</span></span><span class="mask"><span class="in">THE WHOLE ORG.</span></span></h2>
-    <p class="intro" data-reveal>Start with an agent of your own, then grow to agents for every team and the whole company on the same pages.</p>
+    <p class="eyebrow">DO PESSOAL À EMPRESA</p>
+    <h2 class="hl" id="scale-h"><span class="mask"><span class="in">UMA PESSOA OU</span></span> <span class="mask"><span class="in">A EMPRESA TODA.</span></span></h2>
+    <p class="intro" data-reveal>Comece com um agente só seu e cresça até ter agentes em cada equipe e na empresa toda, nas mesmas páginas.</p>
   </header>
 
   <div class="wrap">
@@ -293,15 +302,15 @@
          side by side, each with its heading and its own counters; the toggle is hidden there. -->
     <div class="sc" data-view="me">
       <div class="sc-bar">
-        <div class="seg sc-seg" role="radiogroup" aria-label="One person or the whole org">
-          <input type="radio" name="sc-scale" id="sc-r-me" value="me" checked><label for="sc-r-me">Just me</label>
-          <input type="radio" name="sc-scale" id="sc-r-org" value="org"><label for="sc-r-org">The whole org</label>
-          <i class="sc-thumb" aria-hidden="true"><i class="sc-thumb-in"><b data-t="Just me"></b><b data-t="The whole org"></b></i></i>
+        <div class="seg sc-seg" role="radiogroup" aria-label="Uma pessoa ou a empresa toda">
+          <input type="radio" name="sc-scale" id="sc-r-me" value="me" checked><label for="sc-r-me">Só eu</label>
+          <input type="radio" name="sc-scale" id="sc-r-org" value="org"><label for="sc-r-org">A empresa toda</label>
+          <i class="sc-thumb" aria-hidden="true"><i class="sc-thumb-in"><b data-t="Só eu"></b><b data-t="A empresa toda"></b></i></i>
         </div>
         <dl class="sc-hud sc-hud--bar motion-only">
-          <div class="sc-k"><dt>People</dt><dd class="sc-n" data-me="1" data-org="40">1</dd></div>
-          <div class="sc-k"><dt>Agents</dt><dd class="sc-n" data-me="1" data-org="6">1</dd></div>
-          <div class="sc-k"><dt>Pages</dt><dd class="sc-n" data-me="1" data-org="12">1</dd></div>
+          <div class="sc-k"><dt>Pessoas</dt><dd class="sc-n" data-me="1" data-org="40">1</dd></div>
+          <div class="sc-k"><dt>Agentes</dt><dd class="sc-n" data-me="1" data-org="6">1</dd></div>
+          <div class="sc-k"><dt>Páginas</dt><dd class="sc-n" data-me="1" data-org="12">1</dd></div>
         </dl>
       </div>
 
@@ -309,28 +318,28 @@
         <div class="sc-slots motion-only" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
 
         <article class="sc-panel sc-panel--me" aria-labelledby="sc-h-me">
-          <h3 class="sc-ph static-only" id="sc-h-me">Just me</h3>
+          <h3 class="sc-ph static-only" id="sc-h-me">Só eu</h3>
           <dl class="sc-hud sc-hud--panel static-only">
-            <div class="sc-k"><dt>People</dt><dd class="sc-n">1</dd></div>
-            <div class="sc-k"><dt>Agents</dt><dd class="sc-n">1</dd></div>
-            <div class="sc-k"><dt>Pages</dt><dd class="sc-n">1</dd></div>
+            <div class="sc-k"><dt>Pessoas</dt><dd class="sc-n">1</dd></div>
+            <div class="sc-k"><dt>Agentes</dt><dd class="sc-n">1</dd></div>
+            <div class="sc-k"><dt>Páginas</dt><dd class="sc-n">1</dd></div>
           </dl>
           <ul class="sc-tiles sc-tiles--me">
             <li class="sc-li">
               <div class="sc-tile sc-t--cal">
-                <p class="sc-t-lab">Calendar</p>
+                <p class="sc-t-lab">Agenda</p>
                 <ul class="sc-t-art sc-cal">
-                  <li><b class="sc-cal-d">Tue</b><span class="sc-cal-s"> · </span><span>Dentist, 9:00</span></li>
-                  <li><b class="sc-cal-d">Sat</b><span class="sc-cal-s"> · </span><span>Dinner with Leo</span></li>
+                  <li><b class="sc-cal-d">Ter</b><span class="sc-cal-s"> · </span><span>Dentista, 9h</span></li>
+                  <li><b class="sc-cal-d">Sáb</b><span class="sc-cal-s"> · </span><span>Jantar com Leo</span></li>
                 </ul>
               </div>
             </li>
             <li class="sc-li">
               <div class="sc-tile sc-t--brief">
-                <p class="sc-t-lab">Morning brief</p>
+                <p class="sc-t-lab">Resumo da manhã</p>
                 <div class="sc-t-art sc-dm">
                   <span class="av av--ravi" aria-hidden="true"></span>
-                  <p class="sc-dm-t">3 meetings, 2 invoices due today.</p>
+                  <p class="sc-dm-t">3 reuniões, 2 boletos vencem hoje.</p>
                 </div>
               </div>
             </li>
@@ -338,16 +347,16 @@
         </article>
 
         <article class="sc-panel sc-panel--org" aria-labelledby="sc-h-org">
-          <h3 class="sc-ph static-only" id="sc-h-org">The whole org</h3>
+          <h3 class="sc-ph static-only" id="sc-h-org">A empresa toda</h3>
           <dl class="sc-hud sc-hud--panel static-only">
-            <div class="sc-k"><dt>People</dt><dd class="sc-n">40</dd></div>
-            <div class="sc-k"><dt>Agents</dt><dd class="sc-n">6</dd></div>
-            <div class="sc-k"><dt>Pages</dt><dd class="sc-n">12</dd></div>
+            <div class="sc-k"><dt>Pessoas</dt><dd class="sc-n">40</dd></div>
+            <div class="sc-k"><dt>Agentes</dt><dd class="sc-n">6</dd></div>
+            <div class="sc-k"><dt>Páginas</dt><dd class="sc-n">12</dd></div>
           </dl>
           <ul class="sc-tiles sc-tiles--org">
             <li class="sc-li">
               <div class="sc-tile sc-t--kb">
-                <p class="sc-t-lab">Purchase requests</p>
+                <p class="sc-t-lab">Pedidos de compra</p>
                 <div class="sc-t-art sc-kb" aria-hidden="true">
                   <span class="sc-kb-col sc-kb--req"><i></i><i></i><i></i></span>
                   <span class="sc-kb-col sc-kb--app"><i></i><i></i></span>
@@ -357,19 +366,19 @@
             </li>
             <li class="sc-li">
               <div class="sc-tile sc-t--dash">
-                <p class="sc-t-lab">Sales pipeline</p>
+                <p class="sc-t-lab">Funil de vendas</p>
                 <div class="sc-t-art sc-dash" aria-hidden="true"><i style="--h:.42"></i><i style="--h:.58"></i><i style="--h:.5"></i><i style="--h:.74"></i><i style="--h:.66"></i><i style="--h:.92"></i></div>
               </div>
             </li>
             <li class="sc-li">
               <div class="sc-tile sc-t--form">
-                <p class="sc-t-lab">Report a bug</p>
+                <p class="sc-t-lab">Relatar um erro</p>
                 <div class="sc-t-art sc-form" aria-hidden="true"><i class="sc-field"></i><i class="sc-field sc-field--lg"></i><i class="sc-send"></i></div>
               </div>
             </li>
             <li class="sc-li">
               <div class="sc-tile sc-t--fun">
-                <p class="sc-t-lab">Hiring</p>
+                <p class="sc-t-lab">Contratações</p>
                 <div class="sc-t-art sc-fun" aria-hidden="true"><i style="--w:1"></i><i style="--w:.66"></i><i style="--w:.38"></i></div>
               </div>
             </li>
@@ -383,9 +392,10 @@
 <!-- ===== 04-sdk.html ===== -->
 <section class="sec sd-sec" id="sdk" aria-labelledby="sdk-h">
   <header class="wrap sec-head">
-    <p class="eyebrow">FOR BUILDERS</p>
-    <h2 class="hl sd-hl" id="sdk-h"><span class="mask"><span class="in">BUILD ANY APP</span></span> <span class="mask"><span class="in">ON RAVI.</span></span></h2>
-    <p class="intro" data-reveal>SDKs for TypeScript, Swift and Dart, generated from the same commands your agents use and checked on every change.</p>
+    <p class="eyebrow">PARA DESENVOLVEDORES</p>
+    <h2 class="hl sd-hl" id="sdk-h"><span class="mask"><span class="in">CRIE QUALQUER APP</span></span> <span class="mask"><span class="in">COM O RAVI.</span></span></h2>
+    <p class="intro" data-reveal>SDKs para TypeScript, Swift e Dart, gerados a partir dos mesmos comandos que seus agentes usam e conferidos a cada mudança.</p>
+    <p class="sd-npm" data-reveal><a class="lnk" href="https://www.npmjs.com/package/@ravi-os/sdk" target="_blank" rel="noopener">@ravi-os/sdk no npm <span aria-hidden="true">↗</span></a></p>
   </header>
 
   <div class="wrap">
@@ -399,9 +409,9 @@
           <div class="sd-ring" aria-hidden="true">
             <svg viewBox="0 0 152 152" focusable="false"><g class="sd-dots"><circle cx="76" cy="3" r="2.4" class="sd-dot--b"/><circle cx="94.9" cy="5.5" r="1.5"/><circle cx="112.5" cy="12.8" r="1.5"/><circle cx="127.6" cy="24.4" r="1.5"/><circle cx="139.2" cy="39.5" r="1.5"/><circle cx="146.5" cy="57.1" r="1.5"/><circle cx="149" cy="76" r="2.4" class="sd-dot--b"/><circle cx="146.5" cy="94.9" r="1.5"/><circle cx="139.2" cy="112.5" r="1.5"/><circle cx="127.6" cy="127.6" r="1.5"/><circle cx="112.5" cy="139.2" r="1.5"/><circle cx="94.9" cy="146.5" r="1.5"/><circle cx="76" cy="149" r="2.4" class="sd-dot--b"/><circle cx="57.1" cy="146.5" r="1.5"/><circle cx="39.5" cy="139.2" r="1.5"/><circle cx="24.4" cy="127.6" r="1.5"/><circle cx="12.8" cy="112.5" r="1.5"/><circle cx="5.5" cy="94.9" r="1.5"/><circle cx="3" cy="76" r="2.4" class="sd-dot--b"/><circle cx="5.5" cy="57.1" r="1.5"/><circle cx="12.8" cy="39.5" r="1.5"/><circle cx="24.4" cy="24.4" r="1.5"/><circle cx="39.5" cy="12.8" r="1.5"/><circle cx="57.1" cy="5.5" r="1.5"/></g></svg>
           </div>
-          <p class="sd-hub-t"><span class="sd-mark">RAVI</span> <span class="sd-n"><span class="sd-num">750+</span> <span class="sd-unit">commands</span></span></p>
+          <p class="sd-hub-t"><span class="sd-mark">RAVI</span> <span class="sd-n"><span class="sd-num">750+</span> <span class="sd-unit">comandos</span></span></p>
           <!-- the stamp, pinned to the top of the hub's ring -->
-          <p class="sd-stampw"><span class="sd-stamp">ZERO DRIFT</span></p>
+          <p class="sd-stampw"><span class="sd-stamp">SEM DESVIOS</span></p>
           <i class="sd-port sd-port--a" aria-hidden="true"></i><i class="sd-port sd-port--b" aria-hidden="true"></i><i class="sd-port sd-port--c" aria-hidden="true"></i>
           <!-- no JS: straight lines from the hub (≥1280) -->
           <i class="sd-nj sd-nj--a" aria-hidden="true"></i><i class="sd-nj sd-nj--b" aria-hidden="true"></i><i class="sd-nj sd-nj--c" aria-hidden="true"></i>
@@ -415,12 +425,12 @@
 
       <!-- the team dashboard (TypeScript) -->
       <div class="sd-app sd-app--dash">
-        <p class="sd-app-l"><b>Team dashboard</b> <span class="tag sd-tag">TypeScript</span></p>
+        <p class="sd-app-l"><b>Painel da equipe</b> <span class="tag sd-tag">TypeScript</span></p>
         <div class="rb-browser sd-win sd-dash">
           <div class="rb-chrome" aria-hidden="true"><span class="rb-dots"><i></i><i></i><i></i></span></div>
           <div class="sd-dash-pg">
-            <p class="sd-dash-t">Approved this week</p>
-            <p class="sd-dash-n">$3,450</p>
+            <p class="sd-dash-t">Aprovado na semana</p>
+            <p class="sd-dash-n">R$ 3.450</p>
             <ul class="sd-bars" aria-hidden="true">
               <li class="sd-bar"><i class="sd-bar-f" style="--w:1"></i></li>
               <li class="sd-bar"><i class="sd-bar-f" style="--w:.42"></i></li>
@@ -433,12 +443,12 @@
 
       <!-- the Mac app (Swift) -->
       <div class="sd-app sd-app--mac">
-        <p class="sd-app-l"><b>Mac app</b> <span class="tag sd-tag">Swift</span></p>
+        <p class="sd-app-l"><b>App para Mac</b> <span class="tag sd-tag">Swift</span></p>
         <div class="sd-win sd-mac light">
-          <div class="sd-mac-bar"><span class="sd-tl" aria-hidden="true"><i></i><i></i><i></i></span><span class="sd-mac-t">Purchase requests</span></div>
+          <div class="sd-mac-bar"><span class="sd-tl" aria-hidden="true"><i></i><i></i><i></i></span><span class="sd-mac-t">Pedidos de compra</span></div>
           <ul class="sd-rows">
-            <li class="sd-row"><span class="sd-r-nm">Webcam</span><span class="sd-r-v">$90</span></li>
-            <li class="sd-row"><span class="sd-r-nm">Chair</span><span class="sd-r-v">$210</span></li>
+            <li class="sd-row"><span class="sd-r-nm">Webcam</span><span class="sd-r-v">R$ 90</span></li>
+            <li class="sd-row"><span class="sd-r-nm">Cadeira</span><span class="sd-r-v">R$ 210</span></li>
           </ul>
         </div>
         <i class="sd-nj sd-nj--app" aria-hidden="true"></i>
@@ -446,14 +456,14 @@
 
       <!-- the phone app (Dart) -->
       <div class="sd-app sd-app--phone">
-        <p class="sd-app-l"><b>Phone app</b> <span class="tag sd-tag">Dart</span></p>
+        <p class="sd-app-l"><b>App de celular</b> <span class="tag sd-tag">Dart</span></p>
         <div class="sd-win sd-phone">
           <div class="sd-ph-scr light">
             <i class="sd-ph-isl" aria-hidden="true"></i>
             <div class="sd-ph-hd"><span class="av av--ops av--sm" aria-hidden="true">o</span><b>ops</b></div>
             <div class="sd-ph-msgs">
-              <p class="sd-bub sd-bub--me">Anything waiting?</p>
-              <p class="sd-bub sd-bub--ops">Three requests, $345 in total.</p>
+              <p class="sd-bub sd-bub--me">Tem algo pendente?</p>
+              <p class="sd-bub sd-bub--ops">Três pedidos, R$ 345 no total.</p>
             </div>
             <div class="sd-ph-in" aria-hidden="true"><span></span><i></i></div>
           </div>
@@ -470,17 +480,17 @@
 
 <footer class="foot" id="end" aria-labelledby="foot-h">
   <div class="wrap foot-in">
-    <p class="eyebrow">GET STARTED</p>
+    <p class="eyebrow">INSTALAÇÃO</p>
     <div class="foot-head">
       <i class="foot-sq" aria-hidden="true"></i>
-      <h2 class="hl hl--hero" id="foot-h"><span class="mask"><span class="in">TRY IT</span></span><span class="mask"><span class="in">IN YOUR SLACK.</span></span></h2>
+      <h2 class="hl hl--hero" id="foot-h"><span class="mask"><span class="in">COMECE</span></span> <span class="mask"><span class="in">AGORA.</span></span></h2>
     </div>
-    <p class="lead foot-say">Ravi runs on a computer or server you control and joins your Slack as a bot you own.</p>
+    <p class="lead foot-say">O Ravi roda num computador ou servidor que você controla e trabalha onde sua equipe já conversa.</p>
     <!-- the install pill: .en-pk (the packet) drops onto .en-caret, .en-flash flashes the border (js/09-end.js) -->
     <div class="foot-ins">
       <code class="foot-cmd">bun add -g ravi.bot@next</code><i class="caret en-caret" aria-hidden="true"></i>
-      <button class="copy js-only foot-copy" type="button" data-copy="bun add -g ravi.bot@next" aria-label="Copy the install line">Copy</button>
-      <span class="toast foot-toast" aria-hidden="true" hidden>Copied</span>
+      <button class="copy js-only foot-copy" type="button" data-copy="bun add -g ravi.bot@next" aria-label="Copiar a linha de instalação">Copiar</button>
+      <span class="toast foot-toast" aria-hidden="true" hidden>Copiado</span>
       <i class="en-flash" aria-hidden="true"></i>
       <i class="pkt en-pk" aria-hidden="true"><i></i></i>
     </div>
@@ -488,7 +498,7 @@
       <a class="btn foot-btn" href="https://github.com/filipexyz/ravi">GitHub <span aria-hidden="true">↗</span></a>
       <a class="btn foot-btn" href="https://www.npmjs.com/package/ravi.bot">npm <span aria-hidden="true">↗</span></a>
     </p>
-    <p class="foot-small"><a href="#top">Back to top</a><span class="foot-dot" aria-hidden="true">·</span><span>Screens on this site are illustrations.</span></p>
+    <p class="foot-small"><a href="#top">Voltar ao topo</a><span class="foot-dot" aria-hidden="true">·</span><span class="foot-lic">Código aberto, licença MIT.</span></p>
   </div>
 </footer>
 </body>
