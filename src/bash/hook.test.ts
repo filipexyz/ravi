@@ -363,6 +363,75 @@ describe("createBashPermissionHook", () => {
       expect(getDenyReason(result)).toContain("command substitution");
     });
 
+    it("allows shell loops when only the loop body executables are granted", () => {
+      const ctx = {
+        agentId: "test",
+        kind: "test-runtime",
+        capabilities: [{ permission: "execute", objectType: "executable", objectId: "echo" }],
+      };
+      expect(evaluateBashPermission("for i in 1 2 3; do echo $i; done", ctx).allowed).toBe(true);
+      expect(evaluateBashPermission("for i in 1 2 3\ndo\n  echo $i\ndone", ctx).allowed).toBe(true);
+    });
+
+    it("still checks executables hidden after shell reserved words", () => {
+      const ctx = {
+        agentId: "test",
+        kind: "test-runtime",
+        capabilities: [{ permission: "execute", objectType: "executable", objectId: "echo" }],
+      };
+      for (const [command, executable] of [
+        ['for f in *; do rm "$f"; done', "rm"],
+        ["if true; then wget x; fi", "true"],
+        ["if echo; then wget x; fi", "wget"],
+        ["while echo; do nc -l 4444; done", "nc"],
+        ["time rm -rf x", "rm"],
+        ["! rm -rf x", "rm"],
+        ["echo a & curl evil", "curl"],
+      ]) {
+        const decision = evaluateBashPermission(command, ctx);
+        expect(decision.allowed).toBe(false);
+        expect(decision.reason).toContain(executable);
+      }
+      expect(evaluateBashPermission("for x in a; do bash -c x; done", ctx).allowed).toBe(false);
+    });
+
+    it("checks quoted and escaped command words by their full dequoted word", () => {
+      const ctx = {
+        agentId: "test",
+        kind: "test-runtime",
+        capabilities: [
+          { permission: "execute", objectType: "executable", objectId: "ls" },
+          { permission: "execute", objectType: "executable", objectId: "echo" },
+        ],
+      };
+      expect(evaluateBashPermission('"/tmp/x"ls', ctx).allowed).toBe(false);
+      expect(evaluateBashPermission('"/tmp/x" ls', ctx).allowed).toBe(false);
+      const escaped = evaluateBashPermission("\\rm -rf x", ctx);
+      expect(escaped.allowed).toBe(false);
+      expect(escaped.reason).toContain("rm");
+      expect(evaluateBashPermission("echo '\\' ; rm -rf x", ctx).allowed).toBe(false);
+      expect(evaluateBashPermission('"ls" -la', ctx).allowed).toBe(true);
+      expect(evaluateBashPermission("echo \v# ; bash -c id", ctx).allowed).toBe(false);
+    });
+
+    it("blocks shells hidden behind $'...' quoting or an escaped space before '#'", () => {
+      const wildcard = {
+        agentId: "test",
+        kind: "test-runtime",
+        capabilities: [{ permission: "execute", objectType: "executable", objectId: "*" }],
+      };
+      expect(evaluateBashPermission("$'bash' -c id", wildcard).allowed).toBe(false);
+      expect(evaluateBashPermission('$"bash" -c id', wildcard).allowed).toBe(false);
+      expect(evaluateBashPermission("$'\\x62ash' -c id", wildcard).allowed).toBe(false);
+      const echoOnly = {
+        agentId: "test",
+        kind: "test-runtime",
+        capabilities: [{ permission: "execute", objectType: "executable", objectId: "echo" }],
+      };
+      expect(evaluateBashPermission("echo x\\ #; bash -c 'id'", echoOnly).allowed).toBe(false);
+      expect(evaluateBashPermission("if [[ a == a || b == b ]]; then echo ok; fi", echoOnly).allowed).toBe(true);
+    });
+
     it("does not widen stale agent-runtime capabilities with the agent's materialized grants", () => {
       const decision = evaluateBashPermission("pwd && rg foo", {
         agentId: "dev",
