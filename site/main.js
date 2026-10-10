@@ -801,7 +801,10 @@ function initChrome() {
      reader's place by carrying the #hash over */
   d.addEventListener('click', function (e) {
     var a = e.target.closest && e.target.closest('.lang-sw a[data-lang]'); if (!a) return;
-    try { w.localStorage.setItem('ravi.lang', /^pt/i.test(a.getAttribute('data-lang')) ? 'pt' : 'en'); } catch (err) {}
+    var lang = /^pt/i.test(a.getAttribute('data-lang')) ? 'pt' : 'en', saved = false;
+    try { w.localStorage.setItem('ravi.lang', lang); saved = w.localStorage.getItem('ravi.lang') === lang; } catch (err) {}
+    /* storage refused the write: carry an explicit PT choice in the link so the head script doesn't send it back to /en/ */
+    if (!saved && lang === 'pt' && !/[?&]lang=pt\b/.test(a.search)) a.search = (a.search ? a.search + '&' : '?') + 'lang=pt';
     if (location.hash && !a.hash) a.hash = location.hash;
   });
 
