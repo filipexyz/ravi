@@ -3763,6 +3763,10 @@ public struct PagesNamespace: Sendable {
     PagesAssertionNamespace(transport: transport)
   }
 
+  public var chat: PagesChatNamespace {
+    PagesChatNamespace(transport: transport)
+  }
+
   public var password: PagesPasswordNamespace {
     PagesPasswordNamespace(transport: transport)
   }
@@ -3865,6 +3869,28 @@ public struct PagesAssertionAudiencesNamespace: Sendable {
     var requestBody: [String: RaviJSON] = [:]
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["pages","assertion","audiences"], command: "set", body: requestBody, as: PagesAssertionAudiencesSetReturn.self)
+  }
+}
+
+public struct PagesChatNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func set(_ site: String, _ options: PagesChatSetOptions = .init()) async throws -> PagesChatSetReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["site"] = try RaviJSON.fromEncodable(site)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["pages","chat"], command: "set", body: requestBody, as: PagesChatSetReturn.self)
+  }
+
+  public func show(_ site: String, _ options: PagesChatShowOptions = .init()) async throws -> PagesChatShowReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["site"] = try RaviJSON.fromEncodable(site)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["pages","chat"], command: "show", body: requestBody, as: PagesChatShowReturn.self)
   }
 }
 

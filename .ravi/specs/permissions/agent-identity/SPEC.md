@@ -60,6 +60,10 @@ DM, automation, or workspace baseline.
   policy MUST NOT zero the agent's authority.
 - Unknown or unresolved actors MUST fail closed before agent identity
   capabilities are materialized for an external user-initiated turn.
+- Runtime approval MUST NOT reopen that gate: a capability missing in a turn
+  whose actor is unresolved (`actorResolution=missing_contact`) is denied
+  without sending an approval request, because the request would go back to
+  the unidentified actor's own surface.
 - Turn approval/observer grants remain an upper bound when present.
 - `contact-policy-permissions` is not the default runtime authority path. It
   participates only as the chat-scoped user overlay in governed chats
@@ -140,5 +144,7 @@ actor/surface branches MUST be deliberate, tested, and documented.
   and a contact without a covering grant receives zero tool capabilities.
 - A chat with zero materialized capabilities does not zero the agent identity.
 - An unresolved external actor receives zero effective capabilities.
+- An unresolved external actor's missing capability is denied without an
+  approval request, even when someone on that surface could grant it.
 - A denial from an agent-identity turn resolves to `--to agent:<executor>`.
 - `agent-identity-permissions` appears in the default materializer chain.

@@ -313,39 +313,20 @@ export async function authorizeRuntimeContext(opts: ContextAuthorizationOptions)
 
   if (isChatOnlyAgent(context.agentId) && isToolOrExecCapability({ permission, objectType })) {
     const reason = `Permission denied: agent:${context.agentId ?? "unknown"} is chat-only and cannot use ${permission} ${objectType}:${objectId}`;
-    const provenance = buildAuditContextProvenance({ context });
-    recordAndEmitPermissionDenial({
-      subjectType: "agent",
-      subjectId: context.agentId ?? undefined,
-      agentId: context.agentId,
-      sessionKey: context.sessionKey,
-      sessionName: context.sessionName,
-      contextId: context.contextId,
-      relation: permission,
-      objectType,
-      objectId,
-      reason,
-      detail: provenance ? { context: provenance } : undefined,
-      audit: {
-        type: permissionDeniedAuditType(objectType),
-        agentId: context.agentId ?? "unknown",
-        denied: `${objectType}:${objectId}`,
-        reason,
-        blockType: "runtime_chat_only_ceiling",
-        ...(provenance ? { context: provenance } : {}),
-      },
-    });
-    return {
-      allowed: false,
-      approved: false,
-      inherited: false,
-      reason,
-      context,
-    };
+    return denyRuntimeContext(opts, reason, "runtime_chat_only_ceiling");
   }
 
   if (canWithCapabilityContext(context, permission, objectType, objectId)) {
     return { allowed: true, approved: false, inherited: true, context };
+  }
+
+  // An actor that reached the agent from an external surface without resolving to
+  // a contact must not escalate: the approval card would go back to that same
+  // surface, so the unidentified actor could approve its own request. The CLI and
+  // gateway already fail closed for this actor; the tool path does the same.
+  if (isUnresolvedExternalActor(context)) {
+    const reason = `Permission denied: the actor of this turn is not identified (no linked contact), so ${permission} ${objectType}:${objectId} cannot be requested for approval. Link the actor's identity first.`;
+    return denyRuntimeContext(opts, reason, "runtime_actor_unresolved");
   }
 
   const resolvedSource = toApprovalTarget(context.source);
@@ -374,35 +355,7 @@ export async function authorizeRuntimeContext(opts: ContextAuthorizationOptions)
     const reason =
       result.reason ??
       `Permission denied: agent:${context.agentId ?? "unknown"} requires ${permission} on ${objectType}:${objectId}`;
-    const provenance = buildAuditContextProvenance({ context });
-    recordAndEmitPermissionDenial({
-      subjectType: "agent",
-      subjectId: context.agentId ?? undefined,
-      agentId: context.agentId,
-      sessionKey: context.sessionKey,
-      sessionName: context.sessionName,
-      contextId: context.contextId,
-      relation: permission,
-      objectType,
-      objectId,
-      reason,
-      detail: provenance ? { context: provenance } : undefined,
-      audit: {
-        type: permissionDeniedAuditType(objectType),
-        agentId: context.agentId ?? "unknown",
-        denied: `${objectType}:${objectId}`,
-        reason,
-        blockType: "runtime_context_permission_denied",
-        ...(provenance ? { context: provenance } : {}),
-      },
-    });
-    return {
-      allowed: false,
-      approved: false,
-      inherited: false,
-      reason,
-      context,
-    };
+    return denyRuntimeContext(opts, reason, "runtime_context_permission_denied");
   }
 
   const updated = dbUpdateContextCapabilities(
@@ -416,6 +369,47 @@ export async function authorizeRuntimeContext(opts: ContextAuthorizationOptions)
     approved: true,
     inherited: false,
     reason: result.reason,
+    context,
+  };
+}
+
+function isUnresolvedExternalActor(context: ContextRecord): boolean {
+  return context.metadata?.actorResolution === "missing_contact";
+}
+
+function denyRuntimeContext(
+  opts: ContextAuthorizationOptions,
+  reason: string,
+  blockType: string,
+): ContextAuthorizationResult {
+  const { context, permission, objectType, objectId } = opts;
+  const provenance = buildAuditContextProvenance({ context });
+  recordAndEmitPermissionDenial({
+    subjectType: "agent",
+    subjectId: context.agentId ?? undefined,
+    agentId: context.agentId,
+    sessionKey: context.sessionKey,
+    sessionName: context.sessionName,
+    contextId: context.contextId,
+    relation: permission,
+    objectType,
+    objectId,
+    reason,
+    detail: provenance ? { context: provenance } : undefined,
+    audit: {
+      type: permissionDeniedAuditType(objectType),
+      agentId: context.agentId ?? "unknown",
+      denied: `${objectType}:${objectId}`,
+      reason,
+      blockType,
+      ...(provenance ? { context: provenance } : {}),
+    },
+  });
+  return {
+    allowed: false,
+    approved: false,
+    inherited: false,
+    reason,
     context,
   };
 }

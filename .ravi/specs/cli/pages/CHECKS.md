@@ -38,6 +38,13 @@
   route-visibility update (no artifact upload) and success JSON/human output
   MUST report the effective visibility of that route. Help/`--help` MUST
   mention `--route`.
+- `pages chat set <site> --enabled true` without `--execute` MUST exit 3
+  before any Console call and its plan MUST NOT contain the instructions
+  text. With `--execute` it MUST PATCH `/pages/:siteRef/chat` with only the
+  set fields. `--enabled false`, `--voice`, `--name`, `--language`,
+  `--instructions` and the clear flags MUST apply immediately. Invalid values
+  MUST exit 2 before the brake (`bun test src/pages/chat.test.ts` and the
+  `pages chat` block of `src/cli/commands/pages.test.ts`).
 - A Console failure whose message matches a site not-found MUST surface as the
   `SITE_NOT_FOUND` envelope (exit 1) with suggestedAction `ravi pages list
   --json`; a route not-found MUST surface as `ROUTE_NOT_FOUND` (exit 1) with

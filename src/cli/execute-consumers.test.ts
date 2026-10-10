@@ -151,6 +151,16 @@ const executeInstructions = [
     path: "docs/console/connectors.mdx",
     instruction: "ravi connectors mode main google shared --execute",
   },
+  {
+    name: "Page Chat enable skill",
+    path: "src/plugins/internal/ravi-system/skills/pages/SKILL.md",
+    instruction: "ravi pages chat set <host> --enabled true --execute",
+  },
+  {
+    name: "Page Chat enable documentation",
+    path: "docs/console/pages.mdx",
+    instruction: "ravi pages chat set acme-website --enabled true --execute",
+  },
 ] as const;
 
 const obsoleteExecuteConsumers = [
@@ -287,6 +297,24 @@ const obsoleteExecuteConsumers = [
     path: "docs/console/connectors.mdx",
     obsolete: "ravi connectors mode main google owner --execute",
     current: "ravi connectors mode main google owner",
+  },
+  {
+    name: "Page Chat disable skill",
+    path: "src/plugins/internal/ravi-system/skills/pages/SKILL.md",
+    obsolete: "ravi pages chat set <host> --enabled false --execute",
+    current: "ravi pages chat set <host> --enabled false",
+  },
+  {
+    name: "Page Chat settings skill",
+    path: "src/plugins/internal/ravi-system/skills/pages/SKILL.md",
+    obsolete: 'ravi pages chat set <host> --voice tempo --name "Lia" --language pt-BR --json --execute',
+    current: 'ravi pages chat set <host> --voice tempo --name "Lia" --language pt-BR --json',
+  },
+  {
+    name: "Page Chat disable documentation",
+    path: "docs/console/pages.mdx",
+    obsolete: "ravi pages chat set acme-website --enabled false --execute",
+    current: "ravi pages chat set acme-website --enabled false",
   },
 ] as const;
 

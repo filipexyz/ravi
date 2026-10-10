@@ -157,6 +157,40 @@ Next: re-read the resource, resolve the conflict, then retry.
 The CLI cannot list or mark comments as read, and opening the bar does not mark them read either. Open the page from the Console, read the comment in the bar, then delete it with the trash icon (**Apagar comentário**). Deleting needs write access to the project. Or ship to a different route. Changing visibility is never blocked by comments.
 </Warning>
 
+## Page Chat (voice agent)
+
+Page Chat is a voice agent inside every page. A signed-in viewer taps **Falar** in the Pages bar and talks to an agent that operates the page for them. It acts as that viewer only: it cannot do anything the viewer could not do. Page Chat shows on a site only when the site setting is on and the organization feature `console.pages.chat` is on. Organizations that already existed when Page Chat launched have it on by default.
+
+```bash
+ravi pages chat show acme-website --json                          # settings, org feature, voices
+ravi pages chat set acme-website --voice tempo --name "Lia"       # applies at once
+ravi pages chat set acme-website --language en-US --instructions "Answer in one sentence."
+ravi pages chat set acme-website --clear-name --clear-instructions
+ravi pages chat set acme-website --enabled false                  # turning it off applies at once
+ravi pages chat set acme-website --enabled true --execute         # plan only (exit 3) without --execute
+```
+
+- The first argument is the host slug, the site id or the hostname.
+- `set` changes only the flags you pass. `--enabled true` turns on metered voice usage for every signed-in viewer of the site, so without `--execute` it prints the plan and exits 3.
+- Voices: `bossa` (default, Brazilian Portuguese, feminine), `tempo` (Brazilian Portuguese, masculine), `marin`, `quartz`, `ripple`, `vesper`, `willow`, `stone`, `gleam`, `meridian`, `beacon`, `delta`, `cinder`. `--language` is a BCP 47 tag (default `pt-BR`). `--name` takes up to 60 characters and `--instructions` up to 2,000.
+- `featureEnabled` in the JSON is the organization feature; `settings.enabled` is the site.
+
+The agent reads the page through an accessibility snapshot, so real labels, headings and `aria-label`s decide what it can find. A page can also register actions the agent may call:
+
+```js
+window.ravi = window.ravi || {};
+window.ravi.pageChat = window.ravi.pageChat || { actions: [] };
+window.ravi.pageChat.actions.push({
+  name: "filter_items",
+  description: "Filter the table by status",
+  parameters: { type: "object", properties: { status: { type: "string" } }, required: ["status"] },
+  kind: "read", // "write": the agent reads the change aloud and runs it only after the viewer says yes
+  run: async ({ status }) => { /* ... */ return { ok: true }; },
+});
+```
+
+Use the `push` form: it works on every page, and the runtime reads the list where Page Chat is on. Action names use letters, digits, `_` and `-`, up to 64 characters. A `write` action runs only after the viewer confirms by voice.
+
 ## Releases and restore
 
 Every publish creates a release of the whole host: the map of all its routes. Restoring a release brings **every route** on the host back to that state, not just one page. Restore from the operator bar (**Restaurar**). An unread comment on any route in that release blocks the restore. The project's Pages screen in the Console lists the release history but has no restore button.

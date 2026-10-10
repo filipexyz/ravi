@@ -61484,6 +61484,308 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let PagesChatSetInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "clearInstructions": {
+        "description": "Remove the extra instructions",
+        "type": "boolean"
+      },
+      "clearName": {
+        "description": "Remove the assistant name",
+        "type": "boolean"
+      },
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "enabled": {
+        "description": "Turn Page Chat on (true) or off (false) for this site",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Required with --enabled true; every other change applies immediately",
+        "type": "boolean"
+      },
+      "instructions": {
+        "description": "Extra instructions for the agent (max 2000 chars)",
+        "type": "string"
+      },
+      "language": {
+        "description": "Spoken language as a BCP 47 tag, such as pt-BR",
+        "type": "string"
+      },
+      "name": {
+        "description": "Assistant name the agent uses (max 60 chars)",
+        "type": "string"
+      },
+      "project": {
+        "description": "Console project id or slug; overrides saved Console scope",
+        "type": "string"
+      },
+      "site": {
+        "description": "Pages host slug, site id, or hostname",
+        "type": "string"
+      },
+      "voice": {
+        "description": "Voice: bossa|tempo|marin|quartz|ripple|vesper|willow|stone|gleam|meridian|beacon|delta|cinder",
+        "type": "string"
+      }
+    },
+    "required": [
+      "site"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let PagesChatSetReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "changed": {
+        "items": {
+          "enum": [
+            "enabled",
+            "assistantName",
+            "voice",
+            "language",
+            "instructions"
+          ],
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "consoleUrl": {
+        "type": "string"
+      },
+      "featureEnabled": {
+        "type": "boolean"
+      },
+      "host": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "projectRef": {
+        "type": "string"
+      },
+      "settings": {
+        "additionalProperties": false,
+        "properties": {
+          "assistantName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "instructions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "language": {
+            "type": "string"
+          },
+          "voice": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "assistantName",
+          "voice",
+          "language",
+          "instructions"
+        ],
+        "type": "object"
+      },
+      "siteId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "siteRef": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "voices": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "success",
+      "consoleUrl",
+      "projectRef",
+      "siteRef",
+      "siteId",
+      "host",
+      "featureEnabled",
+      "settings",
+      "voices",
+      "changed"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let PagesChatShowInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "project": {
+        "description": "Console project id or slug; overrides saved Console scope",
+        "type": "string"
+      },
+      "site": {
+        "description": "Pages host slug, site id, or hostname",
+        "type": "string"
+      }
+    },
+    "required": [
+      "site"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let PagesChatShowReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "consoleUrl": {
+        "type": "string"
+      },
+      "featureEnabled": {
+        "type": "boolean"
+      },
+      "host": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "projectRef": {
+        "type": "string"
+      },
+      "settings": {
+        "additionalProperties": false,
+        "properties": {
+          "assistantName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "instructions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "language": {
+            "type": "string"
+          },
+          "voice": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "assistantName",
+          "voice",
+          "language",
+          "instructions"
+        ],
+        "type": "object"
+      },
+      "siteId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "siteRef": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "voices": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "success",
+      "consoleUrl",
+      "projectRef",
+      "siteRef",
+      "siteId",
+      "host",
+      "featureEnabled",
+      "settings",
+      "voices"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let PagesCreateInputSchema = #"""
   {
     "additionalProperties": false,

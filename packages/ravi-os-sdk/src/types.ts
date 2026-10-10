@@ -11918,6 +11918,67 @@ export type PagesAssertionAudiencesSetReturn = {
   success: true;
 };
 
+/** Input shape for `pages.chat.set`. */
+export type PagesChatSetInput = {
+  clearInstructions?: boolean;
+  clearName?: boolean;
+  console?: string;
+  enabled?: string;
+  execute?: boolean;
+  instructions?: string;
+  language?: string;
+  name?: string;
+  project?: string;
+  site: string;
+  voice?: string;
+};
+
+/** Return shape for `pages.chat.set`. */
+export type PagesChatSetReturn = {
+  changed: Array<"enabled" | "assistantName" | "voice" | "language" | "instructions">;
+  consoleUrl: string;
+  featureEnabled: boolean;
+  host: string | null;
+  projectRef: string;
+  settings: {
+    assistantName: string | null;
+    enabled: boolean;
+    instructions: string | null;
+    language: string;
+    voice: string;
+  };
+  siteId: string | null;
+  siteRef: string;
+  success: true;
+  voices: string[];
+};
+
+/** Input shape for `pages.chat.show`. */
+export type PagesChatShowInput = {
+  console?: string;
+  project?: string;
+  site: string;
+};
+
+/** Return shape for `pages.chat.show`. */
+export type PagesChatShowReturn = {
+  consoleUrl: string;
+  featureEnabled: boolean;
+  host: string | null;
+  projectRef: string;
+  settings: {
+    assistantName: string | null;
+    enabled: boolean;
+    instructions: string | null;
+    language: string;
+    voice: string;
+  };
+  siteId: string | null;
+  siteRef: string;
+  success: true;
+  voices: string[];
+};
+
 /** Input shape for `pages.create`. */
 export type PagesCreateInput = {
   args: string[];

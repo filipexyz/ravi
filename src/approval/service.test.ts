@@ -9,6 +9,7 @@ import {
   type ApprovalFinalizeSlackInput,
   type ApprovalServiceDependencies,
 } from "./service.js";
+import { setApprovalGrantorRouterConfigForTest } from "./grantor.js";
 import { SLACK_APPROVAL_ACTION_APPROVE, SLACK_APPROVAL_ACTION_REJECT } from "./slack-blocks.js";
 import {
   flushPermissionAuditEvents,
@@ -102,6 +103,7 @@ function hydrateEvent(event: { topic: string; data: Record<string, unknown> }): 
 describe("approval service", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-approval-service-test-");
+    setApprovalGrantorRouterConfigForTest(() => ({ instances: {}, instanceToAccount: {} }));
     requestReplyResult = { messageId: "msg_1" };
     subscribeEvents = [];
     emitted = [];
@@ -144,6 +146,7 @@ describe("approval service", () => {
 
   afterEach(async () => {
     setApprovalServiceDependenciesForTest();
+    setApprovalGrantorRouterConfigForTest();
     setPermissionAuditPublisherForTest();
     for (const contextId of createdContextIds) {
       dbDeleteContext(contextId);
@@ -756,6 +759,70 @@ describe("approval service", () => {
           objectId: "curl",
         }),
       ]),
+    );
+  });
+
+  it("denies an unidentified external actor without sending an approval card", async () => {
+    // The turn came from a Slack DM whose sender resolved to no contact. Even
+    // with an authorized grantor clicking in that DM, the request must never be
+    // sent: the card would go back to the unidentified actor's own surface.
+    seedSlackOwner("slack-main");
+    subscribeEvents = [
+      {
+        topic: "ravi.inbound.interaction",
+        data: {
+          provider: "slack",
+          accountId: "slack-main",
+          instanceId: "slack-main",
+          channelId: "D123",
+          messageTs: "msg_1",
+          userId: OWNER_SLACK_USER,
+          actionId: SLACK_APPROVAL_ACTION_APPROVE,
+          value: "$requestId",
+        },
+      },
+    ];
+    getOrCreateSession("agent:main:slack:dm:U1", "main", "/tmp/main", { name: "main-slack-dm" });
+    const context = dbCreateContext({
+      contextId: "ctx_unresolved_actor",
+      contextKey: "rctx_unresolved_actor",
+      kind: "agent-runtime",
+      agentId: "main",
+      sessionKey: "agent:main:slack:dm:U1",
+      sessionName: "main-slack-dm",
+      capabilities: [],
+      source: { channel: "slack", accountId: "slack-main", chatId: "D123" },
+      metadata: {
+        authorityMode: "agent-identity",
+        actorPrincipal: "unknown",
+        actorResolution: "missing_contact",
+      },
+      createdAt: 1000,
+    });
+    createdContextIds.add(context.contextId);
+
+    const result = await authorizeRuntimeContext({
+      context,
+      permission: "use",
+      objectType: "tool",
+      objectId: "Bash",
+      timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
+      beforeExternalApproval: () => externalOrder.push("before-external-approval"),
+    });
+
+    expect(result).toMatchObject({ allowed: false, approved: false, inherited: false });
+    expect(result.reason ?? "").toMatch(/not identified/);
+    expect(deliveredRequests).toEqual([]);
+    expect(emitted).toEqual([]);
+    expect(externalOrder).toEqual([]);
+    expect(dbGetContext(context.contextId)?.capabilities).toEqual([]);
+    expect(listPermissionDenials({ subjectType: "agent", subjectId: "main", resolved: false })).toContainEqual(
+      expect.objectContaining({
+        contextId: "ctx_unresolved_actor",
+        relation: "use",
+        objectType: "tool",
+        objectId: "Bash",
+      }),
     );
   });
 

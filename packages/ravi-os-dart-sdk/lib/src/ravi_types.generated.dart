@@ -15207,6 +15207,140 @@ class PagesAssertionAudiencesSetReturn {
 
 PagesAssertionAudiencesSetReturn pagesAssertionAudiencesSetReturnFromJson(Object? json) => PagesAssertionAudiencesSetReturn.fromJsonValue(json);
 
+class PagesChatSetOptions {
+  const PagesChatSetOptions({this.clearInstructions, this.clearName, this.console, this.enabled, this.execute, this.instructions, this.language, this.name, this.project, this.voice});
+
+  final bool? clearInstructions;
+  final bool? clearName;
+  final String? console;
+  final String? enabled;
+  final bool? execute;
+  final String? instructions;
+  final String? language;
+  final String? name;
+  final String? project;
+  final String? voice;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (clearInstructions != null) {
+      into["clearInstructions"] = RaviJson.from(clearInstructions);
+    }
+    if (clearName != null) {
+      into["clearName"] = RaviJson.from(clearName);
+    }
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (enabled != null) {
+      into["enabled"] = RaviJson.from(enabled);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (instructions != null) {
+      into["instructions"] = RaviJson.from(instructions);
+    }
+    if (language != null) {
+      into["language"] = RaviJson.from(language);
+    }
+    if (name != null) {
+      into["name"] = RaviJson.from(name);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (voice != null) {
+      into["voice"] = RaviJson.from(voice);
+    }
+  }
+}
+
+class PagesChatSetReturn {
+  const PagesChatSetReturn({required this.changed, required this.consoleUrl, required this.featureEnabled, required this.host, required this.projectRef, required this.settings, required this.siteId, required this.siteRef, required this.success, required this.voices});
+
+  final List<String> changed;
+  final String consoleUrl;
+  final bool featureEnabled;
+  final RaviJson host;
+  final String projectRef;
+  final RaviJson settings;
+  final RaviJson siteId;
+  final String siteRef;
+  final bool success;
+  final List<String> voices;
+
+  factory PagesChatSetReturn.fromJson(Map<String, Object?> json) {
+    return PagesChatSetReturn(
+      changed: raviJsonAsList(json["changed"], raviJsonAsString),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      featureEnabled: raviJsonAsBool(json["featureEnabled"]),
+      host: RaviJson.from(json["host"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      settings: RaviJson.from(json["settings"]),
+      siteId: RaviJson.from(json["siteId"]),
+      siteRef: raviJsonAsString(json["siteRef"]),
+      success: raviJsonAsBool(json["success"]),
+      voices: raviJsonAsList(json["voices"], raviJsonAsString),
+    );
+  }
+
+  static PagesChatSetReturn fromJsonValue(Object? json) {
+    return PagesChatSetReturn.fromJson(raviJsonObject(json, "PagesChatSetReturn"));
+  }
+}
+
+PagesChatSetReturn pagesChatSetReturnFromJson(Object? json) => PagesChatSetReturn.fromJsonValue(json);
+
+class PagesChatShowOptions {
+  const PagesChatShowOptions({this.console, this.project});
+
+  final String? console;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class PagesChatShowReturn {
+  const PagesChatShowReturn({required this.consoleUrl, required this.featureEnabled, required this.host, required this.projectRef, required this.settings, required this.siteId, required this.siteRef, required this.success, required this.voices});
+
+  final String consoleUrl;
+  final bool featureEnabled;
+  final RaviJson host;
+  final String projectRef;
+  final RaviJson settings;
+  final RaviJson siteId;
+  final String siteRef;
+  final bool success;
+  final List<String> voices;
+
+  factory PagesChatShowReturn.fromJson(Map<String, Object?> json) {
+    return PagesChatShowReturn(
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      featureEnabled: raviJsonAsBool(json["featureEnabled"]),
+      host: RaviJson.from(json["host"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      settings: RaviJson.from(json["settings"]),
+      siteId: RaviJson.from(json["siteId"]),
+      siteRef: raviJsonAsString(json["siteRef"]),
+      success: raviJsonAsBool(json["success"]),
+      voices: raviJsonAsList(json["voices"], raviJsonAsString),
+    );
+  }
+
+  static PagesChatShowReturn fromJsonValue(Object? json) {
+    return PagesChatShowReturn.fromJson(raviJsonObject(json, "PagesChatShowReturn"));
+  }
+}
+
+PagesChatShowReturn pagesChatShowReturnFromJson(Object? json) => PagesChatShowReturn.fromJsonValue(json);
+
 class PagesCreateOptions {
   const PagesCreateOptions({this.console, this.defaultSite, this.execute, this.project, this.visibility});
 

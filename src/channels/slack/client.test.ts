@@ -1,5 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
-import { SlackWebApiClient } from "./client.js";
+import { mapExecutionErrorToContractError } from "../../cli/agent-contract.js";
+import { SlackApiError, SlackWebApiClient, slackApiErrorCode } from "./client.js";
 
 describe("Slack Web API client", () => {
   it("routes requests and private file downloads through the authenticated Hub gateway", async () => {
@@ -234,6 +235,39 @@ describe("Slack Web API client", () => {
       thread_ts: "1783267470.885739",
       status: "",
     });
+  });
+
+  it("returns Slack's invalid_blocks answer from blocks.validate instead of throwing", async () => {
+    const fetchImpl = mock(async () =>
+      jsonResponse({ ok: false, error: "invalid_blocks", errors: ["must provide a type"] }),
+    ) as unknown as typeof fetch;
+    const client = new SlackWebApiClient({ appToken: "xapp-secret", botToken: "xoxb-secret", fetchImpl });
+
+    await expect(client.blocksValidate({ blocks: [{ type: "section" }] })).resolves.toMatchObject({
+      ok: false,
+      error: "invalid_blocks",
+    });
+  });
+
+  it("raises Slack API failures as structured SLACK_<ERROR> errors, not unhandled ones", async () => {
+    const fetchImpl = mock(async () =>
+      jsonResponse({ ok: false, error: "channel_not_found" }),
+    ) as unknown as typeof fetch;
+    const client = new SlackWebApiClient({ appToken: "xapp-secret", botToken: "xoxb-secret", fetchImpl });
+
+    let caught: unknown;
+    try {
+      await client.postMessage({ channel: "C404", text: "Fallback", blocks: [{ type: "section" }] });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(SlackApiError);
+    expect((caught as SlackApiError).message).toBe("Slack chat.postMessage failed: channel_not_found");
+    const contract = mapExecutionErrorToContractError("slack blocks-send", caught);
+    expect(contract.code).toBe("SLACK_CHANNEL_NOT_FOUND");
+    expect(contract.exitCode).toBe(1);
+    expect(slackApiErrorCode("")).toBe("SLACK_API_ERROR");
+    expect(slackApiErrorCode("500 Internal Server Error")).toBe("SLACK_500_INTERNAL_SERVER_ERROR");
   });
 
   it("sends, updates and validates Block Kit payloads through Slack Web API", async () => {
