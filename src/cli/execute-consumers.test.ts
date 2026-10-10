@@ -131,6 +131,16 @@ const executeInstructions = [
     path: "docs/cli/overview.mdx",
     instruction: "ravi heartbeat trigger <id> --execute",
   },
+  {
+    name: "Page Chat enable skill",
+    path: "src/plugins/internal/ravi-system/skills/pages/SKILL.md",
+    instruction: "ravi pages chat set <host> --enabled true --execute",
+  },
+  {
+    name: "Page Chat enable documentation",
+    path: "docs/console/pages.mdx",
+    instruction: "ravi pages chat set acme-website --enabled true --execute",
+  },
 ] as const;
 
 const obsoleteExecuteConsumers = [
@@ -249,6 +259,24 @@ const obsoleteExecuteConsumers = [
     path: ".ravi/specs/cli/console-scope/SPEC.md",
     obsolete: "ravi pages create <slug> --json --execute",
     current: "ravi pages create <slug> --json",
+  },
+  {
+    name: "Page Chat disable skill",
+    path: "src/plugins/internal/ravi-system/skills/pages/SKILL.md",
+    obsolete: "ravi pages chat set <host> --enabled false --execute",
+    current: "ravi pages chat set <host> --enabled false",
+  },
+  {
+    name: "Page Chat settings skill",
+    path: "src/plugins/internal/ravi-system/skills/pages/SKILL.md",
+    obsolete: 'ravi pages chat set <host> --voice tempo --name "Lia" --language pt-BR --json --execute',
+    current: 'ravi pages chat set <host> --voice tempo --name "Lia" --language pt-BR --json',
+  },
+  {
+    name: "Page Chat disable documentation",
+    path: "docs/console/pages.mdx",
+    obsolete: "ravi pages chat set acme-website --enabled false --execute",
+    current: "ravi pages chat set acme-website --enabled false",
   },
 ] as const;
 

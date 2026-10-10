@@ -17,6 +17,7 @@ applies_to:
   - src/cli/agent-contract.ts
   - src/pages/client.ts
   - src/pages/ship.ts
+  - src/pages/chat.ts
   - src/artifacts/publish-client.ts
   - src/plugins/internal/ravi-system/skills/pages/SKILL.md
   - src/cli/skill-gates.ts
@@ -100,6 +101,21 @@ contract errors rethrow first, recognizable Console not-found failures map to
     generic provider-message redaction boundary; terminal control characters
     MUST be stripped and output MUST be length-bounded.
 
+13. `pages chat show <site>` MUST `GET` and `pages chat set <site>` MUST
+    `PATCH` `/api/cli/projects/:projectRef/pages/:siteRef/chat`. `siteRef`
+    accepts a host slug, site id or hostname and is passed through. The PATCH
+    body MUST carry only the fields the caller set (`enabled`,
+    `assistantName`, `voice`, `language`, `instructions`); `--clear-name` and
+    `--clear-instructions` send `null`. Unknown voices, non-BCP-47 languages,
+    `assistantName` over 60 or `instructions` over 2000 characters, set+clear
+    conflicts and an empty change set are `PAYLOAD_INVALID` (exit 2) before
+    the brake and before any Console call. `set` with `--enabled true` MUST
+    dry-run (exit 3) before credential reads, project resolution or Console
+    calls unless `--execute` is passed; its plan reports instructions by length
+    only. Every other `set` applies immediately. Success JSON MUST allowlist
+    `projectRef`, `siteRef`, `siteId`, `host`, `featureEnabled`, `settings`
+    and `voices` (plus `changed` on `set`).
+
 ## Write classification (brake decision per op)
 
 | op | class | brake |
@@ -116,6 +132,9 @@ contract errors rethrow first, recognizable Console not-found failures map to
 | assertion audiences set | registers Pages host origins that may receive a viewer assertion for one aud | dry-run + `--execute` (see `pages/assertion-audiences`) |
 | assertion audiences remove | drops one assertion audience | dry-run + `--execute` (see `pages/assertion-audiences`) |
 | assertion audiences list | reads the host allowlist | not braked |
+| chat show | reads one site's Page Chat settings and the org feature flag | not braked |
+| chat set → `--enabled true` | turns on a metered voice agent for every signed-in viewer of the site | conditional dry-run + `--execute` |
+| chat set → other fields, `--enabled false` | reversible Console settings change; turning off reduces exposure | not braked (declared) |
 
 There is no `pages remove`/route-removal command on this surface today; if one
 is added it MUST arrive braked. Viewer-assertion audience removal is

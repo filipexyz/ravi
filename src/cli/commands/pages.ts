@@ -45,6 +45,20 @@ import {
   type PageAssertionAudienceMutationResult,
 } from "../../pages/assertion-audiences.js";
 import {
+  buildPageChatPatchBody,
+  describePageChatPatch,
+  getPageChatSettings,
+  PAGE_CHAT_ASSISTANT_NAME_MAX,
+  PAGE_CHAT_DEFAULT_LANGUAGE,
+  PAGE_CHAT_DEFAULT_VOICE,
+  PAGE_CHAT_FEATURE,
+  PAGE_CHAT_INSTRUCTIONS_MAX,
+  PAGE_CHAT_VOICES,
+  updatePageChatSettings,
+  type PageChatResult,
+  type PageChatUpdateResult,
+} from "../../pages/chat.js";
+import {
   ensurePageCommentFollow,
   pageCommentCreatorFromContext,
   type PageCommentFollowDeps,
@@ -1162,6 +1176,177 @@ export class PagesAssertionAudienceCommands {
   }
 }
 
+const PAGES_CHAT_SHOW_HELP = `
+Examples:
+  ravi pages chat show acme-website --json
+  ravi pages chat show acme-website.ravi.page --project website
+
+<site> is the Pages host slug, site id or hostname.
+
+Page Chat is the voice agent inside a Ravi Page: a signed-in viewer taps
+"Falar" in the Pages bar and talks to an agent that operates the page for them.
+It shows only when the site setting and the org feature console.pages.chat are
+both on. featureEnabled reports the org feature; settings.enabled the site.
+
+JSON:
+  { projectRef, siteRef, siteId, host, featureEnabled,
+    settings: { enabled, assistantName, voice, language, instructions }, voices }
+`;
+
+const PAGES_CHAT_SET_HELP = `
+Examples:
+  ravi pages chat set acme-website --voice tempo --name "Lia" --json
+  ravi pages chat set acme-website --language en-US --instructions "Answer in one sentence."
+  ravi pages chat set acme-website --clear-name --clear-instructions
+  ravi pages chat set acme-website --enabled false
+  ravi pages chat set acme-website --enabled true --execute
+
+Only the flags you pass change. --clear-name and --clear-instructions reset
+those fields. Voices: ${PAGE_CHAT_VOICES.join(", ")} (default ${PAGE_CHAT_DEFAULT_VOICE}).
+Language is a BCP 47 tag (default ${PAGE_CHAT_DEFAULT_LANGUAGE}). --name takes at most
+${PAGE_CHAT_ASSISTANT_NAME_MAX} characters, --instructions at most ${PAGE_CHAT_INSTRUCTIONS_MAX}.
+
+Write brake:
+  --enabled true turns the voice agent on for every signed-in viewer of the
+  site and starts metered voice usage, so it is a dry-run without --execute
+  (exit 3). Every other change, including --enabled false, applies at once.
+`;
+
+@Group({
+  name: "pages.chat",
+  description: "Read and change the Page Chat voice agent settings of a Pages site",
+  scope: "open",
+})
+export class PagesChatCommands {
+  constructor(private readonly deps: PagesCommandDeps = {}) {}
+
+  @Command({ name: "show", description: "Show a Pages site's Page Chat settings", helpAfter: PAGES_CHAT_SHOW_HELP })
+  @CommandAccess({ kind: "read", resource: "pages", action: "chat", risk: "low" })
+  async show(
+    @Arg("site", { description: "Pages host slug, site id, or hostname" }) site: string,
+    @Option({ flags: "--project <ref>", description: "Console project id or slug; overrides saved Console scope" })
+    projectOption?: string,
+    @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    return runPagesCommand("pages chat show", asJson, async () => {
+      const siteRef = requirePageChatSite(site, "show");
+      const resolved = await resolvePagesProject(undefined, projectOption, consoleUrl, this.deps);
+      const result = await getPageChatSettings(
+        { console: consoleUrl, project: resolved.projectRef, site: siteRef },
+        this.deps,
+      );
+      const payload = { ...result, scope: resolved.scope };
+      printPayload(payload, asJson, () => printPageChat(result, "show"));
+      return payload;
+    });
+  }
+
+  @Command({ name: "set", description: "Change a Pages site's Page Chat settings", helpAfter: PAGES_CHAT_SET_HELP })
+  @CommandAccess({ kind: "mutate", resource: "pages", action: "chat", risk: "medium", requiresConfirmation: true })
+  async set(
+    @Arg("site", { description: "Pages host slug, site id, or hostname" }) site: string,
+    @Option({ flags: "--project <ref>", description: "Console project id or slug; overrides saved Console scope" })
+    projectOption?: string,
+    @Option({ flags: "--enabled <bool>", description: "Turn Page Chat on (true) or off (false) for this site" })
+    enabled?: string,
+    @Option({ flags: "--voice <voice>", description: `Voice: ${PAGE_CHAT_VOICES.join("|")}` }) voice?: string,
+    @Option({
+      flags: "--name <name>",
+      description: `Assistant name the agent uses (max ${PAGE_CHAT_ASSISTANT_NAME_MAX} chars)`,
+    })
+    name?: string,
+    @Option({ flags: "--clear-name", description: "Remove the assistant name" }) clearName?: boolean,
+    @Option({ flags: "--language <bcp47>", description: "Spoken language as a BCP 47 tag, such as pt-BR" })
+    language?: string,
+    @Option({
+      flags: "--instructions <text>",
+      description: `Extra instructions for the agent (max ${PAGE_CHAT_INSTRUCTIONS_MAX} chars)`,
+    })
+    instructions?: string,
+    @Option({ flags: "--clear-instructions", description: "Remove the extra instructions" })
+    clearInstructions?: boolean,
+    @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Required with --enabled true; every other change applies immediately",
+    })
+    execute?: boolean,
+  ) {
+    return runPagesCommand("pages chat set", asJson, async () => {
+      const siteRef = requirePageChatSite(site, "set");
+      const body = buildPageChatPatchBody({
+        clearInstructions,
+        clearName,
+        enabled,
+        instructions,
+        language,
+        name,
+        voice,
+      });
+      if (body.enabled === true && execute !== true) {
+        // Turning Page Chat on exposes a metered voice agent to every
+        // signed-in viewer of the site. Everything else, including turning it
+        // off, is a reversible settings change and applies immediately.
+        contractDryRun(
+          "pages chat set",
+          {
+            project: projectOption ?? "(Console scope default)",
+            site: siteRef,
+            effect: "enable Page Chat for signed-in viewers of this site (metered voice usage)",
+            changes: describePageChatPatch(body),
+          },
+          { asJson },
+        );
+      }
+      const resolved = await resolvePagesProject(undefined, projectOption, consoleUrl, this.deps);
+      const result = await updatePageChatSettings(
+        { body, console: consoleUrl, project: resolved.projectRef, site: siteRef },
+        this.deps,
+      );
+      const payload = { ...result, scope: resolved.scope };
+      printPayload(payload, asJson, () => printPageChat(result, "set"));
+      return payload;
+    });
+  }
+}
+
+function requirePageChatSite(site: string | undefined, command: "set" | "show"): string {
+  const text = site?.trim();
+  if (!text) {
+    throw new CloudAuthError(
+      "PAYLOAD_INVALID",
+      `Missing <site>. Pass a Pages host slug, site id, or hostname: ravi pages chat ${command} <site>.`,
+    );
+  }
+  return text;
+}
+
+function printPageChat(result: PageChatResult | PageChatUpdateResult, action: "set" | "show"): void {
+  const active = result.featureEnabled && result.settings.enabled;
+  if (action === "set") {
+    const changed = "changed" in result ? result.changed.join(", ") : "";
+    console.log(`✓ Page Chat updated${changed ? ` (${changed})` : ""}`);
+  } else {
+    console.log(`Page Chat for ${result.siteRef}`);
+  }
+  if (result.host) console.log(`  Host         ${result.host}`);
+  console.log(`  Status       ${active ? "on" : "off"}`);
+  console.log(`  Site         ${result.settings.enabled ? "enabled" : "disabled"}`);
+  console.log(`  Org feature  ${result.featureEnabled ? "on" : "off"} (${PAGE_CHAT_FEATURE})`);
+  console.log(`  Assistant    ${result.settings.assistantName ?? "(default)"}`);
+  console.log(`  Voice        ${result.settings.voice}`);
+  console.log(`  Language     ${result.settings.language}`);
+  console.log(`  Instructions ${result.settings.instructions ?? "(none)"}`);
+  if (action === "show") console.log(`  Voices       ${result.voices.join(", ")}`);
+  if (result.settings.enabled && !result.featureEnabled) {
+    console.log(
+      `warning: the org feature ${PAGE_CHAT_FEATURE} is off, so viewers do not see Page Chat until it is turned on in Console.`,
+    );
+  }
+}
+
 function requireAssertionSite(site: string | undefined): string {
   const text = site?.trim();
   if (!text) {
@@ -1519,6 +1704,30 @@ const pageAssertionAudienceMutationReturnSchema = z.object({
   success: z.literal(true),
 });
 
+const pageChatSettingsSchema = z.object({
+  enabled: z.boolean(),
+  assistantName: z.string().nullable(),
+  voice: z.string(),
+  language: z.string(),
+  instructions: z.string().nullable(),
+});
+
+const pageChatReturnSchema = z.object({
+  success: z.literal(true),
+  consoleUrl: z.string(),
+  projectRef: z.string(),
+  siteRef: z.string(),
+  siteId: z.string().nullable(),
+  host: z.string().nullable(),
+  featureEnabled: z.boolean(),
+  settings: pageChatSettingsSchema,
+  voices: z.array(z.string()),
+});
+
+const pageChatUpdateReturnSchema = pageChatReturnSchema.extend({
+  changed: z.array(z.enum(["enabled", "assistantName", "voice", "language", "instructions"])),
+});
+
 declareCommandReturns(PagesCommands, {
   list: pagesListReturnSchema,
   published: publishedPagesListReturnSchema,
@@ -1540,6 +1749,11 @@ declareCommandReturns(PagesAssertionAudienceCommands, {
   list: pageAssertionAudienceListReturnSchema,
   set: pageAssertionAudienceMutationReturnSchema,
   remove: pageAssertionAudienceMutationReturnSchema,
+});
+
+declareCommandReturns(PagesChatCommands, {
+  show: pageChatReturnSchema,
+  set: pageChatUpdateReturnSchema,
 });
 
 async function runPagesCommand<T>(op: string, asJson: boolean | undefined, run: () => Promise<T>): Promise<T> {
