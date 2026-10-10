@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getDb } from "../router/router-db.js";
-import { buildJobOutcomeSummary, isPidAlive, readJobTail } from "./runner.js";
+import { buildJobOutcomeSummary, isPidAlive, JobsRunner, readJobTail } from "./runner.js";
 import {
   dbCreateJob,
   dbFinishJob,
@@ -177,5 +177,24 @@ describe("process liveness", () => {
     // PIDs acima do limite do kernel não existem; serve para o reconcile não
     // considerar vivo um job órfão.
     expect(isPidAlive(2_147_483_646)).toBe(false);
+  });
+});
+
+describe("job runner", () => {
+  it("starts the command as acting for the job, never as the operator's terminal", () => {
+    const job = makeJob();
+    const envs: Array<Record<string, string>> = [];
+    const runner = new JobsRunner({
+      spawnCommand: (_command, _cwd, _logPath, env) => {
+        envs.push(env);
+        return { pid: null, onExit: () => {} };
+      },
+      notifySession: async () => {},
+    });
+    // startJob only runs on a started runner; start() would also subscribe to NATS.
+    (runner as unknown as { running: boolean }).running = true;
+
+    expect(runner.startJob(job.id)).toBe(true);
+    expect(envs).toEqual([{ RAVI_AUTOMATION_PRINCIPAL: `automation:job:${job.id}` }]);
   });
 });

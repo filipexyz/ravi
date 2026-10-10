@@ -49,6 +49,7 @@ interface CronJobRow {
   shell_timeout_ms: number | null;
   shell_env_file: string | null;
   on_error: string | null;
+  owner_principal: string | null;
 
   next_run_at: number | null;
   last_run_at: number | null;
@@ -96,6 +97,7 @@ function rowToJob(row: CronJobRow): CronJob {
   if (row.shell_timeout_ms !== null) job.shellTimeoutMs = row.shell_timeout_ms;
   if (row.shell_env_file !== null) job.shellEnvFile = row.shell_env_file;
   if (row.on_error !== null) job.onError = row.on_error;
+  if (row.owner_principal !== null && row.owner_principal !== undefined) job.ownerPrincipal = row.owner_principal;
   if (row.next_run_at !== null) job.nextRunAt = row.next_run_at;
   if (row.last_run_at !== null) job.lastRunAt = row.last_run_at;
   if (row.last_status !== null) job.lastStatus = row.last_status as JobStatus;
@@ -126,10 +128,10 @@ export function dbCreateCronJob(input: CronJobInput): CronJob {
       id, agent_id, account_id, name, description, enabled, delete_after_run,
       schedule_type, schedule_at, schedule_every, schedule_cron, schedule_timezone,
       session_target, reply_session, execution_type, payload_text,
-      shell_command, shell_timeout_ms, shell_env_file, on_error,
+      shell_command, shell_timeout_ms, shell_env_file, on_error, owner_principal,
       next_run_at,
       created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -153,6 +155,7 @@ export function dbCreateCronJob(input: CronJobInput): CronJob {
     input.shellTimeoutMs ?? null,
     input.shellEnvFile ?? null,
     input.onError ?? null,
+    input.ownerPrincipal ?? null,
     nextRunAt ?? null,
     now,
     now,
@@ -276,6 +279,10 @@ export function dbUpdateCronJob(id: string, updates: Partial<CronJob>): CronJob 
   if (hasOwn("onError")) {
     fields.push("on_error = ?");
     values.push(updates.onError ?? null);
+  }
+  if (hasOwn("ownerPrincipal")) {
+    fields.push("owner_principal = ?");
+    values.push(updates.ownerPrincipal ?? null);
   }
 
   if (fields.length === 0) {

@@ -3,5 +3,5 @@
 // Drift is detected by `ravi sdk swift check`.
 
 public let RAVI_SDK_VERSION = "0.1.0"
-public let RAVI_REGISTRY_HASH = "sha256:d984e407624343217333a751ca77a1b0ecd0cfb4ee2c53e6f67014f660503316"
-public let RAVI_GIT_SHA = "b4c6a36387a5"
+public let RAVI_REGISTRY_HASH = "sha256:1958dc9e13e9fd85e8c5ffef94d66cf6ec5ee0e60e372a96c6f33c027a519c03"
+public let RAVI_GIT_SHA = "405c71615317"

@@ -1520,6 +1520,17 @@ public struct ConnectorsNamespace: Sendable {
     return try await transport.call(groupSegments: ["connectors"], command: "list", body: requestBody, as: ConnectorsListReturn.self)
   }
 
+  public func mode(_ agent: String, _ provider: String, _ mode: String? = nil, _ options: ConnectorsModeOptions = .init()) async throws -> ConnectorsModeReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["agent"] = try RaviJSON.fromEncodable(agent)
+    requestBody["provider"] = try RaviJSON.fromEncodable(provider)
+    if let mode {
+      requestBody["mode"] = try RaviJSON.fromEncodable(mode)
+    }
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["connectors"], command: "mode", body: requestBody, as: ConnectorsModeReturn.self)
+  }
+
   public func revoke(_ id: String, _ options: ConnectorsRevokeOptions = .init()) async throws -> ConnectorsRevokeReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["id"] = try RaviJSON.fromEncodable(id)
@@ -2678,6 +2689,12 @@ public struct GmailNamespace: Sendable {
     requestBody["id"] = try RaviJSON.fromEncodable(id)
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["gmail"], command: "read", body: requestBody, as: GmailReadReturn.self)
+  }
+
+  public func send(_ options: GmailSendOptions = .init()) async throws -> GmailSendReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["gmail"], command: "send", body: requestBody, as: GmailSendReturn.self)
   }
 }
 

@@ -6248,12 +6248,16 @@ export type ConnectorsListInput = {
 /** Return shape for `connectors.list`. */
 export type ConnectorsListReturn = {
   connections: Array<{
+    accessMode?: "full" | "read_only";
     createdAt: string;
     displayName: string;
+    externalAccountLogin?: string | null;
     id: string;
-    projectId: string;
+    isDefault?: boolean;
+    projectId: string | null;
     provider: string;
     requiresReauth: boolean;
+    scopeKind?: "user" | "organization";
     scopes: string[];
     status: string;
   }>;
@@ -6263,6 +6267,24 @@ export type ConnectorsListReturn = {
     returned: number;
     total: number;
   };
+};
+
+/** Input shape for `connectors.mode`. */
+export type ConnectorsModeInput = {
+  agent: string;
+  execute?: boolean;
+  mode?: "owner" | "person-asking" | "person_asking" | "shared";
+  provider: string;
+};
+
+/** Return shape for `connectors.mode`. */
+export type ConnectorsModeReturn = {
+  agentId: string;
+  changed: boolean;
+  label: string;
+  mode: "owner" | "person_asking" | "shared";
+  previousMode: "owner" | "person_asking" | "shared";
+  provider: string;
 };
 
 /** Input shape for `connectors.revoke`. */
@@ -6286,16 +6308,21 @@ export type ConnectorsShowInput = {
 /** Return shape for `connectors.show`. */
 export type ConnectorsShowReturn = {
   connection: {
+    accessMode?: "full" | "read_only";
     capabilities: string[];
     createdAt: string;
     displayName: string;
     externalAccountLogin: string | null;
     grantedAt: string;
     id: string;
+    isDefault?: boolean;
     lastReauthAt: string | null;
-    projectId: string;
+    lastUsedAt?: string | null;
+    projectId: string | null;
     provider: string;
     requiresReauth: boolean;
+    revokedAt?: string | null;
+    scopeKind?: "user" | "organization";
     scopes: string[];
     status: string;
   };
@@ -9123,11 +9150,13 @@ export type FeedbackSendReturn = {
 
 /** Input shape for `gmail.list`. */
 export type GmailListInput = {
+  approval?: string;
   connector?: string;
   cursor?: string;
   label?: string;
   max?: string;
   q?: string;
+  shared?: boolean;
 };
 
 /** Return shape for `gmail.list`. */
@@ -9139,9 +9168,11 @@ export type GmailListReturn = {
 
 /** Input shape for `gmail.read`. */
 export type GmailReadInput = {
+  approval?: string;
   connector?: string;
   format?: string;
   id: string;
+  shared?: boolean;
 };
 
 /** Return shape for `gmail.read`. */
@@ -9149,6 +9180,32 @@ export type GmailReadReturn = {
   capability: string;
   refreshed: boolean;
   result?: unknown;
+};
+
+/** Input shape for `gmail.send`. */
+export type GmailSendInput = {
+  approval?: string;
+  bcc?: string;
+  body?: string;
+  cc?: string;
+  connector?: string;
+  execute?: boolean;
+  html?: string;
+  inReplyTo?: string;
+  shared?: boolean;
+  subject?: string;
+  to?: string;
+};
+
+/** Return shape for `gmail.send`. */
+export type GmailSendReturn = {
+  capability: string;
+  refreshed: boolean;
+  result?: {
+    labelIds?: string[];
+    messageId?: string;
+    threadId?: string;
+  };
 };
 
 /** Input shape for `heartbeat.disable`. */

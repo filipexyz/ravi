@@ -33278,7 +33278,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "project": {
-        "description": "Filter by Ravi Cloud project id",
+        "description": "Ignored: connections belong to you, not to a project (removed after 2027-01-01)",
         "type": "string"
       },
       "provider": {
@@ -33298,23 +33298,57 @@ public enum RaviSchemas {
         "items": {
           "additionalProperties": false,
           "properties": {
+            "accessMode": {
+              "enum": [
+                "full",
+                "read_only"
+              ],
+              "type": "string"
+            },
             "createdAt": {
               "type": "string"
             },
             "displayName": {
               "type": "string"
             },
+            "externalAccountLogin": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "id": {
               "type": "string"
             },
+            "isDefault": {
+              "type": "boolean"
+            },
             "projectId": {
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "provider": {
               "type": "string"
             },
             "requiresReauth": {
               "type": "boolean"
+            },
+            "scopeKind": {
+              "enum": [
+                "user",
+                "organization"
+              ],
+              "type": "string"
             },
             "scopes": {
               "items": {
@@ -33368,6 +33402,86 @@ public enum RaviSchemas {
     "required": [
       "connections",
       "pagination"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ConnectorsModeInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "description": "Agent id",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Actually switch to person-asking or shared; default is a dry-run that only shows the plan (exit 3). owner applies immediately",
+        "type": "boolean"
+      },
+      "mode": {
+        "description": "owner (default) | person-asking | shared; omit to show the current mode",
+        "enum": [
+          "owner",
+          "person-asking",
+          "person_asking",
+          "shared"
+        ],
+        "type": "string"
+      },
+      "provider": {
+        "description": "Provider id (google)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "agent",
+      "provider"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ConnectorsModeReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agentId": {
+        "type": "string"
+      },
+      "changed": {
+        "type": "boolean"
+      },
+      "label": {
+        "type": "string"
+      },
+      "mode": {
+        "enum": [
+          "owner",
+          "person_asking",
+          "shared"
+        ],
+        "type": "string"
+      },
+      "previousMode": {
+        "enum": [
+          "owner",
+          "person_asking",
+          "shared"
+        ],
+        "type": "string"
+      },
+      "provider": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "agentId",
+      "provider",
+      "mode",
+      "previousMode",
+      "changed",
+      "label"
     ],
     "type": "object"
   }
@@ -33440,6 +33554,13 @@ public enum RaviSchemas {
       "connection": {
         "additionalProperties": false,
         "properties": {
+          "accessMode": {
+            "enum": [
+              "full",
+              "read_only"
+            ],
+            "type": "string"
+          },
           "capabilities": {
             "items": {
               "type": "string"
@@ -33468,6 +33589,9 @@ public enum RaviSchemas {
           "id": {
             "type": "string"
           },
+          "isDefault": {
+            "type": "boolean"
+          },
           "lastReauthAt": {
             "anyOf": [
               {
@@ -33478,14 +33602,48 @@ public enum RaviSchemas {
               }
             ]
           },
+          "lastUsedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "projectId": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "provider": {
             "type": "string"
           },
           "requiresReauth": {
             "type": "boolean"
+          },
+          "revokedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scopeKind": {
+            "enum": [
+              "user",
+              "organization"
+            ],
+            "type": "string"
           },
           "scopes": {
             "items": {
@@ -33506,8 +33664,8 @@ public enum RaviSchemas {
           "requiresReauth",
           "scopes",
           "createdAt",
-          "capabilities",
           "externalAccountLogin",
+          "capabilities",
           "grantedAt",
           "lastReauthAt"
         ],
@@ -46674,8 +46832,12 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "approval": {
+        "description": "Approval id the account owner approved for this exact action (from a CONNECTOR_APPROVAL_REQUIRED answer)",
+        "type": "string"
+      },
       "connector": {
-        "description": "Connector id (defaults to first active Google)",
+        "description": "Your connection id (defaults to your default Google connection, else the newest active one); only on your own turns",
         "type": "string"
       },
       "cursor": {
@@ -46693,6 +46855,10 @@ public enum RaviSchemas {
       "q": {
         "description": "Gmail search query (same as the web search bar)",
         "type": "string"
+      },
+      "shared": {
+        "description": "In your own chat with this agent (or a group its shared account covers), use its shared account instead of yours (the agent must be in shared mode)",
+        "type": "boolean"
       }
     },
     "type": "object"
@@ -46762,8 +46928,12 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "approval": {
+        "description": "Approval id the account owner approved for this exact action (from a CONNECTOR_APPROVAL_REQUIRED answer)",
+        "type": "string"
+      },
       "connector": {
-        "description": "Connector id (defaults to first active Google)",
+        "description": "Your connection id (defaults to your default Google connection, else the newest active one); only on your own turns",
         "type": "string"
       },
       "format": {
@@ -46773,6 +46943,10 @@ public enum RaviSchemas {
       "id": {
         "description": "Gmail message id (from `ravi gmail list`)",
         "type": "string"
+      },
+      "shared": {
+        "description": "In your own chat with this agent (or a group its shared account covers), use its shared account instead of yours (the agent must be in shared mode)",
+        "type": "boolean"
       }
     },
     "required": [
@@ -46831,6 +47005,96 @@ public enum RaviSchemas {
       },
       "result": {
         "$ref": "#/$defs/__schema0"
+      }
+    },
+    "required": [
+      "capability",
+      "refreshed"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let GmailSendInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "approval": {
+        "description": "Approval id the account owner approved for this exact action (from a CONNECTOR_APPROVAL_REQUIRED answer)",
+        "type": "string"
+      },
+      "bcc": {
+        "description": "Bcc recipients; comma-separated",
+        "type": "string"
+      },
+      "body": {
+        "description": "Plain text body",
+        "type": "string"
+      },
+      "cc": {
+        "description": "Cc recipients; comma-separated",
+        "type": "string"
+      },
+      "connector": {
+        "description": "Your connection id (defaults to your default Google connection, else the newest active one); only on your own turns",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Actually send the email; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
+      "html": {
+        "description": "Optional HTML body",
+        "type": "string"
+      },
+      "inReplyTo": {
+        "description": "Message-Id this email replies to",
+        "type": "string"
+      },
+      "shared": {
+        "description": "In your own chat with this agent (or a group its shared account covers), use its shared account instead of yours (the agent must be in shared mode)",
+        "type": "boolean"
+      },
+      "subject": {
+        "description": "Email subject",
+        "type": "string"
+      },
+      "to": {
+        "description": "Recipient address; repeat or comma-separate for multiple",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let GmailSendReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "capability": {
+        "type": "string"
+      },
+      "refreshed": {
+        "type": "boolean"
+      },
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "labelIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "messageId": {
+            "type": "string"
+          },
+          "threadId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
       }
     },
     "required": [

@@ -104,9 +104,88 @@ function mapLinkError(status: number, payload: unknown): CloudAuthError {
   const linkCode = stringField(payload, "error") ?? "unknown";
   const fallback = defaultCodeForStatus(status);
   const code = normalizeCloudAuthErrorCode(linkCode, fallback);
+  const details =
+    code === "CONNECTOR_APPROVAL_REQUIRED" || code === "CONNECTOR_APPROVAL_PENDING"
+      ? approvalDetails(payload)
+      : code === "CONNECTOR_PERMISSION_REQUIRED"
+        ? permissionDetails(payload)
+        : code === "CONNECTOR_CONSENT_REQUIRED"
+          ? consentDetails(payload)
+          : REFUSAL_REASON_CODES.has(code) || linkCode === "connector_unavailable"
+            ? reasonDetails(payload)
+            : null;
   return new CloudAuthError(code, `Ravi Link request failed (${status}): ${linkCode}`, {
     status,
+    ...(details ? { details } : {}),
   });
+}
+
+export const APPROVAL_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+const APPROVAL_REASON_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
+
+/**
+ * What an approval answer may carry onward: the approval id, its expiry and a
+ * short reason code. The approval page is rebuilt from the Console the CLI is
+ * logged in to, so the link Link sends is not kept.
+ */
+function approvalDetails(payload: unknown): Record<string, string> | null {
+  const approvalId = stringField(payload, "approvalId");
+  if (!approvalId || !APPROVAL_ID_PATTERN.test(approvalId)) return null;
+  const details: Record<string, string> = { approvalId };
+  const expiresAt = stringField(payload, "expiresAt");
+  if (expiresAt && Number.isFinite(Date.parse(expiresAt))) details.expiresAt = expiresAt;
+  const reason = stringField(payload, "reason");
+  if (reason && APPROVAL_REASON_PATTERN.test(reason)) details.reason = reason;
+  return details;
+}
+
+/** Token of a Console consent page (`/connectors/consent/<token>`, base64url). */
+export const CONSENT_REF_PATTERN = /^[A-Za-z0-9_-]{16,256}$/;
+const CONSENT_PATH_PATTERN = /\/connectors\/consent\/([A-Za-z0-9_-]{16,256})$/;
+
+/**
+ * A consent answer keeps the token of the consent page and its expiry. The
+ * page itself is rebuilt from the Console the CLI is logged in to, so the
+ * rest of the link Link sends is not kept.
+ */
+function consentDetails(payload: unknown): Record<string, string> | null {
+  const consentUrl = stringField(payload, "consentUrl");
+  if (!consentUrl) return null;
+  let pathname: string;
+  try {
+    pathname = new URL(consentUrl).pathname;
+  } catch {
+    return null;
+  }
+  const ref = CONSENT_PATH_PATTERN.exec(pathname)?.[1];
+  if (!ref) return null;
+  const details: Record<string, string> = { consentRef: ref };
+  const expiresAt = stringField(payload, "expiresAt");
+  if (expiresAt && Number.isFinite(Date.parse(expiresAt))) details.expiresAt = expiresAt;
+  return details;
+}
+
+/**
+ * Agent exec refusals keep their short reason code (`speaker_not_member`,
+ * `conversation_not_shared`, ...); so does `connector_unavailable`, which
+ * has no code of its own (`shared_connection_unavailable`: the shared
+ * account was revoked or paused).
+ */
+const REFUSAL_REASON_CODES: ReadonlySet<CloudAuthErrorCode> = new Set([
+  "CONNECTOR_NOT_LINKED",
+  "CONNECTOR_FORBIDDEN",
+  "CONNECTOR_GROUP_BLOCKED",
+  "CONNECTOR_SPEAKER_NOT_OWNER",
+]);
+
+function reasonDetails(payload: unknown): Record<string, string> | null {
+  const reason = stringField(payload, "reason");
+  return reason && APPROVAL_REASON_PATTERN.test(reason) ? { reason } : null;
+}
+
+/** A permission answer keeps only whether the connection is read only. */
+function permissionDetails(payload: unknown): Record<string, string> | null {
+  return stringField(payload, "accessMode") === "read_only" ? { accessMode: "read_only" } : null;
 }
 
 function defaultCodeForStatus(status: number): CloudAuthErrorCode {

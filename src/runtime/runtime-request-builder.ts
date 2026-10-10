@@ -13,6 +13,7 @@ import {
 import type { TaskRuntimeResolution } from "../tasks/types.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
 import { isSessionRelayTurn } from "./turn-origin.js";
+import { buildTurnReplyTarget } from "./turn-reply-target.js";
 import { resolveAgentSkills } from "./allowed-skills.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { createRuntimeMessageGenerator } from "./delivery-queue.js";
@@ -886,6 +887,12 @@ async function buildRuntimeStartRequestInternal(
         runtimeResolution,
         resolvedSource: turnSource,
         approvalSource,
+        // Recorded so a connector call in this turn knows who reads the
+        // answer: a relay has no chat of its own to say it.
+        replyTarget: buildTurnReplyTarget({
+          suppressed: Boolean(streamingSession.suppressChatEmit),
+          target: streamingSession.currentReplyTarget,
+        }),
       });
       turnRuntimeContextActivated = true;
       streamingSession.currentRuntimeContextKey = runtimeEnv.RAVI_CONTEXT_KEY;

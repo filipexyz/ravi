@@ -168,10 +168,13 @@ macOS.
   on disk. Those stay on the `link.ravi.so` Worker.
 - Console session JWTs are not provider tokens. They are Ravi-owned CLI
   credentials for Console/Link as that Console user.
-- There is no operator JWT fallback for user-scoped connector tools. If a turn
-  has a bound `consoleUserId`, those tools MUST use that user's stored
-  session (or fail). They MUST NOT silently use the installation operator
-  session. Full user-scoped connector vault on the Worker is a follow-up.
+- Connector tools use only the active `ravi login` session, and only for the
+  operator's own turns: the terminal, the operator's own direct chat (a
+  contact whose `consoleUserId` is the active user), and routines the
+  operator owns (`cli/connectors`). Every other turn fails closed with exit 3
+  before any remote call. They MUST NOT use the operator session for anyone
+  else's turn, and MUST NOT borrow another user's stored session, even for a
+  contact linked to that user.
 
 The CLI MAY cache non-secret metadata such as:
 

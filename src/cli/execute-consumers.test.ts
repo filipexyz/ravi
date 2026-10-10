@@ -132,6 +132,26 @@ const executeInstructions = [
     instruction: "ravi heartbeat trigger <id> --execute",
   },
   {
+    name: "connectors mode help",
+    path: "src/cli/commands/connectors.ts",
+    instruction: "ravi connectors mode main google person-asking --execute",
+  },
+  {
+    name: "connectors mode skill",
+    path: "src/plugins/internal/ravi-system/skills/connectors/SKILL.md",
+    instruction: "ravi connectors mode main google person-asking --execute",
+  },
+  {
+    name: "connectors mode guide",
+    path: "docs/console/connectors.mdx",
+    instruction: "ravi connectors mode main google person-asking --execute",
+  },
+  {
+    name: "connectors shared mode guide",
+    path: "docs/console/connectors.mdx",
+    instruction: "ravi connectors mode main google shared --execute",
+  },
+  {
     name: "Page Chat enable skill",
     path: "src/plugins/internal/ravi-system/skills/pages/SKILL.md",
     instruction: "ravi pages chat set <host> --enabled true --execute",
@@ -259,6 +279,24 @@ const obsoleteExecuteConsumers = [
     path: ".ravi/specs/cli/console-scope/SPEC.md",
     obsolete: "ravi pages create <slug> --json --execute",
     current: "ravi pages create <slug> --json",
+  },
+  {
+    name: "connectors mode help: back to owner applies at once",
+    path: "src/cli/commands/connectors.ts",
+    obsolete: "ravi connectors mode main google owner --execute",
+    current: "ravi connectors mode main google owner",
+  },
+  {
+    name: "connectors skill: back to owner applies at once",
+    path: "src/plugins/internal/ravi-system/skills/connectors/SKILL.md",
+    obsolete: "ravi connectors mode main google owner --execute",
+    current: "ravi connectors mode main google owner",
+  },
+  {
+    name: "connectors guide: back to owner applies at once",
+    path: "docs/console/connectors.mdx",
+    obsolete: "ravi connectors mode main google owner --execute",
+    current: "ravi connectors mode main google owner",
   },
   {
     name: "Page Chat disable skill",

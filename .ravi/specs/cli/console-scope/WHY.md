@@ -84,7 +84,7 @@ to leak, override accidentally, or apply outside their intended session.
 
 Local Projects are an OSS operational model for grouping tasks, workflows,
 resources, specs, and sessions. Console Projects are remote product resources
-with hosted artifacts, Pages, provider connectors, billing, quota, and auth.
+with hosted artifacts, Pages, billing, quota, and auth.
 
 They should be linkable, not identical. A local project can say "its Console
 project is rbbt-lab", but Ravi should not guess that every local project slug is
@@ -144,6 +144,6 @@ the remote Console organization/project, visible in `scope explain`.
 
 ### Require every command to add its own fallback logic
 
-Rejected. Pages, Artifacts, Connectors, Bridges, Sync, Watch, Tags, Sessions,
+Rejected. Pages, Artifacts, Bridges, Sync, Watch, Tags, Sessions,
 and Devin all need similar behavior. Duplicating it would recreate the current
 inconsistency with more code.

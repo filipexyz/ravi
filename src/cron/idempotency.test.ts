@@ -3,6 +3,7 @@ import { getDb } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { dbDeleteCronJob } from "./cron-db.js";
 import { createCronJobIdempotently } from "./idempotency.js";
+import { fingerprintReactionAction } from "../policy/reaction-actions.js";
 import type { CronJobInput } from "./types.js";
 
 let stateDir: string | null = null;
@@ -65,5 +66,17 @@ describe("cron creation idempotency", () => {
     expect(first.created).toBe(true);
     expect(second.created).toBe(true);
     expect(second.targetId).not.toBe(first.targetId);
+  });
+
+  it("leaves the job owner out of the fingerprint", () => {
+    const owned: CronJobInput = { ...input, ownerPrincipal: "operator" };
+    const first = createCronJobIdempotently(owned, { explicitKey: "owner-key" });
+    const replay = createCronJobIdempotently({ ...input, ownerPrincipal: "unknown" }, { explicitKey: "owner-key" });
+
+    expect(first.created).toBe(true);
+    expect(replay).toMatchObject({ created: false, targetId: first.targetId });
+    expect(replay.job?.ownerPrincipal).toBe("operator");
+    // A key recorded before jobs had an owner fingerprinted the input without it.
+    expect(first.reaction?.actionFingerprint).toBe(fingerprintReactionAction(input));
   });
 });

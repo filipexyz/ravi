@@ -71,9 +71,10 @@ wrong organization is exactly the mistake the brake prevents.
 
 ## Internal consumers
 
-`ravi connectors connect` and the console-scope resolver
-(`validateProjectRef`) call `listCloudProjects` from the service layer — the
-brake on the CLI `create` does not affect them. The wrong-scope debugging
+The console-scope resolver (`validateProjectRef`) calls `listCloudProjects`
+from the service layer — the brake on the CLI `create` does not affect it.
+`ravi connectors` no longer lists projects: connections belong to a person,
+not to a project (`cli/connectors`). The wrong-scope debugging
 story (local `rbbt` vs remote `rbbt-ravi`) lives in `cli/console-scope`. There
 is no shipped `cloud-projects` skill — lacuna registrada; the CLI `--help`
 plus this spec are the teaching surface.

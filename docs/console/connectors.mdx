@@ -1,0 +1,221 @@
+---
+title: Connect your accounts
+description: Connect your own Gmail to Ravi through the Console, and control who can make your agent use it.
+icon: plug
+---
+
+At the end of this page your Gmail is connected to Ravi, your agent can read and send mail for you, and you know exactly who can make it do that: only you, unless you choose otherwise for an agent.
+
+## What a connection is
+
+A connection is one of your own accounts, such as your Gmail. It belongs to you, not to a project or to the organization. Ravi and the Console show it by its email address. Today the only connector is Google, which covers Gmail and Calendar.
+
+Your provider tokens stay in Ravi's connector service. Your computer, your agents and the Console web app never see them: they ask the connector service to run an action, and it answers with the result.
+
+Every agent starts in the mode **Only when I ask**: it uses your accounts for your own requests and nobody else's. See [Who can use your accounts](#who-can-use-your-accounts). You can change that for each agent; see [Choose whose account an agent uses](#choose-whose-account-an-agent-uses).
+
+## Connect your account
+
+You can connect from the Console or from your terminal. Both end on the same Console page.
+
+<Tabs>
+  <Tab title="Console">
+    1. Open **Connectors** from the account menu at [console.ravi.bot](https://console.ravi.bot).
+    2. Under **Add connection**, choose **Connect**, or **Read only** if the agent should never send mail.
+    3. Approve on Google's page. The connection appears under **Your connections** with its email.
+  </Tab>
+  <Tab title="Terminal">
+    Log in first (`ravi login`, see [Log in to the Console](/console/login)), then:
+
+    ```bash
+    ravi connectors connect google               # read and send
+    ravi connectors connect google --read-only   # read only, no sending
+    ```
+
+    The command prints a Console link and opens your browser. Open it signed in to the Console as yourself, the same person who ran the command. Then choose **Continue to Google** and approve. The command waits and prints the connection id when you are done.
+  </Tab>
+</Tabs>
+
+<Warning>
+The link works only for the person who started it. If someone else opens it, the Console tells them it is not theirs and offers nothing. Do not forward it. It expires after 10 minutes.
+</Warning>
+
+When a connection expires, reconnect it from its row in the Console, or from the terminal with the id that `ravi connectors list` shows:
+
+```bash
+ravi connectors connect google --reconnect <connection-id>
+```
+
+Reconnecting with a different Google account adds a new connection instead of replacing the account of the old one.
+
+`ravi connectors connect` and `ravi connectors list` still accept `--project`, but ignore it and print a warning. The flag will be removed after 2027-01-01.
+
+## Use it
+
+```bash
+ravi connectors list                         # your connections, with their email
+ravi gmail list --q "is:unread" --max 10
+ravi gmail read <message-id>
+ravi gmail send --to ana@example.com --subject "Hi" --body "Hello"            # shows the plan, exit 3
+ravi gmail send --to ana@example.com --subject "Hi" --body "Hello" --execute  # sends, unless it needs your approval (see Approvals)
+```
+
+Without `--connector <id>`, Gmail commands use the connection you marked **Make default** in the Console while it is active. If none is marked, or the marked one is not active, they use your newest active Google connection.
+
+The same Google connection also covers two Calendar tools: **Read your calendar** (`gcal.event.list`) and **See when you're free or busy** (`gcal.freebusy.query`, the busy times of your calendars between two dates, without event details). To see every tool of a connection and choose what each may do, open the connection under **Connectors** in the Console and look at **Tools**. Ravi has no Calendar command yet, so agents cannot use the Calendar tools from the terminal. A connection made with **Read only** cannot send: the agent says it is read only and points you to **Allow writing** in the Console.
+
+If you are not logged in, every Gmail and connectors command stops with `AUTH_REQUIRED` and asks you to run `ravi login`, including requests you send from your own chat.
+
+## Who can use your accounts
+
+In **Only when I ask** mode, your agent uses your accounts only for you:
+
+| Who asks | Can the agent use your Gmail? |
+|---|---|
+| You, in your terminal | Yes |
+| You, passing a message to the agent with `ravi sessions send` or `ravi sessions ask` from your terminal | Yes, when the answer comes back to your terminal or goes only to your own linked private chat. No when that session posts its answers into a group or someone else's chat. |
+| You, in your own private chat with the agent (WhatsApp, Slack), after you link it | Yes, when that chat has a session of its own (see the note on sessions below) |
+| A cron job you own, including its shell command, or the agent's heartbeat | Yes, if it posts nowhere or only into your own linked private chat (see the note below). Heartbeats have no owner yet: whoever gets the agent to edit `HEARTBEAT.md` changes what the heartbeat does with your accounts. |
+| Anyone else, in their own chat with the agent | No. The agent tells them: "I can't use <your name>'s Gmail for your request." |
+| Anyone in a group chat, including you | No. The agent says "I'll send this to you privately." and asks you to repeat the request in your private chat. |
+| Another agent passing a request along, triggers, observers, session goals and background jobs (`ravi jobs run`), including the commands they start | No |
+| A command run under a turn that has already ended | No. Run it again from the current turn. |
+
+A refused request never reaches your account. Commands that are refused this way end with exit code `3` and tell the agent what to say. When your connection needs reconnecting, the agent tells only you, privately.
+
+<Note>
+A cron job you own, or the heartbeat, that posts into a chat may use your accounts only when that chat is your own private chat with the agent and you have linked it (see below). A routine that posts into any other chat, or into a chat Ravi does not know, is treated like a group message and refused.
+</Note>
+
+<Note>
+A session keeps a transcript. If your private chat shares its session with other people's chats (the `main` DM scope, a route that sends several chats to one session, or another person's chat attached to it), they could ask the agent what it read for you, so the agent refuses: "I can't use your Gmail in this conversation: other people's chats share its session. Give each person their own session (dmScope per-peer), then ask me again." `per-peer` is the default. You can still change an agent's mode from that chat.
+</Note>
+
+### Keep using Gmail from WhatsApp or Slack
+
+Ravi needs to know that you are the person writing in your private chat. In that chat, ask your agent to run `ravi link`. Ravi sends you a private link; open it, sign in to the Console and approve. From then on, your requests in that chat count as yours.
+
+Until you link, the agent refuses Gmail requests in that chat, even yours.
+
+### Cron jobs run as their owner
+
+A cron job remembers who created it. `ravi cron show <id>` prints it on the **Runs as** line, and the JSON output has it as `ownerPrincipal`.
+
+- Jobs created in your terminal or in your own private chat run as you (`operator`), and can use your accounts.
+- Jobs created before this change also run as you.
+- Jobs created by anyone else's request run as that person and cannot use your accounts. If someone else changes a job of yours with `ravi cron set`, anything other than its description, schedule, timeout or delete-after (for example its name, message, shell command, agent, env file, error target, reply session or account), the job becomes theirs.
+- The shell command of a shell job runs as the job, so it can use your accounts only when the job runs as you.
+
+## Approvals
+
+Reading is allowed by default. Anything that writes, such as sending an email, asks you first: the agent prepares the action, you look at it in the Console, and it runs only after you approve.
+
+### What the agent says
+
+When an action needs your approval, the agent does not send the email. It sends you a link, privately, never in a group:
+
+> Please approve this Gmail action: `https://console.ravi.bot/connectors/approvals/…`
+
+After you approve, the agent runs the same action again and it goes through. If you deny it, the agent tells you it did not do it and does not try again.
+
+### Where you approve
+
+- Open the link the agent sent you, or go to **Connectors** in the Console: actions waiting for you are listed under **Waiting for you**.
+- The page shows what will happen (for an email: the recipients, the subject and the start of the text), which agent and computer asked, and why you are asked. Choose **Approve** or **Deny**.
+- Only you can decide: the link does nothing for anyone else.
+- A request waits 15 minutes for your decision. Once you approve, the agent has 10 minutes to run it. An approval covers that one action exactly as shown, once. If the agent changes the email, it has to ask again.
+
+If the agent read your email or calendar while working on the same request, writing always asks you first, even for a tool set to **Always allow**. What it read could have steered what it writes.
+
+### From your terminal
+
+`ravi gmail send --execute` in your own terminal prints the approval link, opens your browser and waits up to 10 minutes. Approve in the Console and the email is sent; deny it and the command stops.
+
+Anywhere else (an agent, a script, or with `--json`), the command stops with exit code `3` (`CONNECTOR_APPROVAL_REQUIRED`) and gives the approval id. After you approve, the same command runs again with `--approval <id>`:
+
+```bash
+ravi gmail send --to ana@example.com --subject "Hi" --body "Hello" --execute --approval <approval-id>
+```
+
+| Code | What happened | Exit |
+|---|---|---|
+| `CONNECTOR_APPROVAL_REQUIRED` | The action needs your approval. Nothing was sent. | `3` |
+| `CONNECTOR_APPROVAL_PENDING` | `--approval` was given, but you have not decided yet. | `3` |
+| `CONNECTOR_APPROVAL_DENIED` | You denied it. | `3` |
+| `CONNECTOR_APPROVAL_INVALID` | The approval expired, was already used, or does not match the command. Run it again without `--approval` to ask again. | `1` |
+
+### Change what needs approval
+
+In the Console, open **Connectors** and choose a connection. Under **Tools**, each tool has one of three settings:
+
+- **Always allow**: the agent uses it without asking you.
+- **Needs approval**: you approve each use. This is the default for writing, such as **Send email**.
+- **Blocked**: the agent cannot use it. It tells you the action is blocked in your Ravi Console settings.
+
+Reading tools start as **Always allow**. If you set one to **Needs approval**, `ravi gmail list` and `ravi gmail read` ask for approval the same way and also take `--approval <id>`.
+
+Your organization's owners and admins can set limits for everyone: turn writing off, or require approval for a tool. Settings above that limit are turned off in the menu, with a note. When the organization turns Google off, the agent says so and nothing runs.
+
+## Choose whose account an agent uses
+
+Each agent has a mode for Google. You choose it per agent:
+
+| Mode | In plain words | Whose Gmail the agent uses |
+|---|---|---|
+| **Only when I ask** (`owner`, the default) | The agent uses your accounts for your own requests, and refuses everyone else. | Yours, only when you ask |
+| **The person asking** (`person-asking`) | Each person who writes to the agent uses their own Gmail, never yours. Each person allows the agent once. | The Gmail of the person writing |
+| **Shared account** (`shared`) | The agent uses one organization account that an admin shared with it. | The organization's shared account |
+
+```bash
+ravi connectors mode main google                                # show the current mode
+ravi connectors mode main google person-asking                  # shows the plan, exit 3
+ravi connectors mode main google person-asking --execute        # switches
+ravi connectors mode main google shared --execute
+ravi connectors mode main google owner                          # back to the default, at once
+```
+
+Only you change a mode, from your terminal or your own private chat with the agent. If anyone else asks the agent to change it, nothing changes and the agent says "Only <your name> can change that." If you ask in a group, nothing changes either, and the agent asks you to do it in your private chat. Switching to **The person asking** or **Shared account** lets other people's requests reach an account, so the command shows the plan and stops with exit code `3` until you add `--execute`. Going back to **Only when I ask** applies at once. `ravi settings set` and `ravi settings delete` do not change modes. When you delete an agent, its modes go with it: a new agent with the same id starts at **Only when I ask**.
+
+In every mode, your own requests, your cron jobs and the agent's heartbeat keep using your own connection. `--connector <id>` names one of your own connections, so Gmail commands refuse it when the request uses someone else's account.
+
+### The person asking
+
+The agent uses the Gmail of the person writing to it, in their private chat with the agent:
+
+1. **They link their chat once**, like you did: the agent sends them a private link (it runs `ravi link` in their chat) and they approve it in the Console. Until then, the agent says: "To use your Gmail here, first link this chat to your Ravi account. Want me to send you a private link to do it?"
+2. **They allow the agent once.** The first time, the agent sends them a link in that private chat: "To use your Gmail here, approve it once: <link>". They open it signed in to the Console as themselves, choose which of their connections the agent may use, and approve. The link works only for them and expires after 24 hours. After that, the agent uses their Gmail whenever they ask, without asking again. A different agent asks once too.
+3. **They need a connected Gmail** in their own Console. If they have none, the agent says: "To use your Gmail here, connect it in Ravi Console first: <link>". The approval page also offers to connect one.
+
+Sending mail always asks the person first, in their own Console, whatever their own tool settings say. Their approvals go to them, not to you. They see the agents they allowed under **Agents that can use your account** on their **Connectors** page, and can remove them there.
+
+Your own requests, your cron jobs and the agent's heartbeat keep using your own connection. Groups stay refused: the agent says "I can only use your Gmail in a direct chat with me. Ask me there."
+
+It works only in a private chat that has a session of its own. If the agent keeps several people's chats in one session (the `main` DM scope, a route that sends several chats to one session, or a chat attached to another person's session), what one person's Gmail returns could be read by the others, so the agent refuses: "I can't use your Gmail in this conversation." Give each person their own session (DM scope `per-peer`, the default) to allow it.
+
+### Shared account
+
+An organization owner or admin sets up the shared account in the Console: they allow shared accounts for the organization, connect an organization account, and share it with this agent on this computer, choosing where it may be used: private chats, groups, or both. The member who manages that account approves what it sends. Then you turn the mode on:
+
+```bash
+ravi connectors mode main google shared --execute
+```
+
+From then on, people writing to the agent use the shared account, in the chats the admin chose, and so does a routine that posts into one of their chats. A shared account starts with reading blocked, except free or busy time, until an admin allows it, and sending always needs the manager's approval. Where it is not shared, the agent says: "I can't use a shared Gmail account in this conversation." If the admin disconnects or pauses that account, the agent says: "I can't use the shared Gmail account right now."
+
+Your own requests, your cron jobs and the agent's heartbeat still use your own connection. To use the shared account for one of your own requests, ask the agent in your private chat with it (or in a group the account is shared for) to add `--shared` to the Gmail command. It works only there: the shared account is shared for chats, so `--shared` from your terminal, from `ravi sessions send` or in a routine that posts nowhere stops with exit code `2`.
+
+### Groups
+
+Personal accounts never answer in a group, where other people would read the answer: not yours in **Only when I ask**, and not the person's in **The person asking**. The same goes for a private chat whose session other people share. Only a shared account can be used in a group, and only when the admin shared it for groups.
+
+### What the agent is told
+
+These requests stop with exit code `3` and tell the agent what to say:
+
+| Code | What happened |
+|---|---|
+| `CONNECTOR_CONSENT_REQUIRED` | The person asking has not allowed this agent yet. The answer carries their approval link as `consentLink`. |
+| `CONNECTOR_NOT_LINKED` | The person asking has not linked their chat to a Ravi account (`ravi link`), or their account is not in this organization. |
+| `CONNECTOR_CONNECTION_REQUIRED` | The person asking has no Gmail connected, or the shared account was disconnected or paused. When it is your own connection that is missing, the code is the same but the exit is `1`. |
+| `CONNECTOR_FORBIDDEN` | The agent is in **Shared account** mode, but no account is shared with it for this conversation. |
+| `CONNECTOR_GROUP_BLOCKED` | A personal account was asked for in a group, in a private chat whose session other people share, or with `ravi sessions send` into a session that posts its answers into a group or someone else's chat. |

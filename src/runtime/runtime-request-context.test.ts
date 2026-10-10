@@ -22,6 +22,7 @@ import { buildRuntimeRequestContext, refreshRuntimeRequestContextForTurn } from 
 import { getRuntimeToolAccessMode } from "./host-services.js";
 import { resolveRuntimePromptSource } from "./runtime-request-builder.js";
 import { buildChannelTurnOrigin, buildSessionRelayTurnOrigin } from "./turn-origin.js";
+import { buildTurnReplyTarget, readTurnReplyTarget, type TurnReplyTarget } from "./turn-reply-target.js";
 
 let stateDir: string | null = null;
 
@@ -774,6 +775,56 @@ describe("runtime request context authority", () => {
       runtimeContext.contextId,
     );
     expect(dbGetContext(runtimeContext.contextId)?.revokedAt).toBeUndefined();
+  });
+
+  it("records where the turn's answer goes, and drops it on a turn that has none", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    const prompt = promptForContact("luis", "read my mail");
+    const { runtimeContext, toolContext, raviEnv } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "pi",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+    const runtimeEnv: Record<string, string> = { ...raviEnv };
+    const refresh = (replyTarget?: TurnReplyTarget) =>
+      refreshRuntimeRequestContextForTurn({
+        runtimeContext,
+        toolContext,
+        runtimeEnv,
+        raviEnv,
+        dbSessionKey: sessionKey,
+        sessionName,
+        sessionCwd: "/tmp/provider-agent",
+        agent,
+        prompt,
+        runtimeProviderId: "pi",
+        model: "gpt-5",
+        runtimeResolution,
+        resolvedSource: prompt.source,
+        replyTarget,
+      });
+
+    const groupTarget = buildTurnReplyTarget({
+      suppressed: false,
+      target: { channel: "whatsapp", chatId: "120363428243036323@g.us", canonicalChatId: "chat_group_1" },
+    });
+    refresh(groupTarget);
+    expect(readTurnReplyTarget(runtimeContext.metadata)).toEqual(groupTarget);
+    expect(readTurnReplyTarget(resolveRuntimeContext(runtimeEnv.RAVI_CONTEXT_KEY, { touch: false })?.metadata)).toEqual(
+      groupTarget,
+    );
+
+    // A later turn without a target must not inherit the previous turn's.
+    refresh();
+    expect(readTurnReplyTarget(runtimeContext.metadata)).toBeNull();
   });
 
   it("rotates instead of throwing when in-place activation cannot find the published context", () => {

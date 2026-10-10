@@ -1,6 +1,18 @@
 import { stripVTControlCharacters } from "node:util";
-import { CLOUD_AUTH_ERROR_CODES, CloudAuthError, isRetryableCloudAuthError } from "../cloud-auth/errors.js";
-import { ContractError, CONTRACT_EXIT_ERROR, CONTRACT_EXIT_USAGE } from "./agent-contract.js";
+import {
+  CLOUD_AUTH_ERROR_CODES,
+  CloudAuthError,
+  isConnectorPolicyCode,
+  isRetryableCloudAuthError,
+} from "../cloud-auth/errors.js";
+import {
+  ContractError,
+  CONTRACT_EXIT_ERROR,
+  CONTRACT_EXIT_POLICY,
+  CONTRACT_EXIT_USAGE,
+  sanitizePublicContractMessage,
+  type ContractErrorDetails,
+} from "./agent-contract.js";
 import { getContext } from "./context.js";
 import { payloadInvalidIssues, sanitizePayloadInvalidMessage } from "./payload-error-message.js";
 
@@ -12,18 +24,62 @@ export function commandOperation(group: string, command: string): string {
 /** Map provider/auth failures into the global CLI exit taxonomy without losing their stable code. */
 export function cloudErrorToContractError(op: string, error: CloudAuthError): ContractError {
   const issues = error.code === "PAYLOAD_INVALID" ? payloadInvalidIssues(error.message, error.issues) : error.issues;
+  const connectorTurn = connectorTurnCopy(error);
   return new ContractError(
     op,
     error.code,
-    publicMessage(error.code, error.message),
-    error.code === "PAYLOAD_INVALID" ? CONTRACT_EXIT_USAGE : CONTRACT_EXIT_ERROR,
+    connectorTurn?.message ?? publicMessage(error.code, error.message),
+    error.code === "PAYLOAD_INVALID"
+      ? CONTRACT_EXIT_USAGE
+      : isConnectorPolicyCode(error.code) || connectorTurn?.policy
+        ? CONTRACT_EXIT_POLICY
+        : CONTRACT_EXIT_ERROR,
     {
       retryable: isRetryableCloudAuthError(error),
       ...(error.status !== undefined ? { status: error.status } : {}),
       ...(issues ? { issues } : {}),
       suggestedAction: suggestedAction(error.code),
+      ...(connectorTurn?.details ?? {}),
     },
   );
+}
+
+/** Details a locally built connector-turn error may carry into the public envelope. */
+const CONNECTOR_TURN_DETAIL_KEYS = [
+  "chatLine",
+  "chatLinePt",
+  "replyTo",
+  "reconnectLink",
+  "approvalId",
+  "approvalLink",
+  "expiresAt",
+  "retryWith",
+  "consentLink",
+  "suggestedAction",
+] as const;
+
+/**
+ * Connector errors built by the local turn classification (`src/link`) carry
+ * their own agent-facing text: what to say in the chat and where, and, when
+ * the code's catalog next step would contradict that, their own
+ * `suggestedAction`. Errors from Link or Console keep the fixed catalog copy,
+ * because their text is remote.
+ * A local error may also say it is a policy block (exit 3) when its code is
+ * not always one: "the person asking has no account connected" is, while the
+ * operator's own missing connection is a plain error.
+ */
+function connectorTurnCopy(
+  error: CloudAuthError,
+): { message: string; details: ContractErrorDetails; policy: boolean } | null {
+  if (!error.code.startsWith("CONNECTOR_") || error.details?.source !== "connector-turn") return null;
+  const message = sanitizePublicContractMessage(error.message);
+  if (!message) return null;
+  const details: ContractErrorDetails = {};
+  for (const key of CONNECTOR_TURN_DETAIL_KEYS) {
+    const value = error.details[key];
+    if (typeof value === "string" && value.trim()) details[key] = value;
+  }
+  return { message, details, policy: error.exitCode === CONTRACT_EXIT_POLICY };
 }
 
 function publicMessage(code: CloudAuthError["code"], sourceMessage: string): string {
@@ -78,6 +134,36 @@ function publicMessage(code: CloudAuthError["code"], sourceMessage: string): str
       return "Console rejected the request because it conflicts with the current state.";
     case "VERSION_CONFLICT":
       return "Console resource changed since it was read.";
+    case "CONNECTOR_GROUP_BLOCKED":
+      return "Personal connections are not used in group chats.";
+    case "CONNECTOR_SPEAKER_NOT_OWNER":
+      return "This connection only serves its owner's own requests.";
+    case "CONNECTOR_DISABLED_BY_ORG":
+      return "The organization turned this connector off.";
+    case "CONNECTOR_TOOL_BLOCKED":
+      return "The account owner or the organization blocked this tool.";
+    case "CONNECTOR_APPROVAL_REQUIRED":
+      return "The account owner must approve this action first.";
+    case "CONNECTOR_APPROVAL_PENDING":
+      return "The approval for this action is still waiting for the account owner.";
+    case "CONNECTOR_APPROVAL_DENIED":
+      return "The account owner denied this action.";
+    case "CONNECTOR_APPROVAL_INVALID":
+      return "The approval does not match this action.";
+    case "CONNECTOR_CONSENT_REQUIRED":
+      return "The person asking must allow this agent to use their account first.";
+    case "CONNECTOR_NOT_LINKED":
+      return "The person asking is not linked to a Console user.";
+    case "CONNECTOR_CONNECTION_REQUIRED":
+      return "No connected account was found for this service.";
+    case "CONNECTOR_REAUTH_REQUIRED":
+      return "The connection expired and must be reconnected.";
+    case "CONNECTOR_PERMISSION_REQUIRED":
+      return "The connection does not allow this action: it is read only or misses a permission.";
+    case "CONNECTOR_POLICY_ABOVE_CEILING":
+      return "The organization's limit for this tool does not allow that policy.";
+    case "CONNECTOR_FORBIDDEN":
+      return "Only the owner of this connection can do that.";
   }
 }
 
@@ -98,6 +184,12 @@ export function renderCloudContractError(error: ContractError, asJson: boolean |
     return;
   }
   console.error(`${error.code}: ${error.message}`);
+  // A connector line the message refers to without quoting it (one with a link).
+  const chatLine = error.details.chatLine;
+  if (typeof chatLine === "string" && chatLine.length > 0 && !error.message.includes(chatLine)) {
+    const replyTo = error.details.replyTo === "owner_privately" ? " (to the owner, privately)" : "";
+    console.error(`Chat line${replyTo}: ${chatLine}`);
+  }
   const next = error.details.suggestedAction;
   if (typeof next === "string" && next.length > 0) console.error(`Next: ${next}.`);
 }
@@ -149,6 +241,36 @@ function suggestedAction(code: CloudAuthError["code"]): string {
       return "re-read the resource, resolve the conflict, then retry";
     case "VERSION_CONFLICT":
       return "re-read the resource and retry with its current version";
+    case "CONNECTOR_GROUP_BLOCKED":
+      return "say in the group that you will answer privately, and ask the owner to repeat the request in their direct chat with you";
+    case "CONNECTOR_SPEAKER_NOT_OWNER":
+      return "tell the person you cannot use the owner's account for their request; do not retry with another flag or connector";
+    case "CONNECTOR_DISABLED_BY_ORG":
+      return "ask an organization owner or admin to turn the connector on in Console";
+    case "CONNECTOR_TOOL_BLOCKED":
+      return "the owner can change this tool's policy on the Console Connectors page; do not retry as is";
+    case "CONNECTOR_APPROVAL_REQUIRED":
+      return "send the approval link to the account owner privately, never in a group, then re-run the same command with --approval <id> after they approve";
+    case "CONNECTOR_APPROVAL_PENDING":
+      return "wait for the account owner to decide, then re-run the same command with the same --approval <id>";
+    case "CONNECTOR_APPROVAL_DENIED":
+      return "do not retry; tell the person the account owner declined, so it was not done";
+    case "CONNECTOR_APPROVAL_INVALID":
+      return "run the same command again without --approval to ask for a new approval";
+    case "CONNECTOR_CONSENT_REQUIRED":
+      return "send the consent link to that person privately, then retry after they approve";
+    case "CONNECTOR_NOT_LINKED":
+      return "run `ravi link` from the person's own chat turn; Ravi sends them a private approval link";
+    case "CONNECTOR_CONNECTION_REQUIRED":
+      return "ask the account owner to connect one on the Console Connectors page (`ravi connectors connect google`)";
+    case "CONNECTOR_REAUTH_REQUIRED":
+      return "tell the account owner privately to reconnect it on the Console Connectors page";
+    case "CONNECTOR_PERMISSION_REQUIRED":
+      return "tell the account owner privately to allow writing, or reconnect, on the Console Connectors page; do not retry as is";
+    case "CONNECTOR_POLICY_ABOVE_CEILING":
+      return "pick a stricter policy, or ask an organization owner or admin to raise the limit";
+    case "CONNECTOR_FORBIDDEN":
+      return "ask the connection's owner to make this change";
   }
 }
 

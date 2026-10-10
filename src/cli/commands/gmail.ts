@@ -1,18 +1,34 @@
 import "reflect-metadata";
-import { spawn } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { z } from "zod";
-import { Arg, CliOnly, Command, CommandAccess, Group, Option } from "../decorators.js";
-import { ContractError, contractDryRun } from "../agent-contract.js";
-import { cloudAuthErrorFromUnknown } from "../../cloud-auth/errors.js";
-import { LinkStepUpRequiredError } from "../../link/client.js";
-import { execCapability, listConnectors } from "../../link/connectors.js";
+import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
+import { CONTRACT_EXIT_POLICY, ContractError, contractDryRun, contractFail } from "../agent-contract.js";
+import { CloudAuthError, cloudAuthErrorFromUnknown } from "../../cloud-auth/errors.js";
+import { APPROVAL_ID_PATTERN } from "../../link/client.js";
+import { currentConnectorRuntimeContext } from "../../link/connector-turn.js";
+import type { ConnectorUseMode } from "../../link/connector-mode.js";
+import {
+  connectorReconnectError,
+  execCapabilityWithApproval,
+  listConnectors,
+  pickDefaultConnector,
+  resolveConnectorExecPlan,
+  type StepUpHandler,
+} from "../../link/connectors.js";
+import { openExternal } from "../../link/open-external.js";
 import { jsonValueSchema } from "../return-schemas.js";
 import { declareCommandReturns } from "./operational-return-schemas.js";
 
+const APPROVAL_FLAG_DESCRIPTION =
+  "Approval id the account owner approved for this exact action (from a CONNECTOR_APPROVAL_REQUIRED answer)";
+const SHARED_FLAG_DESCRIPTION =
+  "In your own chat with this agent (or a group its shared account covers), use its shared account instead of yours (the agent must be in shared mode)";
+const CONNECTOR_FLAG_DESCRIPTION =
+  "Your connection id (defaults to your default Google connection, else the newest active one); only on your own turns";
+
 @Group({
   name: "gmail",
-  description: "Operate Gmail through a connected Google connector",
+  description: "Operate Gmail through a connected Google account (yours, the person asking's, or a shared one)",
   scope: "open",
 })
 export class GmailCommands {
@@ -24,12 +40,14 @@ export class GmailCommands {
     @Option({ flags: "--max <n>", description: "Max messages to return (1-100, default 25)" }) maxOpt?: string,
     @Option({ flags: "--cursor <token>", description: "Page token for the next page (Gmail nextPageToken)" })
     cursor?: string,
-    @Option({ flags: "--connector <id>", description: "Connector id (defaults to first active Google)" })
-    connector?: string,
+    @Option({ flags: "--connector <id>", description: CONNECTOR_FLAG_DESCRIPTION }) connector?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--approval <id>", description: APPROVAL_FLAG_DESCRIPTION }) approval?: string,
+    @Option({ flags: "--shared", description: SHARED_FLAG_DESCRIPTION }) shared?: boolean,
   ) {
     return runGmailCommand(asJson, async () => {
-      const connectorId = connector ?? (await resolveDefaultGoogleConnector());
+      assertApprovalId(approval);
+      const target = await resolveGmailTarget(connector, shared);
       const max = Math.min(Math.max(Number.parseInt(maxOpt ?? "25", 10) || 25, 1), 100);
       const labelIds = label
         ? label
@@ -37,10 +55,12 @@ export class GmailCommands {
             .map((s) => s.trim())
             .filter(Boolean)
         : undefined;
-      const exec = await execCapability({
-        connectorId,
+      const exec = await execWithApproval({
+        ...target,
         capability: "gmail.message.list",
         parameters: { q: query, labelIds, maxResults: max, pageToken: cursor },
+        asJson,
+        approvalId: approval,
       });
       const result = (exec.result ?? {}) as {
         messages?: Array<{ id: string; threadId: string }>;
@@ -70,16 +90,20 @@ export class GmailCommands {
   async read(
     @Arg("id", { description: "Gmail message id (from `ravi gmail list`)" }) id: string,
     @Option({ flags: "--format <format>", description: "full | metadata | raw (default full)" }) format?: string,
-    @Option({ flags: "--connector <id>", description: "Connector id (defaults to first active Google)" })
-    connector?: string,
+    @Option({ flags: "--connector <id>", description: CONNECTOR_FLAG_DESCRIPTION }) connector?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--approval <id>", description: APPROVAL_FLAG_DESCRIPTION }) approval?: string,
+    @Option({ flags: "--shared", description: SHARED_FLAG_DESCRIPTION }) shared?: boolean,
   ) {
     return runGmailCommand(asJson, async () => {
-      const connectorId = connector ?? (await resolveDefaultGoogleConnector());
-      const exec = await execCapability({
-        connectorId,
+      assertApprovalId(approval);
+      const target = await resolveGmailTarget(connector, shared);
+      const exec = await execWithApproval({
+        ...target,
         capability: "gmail.message.read",
         parameters: { id, format: (format ?? "full") as "full" | "metadata" | "raw" },
+        asJson,
+        approvalId: approval,
       });
       if (asJson) {
         console.log(JSON.stringify(exec, null, 2));
@@ -123,10 +147,9 @@ export class GmailCommands {
     action: "send",
     risk: "high",
     requiresConfirmation: true,
-    input: ["to", "cc", "bcc", "subject", "body", "html", "connector"],
+    input: ["to", "cc", "bcc", "subject", "body", "html", "connector", "approval", "shared"],
     redactions: ["body", "html"],
   })
-  @CliOnly()
   async send(
     @Option({ flags: "--to <addr>", description: "Recipient address; repeat or comma-separate for multiple" })
     to?: string,
@@ -137,9 +160,10 @@ export class GmailCommands {
     @Option({ flags: "--html <body>", description: "Optional HTML body" }) html?: string,
     @Option({ flags: "--in-reply-to <messageId>", description: "Message-Id this email replies to" })
     inReplyTo?: string,
-    @Option({ flags: "--connector <id>", description: "Connector id (defaults to first active Google)" })
-    connector?: string,
+    @Option({ flags: "--connector <id>", description: CONNECTOR_FLAG_DESCRIPTION }) connector?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--approval <id>", description: APPROVAL_FLAG_DESCRIPTION }) approval?: string,
+    @Option({ flags: "--shared", description: SHARED_FLAG_DESCRIPTION }) shared?: boolean,
     @Option({
       flags: "--execute",
       description: "Actually send the email; default is a dry-run that only shows the plan (exit 3)",
@@ -147,6 +171,7 @@ export class GmailCommands {
     execute?: boolean,
   ) {
     return runGmailCommand(asJson, async () => {
+      assertApprovalId(approval);
       const recipients = parseAddressList(to);
       if (!recipients.length) {
         throw new Error("--to is required");
@@ -177,7 +202,7 @@ export class GmailCommands {
         );
       }
 
-      const connectorId = connector ?? (await resolveDefaultGoogleConnector());
+      const target = await resolveGmailTarget(connector, shared);
       const parameters = {
         to: recipients,
         cc: parseAddressList(cc) || undefined,
@@ -188,11 +213,14 @@ export class GmailCommands {
         inReplyTo,
       };
 
-      const exec = await execWithStepUp({
-        connectorId,
+      const exec = await execWithApproval({
+        ...target,
         capability: "gmail.message.send",
         parameters,
         asJson,
+        approvalId: approval,
+        stepUp: true,
+        waitAtTerminal: true,
       });
 
       if (asJson) {
@@ -214,33 +242,51 @@ const gmailExecResultSchema = z.object({
   refreshed: z.boolean(),
 });
 
+const gmailSendResultSchema = z.object({
+  result: z
+    .object({
+      messageId: z.string().optional(),
+      threadId: z.string().optional(),
+      labelIds: z.array(z.string()).optional(),
+    })
+    .optional(),
+  capability: z.string(),
+  refreshed: z.boolean(),
+});
+
 declareCommandReturns(GmailCommands, {
   list: gmailExecResultSchema,
   read: gmailExecResultSchema,
+  send: gmailSendResultSchema,
 });
 
-async function execWithStepUp(input: {
-  connectorId: string;
-  capability: string;
-  parameters: unknown;
-  asJson: boolean | undefined;
-}) {
-  try {
-    return await execCapability({
-      connectorId: input.connectorId,
-      capability: input.capability,
-      parameters: input.parameters,
-    });
-  } catch (error) {
-    if (!(error instanceof LinkStepUpRequiredError)) throw error;
-    if (input.asJson) {
+/**
+ * Answer a step-up challenge in the operator's own terminal: show the page,
+ * open it and read the code back. A runtime turn (an agent, the gateway)
+ * never opens a browser on this machine or waits on the daemon's stdin.
+ */
+function stepUpPrompt(op: string, asJson: boolean | undefined): StepUpHandler {
+  return async (challenge) => {
+    if (currentConnectorRuntimeContext().present) {
+      contractFail(
+        op,
+        "INTERACTIVE_ONLY",
+        "This action needs a step-up check in the browser, which only the account owner can do in their own terminal, so it was not done.",
+        {
+          asJson,
+          exitCode: CONTRACT_EXIT_POLICY,
+          details: { suggestedAction: "ask the account owner to run the same command in their own terminal" },
+        },
+      );
+    }
+    if (asJson) {
       console.log(
         JSON.stringify(
           {
             status: "stepup_required",
-            challengeId: error.details.challengeId,
-            verificationUrl: error.details.verificationUrl,
-            expiresAt: error.details.expiresAt,
+            challengeId: challenge.challengeId,
+            verificationUrl: challenge.verificationUrl,
+            expiresAt: challenge.expiresAt,
           },
           null,
           2,
@@ -248,22 +294,61 @@ async function execWithStepUp(input: {
       );
     } else {
       console.log("Step-up authentication required for this destructive action.");
-      console.log(`Open: ${error.details.verificationUrl}`);
-      console.log(`(expires at ${error.details.expiresAt})`);
+      console.log(`Open: ${challenge.verificationUrl}`);
+      console.log(`(expires at ${challenge.expiresAt})`);
     }
     try {
-      await openExternal(error.details.verificationUrl);
+      await openExternal(challenge.verificationUrl);
     } catch {
       // Best-effort browser open
     }
-    const token = await promptStepUpToken(input.asJson);
-    if (!token) throw new Error("Step-up cancelled.");
-    return execCapability({
-      connectorId: input.connectorId,
+    return promptStepUpToken(asJson);
+  };
+}
+
+/**
+ * Run the action. When the owner must approve it first: for a send at the
+ * operator's own terminal (stdin and stdout are TTYs, no runtime context, no
+ * --json) open the approval page, wait for the decision and run it once more
+ * with the approval. Anywhere else, and always for the read commands (which
+ * stay free of side effects), the approval answer goes back to the caller
+ * (exit 3) with the link to send the owner and the `--approval <id>` to
+ * re-run with. `stepUp` answers a step-up challenge (send only), keeping
+ * the approval on the retry.
+ */
+async function execWithApproval(
+  input: GmailTarget & {
+    capability: string;
+    parameters: unknown;
+    asJson: boolean | undefined;
+    approvalId?: string;
+    stepUp?: boolean;
+    waitAtTerminal?: boolean;
+  },
+) {
+  return execCapabilityWithApproval(
+    {
+      ...(input.connectorId ? { connectorId: input.connectorId } : {}),
       capability: input.capability,
       parameters: input.parameters,
-      stepUpToken: token,
-    });
+      expectedMode: input.mode,
+      ...(input.useShared ? { useShared: true } : {}),
+      ...(input.approvalId ? { approvalId: input.approvalId } : {}),
+    },
+    {},
+    input.waitAtTerminal && isOperatorTerminal(input.asJson) ? { openExternal } : null,
+    input.stepUp ? stepUpPrompt("gmail send", input.asJson) : null,
+  );
+}
+
+function isOperatorTerminal(asJson: boolean | undefined): boolean {
+  if (asJson || process.stdin.isTTY !== true || process.stdout.isTTY !== true) return false;
+  return !currentConnectorRuntimeContext().present;
+}
+
+function assertApprovalId(approval: string | undefined): void {
+  if (approval !== undefined && !APPROVAL_ID_PATTERN.test(approval)) {
+    throw new CloudAuthError("PAYLOAD_INVALID", "--approval must be the approval id from the approval answer.");
   }
 }
 
@@ -288,28 +373,44 @@ async function promptStepUpToken(asJson: boolean | undefined): Promise<string | 
   }
 }
 
-function openExternal(url: string): Promise<void> {
-  const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
-  const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: "ignore", detached: true });
-    child.on("error", reject);
-    child.on("spawn", () => {
-      child.unref();
-      resolve();
-    });
-  });
+interface GmailTarget {
+  mode: ConnectorUseMode;
+  /** The operator's own connection (owner mode only). */
+  connectorId?: string;
+  useShared?: boolean;
+}
+
+/**
+ * Whose account this call uses. On the operator's own turns (and in `owner`
+ * mode) it is the operator's connection: `--connector`, else the default.
+ * When the executing agent answers this turn with the person asking's own
+ * account or a shared one, the Worker picks the connection, so a connection
+ * id cannot be passed: it would name one of the operator's.
+ */
+async function resolveGmailTarget(connector: string | undefined, shared: boolean | undefined): Promise<GmailTarget> {
+  const plan = resolveConnectorExecPlan({ provider: "google", ...(shared ? { useShared: true } : {}) });
+  if (plan.mode !== "owner") {
+    if (connector !== undefined) {
+      throw new CloudAuthError(
+        "PAYLOAD_INVALID",
+        `--connector names one of your own connections, but this turn uses ${plan.mode === "shared" ? "the agent's shared account" : "the Gmail of the person asking"}. Run it again without --connector.`,
+      );
+    }
+    return { mode: plan.mode, ...(shared ? { useShared: true } : {}) };
+  }
+  return { mode: "owner", connectorId: connector ?? (await resolveDefaultGoogleConnector()) };
 }
 
 async function resolveDefaultGoogleConnector(): Promise<string> {
   const connectors = await listConnectors({ provider: "google" });
-  const active = connectors.find((conn) => conn.status === "active" && !conn.requiresReauth);
-  if (!active) {
-    throw new Error(
-      "No active Google connector found. Run `ravi connectors connect google` first, or pass --connector <id>.",
-    );
-  }
-  return active.id;
+  const { connector, needsReconnect } = pickDefaultConnector(connectors, "google");
+  if (connector) return connector.id;
+  if (needsReconnect) throw connectorReconnectError();
+  throw new CloudAuthError(
+    "CONNECTOR_CONNECTION_REQUIRED",
+    "You have no active Google connection. Run `ravi connectors connect google` first, or pass --connector <id>.",
+    { details: { source: "connector-turn" } },
+  );
 }
 
 function parseAddressList(value: string | undefined): string[] {

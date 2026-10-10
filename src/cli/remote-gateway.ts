@@ -37,8 +37,10 @@ import {
   ContractError,
   CONTRACT_EXIT_USAGE,
   permissionDeniedToContractError,
+  sanitizePublicContractMessage,
   type ContractErrorDetails,
 } from "./agent-contract.js";
+import { APPROVAL_ID_PATTERN } from "../link/client.js";
 import { CALLER_CWD_HEADER, parseCallerCwd } from "./caller-cwd.js";
 import { cloudContractCatalogCopy } from "./cloud-error-contract.js";
 import { localMediaSendCatalogCopy } from "./media-send-auth.js";
@@ -342,18 +344,20 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
     try {
       const body = JSON.parse(result.body) as Record<string, unknown>;
       if (isCompleteContractErrorBody(body, op)) {
+        const connectorTurn = connectorTurnRemoteCopy(op, body.error);
         return new ContractError(
           op,
           body.error.code,
-          remoteContractFailureMessage(
-            op,
-            body.outcome,
-            projectPublicIssues(body.error.issues),
-            body.error.message,
-            body.error.code,
-          ),
+          connectorTurn?.message ??
+            remoteContractFailureMessage(
+              op,
+              body.outcome,
+              projectPublicIssues(body.error.issues),
+              body.error.message,
+              body.error.code,
+            ),
           body.exitCode,
-          projectRemoteContractDetails(op, body, result.status),
+          { ...projectRemoteContractDetails(op, body, result.status), ...(connectorTurn?.details ?? {}) },
         );
       }
       if (body.error === "PermissionDenied") {
@@ -407,6 +411,142 @@ interface CompleteContractErrorBody {
 /** `ravi link` failures are relayed to people, so they keep the local cloud copy instead of a generic line. */
 const IDENTITY_LINK_OPS = new Set(["identity link", "identity unlink"]);
 
+/**
+ * Personal-connector commands. Their blocks tell the agent what to say and
+ * where (a chat line, the reply target, a reconnect link), so the relay keeps
+ * that copy instead of a generic line. Other failures get the local catalog.
+ */
+function isConnectorOp(op: string): boolean {
+  return op.startsWith("gmail ") || op.startsWith("connectors ");
+}
+
+const CONNECTOR_REMOTE_MESSAGE_MAX = 1_200;
+const CONNECTOR_CHAT_LINE_MAX = 300;
+const CONNECTOR_REPLY_TO_VALUES = new Set(["same_chat", "owner_privately"]);
+
+/**
+ * A connector block built by the daemon's turn classification: it is the only
+ * kind that carries a chat line. Errors relayed from Link or the Console were
+ * already reduced to catalog copy there and carry none.
+ */
+function connectorTurnRemoteCopy(
+  op: string,
+  remote: CompleteContractErrorBody["error"],
+): { message: string; details: ContractErrorDetails } | null {
+  if (!isConnectorOp(op) || !remote.code.startsWith("CONNECTOR_")) return null;
+  const chatLine = boundedRemoteLine(remote.chatLine, CONNECTOR_CHAT_LINE_MAX, "chatLine");
+  if (!chatLine) return null;
+  const message = boundedRemoteLine(remote.message, CONNECTOR_REMOTE_MESSAGE_MAX);
+  if (!message) return null;
+  const details: ContractErrorDetails = { chatLine };
+  const chatLinePt = boundedRemoteLine(remote.chatLinePt, CONNECTOR_CHAT_LINE_MAX, "chatLinePt");
+  if (chatLinePt) details.chatLinePt = chatLinePt;
+  if (typeof remote.replyTo === "string" && CONNECTOR_REPLY_TO_VALUES.has(remote.replyTo)) {
+    details.replyTo = remote.replyTo;
+  }
+  const reconnectLink = connectorConsoleLink(remote.reconnectLink, "/connectors");
+  if (reconnectLink) details.reconnectLink = reconnectLink;
+  Object.assign(details, connectorApprovalDetails(remote));
+  Object.assign(details, connectorConsentDetails(remote));
+  return { message, details };
+}
+
+const CONNECTOR_CONSENT_PATH = /\/connectors\/consent\/([A-Za-z0-9_-]{16,256})$/;
+
+/**
+ * What a consent answer needs to be acted on: the person's consent page (only
+ * a Console `/connectors/consent/<token>` page, under the link rules below)
+ * and its expiry.
+ */
+function connectorConsentDetails(remote: CompleteContractErrorBody["error"]): ContractErrorDetails {
+  if (remote.code !== "CONNECTOR_CONSENT_REQUIRED" || typeof remote.consentLink !== "string") return {};
+  let pathname: string;
+  try {
+    pathname = new URL(remote.consentLink).pathname;
+  } catch {
+    return {};
+  }
+  const token = CONNECTOR_CONSENT_PATH.exec(pathname)?.[1];
+  const consentLink = token ? connectorConsoleLink(remote.consentLink, `/connectors/consent/${token}`) : undefined;
+  if (!consentLink) return {};
+  const details: ContractErrorDetails = { consentLink };
+  const expiresAt = connectorExpiresAt(remote.expiresAt);
+  if (expiresAt) details.expiresAt = expiresAt;
+  return details;
+}
+
+const CONNECTOR_EXPIRES_AT_MAX = 64;
+
+/**
+ * What an approval answer needs to be acted on: the approval id, its Console
+ * page, its expiry and the flag to re-run with. Each is kept only in the
+ * shape the daemon builds: the page is the approval page of that id and the
+ * flag names that id.
+ */
+function connectorApprovalDetails(remote: CompleteContractErrorBody["error"]): ContractErrorDetails {
+  const approvalId = remote.approvalId;
+  if (typeof approvalId !== "string" || !APPROVAL_ID_PATTERN.test(approvalId)) return {};
+  const details: ContractErrorDetails = { approvalId };
+  const approvalLink = connectorConsoleLink(remote.approvalLink, `/connectors/approvals/${approvalId}`);
+  if (approvalLink) details.approvalLink = approvalLink;
+  if (remote.retryWith === `--approval ${approvalId}`) details.retryWith = remote.retryWith;
+  const expiresAt = connectorExpiresAt(remote.expiresAt);
+  if (expiresAt) details.expiresAt = expiresAt;
+  return details;
+}
+
+function connectorExpiresAt(value: unknown): string | undefined {
+  return typeof value === "string" &&
+    value.length <= CONNECTOR_EXPIRES_AT_MAX &&
+    !hasControlCharacters(value) &&
+    Number.isFinite(Date.parse(value))
+    ? value
+    : undefined;
+}
+
+/** A message, or a chat line under `detailKey` (sanitized as the envelope sanitizes that detail, links kept). */
+function boundedRemoteLine(value: unknown, max: number, detailKey?: string): string | undefined {
+  if (typeof value !== "string" || value.length > max || hasControlCharacters(value)) return undefined;
+  const safe = detailKey ? sanitizePublicValue(value, detailKey) : sanitizePublicContractMessage(value);
+  return typeof safe === "string" && safe.trim() && safe.length <= max ? safe : undefined;
+}
+
+function hasControlCharacters(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code < 0x20 || code === 0x7f) return true;
+  }
+  return false;
+}
+
+/**
+ * Only a Console page whose path ends with `suffix` (the connectors page, an
+ * approval or consent page): https (http on localhost), no credentials, query
+ * or fragment.
+ */
+function connectorConsoleLink(value: unknown, suffix: string): string | undefined {
+  if (typeof value !== "string" || value.length > 512) return undefined;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return undefined;
+  }
+  const local = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && local)) return undefined;
+  if (
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash ||
+    !url.pathname.endsWith(suffix) ||
+    !/^(?:\/[A-Za-z0-9._-]+)*$/.test(url.pathname.slice(0, url.pathname.length - suffix.length))
+  ) {
+    return undefined;
+  }
+  return `${url.origin}${url.pathname}`;
+}
+
 const REMOTE_DRY_RUN_MESSAGE = "Dry-run: nothing was written. Re-run with --execute to perform the write.";
 
 function isRemoteWriteBrake(body: CompleteContractErrorBody): boolean {
@@ -422,6 +562,10 @@ function remoteContractFailureMessage(
 ): string {
   if (outcome === "denied") return "Remote gateway denied the command.";
   if (outcome === "usage_error") return remoteValidationFailureMessage(issues, sourceMessage);
+  if (isConnectorOp(op) && code && (outcome === "failed" || code.startsWith("CONNECTOR_"))) {
+    const catalog = cloudContractCatalogCopy(code);
+    if (catalog) return catalog.message;
+  }
   // The write brake is a dry-run, not a policy denial: say how to proceed with local copy.
   if (outcome === "blocked" && code === "WRITE_REQUIRES_EXECUTE") return REMOTE_DRY_RUN_MESSAGE;
   if (outcome === "blocked") return "Remote command was blocked by policy.";
@@ -489,10 +633,16 @@ function projectRemoteContractDetails(
   const details: ContractErrorDetails = { retryable: remote.retryable, status };
   const mediaCatalog = op === "media send" ? localMediaSendCatalogCopy(remote.code) : undefined;
   const identityCatalog = IDENTITY_LINK_OPS.has(op) ? cloudContractCatalogCopy(remote.code) : undefined;
+  const connectorCatalog =
+    isConnectorOp(op) && (body.outcome === "failed" || remote.code.startsWith("CONNECTOR_"))
+      ? cloudContractCatalogCopy(remote.code)
+      : undefined;
   if (mediaCatalog) {
     details.suggestedAction = mediaCatalog.suggestedAction;
   } else if (identityCatalog && body.outcome === "failed") {
     details.suggestedAction = identityCatalog.suggestedAction;
+  } else if (connectorCatalog) {
+    details.suggestedAction = connectorCatalog.suggestedAction;
   } else if (typeof remote.suggestedAction === "string" || isRemoteWriteBrake(body)) {
     details.suggestedAction = remoteSuggestedAction(op, body.outcome, remote.code);
   }

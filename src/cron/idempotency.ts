@@ -29,7 +29,10 @@ export function createCronJobIdempotently(
   idempotency?: CronCreationIdempotency,
 ): CronCreationResult {
   const actionType = "cron.add";
-  const actionFingerprint = fingerprintReactionAction(input);
+  // Who runs the job is not part of the action: keys recorded before jobs had
+  // an owner, and observer replays across that change, still match.
+  const { ownerPrincipal: _ownerPrincipal, ...action } = input;
+  const actionFingerprint = fingerprintReactionAction(action);
   const explicitKey = idempotency?.explicitKey;
   const key =
     explicitKey !== undefined

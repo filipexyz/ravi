@@ -6713,6 +6713,46 @@ class ConnectorsListReturn {
 
 ConnectorsListReturn connectorsListReturnFromJson(Object? json) => ConnectorsListReturn.fromJsonValue(json);
 
+class ConnectorsModeOptions {
+  const ConnectorsModeOptions({this.execute});
+
+  final bool? execute;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+  }
+}
+
+class ConnectorsModeReturn {
+  const ConnectorsModeReturn({required this.agentId, required this.changed, required this.label, required this.mode, required this.previousMode, required this.provider});
+
+  final String agentId;
+  final bool changed;
+  final String label;
+  final String mode;
+  final String previousMode;
+  final String provider;
+
+  factory ConnectorsModeReturn.fromJson(Map<String, Object?> json) {
+    return ConnectorsModeReturn(
+      agentId: raviJsonAsString(json["agentId"]),
+      changed: raviJsonAsBool(json["changed"]),
+      label: raviJsonAsString(json["label"]),
+      mode: raviJsonAsString(json["mode"]),
+      previousMode: raviJsonAsString(json["previousMode"]),
+      provider: raviJsonAsString(json["provider"]),
+    );
+  }
+
+  static ConnectorsModeReturn fromJsonValue(Object? json) {
+    return ConnectorsModeReturn.fromJson(raviJsonObject(json, "ConnectorsModeReturn"));
+  }
+}
+
+ConnectorsModeReturn connectorsModeReturnFromJson(Object? json) => ConnectorsModeReturn.fromJsonValue(json);
+
 class ConnectorsRevokeOptions {
   const ConnectorsRevokeOptions({this.execute, this.yes});
 
@@ -11260,15 +11300,20 @@ class FeedbackSendReturn {
 FeedbackSendReturn feedbackSendReturnFromJson(Object? json) => FeedbackSendReturn.fromJsonValue(json);
 
 class GmailListOptions {
-  const GmailListOptions({this.connector, this.cursor, this.label, this.max, this.q});
+  const GmailListOptions({this.approval, this.connector, this.cursor, this.label, this.max, this.q, this.shared});
 
+  final String? approval;
   final String? connector;
   final String? cursor;
   final String? label;
   final String? max;
   final String? q;
+  final bool? shared;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (approval != null) {
+      into["approval"] = RaviJson.from(approval);
+    }
     if (connector != null) {
       into["connector"] = RaviJson.from(connector);
     }
@@ -11283,6 +11328,9 @@ class GmailListOptions {
     }
     if (q != null) {
       into["q"] = RaviJson.from(q);
+    }
+    if (shared != null) {
+      into["shared"] = RaviJson.from(shared);
     }
   }
 }
@@ -11310,17 +11358,25 @@ class GmailListReturn {
 GmailListReturn gmailListReturnFromJson(Object? json) => GmailListReturn.fromJsonValue(json);
 
 class GmailReadOptions {
-  const GmailReadOptions({this.connector, this.format});
+  const GmailReadOptions({this.approval, this.connector, this.format, this.shared});
 
+  final String? approval;
   final String? connector;
   final String? format;
+  final bool? shared;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (approval != null) {
+      into["approval"] = RaviJson.from(approval);
+    }
     if (connector != null) {
       into["connector"] = RaviJson.from(connector);
     }
     if (format != null) {
       into["format"] = RaviJson.from(format);
+    }
+    if (shared != null) {
+      into["shared"] = RaviJson.from(shared);
     }
   }
 }
@@ -11346,6 +11402,80 @@ class GmailReadReturn {
 }
 
 GmailReadReturn gmailReadReturnFromJson(Object? json) => GmailReadReturn.fromJsonValue(json);
+
+class GmailSendOptions {
+  const GmailSendOptions({this.approval, this.bcc, this.body, this.cc, this.connector, this.execute, this.html, this.inReplyTo, this.shared, this.subject, this.to});
+
+  final String? approval;
+  final String? bcc;
+  final String? body;
+  final String? cc;
+  final String? connector;
+  final bool? execute;
+  final String? html;
+  final String? inReplyTo;
+  final bool? shared;
+  final String? subject;
+  final String? to;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (approval != null) {
+      into["approval"] = RaviJson.from(approval);
+    }
+    if (bcc != null) {
+      into["bcc"] = RaviJson.from(bcc);
+    }
+    if (body != null) {
+      into["body"] = RaviJson.from(body);
+    }
+    if (cc != null) {
+      into["cc"] = RaviJson.from(cc);
+    }
+    if (connector != null) {
+      into["connector"] = RaviJson.from(connector);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (html != null) {
+      into["html"] = RaviJson.from(html);
+    }
+    if (inReplyTo != null) {
+      into["inReplyTo"] = RaviJson.from(inReplyTo);
+    }
+    if (shared != null) {
+      into["shared"] = RaviJson.from(shared);
+    }
+    if (subject != null) {
+      into["subject"] = RaviJson.from(subject);
+    }
+    if (to != null) {
+      into["to"] = RaviJson.from(to);
+    }
+  }
+}
+
+class GmailSendReturn {
+  const GmailSendReturn({required this.capability, required this.refreshed, this.result});
+
+  final String capability;
+  final bool refreshed;
+  final RaviJson? result;
+
+  factory GmailSendReturn.fromJson(Map<String, Object?> json) {
+    return GmailSendReturn(
+      capability: raviJsonAsString(json["capability"]),
+      refreshed: raviJsonAsBool(json["refreshed"]),
+      result: json["result"] == null ? null : RaviJson.from(json["result"]),
+    );
+  }
+
+  static GmailSendReturn fromJsonValue(Object? json) {
+    return GmailSendReturn.fromJson(raviJsonObject(json, "GmailSendReturn"));
+  }
+}
+
+GmailSendReturn gmailSendReturnFromJson(Object? json) => GmailSendReturn.fromJsonValue(json);
 
 class HeartbeatDisableReturn {
   const HeartbeatDisableReturn({required this.agent, required this.changedCount, required this.heartbeat, required this.heartbeatFile, required this.heartbeatFileExists, this.property, required this.status, required this.target, this.value});

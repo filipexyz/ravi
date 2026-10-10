@@ -12,11 +12,15 @@
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 
 const revokeCalls: string[] = [];
+const startCalls: Array<Record<string, unknown>> = [];
+const listCalls: Array<Record<string, unknown>> = [];
 let listResult: Array<Record<string, unknown>> = [];
 let listError: unknown = null;
 let connectStatus: "consumed" | "expired" | "rejected" = "consumed";
 
+const actualChildProcess = await import("node:child_process");
 mock.module("node:child_process", () => ({
+  ...actualChildProcess,
   spawn: () => {
     const child = {
       on(event: string, callback: () => void) {
@@ -63,7 +67,8 @@ mock.module("../../link/connectors.js", () => ({
     connectorId: "conn_1",
     expiresAt: new Date().toISOString(),
   }),
-  listConnectors: async () => {
+  listConnectors: async (options: Record<string, unknown> = {}) => {
+    listCalls.push(options);
     if (listError) throw listError;
     return listResult;
   },
@@ -72,7 +77,7 @@ mock.module("../../link/connectors.js", () => ({
   },
   showConnector: async (id: string) => ({
     id,
-    projectId: "proj_1",
+    projectId: null,
     provider: "google",
     displayName: "Google",
     status: "active",
@@ -84,11 +89,15 @@ mock.module("../../link/connectors.js", () => ({
     grantedAt: "2026-01-01T00:00:00.000Z",
     lastReauthAt: null,
   }),
-  startConnect: async () => ({
-    connectUrl: "https://link.example/connect",
-    pendingGrantId: "pg_1",
-    expiresAt: new Date().toISOString(),
-  }),
+  startConnect: async (options: Record<string, unknown>) => {
+    startCalls.push(options);
+    return {
+      connectUrl: "https://console.example/connect/tok_1",
+      pendingGrantId: "pg_1",
+      expiresAt: new Date().toISOString(),
+      userEmail: "alice@example.com",
+    };
+  },
 }));
 
 const { ConnectorsCommands } = await import("./connectors.js");
@@ -98,13 +107,49 @@ afterAll(() => mock.restore());
 
 beforeEach(() => {
   revokeCalls.length = 0;
+  startCalls.length = 0;
+  listCalls.length = 0;
   listResult = [
-    { id: "conn_1", projectId: "proj_1", provider: "google", displayName: "Gmail", status: "active" },
-    { id: "conn_2", projectId: "proj_1", provider: "google", displayName: "Calendar", status: "active" },
+    {
+      id: "conn_1",
+      projectId: null,
+      provider: "google",
+      displayName: "Gmail",
+      status: "active",
+      externalAccountLogin: "alice@example.com",
+      isDefault: true,
+    },
+    {
+      id: "conn_2",
+      projectId: null,
+      provider: "google",
+      displayName: "Calendar",
+      status: "active",
+      externalAccountLogin: "alice.work@example.com",
+      accessMode: "read_only",
+    },
   ];
   listError = null;
   connectStatus = "consumed";
 });
+
+const IGNORED_PROJECT_LINE =
+  "--project is ignored: connections belong to you, not to a project (removed after 2027-01-01)";
+
+async function captured<T>(run: () => Promise<T> | T): Promise<{ result: T; stdout: string[]; stderr: string[] }> {
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+  const originalLog = console.log;
+  const originalError = console.error;
+  console.log = (...args: unknown[]) => stdout.push(args.map(String).join(" "));
+  console.error = (...args: unknown[]) => stderr.push(args.map(String).join(" "));
+  try {
+    return { result: await run(), stdout, stderr };
+  } finally {
+    console.log = originalLog;
+    console.error = originalError;
+  }
+}
 
 async function silenced<T>(run: () => Promise<T> | T): Promise<T> {
   const originalLog = console.log;
@@ -186,6 +231,42 @@ describe("connectors connect contract", () => {
     expect(JSON.parse(lines[0])).toMatchObject({ status: "started", pendingGrantId: "pg_1" });
   });
 
+  it("starts through the Console with --read-only and --reconnect, and names who must open the link", async () => {
+    const { result, stdout, stderr } = await captured(() =>
+      new ConnectorsCommands().connect("google", undefined, undefined, "Gmail Alice", true, undefined, true, "conn_9"),
+    );
+
+    expect(startCalls).toEqual([
+      { provider: "google", accessMode: "read_only", reconnectConnectionId: "conn_9", displayName: "Gmail Alice" },
+    ]);
+    expect(stderr).toEqual([]);
+    expect(stdout.join("\n")).toContain("https://console.example/connect/tok_1");
+    expect(stdout.join("\n")).toContain(
+      "It works only for the person who started it: open it signed in to Ravi Console as alice@example.com.",
+    );
+    expect(result).toMatchObject({ status: "consumed", connectorId: "conn_1" });
+  });
+
+  it("starts a full-access connection when no access flag is given", async () => {
+    await silenced(() => new ConnectorsCommands().connect("google", undefined, undefined, undefined, true, true));
+
+    expect(startCalls).toEqual([
+      { provider: "google", accessMode: undefined, reconnectConnectionId: undefined, displayName: undefined },
+    ]);
+  });
+
+  it("ignores --project with the exact stderr warning and never sends it", async () => {
+    const { result, stdout, stderr } = await captured(() =>
+      new ConnectorsCommands().connect("google", "proj_1", undefined, undefined, true, true),
+    );
+
+    expect(stderr).toEqual([IGNORED_PROJECT_LINE]);
+    expect(stdout).toHaveLength(1);
+    expect(JSON.parse(stdout[0])).toMatchObject({ status: "started", openAs: "alice@example.com" });
+    expect(result).toMatchObject({ status: "started" });
+    expect(JSON.stringify(startCalls)).not.toContain("proj_1");
+  });
+
   for (const [status, code, retryable] of [
     ["expired", "CONNECTOR_AUTH_EXPIRED", true],
     ["rejected", "CONNECTOR_AUTH_REJECTED", false],
@@ -229,6 +310,26 @@ describe("connectors list contract", () => {
     for (const item of connections) {
       expect(Object.keys(item).sort()).toEqual(["id", "provider"]);
     }
+  });
+
+  it("ignores --project on list with the same warning and never sends it", async () => {
+    const { stderr } = await captured(() =>
+      new ConnectorsCommands().list(undefined, "proj_1", undefined, undefined, true),
+    );
+
+    expect(stderr).toEqual([IGNORED_PROJECT_LINE]);
+    expect(listCalls).toEqual([{ provider: undefined }]);
+  });
+
+  it("shows the account email and flags in human output", async () => {
+    const { stdout, stderr } = await captured(() => new ConnectorsCommands().list());
+
+    const text = stdout.join("\n");
+    expect(stderr).toEqual([]);
+    expect(text).toContain("alice@example.com");
+    expect(text).toContain("alice.work@example.com");
+    expect(text).toContain("[default]");
+    expect(text).toContain("[read only]");
   });
 
   it("rethrows ContractError instead of wrapping it in the CloudAuthError funnel", async () => {

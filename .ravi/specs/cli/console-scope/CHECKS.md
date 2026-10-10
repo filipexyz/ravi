@@ -96,8 +96,9 @@ owners:
   project when `--project` is omitted.
 - `ravi bridges create --json` uses the default project when `--project` is
   omitted.
-- `ravi connectors connect google --json --no-open` fails with a clear project
-  message when no project default exists and multiple projects are visible.
+- `ravi connectors connect google --json --no-open` does not resolve a Console
+  project: with or without a default project it starts the connection, and
+  `--project` only prints the deprecation warning on stderr.
 - `ravi sync push --json` keeps organization scope by default unless a project
   is explicitly supplied or the command opts into project defaulting.
 
