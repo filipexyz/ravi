@@ -71,3 +71,38 @@ every context on the lineage walk must still be live.
 A routine that answers into a chat is allowed only when Ravi knows that chat
 is the owner's own linked direct chat, from the `chats` table and the contact
 binding; anything less certain is treated as a group.
+
+## Approvals
+
+Writes ask the owner first by default because a write made on someone's own
+account (an email to a real person) cannot be taken back, and an agent may be
+steered by what it just read. The Worker decides when an approval is needed;
+the CLI only makes the loop work for both kinds of caller. At the operator's
+own terminal the person who must approve is sitting there, so the command
+opens the page and waits, exactly like `ravi login`. An agent cannot wait for
+a human for ten minutes inside one tool call, so it gets exit 3 with the link
+to send the owner privately and the `--approval <id>` to re-run with; the
+re-run must be the same command, because the approval covers that exact
+action and nothing else.
+
+The approval page is rebuilt from the Console of the active login instead of
+trusting the link in the Worker answer, so a tampered or misconfigured answer
+cannot send the owner to another site. The detail is called `approvalLink`,
+not `approvalUrl`, because the public sanitizer cuts any `*url` value to its
+origin, and an agent would then send the owner a bare domain.
+
+`gmail send` has a gateway route although it sends real email. Every agent
+turn reaches the CLI only through the host gateway, so a CLI-only send would
+leave agents with a 404 instead of the approval answer, and the approval loop
+would exist only for the operator's terminal. The send stays safe there: it
+keeps its `--execute` brake, the turn classification still runs, and the
+Worker still asks the owner before a write. The relay keeps the approval id,
+page, expiry and re-run flag, each checked against the shape the daemon
+builds, because an agent that has to scrape them from the message would get
+the id or the link wrong. A step-up is different: it needs the person at a
+browser and a code typed back, so a runtime turn never answers one.
+
+Remote codes the person can act on (denied, blocked tool, connector turned
+off, read only) get local copy with the line to say, for the same reason as
+the turn blocks: the agent should tell the owner what happened and what they
+can change, not relay a code.

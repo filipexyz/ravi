@@ -9132,6 +9132,7 @@ export type FeedbackSendReturn = {
 
 /** Input shape for `gmail.list`. */
 export type GmailListInput = {
+  approval?: string;
   connector?: string;
   cursor?: string;
   label?: string;
@@ -9148,6 +9149,7 @@ export type GmailListReturn = {
 
 /** Input shape for `gmail.read`. */
 export type GmailReadInput = {
+  approval?: string;
   connector?: string;
   format?: string;
   id: string;
@@ -9155,6 +9157,27 @@ export type GmailReadInput = {
 
 /** Return shape for `gmail.read`. */
 export type GmailReadReturn = {
+  capability: string;
+  refreshed: boolean;
+  result?: unknown;
+};
+
+/** Input shape for `gmail.send`. */
+export type GmailSendInput = {
+  approval?: string;
+  bcc?: string;
+  body?: string;
+  cc?: string;
+  connector?: string;
+  execute?: boolean;
+  html?: string;
+  inReplyTo?: string;
+  subject?: string;
+  to?: string;
+};
+
+/** Return shape for `gmail.send`. */
+export type GmailSendReturn = {
   capability: string;
   refreshed: boolean;
   result?: unknown;

@@ -1,21 +1,24 @@
 import "reflect-metadata";
-import { spawn } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { z } from "zod";
-import { Arg, CliOnly, Command, CommandAccess, Group, Option } from "../decorators.js";
-import { ContractError, contractDryRun } from "../agent-contract.js";
+import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
+import { CONTRACT_EXIT_POLICY, ContractError, contractDryRun, contractFail } from "../agent-contract.js";
 import { CloudAuthError, cloudAuthErrorFromUnknown } from "../../cloud-auth/errors.js";
-import { APPROVAL_ID_PATTERN, LinkStepUpRequiredError } from "../../link/client.js";
+import { APPROVAL_ID_PATTERN } from "../../link/client.js";
 import { currentConnectorRuntimeContext } from "../../link/connector-turn.js";
 import {
   connectorReconnectError,
-  execCapability,
+  execCapabilityWithApproval,
   listConnectors,
   pickDefaultConnector,
-  waitForConnectorApproval,
+  type StepUpHandler,
 } from "../../link/connectors.js";
+import { openExternal } from "../../link/open-external.js";
 import { jsonValueSchema } from "../return-schemas.js";
 import { declareCommandReturns } from "./operational-return-schemas.js";
+
+const APPROVAL_FLAG_DESCRIPTION =
+  "Approval id the account owner approved for this exact action (from a CONNECTOR_APPROVAL_REQUIRED answer)";
 
 @Group({
   name: "gmail",
@@ -37,8 +40,10 @@ export class GmailCommands {
     })
     connector?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--approval <id>", description: APPROVAL_FLAG_DESCRIPTION }) approval?: string,
   ) {
     return runGmailCommand(asJson, async () => {
+      assertApprovalId(approval);
       const connectorId = connector ?? (await resolveDefaultGoogleConnector());
       const max = Math.min(Math.max(Number.parseInt(maxOpt ?? "25", 10) || 25, 1), 100);
       const labelIds = label
@@ -47,10 +52,12 @@ export class GmailCommands {
             .map((s) => s.trim())
             .filter(Boolean)
         : undefined;
-      const exec = await execCapability({
+      const exec = await execWithApproval({
         connectorId,
         capability: "gmail.message.list",
         parameters: { q: query, labelIds, maxResults: max, pageToken: cursor },
+        asJson,
+        approvalId: approval,
       });
       const result = (exec.result ?? {}) as {
         messages?: Array<{ id: string; threadId: string }>;
@@ -86,13 +93,17 @@ export class GmailCommands {
     })
     connector?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--approval <id>", description: APPROVAL_FLAG_DESCRIPTION }) approval?: string,
   ) {
     return runGmailCommand(asJson, async () => {
+      assertApprovalId(approval);
       const connectorId = connector ?? (await resolveDefaultGoogleConnector());
-      const exec = await execCapability({
+      const exec = await execWithApproval({
         connectorId,
         capability: "gmail.message.read",
         parameters: { id, format: (format ?? "full") as "full" | "metadata" | "raw" },
+        asJson,
+        approvalId: approval,
       });
       if (asJson) {
         console.log(JSON.stringify(exec, null, 2));
@@ -139,7 +150,6 @@ export class GmailCommands {
     input: ["to", "cc", "bcc", "subject", "body", "html", "connector", "approval"],
     redactions: ["body", "html"],
   })
-  @CliOnly()
   async send(
     @Option({ flags: "--to <addr>", description: "Recipient address; repeat or comma-separate for multiple" })
     to?: string,
@@ -156,11 +166,7 @@ export class GmailCommands {
     })
     connector?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
-    @Option({
-      flags: "--approval <id>",
-      description: "Approval id the account owner approved for this exact email (from an approval answer)",
-    })
-    approval?: string,
+    @Option({ flags: "--approval <id>", description: APPROVAL_FLAG_DESCRIPTION }) approval?: string,
     @Option({
       flags: "--execute",
       description: "Actually send the email; default is a dry-run that only shows the plan (exit 3)",
@@ -168,9 +174,7 @@ export class GmailCommands {
     execute?: boolean,
   ) {
     return runGmailCommand(asJson, async () => {
-      if (approval !== undefined && !APPROVAL_ID_PATTERN.test(approval)) {
-        throw new CloudAuthError("PAYLOAD_INVALID", "--approval must be the approval id from the approval answer.");
-      }
+      assertApprovalId(approval);
       const recipients = parseAddressList(to);
       if (!recipients.length) {
         throw new Error("--to is required");
@@ -212,12 +216,13 @@ export class GmailCommands {
         inReplyTo,
       };
 
-      const exec = await execWithStepUp({
+      const exec = await execWithApproval({
         connectorId,
         capability: "gmail.message.send",
         parameters,
         asJson,
         approvalId: approval,
+        stepUp: true,
       });
 
       if (asJson) {
@@ -242,27 +247,36 @@ const gmailExecResultSchema = z.object({
 declareCommandReturns(GmailCommands, {
   list: gmailExecResultSchema,
   read: gmailExecResultSchema,
+  send: gmailExecResultSchema,
 });
 
-async function execWithStepUp(input: {
-  connectorId: string;
-  capability: string;
-  parameters: unknown;
-  asJson: boolean | undefined;
-  approvalId?: string;
-}) {
-  try {
-    return await execWithApproval(input);
-  } catch (error) {
-    if (!(error instanceof LinkStepUpRequiredError)) throw error;
-    if (input.asJson) {
+/**
+ * Answer a step-up challenge in the operator's own terminal: show the page,
+ * open it and read the code back. A runtime turn (an agent, the gateway)
+ * never opens a browser on this machine or waits on the daemon's stdin.
+ */
+function stepUpPrompt(op: string, asJson: boolean | undefined): StepUpHandler {
+  return async (challenge) => {
+    if (currentConnectorRuntimeContext().present) {
+      contractFail(
+        op,
+        "INTERACTIVE_ONLY",
+        "This action needs a step-up check in the browser, which only the account owner can do in their own terminal, so it was not done.",
+        {
+          asJson,
+          exitCode: CONTRACT_EXIT_POLICY,
+          details: { suggestedAction: "ask the account owner to run the same command in their own terminal" },
+        },
+      );
+    }
+    if (asJson) {
       console.log(
         JSON.stringify(
           {
             status: "stepup_required",
-            challengeId: error.details.challengeId,
-            verificationUrl: error.details.verificationUrl,
-            expiresAt: error.details.expiresAt,
+            challengeId: challenge.challengeId,
+            verificationUrl: challenge.verificationUrl,
+            expiresAt: challenge.expiresAt,
           },
           null,
           2,
@@ -270,26 +284,26 @@ async function execWithStepUp(input: {
       );
     } else {
       console.log("Step-up authentication required for this destructive action.");
-      console.log(`Open: ${error.details.verificationUrl}`);
-      console.log(`(expires at ${error.details.expiresAt})`);
+      console.log(`Open: ${challenge.verificationUrl}`);
+      console.log(`(expires at ${challenge.expiresAt})`);
     }
     try {
-      await openExternal(error.details.verificationUrl);
+      await openExternal(challenge.verificationUrl);
     } catch {
       // Best-effort browser open
     }
-    const token = await promptStepUpToken(input.asJson);
-    if (!token) throw new Error("Step-up cancelled.");
-    return execWithApproval({ ...input, stepUpToken: token });
-  }
+    return promptStepUpToken(asJson);
+  };
 }
 
 /**
- * Run the action, and when the owner must approve it first: at the
- * operator's own terminal (a TTY, no runtime context) open the approval page
- * and wait for the decision, then run it again with the approval. Anywhere
- * else the approval answer goes back to the caller (exit 3) with the link to
- * send the owner and the `--approval <id>` to re-run with.
+ * Run the action. When the owner must approve it first: at the operator's
+ * own terminal (stdin and stdout are TTYs, no runtime context, no --json)
+ * open the approval page, wait for the decision and run it once more with
+ * the approval. Anywhere else the approval answer goes back to the caller
+ * (exit 3) with the link to send the owner and the `--approval <id>` to
+ * re-run with. `stepUp` answers a step-up challenge (send only), keeping
+ * the approval on the retry.
  */
 async function execWithApproval(input: {
   connectorId: string;
@@ -297,46 +311,30 @@ async function execWithApproval(input: {
   parameters: unknown;
   asJson: boolean | undefined;
   approvalId?: string;
-  stepUpToken?: string;
+  stepUp?: boolean;
 }) {
-  const run = (approvalId: string | undefined) =>
-    execCapability({
+  return execCapabilityWithApproval(
+    {
       connectorId: input.connectorId,
       capability: input.capability,
       parameters: input.parameters,
-      ...(input.stepUpToken ? { stepUpToken: input.stepUpToken } : {}),
-      ...(approvalId ? { approvalId } : {}),
-    });
-  try {
-    return await run(input.approvalId);
-  } catch (error) {
-    if (!(error instanceof CloudAuthError) || error.code !== "CONNECTOR_APPROVAL_REQUIRED") throw error;
-    const approvalId = typeof error.details?.approvalId === "string" ? error.details.approvalId : null;
-    const approvalLink = typeof error.details?.approvalLink === "string" ? error.details.approvalLink : null;
-    if (!approvalId || !approvalLink || !isOperatorTerminal(input.asJson)) throw error;
-    console.error("The account owner must approve this action first.");
-    console.error(`Open: ${approvalLink}`);
-    console.error("Waiting for the decision (up to 10 minutes)...");
-    try {
-      await openExternal(approvalLink);
-    } catch {
-      // Best-effort browser open
-    }
-    const outcome = await waitForConnectorApproval(approvalId);
-    if (outcome === "approved") return run(approvalId);
-    if (outcome === "denied") {
-      throw new CloudAuthError("CONNECTOR_APPROVAL_DENIED", "The account owner denied this action.", { exitCode: 3 });
-    }
-    if (outcome === "expired") {
-      throw new CloudAuthError("CONNECTOR_APPROVAL_INVALID", "The approval expired before it was decided.");
-    }
-    throw error;
-  }
+      ...(input.approvalId ? { approvalId: input.approvalId } : {}),
+    },
+    {},
+    isOperatorTerminal(input.asJson) ? { openExternal } : null,
+    input.stepUp ? stepUpPrompt("gmail send", input.asJson) : null,
+  );
 }
 
 function isOperatorTerminal(asJson: boolean | undefined): boolean {
-  if (asJson || !process.stdin.isTTY || !process.stderr.isTTY) return false;
+  if (asJson || process.stdin.isTTY !== true || process.stdout.isTTY !== true) return false;
   return !currentConnectorRuntimeContext().present;
+}
+
+function assertApprovalId(approval: string | undefined): void {
+  if (approval !== undefined && !APPROVAL_ID_PATTERN.test(approval)) {
+    throw new CloudAuthError("PAYLOAD_INVALID", "--approval must be the approval id from the approval answer.");
+  }
 }
 
 async function promptStepUpToken(asJson: boolean | undefined): Promise<string | null> {
@@ -358,19 +356,6 @@ async function promptStepUpToken(asJson: boolean | undefined): Promise<string | 
   } finally {
     rl.close();
   }
-}
-
-function openExternal(url: string): Promise<void> {
-  const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
-  const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: "ignore", detached: true });
-    child.on("error", reject);
-    child.on("spawn", () => {
-      child.unref();
-      resolve();
-    });
-  });
 }
 
 async function resolveDefaultGoogleConnector(): Promise<string> {

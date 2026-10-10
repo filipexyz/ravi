@@ -1,5 +1,4 @@
 import "reflect-metadata";
-import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option } from "../decorators.js";
@@ -15,6 +14,7 @@ import {
   type ConnectorDetail,
   type ConnectorListItem,
 } from "../../link/connectors.js";
+import { openExternal } from "../../link/open-external.js";
 import { declareCommandReturns } from "./operational-return-schemas.js";
 
 const POLL_INTERVAL_MS = 2_000;
@@ -340,19 +340,6 @@ async function runConnectorCommand<T>(_asJson: boolean | undefined, fn: () => Pr
     if (error instanceof ContractError) throw error;
     throw cloudAuthErrorFromUnknown(error);
   }
-}
-
-function openExternal(url: string): Promise<void> {
-  const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
-  const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: "ignore", detached: true });
-    child.on("error", reject);
-    child.on("spawn", () => {
-      child.unref();
-      resolve();
-    });
-  });
 }
 
 // Re-export so the proxy executor helper has a single import path for

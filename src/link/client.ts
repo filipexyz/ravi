@@ -104,11 +104,15 @@ function mapLinkError(status: number, payload: unknown): CloudAuthError {
   const linkCode = stringField(payload, "error") ?? "unknown";
   const fallback = defaultCodeForStatus(status);
   const code = normalizeCloudAuthErrorCode(linkCode, fallback);
-  const approval =
-    code === "CONNECTOR_APPROVAL_REQUIRED" || code === "CONNECTOR_APPROVAL_PENDING" ? approvalDetails(payload) : null;
+  const details =
+    code === "CONNECTOR_APPROVAL_REQUIRED" || code === "CONNECTOR_APPROVAL_PENDING"
+      ? approvalDetails(payload)
+      : code === "CONNECTOR_PERMISSION_REQUIRED"
+        ? permissionDetails(payload)
+        : null;
   return new CloudAuthError(code, `Ravi Link request failed (${status}): ${linkCode}`, {
     status,
-    ...(approval ? { details: approval } : {}),
+    ...(details ? { details } : {}),
   });
 }
 
@@ -129,6 +133,11 @@ function approvalDetails(payload: unknown): Record<string, string> | null {
   const reason = stringField(payload, "reason");
   if (reason && APPROVAL_REASON_PATTERN.test(reason)) details.reason = reason;
   return details;
+}
+
+/** A permission answer keeps only whether the connection is read only. */
+function permissionDetails(payload: unknown): Record<string, string> | null {
+  return stringField(payload, "accessMode") === "read_only" ? { accessMode: "read_only" } : null;
 }
 
 function defaultCodeForStatus(status: number): CloudAuthErrorCode {

@@ -46221,6 +46221,10 @@ export const FeedbackSendReturnSchema = {
 export const GmailListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "approval": {
+      "description": "Approval id the account owner approved for this exact action (from a CONNECTOR_APPROVAL_REQUIRED answer)",
+      "type": "string"
+    },
     "connector": {
       "description": "Connection id (defaults to your default Google connection, else the newest active one)",
       "type": "string"
@@ -46307,6 +46311,10 @@ export const GmailListReturnSchema = {
 export const GmailReadInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "approval": {
+      "description": "Approval id the account owner approved for this exact action (from a CONNECTOR_APPROVAL_REQUIRED answer)",
+      "type": "string"
+    },
     "connector": {
       "description": "Connection id (defaults to your default Google connection, else the newest active one)",
       "type": "string"
@@ -46328,6 +46336,112 @@ export const GmailReadInputSchema = {
 
 /** JSON Schema for the return shape of `gmail.read`. */
 export const GmailReadReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "capability": {
+      "type": "string"
+    },
+    "refreshed": {
+      "type": "boolean"
+    },
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "capability",
+    "refreshed"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gmail.send`. */
+export const GmailSendInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "approval": {
+      "description": "Approval id the account owner approved for this exact action (from a CONNECTOR_APPROVAL_REQUIRED answer)",
+      "type": "string"
+    },
+    "bcc": {
+      "description": "Bcc recipients; comma-separated",
+      "type": "string"
+    },
+    "body": {
+      "description": "Plain text body",
+      "type": "string"
+    },
+    "cc": {
+      "description": "Cc recipients; comma-separated",
+      "type": "string"
+    },
+    "connector": {
+      "description": "Connection id (defaults to your default Google connection, else the newest active one)",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Actually send the email; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
+    "html": {
+      "description": "Optional HTML body",
+      "type": "string"
+    },
+    "inReplyTo": {
+      "description": "Message-Id this email replies to",
+      "type": "string"
+    },
+    "subject": {
+      "description": "Email subject",
+      "type": "string"
+    },
+    "to": {
+      "description": "Recipient address; repeat or comma-separate for multiple",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gmail.send`. */
+export const GmailSendReturnSchema = {
   "$defs": {
     "__schema0": {
       "anyOf": [

@@ -932,6 +932,108 @@ describe("personal connector blocks over the gateway", () => {
     }
   });
 
+  const APPROVAL_ID = "3f2c8a1e-5b6d-4c7e-9f00-1a2b3c4d5e6f";
+  const APPROVAL_LINK = `https://console.ravi.bot/connectors/approvals/${APPROVAL_ID}`;
+
+  function approvalAnswer(code: "CONNECTOR_APPROVAL_REQUIRED" | "CONNECTOR_APPROVAL_PENDING") {
+    return new CloudAuthError(
+      code,
+      `Luis must approve this Gmail action first. Send them the link privately, never in a group: "Please approve this Gmail action: console.ravi.bot/connectors/approvals/${APPROVAL_ID}", then run the same command again with --approval ${APPROVAL_ID} once they approve.`,
+      {
+        exitCode: 3,
+        status: 409,
+        details: {
+          source: "connector-turn",
+          chatLine: `Please approve this Gmail action: ${APPROVAL_LINK}`,
+          chatLinePt: `Aprove esta ação do Gmail: ${APPROVAL_LINK}`,
+          replyTo: "owner_privately",
+          approvalId: APPROVAL_ID,
+          approvalLink: APPROVAL_LINK,
+          retryWith: `--approval ${APPROVAL_ID}`,
+          expiresAt: "2026-10-10T12:15:00.000Z",
+        },
+      },
+    );
+  }
+
+  it.each(["CONNECTOR_APPROVAL_REQUIRED", "CONNECTOR_APPROVAL_PENDING"] as const)(
+    "keeps the approval id, page, expiry and re-run flag of %s",
+    async (code) => {
+      const { local, remote } = await relay("gmail send", approvalAnswer(code));
+
+      expect(remote).toMatchObject({
+        op: "gmail send",
+        code,
+        exitCode: 3,
+        message: local.message,
+        details: {
+          chatLine: `Please approve this Gmail action: ${APPROVAL_LINK}`,
+          replyTo: "owner_privately",
+          approvalId: APPROVAL_ID,
+          approvalLink: APPROVAL_LINK,
+          retryWith: `--approval ${APPROVAL_ID}`,
+          expiresAt: "2026-10-10T12:15:00.000Z",
+        },
+      });
+      expect(remote?.envelope().error).toMatchObject({
+        approvalId: APPROVAL_ID,
+        approvalLink: APPROVAL_LINK,
+        retryWith: `--approval ${APPROVAL_ID}`,
+        expiresAt: "2026-10-10T12:15:00.000Z",
+      });
+    },
+  );
+
+  it("drops approval details that are not in the shape the daemon builds", () => {
+    const body = (error: Record<string, unknown>) =>
+      JSON.stringify({
+        success: false,
+        op: "gmail send",
+        exitCode: 3,
+        outcome: "blocked",
+        error: {
+          code: "CONNECTOR_APPROVAL_REQUIRED",
+          message: "Luis must approve this Gmail action first.",
+          retryable: false,
+          chatLine: "Please approve this Gmail action.",
+          ...error,
+        },
+      });
+    const relayed = (error: Record<string, unknown>) =>
+      remoteGatewayErrorToContractError("gmail send", result({ status: 409, body: body(error) }))?.details;
+
+    for (const approvalLink of [
+      `https://console.ravi.bot/connectors/approvals/other-id`,
+      `https://console.ravi.bot/connectors/approvals/${APPROVAL_ID}?next=https://x`,
+      `https://user:pw@console.ravi.bot/connectors/approvals/${APPROVAL_ID}`,
+      `http://evil.example/connectors/approvals/${APPROVAL_ID}`,
+      `javascript:alert(1)//connectors/approvals/${APPROVAL_ID}`,
+    ]) {
+      const details = relayed({ approvalId: APPROVAL_ID, approvalLink, retryWith: "--approval other-id" });
+      expect(details?.approvalId).toBe(APPROVAL_ID);
+      expect(details?.approvalLink).toBeUndefined();
+      expect(details?.retryWith).toBeUndefined();
+    }
+    expect(relayed({ approvalId: APPROVAL_ID, expiresAt: "soon" })?.expiresAt).toBeUndefined();
+    const withoutId = relayed({
+      approvalId: "../x",
+      approvalLink: "https://console.ravi.bot/connectors/approvals/../x",
+      retryWith: "--approval ../x",
+      expiresAt: "2026-10-10T12:15:00.000Z",
+    });
+    expect(withoutId?.approvalId).toBeUndefined();
+    expect(withoutId?.approvalLink).toBeUndefined();
+    expect(withoutId?.retryWith).toBeUndefined();
+    expect(withoutId?.expiresAt).toBeUndefined();
+    // A Console under a path prefix keeps its approval page.
+    expect(
+      relayed({
+        approvalId: APPROVAL_ID,
+        approvalLink: `http://localhost:3000/console/connectors/approvals/${APPROVAL_ID}`,
+      })?.approvalLink,
+    ).toBe(`http://localhost:3000/console/connectors/approvals/${APPROVAL_ID}`);
+  });
+
   it("uses the catalog copy, not remote text, for connector failures without a chat line", async () => {
     const { remote } = await relay(
       "gmail list",

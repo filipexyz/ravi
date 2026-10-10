@@ -3667,6 +3667,17 @@ class GmailNamespace {
       decode: gmailReadReturnFromJson,
     );
   }
+
+  Future<GmailSendReturn> send([GmailSendOptions options = const GmailSendOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["gmail"],
+      command: "send",
+      body: requestBody,
+      decode: gmailSendReturnFromJson,
+    );
+  }
 }
 
 class HeartbeatNamespace {

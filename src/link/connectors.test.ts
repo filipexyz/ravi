@@ -5,17 +5,19 @@ import { CloudAuthError } from "../cloud-auth/errors.js";
 import { cloudErrorToContractError, renderCloudContractError } from "../cli/cloud-error-contract.js";
 import type { CloudCredentials } from "../cloud-auth/types.js";
 import type { ContextRecord } from "../router/router-db.js";
-import type { LinkApiClient } from "./client.js";
+import { LinkApiClient } from "./client.js";
 import { decodeExecContextHeader, type ConnectorTurnDeps } from "./connector-turn.js";
 import {
   APPROVAL_HEADER,
   CONSOLE_CONNECT_START_PATH,
   connectorReconnectError,
   execCapability,
+  execCapabilityWithApproval,
   listConnectors,
   pickDefaultConnector,
   startConnect,
   type ConnectorListItem,
+  type TerminalApprovalOptions,
   waitForConnectorApproval,
 } from "./connectors.js";
 
@@ -88,6 +90,26 @@ describe("connector link helpers", () => {
     await expect(
       startConnect({ provider: "google" }, { consoleClient, readCredentials: makeReadCredentials(), turn: TERMINAL }),
     ).rejects.toMatchObject({ code: "SERVER_UNAVAILABLE" } satisfies Partial<CloudAuthError>);
+  });
+
+  it("tells the owner, privately, when the organization turned Google off", async () => {
+    const consoleClient = makeConsoleClient(async () => {
+      throw new CloudAuthError("CONNECTOR_DISABLED_BY_ORG", "Console request failed (403)", { status: 403 });
+    });
+
+    const error = (await startConnect(
+      { provider: "google" },
+      { consoleClient, readCredentials: makeReadCredentials(), turn: TERMINAL },
+    ).catch((e) => e)) as CloudAuthError;
+    const contract = cloudErrorToContractError("connectors connect", error);
+
+    expect(contract.exitCode).toBe(3);
+    expect(contract.envelope().error).toMatchObject({
+      code: "CONNECTOR_DISABLED_BY_ORG",
+      replyTo: "owner_privately",
+      chatLine:
+        "Your organization turned off Google connections in Ravi Console. An organization owner or admin can turn them back on.",
+    });
   });
 
   it("blocks another person's turn before any Console or Link call", async () => {
@@ -348,7 +370,10 @@ describe("connector approvals", () => {
       turn: TERMINAL,
     });
     expect(await waitForConnectorApproval("apr_1", deps("denied"), { sleep: async () => {} })).toBe("denied");
-    expect(await waitForConnectorApproval("apr_1", deps("consumed"), { sleep: async () => {} })).toBe("expired");
+    expect(await waitForConnectorApproval("apr_1", deps("expired"), { sleep: async () => {} })).toBe("expired");
+    expect(await waitForConnectorApproval("apr_1", deps("consumed"), { sleep: async () => {} })).toBe("used");
+    expect(await waitForConnectorApproval("apr_1", deps("weird"), { sleep: async () => {} })).toBe("invalid");
+    expect(await waitForConnectorApproval("../x", deps("approved"), { sleep: async () => {} })).toBe("invalid");
 
     let clock = 0;
     expect(
@@ -361,6 +386,406 @@ describe("connector approvals", () => {
       }),
     ).toBe("timeout");
     expect(clock).toBe(10_000);
+  });
+});
+
+// A stand-in for link.ravi.so: the real LinkApiClient talks to it over a fake
+// fetch, so status codes and bodies go through the same mapping as production.
+const APPROVAL_ID = "3f2c8a1e-5b6d-4c7e-9f00-1a2b3c4d5e6f";
+
+interface FakeWorkerCall {
+  method: string;
+  path: string;
+  headers: Record<string, string>;
+  body: unknown;
+}
+
+type FakeAnswer = [status: number, body: Record<string, unknown>];
+
+function fakeWorker(handlers: {
+  exec: (call: FakeWorkerCall, index: number) => FakeAnswer;
+  approval?: (call: FakeWorkerCall, index: number) => FakeAnswer;
+}) {
+  const calls: FakeWorkerCall[] = [];
+  let execs = 0;
+  let polls = 0;
+  const link = new LinkApiClient({
+    linkUrl: "https://link.test",
+    fetch: async (url, init) => {
+      const headers: Record<string, string> = {};
+      for (const [key, value] of Object.entries((init?.headers ?? {}) as Record<string, string>)) {
+        headers[key.toLowerCase()] = value;
+      }
+      const call: FakeWorkerCall = {
+        method: init?.method ?? "GET",
+        path: url.replace("https://link.test", ""),
+        headers,
+        body: init?.body ? JSON.parse(String(init.body)) : undefined,
+      };
+      calls.push(call);
+      let answer: FakeAnswer = [404, { error: "not_found" }];
+      if (call.method === "POST" && call.path.startsWith("/cli/exec/")) answer = handlers.exec(call, execs++);
+      else if (call.method === "GET" && call.path.startsWith("/cli/approvals/") && handlers.approval) {
+        answer = handlers.approval(call, polls++);
+      }
+      return new Response(JSON.stringify({ requestId: "req_1", ...answer[1] }), {
+        status: answer[0],
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+  });
+  const deps = {
+    consoleClient: makeConsoleClient(async () => ({})),
+    link,
+    readCredentials: makeReadCredentials(),
+    turn: TERMINAL,
+  };
+  return { calls, deps };
+}
+
+const approvalRequired = (code = "connector_approval_required"): FakeAnswer => [
+  409,
+  {
+    error: code,
+    approvalId: APPROVAL_ID,
+    approvalUrl: `https://console.worker-side.example/connectors/approvals/${APPROVAL_ID}`,
+    expiresAt: "2026-10-10T12:15:00.000Z",
+    reason: "policy",
+  },
+];
+const sent: FakeAnswer = [200, { result: { messageId: "m_1" }, capability: "gmail.message.send", refreshed: false }];
+const SEND = {
+  connectorId: "conn_1",
+  capability: "gmail.message.send",
+  parameters: { to: ["ana@example.com"], subject: "Oi", body: "Corpo" },
+};
+
+function terminalSpy(statusClock: { now: number } = { now: 0 }) {
+  const opened: string[] = [];
+  const lines: string[] = [];
+  const sleeps: number[] = [];
+  const terminal: TerminalApprovalOptions = {
+    openExternal: (url) => void opened.push(url),
+    log: (line) => void lines.push(line),
+    sleep: async (ms) => {
+      sleeps.push(ms);
+      statusClock.now += ms;
+    },
+    now: () => statusClock.now,
+  };
+  return { terminal, opened, lines, sleeps };
+}
+
+describe("approval flow against a fake Worker", () => {
+  it("at the operator's terminal opens the page, polls every 2 s, then sends once more with the approval", async () => {
+    const statuses = ["pending", "pending", "approved"];
+    const worker = fakeWorker({
+      exec: (call) => (call.headers["x-ravi-approval"] === APPROVAL_ID ? sent : approvalRequired()),
+      approval: () => [
+        200,
+        { status: statuses.shift(), expiresAt: "2026-10-10T12:15:00.000Z", capability: "gmail.message.send" },
+      ],
+    });
+    const spy = terminalSpy();
+
+    const result = await execCapabilityWithApproval(SEND, worker.deps, spy.terminal);
+
+    expect(result).toMatchObject({ result: { messageId: "m_1" }, capability: "gmail.message.send" });
+    expect(worker.calls.map((call) => `${call.method} ${call.path}`)).toEqual([
+      "POST /cli/exec/conn_1",
+      `GET /cli/approvals/${APPROVAL_ID}`,
+      `GET /cli/approvals/${APPROVAL_ID}`,
+      `GET /cli/approvals/${APPROVAL_ID}`,
+      "POST /cli/exec/conn_1",
+    ]);
+    const [first, , , , retry] = worker.calls;
+    expect(first?.headers["x-ravi-approval"]).toBeUndefined();
+    expect(retry?.headers["x-ravi-approval"]).toBe(APPROVAL_ID);
+    expect(retry?.headers["x-ravi-exec-context"]).toBeString();
+    // The same action is sent again, so the Worker's parameter hash matches.
+    expect(retry?.body).toEqual(first?.body);
+    expect(spy.sleeps).toEqual([2_000, 2_000]);
+    // The page comes from the Console of the active login, not from the Worker answer.
+    const page = `https://console.example/connectors/approvals/${APPROVAL_ID}`;
+    expect(spy.opened).toEqual([page]);
+    expect(spy.lines).toContain(`Open: ${page}`);
+    expect(spy.lines.join("\n")).not.toContain("worker-side");
+  });
+
+  it("also waits when the operator re-runs with an approval that is still pending", async () => {
+    const statuses = ["pending", "approved"];
+    const worker = fakeWorker({
+      exec: (_call, index) => (index === 0 ? approvalRequired("connector_approval_pending") : sent),
+      approval: () => [200, { status: statuses.shift() }],
+    });
+    const spy = terminalSpy();
+
+    await execCapabilityWithApproval({ ...SEND, approvalId: APPROVAL_ID }, worker.deps, spy.terminal);
+
+    const execs = worker.calls.filter((call) => call.method === "POST");
+    expect(execs.map((call) => call.headers["x-ravi-approval"])).toEqual([APPROVAL_ID, APPROVAL_ID]);
+  });
+
+  it("anywhere else exits 3 with the approval link, the expiry and the flag to re-run with", async () => {
+    const worker = fakeWorker({ exec: () => approvalRequired() });
+
+    const error = (await execCapabilityWithApproval(SEND, worker.deps, null).catch((e) => e)) as CloudAuthError;
+    const contract = cloudErrorToContractError("gmail send", error);
+
+    expect(worker.calls).toHaveLength(1);
+    expect(contract.exitCode).toBe(3);
+    expect(contract.envelope().error).toMatchObject({
+      code: "CONNECTOR_APPROVAL_REQUIRED",
+      approvalId: APPROVAL_ID,
+      approvalLink: `https://console.example/connectors/approvals/${APPROVAL_ID}`,
+      expiresAt: "2026-10-10T12:15:00.000Z",
+      retryWith: `--approval ${APPROVAL_ID}`,
+      replyTo: "owner_privately",
+      chatLine: `Please approve this Gmail action: https://console.example/connectors/approvals/${APPROVAL_ID}`,
+    });
+    expect(contract.message).toContain("never in a group");
+    expect(contract.message).toContain(`--approval ${APPROVAL_ID}`);
+    expect(JSON.stringify(contract.envelope())).not.toContain("worker-side");
+  });
+
+  it("--approval sends X-Ravi-Approval, and a pending approval exits 3 with the same details", async () => {
+    const worker = fakeWorker({ exec: () => approvalRequired("connector_approval_pending") });
+
+    const error = (await execCapabilityWithApproval({ ...SEND, approvalId: APPROVAL_ID }, worker.deps, null).catch(
+      (e) => e,
+    )) as CloudAuthError;
+    const contract = cloudErrorToContractError("gmail send", error);
+
+    expect(worker.calls[0]?.headers["x-ravi-approval"]).toBe(APPROVAL_ID);
+    expect(contract.exitCode).toBe(3);
+    expect(contract.envelope().error).toMatchObject({
+      code: "CONNECTOR_APPROVAL_PENDING",
+      approvalId: APPROVAL_ID,
+      retryWith: `--approval ${APPROVAL_ID}`,
+      expiresAt: "2026-10-10T12:15:00.000Z",
+    });
+  });
+
+  it("stops with CONNECTOR_APPROVAL_DENIED (exit 3) when the owner declines while it waits", async () => {
+    const statuses = ["pending", "denied"];
+    const worker = fakeWorker({ exec: () => approvalRequired(), approval: () => [200, { status: statuses.shift() }] });
+    const spy = terminalSpy();
+
+    const error = (await execCapabilityWithApproval(SEND, worker.deps, spy.terminal).catch((e) => e)) as CloudAuthError;
+    const contract = cloudErrorToContractError("gmail send", error);
+
+    expect(worker.calls.filter((call) => call.method === "POST")).toHaveLength(1);
+    expect(contract.exitCode).toBe(3);
+    expect(contract.code).toBe("CONNECTOR_APPROVAL_DENIED");
+    expect(contract.message).toBe("The approval was declined in Ravi Console, so this Gmail action was not done.");
+  });
+
+  it.each([
+    ["expired", "expired before it was decided"],
+    ["consumed", "was already used"],
+  ])("stops with CONNECTOR_APPROVAL_INVALID (exit 1) when the approval is %s while it waits", async (status, why) => {
+    const worker = fakeWorker({ exec: () => approvalRequired(), approval: () => [200, { status }] });
+    const spy = terminalSpy();
+
+    const error = (await execCapabilityWithApproval(SEND, worker.deps, spy.terminal).catch((e) => e)) as CloudAuthError;
+    const contract = cloudErrorToContractError("gmail send", error);
+
+    expect(worker.calls.filter((call) => call.method === "POST")).toHaveLength(1);
+    expect(contract.exitCode).toBe(1);
+    expect(contract.code).toBe("CONNECTOR_APPROVAL_INVALID");
+    expect(contract.message).toContain(why);
+    expect(contract.message).toContain("Run the same command again to ask for a new approval.");
+  });
+
+  it("treats an approval the Worker does not know for this user as invalid", async () => {
+    const worker = fakeWorker({ exec: () => approvalRequired(), approval: () => [404, { error: "not_found" }] });
+    const spy = terminalSpy();
+
+    const error = (await execCapabilityWithApproval(SEND, worker.deps, spy.terminal).catch((e) => e)) as CloudAuthError;
+
+    expect(error.code).toBe("CONNECTOR_APPROVAL_INVALID");
+  });
+
+  it("keeps waiting through a passing outage", async () => {
+    const answers: FakeAnswer[] = [
+      [503, { error: "internal_error" }],
+      [200, { status: "approved" }],
+    ];
+    const worker = fakeWorker({
+      exec: (call) => (call.headers["x-ravi-approval"] ? sent : approvalRequired()),
+      approval: () => answers.shift()!,
+    });
+    const spy = terminalSpy();
+
+    await execCapabilityWithApproval(SEND, worker.deps, spy.terminal);
+
+    expect(worker.calls.filter((call) => call.method === "GET")).toHaveLength(2);
+  });
+
+  it("refreshes an expired bearer once while it waits, then goes on polling", async () => {
+    const answers: FakeAnswer[] = [
+      [401, { error: "unauthorized" }],
+      [200, { status: "approved" }],
+    ];
+    const worker = fakeWorker({
+      exec: (call) => (call.headers["x-ravi-approval"] ? sent : approvalRequired()),
+      approval: () => answers.shift()!,
+    });
+    const spy = terminalSpy();
+
+    await execCapabilityWithApproval(SEND, worker.deps, spy.terminal);
+
+    expect(worker.calls.filter((call) => call.method === "GET")).toHaveLength(2);
+    // The Console session is checked for the first exec, the wait, one
+    // re-authentication after the 401 and the exec with the approval.
+    expect(worker.deps.consoleClient.me).toHaveBeenCalledTimes(4);
+    expect(spy.sleeps).toEqual([]);
+  });
+
+  it("stops with AUTH_EXPIRED when the bearer is still refused after one refresh", async () => {
+    const worker = fakeWorker({
+      exec: () => approvalRequired(),
+      approval: () => [401, { error: "unauthorized" }],
+    });
+    const spy = terminalSpy();
+
+    const error = (await execCapabilityWithApproval(SEND, worker.deps, spy.terminal).catch((e) => e)) as CloudAuthError;
+
+    expect(error).toBeInstanceOf(CloudAuthError);
+    expect(error.code).toBe("AUTH_EXPIRED");
+    expect(worker.calls.filter((call) => call.method === "GET")).toHaveLength(2);
+    expect(worker.deps.consoleClient.me).toHaveBeenCalledTimes(3);
+    expect(spy.sleeps).toEqual([]);
+  });
+
+  it("keeps the approval when the approved action then asks for a step-up", async () => {
+    const worker = fakeWorker({
+      exec: (call) => {
+        if (!call.headers["x-ravi-approval"]) return approvalRequired();
+        if (!call.headers["x-ravi-step-up"]) {
+          return [
+            409,
+            {
+              error: "connector_stepup_required",
+              challengeId: "chl_1",
+              verificationUrl: "https://link.test/stepup/chl_1",
+              expiresAt: "2026-10-10T12:05:00.000Z",
+            },
+          ];
+        }
+        return sent;
+      },
+      approval: () => [200, { status: "approved" }],
+    });
+    const spy = terminalSpy();
+    const challenges: string[] = [];
+
+    const result = await execCapabilityWithApproval(SEND, worker.deps, spy.terminal, async (challenge) => {
+      challenges.push(challenge.challengeId);
+      return "stepup-code";
+    });
+
+    expect(result).toMatchObject({ result: { messageId: "m_1" } });
+    expect(challenges).toEqual(["chl_1"]);
+    const execs = worker.calls.filter((call) => call.method === "POST");
+    expect(
+      execs.map((call) => [call.headers["x-ravi-approval"] ?? "-", call.headers["x-ravi-step-up"] ?? "-"]),
+    ).toEqual([
+      ["-", "-"],
+      [APPROVAL_ID, "-"],
+      [APPROVAL_ID, "stepup-code"],
+    ]);
+    // The owner approves once: no second approval is asked for.
+    expect(worker.calls.filter((call) => call.method === "GET")).toHaveLength(1);
+  });
+
+  it("hands the approval answer back after 10 minutes without a decision", async () => {
+    const worker = fakeWorker({ exec: () => approvalRequired(), approval: () => [200, { status: "pending" }] });
+    const spy = terminalSpy();
+
+    const error = (await execCapabilityWithApproval(SEND, worker.deps, spy.terminal).catch((e) => e)) as CloudAuthError;
+
+    expect(error.code).toBe("CONNECTOR_APPROVAL_REQUIRED");
+    expect(cloudErrorToContractError("gmail send", error).exitCode).toBe(3);
+    expect(spy.sleeps.reduce((total, ms) => total + ms, 0)).toBe(10 * 60_000);
+    expect(worker.calls.filter((call) => call.method === "POST")).toHaveLength(1);
+  });
+});
+
+describe("Worker connector answers on exec", () => {
+  async function execAnswer(answer: FakeAnswer, capability = "gmail.message.send") {
+    const worker = fakeWorker({ exec: () => answer });
+    const error = (await execCapability({ ...SEND, capability }, worker.deps).catch((e) => e)) as CloudAuthError;
+    return { error, contract: cloudErrorToContractError("gmail send", error) };
+  }
+
+  it("a denied approval exits 3 and tells the agent not to retry", async () => {
+    const { contract } = await execAnswer([403, { error: "connector_approval_denied" }]);
+
+    expect(contract.exitCode).toBe(3);
+    expect(contract.envelope().error).toMatchObject({
+      code: "CONNECTOR_APPROVAL_DENIED",
+      chatLine: "Okay, I didn't do it: the approval was declined.",
+      replyTo: "same_chat",
+    });
+    expect(contract.message).toContain("Do not run it again with this approval.");
+  });
+
+  it("an approval that does not cover the action exits 1 and says to ask again without --approval", async () => {
+    const { contract } = await execAnswer([400, { error: "connector_approval_invalid" }]);
+
+    expect(contract.exitCode).toBe(1);
+    expect(contract.code).toBe("CONNECTOR_APPROVAL_INVALID");
+    expect(contract.message).toContain("without --approval");
+  });
+
+  it("a blocked tool exits 3 with the line for the owner and the Connectors page", async () => {
+    const { contract } = await execAnswer([403, { error: "connector_tool_blocked" }]);
+
+    expect(contract.exitCode).toBe(3);
+    expect(contract.envelope().error).toMatchObject({
+      code: "CONNECTOR_TOOL_BLOCKED",
+      replyTo: "owner_privately",
+      reconnectLink: "https://console.example/connectors",
+    });
+    expect(String(contract.details.chatLine)).toContain("https://console.example/connectors");
+    expect(contract.message).toContain("Do not retry it");
+  });
+
+  it("a connector the organization turned off exits 3 with the line for the owner", async () => {
+    const { contract } = await execAnswer([403, { error: "connector_disabled_by_org" }], "gcal.freebusy.query");
+
+    expect(contract.exitCode).toBe(3);
+    expect(contract.code).toBe("CONNECTOR_DISABLED_BY_ORG");
+    expect(contract.message).toContain("Google Calendar");
+    expect(String(contract.details.chatLine)).toContain("organization owner or admin");
+  });
+
+  it("a read-only connection asked to write explains Allow writing", async () => {
+    const { contract } = await execAnswer([403, { error: "connector_permission_required", accessMode: "read_only" }]);
+
+    expect(contract.exitCode).toBe(1);
+    expect(contract.code).toBe("CONNECTOR_PERMISSION_REQUIRED");
+    expect(String(contract.details.chatLine)).toContain("read only");
+    expect(String(contract.details.chatLine)).toContain("Allow writing");
+    expect(JSON.stringify(contract.envelope())).not.toContain("REDACTED");
+  });
+
+  it.each([
+    [403, "connector_group_blocked", "CONNECTOR_GROUP_BLOCKED", 3],
+    [403, "connector_speaker_not_owner", "CONNECTOR_SPEAKER_NOT_OWNER", 3],
+    [409, "connector_consent_required", "CONNECTOR_CONSENT_REQUIRED", 3],
+    [403, "connector_not_linked", "CONNECTOR_NOT_LINKED", 3],
+    [409, "connector_connection_required", "CONNECTOR_CONNECTION_REQUIRED", 1],
+    [409, "connector_policy_above_ceiling", "CONNECTOR_POLICY_ABOVE_CEILING", 1],
+    [403, "connector_forbidden", "CONNECTOR_FORBIDDEN", 1],
+  ] as const)("%i %s → %s, exit %i, catalog copy", async (status, workerCode, cliCode, exit) => {
+    const { contract } = await execAnswer([status, { error: workerCode }]);
+
+    expect(contract.code).toBe(cliCode);
+    expect(contract.exitCode).toBe(exit);
+    expect(contract.message).not.toContain(workerCode);
+    expect(contract.details.suggestedAction).toBeString();
   });
 });
 

@@ -149,6 +149,10 @@ function publicMessage(code: CloudAuthError["code"], sourceMessage: string): str
       return "The person asking has no connected account for this service.";
     case "CONNECTOR_REAUTH_REQUIRED":
       return "The connection expired and must be reconnected.";
+    case "CONNECTOR_PERMISSION_REQUIRED":
+      return "The connection does not allow this action: it is read only or misses a permission.";
+    case "CONNECTOR_POLICY_ABOVE_CEILING":
+      return "The organization's limit for this tool does not allow that policy.";
     case "CONNECTOR_FORBIDDEN":
       return "Only the owner of this connection can do that.";
   }
@@ -237,13 +241,13 @@ function suggestedAction(code: CloudAuthError["code"]): string {
     case "CONNECTOR_TOOL_BLOCKED":
       return "the owner can change this tool's policy on the Console Connectors page; do not retry as is";
     case "CONNECTOR_APPROVAL_REQUIRED":
-      return "send the approval link to the account owner privately, then re-run the same command after they approve";
+      return "send the approval link to the account owner privately, never in a group, then re-run the same command with --approval <id> after they approve";
     case "CONNECTOR_APPROVAL_PENDING":
-      return "wait for the account owner to decide, then re-run the same command";
+      return "wait for the account owner to decide, then re-run the same command with the same --approval <id>";
     case "CONNECTOR_APPROVAL_DENIED":
-      return "do not retry; tell the person the account owner declined";
+      return "do not retry; tell the person the account owner declined, so it was not done";
     case "CONNECTOR_APPROVAL_INVALID":
-      return "run the action again without the old approval";
+      return "run the same command again without --approval to ask for a new approval";
     case "CONNECTOR_CONSENT_REQUIRED":
       return "send the consent link to that person privately, then retry after they approve";
     case "CONNECTOR_NOT_LINKED":
@@ -252,6 +256,10 @@ function suggestedAction(code: CloudAuthError["code"]): string {
       return "ask the person to connect an account on the Console Connectors page";
     case "CONNECTOR_REAUTH_REQUIRED":
       return "tell the account owner privately to reconnect it on the Console Connectors page";
+    case "CONNECTOR_PERMISSION_REQUIRED":
+      return "tell the account owner privately to allow writing, or reconnect, on the Console Connectors page; do not retry as is";
+    case "CONNECTOR_POLICY_ABOVE_CEILING":
+      return "pick a stricter policy, or ask an organization owner or admin to raise the limit";
     case "CONNECTOR_FORBIDDEN":
       return "ask the connection's owner to make this change";
   }

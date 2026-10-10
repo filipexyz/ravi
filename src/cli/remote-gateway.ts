@@ -40,6 +40,7 @@ import {
   sanitizePublicContractMessage,
   type ContractErrorDetails,
 } from "./agent-contract.js";
+import { APPROVAL_ID_PATTERN } from "../link/client.js";
 import { CALLER_CWD_HEADER, parseCallerCwd } from "./caller-cwd.js";
 import { cloudContractCatalogCopy } from "./cloud-error-contract.js";
 import { localMediaSendCatalogCopy } from "./media-send-auth.js";
@@ -443,9 +444,37 @@ function connectorTurnRemoteCopy(
   if (typeof remote.replyTo === "string" && CONNECTOR_REPLY_TO_VALUES.has(remote.replyTo)) {
     details.replyTo = remote.replyTo;
   }
-  const reconnectLink = connectorReconnectLink(remote.reconnectLink);
+  const reconnectLink = connectorConsoleLink(remote.reconnectLink, "/connectors");
   if (reconnectLink) details.reconnectLink = reconnectLink;
+  Object.assign(details, connectorApprovalDetails(remote));
   return { message, details };
+}
+
+const CONNECTOR_EXPIRES_AT_MAX = 64;
+
+/**
+ * What an approval answer needs to be acted on: the approval id, its Console
+ * page, its expiry and the flag to re-run with. Each is kept only in the
+ * shape the daemon builds: the page is the approval page of that id and the
+ * flag names that id.
+ */
+function connectorApprovalDetails(remote: CompleteContractErrorBody["error"]): ContractErrorDetails {
+  const approvalId = remote.approvalId;
+  if (typeof approvalId !== "string" || !APPROVAL_ID_PATTERN.test(approvalId)) return {};
+  const details: ContractErrorDetails = { approvalId };
+  const approvalLink = connectorConsoleLink(remote.approvalLink, `/connectors/approvals/${approvalId}`);
+  if (approvalLink) details.approvalLink = approvalLink;
+  if (remote.retryWith === `--approval ${approvalId}`) details.retryWith = remote.retryWith;
+  const expiresAt = remote.expiresAt;
+  if (
+    typeof expiresAt === "string" &&
+    expiresAt.length <= CONNECTOR_EXPIRES_AT_MAX &&
+    !hasControlCharacters(expiresAt) &&
+    Number.isFinite(Date.parse(expiresAt))
+  ) {
+    details.expiresAt = expiresAt;
+  }
+  return details;
 }
 
 /** A message, or a chat line under `detailKey` (sanitized as the envelope sanitizes that detail, links kept). */
@@ -463,8 +492,11 @@ function hasControlCharacters(value: string): boolean {
   return false;
 }
 
-/** Only the Console connectors page: https (http on localhost), no credentials, query or fragment. */
-function connectorReconnectLink(value: unknown): string | undefined {
+/**
+ * Only a Console page whose path ends with `suffix` (the connectors page, an
+ * approval page): https (http on localhost), no credentials, query or fragment.
+ */
+function connectorConsoleLink(value: unknown, suffix: string): string | undefined {
   if (typeof value !== "string" || value.length > 512) return undefined;
   let url: URL;
   try {
@@ -479,7 +511,8 @@ function connectorReconnectLink(value: unknown): string | undefined {
     url.password ||
     url.search ||
     url.hash ||
-    !/^(?:\/[A-Za-z0-9._-]+)*\/connectors$/.test(url.pathname)
+    !url.pathname.endsWith(suffix) ||
+    !/^(?:\/[A-Za-z0-9._-]+)*$/.test(url.pathname.slice(0, url.pathname.length - suffix.length))
   ) {
     return undefined;
   }

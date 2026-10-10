@@ -22,9 +22,20 @@
    `ravi connectors connect google --reconnect <id>`.
 7. `CONNECTOR_CONNECTION_REQUIRED` (exit 1): `ravi connectors connect google`.
 8. `CONNECTOR_APPROVAL_REQUIRED` / `_PENDING` (exit 3): send `error.chatLine`
-   (the `approvalLink`) to the owner privately; after they approve, run the
-   same command again with `error.retryWith` (`--approval <id>`). At the
-   operator's terminal `gmail send --execute` waits for the decision itself.
+   (the `approvalLink`) to the owner privately, never in a group; after they
+   approve, run the same command again, unchanged, with `error.retryWith`
+   (`--approval <id>`). At the operator's terminal (stdin and stdout TTYs, no
+   runtime context, no `--json`) the command opens the page and waits up to
+   10 minutes itself. If it does not wait, check `RAVI_CONTEXT_KEY` and the
+   other runtime markers in the shell.
+8a. `CONNECTOR_APPROVAL_DENIED` (exit 3): do not retry; say `error.chatLine`.
+    `CONNECTOR_APPROVAL_INVALID` (exit 1): the approval expired, was used, or
+    the command changed; run it again without `--approval`.
+8b. `CONNECTOR_TOOL_BLOCKED` / `CONNECTOR_DISABLED_BY_ORG` (exit 3) and
+    `CONNECTOR_PERMISSION_REQUIRED` (exit 1, read only or a missing scope):
+    send `error.chatLine` to the owner privately. The owner changes tool
+    rules on the connection's Tools in Console > Connectors; an organization
+    owner or admin turns Google back on in /org/connectors.
 9. `CONNECTOR_AUTH_REJECTED` after connect: the link was opened by another
    Console user, or the organization does not allow the connector. Start
    again and open the link signed in as the user of `ravi login`.
@@ -57,4 +68,12 @@ ravi connectors connect google --no-open --json      # expect one started docume
 ```
 
 From an agent turn in a group chat, `ravi gmail list --json` must exit 3 with
-`CONNECTOR_GROUP_BLOCKED`.
+`CONNECTOR_GROUP_BLOCKED`. With "Send email" on Needs approval,
+`ravi gmail send ... --execute --json` must exit 3 `CONNECTOR_APPROVAL_REQUIRED`
+with `approvalLink` and `retryWith`, and the same command without `--json` in
+your terminal must open the approval page and wait. From an agent turn in
+the owner's linked DM, the same `gmail send ... --execute --json` goes
+through the host gateway and must come back exit 3 with `approvalId`,
+`approvalLink`, `expiresAt` and `retryWith`; a 404 / `SERVER_UNAVAILABLE`
+there means the daemon runs a bundle where `gmail send` has no gateway route
+(rebuild and restart the daemon).

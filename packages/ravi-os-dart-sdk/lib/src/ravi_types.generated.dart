@@ -11260,8 +11260,9 @@ class FeedbackSendReturn {
 FeedbackSendReturn feedbackSendReturnFromJson(Object? json) => FeedbackSendReturn.fromJsonValue(json);
 
 class GmailListOptions {
-  const GmailListOptions({this.connector, this.cursor, this.label, this.max, this.q});
+  const GmailListOptions({this.approval, this.connector, this.cursor, this.label, this.max, this.q});
 
+  final String? approval;
   final String? connector;
   final String? cursor;
   final String? label;
@@ -11269,6 +11270,9 @@ class GmailListOptions {
   final String? q;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (approval != null) {
+      into["approval"] = RaviJson.from(approval);
+    }
     if (connector != null) {
       into["connector"] = RaviJson.from(connector);
     }
@@ -11310,12 +11314,16 @@ class GmailListReturn {
 GmailListReturn gmailListReturnFromJson(Object? json) => GmailListReturn.fromJsonValue(json);
 
 class GmailReadOptions {
-  const GmailReadOptions({this.connector, this.format});
+  const GmailReadOptions({this.approval, this.connector, this.format});
 
+  final String? approval;
   final String? connector;
   final String? format;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (approval != null) {
+      into["approval"] = RaviJson.from(approval);
+    }
     if (connector != null) {
       into["connector"] = RaviJson.from(connector);
     }
@@ -11346,6 +11354,76 @@ class GmailReadReturn {
 }
 
 GmailReadReturn gmailReadReturnFromJson(Object? json) => GmailReadReturn.fromJsonValue(json);
+
+class GmailSendOptions {
+  const GmailSendOptions({this.approval, this.bcc, this.body, this.cc, this.connector, this.execute, this.html, this.inReplyTo, this.subject, this.to});
+
+  final String? approval;
+  final String? bcc;
+  final String? body;
+  final String? cc;
+  final String? connector;
+  final bool? execute;
+  final String? html;
+  final String? inReplyTo;
+  final String? subject;
+  final String? to;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (approval != null) {
+      into["approval"] = RaviJson.from(approval);
+    }
+    if (bcc != null) {
+      into["bcc"] = RaviJson.from(bcc);
+    }
+    if (body != null) {
+      into["body"] = RaviJson.from(body);
+    }
+    if (cc != null) {
+      into["cc"] = RaviJson.from(cc);
+    }
+    if (connector != null) {
+      into["connector"] = RaviJson.from(connector);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (html != null) {
+      into["html"] = RaviJson.from(html);
+    }
+    if (inReplyTo != null) {
+      into["inReplyTo"] = RaviJson.from(inReplyTo);
+    }
+    if (subject != null) {
+      into["subject"] = RaviJson.from(subject);
+    }
+    if (to != null) {
+      into["to"] = RaviJson.from(to);
+    }
+  }
+}
+
+class GmailSendReturn {
+  const GmailSendReturn({required this.capability, required this.refreshed, this.result});
+
+  final String capability;
+  final bool refreshed;
+  final RaviJson? result;
+
+  factory GmailSendReturn.fromJson(Map<String, Object?> json) {
+    return GmailSendReturn(
+      capability: raviJsonAsString(json["capability"]),
+      refreshed: raviJsonAsBool(json["refreshed"]),
+      result: json["result"] == null ? null : RaviJson.from(json["result"]),
+    );
+  }
+
+  static GmailSendReturn fromJsonValue(Object? json) {
+    return GmailSendReturn.fromJson(raviJsonObject(json, "GmailSendReturn"));
+  }
+}
+
+GmailSendReturn gmailSendReturnFromJson(Object? json) => GmailSendReturn.fromJsonValue(json);
 
 class HeartbeatDisableReturn {
   const HeartbeatDisableReturn({required this.agent, required this.changedCount, required this.heartbeat, required this.heartbeatFile, required this.heartbeatFileExists, this.property, required this.status, required this.target, this.value});

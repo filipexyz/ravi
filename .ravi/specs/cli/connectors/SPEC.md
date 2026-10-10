@@ -21,6 +21,8 @@ applies_to:
   - src/link/connector-turn.ts
   - src/link/client.ts
   - src/cloud-auth/connector-auth.ts
+  - src/cloud-auth/errors.ts
+  - src/link/open-external.ts
   - src/cli/agent-contract.ts
   - src/cli/cloud-error-contract.ts
   - src/cli/remote-gateway.ts
@@ -123,21 +125,57 @@ instead of inventing local suggestions that would require extra remote calls.
    - approval (`CONNECTOR_APPROVAL_REQUIRED` / `_PENDING`): "Please approve
      this Gmail action: <console>/connectors/approvals/<id>" / "Aprove esta
      ação do Gmail: <link>", `replyTo: owner_privately`, plus `approvalId`,
-     `approvalLink`, `expiresAt` and `retryWith: "--approval <id>"`.
+     `approvalLink`, `expiresAt` and `retryWith: "--approval <id>"`. The
+     message tells the agent to send the link to the owner privately, never
+     in a group, and to re-run the same command with `--approval <id>` after
+     the owner approves.
+   - Link answers the person can act on are rebuilt locally the same way
+     (the service is named from the capability: `gmail.*` Gmail, `gcal.*`
+     Google Calendar):
+     - `CONNECTOR_APPROVAL_DENIED`: "Okay, I didn't do it: the approval was
+       declined." / "Certo, não fiz: a aprovação foi recusada.",
+       `replyTo: same_chat`, and the message says not to run it again;
+     - `CONNECTOR_APPROVAL_INVALID`: no chat line; the message says to run
+       the same command again without `--approval` to ask for a new one;
+     - `CONNECTOR_TOOL_BLOCKED`: "I can't do that: this Gmail action is
+       blocked in your Ravi Console settings. You can review it under
+       Connectors: <console>/connectors", `replyTo: owner_privately`,
+       `reconnectLink` = the Connectors page, and the message says not to
+       retry with another flag or connection;
+     - `CONNECTOR_DISABLED_BY_ORG` (exec, or the Console connect start):
+       "Your organization turned off Google connections in Ravi Console. An
+       organization owner or admin can turn them back on.",
+       `replyTo: owner_privately`;
+     - `CONNECTOR_PERMISSION_REQUIRED` (Link `connector_permission_required`;
+       the answer keeps only `accessMode: "read_only"`): read only → "Your
+       Gmail connection is read only, so I can't do that. To allow it, choose
+       Allow writing in Ravi Console: <console>/connectors"; otherwise "Your
+       Gmail connection is missing a permission this needs. Reconnect it in
+       Ravi Console: <console>/connectors"; `replyTo: owner_privately`,
+       `reconnectLink`.
+     At the operator's terminal a denial or an expired/used approval carries
+     no chat line: the operator decided it themselves.
 5. These local messages and detail keys (`chatLine`, `chatLinePt`, `replyTo`,
    `reconnectLink`, `approvalId`, `approvalLink`, `expiresAt`, `retryWith`)
    reach the public envelope only for errors built locally
    (`details.source == "connector-turn"`). Link and Console errors with the
    same codes keep the fixed catalog copy. Human output prints the chat line
-   when the message does not quote it.
+   when the message does not quote it. Detail keys never end in `url`: the
+   public sanitizer cuts such values to their origin, so the approval page
+   travels as `approvalLink` (the Worker's `approvalUrl` is never kept).
 5a. The host-gateway relay (child CLIs with `RAVI_CONTEXT_KEY`) keeps that
    copy for `gmail *` and `connectors *`: a `CONNECTOR_*` error that carries a
    chat line keeps its sanitized message (at most 1200 characters, no control
    characters), `chatLine`/`chatLinePt` (at most 300), `replyTo` (only
    `same_chat` or `owner_privately`) and `reconnectLink` (only a Console
    `/connectors` page over https, or http on localhost, with no credentials,
-   query or fragment). Other cloud codes on those commands take the local
-   catalog message and next step; nothing else of the remote body is kept.
+   query or fragment). An approval answer also keeps `approvalId` (only one
+   matching `[A-Za-z0-9_-]{1,128}`), `approvalLink` (only that id's Console
+   `/connectors/approvals/<id>` page, under the same link rules),
+   `retryWith` (only exactly `--approval <id>`) and `expiresAt` (only a
+   parseable date, at most 64 characters). Other cloud codes on those
+   commands take the local catalog message and next step; nothing else of
+   the remote body is kept.
 6. `connect`, `list`, `show`, `revoke` follow the same table: no contact can
    connect, list, show or revoke the owner's accounts. The "dono" permission
    tag is not identity.
@@ -181,18 +219,38 @@ instead of inventing local suggestions that would require extra remote calls.
     `CONNECTOR_CONNECTION_REQUIRED`.
 
 12a. Approvals. A Link `connector_approval_required` or
-    `connector_approval_pending` answer keeps only `approvalId`
+    `connector_approval_pending` answer (409) keeps only `approvalId`
     (`[A-Za-z0-9_-]{1,128}`), `expiresAt` and a short `reason`; the approval
     page is rebuilt as `<console>/connectors/approvals/<id>` from the Console
-    of the active login, never taken from Link. `gmail send --approval <id>`
-    sends `X-Ravi-Approval: <id>`. At the operator's terminal (a TTY, no
-    runtime context, no `--json`) `gmail send --execute` prints the page,
-    opens the browser, polls `GET /cli/approvals/:id` every 2 s for up to 10
-    minutes and, once approved, sends again with the header; a denial exits 3
-    `CONNECTOR_APPROVAL_DENIED`, an expired or used approval exits 1
-    `CONNECTOR_APPROVAL_INVALID`, and a timeout returns the approval answer.
-    Anywhere else the approval answer exits 3 with the details of
-    invariant 4.
+    of the active login, never taken from Link. `--approval <id>` on
+    `gmail send`, `gmail list` and `gmail read` sends `X-Ravi-Approval: <id>`
+    (a read tool the owner set to Needs approval asks the same way); a value
+    outside the id pattern fails `PAYLOAD_INVALID` before any call. Every
+    gmail exec goes through `execCapabilityWithApproval`
+    (`src/link/connectors.ts`):
+    - At the operator's terminal (stdin and stdout are TTYs, no runtime
+      context as defined by invariant 1, no `--json`), a required or pending
+      approval prints the page on stderr, opens the browser with the same
+      helper as `ravi login` (`src/link/open-external.ts`, best effort),
+      polls `GET /cli/approvals/:id` every 2 s for up to 10 minutes and, once
+      `approved`, runs the same exec (same body) once more with the header.
+      Poll answers: `denied` → exit 3 `CONNECTOR_APPROVAL_DENIED`; `expired`,
+      `consumed`, an unknown status, or a 404 → exit 1
+      `CONNECTOR_APPROVAL_INVALID`; a retryable failure (5xx, 429) keeps
+      waiting; an expired bearer is refreshed once; after 10 minutes the
+      approval answer is returned (exit 3).
+    - Anywhere else the approval answer exits 3 with the details of
+      invariant 4 and is not polled.
+    - A step-up challenge (Link `connector_stepup_required`) on `gmail send`
+      is answered at the operator's own terminal only, and the step-up retry
+      keeps the approval header: the Worker asks for the step-up before it
+      consumes the approval, so the owner approves once. In a runtime turn
+      (an agent, the gateway) the step-up never opens a browser or reads
+      stdin: the command exits 3 `INTERACTIVE_ONLY`.
+    - A re-run with `--approval` that Link answers with
+      `connector_approval_denied` (403) exits 3, with
+      `connector_approval_invalid` (400) exits 1, with the copy of
+      invariant 4.
 
 ### Cron owner
 
@@ -260,6 +318,8 @@ instead of inventing local suggestions that would require extra remote calls.
 | person asking is not linked (phase 3) | `CONNECTOR_NOT_LINKED` | 3 |
 | no connection for the provider | `CONNECTOR_CONNECTION_REQUIRED` | 1 |
 | connection must be reconnected | `CONNECTOR_REAUTH_REQUIRED` | 1 |
+| connection is read only, or misses a provider permission (Link `connector_permission_required`) | `CONNECTOR_PERMISSION_REQUIRED` | 1 |
+| tool policy above the organization's limit (Link `connector_policy_above_ceiling`, Console only) | `CONNECTOR_POLICY_ABOVE_CEILING` | 1 |
 | only the connection's owner may do that | `CONNECTOR_FORBIDDEN` | 1 |
 | authorization expires before completion | `CONNECTOR_AUTH_EXPIRED` | 1 |
 | authorization is rejected (for example opened by another user) | `CONNECTOR_AUTH_REJECTED` | 1 |
@@ -269,12 +329,23 @@ instead of inventing local suggestions that would require extra remote calls.
 
 ## Internal consumers
 
-`gmail` wraps `execCapability`, `listConnectors` and `waitForConnectorApproval`
-from `src/link/connectors.ts`; it consumes the helpers, not the braked
-`revoke`. `gmail send` is CLI-only, so the approval flow runs in the local
-CLI, not over the gateway. There is no shipped
-`connectors` skill — lacuna registrada; the CLI `--help`, docs page
-`console/connectors` and this spec are the teaching surface.
+`gmail` wraps `execCapabilityWithApproval` and `listConnectors` from
+`src/link/connectors.ts`; it consumes the helpers, not the braked `revoke`.
+`gmail list`, `gmail read` and `gmail send` all have gateway routes: every
+agent turn carries `RAVI_CONTEXT_KEY` and so runs its commands through the
+host gateway, and an agent must be able to reach `gmail send` to get the
+approval answer and re-run with `--approval <id>`. `gmail send` keeps its
+`--execute` brake there. A gateway turn is never the operator's terminal, so
+an approval answer is returned (exit 3), and the relay keeps its message,
+chat line and approval keys (invariant 5a).
+
+The shipped `connectors` skill (`ravi skills show connectors`) teaches agents
+who may use a connection, the `CONNECTOR_*` codes with what to say, and the
+approval loop. The Calendar tools (`gcal.event.list`, `gcal.freebusy.query`)
+have no `ravi` command yet. The docs page `console/connectors` and the skill
+name them and point to the connection's Tools in the Console; they do not
+point to `connectors show`, whose `capabilities` list is whatever Link stores
+for the row (empty for connections made with the current connect flow).
 
 ## Validation
 
@@ -284,7 +355,9 @@ CLI, not over the gateway. There is no shipped
   test` runs `src/link/` and `src/runtime/turn-origin.test.ts`.
 - `bun test src/cli/commands/connectors.test.ts src/cli/commands/gmail.test.ts src/cli/commands/mail.test.ts src/cloud-auth/errors.test.ts src/cli/remote-gateway.test.ts`
   green (contract describes, `--project` warning, flags, error mapping,
-  default connection, gateway relay).
+  default connection, gateway relay, the terminal check of the approval
+  wait). The approval flow itself runs against a fake Worker (the real
+  `LinkApiClient` over a fake fetch) in `src/link/connectors.test.ts`.
 - `bun test src/cron/ src/cli/commands/cron-commands.test.ts src/router/router.test.ts`
   green (cron owner, shell cron marker, idempotency).
 - `bun run typecheck` clean.

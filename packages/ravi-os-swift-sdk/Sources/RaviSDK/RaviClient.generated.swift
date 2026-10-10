@@ -2679,6 +2679,12 @@ public struct GmailNamespace: Sendable {
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["gmail"], command: "read", body: requestBody, as: GmailReadReturn.self)
   }
+
+  public func send(_ options: GmailSendOptions = .init()) async throws -> GmailSendReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["gmail"], command: "send", body: requestBody, as: GmailSendReturn.self)
+  }
 }
 
 public struct HeartbeatNamespace: Sendable {

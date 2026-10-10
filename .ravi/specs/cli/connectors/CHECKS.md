@@ -60,6 +60,14 @@
   MUST keep the local message, `chatLine`, `chatLinePt`, `replyTo` and a
   Console `/connectors` `reconnectLink`; any other reconnect link or reply
   target MUST be dropped, and other commands MUST NOT carry chat lines.
+- Over the host gateway, a `CONNECTOR_APPROVAL_REQUIRED` or `_PENDING`
+  answer MUST keep `approvalId`, `approvalLink`, `retryWith` and
+  `expiresAt`; an approval link that is not the Console page of that id, a
+  `retryWith` other than `--approval <id>`, an unparseable `expiresAt` or a
+  malformed id MUST be dropped.
+- `gmail send` MUST have a gateway route (`/api/v1/gmail/send`): an agent
+  turn sent through a real host gateway with `--execute` MUST come back exit
+  3 `CONNECTOR_APPROVAL_REQUIRED` with the approval keys above, never a 404.
 
 ### Calls
 
@@ -73,11 +81,42 @@
   contain no `[REDACTED` marker and human output MUST print the chat line.
 - A Link approval answer MUST keep only `approvalId`, `expiresAt` and
   `reason`, and exec MUST turn it into an exit-3 error with `approvalLink`
-  (`<console>/connectors/approvals/<id>` from the active login),
-  `retryWith: "--approval <id>"` and the private chat line.
-  `gmail send --approval <id>` MUST send `X-Ravi-Approval`; the approval poll
-  MUST wait 2 s between polls and report approved, denied, expired and
-  timeout.
+  (`<console>/connectors/approvals/<id>` from the active login, never the
+  Worker's `approvalUrl`), `expiresAt`, `retryWith: "--approval <id>"` and
+  the private chat line; the message MUST say "never in a group" and name
+  `--approval <id>`.
+- `gmail send|list|read --approval <id>` MUST send `X-Ravi-Approval`; a
+  malformed id MUST fail `PAYLOAD_INVALID` before any call.
+- Against a fake Worker: at the operator's terminal a 409 approval answer
+  MUST open the Console page, poll `GET /cli/approvals/:id` with 2 s between
+  polls and, once `approved`, send the same body once more with the header; a
+  re-run whose approval is still pending MUST wait the same way. `denied`
+  while waiting MUST exit 3 `CONNECTOR_APPROVAL_DENIED` with no second exec;
+  `expired`, `consumed` or a 404 MUST exit 1 `CONNECTOR_APPROVAL_INVALID`
+  with no second exec; a 503 while waiting MUST keep waiting; a 401 while
+  waiting MUST re-authenticate once and keep polling, and a second 401 in a
+  row MUST fail `AUTH_EXPIRED` after exactly two polls with no sleep between
+  them; 10 minutes without a decision MUST return the approval answer
+  (exit 3).
+- Against a fake Worker, an approved action that then asks for a step-up
+  MUST send the step-up retry with both `X-Ravi-Approval` and the step-up
+  token, and MUST NOT ask for a second approval. In a runtime turn the
+  step-up MUST exit 3 `INTERACTIVE_ONLY` without opening a browser or
+  reading stdin.
+- Outside the operator's terminal (stdin or stdout not a TTY, a runtime
+  context, or `--json`) the approval answer MUST exit 3 without polling.
+- Link `connector_approval_denied` MUST exit 3 with the "Okay, I didn't do
+  it" line; `connector_approval_invalid` MUST exit 1 and say to run again
+  without `--approval`; `connector_tool_blocked` and
+  `connector_disabled_by_org` MUST exit 3 with a line for the owner, sent
+  privately; `connector_permission_required` with `accessMode: read_only`
+  MUST exit 1 `CONNECTOR_PERMISSION_REQUIRED` and point to Allow writing.
+- Every Worker code of the connectors contract (`connector_group_blocked`,
+  `_speaker_not_owner`, `_disabled_by_org`, `_tool_blocked`,
+  `_approval_required|pending|denied|invalid`, `_consent_required`,
+  `_not_linked`, `_connection_required`, `_policy_above_ceiling`,
+  `_forbidden`) MUST map to its uppercase CLI code with the exit of the
+  official error table.
 - `connectors connect` MUST call `POST /api/cli/connectors/connect/start` on
   the Console with the bearer and MUST NOT call Link to start. The body MUST
   omit unset keys; `--read-only` → `accessMode: "read_only"`,

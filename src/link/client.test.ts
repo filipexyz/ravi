@@ -96,6 +96,55 @@ describe("LinkApiClient", () => {
     expect(error.details).toBeUndefined();
   });
 
+  test("keeps only the read-only flag of a permission answer", async () => {
+    const answer = (body: Record<string, unknown>) =>
+      new LinkApiClient({
+        fetch: mockFetch(async () => new Response(JSON.stringify(body), { status: 403 })),
+      })
+        .request("POST", "/cli/exec/abc", "tok", {})
+        .catch((e) => e) as Promise<CloudAuthError>;
+
+    const readOnly = await answer({ error: "connector_permission_required", accessMode: "read_only", requestId: "r" });
+    expect(readOnly.code).toBe("CONNECTOR_PERMISSION_REQUIRED");
+    expect(readOnly.details).toEqual({ accessMode: "read_only" });
+
+    const missing = await answer({ error: "connector_permission_required", missingScopes: ["gmail.send"] });
+    expect(missing.code).toBe("CONNECTOR_PERMISSION_REQUIRED");
+    expect(missing.details).toBeUndefined();
+  });
+
+  test("maps the Worker's policy answers to their CLI codes", async () => {
+    const cases: Array<[number, string, string]> = [
+      [403, "connector_group_blocked", "CONNECTOR_GROUP_BLOCKED"],
+      [403, "connector_speaker_not_owner", "CONNECTOR_SPEAKER_NOT_OWNER"],
+      [403, "connector_disabled_by_org", "CONNECTOR_DISABLED_BY_ORG"],
+      [403, "connector_tool_blocked", "CONNECTOR_TOOL_BLOCKED"],
+      [409, "connector_approval_required", "CONNECTOR_APPROVAL_REQUIRED"],
+      [409, "connector_approval_pending", "CONNECTOR_APPROVAL_PENDING"],
+      [403, "connector_approval_denied", "CONNECTOR_APPROVAL_DENIED"],
+      [400, "connector_approval_invalid", "CONNECTOR_APPROVAL_INVALID"],
+      [409, "connector_consent_required", "CONNECTOR_CONSENT_REQUIRED"],
+      [403, "connector_not_linked", "CONNECTOR_NOT_LINKED"],
+      [409, "connector_connection_required", "CONNECTOR_CONNECTION_REQUIRED"],
+      [409, "connector_policy_above_ceiling", "CONNECTOR_POLICY_ABOVE_CEILING"],
+      [403, "connector_forbidden", "CONNECTOR_FORBIDDEN"],
+    ];
+    for (const [status, workerCode, cliCode] of cases) {
+      const client = new LinkApiClient({
+        fetch: mockFetch(
+          async () => new Response(JSON.stringify({ error: workerCode, requestId: "req_1" }), { status }),
+        ),
+      });
+      const error = (await client.request("POST", "/cli/exec/abc", "tok", {}).catch((e) => e)) as CloudAuthError;
+      const seen: { workerCode: string; code: string; status?: number } = {
+        workerCode,
+        code: error.code,
+        status: error.status,
+      };
+      expect(seen).toEqual({ workerCode, code: cliCode, status });
+    }
+  });
+
   test("wraps network errors as SERVER_UNAVAILABLE", async () => {
     const client = new LinkApiClient({
       fetch: mockFetch(async () => {

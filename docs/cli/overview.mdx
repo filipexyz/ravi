@@ -57,7 +57,7 @@ ravi skills show pages --file references/<file> --raw > out.txt   # copy a file 
 | `0` | Success. |
 | `1` | The command ran and failed: not found, provider error, permission denied. |
 | `2` | Usage error or refused input: unknown flag, bad argument, or a combination the command refuses. The JSON error lists the accepted flags. |
-| `3` | Dry-run. A braked command printed its plan and wrote nothing. Not an error. |
+| `3` | Blocked by policy, not an error. Usually a dry-run: a braked command printed its plan and wrote nothing. `connectors` and `gmail` also exit `3` when a rule stops the call, for example a write waiting for the account owner's approval. |
 
 ### Braked vs immediate
 
@@ -100,7 +100,7 @@ ravi bases list --project <ref>                 # one-off override
 
 `ravi cloud scope set` also takes `--agent`, `--session` or `--workspace` instead of `--global`. See [Log in to the Console](/console/login).
 
-`connectors` and `gmail` do not use a project: a connection belongs to the person who connected it. `--project` on `connectors` is ignored with a warning. See [Connect your accounts](/console/connectors).
+`connectors` and `gmail` do not use a project: a connection belongs to the person who connected it. `--project` on `connectors` is ignored with a warning. Writes such as `ravi gmail send --execute` ask the account owner first; after they approve, the same command runs again with `--approval <id>`. See [Connect your accounts](/console/connectors).
 
 ### Who runs the command
 

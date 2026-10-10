@@ -15,11 +15,11 @@ import {
   deleteConnectorSession,
   resolveConnectorCloudCredentials,
 } from "../cloud-auth/connector-auth.js";
-import { CloudAuthError } from "../cloud-auth/errors.js";
+import { CloudAuthError, isRetryableCloudAuthError } from "../cloud-auth/errors.js";
 import { deleteCloudCredentials, readCloudCredentials, writeCloudCredentials } from "../cloud-auth/storage.js";
 import { DEFAULT_CONSOLE_URL, type CloudCredentials } from "../cloud-auth/types.js";
 
-import { APPROVAL_ID_PATTERN, LinkApiClient } from "./client.js";
+import { APPROVAL_ID_PATTERN, LinkApiClient, LinkStepUpRequiredError } from "./client.js";
 import {
   buildExecContext,
   encodeExecContextHeader,
@@ -153,17 +153,25 @@ export async function startConnect(
   deps: ConnectorHelperDeps = {},
 ): Promise<ConnectStartOutcome> {
   const ctx = await authenticate(deps);
-  const payload = await ctx.consoleClient.requestJson<unknown>(
-    "POST",
-    CONSOLE_CONNECT_START_PATH,
-    {
-      provider: options.provider,
-      ...(options.accessMode ? { accessMode: options.accessMode } : {}),
-      ...(options.reconnectConnectionId ? { reconnectConnectionId: options.reconnectConnectionId } : {}),
-      ...(options.displayName ? { displayName: options.displayName } : {}),
-    },
-    ctx.accessToken,
-  );
+  let payload: unknown;
+  try {
+    payload = await ctx.consoleClient.requestJson<unknown>(
+      "POST",
+      CONSOLE_CONNECT_START_PATH,
+      {
+        provider: options.provider,
+        ...(options.accessMode ? { accessMode: options.accessMode } : {}),
+        ...(options.reconnectConnectionId ? { reconnectConnectionId: options.reconnectConnectionId } : {}),
+        ...(options.displayName ? { displayName: options.displayName } : {}),
+      },
+      ctx.accessToken,
+    );
+  } catch (error) {
+    if (error instanceof CloudAuthError && error.code === "CONNECTOR_DISABLED_BY_ORG") {
+      throw connectorDisabledByOrgError({ ownerName: ctx.ownerName, service: "Google account", status: error.status });
+    }
+    throw error;
+  }
   const root = objectValue(payload);
   const connectUrl = stringValue(root?.connectUrl);
   const pendingGrantId = stringValue(root?.pendingGrantId);
@@ -220,15 +228,17 @@ export async function revokeConnector(id: string, deps: ConnectorHelperDeps = {}
   );
 }
 
+export interface ExecCapabilityOptions {
+  connectorId: string;
+  capability: string;
+  parameters: unknown;
+  stepUpToken?: string;
+  /** The owner's approval of this exact action, from an earlier approval answer. */
+  approvalId?: string;
+}
+
 export async function execCapability(
-  options: {
-    connectorId: string;
-    capability: string;
-    parameters: unknown;
-    stepUpToken?: string;
-    /** The owner's approval of this exact action, from an earlier approval answer. */
-    approvalId?: string;
-  },
+  options: ExecCapabilityOptions,
   deps: ConnectorHelperDeps = {},
 ): Promise<ExecResult> {
   const ctx = await authenticate(deps);
@@ -249,18 +259,139 @@ export async function execCapability(
       { headers },
     );
   } catch (error) {
-    if (error instanceof CloudAuthError && error.code === "CONNECTOR_REAUTH_REQUIRED") {
-      throw connectorReconnectError({ consoleUrl: ctx.consoleUrl, ownerName: ctx.ownerName, status: error.status });
+    throw connectorAnswerError(error, {
+      consoleUrl: ctx.consoleUrl,
+      ownerName: ctx.ownerName,
+      service: serviceForCapability(options.capability),
+      approvalId: options.approvalId,
+    });
+  }
+}
+
+export interface ApprovalWaitOptions {
+  intervalMs?: number;
+  timeoutMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+  now?: () => number;
+}
+
+/** The operator's own terminal, where an approval can be waited for. */
+export interface TerminalApprovalOptions extends ApprovalWaitOptions {
+  /** Opens a page in the operator's browser (best effort). */
+  openExternal?: (url: string) => Promise<void> | void;
+  /** Progress lines for the operator; stderr by default. */
+  log?: (line: string) => void;
+}
+
+/**
+ * Answers a step-up challenge with the code from the browser, or null to
+ * cancel. Without one, the challenge is thrown as it came.
+ */
+export type StepUpHandler = (challenge: LinkStepUpRequiredError["details"]) => Promise<string | null>;
+
+/**
+ * Run a capability; when the owner must approve it first and `terminal` is
+ * given (the operator's own terminal), print the approval page, open it,
+ * wait for the decision and run the same action once more with the
+ * approval. Without `terminal` the approval answer is thrown (exit 3) with
+ * the link to send the owner and the `--approval <id>` to re-run with.
+ * A step-up challenge on the way is answered through `stepUp`, and the
+ * retry keeps the approval: the Worker asks for the step-up before it
+ * consumes the approval.
+ */
+export async function execCapabilityWithApproval(
+  options: ExecCapabilityOptions,
+  deps: ConnectorHelperDeps = {},
+  terminal: TerminalApprovalOptions | null = null,
+  stepUp: StepUpHandler | null = null,
+): Promise<ExecResult> {
+  try {
+    return await execCapabilityWithStepUp(options, deps, stepUp);
+  } catch (error) {
+    if (!terminal || !(error instanceof CloudAuthError) || !isApprovalAnswer(error)) throw error;
+    const approvalId = stringValue(error.details?.approvalId);
+    const approvalLink = stringValue(error.details?.approvalLink);
+    if (!approvalId || !approvalLink) throw error;
+    const log = terminal.log ?? ((line: string) => console.error(line));
+    const service = serviceForCapability(options.capability);
+    log(`This ${service} action needs your approval in Ravi Console.`);
+    log(`Open: ${approvalLink}`);
+    log("Waiting for your decision (up to 10 minutes)...");
+    try {
+      await terminal.openExternal?.(approvalLink);
+    } catch {
+      // Best-effort browser open: the link is printed above.
     }
-    if (error instanceof CloudAuthError && isApprovalAnswer(error)) {
-      throw connectorApprovalError(error, { consoleUrl: ctx.consoleUrl, ownerName: ctx.ownerName });
+    const outcome = await waitForConnectorApproval(approvalId, deps, terminal);
+    switch (outcome) {
+      case "approved":
+        log("Approved. Running it now.");
+        return execCapabilityWithStepUp({ ...options, approvalId }, deps, stepUp);
+      case "denied":
+        throw connectorApprovalDeniedError({ service, atTerminal: true });
+      case "expired":
+      case "used":
+      case "invalid":
+        throw connectorApprovalInvalidError({ approvalId, service, reason: outcome, atTerminal: true });
+      case "timeout":
+        log("No decision after 10 minutes.");
+        throw error;
     }
-    throw error;
+  }
+}
+
+async function execCapabilityWithStepUp(
+  options: ExecCapabilityOptions,
+  deps: ConnectorHelperDeps,
+  stepUp: StepUpHandler | null,
+): Promise<ExecResult> {
+  try {
+    return await execCapability(options, deps);
+  } catch (error) {
+    if (!stepUp || !(error instanceof LinkStepUpRequiredError)) throw error;
+    const token = await stepUp(error.details);
+    if (!token) throw new Error("Step-up cancelled.");
+    return execCapability({ ...options, stepUpToken: token }, deps);
   }
 }
 
 function isApprovalAnswer(error: CloudAuthError): boolean {
   return error.code === "CONNECTOR_APPROVAL_REQUIRED" || error.code === "CONNECTOR_APPROVAL_PENDING";
+}
+
+/**
+ * A Link or Console answer that tells the agent what to say: the connector
+ * codes the person can act on get local copy (`source: "connector-turn"`)
+ * with the line to send. Anything else is returned as it came.
+ */
+export function connectorAnswerError(
+  error: unknown,
+  input: { consoleUrl?: string | null; ownerName?: string | null; service?: string; approvalId?: string } = {},
+): unknown {
+  if (!(error instanceof CloudAuthError)) return error;
+  switch (error.code) {
+    case "CONNECTOR_REAUTH_REQUIRED":
+      return connectorReconnectError({ ...input, status: error.status });
+    case "CONNECTOR_APPROVAL_REQUIRED":
+    case "CONNECTOR_APPROVAL_PENDING":
+      return connectorApprovalError(error, input);
+    case "CONNECTOR_APPROVAL_DENIED":
+      return connectorApprovalDeniedError({ ...input, status: error.status });
+    case "CONNECTOR_APPROVAL_INVALID":
+      return connectorApprovalInvalidError({ ...input, reason: "mismatch", status: error.status });
+    case "CONNECTOR_TOOL_BLOCKED":
+      return connectorToolBlockedError({ ...input, status: error.status });
+    case "CONNECTOR_DISABLED_BY_ORG":
+      return connectorDisabledByOrgError({ ...input, status: error.status });
+    case "CONNECTOR_PERMISSION_REQUIRED":
+      return connectorPermissionError({
+        ...input,
+        status: error.status,
+        readOnly: error.details?.accessMode === "read_only",
+      });
+    default:
+      return error;
+  }
 }
 
 /**
@@ -276,18 +407,18 @@ export function connectorApprovalError(
   const approvalId = stringValue(error.details?.approvalId);
   if (!approvalId || !APPROVAL_ID_PATTERN.test(approvalId)) return error;
   const service = input.service ?? "Gmail";
-  const consoleUrl = (input.consoleUrl ?? readActiveConsoleUrl()).replace(/\/+$/, "");
+  const consoleUrl = consoleBase(input.consoleUrl);
   const approvalLink = `${consoleUrl}/connectors/approvals/${approvalId}`;
   const ownerName = stringValue(input.ownerName);
   const retryWith = `--approval ${approvalId}`;
   const chatLine = `Please approve this ${service} action: ${approvalLink}`;
   const chatLinePt = `Aprove esta ação do ${service}: ${approvalLink}`;
-  const quotedLine = `Please approve this ${service} action: ${approvalLink.replace(/^[a-z]+:\/\//i, "")}`;
+  const quotedLine = `Please approve this ${service} action: ${withoutScheme(approvalLink)}`;
   const expiresAt = stringValue(error.details?.expiresAt);
   const message =
     error.code === "CONNECTOR_APPROVAL_PENDING"
-      ? `The approval for this ${service} action is still waiting for ${ownerName ?? "the account owner"}. Once they approve, run the same command again with ${retryWith}.`
-      : `${ownerName ?? "The account owner"} must approve this ${service} action first. Tell them privately, never in a group: "${quotedLine}", then run the same command again with ${retryWith} once they approve.`;
+      ? `The approval for this ${service} action is still waiting for ${ownerName ?? "the account owner"}. Once they approve, run the same command again with ${retryWith}. If they have not seen it, send them the link again privately, never in a group: "${quotedLine}"`
+      : `${ownerName ?? "The account owner"} must approve this ${service} action first. Send them the link privately, never in a group: "${quotedLine}", then run the same command again with ${retryWith} once they approve.`;
   return new CloudAuthError(error.code, message, {
     exitCode: 3,
     ...(error.status !== undefined ? { status: error.status } : {}),
@@ -304,33 +435,185 @@ export function connectorApprovalError(
   });
 }
 
-export type ConnectorApprovalOutcome = "approved" | "denied" | "expired" | "timeout";
+/** The owner declined the action: it is not done, and the approval is not retried. */
+export function connectorApprovalDeniedError(
+  input: { ownerName?: string | null; service?: string; status?: number; atTerminal?: boolean } = {},
+): CloudAuthError {
+  const service = input.service ?? "Gmail";
+  const owner = stringValue(input.ownerName) ?? "The account owner";
+  const options = { exitCode: 3, ...(input.status !== undefined ? { status: input.status } : {}) };
+  if (input.atTerminal) {
+    return new CloudAuthError(
+      "CONNECTOR_APPROVAL_DENIED",
+      `The approval was declined in Ravi Console, so this ${service} action was not done.`,
+      { ...options, details: { source: "connector-turn" } },
+    );
+  }
+  const chatLine = "Okay, I didn't do it: the approval was declined.";
+  const chatLinePt = "Certo, não fiz: a aprovação foi recusada.";
+  return new CloudAuthError(
+    "CONNECTOR_APPROVAL_DENIED",
+    `${owner} declined this ${service} action in Ravi Console, so it was not done. Do not run it again with this approval. Reply: "${chatLine}"`,
+    { ...options, details: { source: "connector-turn", chatLine, chatLinePt, replyTo: "same_chat" } },
+  );
+}
+
+/**
+ * The approval does not cover this action any more (it expired, was used, or
+ * the command changed). A new run without `--approval` asks again.
+ */
+export function connectorApprovalInvalidError(
+  input: {
+    approvalId?: string;
+    ownerName?: string | null;
+    service?: string;
+    status?: number;
+    reason?: "expired" | "used" | "invalid" | "mismatch";
+    atTerminal?: boolean;
+  } = {},
+): CloudAuthError {
+  const service = input.service ?? "Gmail";
+  const owner = stringValue(input.ownerName) ?? "the account owner";
+  const approval =
+    input.approvalId && APPROVAL_ID_PATTERN.test(input.approvalId)
+      ? `The approval ${input.approvalId}`
+      : "The approval";
+  const why =
+    input.reason === "expired"
+      ? `expired before it was decided`
+      : input.reason === "used"
+        ? "was already used"
+        : "does not cover this action: it expired, was already used, or the command changed";
+  const next = input.atTerminal
+    ? "Run the same command again to ask for a new approval."
+    : `Run the same command again without --approval to ask ${owner} for a new approval.`;
+  return new CloudAuthError(
+    "CONNECTOR_APPROVAL_INVALID",
+    `${approval} ${why}, so this ${service} action was not done. ${next}`,
+    {
+      exitCode: 1,
+      ...(input.status !== undefined ? { status: input.status } : {}),
+      details: { source: "connector-turn" },
+    },
+  );
+}
+
+/** The owner or the organization blocked this tool in the Console. */
+export function connectorToolBlockedError(
+  input: { consoleUrl?: string | null; ownerName?: string | null; service?: string; status?: number } = {},
+): CloudAuthError {
+  const service = input.service ?? "Gmail";
+  const link = `${consoleBase(input.consoleUrl)}/connectors`;
+  const owner = stringValue(input.ownerName) ?? "the account owner";
+  const chatLine = `I can't do that: this ${service} action is blocked in your Ravi Console settings. You can review it under Connectors: ${link}`;
+  const chatLinePt = `Não posso fazer isso: esta ação do ${service} está bloqueada nas suas configurações do Ravi Console. Você pode revisar em Connectors: ${link}`;
+  return new CloudAuthError(
+    "CONNECTOR_TOOL_BLOCKED",
+    `This ${service} action is blocked in Ravi Console, by ${owner} or by the organization, so it was not run. Do not retry it with another flag or connection. Tell ${owner} privately: "${chatLine.replace(link, withoutScheme(link))}"`,
+    {
+      exitCode: 3,
+      ...(input.status !== undefined ? { status: input.status } : {}),
+      details: { source: "connector-turn", chatLine, chatLinePt, replyTo: "owner_privately", reconnectLink: link },
+    },
+  );
+}
+
+/** The organization turned the provider off: only an organization owner or admin can turn it back on. */
+export function connectorDisabledByOrgError(
+  input: { ownerName?: string | null; service?: string; status?: number } = {},
+): CloudAuthError {
+  const owner = stringValue(input.ownerName) ?? "the account owner";
+  const service = input.service ?? "Gmail";
+  const chatLine =
+    "Your organization turned off Google connections in Ravi Console. An organization owner or admin can turn them back on.";
+  const chatLinePt =
+    "Sua organização desligou as conexões do Google no Ravi Console. Um dono ou admin da organização pode religar.";
+  return new CloudAuthError(
+    "CONNECTOR_DISABLED_BY_ORG",
+    `The organization turned off Google connections in Ravi Console, so ${owner}'s ${service} cannot be used. Do not retry. Tell ${owner} privately: "${chatLine}"`,
+    {
+      exitCode: 3,
+      ...(input.status !== undefined ? { status: input.status } : {}),
+      details: { source: "connector-turn", chatLine, chatLinePt, replyTo: "owner_privately" },
+    },
+  );
+}
+
+/** The connection is read only, or misses a permission the action needs. */
+export function connectorPermissionError(
+  input: {
+    consoleUrl?: string | null;
+    ownerName?: string | null;
+    service?: string;
+    status?: number;
+    readOnly?: boolean;
+  } = {},
+): CloudAuthError {
+  const service = input.service ?? "Gmail";
+  const link = `${consoleBase(input.consoleUrl)}/connectors`;
+  const owner = stringValue(input.ownerName) ?? "the account owner";
+  const chatLine = input.readOnly
+    ? `Your ${service} connection is read only, so I can't do that. To allow it, choose Allow writing in Ravi Console: ${link}`
+    : `Your ${service} connection is missing a permission this needs. Reconnect it in Ravi Console: ${link}`;
+  const chatLinePt = input.readOnly
+    ? `Sua conexão do ${service} é só leitura, então não posso fazer isso. Para permitir, escolha Allow writing no Ravi Console: ${link}`
+    : `Falta uma permissão na sua conexão do ${service} para isso. Reconecte no Ravi Console: ${link}`;
+  const why = input.readOnly ? "is read only" : "is missing a permission this action needs";
+  return new CloudAuthError(
+    "CONNECTOR_PERMISSION_REQUIRED",
+    `${owner === "the account owner" ? "The" : `${owner}'s`} ${service} connection ${why}, so it was not run. Do not retry as is. Tell ${owner} privately: "${chatLine.replace(link, withoutScheme(link))}"`,
+    {
+      ...(input.status !== undefined ? { status: input.status } : {}),
+      details: { source: "connector-turn", chatLine, chatLinePt, replyTo: "owner_privately", reconnectLink: link },
+    },
+  );
+}
+
+export type ConnectorApprovalOutcome = "approved" | "denied" | "expired" | "used" | "invalid" | "timeout";
 
 /**
  * Wait at the operator's terminal for the owner to decide on an approval:
- * poll `GET /cli/approvals/:id` every 2 s, up to 10 minutes.
+ * poll `GET /cli/approvals/:id` every 2 s, up to 10 minutes. A passing outage
+ * keeps waiting; an approval Link does not know for this user is `invalid`.
  */
 export async function waitForConnectorApproval(
   approvalId: string,
   deps: ConnectorHelperDeps = {},
-  options: { intervalMs?: number; timeoutMs?: number; sleep?: (ms: number) => Promise<void>; now?: () => number } = {},
+  options: ApprovalWaitOptions = {},
 ): Promise<ConnectorApprovalOutcome> {
-  if (!APPROVAL_ID_PATTERN.test(approvalId)) return "expired";
+  if (!APPROVAL_ID_PATTERN.test(approvalId)) return "invalid";
   const intervalMs = options.intervalMs ?? 2_000;
   const now = options.now ?? Date.now;
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const deadline = now() + (options.timeoutMs ?? 10 * 60_000);
-  const ctx = await authenticate(deps);
+  let ctx = await authenticate(deps);
+  let refreshed = false;
   for (;;) {
-    const answer = await ctx.link.request<{ status?: unknown }>(
-      "GET",
-      `/cli/approvals/${encodeURIComponent(approvalId)}`,
-      ctx.accessToken,
-    );
-    const status = objectValue(answer)?.status;
+    let status: unknown = "pending";
+    try {
+      const answer = await ctx.link.request<{ status?: unknown }>(
+        "GET",
+        `/cli/approvals/${encodeURIComponent(approvalId)}`,
+        ctx.accessToken,
+      );
+      status = objectValue(answer)?.status;
+      refreshed = false;
+    } catch (error) {
+      if (!(error instanceof CloudAuthError)) throw error;
+      if (error.code === "NOT_FOUND") return "invalid";
+      if (error.code === "AUTH_EXPIRED" && !refreshed) {
+        // The bearer expired during a long wait: refresh it once and go on.
+        ctx = await authenticate(deps);
+        refreshed = true;
+        continue;
+      }
+      if (!isRetryableCloudAuthError(error)) throw error;
+    }
     if (status === "approved") return "approved";
     if (status === "denied") return "denied";
-    if (status !== "pending") return "expired";
+    if (status === "expired") return "expired";
+    if (status === "consumed") return "used";
+    if (status !== "pending") return "invalid";
     if (now() + intervalMs > deadline) return "timeout";
     await sleep(intervalMs);
   }
@@ -368,12 +651,11 @@ export function connectorReconnectError(
   input: { consoleUrl?: string | null; ownerName?: string | null; status?: number; service?: string } = {},
 ): CloudAuthError {
   const service = input.service ?? "Gmail";
-  const consoleUrl = (input.consoleUrl ?? readActiveConsoleUrl()).replace(/\/+$/, "");
-  const reconnectLink = `${consoleUrl}/connectors`;
+  const reconnectLink = `${consoleBase(input.consoleUrl)}/connectors`;
   const owner = stringValue(input.ownerName) ?? "the account owner";
   const chatLine = `Your ${service} connection expired. Reconnect: ${reconnectLink}`;
   const chatLinePt = `Sua conexão do ${service} expirou. Reconecte: ${reconnectLink}`;
-  const quotedLine = `Your ${service} connection expired. Reconnect: ${reconnectLink.replace(/^[a-z]+:\/\//i, "")}`;
+  const quotedLine = `Your ${service} connection expired. Reconnect: ${withoutScheme(reconnectLink)}`;
   return new CloudAuthError(
     "CONNECTOR_REAUTH_REQUIRED",
     `The ${service} connection expired. Tell ${owner} privately, never in a group: "${quotedLine}"`,
@@ -382,6 +664,26 @@ export function connectorReconnectError(
       details: { source: "connector-turn", chatLine, chatLinePt, replyTo: "owner_privately", reconnectLink },
     },
   );
+}
+
+/** The service a capability acts on, for the lines the agent says. */
+export function serviceForCapability(capability: string): string {
+  if (capability.startsWith("gmail.")) return "Gmail";
+  if (capability.startsWith("gcal.")) return "Google Calendar";
+  return "Google";
+}
+
+/**
+ * The Console of the active login, without a trailing slash. Public messages
+ * lose the path of any `scheme://` URL, so lines quoted in a message use
+ * `withoutScheme`; `chatLine` and the link details keep the whole link.
+ */
+function consoleBase(consoleUrl: string | null | undefined): string {
+  return (consoleUrl ?? readActiveConsoleUrl()).replace(/\/+$/, "");
+}
+
+function withoutScheme(link: string): string {
+  return link.replace(/^[a-z]+:\/\//i, "");
 }
 
 function readActiveConsoleUrl(): string {

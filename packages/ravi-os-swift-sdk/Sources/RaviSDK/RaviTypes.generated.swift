@@ -13307,13 +13307,15 @@ public struct FeedbackSendReturn: Codable, Sendable {
 }
 
 public struct GmailListOptions: Codable, Sendable {
+  public var approval: String?
   public var connector: String?
   public var cursor: String?
   public var label: String?
   public var max: String?
   public var q: String?
 
-  public init(connector: String? = nil, cursor: String? = nil, label: String? = nil, max: String? = nil, q: String? = nil) {
+  public init(approval: String? = nil, connector: String? = nil, cursor: String? = nil, label: String? = nil, max: String? = nil, q: String? = nil) {
+    self.approval = approval
     self.connector = connector
     self.cursor = cursor
     self.label = label
@@ -13322,6 +13324,7 @@ public struct GmailListOptions: Codable, Sendable {
   }
 
   enum CodingKeys: String, CodingKey {
+    case approval = "approval"
     case connector = "connector"
     case cursor = "cursor"
     case label = "label"
@@ -13330,6 +13333,9 @@ public struct GmailListOptions: Codable, Sendable {
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.approval {
+      body["approval"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.connector {
       body["connector"] = try RaviJSON.fromEncodable(value)
     }
@@ -13367,20 +13373,26 @@ public struct GmailListReturn: Codable, Sendable {
 }
 
 public struct GmailReadOptions: Codable, Sendable {
+  public var approval: String?
   public var connector: String?
   public var format: String?
 
-  public init(connector: String? = nil, format: String? = nil) {
+  public init(approval: String? = nil, connector: String? = nil, format: String? = nil) {
+    self.approval = approval
     self.connector = connector
     self.format = format
   }
 
   enum CodingKeys: String, CodingKey {
+    case approval = "approval"
     case connector = "connector"
     case format = "format"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.approval {
+      body["approval"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.connector {
       body["connector"] = try RaviJSON.fromEncodable(value)
     }
@@ -13391,6 +13403,96 @@ public struct GmailReadOptions: Codable, Sendable {
 }
 
 public struct GmailReadReturn: Codable, Sendable {
+  public var capability: String
+  public var refreshed: Bool
+  public var result: RaviJSON?
+
+  public init(capability: String, refreshed: Bool, result: RaviJSON? = nil) {
+    self.capability = capability
+    self.refreshed = refreshed
+    self.result = result
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case capability = "capability"
+    case refreshed = "refreshed"
+    case result = "result"
+  }
+}
+
+public struct GmailSendOptions: Codable, Sendable {
+  public var approval: String?
+  public var bcc: String?
+  public var body: String?
+  public var cc: String?
+  public var connector: String?
+  public var execute: Bool?
+  public var html: String?
+  public var inReplyTo: String?
+  public var subject: String?
+  public var to: String?
+
+  public init(approval: String? = nil, bcc: String? = nil, body: String? = nil, cc: String? = nil, connector: String? = nil, execute: Bool? = nil, html: String? = nil, inReplyTo: String? = nil, subject: String? = nil, to: String? = nil) {
+    self.approval = approval
+    self.bcc = bcc
+    self.body = body
+    self.cc = cc
+    self.connector = connector
+    self.execute = execute
+    self.html = html
+    self.inReplyTo = inReplyTo
+    self.subject = subject
+    self.to = to
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case approval = "approval"
+    case bcc = "bcc"
+    case body = "body"
+    case cc = "cc"
+    case connector = "connector"
+    case execute = "execute"
+    case html = "html"
+    case inReplyTo = "inReplyTo"
+    case subject = "subject"
+    case to = "to"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.approval {
+      body["approval"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.bcc {
+      body["bcc"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.body {
+      body["body"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.cc {
+      body["cc"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.connector {
+      body["connector"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.html {
+      body["html"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.inReplyTo {
+      body["inReplyTo"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.subject {
+      body["subject"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.to {
+      body["to"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct GmailSendReturn: Codable, Sendable {
   public var capability: String
   public var refreshed: Bool
   public var result: RaviJSON?

@@ -65,6 +65,26 @@ describe("normalizeCloudAuthErrorCode", () => {
     );
     expect(normalizeCloudAuthErrorCode("connector_forbidden", "PROJECT_ACCESS_DENIED")).toBe("CONNECTOR_FORBIDDEN");
   });
+
+  it.each([
+    ["connector_group_blocked", "CONNECTOR_GROUP_BLOCKED"],
+    ["connector_speaker_not_owner", "CONNECTOR_SPEAKER_NOT_OWNER"],
+    ["connector_disabled_by_org", "CONNECTOR_DISABLED_BY_ORG"],
+    ["connector_tool_blocked", "CONNECTOR_TOOL_BLOCKED"],
+    ["connector_approval_required", "CONNECTOR_APPROVAL_REQUIRED"],
+    ["connector_approval_pending", "CONNECTOR_APPROVAL_PENDING"],
+    ["connector_approval_denied", "CONNECTOR_APPROVAL_DENIED"],
+    ["connector_approval_invalid", "CONNECTOR_APPROVAL_INVALID"],
+    ["connector_consent_required", "CONNECTOR_CONSENT_REQUIRED"],
+    ["connector_not_linked", "CONNECTOR_NOT_LINKED"],
+    ["connector_connection_required", "CONNECTOR_CONNECTION_REQUIRED"],
+    ["connector_policy_above_ceiling", "CONNECTOR_POLICY_ABOVE_CEILING"],
+    ["connector_forbidden", "CONNECTOR_FORBIDDEN"],
+    ["connector_reauth_required", "CONNECTOR_REAUTH_REQUIRED"],
+    ["connector_permission_required", "CONNECTOR_PERMISSION_REQUIRED"],
+  ] as const)("maps every Worker connector code: %s", (workerCode, cliCode) => {
+    expect(normalizeCloudAuthErrorCode(workerCode, "SERVER_UNAVAILABLE")).toBe(cliCode);
+  });
 });
 
 describe("connector error exit codes", () => {
@@ -83,6 +103,8 @@ describe("connector error exit codes", () => {
     "CONNECTOR_APPROVAL_INVALID",
     "CONNECTOR_CONNECTION_REQUIRED",
     "CONNECTOR_REAUTH_REQUIRED",
+    "CONNECTOR_PERMISSION_REQUIRED",
+    "CONNECTOR_POLICY_ABOVE_CEILING",
     "CONNECTOR_FORBIDDEN",
   ];
 
@@ -185,6 +207,12 @@ describe("cloudErrorToContractError", () => {
     ["CONNECTOR_NOT_LINKED", "The person asking is not linked to a Console user.", false],
     ["CONNECTOR_CONNECTION_REQUIRED", "The person asking has no connected account for this service.", false],
     ["CONNECTOR_REAUTH_REQUIRED", "The connection expired and must be reconnected.", false],
+    [
+      "CONNECTOR_PERMISSION_REQUIRED",
+      "The connection does not allow this action: it is read only or misses a permission.",
+      false,
+    ],
+    ["CONNECTOR_POLICY_ABOVE_CEILING", "The organization's limit for this tool does not allow that policy.", false],
     ["CONNECTOR_FORBIDDEN", "Only the owner of this connection can do that.", false],
   ] as const)("maps %s to a stable public message", (code, publicMessage, retryable) => {
     const source = new CloudAuthError(code, `PRIVATE_PROVIDER_BODY_8K2R:${code}`, { status: 429 });
