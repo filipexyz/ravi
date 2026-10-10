@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { dbCreateTagDefinition } from "../tags/tag-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { actorCanGrantRequestedPermission } from "./grantor.js";
+import { actorCanGrantRequestedPermission, setApprovalGrantorRouterConfigForTest } from "./grantor.js";
 import {
   APPROVAL_TEST_FAMILY_PHONE,
   APPROVAL_TEST_LEAD_PHONE,
@@ -17,11 +17,13 @@ let stateDir: string | null = null;
 describe("approval grantor", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-approval-grantor-");
+    setApprovalGrantorRouterConfigForTest(() => ({ instances: {}, instanceToAccount: {} }));
   });
 
   afterEach(async () => {
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+    setApprovalGrantorRouterConfigForTest();
   });
 
   it("fails closed without an actor or resolvable identity", () => {
@@ -84,6 +86,83 @@ describe("approval grantor", () => {
         objectId: "daemon",
       }).allowed,
     ).toBe(true);
+  });
+
+  it("does not resolve a Slack clicker linked only under another instance", () => {
+    // The turn resolves a Slack author only within the receiving instance, so the
+    // grantor must not find an owner the turn would call unknown.
+    seedApprovalContact({
+      phone: APPROVAL_TEST_SLACK_OWNER_PHONE,
+      name: "Slack Owner",
+      tags: ["permission.owner"],
+      slack: { userId: APPROVAL_TEST_SLACK_OWNER_USER, instanceId: "old-slack" },
+    });
+
+    expect(
+      actorCanGrantRequestedPermission({
+        channel: "slack",
+        accountId: "slack-main",
+        instanceId: "slack-main",
+        senderId: APPROVAL_TEST_SLACK_OWNER_USER,
+        permission: "execute",
+        objectType: "group",
+        objectId: "daemon",
+      }),
+    ).toMatchObject({ allowed: false, reason: "unresolved_identity" });
+  });
+
+  it("resolves a Slack clicker through the instance's configured slug/UUID alias", () => {
+    const uuid = "6f9619ff-8b86-d011-b42d-00c04fc964ff";
+    setApprovalGrantorRouterConfigForTest(() => ({
+      instances: { "slack-main": { instanceId: uuid } as never },
+      instanceToAccount: { [uuid]: "slack-main" },
+    }));
+    seedApprovalContact({
+      phone: APPROVAL_TEST_SLACK_OWNER_PHONE,
+      name: "Slack Owner",
+      tags: ["permission.owner"],
+      slack: { userId: APPROVAL_TEST_SLACK_OWNER_USER, instanceId: uuid },
+    });
+
+    expect(
+      actorCanGrantRequestedPermission({
+        channel: "slack",
+        accountId: "slack-main",
+        instanceId: "slack-main",
+        senderId: APPROVAL_TEST_SLACK_OWNER_USER,
+        permission: "execute",
+        objectType: "group",
+        objectId: "daemon",
+      }),
+    ).toMatchObject({ allowed: true, reason: "authorized_grantor" });
+  });
+
+  it("does not fall back to the account's workspace when the stored Slack instance is unmapped", () => {
+    // A stale account id can name another workspace; the request's instance is
+    // the only scope searched.
+    const uuid = "6f9619ff-8b86-d011-b42d-00c04fc964ff";
+    setApprovalGrantorRouterConfigForTest(() => ({
+      instances: { "slack-other": { instanceId: uuid } as never },
+      instanceToAccount: { [uuid]: "slack-other" },
+    }));
+    seedApprovalContact({
+      phone: APPROVAL_TEST_SLACK_OWNER_PHONE,
+      name: "Slack Owner",
+      tags: ["permission.owner"],
+      slack: { userId: APPROVAL_TEST_SLACK_OWNER_USER, instanceId: uuid },
+    });
+
+    expect(
+      actorCanGrantRequestedPermission({
+        channel: "slack",
+        accountId: "slack-other",
+        instanceId: "unmapped-instance",
+        senderId: APPROVAL_TEST_SLACK_OWNER_USER,
+        permission: "execute",
+        objectType: "group",
+        objectId: "daemon",
+      }),
+    ).toMatchObject({ allowed: false, reason: "unresolved_identity" });
   });
 
   it("denies a contact who lacks the requested capability", () => {

@@ -10,6 +10,8 @@
   agent identity MUST NOT materialize.
 - A chat with zero materialized capabilities MUST NOT zero the agent identity.
 - An unresolved external actor MUST receive zero effective capabilities.
+- Runtime approval MUST deny an unresolved external actor's missing capability
+  without sending an approval request (`src/approval/service.test.ts`).
 - Agent-identity denials MUST resolve recommended grants to
   `agent:<executor>`; user-overlay denials MUST also recommend a chat-scoped
   contact grant.
