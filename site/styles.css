@@ -108,6 +108,20 @@ html.motion [data-reveal="pop"]{transform:scale(.9)}
 .hdr-in{height:100%;max-width:var(--maxw);margin-inline:auto;padding-inline:var(--px);display:flex;align-items:center;justify-content:space-between;gap:24px}
 .brand{display:inline-flex;align-items:center;gap:12px;min-height:44px;font-family:var(--font-mono);font-size:13px;font-weight:500;letter-spacing:.22em;text-transform:uppercase;color:var(--text)}
 .brand-mark{width:26px;height:26px;border-radius:5px;box-shadow:0 0 0 1px var(--line-strong)}
+/* the legacy wordmark (brand/logo-dark.svg, inlined by assemble.py): ASCII-art "ravi" in the logo's own cyan */
+.brand .logo-dark{display:block;height:34px;width:auto;flex:none}
+/* the PT | EN switch: in the header row at every width (beside the nav, or before Menu), and again in the menu sheet */
+.lang-sw{display:flex;align-items:center;font-family:var(--font-mono);font-size:12px;letter-spacing:.14em;color:var(--quiet)}
+.lang-sw a{display:inline-flex;align-items:center;justify-content:center;min-width:40px;min-height:44px;padding:0 4px;color:var(--muted);transition:color .18s}
+.lang-sw a:hover{color:var(--text)}
+.lang-sw a[aria-current]{color:var(--text);text-decoration:underline;text-decoration-color:var(--mint);text-underline-offset:6px;text-decoration-thickness:1px}
+.hdr-in{justify-content:flex-start}
+.hdr-nav{margin-left:auto}
+.lang-sw--hdr{margin-left:clamp(12px,2vw,28px);margin-right:-4px}
+.sheet .lang-sw{padding-top:4px}
+.sheet .lang-sw a{display:inline-flex;justify-content:flex-start;height:48px;min-width:44px;padding:0 12px 0 0;border-bottom:0;font-size:13px;color:var(--muted)}
+.sheet .lang-sw a+span+a{padding:0 0 0 12px;justify-content:center}
+.sheet .lang-sw a[aria-current]{color:var(--text)}
 .hdr-nav{display:flex;align-items:center;gap:clamp(20px,3vw,40px)}
 .hdr-nav a,.sheet a{font-family:var(--font-mono);font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);transition:color .18s}
 .hdr-nav a{display:inline-flex;align-items:center;min-height:44px}
@@ -120,6 +134,8 @@ html.motion [data-reveal="pop"]{transform:scale(.9)}
 @media (max-width:1023px){
   .hdr-nav{display:none}
   .hdr-menu{display:inline-flex;align-items:center;justify-content:center}
+  .lang-sw--hdr{margin-left:auto;margin-right:8px}
+  .brand .logo-dark{height:28px}
   html.no-js .hdr{position:relative;height:auto}
   html.no-js body{padding-top:0}
   html.no-js .hdr-in{height:auto;min-height:52px;flex-wrap:wrap;row-gap:0;padding-block:4px 6px}
@@ -286,9 +302,9 @@ html:not(.motion) .frames,html.frames-mode .frames{display:grid}
 .av--carla{background:#e7eef7;color:var(--p-ink)}
 .av--rec{background:var(--sand);color:var(--p-ink)}
 .av--ops{background:var(--p-teal);color:#fff}
-/* the Ravi bot: a dark square with the brand R (the mark from the header). Every agent message in a Slack mock is
+/* the Ravi bot: the legacy favicon mark (brand/favicon.svg, a cyan rounded square with "r"). Every agent message in a Slack mock is
    posted by this one bot ("Ravi" + .app badge); markup <span class="av av--ravi" aria-hidden="true"></span> */
-.av--ravi{background:#0d0d0d url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cpath d='M56 198V58h72c34 0 57 18 57 48 0 21-11 36-29 43l37 49h-44l-32-43H94v43H56Zm38-73h31c15 0 23-7 23-19 0-12-8-19-23-19H94v38Z' fill='%23f3f2ef'/%3E%3C/svg%3E") 50% 50%/100% 100% no-repeat;color:transparent}
+.av--ravi{background:transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230891B2'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-family='DM Sans, Arial, sans-serif' font-size='40' font-weight='700' fill='%23FFFFFF'%3Er%3C/text%3E%3C/svg%3E") 50% 50%/100% 100% no-repeat;color:transparent}
 .av--sm{width:20px;height:20px;border-radius:50%;font-size:12px;font-weight:500}
 .sk-win{position:relative;display:flex;background:var(--p-bg);border:1px solid var(--p-line);border-radius:8px;color:var(--p-ink);font-family:var(--font-sans);font-size:15px;line-height:1.45;min-width:0;isolation:isolate}
 .sk-win::before{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:0 24px 60px rgba(23,32,42,.08);opacity:var(--lift,1);z-index:-1;pointer-events:none}
@@ -451,6 +467,14 @@ html.motion .foot-say,html.motion .foot-ins,html.motion .foot-btns,html.motion .
 }
 html.motion .shimmer.is-on.is-paused::before{animation-play-state:paused}
 
+/* PT-BR headlines carry accents (Á, Ã, Ç) and Q tails: the mask and its line grow by the same amount above and below
+   (layout unchanged), so the marks sit inside the moving line and inside the clip */
+html[lang="pt-BR"] .mask{padding-top:.18em;margin-top:-.18em;padding-bottom:.14em;margin-bottom:-.14em}
+html[lang="pt-BR"] .mask>.in{padding-top:.18em;margin-top:-.18em}
+/* a flex column keeps those negative margins from collapsing into each other, so the line spacing stays as authored */
+html[lang="pt-BR"] .hl:not(.sd-hl){display:flex;flex-direction:column}
+html[lang="pt-BR"] #tools-h .mask+.mask{margin-top:-.04em}   /* 01-tools.css adds .14em between its lines */
+
 /* ===== 00-top.css ===== */
 /* 00 · #top hero: AGENTS FOR SLACK.
    The figure is one Slack thread (.tv-win, the base .sk-win with no sidebar) and the agent rail (.tv-rail) beside it.
@@ -459,7 +483,9 @@ html.motion .shimmer.is-on.is-paused::before{animation-play-state:paused}
    holds without JS), joined to the window by a 1px hairline. <1024: the rail is one row of chips on the page just
    above the window's top edge, each joined to it by a short hairline. The authored HTML is the end state; the html.motion rules at the bottom are the scene's start. */
 .sec--top{padding-top:clamp(28px,5vh,56px);padding-bottom:clamp(72px,10vh,120px)}
-#top .hl--hero{margin-top:16px}
+/* --hk scales the headline per language (i18n top.h_scale): its longest line has to fit the column */
+#top .hl--hero{margin-top:16px;font-size:calc(clamp(4.2rem,11vw,9.5rem) * var(--hk,1))}
+@media (max-width:599px){ #top .hl--hero{font-size:calc(clamp(36px,10.7vw,44px) * var(--hk,1))} }
 .top-row{display:grid;grid-template-columns:minmax(0,1fr) 640px;column-gap:48px;margin-top:28px;align-items:start}
 .top-copy{display:grid;gap:22px;align-content:start;padding-top:6px;min-width:0}
 .top-say,.top-go{display:grid;align-content:start;min-width:0}
@@ -504,7 +530,7 @@ html.motion .shimmer.is-on.is-paused::before{animation-play-state:paused}
 
 /* short desks (a 1280×720 laptop, a browser window under 780px tall): the headline is capped by the viewport
    height and the top spacing tightens. Taller desks keep the clamp (17vh is above it from 1440×900 and 1100×800 up). */
-@media (min-width:1024px){ #top .hl--hero{font-size:min(clamp(4.2rem,11vw,9.5rem),17vh)} }
+@media (min-width:1024px){ #top .hl--hero{font-size:calc(min(clamp(4.2rem,11vw,9.5rem),17vh) * var(--hk,1))} }
 @media (min-width:1024px) and (max-height:780px){
   .sec--top{padding-top:20px}
   #top .hl--hero{margin-top:12px}
@@ -939,7 +965,7 @@ html:not(.motion) #scale .sc-tiles--me{grid-template-columns:repeat(2,minmax(0,1
    --sd-lay tells the JS which wire geometry to draw. With no JS the .sd-nj lines stand in for the wires.
    No html.motion hidden rules: the builder sets every starting state with fromTo. */
 #sdk .sec-head{margin-bottom:88px}
-#sdk .sd-hl .mask{display:inline-block;vertical-align:top}
+#sdk .sd-hl .mask{display:inline-block;vertical-align:top;padding-right:.08em;margin-right:-.08em}  /* the last letter of a line (the P of APP) keeps its edge */
 
 /* ---------- the figure ---------- */
 #sdk .sd-fig{
@@ -1105,6 +1131,10 @@ html:not(.motion) #scale .sc-tiles--me{grid-template-columns:repeat(2,minmax(0,1
   #sdk:not(.sd-js) .sd-app--phone .sd-nj--app{height:144px}
   #sdk .sd-dash-n{font-size:34px}
 }
+
+/* the SDK on npm: a small link under the sentence; the package name keeps its case */
+#sdk .sd-npm{margin-top:14px}
+#sdk .sd-npm .lnk{text-transform:none;letter-spacing:.04em}
 
 /* ===== 09-end.css ===== */
 /* 09 · #end: the closing (footer.foot#end, prefix en- for motion hooks, foot- for layout).

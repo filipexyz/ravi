@@ -1,3 +1,29 @@
+/* ===== i18n: strings that JS writes, by <html lang> (from i18n/*.json js.*) ===== */
+window.RAVI_I18N = {
+"en": {
+"approved_by": "Approved by Carla",
+"close": "Close",
+"copied": "Copied",
+"copied_tag": "[COPIED]",
+"copy_fail": "Selected, press Command or Control and C to copy",
+"cur": "$",
+"declined_by": "Declined by Carla",
+"locale": "en-US",
+"menu": "Menu"
+},
+"pt-BR": {
+"approved_by": "Aprovado por Carla",
+"close": "Fechar",
+"copied": "Copiado",
+"copied_tag": "[COPIADO]",
+"copy_fail": "Selecionado. Use Command ou Control e C para copiar.",
+"cur": "R$ ",
+"declined_by": "Recusado por Carla",
+"locale": "pt-BR",
+"menu": "Menu"
+}
+};
+
 /* ===== 00-core.js ===== */
 /* ravi.bot "One Loop" — core: boot + gating, motion vocabulary, helpers, section registry,
    pins + beat chips, header menu, copy buttons, anchors, generic reveals. */
@@ -25,6 +51,12 @@ var pendingReveals = typeof WeakSet === 'function' ? new WeakSet() : null;   // 
 var state = { mode: null, hardFrames: false, driftFrames: false, driftKey: '', driftTimer: 0, kbAt: -1e9, jumpAt: -1e9,
   resizeAt: -1e9, layoutAt: -1e9, scrollAt: -1e9, inputAt: -1e9, hashDone: false, built: false, building: false, staged: true, mm: null, refreshQueued: false };
 var nativeRAF = w.requestAnimationFrame;
+
+/* ---------- i18n: every string JS writes comes from window.RAVI_I18N (i18n/*.json js.*), picked by <html lang> ---------- */
+var I18N = w.RAVI_I18N || {};
+function lang() { return /^pt/i.test(html.getAttribute('lang') || '') ? 'pt-BR' : 'en'; }
+function tx(k) { var a = I18N[lang()] || {}, b = I18N.en || {}; return a[k] != null ? a[k] : (b[k] != null ? b[k] : k); }
+function money(v) { return tx('cur') + Math.round(v).toLocaleString(tx('locale')); }
 
 function now() { return (w.performance && performance.now()) || Date.now(); }
 function kbRecent() { return now() - state.kbAt < 1500; }
@@ -85,7 +117,7 @@ function typeLine(el, maxDur) {
 }
 function count(el, to, dur, fmt) {
   var o = { v: 0 };
-  fmt = fmt || function (v) { return Math.round(v).toLocaleString('en-US'); };
+  fmt = fmt || function (v) { return Math.round(v).toLocaleString(tx('locale')); };
   return gsap.to(o, { v: to, duration: dur == null ? .55 : dur, ease: 'power2.out', onUpdate: function () { el.textContent = fmt(o.v); } });
 }
 function blink(el) { return gsap.fromTo(el, { opacity: 1 }, { opacity: 0, repeat: -1, yoyo: true, duration: .5, ease: 'steps(1)' }); }
@@ -729,14 +761,14 @@ function initChrome() {
   var btn = $('.hdr-menu'), sheet = d.getElementById('sheet');
   function focusables() { return [btn].concat($$('a', sheet)); }
   function openSheet() {
-    sheet.hidden = false; btn.setAttribute('aria-expanded', 'true'); btn.textContent = 'Close';
+    sheet.hidden = false; btn.setAttribute('aria-expanded', 'true'); btn.textContent = tx('close');
     if (gsap && isMotion()) gsap.fromTo(sheet, { clipPath: 'inset(0 0 100% 0)' }, { clipPath: 'inset(0 0 0% 0)', duration: .3, ease: E.wipe });
     /* the header is fixed and never needs scrolling into view: opening and closing the menu leaves the page where it is */
     var f = $('a', sheet); if (f) f.focus({ preventScroll: true });
   }
   function closeSheet(refocus) {
     if (!sheet || sheet.hidden) return;
-    sheet.hidden = true; btn.setAttribute('aria-expanded', 'false'); btn.textContent = 'Menu';
+    sheet.hidden = true; btn.setAttribute('aria-expanded', 'false'); btn.textContent = tx('menu');
     if (refocus) btn.focus({ preventScroll: true });
   }
   Ravi.closeMenu = closeSheet;
@@ -765,6 +797,14 @@ function initChrome() {
   var noteT = 0;
   w.addEventListener('scroll', function () { state.scrollAt = now(); clearTimeout(noteT); noteT = setTimeout(notePlace, 160); }, { passive: true });
 
+  /* the PT | EN switch: remember the choice (the PT page's head script reads it on the next visit to /) and keep the
+     reader's place by carrying the #hash over */
+  d.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('.lang-sw a[data-lang]'); if (!a) return;
+    try { w.localStorage.setItem('ravi.lang', /^pt/i.test(a.getAttribute('data-lang')) ? 'pt' : 'en'); } catch (err) {}
+    if (location.hash && !a.hash) a.hash = location.hash;
+  });
+
   /* copy buttons: the label turns [COPIED] (or Copied) for 1.6 s; when the button has a .toast beside it, the
      toast says Copied instead and the label stays */
   function fallbackCopy(text, btn) {
@@ -786,7 +826,7 @@ function initChrome() {
     if (b._label == null) b._label = b.textContent;
     var toast = b.parentNode && b.parentNode.querySelector('.toast');
     function done(ok) {
-      announce(ok ? 'Copied' : 'Selected, press Command or Control and C to copy');
+      announce(ok ? tx('copied') : tx('copy_fail'));
       clearTimeout(b._t);
       if (toast) {
         toast.hidden = !ok;
@@ -794,7 +834,7 @@ function initChrome() {
         b._t = setTimeout(function () { toast.hidden = true; }, 1600);
         return;
       }
-      b.textContent = ok ? (/^\[/.test(b._label) ? '[COPIED]' : 'Copied') : b._label; b.classList.toggle('is-done', ok);
+      b.textContent = ok ? (/^\[/.test(b._label) ? tx('copied_tag') : tx('copied')) : b._label; b.classList.toggle('is-done', ok);
       b._t = setTimeout(function () { b.textContent = b._label; b.classList.remove('is-done'); }, 1600);
     }
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -863,7 +903,7 @@ var Ravi = w.Ravi = {
   wipeIn: wipeIn, wipeOut: wipeOut, press: press, ripple: ripple, cursorTo: cursorTo, samplePath: samplePath, sampler: sampler,
   packet: packet, packetRefuse: packetRefuse, pt: pt, arc: arc, breathe: breathe, lit: lit, hold: hold, center: center,
   pauseOffscreen: pauseOffscreen, caretOn: caretOn, irisIn: irisIn, spot: spot, draw: draw,
-  scrollToY: scrollToY, refresh: refresh, announce: announce, kbRecent: kbRecent,
+  scrollToY: scrollToY, refresh: refresh, announce: announce, kbRecent: kbRecent, t: tx, money: money, lang: lang,
   /* the section id a page opened on a #hash will land on during the first build ('' otherwise): a scrubbed scene
      there can skip its scrub instead of resting half-built at the landing. Arrivals by click send 'ravi:anchor'. */
   arrival: function () { return state.hashDone ? '' : arrivalId(); },
@@ -1293,7 +1333,7 @@ function setSb(sb) {
 }
 function waitFace() { stamp('approve'); board('approve'); setSb('req'); setSt('wait'); }
 function doneFace(o) { stamp(o); board(o); setSb('out'); setSt('done'); }
-function said(o) { return (o === 'decline' ? 'Declined' : 'Approved') + ' by Carla'; }
+function said(o) { return Ravi.t(o === 'decline' ? 'declined_by' : 'approved_by'); }
 /* the pressed button hides with its row: focus lands on the stamp that replaced it */
 function focusStamp(had) { if (had) { var d = q('.ck-done'); if (d) d.focus({ preventScroll: true }); } }
 
@@ -1424,13 +1464,13 @@ function deal(ctx) {
   var tl = gsap.timeline({ paused: true, onComplete: function () { S.dealt = true; } });
   tl.fromTo(gh, { y: 40, rotation: 0, opacity: 0 }, Object.assign({ duration: .75, ease: E.pop, stagger: .12 }, fan), 0);
   tl.fromTo(ft, { y: 14, opacity: 0 }, { y: 0, opacity: 1, duration: .45, ease: E.rise }, .6);
-  tl.add(Ravi.count(n, 480, .8, function (v) { return '$' + Math.round(2970 + v).toLocaleString('en-US'); }), .7);
+  tl.add(Ravi.count(n, 480, .8, function (v) { return Ravi.money(2970 + v); }), .7);
   tl.fromTo(n, { '--fl': 0 }, { '--fl': 1, duration: .2, ease: E.enter, yoyo: true, repeat: 1, immediateRender: false }, 1.5);
   var st = Ravi.ST.create({ trigger: ctx.$('.ck-stage'), start: 'top 80%', end: 'max', once: true, onEnter: function () { tl.play(); } });
   ctx.add(function () {
     st.kill();
     if (tl.progress() > 0 && tl.progress() < 1) S.dealt = true;
-    tl.kill(); gsap.set(ft, { clearProps: 'opacity,transform' }); n.textContent = '$3,450';
+    tl.kill(); gsap.set(ft, { clearProps: 'opacity,transform' }); n.textContent = Ravi.money(3450);
   });
 }
 
