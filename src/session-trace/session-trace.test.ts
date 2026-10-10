@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { attachChatToSession, getOrCreateSession, updateSessionName } from "../router/sessions.js";
 import { dbUpsertChat } from "../router/router-db.js";
-import { recordDeliveryTrace, recordResponseEmittedTrace } from "./channel-trace.js";
+import {
+  PROMPT_TRACE_TEXT_MAX_CHARS,
+  recordDeliveryTrace,
+  recordPromptPublishedTrace,
+  recordResponseEmittedTrace,
+} from "./channel-trace.js";
 import { querySessionTrace } from "./query.js";
 import { recordAdapterRequestTrace } from "./runtime-trace.js";
 import {
@@ -209,5 +214,34 @@ describe("session trace query", () => {
       actorType: "agent",
       actorAgentId: "main",
     });
+  });
+
+  it("stores the full published prompt text instead of a 500-char preview", () => {
+    const sessionKey = "agent:main:prompt-full-text";
+    const sessionName = "main-prompt-full-text";
+    getOrCreateSession(sessionKey, "main", "/tmp/ravi-agent");
+    updateSessionName(sessionKey, sessionName);
+
+    const prompt = `${"a".repeat(590)} final words`;
+    recordPromptPublishedTrace({ sessionName, timestamp: 40, payload: { prompt } });
+
+    const event = listSessionEvents(sessionKey)[0];
+    expect(event?.eventType).toBe("prompt.published");
+    expect(event?.preview).toBe(prompt);
+    expect(event?.payloadJson).toMatchObject({ promptChars: prompt.length, previewTruncated: false });
+  });
+
+  it("caps oversized published prompts and flags the truncation", () => {
+    const sessionKey = "agent:main:prompt-capped";
+    const sessionName = "main-prompt-capped";
+    getOrCreateSession(sessionKey, "main", "/tmp/ravi-agent");
+    updateSessionName(sessionKey, sessionName);
+
+    const prompt = "b".repeat(PROMPT_TRACE_TEXT_MAX_CHARS + 10);
+    recordPromptPublishedTrace({ sessionName, timestamp: 41, payload: { prompt } });
+
+    const event = listSessionEvents(sessionKey)[0];
+    expect(event?.preview).toBe(`${"b".repeat(PROMPT_TRACE_TEXT_MAX_CHARS)}...`);
+    expect(event?.payloadJson).toMatchObject({ promptChars: prompt.length, previewTruncated: true });
   });
 });

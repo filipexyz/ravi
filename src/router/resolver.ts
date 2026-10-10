@@ -4,7 +4,15 @@
  * Resolves phone numbers to agents and session keys.
  */
 
-import type { RouterConfig, AgentConfig, RouteConfig, MatchedRoute, ResolvedRoute, DmScope } from "./types.js";
+import type {
+  RouterConfig,
+  AgentConfig,
+  RouteConfig,
+  MatchedRoute,
+  ResolvedRoute,
+  DmScope,
+  SessionEntry,
+} from "./types.js";
 import { buildSessionKey } from "./session-key.js";
 import { generateSessionName, ensureUniqueName, slugify } from "./session-name.js";
 import { getOrCreateSession, getSession, updateSessionName, getSessionByName } from "./sessions.js";
@@ -244,8 +252,11 @@ export function commitMatchedRoute(
     forcedRouteParentSessionKey: forcedRouteSession?.sessionKey ?? null,
   });
   const createdSession = !getSession(effectiveSessionKey);
+  const resolvedPeerKind = (params.peerKind ?? (isGroup ? "group" : "dm")) as "dm" | "group" | "channel";
+  const chatType = resolveSessionChatType(resolvedPeerKind, dmScope);
   const existing = getOrCreateSession(effectiveSessionKey, agentId, agentCwd, {
     ...(threadId ? { lastThreadId: threadId } : {}),
+    ...(chatType ? { chatType } : {}),
   });
   let sessionName = existing.name;
 
@@ -254,7 +265,6 @@ export function commitMatchedRoute(
     sessionName = forcedRouteSessionName;
     updateSessionName(effectiveSessionKey, sessionName);
   } else if (!sessionName) {
-    const resolvedPeerKind = (params.peerKind ?? (isGroup ? "group" : "dm")) as "dm" | "group" | "channel";
     const isMain = dmScope === "main";
     const baseName =
       threadId && forcedRouteSessionName
@@ -293,6 +303,16 @@ export function commitMatchedRoute(
 function cleanThreadId(threadId: string | undefined): string | undefined {
   const cleaned = threadId?.trim();
   return cleaned ? cleaned : undefined;
+}
+
+/**
+ * Chat type recorded on a session created by inbound routing. The shared
+ * `dmScope=main` session also hosts CLI/system prompts, so it stays untyped.
+ */
+export function resolveSessionChatType(peerKind: string, dmScope: DmScope): SessionEntry["chatType"] | undefined {
+  if (peerKind !== "dm" && peerKind !== "group" && peerKind !== "channel") return undefined;
+  if (peerKind === "dm" && dmScope === "main") return undefined;
+  return peerKind;
 }
 
 export function resolveCommittedSessionKey(params: {

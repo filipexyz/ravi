@@ -8,8 +8,8 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { matchPattern, findRoute, matchRoute, resolveCommittedSessionKey } from "./resolver.js";
-import { parseSessionKey } from "./session-key.js";
+import { matchPattern, findRoute, matchRoute, resolveCommittedSessionKey, resolveSessionChatType } from "./resolver.js";
+import { deriveChatTypeFromSessionKey, parseSessionKey } from "./session-key.js";
 import type { RouterConfig, RouteConfig, AgentConfig } from "./types.js";
 
 // ============================================================================
@@ -473,5 +473,55 @@ describe("parseSessionKey — LID peer ids", () => {
       peerId: "lid:224420715061374",
       dmScope: "per-peer",
     });
+  });
+});
+
+// ============================================================================
+// Session chatType
+// ============================================================================
+
+describe("resolveSessionChatType", () => {
+  it("types routed DM, group and channel sessions", () => {
+    expect(resolveSessionChatType("dm", "per-peer")).toBe("dm");
+    expect(resolveSessionChatType("dm", "per-account-channel-peer")).toBe("dm");
+    expect(resolveSessionChatType("group", "per-peer")).toBe("group");
+    expect(resolveSessionChatType("group", "main")).toBe("group");
+    expect(resolveSessionChatType("channel", "per-peer")).toBe("channel");
+  });
+
+  it("leaves the shared dmScope=main session and unknown peer kinds untyped", () => {
+    expect(resolveSessionChatType("dm", "main")).toBeUndefined();
+    expect(resolveSessionChatType("thread", "per-peer")).toBeUndefined();
+  });
+
+  it("matches the session key shape built by matchRoute", () => {
+    const config = makeConfig([]);
+    const dm = matchRoute(config, { phone: "5511999999999", channel: "whatsapp" });
+    const group = matchRoute(config, {
+      phone: "5511999999999",
+      channel: "whatsapp",
+      isGroup: true,
+      groupId: "120363@g.us",
+    });
+    expect(deriveChatTypeFromSessionKey(dm!.sessionKey)).toBe(resolveSessionChatType("dm", dm!.dmScope)!);
+    expect(deriveChatTypeFromSessionKey(group!.sessionKey)).toBe(resolveSessionChatType("group", group!.dmScope)!);
+  });
+});
+
+describe("deriveChatTypeFromSessionKey", () => {
+  it("infers chat type from routed key shapes", () => {
+    expect(deriveChatTypeFromSessionKey("agent:main:dm:5511999999999")).toBe("dm");
+    expect(deriveChatTypeFromSessionKey("agent:main:whatsapp:dm:5511999999999")).toBe("dm");
+    expect(deriveChatTypeFromSessionKey("agent:main:whatsapp:group:120363")).toBe("group");
+    expect(deriveChatTypeFromSessionKey("agent:main:whatsapp:acc:group:120363")).toBe("group");
+    expect(deriveChatTypeFromSessionKey("agent:main:slack:T1:channel:C123:thread:171.1")).toBe("channel");
+  });
+
+  it("returns null for the shared main session and non-routed keys", () => {
+    expect(deriveChatTypeFromSessionKey("agent:main:main")).toBeNull();
+    expect(deriveChatTypeFromSessionKey("agent:main:cron:abc123")).toBeNull();
+    expect(deriveChatTypeFromSessionKey("agent:main:trigger:a1b2c3d4")).toBeNull();
+    expect(deriveChatTypeFromSessionKey("agent:main:task:t1:worker:x")).toBeNull();
+    expect(deriveChatTypeFromSessionKey("not-a-session-key")).toBeNull();
   });
 });
