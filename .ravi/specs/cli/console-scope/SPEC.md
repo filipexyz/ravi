@@ -18,7 +18,6 @@ applies_to:
   - src/cli/commands/pages.ts
   - src/cli/commands/artifacts.ts
   - src/cli/commands/bridges.ts
-  - src/cli/commands/connectors.ts
   - src/cli/commands/sync.ts
   - src/cli/commands/watch.ts
   - src/cli/agent-contract.ts
@@ -56,7 +55,9 @@ projection that consume that Console contract.
 - `Console organization`: the remote Ravi Console organization selected during
   `ravi login`.
 - `Console project`: the remote project id or slug accepted by Console APIs such
-  as Pages, Artifacts publish, provider connectors, MCP bridges, and sync.
+  as Pages, Artifacts publish, MCP bridges, and sync. Connectors are not
+  project-scoped: a connection belongs to the Console user who connected it
+  (`cli/connectors`).
 - `Local project`: the OSS Ravi Projects domain stored locally under
   `src/projects`. It is not the same entity as a Console project.
 - `Console scope`: non-secret local context containing the Console base URL,
@@ -425,7 +426,6 @@ Highest-priority commands:
 - `ravi pages publish`
 - `ravi artifacts publish` for generic artifact publishing
 - `ravi bridges list|create`
-- `ravi connectors connect`
 - `ravi sync push|pull`
 - `ravi watch create`
 - `ravi tags attach|detach|list` when the tag operation targets project scope
@@ -503,8 +503,9 @@ errors.
 - A child CLI using only `RAVI_CONTEXT_KEY` can recover the same effective scope.
 - `ravi pages publish docs ./dist --json` resolves the project from
   the shared scope when no `--project` is passed.
-- `ravi connectors connect google` resolves a project from the shared scope or
-  fails with a clear next command when ambiguous.
+- `ravi connectors connect google` never resolves a Console project: it ignores
+  `--project` (stderr warning until 2027-01-01) and does not read the shared
+  scope.
 - `ravi login` with multiple organizations is completed through Console-side org
   selection, not a local `--org` flag.
 - `ravi login` can be run for org `luis`, then org `rbbt`, and both approved

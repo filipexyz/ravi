@@ -33278,7 +33278,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "project": {
-        "description": "Filter by Ravi Cloud project id",
+        "description": "Ignored: connections belong to you, not to a project (removed after 2027-01-01)",
         "type": "string"
       },
       "provider": {
@@ -33298,23 +33298,57 @@ public enum RaviSchemas {
         "items": {
           "additionalProperties": false,
           "properties": {
+            "accessMode": {
+              "enum": [
+                "full",
+                "read_only"
+              ],
+              "type": "string"
+            },
             "createdAt": {
               "type": "string"
             },
             "displayName": {
               "type": "string"
             },
+            "externalAccountLogin": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "id": {
               "type": "string"
             },
+            "isDefault": {
+              "type": "boolean"
+            },
             "projectId": {
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "provider": {
               "type": "string"
             },
             "requiresReauth": {
               "type": "boolean"
+            },
+            "scopeKind": {
+              "enum": [
+                "user",
+                "organization"
+              ],
+              "type": "string"
             },
             "scopes": {
               "items": {
@@ -33440,6 +33474,13 @@ public enum RaviSchemas {
       "connection": {
         "additionalProperties": false,
         "properties": {
+          "accessMode": {
+            "enum": [
+              "full",
+              "read_only"
+            ],
+            "type": "string"
+          },
           "capabilities": {
             "items": {
               "type": "string"
@@ -33468,6 +33509,9 @@ public enum RaviSchemas {
           "id": {
             "type": "string"
           },
+          "isDefault": {
+            "type": "boolean"
+          },
           "lastReauthAt": {
             "anyOf": [
               {
@@ -33478,14 +33522,48 @@ public enum RaviSchemas {
               }
             ]
           },
+          "lastUsedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "projectId": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "provider": {
             "type": "string"
           },
           "requiresReauth": {
             "type": "boolean"
+          },
+          "revokedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scopeKind": {
+            "enum": [
+              "user",
+              "organization"
+            ],
+            "type": "string"
           },
           "scopes": {
             "items": {
@@ -33506,8 +33584,8 @@ public enum RaviSchemas {
           "requiresReauth",
           "scopes",
           "createdAt",
-          "capabilities",
           "externalAccountLogin",
+          "capabilities",
           "grantedAt",
           "lastReauthAt"
         ],
@@ -46675,7 +46753,7 @@ public enum RaviSchemas {
     "additionalProperties": false,
     "properties": {
       "connector": {
-        "description": "Connector id (defaults to first active Google)",
+        "description": "Connection id (defaults to your default Google connection, else the newest active one)",
         "type": "string"
       },
       "cursor": {
@@ -46763,7 +46841,7 @@ public enum RaviSchemas {
     "additionalProperties": false,
     "properties": {
       "connector": {
-        "description": "Connector id (defaults to first active Google)",
+        "description": "Connection id (defaults to your default Google connection, else the newest active one)",
         "type": "string"
       },
       "format": {

@@ -1921,7 +1921,7 @@ export class RaviClient {
   };
 
   readonly connectors = {
-    /** List your connectors */
+    /** List your connections */
     list: async (options?: {
       fields?: string;
       limit?: string;
@@ -1935,7 +1935,7 @@ export class RaviClient {
         body: { ...(options ?? {}) },
       });
     },
-    /** Revoke a connector and delete its stored credentials */
+    /** Disconnect one of your connections and delete its stored credentials */
     revoke: async (id: string, options?: {
       execute?: boolean;
       yes?: boolean;
@@ -1946,7 +1946,7 @@ export class RaviClient {
         body: { id, ...(options ?? {}) },
       });
     },
-    /** Show details of a single connector */
+    /** Show details of one of your connections */
     show: async (id: string): Promise<ConnectorsShowReturn> => {
       return this.transport.call({
         groupSegments: ["connectors"],

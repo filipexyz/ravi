@@ -104,9 +104,31 @@ function mapLinkError(status: number, payload: unknown): CloudAuthError {
   const linkCode = stringField(payload, "error") ?? "unknown";
   const fallback = defaultCodeForStatus(status);
   const code = normalizeCloudAuthErrorCode(linkCode, fallback);
+  const approval =
+    code === "CONNECTOR_APPROVAL_REQUIRED" || code === "CONNECTOR_APPROVAL_PENDING" ? approvalDetails(payload) : null;
   return new CloudAuthError(code, `Ravi Link request failed (${status}): ${linkCode}`, {
     status,
+    ...(approval ? { details: approval } : {}),
   });
+}
+
+export const APPROVAL_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+const APPROVAL_REASON_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
+
+/**
+ * What an approval answer may carry onward: the approval id, its expiry and a
+ * short reason code. The approval page is rebuilt from the Console the CLI is
+ * logged in to, so the link Link sends is not kept.
+ */
+function approvalDetails(payload: unknown): Record<string, string> | null {
+  const approvalId = stringField(payload, "approvalId");
+  if (!approvalId || !APPROVAL_ID_PATTERN.test(approvalId)) return null;
+  const details: Record<string, string> = { approvalId };
+  const expiresAt = stringField(payload, "expiresAt");
+  if (expiresAt && Number.isFinite(Date.parse(expiresAt))) details.expiresAt = expiresAt;
+  const reason = stringField(payload, "reason");
+  if (reason && APPROVAL_REASON_PATTERN.test(reason)) details.reason = reason;
+  return details;
 }
 
 function defaultCodeForStatus(status: number): CloudAuthErrorCode {

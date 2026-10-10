@@ -2957,6 +2957,7 @@ function getDb(): Database {
       shell_timeout_ms INTEGER,
       shell_env_file TEXT,
       on_error TEXT,
+      owner_principal TEXT,
 
       -- State
       next_run_at INTEGER,
@@ -3098,6 +3099,13 @@ function getDb(): Database {
   if (!cronColumns.some((c) => c.name === "last_exit_code")) {
     db.exec("ALTER TABLE cron_jobs ADD COLUMN last_exit_code INTEGER");
     log.info("Added last_exit_code column to cron_jobs table");
+  }
+  // Who a job runs as for personal connectors: `operator`, or the actor
+  // principal of the turn that created it. NULL (rows created before this
+  // column) means the operator.
+  if (!cronColumns.some((c) => c.name === "owner_principal")) {
+    db.exec("ALTER TABLE cron_jobs ADD COLUMN owner_principal TEXT");
+    log.info("Added owner_principal column to cron_jobs table");
   }
 
   // Migration: add heartbeat_account_id column to agents

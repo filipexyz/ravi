@@ -55,7 +55,8 @@
             "pages": [
               "console/login",
               "console/pages",
-              "console/bases"
+              "console/bases",
+              "console/connectors"
             ]
           },
           {

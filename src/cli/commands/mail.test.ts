@@ -514,6 +514,7 @@ describe("mail agent-first contract", () => {
         undefined,
         undefined,
         true,
+        undefined,
         true,
       ),
     );

@@ -20,6 +20,7 @@ import {
   expandHome,
 } from "../router/index.js";
 import { getAgent } from "../router/config.js";
+import { spawnedAutomationEnv } from "../runtime/turn-origin.js";
 import {
   dbGetDueJobs,
   dbGetNextDueJob,
@@ -375,6 +376,9 @@ export class CronRunner {
       const result = await runShellCronCommand(job.shellCommand, {
         timeoutMs: job.shellTimeoutMs ?? DEFAULT_CRON_SHELL_TIMEOUT_MS,
         envFile: job.shellEnvFile,
+        // Wins over the env file: the command acts for this job (and its
+        // owner), never as the operator's terminal.
+        env: spawnedAutomationEnv("cron", job.id),
       });
 
       if (result.stdout.trim()) {

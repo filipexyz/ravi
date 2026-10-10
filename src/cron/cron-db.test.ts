@@ -85,6 +85,46 @@ describe("dbUpdateCronJob", () => {
   });
 });
 
+describe("cron owner principal", () => {
+  it("persists the owner set at creation and leaves legacy jobs NULL", () => {
+    const owned = dbCreateCronJob({
+      name: `test-owner-cron-${Date.now()}`,
+      schedule: { type: "every", every: 60_000 },
+      message: "noop",
+      ownerPrincipal: "operator",
+    });
+    createdJobIds.push(owned.id);
+    const legacy = dbCreateCronJob({
+      name: `test-owner-legacy-${Date.now()}`,
+      schedule: { type: "every", every: 60_000 },
+      message: "noop",
+    });
+    createdJobIds.push(legacy.id);
+
+    expect(dbGetCronJob(owned.id)?.ownerPrincipal).toBe("operator");
+    expect(dbGetCronJob(legacy.id)?.ownerPrincipal).toBeUndefined();
+    const raw = getDb().prepare("SELECT owner_principal FROM cron_jobs WHERE id = ?").get(legacy.id) as {
+      owner_principal: string | null;
+    };
+    expect(raw.owner_principal).toBeNull();
+  });
+
+  it("updates the owner when the job is re-owned", () => {
+    const created = dbCreateCronJob({
+      name: `test-owner-update-${Date.now()}`,
+      schedule: { type: "every", every: 60_000 },
+      message: "noop",
+      ownerPrincipal: "operator",
+    });
+    createdJobIds.push(created.id);
+
+    const updated = dbUpdateCronJob(created.id, { ownerPrincipal: "contact:c_bob" });
+
+    expect(updated.ownerPrincipal).toBe("contact:c_bob");
+    expect(dbGetCronJob(created.id)?.ownerPrincipal).toBe("contact:c_bob");
+  });
+});
+
 describe("agent job dispatch and outcome state", () => {
   it("dbMarkJobDispatched advances the schedule and clears the previous outcome", () => {
     const created = dbCreateCronJob({

@@ -4,8 +4,10 @@ import {
   CloudAuthError,
   classifyConsoleNetworkError,
   cloudAuthErrorFromUnknown,
+  isConnectorPolicyCode,
   isRetryableCloudAuthError,
   normalizeCloudAuthErrorCode,
+  type CloudAuthErrorCode,
 } from "./errors.js";
 
 describe("CloudAuthError retry hints", () => {
@@ -48,6 +50,52 @@ describe("normalizeCloudAuthErrorCode", () => {
     expect(normalizeCloudAuthErrorCode("INSTALLATION_ORG_MISMATCH", "PAYLOAD_INVALID")).toBe("ORG_ACCESS_DENIED");
     expect(normalizeCloudAuthErrorCode("CONTACT_REQUIRED", "PAYLOAD_INVALID")).toBe("CONTACT_REQUIRED");
     expect(normalizeCloudAuthErrorCode("AUTH_REQUIRED", "PAYLOAD_INVALID")).toBe("AUTH_REQUIRED");
+  });
+
+  it("maps Link connector codes onto the connector CLI codes", () => {
+    expect(normalizeCloudAuthErrorCode("connector_group_blocked", "PAYLOAD_INVALID")).toBe("CONNECTOR_GROUP_BLOCKED");
+    expect(normalizeCloudAuthErrorCode("connector_speaker_not_owner", "PAYLOAD_INVALID")).toBe(
+      "CONNECTOR_SPEAKER_NOT_OWNER",
+    );
+    expect(normalizeCloudAuthErrorCode("connector_approval_required", "PAYLOAD_INVALID")).toBe(
+      "CONNECTOR_APPROVAL_REQUIRED",
+    );
+    expect(normalizeCloudAuthErrorCode("connector_reauth_required", "PAYLOAD_INVALID")).toBe(
+      "CONNECTOR_REAUTH_REQUIRED",
+    );
+    expect(normalizeCloudAuthErrorCode("connector_forbidden", "PROJECT_ACCESS_DENIED")).toBe("CONNECTOR_FORBIDDEN");
+  });
+});
+
+describe("connector error exit codes", () => {
+  const POLICY: CloudAuthErrorCode[] = [
+    "CONNECTOR_GROUP_BLOCKED",
+    "CONNECTOR_SPEAKER_NOT_OWNER",
+    "CONNECTOR_DISABLED_BY_ORG",
+    "CONNECTOR_TOOL_BLOCKED",
+    "CONNECTOR_APPROVAL_REQUIRED",
+    "CONNECTOR_APPROVAL_PENDING",
+    "CONNECTOR_APPROVAL_DENIED",
+    "CONNECTOR_CONSENT_REQUIRED",
+    "CONNECTOR_NOT_LINKED",
+  ];
+  const ERRORS: CloudAuthErrorCode[] = [
+    "CONNECTOR_APPROVAL_INVALID",
+    "CONNECTOR_CONNECTION_REQUIRED",
+    "CONNECTOR_REAUTH_REQUIRED",
+    "CONNECTOR_FORBIDDEN",
+  ];
+
+  it.each(POLICY)("%s is a policy block (exit 3)", (code) => {
+    expect(isConnectorPolicyCode(code)).toBe(true);
+    expect(new CloudAuthError(code, "x").exitCode).toBe(3);
+    expect(cloudErrorToContractError("gmail list", new CloudAuthError(code, "x")).exitCode).toBe(3);
+  });
+
+  it.each(ERRORS)("%s is an ordinary failure (exit 1)", (code) => {
+    expect(isConnectorPolicyCode(code)).toBe(false);
+    expect(new CloudAuthError(code, "x").exitCode).toBe(1);
+    expect(cloudErrorToContractError("gmail list", new CloudAuthError(code, "x")).exitCode).toBe(1);
   });
 });
 
@@ -125,6 +173,19 @@ describe("cloudErrorToContractError", () => {
     ["LINK_REQUESTS_UNAVAILABLE", "This Console does not support link approval requests yet.", false],
     ["LINK_DM_UNSUPPORTED", "Ravi cannot send a private message to this person on this channel.", false],
     ["LINK_DM_FAILED", "Ravi could not send the private message to the person who asked.", false],
+    ["CONNECTOR_GROUP_BLOCKED", "Personal connections are not used in group chats.", false],
+    ["CONNECTOR_SPEAKER_NOT_OWNER", "This connection only serves its owner's own requests.", false],
+    ["CONNECTOR_DISABLED_BY_ORG", "The organization turned this connector off.", false],
+    ["CONNECTOR_TOOL_BLOCKED", "The account owner or the organization blocked this tool.", false],
+    ["CONNECTOR_APPROVAL_REQUIRED", "The account owner must approve this action first.", false],
+    ["CONNECTOR_APPROVAL_PENDING", "The approval for this action is still waiting for the account owner.", false],
+    ["CONNECTOR_APPROVAL_DENIED", "The account owner denied this action.", false],
+    ["CONNECTOR_APPROVAL_INVALID", "The approval does not match this action.", false],
+    ["CONNECTOR_CONSENT_REQUIRED", "The person asking must allow this agent to use their account first.", false],
+    ["CONNECTOR_NOT_LINKED", "The person asking is not linked to a Console user.", false],
+    ["CONNECTOR_CONNECTION_REQUIRED", "The person asking has no connected account for this service.", false],
+    ["CONNECTOR_REAUTH_REQUIRED", "The connection expired and must be reconnected.", false],
+    ["CONNECTOR_FORBIDDEN", "Only the owner of this connection can do that.", false],
   ] as const)("maps %s to a stable public message", (code, publicMessage, retryable) => {
     const source = new CloudAuthError(code, `PRIVATE_PROVIDER_BODY_8K2R:${code}`, { status: 429 });
     const contract = cloudErrorToContractError("cloud fixture fail", source);
@@ -132,7 +193,7 @@ describe("cloudErrorToContractError", () => {
     expect(contract).toMatchObject({
       code,
       message: publicMessage,
-      exitCode: code === "PAYLOAD_INVALID" ? 2 : 1,
+      exitCode: code === "PAYLOAD_INVALID" ? 2 : isConnectorPolicyCode(code) ? 3 : 1,
       details: {
         retryable,
         status: 429,
@@ -140,6 +201,48 @@ describe("cloudErrorToContractError", () => {
     });
     expect(contract.details.suggestedAction).toBeString();
     expect(JSON.stringify(contract.envelope())).not.toContain("PRIVATE_PROVIDER_BODY_8K2R");
+  });
+
+  it("keeps the chat line of a locally classified connector block, not the remote catalog copy", () => {
+    const source = new CloudAuthError(
+      "CONNECTOR_SPEAKER_NOT_OWNER",
+      "This turn is someone else's. Say: \"I can't use Luis's Gmail for your request.\"",
+      {
+        exitCode: 3,
+        details: {
+          source: "connector-turn",
+          chatLine: "I can't use Luis's Gmail for your request.",
+          chatLinePt: "Não posso usar o Gmail de Luis para o seu pedido.",
+          replyTo: "speaker",
+          ignored: "not copied",
+        },
+      },
+    );
+    const contract = cloudErrorToContractError("gmail list", source);
+
+    expect(contract.exitCode).toBe(3);
+    expect(contract.message).toContain("I can't use Luis's Gmail for your request.");
+    expect(contract.details).toMatchObject({
+      chatLine: "I can't use Luis's Gmail for your request.",
+      chatLinePt: "Não posso usar o Gmail de Luis para o seu pedido.",
+      replyTo: "speaker",
+    });
+    expect(contract.details.ignored).toBeUndefined();
+  });
+
+  it("uses the catalog copy for a remote connector block even when it carries details", () => {
+    const source = new CloudAuthError(
+      "CONNECTOR_GROUP_BLOCKED",
+      "Ravi Link request failed (403): connector_group_blocked",
+      {
+        status: 403,
+        details: { chatLine: "remote text" },
+      },
+    );
+    const contract = cloudErrorToContractError("gmail list", source);
+
+    expect(contract.message).toBe("Personal connections are not used in group chats.");
+    expect(contract.details.chatLine).toBeUndefined();
   });
 
   it("preserves sanitized local PAYLOAD_INVALID reasons as the public message and issues", () => {

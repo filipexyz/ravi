@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "11ea0db08771affb"
+    "version": "69dc033e87bed708"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -37254,7 +37254,7 @@
                     "type": "string"
                   },
                   "project": {
-                    "description": "Filter by Ravi Cloud project id",
+                    "description": "Ignored: connections belong to you, not to a project (removed after 2027-01-01)",
                     "type": "string"
                   },
                   "provider": {
@@ -37279,23 +37279,57 @@
                       "items": {
                         "additionalProperties": false,
                         "properties": {
+                          "accessMode": {
+                            "enum": [
+                              "full",
+                              "read_only"
+                            ],
+                            "type": "string"
+                          },
                           "createdAt": {
                             "type": "string"
                           },
                           "displayName": {
                             "type": "string"
                           },
+                          "externalAccountLogin": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "id": {
                             "type": "string"
                           },
+                          "isDefault": {
+                            "type": "boolean"
+                          },
                           "projectId": {
-                            "type": "string"
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "provider": {
                             "type": "string"
                           },
                           "requiresReauth": {
                             "type": "boolean"
+                          },
+                          "scopeKind": {
+                            "enum": [
+                              "user",
+                              "organization"
+                            ],
+                            "type": "string"
                           },
                           "scopes": {
                             "items": {
@@ -37364,7 +37398,7 @@
           }
         },
         "security": [],
-        "summary": "List your connectors",
+        "summary": "List your connections",
         "tags": [
           "connectors"
         ]
@@ -37434,7 +37468,7 @@
           }
         },
         "security": [],
-        "summary": "Revoke a connector and delete its stored credentials",
+        "summary": "Disconnect one of your connections and delete its stored credentials",
         "tags": [
           "connectors"
         ]
@@ -37473,6 +37507,13 @@
                     "connection": {
                       "additionalProperties": false,
                       "properties": {
+                        "accessMode": {
+                          "enum": [
+                            "full",
+                            "read_only"
+                          ],
+                          "type": "string"
+                        },
                         "capabilities": {
                           "items": {
                             "type": "string"
@@ -37501,6 +37542,9 @@
                         "id": {
                           "type": "string"
                         },
+                        "isDefault": {
+                          "type": "boolean"
+                        },
                         "lastReauthAt": {
                           "anyOf": [
                             {
@@ -37511,14 +37555,48 @@
                             }
                           ]
                         },
+                        "lastUsedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "projectId": {
-                          "type": "string"
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "provider": {
                           "type": "string"
                         },
                         "requiresReauth": {
                           "type": "boolean"
+                        },
+                        "revokedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "scopeKind": {
+                          "enum": [
+                            "user",
+                            "organization"
+                          ],
+                          "type": "string"
                         },
                         "scopes": {
                           "items": {
@@ -37539,8 +37617,8 @@
                         "requiresReauth",
                         "scopes",
                         "createdAt",
-                        "capabilities",
                         "externalAccountLogin",
+                        "capabilities",
                         "grantedAt",
                         "lastReauthAt"
                       ],
@@ -37564,7 +37642,7 @@
           }
         },
         "security": [],
-        "summary": "Show details of a single connector",
+        "summary": "Show details of one of your connections",
         "tags": [
           "connectors"
         ]
@@ -54541,7 +54619,7 @@
                 "additionalProperties": false,
                 "properties": {
                   "connector": {
-                    "description": "Connector id (defaults to first active Google)",
+                    "description": "Connection id (defaults to your default Google connection, else the newest active one)",
                     "type": "string"
                   },
                   "cursor": {
@@ -54655,7 +54733,7 @@
                 "additionalProperties": false,
                 "properties": {
                   "connector": {
-                    "description": "Connector id (defaults to first active Google)",
+                    "description": "Connection id (defaults to your default Google connection, else the newest active one)",
                     "type": "string"
                   },
                   "format": {
@@ -119656,7 +119734,7 @@
       "name": "commands"
     },
     {
-      "description": "Connect and manage external services (Gmail, Calendar, ...) through Ravi Console",
+      "description": "Connect and manage your own accounts (Gmail, Calendar, ...) through Ravi Console",
       "name": "connectors"
     },
     {
@@ -119706,7 +119784,7 @@
       "name": "feedback"
     },
     {
-      "description": "Operate Gmail through a connected Google connector",
+      "description": "Operate your Gmail through your connected Google account",
       "name": "gmail"
     },
     {

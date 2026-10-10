@@ -41,11 +41,40 @@ export function buildSessionRelayTurnOrigin(
   };
 }
 
-export function buildRuntimeCallerPrincipal(context?: SessionRelayOriginContext): RuntimeTurnOriginPrincipal {
+export function buildRuntimeCallerPrincipal(
+  context?: SessionRelayOriginContext,
+  env: NodeJS.ProcessEnv = process.env,
+): RuntimeTurnOriginPrincipal {
+  // A process the daemon spawned for an automation acts for that automation,
+  // never for the local operator, even when it falls back to the operator's
+  // default credential.
+  const spawned = readSpawnedAutomationPrincipal(env);
+  if (spawned) return { type: "automation", id: spawned.slice("automation:".length) };
   const agentId = cleanString(context?.agentId);
   if (agentId) return { type: "agent", id: agentId };
   const sessionKey = cleanString(context?.sessionKey);
   return { type: "automation", id: sessionKey ? `session:${sessionKey}` : "operator:local" };
+}
+
+/**
+ * Set by the daemon on every process it spawns for an automation (shell cron,
+ * shell trigger, job): `automation:<kind>:<id>`. Those processes run without a
+ * runtime context, so without it they would look like the operator's terminal.
+ */
+export const RAVI_AUTOMATION_PRINCIPAL_ENV = "RAVI_AUTOMATION_PRINCIPAL";
+
+export type SpawnedAutomationKind = "cron" | "trigger" | "job";
+
+const SPAWNED_AUTOMATION_PRINCIPAL_PATTERN = /^automation:(?:cron|trigger|job):[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
+
+export function spawnedAutomationEnv(kind: SpawnedAutomationKind, id: string): Record<string, string> {
+  return { [RAVI_AUTOMATION_PRINCIPAL_ENV]: `automation:${kind}:${id}` };
+}
+
+/** The automation a daemon-spawned process acts for, or null outside one (or when the marker is malformed). */
+export function readSpawnedAutomationPrincipal(env: NodeJS.ProcessEnv = process.env): string | null {
+  const value = env[RAVI_AUTOMATION_PRINCIPAL_ENV]?.trim();
+  return value && SPAWNED_AUTOMATION_PRINCIPAL_PATTERN.test(value) ? value : null;
 }
 
 export function buildChannelTurnOrigin(

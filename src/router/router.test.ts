@@ -218,6 +218,27 @@ describe("router context queries", () => {
     expect(reactionIndexes).toContain("idx_reaction_actions_source");
   });
 
+  it("adds the cron owner column to legacy cron tables and keeps old rows as operator (NULL)", () => {
+    const db = getDb();
+    db.exec("ALTER TABLE cron_jobs DROP COLUMN owner_principal");
+    db.prepare(
+      `INSERT INTO cron_jobs (id, name, schedule_type, schedule_every, payload_text, created_at, updated_at)
+       VALUES ('legacy-cron', 'legacy', 'every', 60000, 'noop', 1, 1)`,
+    ).run();
+
+    closeRouterDb();
+    const reopened = getDb();
+
+    const cronColumns = new Set(
+      (reopened.prepare("PRAGMA table_info(cron_jobs)").all() as Array<{ name: string }>).map((row) => row.name),
+    );
+    expect(cronColumns).toContain("owner_principal");
+    const legacy = reopened.prepare("SELECT owner_principal FROM cron_jobs WHERE id = 'legacy-cron'").get() as {
+      owner_principal: string | null;
+    };
+    expect(legacy.owner_principal).toBeNull();
+  });
+
   it("scopes Console inbox item idempotency by Console and organization", () => {
     const db = getDb();
     const insert = db.prepare(

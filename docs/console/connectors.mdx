@@ -1,0 +1,119 @@
+---
+title: Connect your accounts
+description: Connect your own Gmail to Ravi through the Console, and control who can make your agent use it.
+icon: plug
+---
+
+At the end of this page your Gmail is connected to Ravi, your agent can read and send mail for you, and you know exactly who can make it do that: only you.
+
+## What a connection is
+
+A connection is one of your own accounts, such as your Gmail. It belongs to you, not to a project or to the organization. Ravi and the Console show it by its email address. Today the only connector is Google, which covers Gmail and Calendar.
+
+Your provider tokens stay in Ravi's connector service. Your computer, your agents and the Console web app never see them: they ask the connector service to run an action, and it answers with the result.
+
+Every connection starts in the mode **Only when I ask**: it serves your own requests and nobody else's. See [Who can use your accounts](#who-can-use-your-accounts).
+
+## Connect your account
+
+You can connect from the Console or from your terminal. Both end on the same Console page.
+
+<Tabs>
+  <Tab title="Console">
+    1. Open **Connectors** from the account menu at [console.ravi.bot](https://console.ravi.bot).
+    2. Under **Add connection**, choose **Connect**, or **Read only** if the agent should never send mail.
+    3. Approve on Google's page. The connection appears under **Your connections** with its email.
+  </Tab>
+  <Tab title="Terminal">
+    Log in first (`ravi login`, see [Log in to the Console](/console/login)), then:
+
+    ```bash
+    ravi connectors connect google               # read and send
+    ravi connectors connect google --read-only   # read only, no sending
+    ```
+
+    The command prints a Console link and opens your browser. Open it signed in to the Console as yourself, the same person who ran the command. Then choose **Continue to Google** and approve. The command waits and prints the connection id when you are done.
+  </Tab>
+</Tabs>
+
+<Warning>
+The link works only for the person who started it. If someone else opens it, the Console tells them it is not theirs and offers nothing. Do not forward it. It expires after 10 minutes.
+</Warning>
+
+When a connection expires, reconnect it from its row in the Console, or from the terminal with the id that `ravi connectors list` shows:
+
+```bash
+ravi connectors connect google --reconnect <connection-id>
+```
+
+Reconnecting with a different Google account adds a new connection instead of replacing the account of the old one.
+
+`ravi connectors connect` and `ravi connectors list` still accept `--project`, but ignore it and print a warning. The flag will be removed after 2027-01-01.
+
+## Use it
+
+```bash
+ravi connectors list                         # your connections, with their email
+ravi gmail list --q "is:unread" --max 10
+ravi gmail read <message-id>
+ravi gmail send --to ana@example.com --subject "Hi" --body "Hello"            # shows the plan, exit 3
+ravi gmail send --to ana@example.com --subject "Hi" --body "Hello" --execute  # sends, unless it needs your approval (see Approvals)
+```
+
+Without `--connector <id>`, Gmail commands use the connection you marked **Make default** in the Console while it is active. If none is marked, or the marked one is not active, they use your newest active Google connection.
+
+If you are not logged in, every Gmail and connectors command stops with `AUTH_REQUIRED` and asks you to run `ravi login`, including requests you send from your own chat.
+
+## Who can use your accounts
+
+In **Only when I ask** mode, your agent uses your accounts only for you:
+
+| Who asks | Can the agent use your Gmail? |
+|---|---|
+| You, in your terminal | Yes |
+| You, passing a message to the agent with `ravi sessions send` or `ravi sessions ask` from your terminal | Yes |
+| You, in your own private chat with the agent (WhatsApp, Slack), after you link it | Yes |
+| A cron job or heartbeat you own, including the shell command of a cron job you own | Yes, if it posts nowhere or only into your own linked private chat (see the note below) |
+| Anyone else, in their own chat with the agent | No. The agent tells them: "I can't use <your name>'s Gmail for your request." |
+| Anyone in a group chat, including you | No. The agent says "I'll send this to you privately." and asks you to repeat the request in your private chat. |
+| Another agent passing a request along, triggers, observers, session goals and background jobs (`ravi jobs run`), including the commands they start | No |
+| A command run under a turn that has already ended | No. Run it again from the current turn. |
+
+A refused request never reaches your account. Commands that are refused this way end with exit code `3` and tell the agent what to say. When your connection needs reconnecting, the agent tells only you, privately.
+
+<Note>
+A cron job or heartbeat that posts into a chat may use your accounts only when that chat is your own private chat with the agent and you have linked it (see below). A routine that posts into any other chat, or into a chat Ravi does not know, is treated like a group message and refused.
+</Note>
+
+### Keep using Gmail from WhatsApp or Slack
+
+Ravi needs to know that you are the person writing in your private chat. In that chat, ask your agent to run `ravi link`. Ravi sends you a private link; open it, sign in to the Console and approve. From then on, your requests in that chat count as yours.
+
+Until you link, the agent refuses Gmail requests in that chat, even yours.
+
+### Cron jobs run as their owner
+
+A cron job remembers who created it. `ravi cron show <id>` prints it on the **Runs as** line, and the JSON output has it as `ownerPrincipal`.
+
+- Jobs created in your terminal or in your own private chat run as you (`operator`), and can use your accounts.
+- Jobs created before this change also run as you.
+- Jobs created by anyone else's request run as that person and cannot use your accounts. If someone else changes a job of yours with `ravi cron set`, anything other than its name, description, schedule, timeout or delete-after (for example its message, shell command, agent, env file, error target, reply session or account), the job becomes theirs.
+- The shell command of a shell job runs as the job, so it can use your accounts only when the job runs as you.
+
+## Approvals
+
+In the Console, each tool of a connection can be set to **Always allow**, **Needs approval** or **Blocked**. When `ravi gmail send --execute` needs your approval:
+
+- In your terminal, the command prints the approval link, opens your browser and waits up to 10 minutes. Approve in the Console and the email is sent.
+- Anywhere else (an agent, a script without a terminal), the command stops with exit code `3` (`CONNECTOR_APPROVAL_REQUIRED`). The agent sends you the approval link privately. After you approve, it runs the same command again with `--approval <id>`:
+
+```bash
+ravi gmail send --to ana@example.com --subject "Hi" --body "Hello" --execute --approval <approval-id>
+```
+
+An approval covers that one email. If you deny it, the command stops with `CONNECTOR_APPROVAL_DENIED`.
+
+## Coming next
+
+- **The person asking.** Other people who talk to the same agent will be able to use their own connected accounts, after they allow it once.
+- **Shared accounts.** Organizations will be able to share one account with chosen agents and chats.

@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 
 afterAll(() => mock.restore());
 const actualRouterConfigModule = await import("../../router/config.js");
@@ -10,6 +10,7 @@ const emitMock = mock(async () => {});
 
 let cronJob: Record<string, unknown> | null = null;
 let cronJobs: Record<string, unknown>[] = [];
+let cronUpdatePatches: Record<string, unknown>[] = [];
 let mockScopeContext: Record<string, unknown> | undefined;
 let mockScopeEnforced = false;
 // Cross-agent grants held by the mock caller, e.g. { permission: "view", objectType: "agent", objectId: "*" }.
@@ -167,6 +168,7 @@ mock.module("../../cron/index.js", () => ({
   dbGetCronJob: () => cronJob,
   dbListCronJobs: () => (cronJobs.length > 0 ? cronJobs : cronJob ? [cronJob] : []),
   dbUpdateCronJob: (_id: string, patch: Record<string, unknown>) => {
+    cronUpdatePatches.push(patch);
     cronJob = {
       ...cronJob,
       ...patch,
@@ -242,6 +244,7 @@ describe("CronCommands --json", () => {
     mockCliContext = undefined;
     creationIdempotency = undefined;
     cronJobs = [];
+    cronUpdatePatches = [];
     cronJob = {
       id: "cron-1",
       name: "Daily",
@@ -1142,5 +1145,157 @@ describe("cron agent-first contract", () => {
     expect(Object.keys(items[0]).sort()).toEqual(["id", "name"]);
     const jobs = payload.jobs as Array<Record<string, unknown>>;
     expect(Object.keys(jobs[0]).sort()).toEqual(["id", "name"]);
+  });
+});
+
+describe("CronCommands owner principal", () => {
+  const MARKERS = ["RAVI_CONTEXT_KEY", "RAVI_SESSION_KEY", "RAVI_SESSION_NAME", "RAVI_AGENT_ID"] as const;
+  let savedEnv: Partial<Record<(typeof MARKERS)[number], string | undefined>> = {};
+
+  beforeEach(() => {
+    savedEnv = {};
+    for (const name of MARKERS) {
+      savedEnv[name] = process.env[name];
+      delete process.env[name];
+    }
+    emitMock.mockClear();
+    mockScopeContext = undefined;
+    mockScopeEnforced = false;
+    mockCliContext = undefined;
+    cronJobs = [];
+    cronUpdatePatches = [];
+    cronJob = {
+      id: "cron-1",
+      name: "Daily",
+      enabled: true,
+      schedule: { type: "every", every: 1_800_000 },
+      executionType: "agent",
+      message: "hello",
+      sessionTarget: "main",
+      deleteAfterRun: false,
+      fireCount: 0,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+  });
+
+  afterEach(() => {
+    for (const name of MARKERS) {
+      if (savedEnv[name] === undefined) delete process.env[name];
+      else process.env[name] = savedEnv[name];
+    }
+  });
+
+  function addAgentJob() {
+    return captureJson(() =>
+      new CronCommands().add(
+        "Morning inbox",
+        undefined,
+        "30m",
+        undefined,
+        undefined,
+        "summarize my inbox",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      ),
+    );
+  }
+
+  it("records the operator as owner when the job is created from the terminal", async () => {
+    const payload = await addAgentJob();
+
+    expect(payload).toMatchObject({ status: "created", job: { ownerPrincipal: "operator" } });
+    expect(cronJob?.ownerPrincipal).toBe("operator");
+  });
+
+  it("records an unknown owner when a runtime creates the job without a context", async () => {
+    process.env.RAVI_SESSION_NAME = "someone-else";
+
+    const payload = await addAgentJob();
+
+    expect(payload).toMatchObject({ job: { ownerPrincipal: "unknown" } });
+  });
+
+  it("shows legacy jobs (no owner) as running as the operator", async () => {
+    const payload = await captureJson(async () => new CronCommands().show("cron-1", true));
+    expect(payload).toMatchObject({ job: { ownerPrincipal: "operator" } });
+
+    const lines: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => lines.push(args.map(String).join(" "));
+    try {
+      new CronCommands().show("cron-1");
+    } finally {
+      console.log = originalLog;
+    }
+    expect(lines).toContain(`  ${"Runs as:".padEnd(16)}operator`);
+  });
+
+  it("re-owns the job when a non-operator turn rewrites what it runs", async () => {
+    cronJob = { ...cronJob, ownerPrincipal: "operator" };
+    process.env.RAVI_SESSION_NAME = "someone-else";
+
+    const payload = await captureJson(() => new CronCommands().set("cron-1", "message", "forward my mail", true));
+
+    expect(payload).toMatchObject({ status: "updated", job: { ownerPrincipal: "unknown" } });
+  });
+
+  it("re-owns the job in the same write for env-file, on-error, agent, account and reply-session edits", async () => {
+    process.env.RAVI_SESSION_NAME = "someone-else";
+    const edits: Array<[string, string, Record<string, unknown>]> = [
+      ["env-file", "/tmp/x.env", { executionType: "shell", shellCommand: "echo ok", message: "" }],
+      ["on-error", "notify-session:someone-else", { executionType: "shell", shellCommand: "echo ok", message: "" }],
+      ["agent", "main", {}],
+      ["account", "wa-other", {}],
+      ["reply-session", "agent:main:main", {}],
+    ];
+
+    for (const [key, value, shape] of edits) {
+      cronJob = { ...cronJob, ...shape, ownerPrincipal: "operator" };
+      cronUpdatePatches = [];
+
+      const payload = await captureJson(() => new CronCommands().set("cron-1", key, value, true));
+
+      expect(payload).toMatchObject({ status: "updated", job: { ownerPrincipal: "unknown" } });
+      expect(cronUpdatePatches).toHaveLength(1);
+      expect(cronUpdatePatches[0]).toMatchObject({ ownerPrincipal: "unknown" });
+    }
+  });
+
+  it("keeps the owner for edits that change neither what runs nor where it reports", async () => {
+    process.env.RAVI_SESSION_NAME = "someone-else";
+
+    for (const [key, value] of [
+      ["name", "Renamed"],
+      ["description", "notes"],
+      ["every", "1h"],
+      ["delete-after", "no"],
+    ] as const) {
+      cronJob = { ...cronJob, ownerPrincipal: "operator" };
+      cronUpdatePatches = [];
+
+      const payload = await captureJson(() => new CronCommands().set("cron-1", key, value, true));
+
+      expect(payload).toMatchObject({ job: { ownerPrincipal: "operator" } });
+      expect(cronUpdatePatches).toHaveLength(1);
+      expect(cronUpdatePatches[0]).not.toHaveProperty("ownerPrincipal");
+    }
+  });
+
+  it("keeps the owner when the operator edits the job", async () => {
+    cronJob = { ...cronJob, ownerPrincipal: "contact:c_bob" };
+
+    const payload = await captureJson(() => new CronCommands().set("cron-1", "message", "new text", true));
+
+    expect(payload).toMatchObject({ job: { ownerPrincipal: "contact:c_bob" } });
   });
 });

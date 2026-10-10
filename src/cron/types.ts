@@ -56,6 +56,11 @@ export interface CronJob {
   shellEnvFile?: string;
   /** Optional error action, currently notify-session:<session> */
   onError?: string;
+  /**
+   * Who the job runs as for personal connectors: `operator`, or the actor
+   * principal of the turn that created it. Unset on legacy rows (= operator).
+   */
+  ownerPrincipal?: string;
 
   // State
   nextRunAt?: number;
@@ -96,6 +101,8 @@ export interface CronJobInput {
   shellEnvFile?: string;
   /** Optional error action, currently notify-session:<session> */
   onError?: string;
+  /** `operator`, or the actor principal of the creating turn. */
+  ownerPrincipal?: string;
 }
 
 /**

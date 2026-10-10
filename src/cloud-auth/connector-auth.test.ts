@@ -1,7 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { CloudAuthError } from "./errors.js";
-import { resolveConnectorCloudCredentials } from "./connector-auth.js";
-import { writeCloudCredentials } from "./storage.js";
+import {
+  assertConnectorSessionUser,
+  deleteConnectorSession,
+  resolveConnectorCloudCredentials,
+} from "./connector-auth.js";
+import {
+  listCloudAuthUserIds,
+  readActiveCloudAuthUserId,
+  readCloudCredentials,
+  readCloudCredentialsForUser,
+  writeCloudCredentials,
+} from "./storage.js";
 import { createRuntimeContext } from "../runtime/context-registry.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import type { CloudCredentials } from "./types.js";
@@ -19,36 +29,176 @@ afterEach(async () => {
 });
 
 describe("resolveConnectorCloudCredentials", () => {
-  it("uses the bound Console user when turn metadata has consoleUserId", () => {
+  it("uses the active session from the terminal", () => {
     writeCloudCredentials(makeCredentials("user_operator", "operator-access"));
-    writeCloudCredentials(makeCredentials("user_alice", "alice-access"));
-    const context = createRuntimeContext({
-      kind: "turn-runtime",
-      metadata: { actorPrincipal: "contact:luis", consoleUserId: "user_alice" },
-    });
-    process.env.RAVI_CONTEXT_KEY = context.contextKey;
 
-    expect(resolveConnectorCloudCredentials().accessToken).toBe("alice-access");
+    const { turn, credentials } = resolveConnectorCloudCredentials();
+
+    expect(credentials.accessToken).toBe("operator-access");
+    expect(turn.speaker.kind).toBe("terminal");
   });
 
-  it("does not fall back to the operator JWT for user-scoped connector tools", () => {
+  it("uses the active session for the operator's own linked chat", () => {
     writeCloudCredentials(makeCredentials("user_operator", "operator-access"));
     const context = createRuntimeContext({
       kind: "turn-runtime",
-      metadata: { actorPrincipal: "contact:luis" },
+      metadata: {
+        actorPrincipal: "contact:luis",
+        actorResolution: "resolved",
+        consoleUserId: "user_operator",
+        consoleOrgId: "org_123",
+        agentIdentityCompartment: "dm:5511999999999@s.whatsapp.net",
+      },
     });
     process.env.RAVI_CONTEXT_KEY = context.contextKey;
 
+    const { turn, credentials } = resolveConnectorCloudCredentials();
+
+    expect(credentials.accessToken).toBe("operator-access");
+    expect(turn.speaker).toEqual({ kind: "owner", contactId: "luis", consoleUserId: "user_operator" });
+  });
+
+  it("never borrows another stored user's session for a contact linked to that user", () => {
+    writeCloudCredentials(makeCredentials("user_alice", "alice-access"));
+    writeCloudCredentials(makeCredentials("user_operator", "operator-access"));
+    const context = createRuntimeContext({
+      kind: "turn-runtime",
+      metadata: {
+        actorPrincipal: "contact:alice",
+        actorResolution: "resolved",
+        consoleUserId: "user_alice",
+        agentIdentityCompartment: "dm:5511888888888@s.whatsapp.net",
+      },
+    });
+    process.env.RAVI_CONTEXT_KEY = context.contextKey;
+
+    let caught: unknown;
     try {
-      resolveConnectorCloudCredentials({ requireBoundUser: true });
-      throw new Error("expected AUTH_REQUIRED");
+      resolveConnectorCloudCredentials();
     } catch (error) {
-      expect(error).toBeInstanceOf(CloudAuthError);
-      expect((error as CloudAuthError).code).toBe("AUTH_REQUIRED");
-      expect((error as CloudAuthError).message).toContain("Operator JWT is not a fallback");
+      caught = error;
     }
+
+    expect(caught).toBeInstanceOf(CloudAuthError);
+    expect((caught as CloudAuthError).code).toBe("CONNECTOR_SPEAKER_NOT_OWNER");
+    expect((caught as CloudAuthError).exitCode).toBe(3);
+  });
+
+  it("does not fall back to the operator session for an unlinked contact", () => {
+    writeCloudCredentials(makeCredentials("user_operator", "operator-access"));
+    const context = createRuntimeContext({
+      kind: "turn-runtime",
+      metadata: {
+        actorPrincipal: "contact:luis",
+        actorResolution: "resolved",
+        agentIdentityCompartment: "dm:5511999999999@s.whatsapp.net",
+      },
+    });
+    process.env.RAVI_CONTEXT_KEY = context.contextKey;
+
+    expect(() => resolveConnectorCloudCredentials()).toThrow(CloudAuthError);
+  });
+
+  it("asks for ravi login from the terminal when no session is stored", () => {
+    let caught: unknown;
+    try {
+      resolveConnectorCloudCredentials();
+    } catch (error) {
+      caught = error;
+    }
+
+    expect((caught as CloudAuthError).code).toBe("AUTH_REQUIRED");
+  });
+
+  it("asks the logged-out owner for ravi login instead of calling them someone else", () => {
+    const context = createRuntimeContext({
+      kind: "turn-runtime",
+      metadata: {
+        actorPrincipal: "contact:luis",
+        actorResolution: "resolved",
+        consoleUserId: "user_operator",
+        consoleOrgId: "org_123",
+        agentIdentityCompartment: "dm:5511999999999@s.whatsapp.net",
+      },
+    });
+    process.env.RAVI_CONTEXT_KEY = context.contextKey;
+
+    const caught = catchError(() => resolveConnectorCloudCredentials());
+
+    expect(caught).toBeInstanceOf(CloudAuthError);
+    expect((caught as CloudAuthError).code).toBe("AUTH_REQUIRED");
+  });
+
+  it("asks for ravi login when the stored session does not say whose it is and a contact speaks", () => {
+    const legacy = makeCredentials("user_operator", "operator-access");
+    legacy.user = { name: "Operator" };
+    writeCloudCredentials(legacy);
+    const context = createRuntimeContext({
+      kind: "turn-runtime",
+      metadata: {
+        actorPrincipal: "contact:luis",
+        actorResolution: "resolved",
+        consoleUserId: "user_operator",
+        consoleOrgId: "org_123",
+        agentIdentityCompartment: "dm:5511999999999@s.whatsapp.net",
+      },
+    });
+    process.env.RAVI_CONTEXT_KEY = context.contextKey;
+
+    const caught = catchError(() => resolveConnectorCloudCredentials());
+
+    expect((caught as CloudAuthError).code).toBe("AUTH_REQUIRED");
   });
 });
+
+describe("deleteConnectorSession", () => {
+  it("forgets a dead session without making another stored user the active one", () => {
+    writeCloudCredentials(makeCredentials("user_alice", "alice-access"));
+    writeCloudCredentials(makeCredentials("user_operator", "operator-access"));
+    expect(readActiveCloudAuthUserId()).toBe("user_operator");
+
+    deleteConnectorSession();
+
+    expect(readActiveCloudAuthUserId()).toBeNull();
+    expect(readCloudCredentials()).toBeNull();
+    expect(listCloudAuthUserIds()).toEqual(["user_alice"]);
+    expect(readCloudCredentialsForUser("user_alice")?.accessToken).toBe("alice-access");
+    expect((catchError(() => resolveConnectorCloudCredentials()) as CloudAuthError).code).toBe("AUTH_REQUIRED");
+  });
+
+  it("removes the only stored session", () => {
+    writeCloudCredentials(makeCredentials("user_operator", "operator-access"));
+
+    deleteConnectorSession();
+
+    expect(readActiveCloudAuthUserId()).toBeNull();
+    expect(listCloudAuthUserIds()).toEqual([]);
+  });
+});
+
+describe("assertConnectorSessionUser", () => {
+  it("refuses a session the Console says belongs to another user", () => {
+    const caught = catchError(() => assertConnectorSessionUser("user_operator", "user_alice"));
+
+    expect(caught).toBeInstanceOf(CloudAuthError);
+    expect((caught as CloudAuthError).code).toBe("AUTH_REQUIRED");
+  });
+
+  it("accepts the same user and sessions that do not name one", () => {
+    expect(() => assertConnectorSessionUser("user_operator", "user_operator")).not.toThrow();
+    expect(() => assertConnectorSessionUser(null, "user_alice")).not.toThrow();
+    expect(() => assertConnectorSessionUser("user_operator", undefined)).not.toThrow();
+  });
+});
+
+function catchError(fn: () => unknown): unknown {
+  try {
+    fn();
+  } catch (error) {
+    return error;
+  }
+  return null;
+}
 
 function makeCredentials(userId: string, accessToken: string): CloudCredentials {
   return {
@@ -60,7 +210,7 @@ function makeCredentials(userId: string, accessToken: string): CloudCredentials 
     accessTokenExpiresAt: "2026-05-10T00:00:00.000Z",
     refreshTokenExpiresAt: "2026-06-10T00:00:00.000Z",
     scopes: ["artifacts:publish"],
-    user: { id: userId },
+    user: { id: userId, name: "Operator" },
     organization: { id: "org_123", name: "Acme" },
     createdAt: "2026-05-09T00:00:00.000Z",
     updatedAt: "2026-05-09T00:00:00.000Z",

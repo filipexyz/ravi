@@ -39,6 +39,7 @@ import { DEFAULT_CRON_SHELL_TIMEOUT_MS } from "../../cron/shell-executor.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 import { buildCronShowOutput, type CronRoutingResolution, type CronRoutingSource } from "../cron-show-output.js";
 import { resolveCronTarget, type CronTargetResolution } from "../../cron/target-resolver.js";
+import { CRON_OPERATOR_OWNER, resolveCronOwnerPrincipalForCurrentTurn } from "../../link/connector-turn.js";
 
 function parseCronShellTimeout(value: string | undefined): number | undefined {
   if (!value) return undefined;
@@ -222,9 +223,41 @@ function assertCronJobMutable(op: string, id: string, job: CronJob, asJson?: boo
   });
 }
 
+/** "Runs as" for personal connectors. Legacy rows without an owner run as the operator. */
+function cronJobRunsAs(job: Pick<CronJob, "ownerPrincipal">): string {
+  return job.ownerPrincipal ?? CRON_OPERATOR_OWNER;
+}
+
+/**
+ * `cron set` keys that change neither what a job runs nor where its output
+ * goes. Any other key (instructions, agent, env file, error target, reply
+ * session, account, and any key added later) set from another person's turn
+ * makes that person the job's owner, so the job cannot keep the operator's
+ * connectors under somebody else's changes.
+ */
+const CRON_OWNER_KEEP_KEYS = new Set([
+  "name",
+  "description",
+  "cron",
+  "every",
+  "tz",
+  "timezone",
+  "timeout",
+  "delete-after",
+]);
+
+/** Owner change that goes in the same write as a `cron set` edit, or nothing. */
+function cronOwnerUpdateForSet(key: string, job: CronJob): Pick<CronJob, "ownerPrincipal"> | Record<string, never> {
+  if (CRON_OWNER_KEEP_KEYS.has(key)) return {};
+  const setterOwner = resolveCronOwnerPrincipalForCurrentTurn();
+  if (setterOwner === CRON_OPERATOR_OWNER || setterOwner === cronJobRunsAs(job)) return {};
+  return { ownerPrincipal: setterOwner };
+}
+
 function serializeCronJob(job: CronJob) {
   return {
     ...job,
+    ownerPrincipal: cronJobRunsAs(job),
     effectiveAgentId: job.executionType === "agent" ? (job.agentId ?? getDefaultAgentId()) : undefined,
     ownerAgentId: job.executionType === "shell" ? job.agentId : undefined,
     scheduleDescription: describeSchedule(job.schedule),
@@ -414,6 +447,7 @@ export class CronCommands {
       for (const line of buildCronShowOutput(job, describeSchedule(job.schedule), agentId, routing)) {
         console.log(line);
       }
+      console.log(`  ${"Runs as:".padEnd(16)}${cronJobRunsAs(job)}`);
     }
     return payload;
   }
@@ -555,6 +589,7 @@ export class CronCommands {
       shellTimeoutMs: isShellJob ? parseCronShellTimeout(timeout) : undefined,
       shellEnvFile: isShellJob ? envFile : undefined,
       onError: isShellJob ? normalizeCronOnError(onError) : undefined,
+      ownerPrincipal: resolveCronOwnerPrincipalForCurrentTurn(),
     };
 
     try {
@@ -706,15 +741,17 @@ export class CronCommands {
       const logHuman = (message: string) => {
         if (!asJson) console.log(message);
       };
+      const ownerUpdate = cronOwnerUpdateForSet(key, job);
+      const update = (updates: Partial<CronJob>) => dbUpdateCronJob(id, { ...updates, ...ownerUpdate });
 
       switch (key) {
         case "name":
-          dbUpdateCronJob(id, { name: value });
+          update({ name: value });
           logHuman(`✓ Name set: ${id} -> ${value}`);
           break;
 
         case "message":
-          dbUpdateCronJob(id, {
+          update({
             executionType: "agent",
             message: value,
             shellCommand: undefined,
@@ -727,7 +764,7 @@ export class CronCommands {
 
         case "shell":
         case "exec":
-          dbUpdateCronJob(id, {
+          update({
             executionType: "shell",
             message: "",
             shellCommand: value,
@@ -740,7 +777,7 @@ export class CronCommands {
             fail("timeout only applies to shell cron jobs");
           }
           const shellTimeoutMs = value === "null" || value === "-" ? undefined : parseCronShellTimeout(value);
-          dbUpdateCronJob(id, { shellTimeoutMs });
+          update({ shellTimeoutMs });
           normalizedValue = shellTimeoutMs ?? null;
           logHuman(`✓ Shell timeout set: ${id} -> ${shellTimeoutMs ? formatDurationMs(shellTimeoutMs) : "(default)"}`);
           break;
@@ -751,7 +788,7 @@ export class CronCommands {
             fail("env-file only applies to shell cron jobs");
           }
           const shellEnvFile = value === "null" || value === "-" ? undefined : value;
-          dbUpdateCronJob(id, { shellEnvFile });
+          update({ shellEnvFile });
           normalizedValue = shellEnvFile ?? null;
           logHuman(`✓ Shell env file set: ${id} -> ${shellEnvFile ?? "(none)"}`);
           break;
@@ -762,7 +799,7 @@ export class CronCommands {
             fail("on-error only applies to shell cron jobs");
           }
           const normalizedOnError = normalizeCronOnError(value);
-          dbUpdateCronJob(id, { onError: normalizedOnError });
+          update({ onError: normalizedOnError });
           normalizedValue = normalizedOnError ?? null;
           logHuman(`✓ On-error action set: ${id} -> ${normalizedOnError ?? "(none)"}`);
           break;
@@ -773,7 +810,7 @@ export class CronCommands {
             fail(`Invalid cron expression: ${value}`);
           }
           const schedule: CronSchedule = { type: "cron", cron: value, timezone: job.schedule.timezone };
-          dbUpdateCronJob(id, { schedule });
+          update({ schedule });
           normalizedValue = schedule;
           logHuman(`✓ Cron set: ${id} -> ${value}`);
           break;
@@ -782,7 +819,7 @@ export class CronCommands {
         case "every": {
           const ms = parseDurationMs(value);
           const schedule: CronSchedule = { type: "every", every: ms };
-          dbUpdateCronJob(id, { schedule });
+          update({ schedule });
           normalizedValue = schedule;
           logHuman(`✓ Interval set: ${id} -> ${formatDurationMs(ms)}`);
           break;
@@ -803,7 +840,7 @@ export class CronCommands {
             }
           }
           const schedule: CronSchedule = { ...job.schedule, timezone };
-          dbUpdateCronJob(id, { schedule });
+          update({ schedule });
           normalizedValue = timezone ?? null;
           logHuman(`✓ Timezone set: ${id} -> ${timezone ?? "(system default)"}`);
           break;
@@ -817,7 +854,7 @@ export class CronCommands {
               fail(`Agent not found: ${agentId}`);
             }
           }
-          dbUpdateCronJob(id, { agentId });
+          update({ agentId });
           normalizedValue = agentId ?? null;
           logHuman(`✓ Agent set: ${id} -> ${agentId ?? "(default)"}`);
           break;
@@ -825,7 +862,7 @@ export class CronCommands {
 
         case "account": {
           const accountId = value === "null" || value === "-" ? undefined : value;
-          dbUpdateCronJob(id, { accountId });
+          update({ accountId });
           normalizedValue = accountId ?? null;
           logHuman(`✓ Account set: ${id} -> ${accountId ?? "(auto)"}`);
           break;
@@ -833,7 +870,7 @@ export class CronCommands {
 
         case "description":
           normalizedValue = value === "null" || value === "-" ? null : value;
-          dbUpdateCronJob(id, { description: normalizedValue === null ? undefined : value });
+          update({ description: normalizedValue === null ? undefined : value });
           logHuman(`✓ Description set: ${id}`);
           break;
 
@@ -842,14 +879,14 @@ export class CronCommands {
           if (!validValues.includes(value)) {
             fail(`Invalid session value: ${value}. Valid: ${validValues.join(", ")}`);
           }
-          dbUpdateCronJob(id, { sessionTarget: value as "main" | "isolated" });
+          update({ sessionTarget: value as "main" | "isolated" });
           logHuman(`✓ Session set: ${id} -> ${value}`);
           break;
         }
 
         case "reply-session": {
           const replySession = value === "null" || value === "-" ? undefined : value;
-          dbUpdateCronJob(id, { replySession });
+          update({ replySession });
           normalizedValue = replySession ?? null;
           logHuman(`✓ Reply session set: ${id} -> ${replySession ?? "(auto)"}`);
           break;
@@ -861,7 +898,7 @@ export class CronCommands {
           if (!["true", "false", "yes", "no", "1", "0"].includes(normalizedBooleanInput)) {
             fail(`Invalid boolean value: ${value}. Use: true, false, yes, no, 1, 0`);
           }
-          dbUpdateCronJob(id, { deleteAfterRun: boolValue });
+          update({ deleteAfterRun: boolValue });
           normalizedValue = boolValue;
           logHuman(`✓ Delete-after set: ${id} -> ${boolValue ? "yes" : "no"}`);
           break;

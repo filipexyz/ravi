@@ -54,6 +54,48 @@ describe("LinkApiClient", () => {
     });
   });
 
+  test("keeps only the approval id, expiry and reason of an approval answer", async () => {
+    const client = new LinkApiClient({
+      fetch: mockFetch(
+        async () =>
+          new Response(
+            JSON.stringify({
+              error: "connector_approval_required",
+              approvalId: "apr_123",
+              approvalUrl: "https://evil.example/connectors/approvals/apr_123",
+              expiresAt: "2026-10-10T12:00:00.000Z",
+              reason: "write_after_read",
+              preview: "PRIVATE_MESSAGE_8K2R",
+            }),
+            { status: 409 },
+          ),
+      ),
+    });
+
+    const error = (await client.request("POST", "/cli/exec/abc", "tok", {}).catch((e) => e)) as CloudAuthError;
+
+    expect(error.code).toBe("CONNECTOR_APPROVAL_REQUIRED");
+    expect(error.details).toEqual({
+      approvalId: "apr_123",
+      expiresAt: "2026-10-10T12:00:00.000Z",
+      reason: "write_after_read",
+    });
+  });
+
+  test("drops a malformed approval id", async () => {
+    const client = new LinkApiClient({
+      fetch: mockFetch(
+        async () =>
+          new Response(JSON.stringify({ error: "connector_approval_pending", approvalId: "../../x" }), { status: 409 }),
+      ),
+    });
+
+    const error = (await client.request("POST", "/cli/exec/abc", "tok", {}).catch((e) => e)) as CloudAuthError;
+
+    expect(error.code).toBe("CONNECTOR_APPROVAL_PENDING");
+    expect(error.details).toBeUndefined();
+  });
+
   test("wraps network errors as SERVER_UNAVAILABLE", async () => {
     const client = new LinkApiClient({
       fetch: mockFetch(async () => {

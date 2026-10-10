@@ -25,6 +25,7 @@ import {
   expandHome,
 } from "../router/index.js";
 import { getAgent } from "../router/config.js";
+import { spawnedAutomationEnv } from "../runtime/turn-origin.js";
 import { dbListTriggers, dbGetTrigger, dbRecordTriggerFilterRejects, dbUpdateTriggerState } from "./triggers-db.js";
 import type { CompiledFilter } from "./filter.js";
 import { isLegacySessionTarget, isSessionNameTemplate, type Trigger } from "./types.js";
@@ -723,6 +724,8 @@ export class TriggerRunner {
       RAVI_TRIGGER_MESSAGE_TS: stringField("messageTs"),
       RAVI_TRIGGER_THREAD_TS: stringField("threadTs"),
       RAVI_TRIGGER_RESPONSE_URL_ID: stringField("responseUrlId"),
+      // The command acts for this trigger, never as the operator's terminal.
+      ...spawnedAutomationEnv("trigger", trigger.id),
     };
   }
 

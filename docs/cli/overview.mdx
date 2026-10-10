@@ -90,7 +90,7 @@ When unsure, run the command without `--execute` first. If it is braked, you get
 
 ### Console-scoped commands
 
-Commands that work with the Ravi Console (`pages`, `bases`, `connectors`, `bridges`, `bug`, `feedback`, `cloud projects`) need `ravi login` first; without it they fail with `AUTH_REQUIRED`. Commands that act on a Console project take `--project <ref>`, a project id or slug. `ravi pages` and `ravi bases` fall back to a saved default project when you omit it:
+Commands that work with the Ravi Console (`pages`, `bases`, `connectors`, `gmail`, `bridges`, `bug`, `feedback`, `cloud projects`) need `ravi login` first; without it they fail with `AUTH_REQUIRED`. Commands that act on a Console project take `--project <ref>`, a project id or slug. `ravi pages` and `ravi bases` fall back to a saved default project when you omit it:
 
 ```bash
 ravi cloud scope set --global --project <ref>   # default project for this install
@@ -99,6 +99,8 @@ ravi bases list --project <ref>                 # one-off override
 ```
 
 `ravi cloud scope set` also takes `--agent`, `--session` or `--workspace` instead of `--global`. See [Log in to the Console](/console/login).
+
+`connectors` and `gmail` do not use a project: a connection belongs to the person who connected it. `--project` on `connectors` is ignored with a warning. See [Connect your accounts](/console/connectors).
 
 ### Who runs the command
 
@@ -190,7 +192,7 @@ Each line is one root command. Run `ravi <group> --help` for its subcommands.
 | `pages` | Publish pages to your project host (`ravi pages ship`), visibility, passwords, domains. |
 | `bases` | Typed project tables: schema, rows, views, charts, row-event subscriptions. |
 | `artifacts` | Artifact ledger and lineage; `artifacts publish` is the advanced upload behind Pages. |
-| `connectors` | Connect external services (Gmail, Calendar, ...) through the Console. |
+| `connectors` | Connect your own accounts (Gmail, Calendar, ...) through the Console. |
 | `bridges` | MCP bridges managed through the Console. |
 | `inbox` | Local inbox and the Console agent-inbox poller. |
 | `sync` | Local-first sync outbox and inbox with the Console. |
@@ -208,7 +210,7 @@ Each line is one root command. Run `ravi <group> --help` for its subcommands.
 | `meetings` | Meeting artifacts and providers. |
 | `mail` | Local-first mail accounts, mailboxes, threads and sending. |
 | `calendars` | Local-first calendars and availability. |
-| `gmail` | Gmail through a connected Google connector. |
+| `gmail` | Your Gmail, through your connected Google account. |
 | `yt` | YouTube Data and Analytics APIs. |
 | `insights` | Operational insights with lineage. |
 | `specs` | Versioned specs under `.ravi/specs`. |

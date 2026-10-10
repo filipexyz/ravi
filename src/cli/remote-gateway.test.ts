@@ -808,6 +808,175 @@ describe("ravi link failures over the gateway", () => {
   );
 });
 
+describe("personal connector blocks over the gateway", () => {
+  async function relay(op: string, error: CloudAuthError) {
+    const local = cloudErrorToContractError(op, error);
+    const response = contractErrorResponse(local);
+    const remote = remoteGatewayErrorToContractError(
+      op,
+      result({ status: response.status, body: await response.text() }),
+    );
+    return { local, remote };
+  }
+
+  it("keeps the message, chat line and reply target of a speaker-not-owner block", async () => {
+    const chatLine = "I can't use Luis's Gmail for your request.";
+    const { local, remote } = await relay(
+      "gmail list",
+      new CloudAuthError(
+        "CONNECTOR_SPEAKER_NOT_OWNER",
+        `This message came from someone other than Luis, and personal connections serve only Luis's own requests. Reply in this chat: "${chatLine}"`,
+        {
+          exitCode: 3,
+          details: {
+            source: "connector-turn",
+            chatLine,
+            chatLinePt: "Não posso usar o Gmail do Luis para o seu pedido.",
+            replyTo: "same_chat",
+          },
+        },
+      ),
+    );
+
+    expect(remote).toMatchObject({
+      op: "gmail list",
+      code: "CONNECTOR_SPEAKER_NOT_OWNER",
+      exitCode: 3,
+      message: local.message,
+      details: {
+        chatLine,
+        chatLinePt: "Não posso usar o Gmail do Luis para o seu pedido.",
+        replyTo: "same_chat",
+        suggestedAction: local.details.suggestedAction,
+      },
+    });
+    expect(remote?.message).not.toBe("Remote command was blocked by policy.");
+  });
+
+  it("keeps the group-blocked line for connectors commands", async () => {
+    const { local, remote } = await relay(
+      "connectors list",
+      new CloudAuthError(
+        "CONNECTOR_GROUP_BLOCKED",
+        'Personal connections are never used in group chats, where other people would read the answer. Reply in the group: "I\'ll send this to you privately." and ask Luis to repeat the request in their direct chat with you.',
+        {
+          exitCode: 3,
+          details: {
+            source: "connector-turn",
+            chatLine: "I'll send this to you privately.",
+            chatLinePt: "Vou te mandar isso no privado.",
+            replyTo: "same_chat",
+          },
+        },
+      ),
+    );
+
+    expect(remote).toMatchObject({
+      code: "CONNECTOR_GROUP_BLOCKED",
+      exitCode: 3,
+      message: local.message,
+      details: { chatLine: "I'll send this to you privately.", replyTo: "same_chat" },
+    });
+  });
+
+  it("keeps the whole reconnect link for the owner", async () => {
+    const link = "https://console.ravi.bot/connectors";
+    const { remote } = await relay(
+      "gmail list",
+      new CloudAuthError(
+        "CONNECTOR_REAUTH_REQUIRED",
+        'The Gmail connection expired. Tell Luis privately, never in a group: "Your Gmail connection expired. Reconnect: console.ravi.bot/connectors"',
+        {
+          details: {
+            source: "connector-turn",
+            chatLine: `Your Gmail connection expired. Reconnect: ${link}`,
+            replyTo: "owner_privately",
+            reconnectLink: link,
+          },
+        },
+      ),
+    );
+
+    expect(remote?.message).toContain("Reconnect: console.ravi.bot/connectors");
+    expect(remote?.details).toMatchObject({
+      chatLine: `Your Gmail connection expired. Reconnect: ${link}`,
+      replyTo: "owner_privately",
+      reconnectLink: link,
+    });
+  });
+
+  it("drops a reconnect link that is not the Console connectors page, and unknown reply targets", () => {
+    const body = (error: Record<string, unknown>) =>
+      JSON.stringify({
+        success: false,
+        op: "gmail list",
+        exitCode: 1,
+        outcome: "failed",
+        error: { code: "CONNECTOR_REAUTH_REQUIRED", message: "The connection expired.", retryable: false, ...error },
+      });
+
+    for (const reconnectLink of [
+      "javascript:alert(1)",
+      "http://evil.example/connectors",
+      "https://evil.example/connectors?next=https://x",
+      "https://user:pw@console.ravi.bot/connectors",
+      "https://console.ravi.bot/oauth/callback",
+    ]) {
+      const remote = remoteGatewayErrorToContractError(
+        "gmail list",
+        result({ status: 409, body: body({ chatLine: "Reconnect your Gmail.", replyTo: "everyone", reconnectLink }) }),
+      );
+      expect(remote?.details.reconnectLink).toBeUndefined();
+      expect(remote?.details.replyTo).toBeUndefined();
+      expect(remote?.details.chatLine).toBe("Reconnect your Gmail.");
+    }
+  });
+
+  it("uses the catalog copy, not remote text, for connector failures without a chat line", async () => {
+    const { remote } = await relay(
+      "gmail list",
+      new CloudAuthError("CONNECTOR_TOOL_BLOCKED", "PRIVATE_MESSAGE_8K2R", { exitCode: 3 }),
+    );
+
+    expect(remote).toMatchObject({
+      code: "CONNECTOR_TOOL_BLOCKED",
+      message: "The account owner or the organization blocked this tool.",
+    });
+    expect(JSON.stringify(remote?.envelope())).not.toContain("PRIVATE_MESSAGE_8K2R");
+
+    const auth = await relay("gmail list", new CloudAuthError("AUTH_REQUIRED", "PRIVATE_MESSAGE_8K2R"));
+    expect(auth.remote).toMatchObject({
+      code: "AUTH_REQUIRED",
+      message: "Console authentication is required.",
+      details: { suggestedAction: "run 'ravi login' and retry" },
+    });
+  });
+
+  it("does not let other commands carry connector chat lines", () => {
+    const remote = remoteGatewayErrorToContractError(
+      "pages ship",
+      result({
+        status: 403,
+        body: JSON.stringify({
+          success: false,
+          op: "pages ship",
+          exitCode: 3,
+          outcome: "blocked",
+          error: {
+            code: "CONNECTOR_SPEAKER_NOT_OWNER",
+            message: "PRIVATE_MESSAGE_8K2R",
+            retryable: false,
+            chatLine: "PRIVATE_LINE",
+          },
+        }),
+      }),
+    );
+
+    expect(remote?.message).toBe("Remote command was blocked by policy.");
+    expect(remote?.details.chatLine).toBeUndefined();
+  });
+});
+
 describe("gateway requirement for runtime context keys", () => {
   it("requires the gateway whenever a context key is present", () => {
     expect(requiresRemoteGateway({ RAVI_CONTEXT_KEY: "rctx_test" })).toBe(true);

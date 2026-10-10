@@ -33011,7 +33011,7 @@ export const ConnectorsListInputSchema = {
       "type": "string"
     },
     "project": {
-      "description": "Filter by Ravi Cloud project id",
+      "description": "Ignored: connections belong to you, not to a project (removed after 2027-01-01)",
       "type": "string"
     },
     "provider": {
@@ -33030,23 +33030,57 @@ export const ConnectorsListReturnSchema = {
       "items": {
         "additionalProperties": false,
         "properties": {
+          "accessMode": {
+            "enum": [
+              "full",
+              "read_only"
+            ],
+            "type": "string"
+          },
           "createdAt": {
             "type": "string"
           },
           "displayName": {
             "type": "string"
           },
+          "externalAccountLogin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "id": {
             "type": "string"
           },
+          "isDefault": {
+            "type": "boolean"
+          },
           "projectId": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "provider": {
             "type": "string"
           },
           "requiresReauth": {
             "type": "boolean"
+          },
+          "scopeKind": {
+            "enum": [
+              "user",
+              "organization"
+            ],
+            "type": "string"
           },
           "scopes": {
             "items": {
@@ -33168,6 +33202,13 @@ export const ConnectorsShowReturnSchema = {
     "connection": {
       "additionalProperties": false,
       "properties": {
+        "accessMode": {
+          "enum": [
+            "full",
+            "read_only"
+          ],
+          "type": "string"
+        },
         "capabilities": {
           "items": {
             "type": "string"
@@ -33196,6 +33237,9 @@ export const ConnectorsShowReturnSchema = {
         "id": {
           "type": "string"
         },
+        "isDefault": {
+          "type": "boolean"
+        },
         "lastReauthAt": {
           "anyOf": [
             {
@@ -33206,14 +33250,48 @@ export const ConnectorsShowReturnSchema = {
             }
           ]
         },
+        "lastUsedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "projectId": {
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "provider": {
           "type": "string"
         },
         "requiresReauth": {
           "type": "boolean"
+        },
+        "revokedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "scopeKind": {
+          "enum": [
+            "user",
+            "organization"
+          ],
+          "type": "string"
         },
         "scopes": {
           "items": {
@@ -33234,8 +33312,8 @@ export const ConnectorsShowReturnSchema = {
         "requiresReauth",
         "scopes",
         "createdAt",
-        "capabilities",
         "externalAccountLogin",
+        "capabilities",
         "grantedAt",
         "lastReauthAt"
       ],
@@ -46144,7 +46222,7 @@ export const GmailListInputSchema = {
   "additionalProperties": false,
   "properties": {
     "connector": {
-      "description": "Connector id (defaults to first active Google)",
+      "description": "Connection id (defaults to your default Google connection, else the newest active one)",
       "type": "string"
     },
     "cursor": {
@@ -46230,7 +46308,7 @@ export const GmailReadInputSchema = {
   "additionalProperties": false,
   "properties": {
     "connector": {
-      "description": "Connector id (defaults to first active Google)",
+      "description": "Connection id (defaults to your default Google connection, else the newest active one)",
       "type": "string"
     },
     "format": {

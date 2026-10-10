@@ -4,7 +4,10 @@ import {
   buildRuntimeCallerPrincipal,
   buildSessionRelayTurnOrigin,
   isSessionRelayTurn,
+  RAVI_AUTOMATION_PRINCIPAL_ENV,
+  readSpawnedAutomationPrincipal,
   resolveRuntimeTurnOrigin,
+  spawnedAutomationEnv,
 } from "./turn-origin.js";
 
 describe("runtime turn origin", () => {
@@ -50,6 +53,31 @@ describe("runtime turn origin", () => {
     expect(buildRuntimeCallerPrincipal({ sessionKey: "agent:origin-agent:main" })).toEqual({
       type: "automation",
       id: "session:agent:origin-agent:main",
+    });
+  });
+
+  it("attributes a relay from a daemon-spawned automation process to that automation", () => {
+    const cronEnv = spawnedAutomationEnv("cron", "job_1");
+    expect(cronEnv).toEqual({ [RAVI_AUTOMATION_PRINCIPAL_ENV]: "automation:cron:job_1" });
+
+    // Without a runtime context and with the admin default credential alike.
+    expect(buildRuntimeCallerPrincipal(undefined, cronEnv)).toEqual({ type: "automation", id: "cron:job_1" });
+    expect(buildRuntimeCallerPrincipal({ agentId: "bootstrap" }, spawnedAutomationEnv("job", "j_2"))).toEqual({
+      type: "automation",
+      id: "job:j_2",
+    });
+    expect(buildRuntimeCallerPrincipal(undefined, spawnedAutomationEnv("trigger", "tr_3"))).toEqual({
+      type: "automation",
+      id: "trigger:tr_3",
+    });
+  });
+
+  it("ignores a malformed automation marker", () => {
+    expect(readSpawnedAutomationPrincipal({ [RAVI_AUTOMATION_PRINCIPAL_ENV]: "operator" })).toBeNull();
+    expect(readSpawnedAutomationPrincipal({ [RAVI_AUTOMATION_PRINCIPAL_ENV]: "automation:operator:local" })).toBeNull();
+    expect(buildRuntimeCallerPrincipal(undefined, { [RAVI_AUTOMATION_PRINCIPAL_ENV]: "x y" })).toEqual({
+      type: "automation",
+      id: "operator:local",
     });
   });
 

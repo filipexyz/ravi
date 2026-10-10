@@ -6248,12 +6248,16 @@ export type ConnectorsListInput = {
 /** Return shape for `connectors.list`. */
 export type ConnectorsListReturn = {
   connections: Array<{
+    accessMode?: "full" | "read_only";
     createdAt: string;
     displayName: string;
+    externalAccountLogin?: string | null;
     id: string;
-    projectId: string;
+    isDefault?: boolean;
+    projectId: string | null;
     provider: string;
     requiresReauth: boolean;
+    scopeKind?: "user" | "organization";
     scopes: string[];
     status: string;
   }>;
@@ -6286,16 +6290,21 @@ export type ConnectorsShowInput = {
 /** Return shape for `connectors.show`. */
 export type ConnectorsShowReturn = {
   connection: {
+    accessMode?: "full" | "read_only";
     capabilities: string[];
     createdAt: string;
     displayName: string;
     externalAccountLogin: string | null;
     grantedAt: string;
     id: string;
+    isDefault?: boolean;
     lastReauthAt: string | null;
-    projectId: string;
+    lastUsedAt?: string | null;
+    projectId: string | null;
     provider: string;
     requiresReauth: boolean;
+    revokedAt?: string | null;
+    scopeKind?: "user" | "organization";
     scopes: string[];
     status: string;
   };

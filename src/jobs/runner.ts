@@ -14,6 +14,7 @@ import { appendFileSync, mkdirSync, openSync, closeSync, readFileSync, existsSyn
 import { dirname } from "node:path";
 import { nats } from "../nats.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
+import { spawnedAutomationEnv } from "../runtime/turn-origin.js";
 import { logger } from "../utils/logger.js";
 import { dbFinishJob, dbGetJob, dbListJobs, dbListRunningJobs, dbMarkJobNotified, dbMarkJobRunning } from "./store.js";
 import { isJobTerminal, type JobRecord } from "./types.js";
@@ -35,6 +36,7 @@ export interface JobsRunnerOptions {
     command: string,
     cwd: string | null,
     logPath: string,
+    env: Record<string, string>,
   ) => { pid: number | null; onExit: (cb: (code: number | null, signal: string | null) => void) => void };
   notifySession?: (job: JobRecord, summary: string) => Promise<void>;
   now?: () => number;
@@ -96,7 +98,8 @@ export class JobsRunner {
 
     let spawned: { pid: number | null; onExit: (cb: (code: number | null, signal: string | null) => void) => void };
     try {
-      spawned = this.spawnCommand(job.command, job.cwd, job.logPath);
+      // O job age em nome dele mesmo, nunca como o terminal do operador.
+      spawned = this.spawnCommand(job.command, job.cwd, job.logPath, spawnedAutomationEnv("job", job.id));
     } catch (error) {
       dbFinishJob(jobId, { status: "failed", exitCode: null, signal: null });
       appendFileSync(
@@ -223,7 +226,7 @@ async function defaultNotifySession(job: JobRecord, summary: string): Promise<vo
   });
 }
 
-function defaultSpawnCommand(command: string, cwd: string | null, logPath: string) {
+function defaultSpawnCommand(command: string, cwd: string | null, logPath: string, env: Record<string, string>) {
   mkdirSync(dirname(logPath), { recursive: true });
   const fd = openSync(logPath, "a");
   const child = spawn(command, {
@@ -231,7 +234,7 @@ function defaultSpawnCommand(command: string, cwd: string | null, logPath: strin
     cwd: cwd ?? process.cwd(),
     stdio: ["ignore", fd, fd],
     detached: process.platform !== "win32",
-    env: process.env,
+    env: { ...process.env, ...env },
   });
   closeSync(fd);
   return {

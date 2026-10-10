@@ -1,4 +1,6 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 
 afterAll(() => mock.restore());
@@ -38,6 +40,7 @@ mock.module("../omni/session-stream.js", () => ({
 }));
 
 const { CronRunner } = await import("./runner.js");
+const { resolveConnectorTurn } = await import("../link/connector-turn.js");
 const { dbCreateCronJob, dbGetCronJob, dbMarkJobDispatched, dbUpdateJobState } = await import("./cron-db.js");
 const { CRON_RUNTIME_EVENTS_TOPIC } = await import("./turn-outcome.js");
 
@@ -321,6 +324,56 @@ describe("CronRunner agent job outcome tracking", () => {
       expect(subscribedTopics).toContain(CRON_RUNTIME_EVENTS_TOPIC);
     } finally {
       await runner.stop();
+    }
+  });
+});
+
+describe("CronRunner shell jobs and personal connectors", () => {
+  function parseEnvDump(text: string): Record<string, string> {
+    const env: Record<string, string> = {};
+    for (const line of text.split("\n")) {
+      const eq = line.indexOf("=");
+      if (eq > 0) env[line.slice(0, eq)] = line.slice(eq + 1);
+    }
+    return env;
+  }
+
+  async function runShellJobEnv(ownerPrincipal: string): Promise<{ jobId: string; env: Record<string, string> }> {
+    const out = join(stateDir!, `env-${Math.random().toString(36).slice(2, 8)}.txt`);
+    const envFile = join(stateDir!, "job.env");
+    // The env file cannot rename the automation the command acts for.
+    writeFileSync(envFile, "RAVI_AUTOMATION_PRINCIPAL=automation:cron:someone-else\n");
+    const job = dbCreateCronJob({
+      name: `shell-env-${Math.random().toString(36).slice(2, 8)}`,
+      schedule: { type: "every", every: 60_000 },
+      message: "",
+      executionType: "shell",
+      shellCommand: `env > '${out}'`,
+      shellEnvFile: envFile,
+      ownerPrincipal,
+    });
+    await new CronRunner().triggerJob(job.id);
+    return { jobId: job.id, env: parseEnvDump(readFileSync(out, "utf8")) };
+  }
+
+  const owner = { activeUserId: "user_luis", activeOrgId: "org_1", ownerName: "Luis" };
+
+  it("runs the command as the job's routine, never as the operator's terminal", async () => {
+    const contactJob = await runShellJobEnv("contact:c_bob");
+
+    expect(contactJob.env.RAVI_AUTOMATION_PRINCIPAL).toBe(`automation:cron:${contactJob.jobId}`);
+    const blocked = resolveConnectorTurn({ ...owner, env: contactJob.env });
+    expect(blocked.ok).toBe(false);
+    if (!blocked.ok) expect(blocked.error.code).toBe("CONNECTOR_SPEAKER_NOT_OWNER");
+
+    const operatorJob = await runShellJobEnv("operator");
+    const allowed = resolveConnectorTurn({ ...owner, env: operatorJob.env });
+    expect(allowed.ok).toBe(true);
+    if (allowed.ok) {
+      expect(allowed.turn).toMatchObject({
+        speaker: { kind: "automation" },
+        routine: { kind: "cron", id: operatorJob.jobId },
+      });
     }
   });
 });

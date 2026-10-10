@@ -4,15 +4,22 @@ import { createInterface } from "node:readline/promises";
 import { z } from "zod";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { ContractError, contractDryRun } from "../agent-contract.js";
-import { cloudAuthErrorFromUnknown } from "../../cloud-auth/errors.js";
-import { LinkStepUpRequiredError } from "../../link/client.js";
-import { execCapability, listConnectors } from "../../link/connectors.js";
+import { CloudAuthError, cloudAuthErrorFromUnknown } from "../../cloud-auth/errors.js";
+import { APPROVAL_ID_PATTERN, LinkStepUpRequiredError } from "../../link/client.js";
+import { currentConnectorRuntimeContext } from "../../link/connector-turn.js";
+import {
+  connectorReconnectError,
+  execCapability,
+  listConnectors,
+  pickDefaultConnector,
+  waitForConnectorApproval,
+} from "../../link/connectors.js";
 import { jsonValueSchema } from "../return-schemas.js";
 import { declareCommandReturns } from "./operational-return-schemas.js";
 
 @Group({
   name: "gmail",
-  description: "Operate Gmail through a connected Google connector",
+  description: "Operate your Gmail through your connected Google account",
   scope: "open",
 })
 export class GmailCommands {
@@ -24,7 +31,10 @@ export class GmailCommands {
     @Option({ flags: "--max <n>", description: "Max messages to return (1-100, default 25)" }) maxOpt?: string,
     @Option({ flags: "--cursor <token>", description: "Page token for the next page (Gmail nextPageToken)" })
     cursor?: string,
-    @Option({ flags: "--connector <id>", description: "Connector id (defaults to first active Google)" })
+    @Option({
+      flags: "--connector <id>",
+      description: "Connection id (defaults to your default Google connection, else the newest active one)",
+    })
     connector?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
@@ -70,7 +80,10 @@ export class GmailCommands {
   async read(
     @Arg("id", { description: "Gmail message id (from `ravi gmail list`)" }) id: string,
     @Option({ flags: "--format <format>", description: "full | metadata | raw (default full)" }) format?: string,
-    @Option({ flags: "--connector <id>", description: "Connector id (defaults to first active Google)" })
+    @Option({
+      flags: "--connector <id>",
+      description: "Connection id (defaults to your default Google connection, else the newest active one)",
+    })
     connector?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
@@ -123,7 +136,7 @@ export class GmailCommands {
     action: "send",
     risk: "high",
     requiresConfirmation: true,
-    input: ["to", "cc", "bcc", "subject", "body", "html", "connector"],
+    input: ["to", "cc", "bcc", "subject", "body", "html", "connector", "approval"],
     redactions: ["body", "html"],
   })
   @CliOnly()
@@ -137,9 +150,17 @@ export class GmailCommands {
     @Option({ flags: "--html <body>", description: "Optional HTML body" }) html?: string,
     @Option({ flags: "--in-reply-to <messageId>", description: "Message-Id this email replies to" })
     inReplyTo?: string,
-    @Option({ flags: "--connector <id>", description: "Connector id (defaults to first active Google)" })
+    @Option({
+      flags: "--connector <id>",
+      description: "Connection id (defaults to your default Google connection, else the newest active one)",
+    })
     connector?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--approval <id>",
+      description: "Approval id the account owner approved for this exact email (from an approval answer)",
+    })
+    approval?: string,
     @Option({
       flags: "--execute",
       description: "Actually send the email; default is a dry-run that only shows the plan (exit 3)",
@@ -147,6 +168,9 @@ export class GmailCommands {
     execute?: boolean,
   ) {
     return runGmailCommand(asJson, async () => {
+      if (approval !== undefined && !APPROVAL_ID_PATTERN.test(approval)) {
+        throw new CloudAuthError("PAYLOAD_INVALID", "--approval must be the approval id from the approval answer.");
+      }
       const recipients = parseAddressList(to);
       if (!recipients.length) {
         throw new Error("--to is required");
@@ -193,6 +217,7 @@ export class GmailCommands {
         capability: "gmail.message.send",
         parameters,
         asJson,
+        approvalId: approval,
       });
 
       if (asJson) {
@@ -224,13 +249,10 @@ async function execWithStepUp(input: {
   capability: string;
   parameters: unknown;
   asJson: boolean | undefined;
+  approvalId?: string;
 }) {
   try {
-    return await execCapability({
-      connectorId: input.connectorId,
-      capability: input.capability,
-      parameters: input.parameters,
-    });
+    return await execWithApproval(input);
   } catch (error) {
     if (!(error instanceof LinkStepUpRequiredError)) throw error;
     if (input.asJson) {
@@ -258,13 +280,63 @@ async function execWithStepUp(input: {
     }
     const token = await promptStepUpToken(input.asJson);
     if (!token) throw new Error("Step-up cancelled.");
-    return execCapability({
+    return execWithApproval({ ...input, stepUpToken: token });
+  }
+}
+
+/**
+ * Run the action, and when the owner must approve it first: at the
+ * operator's own terminal (a TTY, no runtime context) open the approval page
+ * and wait for the decision, then run it again with the approval. Anywhere
+ * else the approval answer goes back to the caller (exit 3) with the link to
+ * send the owner and the `--approval <id>` to re-run with.
+ */
+async function execWithApproval(input: {
+  connectorId: string;
+  capability: string;
+  parameters: unknown;
+  asJson: boolean | undefined;
+  approvalId?: string;
+  stepUpToken?: string;
+}) {
+  const run = (approvalId: string | undefined) =>
+    execCapability({
       connectorId: input.connectorId,
       capability: input.capability,
       parameters: input.parameters,
-      stepUpToken: token,
+      ...(input.stepUpToken ? { stepUpToken: input.stepUpToken } : {}),
+      ...(approvalId ? { approvalId } : {}),
     });
+  try {
+    return await run(input.approvalId);
+  } catch (error) {
+    if (!(error instanceof CloudAuthError) || error.code !== "CONNECTOR_APPROVAL_REQUIRED") throw error;
+    const approvalId = typeof error.details?.approvalId === "string" ? error.details.approvalId : null;
+    const approvalLink = typeof error.details?.approvalLink === "string" ? error.details.approvalLink : null;
+    if (!approvalId || !approvalLink || !isOperatorTerminal(input.asJson)) throw error;
+    console.error("The account owner must approve this action first.");
+    console.error(`Open: ${approvalLink}`);
+    console.error("Waiting for the decision (up to 10 minutes)...");
+    try {
+      await openExternal(approvalLink);
+    } catch {
+      // Best-effort browser open
+    }
+    const outcome = await waitForConnectorApproval(approvalId);
+    if (outcome === "approved") return run(approvalId);
+    if (outcome === "denied") {
+      throw new CloudAuthError("CONNECTOR_APPROVAL_DENIED", "The account owner denied this action.", { exitCode: 3 });
+    }
+    if (outcome === "expired") {
+      throw new CloudAuthError("CONNECTOR_APPROVAL_INVALID", "The approval expired before it was decided.");
+    }
+    throw error;
   }
+}
+
+function isOperatorTerminal(asJson: boolean | undefined): boolean {
+  if (asJson || !process.stdin.isTTY || !process.stderr.isTTY) return false;
+  return !currentConnectorRuntimeContext().present;
 }
 
 async function promptStepUpToken(asJson: boolean | undefined): Promise<string | null> {
@@ -303,13 +375,14 @@ function openExternal(url: string): Promise<void> {
 
 async function resolveDefaultGoogleConnector(): Promise<string> {
   const connectors = await listConnectors({ provider: "google" });
-  const active = connectors.find((conn) => conn.status === "active" && !conn.requiresReauth);
-  if (!active) {
-    throw new Error(
-      "No active Google connector found. Run `ravi connectors connect google` first, or pass --connector <id>.",
-    );
-  }
-  return active.id;
+  const { connector, needsReconnect } = pickDefaultConnector(connectors, "google");
+  if (connector) return connector.id;
+  if (needsReconnect) throw connectorReconnectError();
+  throw new CloudAuthError(
+    "CONNECTOR_CONNECTION_REQUIRED",
+    "You have no active Google connection. Run `ravi connectors connect google` first, or pass --connector <id>.",
+    { details: { source: "connector-turn" } },
+  );
 }
 
 function parseAddressList(value: string | undefined): string[] {
