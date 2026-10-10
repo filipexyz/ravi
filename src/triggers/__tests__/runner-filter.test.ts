@@ -433,3 +433,26 @@ describe("TriggerRunner main-session pinned recipient", () => {
     });
   });
 });
+
+describe("TriggerRunner shell environment", () => {
+  it("runs the shell command as acting for the trigger, never as the operator's terminal", async () => {
+    const topic = "ravi.test.automation-marker";
+    const trigger = dbCreateTrigger({
+      name: "marker-shell",
+      agentId: "trigger-test-agent",
+      topic,
+      message: "",
+      executionType: "shell",
+      shellCommand: `printf '%s\\n' "$RAVI_AUTOMATION_PRINCIPAL" >> '${markerPath()}'`,
+      shellTimeoutMs: 10_000,
+      session: "isolated",
+      cooldownMs: 0,
+    });
+
+    await startRunner();
+    emit(topic, { eventId: "evt-marker" });
+
+    await waitFor(() => firedShellTriggerIds().length >= 1);
+    expect(firedShellTriggerIds()).toEqual([`automation:trigger:${trigger.id}`]);
+  });
+});
