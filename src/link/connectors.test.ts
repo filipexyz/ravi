@@ -188,7 +188,12 @@ describe("connector link helpers", () => {
         consoleClient: makeConsoleClient(async () => ({})),
         link,
         readCredentials: makeReadCredentials(),
-        turn: { activeUserId: "user_alice", runtimeContext: { present: true, record } },
+        // The owner's direct chat, in a session of its own.
+        turn: {
+          activeUserId: "user_alice",
+          runtimeContext: { present: true, record },
+          isPrivateDirectSession: () => true,
+        },
       },
     );
 

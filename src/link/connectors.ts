@@ -63,7 +63,11 @@ export interface ConnectorHelperDeps {
 
 export interface ConnectorListItem {
   id: string;
-  /** Always null since connections belong to a person (kept until 2027-01-01). */
+  /**
+   * Legacy, ignored: connections belong to a person. Until 2027-01-01 the
+   * Worker sends the row's project, else the stored legacy project id, else
+   * "" (older answers sent null).
+   */
   projectId: string | null;
   provider: string;
   displayName: string;

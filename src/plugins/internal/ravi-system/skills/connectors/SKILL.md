@@ -23,11 +23,16 @@ Todo agent começa no modo "Only when I ask" (`owner`): as contas do dono servem
 só aos pedidos do próprio dono. O dono pode mudar isso por agent (veja Modo do
 agent). Esta seção vale para o modo `owner`.
 
-- Pode: o terminal do dono, o `ravi sessions send|ask` dele, o chat privado do
-  dono com o agent depois do `ravi link`, e crons/heartbeat do dono que
-  respondem em lugar nenhum ou só no chat privado dele.
-- Não pode: outra pessoa (mesmo com tag de dono), grupo (nem o dono), outro
-  agent repassando, triggers, observers, jobs.
+- Pode: o terminal do dono; o `ravi sessions send|ask` dele quando a resposta
+  volta para o terminal ou vai só para o chat privado dele; o chat privado do
+  dono com o agent depois do `ravi link`, quando esse chat tem uma sessão só
+  dele; e crons/heartbeat do dono que respondem em lugar nenhum ou só no chat
+  privado dele.
+- Não pode: outra pessoa (mesmo com tag de dono), grupo (nem o dono), o chat
+  privado do dono numa sessão que outras pessoas compartilham (DM scope
+  `main`, uma rota que manda vários chats para a mesma sessão, um chat
+  anexado), um `ravi sessions send` numa sessão que responde num grupo ou no
+  chat de outra pessoa, outro agent repassando, triggers, observers, jobs.
 
 O Ravi classifica o turno antes de qualquer chamada. Um turno recusado nunca
 chega na conta e sai com exit `3`. Não tente contornar com outro `--connector`,
@@ -114,7 +119,7 @@ privado, nunca num grupo).
 | Código | O que aconteceu | O que fazer | Exit |
 |---|---|---|---|
 | `WRITE_REQUIRES_EXECUTE` | `gmail send` sem `--execute` | revise o plano e rode com `--execute` | 3 |
-| `CONNECTOR_GROUP_BLOCKED` | pedido num grupo | diga no grupo "I'll send this to you privately." e peça ao dono para repetir no privado | 3 |
+| `CONNECTOR_GROUP_BLOCKED` | pedido num grupo; ou no chat privado do dono numa sessão compartilhada; ou um `ravi sessions send` cuja sessão responde num grupo ou no chat de outra pessoa | no grupo, diga "I'll send this to you privately." e peça ao dono para repetir no privado; na sessão compartilhada, responda com o `chatLine` (dar a cada pessoa a própria sessão); no `sessions send`, não ponha nada da conta nesse chat e não repita | 3 |
 | `CONNECTOR_SPEAKER_NOT_OWNER` | quem pediu não é o dono | responda com o `chatLine` ("I can't use <dono>'s Gmail for your request.") | 3 |
 | `CONNECTOR_APPROVAL_REQUIRED` | a ação precisa da aprovação do dono | veja Aprovações | 3 |
 | `CONNECTOR_APPROVAL_PENDING` | o dono ainda não decidiu | espere; se ele não viu, mande o link de novo no privado | 3 |

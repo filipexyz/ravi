@@ -9,7 +9,18 @@
    intended, re-run with `--execute` (or `--yes`, the legacy equivalent).
 4. `CONNECTOR_GROUP_BLOCKED` (exit 3): the turn is in a group chat. Say
    `error.chatLine` in the group and continue in the owner's direct chat. Do
-   not retry with other flags.
+   not retry with other flags. In the owner's own direct chat it means the
+   session is shared (`dmScope: main`, a route with a session name, another
+   person's chat attached): give each person their own session
+   (`dmScope: per-peer`, the default) and remove the route's session name or
+   detach the chat. On the operator's `ravi sessions send|ask` it means the
+   session posts its answer into a group or someone else's chat (its output
+   attachment): run the command in the terminal, or ask in the owner's
+   direct chat. Where the answer goes is `metadata.turnReplyTarget` of the
+   live turn context: `ravi context list --session <session-key> --kind turn-runtime --json`,
+   then `ravi context info <context-id> --json`. A relay turn without it
+   means the daemon runs an older bundle than the CLI: restart it
+   (`./bin/ravi daemon restart -m "<reason>"`).
 5. `CONNECTOR_SPEAKER_NOT_OWNER` (exit 3): the turn is not the owner's. Say
    `error.chatLine` to the person who asked. If the owner is the one asking
    from their own chat, they must run `ravi link` there once. If the turn
@@ -77,7 +88,7 @@
 ## Validation
 
 ```bash
-bun test src/link/ src/runtime/turn-origin.test.ts src/cloud-auth/connector-auth.test.ts
+bun test src/link/ src/runtime/turn-origin.test.ts src/runtime/turn-reply-target.test.ts src/cloud-auth/connector-auth.test.ts
 # One file per run: their mock.module calls collide in one process.
 for f in connectors connectors-mode gmail mail settings; do bun test "src/cli/commands/$f.test.ts" || break; done
 bun test src/cloud-auth/errors.test.ts
@@ -89,7 +100,7 @@ Live checks against the local CLI (requires `ravi login`; revoke checks are
 dry-run only unless you really mean it):
 
 ```bash
-ravi connectors list --json                          # expect connections (projectId null) + pagination
+ravi connectors list --json                          # expect connections + pagination (projectId: a legacy string, often ""; ignored)
 ravi connectors list --fields id,provider --json     # expect compact items
 ravi connectors list --project x --json              # expect the --project line on stderr
 ravi connectors revoke conn_x --json                 # expect exit 3 + plan, nothing revoked

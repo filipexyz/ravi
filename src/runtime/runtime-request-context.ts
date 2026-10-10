@@ -43,6 +43,7 @@ import {
 import type { RuntimeCapabilities, RuntimeProviderId } from "./types.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
 import { resolveRuntimeTurnOrigin } from "./turn-origin.js";
+import { TURN_REPLY_TARGET_METADATA_KEY, type TurnReplyTarget } from "./turn-reply-target.js";
 
 export interface RuntimeRequestContextOptions {
   dbSessionKey: string;
@@ -145,6 +146,8 @@ export function refreshRuntimeRequestContextForTurn(options: {
   runtimeResolution: TaskRuntimeResolution;
   resolvedSource?: RuntimeMessageTarget;
   approvalSource?: RuntimeMessageTarget;
+  /** Where this turn's answer goes, as the runtime bound it for the turn. */
+  replyTarget?: TurnReplyTarget;
 }): ContextRecord {
   const derived = deriveRuntimeContextForPrompt({
     agentId: options.agent.id,
@@ -160,6 +163,7 @@ export function refreshRuntimeRequestContextForTurn(options: {
       model: options.model,
       runtimeResolution: options.runtimeResolution,
       approvalSource: options.approvalSource,
+      replyTarget: options.replyTarget,
     }),
   });
 
@@ -652,6 +656,7 @@ function buildRuntimeContextMetadata(options: {
   model: string;
   runtimeResolution: TaskRuntimeResolution;
   approvalSource?: RuntimeMessageTarget;
+  replyTarget?: TurnReplyTarget;
 }): Record<string, unknown> {
   const actorMetadata = buildRuntimeContextActorMetadata(options.prompt, options.resolvedSource);
   const turnOrigin = resolveRuntimeTurnOrigin(options.prompt._turnOrigin);
@@ -673,6 +678,7 @@ function buildRuntimeContextMetadata(options: {
     runtimeEffortSource: options.runtimeResolution.sources.effort,
     runtimeThinkingSource: options.runtimeResolution.sources.thinking,
     ...(options.approvalSource ? { approvalSource: options.approvalSource } : {}),
+    ...(options.replyTarget ? { [TURN_REPLY_TARGET_METADATA_KEY]: options.replyTarget } : {}),
     ...(actorMetadata ? { actor: actorMetadata, actorMetadata } : {}),
     ...(turnOrigin ? { turnOrigin } : {}),
     ...(options.prompt._observation ? { observation: { ...options.prompt._observation } } : {}),

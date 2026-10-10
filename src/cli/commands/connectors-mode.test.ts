@@ -10,6 +10,7 @@ import { writeCloudCredentials } from "../../cloud-auth/storage.js";
 import { connectorModeSettingKey, readAgentConnectorMode, writeAgentConnectorMode } from "../../link/connector-mode.js";
 import { dbGetSetting } from "../../router/router-db.js";
 import { createRuntimeContext } from "../../runtime/context-registry.js";
+import { buildSessionRelayTurnOrigin } from "../../runtime/turn-origin.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { ContractError } from "../agent-contract.js";
 import { cloudErrorToContractError } from "../cloud-error-contract.js";
@@ -204,6 +205,42 @@ describe("ravi connectors mode", () => {
     expect(contract.code).toBe("CONNECTOR_GROUP_BLOCKED");
     expect(contract.details.chatLine).toBe("Ask me in our private chat and I'll change it.");
     expect(stored()).toBe("shared");
+  });
+
+  it("lets the operator's `ravi sessions send` change it, even into a session that posts into a group", async () => {
+    const relayTurn = (turnReplyTarget?: Record<string, unknown>) =>
+      createRuntimeContext({
+        kind: "turn-runtime",
+        agentId: "main",
+        sessionName: "familia",
+        metadata: {
+          actorPrincipal: "automation:operator:local",
+          actorResolution: "resolved",
+          executorAgentId: "main",
+          agentIdentityCompartment: "workspace:default",
+          turnOrigin: buildSessionRelayTurnOrigin("send", undefined),
+          ...(turnReplyTarget ? { turnReplyTarget } : {}),
+        },
+      });
+
+    // The session posts the answer into the group.
+    writeAgentConnectorMode("main", "google", "shared");
+    process.env.RAVI_CONTEXT_KEY = relayTurn({
+      kind: "chat",
+      channel: "whatsapp",
+      chatId: "120363012345678901@g.us",
+    }).contextKey;
+    const intoGroup = await run(["main", "google", "owner"]);
+    expect(intoGroup.error).toBeUndefined();
+    expect(intoGroup.result).toMatchObject({ mode: "owner", previousMode: "shared", changed: true });
+    expect(stored()).toBeNull();
+
+    // Ravi could not tell where the answer goes.
+    process.env.RAVI_CONTEXT_KEY = relayTurn().contextKey;
+    const unknown = await run(["main", "google", "person-asking"], { execute: true });
+    expect(unknown.error).toBeUndefined();
+    expect(unknown.result).toMatchObject({ mode: "person_asking", changed: true });
+    expect(stored()).toBe("person_asking");
   });
 
   it("refuses an unknown provider or mode with a usage error (exit 2)", async () => {

@@ -20,7 +20,7 @@ import {
   dbGetAgent,
   dbUpsertChat,
 } from "../router/router-db.js";
-import { getOrCreateSession } from "../router/sessions.js";
+import { attachChatToSession, getOrCreateSession } from "../router/sessions.js";
 import {
   ADMIN_BOOTSTRAP_AGENT_ID,
   ADMIN_BOOTSTRAP_KIND,
@@ -48,6 +48,10 @@ import {
 import { readAgentConnectorMode, type ConnectorUseMode, writeAgentConnectorMode } from "./connector-mode.js";
 
 const OWNER = { activeUserId: "user_luis", activeOrgId: "org_1", ownerName: "Luis" } satisfies ConnectorTurnDeps;
+/** The owner's direct chat in a session of its own (dmScope per-peer). */
+const OWNER_DM_SESSION = { sessionKey: "agent:main:whatsapp:wa-main:dm:5511999999999", sessionName: "luis-dm" };
+/** What the runtime records for a relay whose answer goes back to the waiting terminal. */
+const TO_TERMINAL = { turnReplyTarget: { kind: "none" } };
 
 let stateDir: string | null = null;
 
@@ -60,10 +64,15 @@ afterEach(async () => {
   stateDir = null;
 });
 
-function turnContext(metadata: Record<string, unknown>, extra: { sessionName?: string } = {}): ContextRecord {
+function turnContext(
+  metadata: Record<string, unknown>,
+  extra: { sessionName?: string; sessionKey?: string } = {},
+): ContextRecord {
+  if (extra.sessionKey) getOrCreateSession(extra.sessionKey, "main", stateDir ?? "/tmp");
   return createRuntimeContext({
     kind: "turn-runtime",
     agentId: "main",
+    ...(extra.sessionKey ? { sessionKey: extra.sessionKey } : {}),
     sessionName: extra.sessionName ?? "main-session",
     metadata: { actorResolution: "resolved", executorAgentId: "main", ...metadata },
   });
@@ -88,6 +97,21 @@ function expectBlocked(result: ReturnType<typeof resolveConnectorTurn>, code: st
 
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function upsertDirectChat(platformChatId: string, contactId: string) {
+  const chat = dbUpsertChat({ channel: "whatsapp", instanceId: "", platformChatId, chatType: "dm" });
+  return dbCanonicalizeDmChatForContact({ chatId: chat.id, contactId, platformChatId });
+}
+
+function bindToConsole(contactId: string, consoleUserId: string, orgId = "org_1") {
+  writeCachedActorBinding({
+    contactId,
+    actorPrincipal: `contact:${contactId}`,
+    consoleUserId,
+    orgId,
+    installationId: "inst_1",
+  });
 }
 
 describe("connector turn classification", () => {
@@ -126,6 +150,7 @@ describe("connector turn classification", () => {
       actorPrincipal: "automation:operator:local",
       agentIdentityCompartment: "workspace:default",
       turnOrigin: buildSessionRelayTurnOrigin("send", undefined),
+      ...TO_TERMINAL,
     });
 
     expect(classify(context)).toEqual({
@@ -146,6 +171,7 @@ describe("connector turn classification", () => {
       actorPrincipal: `agent:${ADMIN_BOOTSTRAP_AGENT_ID}`,
       agentIdentityCompartment: "workspace:default",
       turnOrigin: buildSessionRelayTurnOrigin("ask", { agentId: ADMIN_BOOTSTRAP_AGENT_ID }),
+      ...TO_TERMINAL,
     });
 
     const result = classify(context);
@@ -208,12 +234,15 @@ describe("connector turn classification", () => {
   });
 
   it("lets the owner's own linked direct chat act as the owner", () => {
-    const context = turnContext({
-      actorPrincipal: "contact:c_luis",
-      consoleUserId: "user_luis",
-      consoleOrgId: "org_1",
-      agentIdentityCompartment: "dm:5511999999999@s.whatsapp.net",
-    });
+    const context = turnContext(
+      {
+        actorPrincipal: "contact:c_luis",
+        consoleUserId: "user_luis",
+        consoleOrgId: "org_1",
+        agentIdentityCompartment: "dm:5511999999999@s.whatsapp.net",
+      },
+      OWNER_DM_SESSION,
+    );
 
     const result = classify(context);
 
@@ -668,13 +697,317 @@ describe("connector turn classification", () => {
     });
   });
 
+  describe("operator relays answer where the session posts", () => {
+    const GROUP_KEY = "agent:main:whatsapp:wa-main:group:120363012345678901";
+    const OWNER_JID = "5511999999999@s.whatsapp.net";
+    const ANA_JID = "5511888888888@s.whatsapp.net";
+
+    function relay(turnReplyTarget: Record<string, unknown> | undefined, extra: { sessionKey?: string } = {}) {
+      return turnContext(
+        {
+          actorPrincipal: "automation:operator:local",
+          agentIdentityCompartment: "workspace:default",
+          turnOrigin: buildSessionRelayTurnOrigin("send", undefined),
+          ...(turnReplyTarget ? { turnReplyTarget } : {}),
+        },
+        extra,
+      );
+    }
+
+    function groupChat() {
+      return dbUpsertChat({
+        channel: "whatsapp",
+        instanceId: "wa-main",
+        platformChatId: "120363012345678901@g.us",
+        chatType: "group",
+      });
+    }
+
+    it("blocks a relay whose answer the session posts into a group, as the owner in the wrong place", () => {
+      const chat = groupChat();
+      const context = relay({
+        kind: "chat",
+        channel: "whatsapp",
+        chatId: "120363012345678901@g.us",
+        canonicalChatId: chat.id,
+      });
+      const result = classify(context);
+
+      const error = expectBlocked(result, "CONNECTOR_GROUP_BLOCKED");
+      expect(error.message).toContain("ravi sessions send");
+      if (result.ok) return;
+      expect(result.speakerIsOwner).toBe(true);
+      expect(result.candidate).toMatchObject({ speaker: { kind: "owner" }, conversation: "group" });
+      // Still the operator's own request: a cron it creates is the operator's.
+      expect(resolveCronOwnerPrincipalForCurrentTurn({ ...OWNER, env: envFor(context) })).toBe("operator");
+    });
+
+    it("lets a relay answer into the owner's own linked direct chat, and blocks someone else's", () => {
+      upsertDirectChat(OWNER_JID, "c_luis");
+      bindToConsole("c_luis", "user_luis");
+      upsertDirectChat(ANA_JID, "c_ana");
+      bindToConsole("c_ana", "user_ana");
+
+      const own = classify(relay({ kind: "chat", channel: "whatsapp", chatId: OWNER_JID }));
+      expect(own.ok).toBe(true);
+      if (own.ok) expect(own.turn).toMatchObject({ speaker: { kind: "owner" }, conversation: "dm" });
+
+      const other = classify(relay({ kind: "chat", channel: "whatsapp", chatId: ANA_JID }));
+      expectBlocked(other, "CONNECTOR_GROUP_BLOCKED");
+      if (!other.ok) expect(other.candidate?.conversation).toBe("dm");
+    });
+
+    it("fails closed when the turn does not say where its answer goes", () => {
+      const error = expectBlocked(classify(relay(undefined)), "CONNECTOR_GROUP_BLOCKED");
+      expect(error.message).toContain("could not tell where this session posts the answer");
+    });
+
+    it("reads the session's output chat when the answer had no chat yet at the start of the turn", () => {
+      const unresolved = { kind: "unresolved" };
+      // No output chat: the answer reaches no chat, as from the terminal.
+      expect(classify(relay(unresolved, { sessionKey: GROUP_KEY })).ok).toBe(true);
+
+      getOrCreateSession(GROUP_KEY, "main", stateDir ?? "/tmp");
+      const chat = groupChat();
+      attachChatToSession({
+        sessionKey: GROUP_KEY,
+        chatId: chat.id,
+        role: "primary",
+        attachedByType: "system",
+        attachedReason: "inbound-route",
+        setOutputTarget: true,
+      });
+      expectBlocked(classify(relay(unresolved, { sessionKey: GROUP_KEY })), "CONNECTOR_GROUP_BLOCKED");
+      // Without a session to read, nothing says where it goes.
+      expectBlocked(classify(relay(unresolved)), "CONNECTOR_GROUP_BLOCKED");
+    });
+
+    it("gives a relay block its own next step in the envelope: post nothing from the account into that chat", () => {
+      const chat = groupChat();
+      const intoGroup = relay({
+        kind: "chat",
+        channel: "whatsapp",
+        chatId: "120363012345678901@g.us",
+        canonicalChatId: chat.id,
+      });
+
+      for (const context of [intoGroup, relay(undefined)]) {
+        const contract = cloudErrorToContractError(
+          "gmail list",
+          expectBlocked(classify(context), "CONNECTOR_GROUP_BLOCKED"),
+        );
+        const envelope = contract.envelope().error;
+
+        expect(contract.exitCode).toBe(3);
+        expect(envelope).toMatchObject({
+          code: "CONNECTOR_GROUP_BLOCKED",
+          suggestedAction:
+            "do not retry, and post nothing from Luis's Gmail into the chat this session answers in; Luis can run the command in their terminal",
+        });
+        expect(envelope.message).toContain("Do not retry");
+        expect(envelope).not.toHaveProperty("chatLine");
+      }
+    });
+
+    it("lets the operator change a mode from a relay wherever the session posts, and own the crons it creates", () => {
+      upsertDirectChat(ANA_JID, "c_ana");
+      bindToConsole("c_ana", "user_ana");
+      const chat = groupChat();
+      const operator = (context: ContextRecord) =>
+        resolveOperatorTurn({
+          ...OWNER,
+          env: envFor(context),
+          action: "change how this agent uses connected accounts",
+        });
+
+      for (const target of [
+        { kind: "chat", channel: "whatsapp", chatId: "120363012345678901@g.us", canonicalChatId: chat.id },
+        { kind: "chat", channel: "whatsapp", chatId: ANA_JID },
+        undefined,
+      ]) {
+        const context = relay(target);
+        expect(classify(context).ok).toBe(false);
+
+        const result = operator(context);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.turn).toMatchObject({
+            actorPrincipal: "automation:operator:local",
+            speaker: { kind: "owner" },
+          });
+        }
+        expect(resolveCronOwnerPrincipalForCurrentTurn({ ...OWNER, env: envFor(context) })).toBe("operator");
+      }
+
+      // A routine answering into that group, or a relay the operator did not
+      // send (the goal wake), is still not the operator.
+      for (const context of [
+        turnContext({
+          actorPrincipal: "automation:heartbeat",
+          agentIdentityCompartment: `chat:${chat.platformChatId}`,
+        }),
+        turnContext({
+          actorPrincipal: "automation:operator:local",
+          agentIdentityCompartment: "workspace:default",
+          turnOrigin: buildSessionRelayTurnOrigin("execute", undefined),
+          turnReplyTarget: { kind: "chat", channel: "whatsapp", chatId: chat.platformChatId, canonicalChatId: chat.id },
+        }),
+      ]) {
+        const result = operator(context);
+        expect(result.ok).toBe(false);
+        if (result.ok) continue;
+        expect(result.error.code).toBe("CONNECTOR_SPEAKER_NOT_OWNER");
+        expect(result.error.details?.chatLine).toBe("Only Luis can change that.");
+      }
+    });
+
+    it("keeps a routine posting nowhere allowed, and checks a chat recorded for it", () => {
+      const chat = groupChat();
+      const heartbeat = { actorPrincipal: "automation:heartbeat", agentIdentityCompartment: "automation:heartbeat" };
+
+      expect(classify(turnContext(heartbeat)).ok).toBe(true);
+      expect(classify(turnContext({ ...heartbeat, turnReplyTarget: { kind: "unresolved" } })).ok).toBe(true);
+      expectBlocked(
+        classify(
+          turnContext({
+            ...heartbeat,
+            turnReplyTarget: {
+              kind: "chat",
+              channel: "whatsapp",
+              chatId: chat.platformChatId,
+              canonicalChatId: chat.id,
+            },
+          }),
+        ),
+        "CONNECTOR_GROUP_BLOCKED",
+      );
+    });
+  });
+
+  describe("the owner's own direct chat needs a session of its own", () => {
+    const OWNER_JID = "5511999999999@s.whatsapp.net";
+    const LUIS = {
+      actorPrincipal: "contact:c_luis",
+      consoleUserId: "user_luis",
+      consoleOrgId: "org_1",
+      agentIdentityCompartment: `dm:${OWNER_JID}`,
+    };
+
+    function ownerTurn(
+      session: { sessionKey?: string; sessionName?: string },
+      metadata: Record<string, unknown> = LUIS,
+    ) {
+      return turnContext(metadata, session);
+    }
+
+    it("uses the owner's account in a per-person direct-chat session", () => {
+      for (const sessionKey of [
+        OWNER_DM_SESSION.sessionKey,
+        "agent:main:dm:5511999999999",
+        "agent:main:whatsapp:dm:5511999999999",
+      ]) {
+        const result = classify(ownerTurn({ sessionKey, sessionName: "luis-dm" }));
+        expect(result.ok).toBe(true);
+        if (result.ok) expect(result.turn).toMatchObject({ speaker: { kind: "owner" }, conversation: "dm" });
+      }
+    });
+
+    it("refuses the session all direct chats share (dmScope main), a group key and an unknown session", () => {
+      for (const sessionKey of ["agent:main:main", "agent:main:whatsapp:group:120363", "custom-session", undefined]) {
+        const result = classify(ownerTurn({ sessionKey, sessionName: "main" }));
+        const error = expectBlocked(result, "CONNECTOR_GROUP_BLOCKED");
+        expect(error.details).toMatchObject({
+          source: "connector-turn",
+          chatLine:
+            "I can't use your Gmail in this conversation: other people's chats share its session. Give each person their own session (dmScope per-peer), then ask me again.",
+          chatLinePt:
+            "Não posso usar o seu Gmail nesta conversa: as conversas de outras pessoas compartilham a sessão dela. Dê a cada pessoa a própria sessão (dmScope per-peer) e me peça de novo.",
+          replyTo: "same_chat",
+        });
+        expect(error.message).toContain("Do not retry");
+        if (!result.ok) expect(result).toMatchObject({ speakerIsOwner: true, sharedSession: true });
+      }
+    });
+
+    it("tells the agent in the envelope to reply with the chat line and wait for sessions of their own", () => {
+      const error = expectBlocked(
+        classify(ownerTurn({ sessionKey: "agent:main:main", sessionName: "main" })),
+        "CONNECTOR_GROUP_BLOCKED",
+      );
+      const contract = cloudErrorToContractError("gmail list", error);
+
+      expect(contract.exitCode).toBe(3);
+      expect(contract.envelope().error).toMatchObject({
+        code: "CONNECTOR_GROUP_BLOCKED",
+        chatLine: error.details?.chatLine,
+        replyTo: "same_chat",
+        suggestedAction:
+          "reply in this chat with the chat line, and do not retry until Luis gives each person their own session (dmScope per-peer)",
+      });
+
+      // A block without its own next step keeps the code's catalog one.
+      const inGroup = expectBlocked(
+        classify(turnContext({ ...LUIS, agentIdentityCompartment: "chat:120363012345678901@g.us" })),
+        "CONNECTOR_GROUP_BLOCKED",
+      );
+      expect(cloudErrorToContractError("gmail list", inGroup).envelope().error.suggestedAction).toBe(
+        "say in the group that you will answer privately, and ask the owner to repeat the request in their direct chat with you",
+      );
+    });
+
+    it("refuses a session a route sends chats into by name, or another person's chat is attached to", () => {
+      dbCreateRoute({ pattern: "*", accountId: "wa-main", agent: "main", session: "team-inbox" });
+      expectBlocked(
+        classify(ownerTurn({ sessionKey: OWNER_DM_SESSION.sessionKey, sessionName: "team-inbox" })),
+        "CONNECTOR_GROUP_BLOCKED",
+      );
+
+      const ownChat = upsertDirectChat(OWNER_JID, "c_luis");
+      getOrCreateSession(OWNER_DM_SESSION.sessionKey, "main", stateDir ?? "/tmp");
+      dbCreateSessionChatSubscription({ sessionKey: OWNER_DM_SESSION.sessionKey, chatId: ownChat.id, role: "primary" });
+      expect(classify(ownerTurn(OWNER_DM_SESSION)).ok).toBe(true);
+
+      const anaChat = upsertDirectChat("5511888888888@s.whatsapp.net", "c_ana");
+      dbCreateSessionChatSubscription({ sessionKey: OWNER_DM_SESSION.sessionKey, chatId: anaChat.id, role: "input" });
+      expectBlocked(classify(ownerTurn(OWNER_DM_SESSION)), "CONNECTOR_GROUP_BLOCKED");
+    });
+
+    it("still lets the owner change a mode and own the crons they create there", () => {
+      const shared = ownerTurn({ sessionKey: "agent:main:main", sessionName: "main" });
+
+      expect(
+        resolveOperatorTurn({ ...OWNER, env: envFor(shared), action: "change how this agent uses connected accounts" })
+          .ok,
+      ).toBe(true);
+      expect(resolveCronOwnerPrincipalForCurrentTurn({ ...OWNER, env: envFor(shared) })).toBe("operator");
+    });
+
+    it("keeps the refusal in every agent mode, unless the owner asks for the shared account", () => {
+      const env = envFor(ownerTurn({ sessionKey: "agent:main:main", sessionName: "main" }));
+      const exec = (mode: ConnectorUseMode, useShared = false) =>
+        resolveConnectorExecRoute({ ...OWNER, env, provider: "google", getAgentMode: () => mode, useShared });
+
+      for (const mode of ["owner", "person_asking", "shared"] as const) {
+        const result = exec(mode);
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error.code).toBe("CONNECTOR_GROUP_BLOCKED");
+      }
+      const shared = exec("shared", true);
+      expect(shared.ok).toBe(true);
+      if (shared.ok) expect(shared.route).toMatchObject({ mode: "shared", turn: { conversation: "dm" } });
+    });
+  });
+
   describe("lineage", () => {
     it("lets a derived cli-runtime child inherit the actor of its turn", () => {
-      const parent = turnContext({
-        actorPrincipal: "contact:c_luis",
-        consoleUserId: "user_luis",
-        agentIdentityCompartment: "dm:5511999999999@s.whatsapp.net",
-      });
+      const parent = turnContext(
+        {
+          actorPrincipal: "contact:c_luis",
+          consoleUserId: "user_luis",
+          agentIdentityCompartment: "dm:5511999999999@s.whatsapp.net",
+        },
+        OWNER_DM_SESSION,
+      );
       const child = issueRuntimeContext({ parent, cliName: "external-cli" });
       expect(child.metadata?.actorPrincipal).toBeUndefined();
 
@@ -746,9 +1079,11 @@ describe("connector turn classification", () => {
         consoleUserId: "user_luis",
         agentIdentityCompartment: "dm:5511999999999@s.whatsapp.net",
       });
+      getOrCreateSession(OWNER_DM_SESSION.sessionKey, "main", stateDir ?? "/tmp");
       const projected = createRuntimeContext({
         kind: "cli-runtime",
         agentId: "main",
+        ...OWNER_DM_SESSION,
         metadata: {
           actorPrincipal: "contact:c_luis",
           actorResolution: "resolved",
@@ -1013,6 +1348,7 @@ describe("per-agent connector mode", () => {
     actorPrincipal: "automation:operator:local",
     agentIdentityCompartment: "workspace:default",
     turnOrigin: buildSessionRelayTurnOrigin("send", undefined),
+    ...TO_TERMINAL,
   };
 
   // The session check of `person_asking` has its own tests below, on the

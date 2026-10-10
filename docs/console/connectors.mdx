@@ -73,8 +73,8 @@ In **Only when I ask** mode, your agent uses your accounts only for you:
 | Who asks | Can the agent use your Gmail? |
 |---|---|
 | You, in your terminal | Yes |
-| You, passing a message to the agent with `ravi sessions send` or `ravi sessions ask` from your terminal | Yes |
-| You, in your own private chat with the agent (WhatsApp, Slack), after you link it | Yes |
+| You, passing a message to the agent with `ravi sessions send` or `ravi sessions ask` from your terminal | Yes, when the answer comes back to your terminal or goes only to your own linked private chat. No when that session posts its answers into a group or someone else's chat. |
+| You, in your own private chat with the agent (WhatsApp, Slack), after you link it | Yes, when that chat has a session of its own (see the note on sessions below) |
 | A cron job or heartbeat you own, including the shell command of a cron job you own | Yes, if it posts nowhere or only into your own linked private chat (see the note below) |
 | Anyone else, in their own chat with the agent | No. The agent tells them: "I can't use <your name>'s Gmail for your request." |
 | Anyone in a group chat, including you | No. The agent says "I'll send this to you privately." and asks you to repeat the request in your private chat. |
@@ -85,6 +85,10 @@ A refused request never reaches your account. Commands that are refused this way
 
 <Note>
 A cron job or heartbeat that posts into a chat may use your accounts only when that chat is your own private chat with the agent and you have linked it (see below). A routine that posts into any other chat, or into a chat Ravi does not know, is treated like a group message and refused.
+</Note>
+
+<Note>
+A session keeps a transcript. If your private chat shares its session with other people's chats (the `main` DM scope, a route that sends several chats to one session, or another person's chat attached to it), they could ask the agent what it read for you, so the agent refuses: "I can't use your Gmail in this conversation: other people's chats share its session. Give each person their own session (dmScope per-peer), then ask me again." `per-peer` is the default. You can still change an agent's mode from that chat.
 </Note>
 
 ### Keep using Gmail from WhatsApp or Slack
@@ -214,4 +218,4 @@ These requests stop with exit code `3` and tell the agent what to say:
 | `CONNECTOR_NOT_LINKED` | The person asking has not linked their chat to a Ravi account (`ravi link`), or their account is not in this organization. |
 | `CONNECTOR_CONNECTION_REQUIRED` | The person asking has no Gmail connected, or the shared account was disconnected or paused. When it is your own connection that is missing, the code is the same but the exit is `1`. |
 | `CONNECTOR_FORBIDDEN` | The agent is in **Shared account** mode, but no account is shared with it for this conversation. |
-| `CONNECTOR_GROUP_BLOCKED` | A personal account was asked for in a group, or in a private chat whose session other people share. |
+| `CONNECTOR_GROUP_BLOCKED` | A personal account was asked for in a group, in a private chat whose session other people share, or with `ravi sessions send` into a session that posts its answers into a group or someone else's chat. |

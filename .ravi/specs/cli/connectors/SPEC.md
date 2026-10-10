@@ -30,6 +30,7 @@ applies_to:
   - src/cli/cloud-error-contract.ts
   - src/cli/remote-gateway.ts
   - src/runtime/turn-origin.ts
+  - src/runtime/turn-reply-target.ts
 owners:
   - ravi-dev
 status: active
@@ -100,23 +101,63 @@ instead of inventing local suggestions that would require extra remote calls.
 | No runtime context and no runtime or automation marker (terminal) | allowed: speaker `terminal`, conversation `terminal` |
 | A live `admin-bootstrap` root context with `admin:system:*` and no actor on the walk (the operator's admin key over the gateway or SDK, and its children) | allowed: speaker `terminal`, conversation `terminal` |
 | A runtime marker (`RAVI_SESSION_KEY`, `RAVI_SESSION_NAME`, `RAVI_AGENT_ID`, `RAVI_TRIGGER_ID`) or a tool/gateway transport without a live context, or an unresolved/revoked/expired context key, or a revoked/expired context on the walk | blocked `CONNECTOR_SPEAKER_NOT_OWNER` |
-| `automation:operator:local` or `agent:bootstrap` relayed by the operator's `ravi sessions send` or `ask` (turn origin `session-relay`, action `send`/`ask`, no session, principal equal to the actor) | allowed: speaker `owner`, conversation `terminal` |
+| `automation:operator:local` or `agent:bootstrap` relayed by the operator's `ravi sessions send` or `ask` (turn origin `session-relay`, action `send`/`ask`, no session, principal equal to the actor) | allowed: speaker `owner`, conversation `terminal`, when the answer reaches no chat (invariant 3a); a relay whose answer the session posts into a chat follows the last two rows |
 | The same principals with any other origin (`execute`, as the session-goal wake sends, `inform`, `answer`, a relay from a session, or no origin) | blocked `CONNECTOR_SPEAKER_NOT_OWNER` |
-| `contact:<id>`, `actorResolution=resolved`, `consoleUserId` equal to the active session's user (and the same org when both are known), in a `dm:` compartment | allowed: speaker `owner` (contactId, consoleUserId), conversation `dm` |
+| `contact:<id>`, `actorResolution=resolved`, `consoleUserId` equal to the active session's user (and the same org when both are known), in a `dm:` compartment whose session is the owner's own (the session check of invariant 23, `readIsPrivateDirectSession`) | allowed: speaker `owner` (contactId, consoleUserId), conversation `dm` |
+| The same owner in a `dm:` compartment whose session other people's chats share (`dmScope: main`, a route by session name, another person's chat attached), or whose session is unknown | blocked `CONNECTOR_GROUP_BLOCKED` (`speakerIsOwner`, `sharedSession`) |
 | `contact:<id>` linked to another Console user, not linked, `missing_contact`, or `unknown` | blocked `CONNECTOR_SPEAKER_NOT_OWNER` |
 | `agent:<id>` (relay from another agent), `automation:session:*` | blocked `CONNECTOR_SPEAKER_NOT_OWNER` |
 | `automation:cron:<jobId>` (agent turn or the job's shell command) | allowed only when the job's `owner_principal` is NULL (legacy), `operator`, or a contact linked to the active Console user and org: speaker `automation`, routine `cron`; otherwise, or when the job is missing, blocked |
 | `automation:heartbeat` | allowed: speaker `automation`, routine `heartbeat` |
 | `automation:trigger:*`, `automation:job:*`, `automation:observer:*`, `session-followup`, `daemon-restart`, any other principal | blocked `CONNECTOR_SPEAKER_NOT_OWNER` |
 | Compartment `chat:<id>` (group) for a contact turn, the owner included | blocked `CONNECTOR_GROUP_BLOCKED` |
-| An allowed routine or relay whose compartment is `chat:<id>` or `dm:<id>` (it answers into a chat) | allowed with conversation `dm` only when every `chats` row for that chat is a `dm` that resolves to one contact linked to the active Console user and org; otherwise blocked `CONNECTOR_GROUP_BLOCKED` |
+| An allowed routine or relay that answers into a chat: its compartment is `chat:<id>` or `dm:<id>`, or its recorded `turnReplyTarget` is a chat, or (a relay) the target was `unresolved` and the session now has an output attachment | allowed with conversation `dm` only when every `chats` row for that chat is a `dm` that resolves to one contact linked to the active Console user and org; otherwise blocked `CONNECTOR_GROUP_BLOCKED` (a relay keeps `speakerIsOwner`) |
+| An operator relay with no chat compartment and no readable `turnReplyTarget`, or an `unresolved` one without a session to read | blocked `CONNECTOR_GROUP_BLOCKED`: Ravi cannot tell who reads the answer |
+
+3a. Where a turn's answer goes. The runtime records it on the turn context
+   each time a turn starts (`turnReplyTarget`, `src/runtime/turn-reply-target.ts`,
+   written in `beforeTurnStart` right after the turn's reply target is bound):
+   `none` when the turn posts to no chat (`suppressChatEmit`: a
+   `_cliDestination` relay whose CLI waits on the transcript, an
+   observation, an observer session); `chat` with the bound chat (`channel`,
+   `chatId`, `canonicalChatId`, `instanceId`); otherwise `unresolved` (no
+   chat yet, one may be found when the answer is sent). A relay's prompt
+   carries no chat unless it names one (`--channel` and `--to`), so its
+   compartment is `workspace:default` and says nothing about the answer: the classification reads `turnReplyTarget` from
+   the actor context, and checks an `unresolved` one against the session's
+   current output attachment (none: the answer reaches no chat). A routine
+   takes its compartment from the session's chat, so a recorded chat only
+   adds the same check. A relay blocked by where its answer goes keeps
+   `speakerIsOwner` (a cron it creates is still the operator's) and `relay`
+   (the relay turn, so `connectors mode` still runs from it) and, answering
+   into a chat, a candidate with that conversation (`group` unless the chat
+   is a known direct chat).
 
 4. A blocked turn's error message is written for the agent and carries the
    line to say, in `details.chatLine` (English) and `details.chatLinePt`
-   (Portuguese), plus `details.replyTo`:
+   (Portuguese), plus `details.replyTo`. A block whose code's catalog next
+   step would contradict its message (the catalog `CONNECTOR_GROUP_BLOCKED`
+   step says to answer in the group) carries its own
+   `details.suggestedAction`, which the envelope keeps
+   (`src/cli/cloud-error-contract.ts`); the others get the catalog one:
    - group, owner speaking: "I'll send this to you privately." /
      "Vou te mandar isso no privado." and ask the owner to repeat the request
      in their direct chat;
+   - the owner's direct chat in a shared session: "I can't use your Gmail in
+     this conversation: other people's chats share its session. Give each
+     person their own session (dmScope per-peer), then ask me again." / "Não
+     posso usar o seu Gmail nesta conversa: as conversas de outras pessoas
+     compartilham a sessão dela. Dê a cada pessoa a própria sessão (dmScope
+     per-peer) e me peça de novo.", `replyTo: same_chat`; the owner is also
+     the operator, so the line says how to allow it. `suggestedAction`:
+     "reply in this chat with the chat line, and do not retry until <owner>
+     gives each person their own session (dmScope per-peer)";
+   - a relay or routine answering into a chat that is not the owner's: no
+     chat line; for a relay (also one whose answer Ravi could not place) the
+     message says the owner can run the command in their terminal or ask in
+     their own direct chat, and `suggestedAction` is "do not retry, and post
+     nothing from <owner>'s Gmail into the chat this session answers in;
+     <owner> can run the command in their terminal";
    - anyone else: "I can't use <owner>'s Gmail for your request." /
      "Não posso usar o Gmail de <dono> para o seu pedido." (the owner's name
      comes from the active session; the neutral fallback is "my owner's" /
@@ -221,8 +262,10 @@ instead of inventing local suggestions that would require extra remote calls.
 10. `--project` on `connect` and `list` is a no-op until 2027-01-01: it MUST
     NOT be sent and MUST print exactly this line on stderr:
     `--project is ignored: connections belong to you, not to a project (removed after 2027-01-01)`.
-11. `list`/`show` return `projectId: string | null` (always null for personal
-    connections, kept until 2027-01-01) plus the optional
+11. `list`/`show` return `projectId: string | null` (kept until 2027-01-01
+    and ignored by the CLI: the Worker sends a string, the row's project,
+    else the stored legacy project id, else `""`; older answers sent null)
+    plus the optional
     `externalAccountLogin`, `isDefault`, `accessMode` (`full` | `read_only`)
     and `scopeKind` (`user` | `organization`); `show` adds optional
     `lastUsedAt` and `revokedAt`. Human output names a connection by its
@@ -273,11 +316,13 @@ instead of inventing local suggestions that would require extra remote calls.
 
 13. `cron_jobs.owner_principal` (TEXT NULL, lazy-init) is set by
     `ravi cron add`: `operator` when the creating turn is the terminal or the
-    owner (same table), else the creating turn's `actorPrincipal` (`unknown`
-    when it cannot be resolved). NULL means a legacy job and runs as the
-    operator. `cron show`/`list` JSON expose it as `ownerPrincipal`, and
-    `cron show` prints it as "Runs as". When a turn that is not the operator
-    changes a job with `cron set`, any key except `name`, `description`,
+    owner (same table; also the owner blocked only by where the answer goes:
+    a group, a shared session, a relay answering into a chat), else the
+    creating turn's `actorPrincipal` (`unknown` when it cannot be resolved).
+    NULL means a legacy job and runs as the operator. `cron show`/`list` JSON
+    expose it as `ownerPrincipal`, and `cron show` prints it as "Runs as".
+    When a turn that is not the operator changes a job with `cron set`, any
+    key except `name`, `description`,
     `cron`, `every`, `tz`/`timezone`, `timeout` and `delete-after` (so
     `message`, `shell`, `exec`, `agent`, `session`, `reply-session`,
     `env-file`, `on-error`, `account` and any key added later), the job takes
@@ -324,8 +369,10 @@ instead of inventing local suggestions that would require extra remote calls.
 22. `ravi connectors mode <agent> <provider> [owner|person-asking|shared]`
     shows the mode without a value and sets it with one (`person_asking` is
     accepted too). In this order: the turn MUST be the operator's (the
-    terminal, the owner's own linked direct chat, or the owner's own
-    `ravi sessions send|ask`), otherwise exit 3 `CONNECTOR_SPEAKER_NOT_OWNER`
+    terminal, the owner's own linked direct chat, also when its session is
+    shared, since a mode change returns nothing from an account, or the
+    owner's own `ravi sessions send|ask`, for the same reason wherever the
+    session posts its answer), otherwise exit 3 `CONNECTOR_SPEAKER_NOT_OWNER`
     with the chat line "Only <owner> can change that." / "Só <dono> pode
     mudar isso." and nothing is read or written. The owner asking outside
     their direct chat (a group) is refused the same way, with
@@ -358,8 +405,10 @@ instead of inventing local suggestions that would require extra remote calls.
 
 | Turn | `owner` | `person_asking` | `shared` |
 |---|---|---|---|
-| Terminal, operator relay (`ravi sessions send\|ask`) | own connection | own connection | own connection (`--shared`: `PAYLOAD_INVALID`) |
-| The owner's own direct chat | own connection | own connection | own connection; agent exec `shared`, conversation `dm`, with `gmail --shared` |
+| Terminal, operator relay (`ravi sessions send\|ask`) answering to no chat | own connection | own connection | own connection (`--shared`: `PAYLOAD_INVALID`) |
+| The owner's own direct chat (a session of its own), or an operator relay answering into it | own connection | own connection | own connection; agent exec `shared`, conversation `dm`, with `gmail --shared` |
+| The owner's own direct chat whose session other people share | `CONNECTOR_GROUP_BLOCKED` | `CONNECTOR_GROUP_BLOCKED` | `CONNECTOR_GROUP_BLOCKED`; agent exec `shared`, conversation `dm`, with `--shared` |
+| An operator relay answering into a group or another person's chat | `CONNECTOR_GROUP_BLOCKED` | `CONNECTOR_GROUP_BLOCKED` | `CONNECTOR_GROUP_BLOCKED`; agent exec `shared` with that conversation, with `--shared` |
 | The owner in a group | `CONNECTOR_GROUP_BLOCKED` | `CONNECTOR_GROUP_BLOCKED` | `CONNECTOR_GROUP_BLOCKED`; agent exec `shared`, conversation `group`, with `--shared` |
 | A resolved contact (linked to another user, or not linked) in a direct chat with a session of their own | `CONNECTOR_SPEAKER_NOT_OWNER` | agent exec `person_asking` | agent exec `shared`, conversation `dm` |
 | A resolved contact in a direct chat whose session other people share | `CONNECTOR_SPEAKER_NOT_OWNER` | `CONNECTOR_GROUP_BLOCKED` ("I can't use your Gmail in this conversation.") | agent exec `shared`, conversation `dm` |
@@ -382,7 +431,8 @@ instead of inventing local suggestions that would require extra remote calls.
     turns in a chat (conversation `dm` or `group`), because a shared grant
     only lists chats. On an agent that is not in `shared` mode, with no agent
     (the terminal), or on a turn whose conversation is `terminal` or
-    `automation` (the operator relay, a routine posting nowhere), it is
+    `automation` (the operator relay answering to no chat, a routine posting
+    nowhere), it is
     `PAYLOAD_INVALID` (exit 2); on anyone else's turn it never unblocks
     anything. In agent modes `--connector` is refused with
     `PAYLOAD_INVALID` (it names one of the owner's own connections), and the
@@ -505,10 +555,13 @@ for the row (empty for connections made with the current connect flow).
 
 ## Validation
 
-- `bun test src/link/ src/runtime/turn-origin.test.ts src/cloud-auth/connector-auth.test.ts`
+- `bun test src/link/ src/runtime/turn-origin.test.ts src/runtime/turn-reply-target.test.ts src/cloud-auth/connector-auth.test.ts`
   green (classification rows, automation marker, lineage liveness, header
-  encoding, connect via the Console, approvals, session pinning). `bun run
-  test` runs `src/link/` and `src/runtime/turn-origin.test.ts`.
+  encoding, connect via the Console, approvals, session pinning). A relay
+  run through `buildRuntimeStartRequest` and its first turn, into a session
+  that posts into a group and with `_cliDestination`, is in
+  `src/link/connector-turn.relay.test.ts`. `bun run test` runs `src/link/`,
+  `src/runtime/turn-origin.test.ts` and `src/runtime/turn-reply-target.test.ts`.
 - Each of `src/cli/commands/connectors.test.ts`,
   `src/cli/commands/connectors-mode.test.ts`, `src/cli/commands/gmail.test.ts`,
   `src/cli/commands/mail.test.ts`, `src/cli/commands/settings.test.ts`,
@@ -543,6 +596,19 @@ for the row (empty for connections made with the current connect flow).
   surface and the prompt does not say `isGroup: false`. Crons and heartbeats
   that answer into a chat are therefore checked against the `chats` table:
   only the owner's linked direct chat passes.
+- Before the fix, the operator relay classified as `terminal` whatever the
+  session did with the answer: a relay has no chat compartment, so
+  `ravi sessions send <group-session> "..."` read the owner's mail and the
+  session posted it into the group (its output attachment). The turn now
+  records where its answer goes (invariant 3a); a relay without that record
+  (a turn context from a daemon older than the CLI) is blocked until the
+  daemon restarts.
+- Before the fix, the owner's own direct chat had no session check: with
+  `dmScope: main`, a route that sends several chats to one session, or
+  another person's chat attached, the owner's mail stayed in a transcript the
+  others could ask about. Relays and routines answering into the owner's
+  direct chat are still checked only by where the answer goes, not by who
+  else writes in that session.
 - TUI turns carry `actorPrincipal: unknown` and are blocked.
 - Before the automation marker, shell crons, shell triggers and `ravi jobs
   run` jobs ran without any runtime env (PM2 strips it) and classified as the

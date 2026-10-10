@@ -22,12 +22,40 @@
   `owner`, conversation `terminal`, only with a `session-relay` origin of
   action `send` or `ask`, no session and the same principal; `execute` (the
   goal wake), `inform`, a relay from a session, or no origin MUST block.
+- Such a relay MUST be allowed as `terminal` only when its turn context's
+  `turnReplyTarget` is `none`, or `unresolved` while the session has no
+  output attachment. A relay whose answer the session posts into a group or
+  another person's chat (the recorded chat, or the output attachment of an
+  `unresolved` target) MUST exit 3 `CONNECTOR_GROUP_BLOCKED` with
+  `speakerIsOwner`; into the owner's linked direct chat it MUST be allowed
+  with conversation `dm`. A relay with no readable `turnReplyTarget`, or an
+  `unresolved` one without a session, MUST be blocked. Run through
+  `buildRuntimeStartRequest`, a relay into a session whose output is a group
+  MUST be blocked, and the same relay with `_cliDestination` MUST be allowed.
+  Both relay blocks MUST carry, in the envelope, the `suggestedAction` to
+  post nothing from the account into that chat (the owner can run the
+  command in their terminal), never the catalog step to answer in the group;
+  the owner's shared-session block MUST carry the one to reply with the chat
+  line and not retry until each person has their own session. A relay
+  blocked by where it answers MUST still change a mode (`connectors mode`)
+  and own the crons it creates (`operator`).
+- The runtime MUST record `turnReplyTarget` on the turn context at every
+  turn start: `none` when the turn posts to no chat (`suppressChatEmit`),
+  the bound chat when there is one, `unresolved` otherwise.
 - A live `admin-bootstrap` root with `admin:system:*` and no actor MUST be
   allowed as the terminal; the same kind without the capability, or a child
   of a revoked one, MUST block.
 - A resolved contact whose `consoleUserId` is the active session's user, in a
-  `dm:` compartment, MUST be allowed as speaker `owner`, conversation `dm`.
-  The same contact with a different `consoleOrgId` MUST be blocked.
+  `dm:` compartment whose session is the owner's own (the `person_asking`
+  session check), MUST be allowed as speaker `owner`, conversation `dm`.
+  The same contact with a different `consoleOrgId` MUST be blocked. In a
+  session other people's chats share (`dmScope: main`, a group key, an
+  unknown session, a route by session name, another person's chat attached)
+  it MUST exit 3 `CONNECTOR_GROUP_BLOCKED` with the chat line telling the
+  owner to give each person their own session (`replyTo: same_chat`), in
+  every agent mode; only `--shared` in `shared` mode moves it to the shared
+  account. That turn MUST still change a mode (`connectors mode`) and own
+  the crons it creates (`operator`).
 - A contact linked to another Console user MUST be blocked
   (`CONNECTOR_SPEAKER_NOT_OWNER`, exit 3) and MUST NOT switch to that user's
   stored session, even when one exists.
@@ -191,7 +219,9 @@
   "Only <owner> can change that." and MUST NOT change the row. The owner
   asking in a group MUST exit 3 `CONNECTOR_GROUP_BLOCKED` with "Ask me in our
   private chat and I'll change it." and MUST NOT change the row. The owner's
-  own direct chat and the terminal MUST pass.
+  own direct chat (also in a shared session), the operator's
+  `ravi sessions send|ask` wherever the session posts its answer, and the
+  terminal MUST pass.
 - An unknown provider or mode MUST exit 2 with `acceptedPositionals`; an
   unknown agent MUST exit 1 `AGENT_NOT_FOUND` with suggestions, both before
   the brake.

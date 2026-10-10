@@ -55,12 +55,15 @@ const CONNECTOR_TURN_DETAIL_KEYS = [
   "expiresAt",
   "retryWith",
   "consentLink",
+  "suggestedAction",
 ] as const;
 
 /**
  * Connector errors built by the local turn classification (`src/link`) carry
- * their own agent-facing text: what to say in the chat and where. Errors from
- * Link or Console keep the fixed catalog copy, because their text is remote.
+ * their own agent-facing text: what to say in the chat and where, and, when
+ * the code's catalog next step would contradict that, their own
+ * `suggestedAction`. Errors from Link or Console keep the fixed catalog copy,
+ * because their text is remote.
  * A local error may also say it is a policy block (exit 3) when its code is
  * not always one: "the person asking has no account connected" is, while the
  * operator's own missing connection is a plain error.

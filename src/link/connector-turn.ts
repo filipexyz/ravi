@@ -2,8 +2,9 @@
  * Who is asking, for connector calls.
  *
  * A personal connection serves only its owner's own requests ("Only when I
- * ask"): the terminal, the owner's own direct chat (linked by `ravi link`) and
- * routines the owner owns. Every connector call classifies the current turn
+ * ask"): the terminal, the owner's own direct chat (linked by `ravi link`, in
+ * a session of its own) and routines the owner owns, and only where no one
+ * else reads the answer. Every connector call classifies the current turn
  * first and fails closed on anything else, so another person's message never
  * reaches the operator's Console session. The "dono" permission tag is not
  * identity: only the Console user bound to the speaking contact is.
@@ -31,6 +32,7 @@ import { dbGetCronJob } from "../cron/cron-db.js";
 import {
   dbGetAgent,
   dbGetContext,
+  dbGetSessionOutputAttachment,
   dbListChatParticipants,
   dbListChatsByRef,
   dbListRoutesBySessionName,
@@ -45,6 +47,7 @@ import {
   resolveRuntimeContext,
 } from "../runtime/context-registry.js";
 import { RAVI_AUTOMATION_PRINCIPAL_ENV, readSpawnedAutomationPrincipal } from "../runtime/turn-origin.js";
+import { readTurnReplyTarget } from "../runtime/turn-reply-target.js";
 import { connectorModeArg, readAgentConnectorMode, type ConnectorUseMode } from "./connector-mode.js";
 
 export type ConnectorSpeakerKind = "terminal" | "owner" | "contact" | "agent" | "automation";
@@ -83,6 +86,18 @@ export type ConnectorTurnResult =
       actorPrincipal: string;
       /** The speaker is the owner, blocked only by where the answer would go (a group). */
       speakerIsOwner?: boolean;
+      /**
+       * The owner in their own direct chat, refused only because other
+       * people's chats share its session (and so its transcript).
+       */
+      sharedSession?: boolean;
+      /**
+       * The operator's own relay (`ravi sessions send|ask`), refused only for
+       * where the session posts its answer (a chat that is not the owner's
+       * direct chat, or one Ravi could not read): the relay turn, with that
+       * conversation when the chat is known.
+       */
+      relay?: ConnectorTurn;
       /**
        * The turn as it is, when only the owner's own accounts are refused
        * here: a resolved contact (or the owner) in a direct chat or a group,
@@ -262,6 +277,11 @@ export function resolveConnectorTurn(deps: ConnectorTurnDeps = {}): ConnectorTur
     if (surface?.type !== "dm") {
       return { ...notOwner(actorPrincipal, unknownTurnMessage(owner)), speakerIsOwner: true };
     }
+    // The owner's own chat, but in a session other people's chats share,
+    // what the account returns stays in a transcript they can ask about.
+    if (!candidate || !isPrivateDirectChat(candidate, deps)) {
+      return withCandidate(ownerSharedSessionBlocked(actorPrincipal, owner), candidate);
+    }
     return {
       ok: true,
       turn: {
@@ -274,16 +294,61 @@ export function resolveConnectorTurn(deps: ConnectorTurnDeps = {}): ConnectorTur
   }
 
   const verdict = classifyNonContactPrincipal(actorPrincipal, base, owner, deps, metadata);
-  if (!verdict.ok || (surface?.type !== "chat" && surface?.type !== "dm")) return verdict;
+  if (!verdict.ok) return verdict;
+  const answer = resolveAnswerChat(surface, metadata, verdict.turn, {
+    sessionKey: sameSessionKey(actorContext.sessionKey, runtime.record.sessionKey),
+  });
+  // The operator relay is the owner's own request: only where the answer
+  // goes can block it.
+  const relay = verdict.turn.speaker.kind === "owner";
+  if (answer.kind === "unknown") return relayAnswerUnknown(actorPrincipal, owner, verdict.turn);
+  if (answer.kind === "none") return verdict;
   // A routine or an operator relay answering into a chat: only the owner's
   // own direct chat may receive what the operator's accounts return.
-  if (!surfaceIsOwnersDirectChat(surface.id, readActorChannel(metadata), owner, deps)) {
-    return withCandidate(groupBlockedForAutomation(actorPrincipal, owner), {
-      ...verdict.turn,
-      conversation: surface.type === "chat" ? "group" : "dm",
-    });
+  if (!surfaceIsOwnersDirectChat(answer.chatId, answer.channel, owner, deps)) {
+    const group =
+      answer.group ?? !(deps.getDmChatContact ?? readDmChatContact)({ chatId: answer.chatId, channel: answer.channel });
+    const candidate: ConnectorTurn = { ...verdict.turn, conversation: group ? "group" : "dm" };
+    return withCandidate(groupBlockedForAutomation(actorPrincipal, owner, relay ? candidate : undefined), candidate);
   }
   return { ok: true, turn: { ...verdict.turn, conversation: "dm" } };
+}
+
+type AnswerChat =
+  | { kind: "none" }
+  | { kind: "unknown" }
+  | { kind: "chat"; chatId: string; channel: string | null; group?: boolean };
+
+/**
+ * The chat an allowed relay or routine answers into. A `chat:`/`dm:`
+ * compartment names it. A relay's prompt carries no chat, so its compartment
+ * does not: the reply target the runtime recorded when the turn started
+ * decides (none: back to the waiting terminal), and a target still unresolved
+ * then is the session's output attachment, if any. A relay whose target
+ * cannot be read fails closed. Routines take their chat from the session, so
+ * their compartment already names it; a recorded chat still counts.
+ */
+function resolveAnswerChat(
+  surface: { type: string; id: string } | null,
+  metadata: Record<string, unknown>,
+  turn: ConnectorTurn,
+  input: { sessionKey: string | null },
+): AnswerChat {
+  if (surface && (surface.type === "chat" || surface.type === "dm")) {
+    return { kind: "chat", chatId: surface.id, channel: readActorChannel(metadata), group: surface.type === "chat" };
+  }
+  const recorded = readTurnReplyTarget(metadata);
+  if (recorded?.kind === "chat") {
+    return { kind: "chat", chatId: recorded.canonicalChatId ?? recorded.chatId, channel: recorded.channel };
+  }
+  if (turn.speaker.kind !== "owner" || recorded?.kind === "none") return { kind: "none" };
+  if (!recorded || !input.sessionKey) return { kind: "unknown" };
+  try {
+    const attached = dbGetSessionOutputAttachment(input.sessionKey);
+    return attached ? { kind: "chat", chatId: attached.chatId, channel: null } : { kind: "none" };
+  } catch {
+    return { kind: "unknown" };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -475,13 +540,21 @@ function personAskingGroupBlocked(actorPrincipal: string, owner: OwnerIdentity):
 
 /**
  * The operator's own turn (the terminal, the owner's own linked direct chat,
- * or the owner's own `ravi sessions send|ask`), for changes to how an agent
- * uses connected accounts. Contacts, routines and agents never pass, in any
- * mode.
+ * also in a shared session, or the owner's own `ravi sessions send|ask`,
+ * wherever the session posts its answer), for changes to how an agent uses
+ * connected accounts. Contacts, routines and agents never pass, in any mode.
  */
 export function resolveOperatorTurn(deps: ConnectorTurnDeps & { action: string }): ConnectorTurnResult {
   const result = resolveConnectorTurn(deps);
   if (result.ok && (result.turn.speaker.kind === "terminal" || result.turn.speaker.kind === "owner")) return result;
+  // The owner's own direct chat in a shared session: changing a mode returns
+  // nothing from an account, so the transcript is no reason to refuse it.
+  if (!result.ok && result.sharedSession && result.candidate?.speaker.kind === "owner") {
+    return { ok: true, turn: result.candidate };
+  }
+  // The operator's own relay, whatever chat the session posts into: the
+  // same, and the operator is the one asking, not the people in that chat.
+  if (!result.ok && result.relay?.speaker.kind === "owner") return { ok: true, turn: result.relay };
   const owner = resolveOwner(deps, deps.env ?? process.env);
   if (!result.ok && (result.speakerIsOwner || result.candidate?.speaker.kind === "owner")) {
     // The owner, only in the wrong place (a group): send them to their own chat.
@@ -955,13 +1028,76 @@ function groupBlockedForOwner(actorPrincipal: string, owner: OwnerIdentity): Blo
   };
 }
 
-function groupBlockedForAutomation(actorPrincipal: string, owner: OwnerIdentity): BlockedTurn {
-  return blocked(
-    "CONNECTOR_GROUP_BLOCKED",
+/**
+ * A routine, or the operator's relay (`relay`: the relay turn), answering
+ * into a chat that is not the owner's direct chat.
+ */
+function groupBlockedForAutomation(actorPrincipal: string, owner: OwnerIdentity, relay?: ConnectorTurn): BlockedTurn {
+  const message = `This turn answers into a chat that is not known to be ${owner.label}'s direct chat, and personal connections are never used where other people may read the answer.`;
+  if (!relay) return blocked("CONNECTOR_GROUP_BLOCKED", actorPrincipal, message, {});
+  return relayBlocked(
     actorPrincipal,
-    `This turn answers into a chat that is not known to be ${owner.label}'s direct chat, and personal connections are never used where other people may read the answer.`,
-    {},
+    owner,
+    relay,
+    `${message} ${owner.label} sent this from their terminal (\`ravi sessions send|ask\`), and this session posts its answers into that chat. Do not retry: ${owner.label} can run the command in their terminal or ask in their own direct chat with you.`,
   );
+}
+
+function relayAnswerUnknown(actorPrincipal: string, owner: OwnerIdentity, relay: ConnectorTurn): BlockedTurn {
+  return relayBlocked(
+    actorPrincipal,
+    owner,
+    relay,
+    `${owner.label} sent this from their terminal (\`ravi sessions send|ask\`), but Ravi could not tell where this session posts the answer, and personal connections are never used where other people may read it. Do not retry: ${owner.label} can run the command in their terminal or ask in their own direct chat with you.`,
+  );
+}
+
+/**
+ * The operator's own relay, refused only for where the session posts its
+ * answer. Still the owner's request (`speakerIsOwner`: a cron it creates is
+ * the operator's), and nothing the agent says may carry what the account
+ * returns, so the next step is not the group-chat one of the code's catalog.
+ */
+function relayBlocked(
+  actorPrincipal: string,
+  owner: OwnerIdentity,
+  relay: ConnectorTurn,
+  message: string,
+): BlockedTurn {
+  return {
+    ...blocked("CONNECTOR_GROUP_BLOCKED", actorPrincipal, message, {
+      suggestedAction: `do not retry, and post nothing from ${owner.possessiveEn} ${owner.service} into the chat this session answers in; ${owner.label} can run the command in their terminal`,
+    }),
+    speakerIsOwner: true,
+    relay,
+  };
+}
+
+/**
+ * The owner in their own direct chat, in a session other people's chats
+ * share (`dmScope: main`, a route that sends several chats to one session,
+ * an attached chat): what their accounts return would stay in a transcript
+ * the others can ask about. The owner is also the operator, so the line tells
+ * them how to allow it.
+ */
+function ownerSharedSessionBlocked(actorPrincipal: string, owner: OwnerIdentity): BlockedTurn {
+  const chatLine = `I can't use your ${owner.service} in this conversation: other people's chats share its session. Give each person their own session (dmScope per-peer), then ask me again.`;
+  const chatLinePt = `Não posso usar o seu ${owner.service} nesta conversa: as conversas de outras pessoas compartilham a sessão dela. Dê a cada pessoa a própria sessão (dmScope per-peer) e me peça de novo.`;
+  return {
+    ...blocked(
+      "CONNECTOR_GROUP_BLOCKED",
+      actorPrincipal,
+      `${owner.label} asked in their own direct chat, but its session is shared with other people's chats (dmScope main, a route that sends several chats to one session, or an attached chat), so they could read what ${owner.possessiveEn} ${owner.service} returns. Do not retry. Reply: "${chatLine}"`,
+      {
+        chatLine,
+        chatLinePt,
+        replyTo: "same_chat",
+        suggestedAction: `reply in this chat with the chat line, and do not retry until ${owner.label} gives each person their own session (dmScope per-peer)`,
+      },
+    ),
+    speakerIsOwner: true,
+    sharedSession: true,
+  };
 }
 
 function unknownTurnMessage(owner: OwnerIdentity): string {
@@ -976,7 +1112,13 @@ function blocked(
   code: CloudAuthErrorCode,
   actorPrincipal: string,
   message: string,
-  details: { chatLine?: string; chatLinePt?: string; replyTo?: "same_chat" | "owner_privately" },
+  details: {
+    chatLine?: string;
+    chatLinePt?: string;
+    replyTo?: "same_chat" | "owner_privately";
+    /** Only where the code's catalog next step would contradict the message. */
+    suggestedAction?: string;
+  },
 ): Extract<ConnectorTurnResult, { ok: false }> {
   return {
     ok: false,

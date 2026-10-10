@@ -12,6 +12,7 @@ import {
   readCloudCredentialsForUser,
   writeCloudCredentials,
 } from "./storage.js";
+import { getOrCreateSession } from "../router/sessions.js";
 import { createRuntimeContext } from "../runtime/context-registry.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import type { CloudCredentials } from "./types.js";
@@ -40,8 +41,13 @@ describe("resolveConnectorCloudCredentials", () => {
 
   it("uses the active session for the operator's own linked chat", () => {
     writeCloudCredentials(makeCredentials("user_operator", "operator-access"));
+    // The owner's direct chat, in a session of its own (dmScope per-peer).
+    const sessionKey = "agent:main:whatsapp:wa-main:dm:5511999999999";
+    getOrCreateSession(sessionKey, "main", stateDir ?? "/tmp");
     const context = createRuntimeContext({
       kind: "turn-runtime",
+      sessionKey,
+      sessionName: "luis-dm",
       metadata: {
         actorPrincipal: "contact:luis",
         actorResolution: "resolved",
