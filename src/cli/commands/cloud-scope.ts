@@ -2,6 +2,7 @@ import "reflect-metadata";
 import { z } from "zod";
 import { Command, CommandAccess, Group, Option } from "../decorators.js";
 import { ContractError } from "../agent-contract.js";
+import { jsonObjectSchema } from "../return-schemas.js";
 import { CloudAuthError, cloudAuthErrorFromUnknown } from "../../cloud-auth/errors.js";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import { deleteCloudCredentials, readCloudCredentials, writeCloudCredentials } from "../../cloud-auth/storage.js";
@@ -170,6 +171,19 @@ const consoleScopeSchema = z.object({
   project: consoleScopeProjectSchema.nullable().optional(),
   source: consoleScopeSourceSchema,
 });
+// The saved default row (`ConsoleScopeDefault`). It is not a resolved scope,
+// so it has no `source`; `show`/`explain` report the source after resolving.
+const consoleScopeDefaultSchema = z.object({
+  scopeKind: z.enum(CONSOLE_SCOPE_KINDS),
+  scopeKey: z.string(),
+  consoleUrl: z.string(),
+  organization: consoleScopeOrganizationSchema.nullable().optional(),
+  project: consoleScopeProjectSchema.nullable().optional(),
+  sourceNote: z.string().nullable().optional(),
+  metadata: jsonObjectSchema.nullable().optional(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
 const consoleScopeTargetSchema = z.object({
   scopeKind: z.enum(CONSOLE_SCOPE_KINDS),
   scopeKey: z.string(),
@@ -206,7 +220,7 @@ declareCommandReturns(CloudScopeCommands, {
     success: z.literal(true),
     action: z.literal("set"),
     target: consoleScopeTargetSchema,
-    scope: consoleScopeSchema,
+    scope: consoleScopeDefaultSchema,
   }),
   clear: z.object({
     success: z.literal(true),

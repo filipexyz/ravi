@@ -6017,6 +6017,8 @@ export type CloudScopeSetReturn = {
   action: "set";
   scope: {
     consoleUrl: string;
+    createdAt: number;
+    metadata?: (Record<string, unknown>) | null;
     organization?: ({
       id?: string | null;
       name?: string | null;
@@ -6028,7 +6030,10 @@ export type CloudScopeSetReturn = {
       ref: string;
       slug?: string | null;
     }) | null;
-    source: "explicit" | "runtime_context" | "local_project_mapping" | "session_default" | "agent_default" | "workspace_default" | "global_default" | "cloud_credentials" | "env_compat" | "single_remote_project";
+    scopeKey: string;
+    scopeKind: "session" | "agent" | "workspace" | "global";
+    sourceNote?: string | null;
+    updatedAt: number;
   };
   success: true;
   target: {

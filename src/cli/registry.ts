@@ -209,6 +209,7 @@ function registerCommand(
 
     // Build the final args array in parameter order
     const finalArgs: unknown[] = [];
+    const sharedOptionValues = new Map<string, unknown>();
     const totalParams = argsMeta.length + optionsMeta.length;
 
     for (let i = 0; i < totalParams; i++) {
@@ -225,13 +226,22 @@ function registerCommand(
         const optName = extractOptionName(optAtIndex.flags);
         const optionValue = resolveOptionValue(options, optAtIndex.flags, optionsMeta, cmd);
         finalArgs.push(optionValue);
-        // An option that shares its name with an arg must not overwrite the
-        // arg's value in the flat input (and the remote gateway body built
-        // from it); the arg owns that key, as in the gateway dispatcher.
-        if (optionValue !== undefined && !argsMeta.some((arg) => arg.name === optName)) {
+        if (optionValue === undefined) continue;
+        if (argsMeta.some((arg) => arg.name === optName)) {
+          sharedOptionValues.set(optName, optionValue);
+        } else {
           input[optName] = optionValue;
         }
       }
+    }
+
+    // An option that shares its name with an arg must not overwrite the arg's
+    // value in the flat input (and the remote gateway body built from it); the
+    // arg owns that key, as in the gateway dispatcher. When the arg was left
+    // out, the option fills the key, so `pages list --project <ref>` still
+    // reaches the gateway, which hands the key to the arg.
+    for (const [optName, optionValue] of sharedOptionValues) {
+      if (input[optName] === undefined) input[optName] = optionValue;
     }
 
     let remoteConfig: RemoteGatewayConfig | null;
