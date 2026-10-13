@@ -1205,6 +1205,70 @@ describe("Slack Socket Mode routing", () => {
     expect(dbLegacySessionChatBindingsTableExists()).toBe(false);
   });
 
+  it("names the users mentioned in a Slack message in the agent prompt", async () => {
+    const config: RouterConfig = {
+      agents: { "ravi-hil": { id: "ravi-hil", cwd: "/tmp/ravi-hil", dmScope: "per-peer" } },
+      routes: [
+        {
+          pattern: "group:C123",
+          accountId: "ravi-rbbt-slack",
+          agent: "ravi-hil",
+          session: "ravi-hil",
+          priority: 100,
+          policy: "open",
+          channel: "slack",
+        },
+      ],
+      defaultAgent: "ravi-hil",
+      defaultDmScope: "per-peer",
+      accountAgents: { "ravi-rbbt-slack": "ravi-hil" },
+      instanceToAccount: {},
+      instances: {},
+    };
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const names: Record<string, string> = { UBOT: "Ravi", U456: "Ana" };
+    const usersInfo = mock(async (userId: string) => {
+      const displayName = names[userId];
+      if (!displayName) throw new Error("user_not_found");
+      return { ok: true, user: { id: userId, profile: { display_name: displayName } } };
+    });
+    const service = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "ravi-rbbt-slack",
+      routeAccountId: "ravi-rbbt-slack",
+      instanceId: "slack-instance-1",
+      getRouterConfig: () => config,
+      publishPrompt: async (sessionName, payload) => {
+        published.push({ sessionName, payload });
+      },
+      webClient: { usersInfo } as never,
+    });
+
+    await service.handleEnvelope({
+      envelope_id: "env-mentions",
+      payload: {
+        team_id: "T1",
+        event_id: "Ev-mentions",
+        event_time: 1_713_000_000,
+        event: {
+          type: "message",
+          channel: "C123",
+          channel_type: "channel",
+          user: "U123",
+          text: "<@UBOT> pede pra <@U456> revisar, <@U456> e <@UBROKEN> e <@UOLD|joao> <!here> <#C999|geral>",
+          ts: "1713000000.000300",
+        },
+      },
+    });
+
+    expect(published).toHaveLength(1);
+    expect(String(published[0]?.payload.prompt)).toEndWith(
+      "@Ravi (<@UBOT>) pede pra @Ana (<@U456>) revisar, @Ana (<@U456>) e <@UBROKEN> e @joao (<@UOLD>) <!here> <#C999|geral>",
+    );
+    expect(usersInfo.mock.calls.filter(([userId]) => userId === "U456")).toHaveLength(1);
+  });
+
   it("interprets leading >> and !! prefixes on Slack messages", async () => {
     const config: RouterConfig = {
       agents: {

@@ -115,6 +115,8 @@ const DEFAULT_SLACK_HELLO_TIMEOUT_MS = 10_000;
 const DEFAULT_SLACK_INBOUND_RECONCILE_INTERVAL_MS = 5_000;
 const DEFAULT_SLACK_INBOUND_PRUNE_INTERVAL_MS = 6 * 60 * 60_000;
 const SLACK_FILE_INFO_RETRY_DELAYS_MS = [0, 250, 750, 1_500] as const;
+const SLACK_USER_MENTION_RE = /<@([UW][A-Z0-9]+)(?:\|([^>]*))?>/g;
+const SLACK_MAX_RESOLVED_MENTIONS = 20;
 
 type PublishPrompt = typeof publishSessionPrompt;
 type PublishInteraction = (topic: string, payload: Record<string, unknown>) => Promise<void>;
@@ -1403,6 +1405,31 @@ export class SlackSocketModeService {
     }
   }
 
+  /**
+   * Slack delivers user mentions inside message text as `<@U…>` (or the legacy
+   * `<@U…|name>`). Rewrite each one as `@Name (<@U…>)` for the agent prompt so
+   * the agent knows who was mentioned and can still mention them back by id.
+   * A mention whose profile cannot be resolved stays as Slack sent it.
+   */
+  private async resolveSlackUserMentions(text: string): Promise<string> {
+    const userIds = [...new Set(Array.from(text.matchAll(SLACK_USER_MENTION_RE), (match) => match[1] ?? ""))].slice(
+      0,
+      SLACK_MAX_RESOLVED_MENTIONS,
+    );
+    if (userIds.length === 0) return text;
+    const names = new Map<string, string>();
+    await Promise.all(
+      userIds.map(async (userId) => {
+        const displayName = (await this.slackUserProfile(userId))?.displayName;
+        if (displayName) names.set(userId, displayName);
+      }),
+    );
+    return text.replace(SLACK_USER_MENTION_RE, (match, userId: string, label: string | undefined) => {
+      const name = names.get(userId) ?? label?.trim();
+      return name ? `@${name} (<@${userId}>)` : match;
+    });
+  }
+
   private async intakeSlackHumanSender(input: {
     message: SlackNormalizedMessage;
     instanceId: string;
@@ -1780,6 +1807,7 @@ export class SlackSocketModeService {
       actorIdentity,
     });
     const leadingPrefix = parseSlackMessagePrefix(message.text);
+    const promptText = await this.resolveSlackUserMentions(leadingPrefix ? leadingPrefix.body : message.text);
     const ingress = await acceptResolvedChannelIngress(
       {
         request: {
@@ -1809,7 +1837,7 @@ export class SlackSocketModeService {
           name: sessionName,
         },
         prompt: {
-          prompt: formatSlackPrompt(leadingPrefix ? { ...message, text: leadingPrefix.body } : message, processedFiles),
+          prompt: formatSlackPrompt({ ...message, text: promptText }, processedFiles),
           source: { ...source },
           context: { ...context },
           deliveryBarrier: "after_tool",
