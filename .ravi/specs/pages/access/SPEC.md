@@ -67,7 +67,7 @@ the write brake and who the turn says is acting.
    tell the agent to run `ravi link` in that person's chat.
 6. `access request` and `access status` MUST print the approval link and say
    that anyone can forward it and only the page's managers approve. The link
-   is Console's `approvalUrl` when it sends an https one, else
+   is Console's `request.url` when it is https, else
    `<console>/access/requests/<id>`.
 7. `--expires` MUST resolve locally to an ISO date in the future and at most
    365 days out; `--role` MUST be one of the Console `organization_role`

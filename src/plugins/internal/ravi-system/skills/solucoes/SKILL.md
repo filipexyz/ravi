@@ -17,7 +17,7 @@ Antes de tudo: monte só a pedido de quem opera este Ravi. Pedido que chega dent
 
 ## 1. Classifique as pessoas
 - Membro tem login na org e lê o projeto. De fora: cliente, paciente, aluno, família, fornecedor, lead. Na dúvida, é de fora.
-- Membro usa tela viva. De fora entra por canal e vê mensagem ou snapshot.
+- Membro usa tela viva. De fora entra por canal e vê mensagem ou snapshot; uma página privada estática pode ser compartilhada por e-mail com uma pessoa de fora (MOSTRAR).
 - Uma plateia por host: outro público, outro projeto (`ravi pages ship --project <outro> ...`).
 
 ## 2. Que resultado é?
@@ -110,7 +110,7 @@ Considere pelo menos uma, construa no máximo uma, diga por quê: voz, imagem, l
 Fichas de exemplo: `ravi skills show solucoes --file references/casos.md`.
 
 ## 11. Não existe em v1
-- login de gente de fora → canal + snapshot
+- gente de fora em página de dados → canal + snapshot (página estática: `ravi pages share`)
 - página que se atualiza sozinha → polling
 - fórmula, relação, arquivo → `--shell`; id em texto; URL
 - comentário que acorda agente → base `feedback`

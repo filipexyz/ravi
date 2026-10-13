@@ -135,7 +135,7 @@ ravi access status <request-id>
 - `request` tem freio (avisa os admins de outra org). A saída traz o link de aprovação: qualquer pessoa pode encaminhá-lo, abrir não muda nada, e só quem gerencia a página aprova. Já tem acesso? Sai `already_allowed`.
 - Aprovado: leia de novo com `ravi pages read <url>`.
 
-Quem age: no turno do próprio operador (terminal, a DM dele, as rotinas dele) age o usuário do `ravi login`. Quando outra pessoa escreveu a mensagem, o Console age por ELA, pelo `ravi link` dela, e ela e o operador precisam ter o papel. Sem link sai `ACTOR_NOT_LINKED` (exit 3): rode `ravi link` no chat dela e tente de novo. Turno que o Ravi não consegue atribuir é recusado antes de qualquer chamada (`ACTOR_UNKNOWN`, exit 3). `invites list` só roda no turno do operador.
+Quem age: no turno do próprio operador (terminal, a DM dele, as rotinas dele) age o usuário do `ravi login`. Quando outra pessoa escreveu a mensagem, o Console age por ELA, pelo `ravi link` dela. Para compartilhar ou convidar, ela e o operador precisam ter o papel; para pedir acesso, basta ser ela. Sem link sai `ACTOR_NOT_LINKED` (exit 3): rode `ravi link` no chat dela e tente de novo. Turno que o Ravi não consegue atribuir é recusado antes de qualquer chamada (`ACTOR_UNKNOWN`, exit 3). `invites list` só roda no turno do operador.
 
 ## Página de dados
 
