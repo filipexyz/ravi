@@ -26367,12 +26367,14 @@ public struct SkillsInspectReturn: Codable, Sendable {
   public var agentId: String
   public var allowlist: [String]
   public var hasConfiguration: Bool
+  public var libraryGrants: [String]
   public var provenance: RaviJSON
 
-  public init(agentId: String, allowlist: [String], hasConfiguration: Bool, provenance: RaviJSON) {
+  public init(agentId: String, allowlist: [String], hasConfiguration: Bool, libraryGrants: [String], provenance: RaviJSON) {
     self.agentId = agentId
     self.allowlist = allowlist
     self.hasConfiguration = hasConfiguration
+    self.libraryGrants = libraryGrants
     self.provenance = provenance
   }
 
@@ -26380,6 +26382,7 @@ public struct SkillsInspectReturn: Codable, Sendable {
     case agentId = "agentId"
     case allowlist = "allowlist"
     case hasConfiguration = "hasConfiguration"
+    case libraryGrants = "libraryGrants"
     case provenance = "provenance"
   }
 }
@@ -26537,6 +26540,81 @@ public struct SkillsListReturn: Codable, Sendable {
   }
 }
 
+public struct SkillsPublishOptions: Codable, Sendable {
+  public var execute: Bool?
+  public var external: Bool?
+  public var name: String?
+  public var note: String?
+  public var scope: String?
+  public var slug: String?
+
+  public init(execute: Bool? = nil, external: Bool? = nil, name: String? = nil, note: String? = nil, scope: String? = nil, slug: String? = nil) {
+    self.execute = execute
+    self.external = external
+    self.name = name
+    self.note = note
+    self.scope = scope
+    self.slug = slug
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case execute = "execute"
+    case external = "external"
+    case name = "name"
+    case note = "note"
+    case scope = "scope"
+    case slug = "slug"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.external {
+      body["external"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.name {
+      body["name"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.note {
+      body["note"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.scope {
+      body["scope"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.slug {
+      body["slug"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct SkillsPublishReturn: Codable, Sendable {
+  public var contentHash: String
+  public var item: RaviJSON
+  public var ref: String
+  public var success: Bool
+  public var unchanged: Bool
+  public var version: Double
+
+  public init(contentHash: String, item: RaviJSON, ref: String, success: Bool, unchanged: Bool, version: Double) {
+    self.contentHash = contentHash
+    self.item = item
+    self.ref = ref
+    self.success = success
+    self.unchanged = unchanged
+    self.version = version
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case contentHash = "contentHash"
+    case item = "item"
+    case ref = "ref"
+    case success = "success"
+    case unchanged = "unchanged"
+    case version = "version"
+  }
+}
+
 public struct SkillsRevokeReturn: Codable, Sendable {
   public var agentId: String
   public var grant: RaviJSON?
@@ -26636,15 +26714,71 @@ public struct SkillsRevokeBatchReturn: Codable, Sendable {
   }
 }
 
+public struct SkillsSearchOptions: Codable, Sendable {
+  public var limit: String?
+  public var local: Bool?
+  public var project: String?
+
+  public init(limit: String? = nil, local: Bool? = nil, project: String? = nil) {
+    self.limit = limit
+    self.local = local
+    self.project = project
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case limit = "limit"
+    case local = "local"
+    case project = "project"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.local {
+      body["local"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct SkillsSearchReturn: Codable, Sendable {
+  public var items: [RaviJSON]
+  public var library: RaviJSON
+  public var query: String
+  public var stale: Bool
+  public var total: Double
+
+  public init(items: [RaviJSON], library: RaviJSON, query: String, stale: Bool, total: Double) {
+    self.items = items
+    self.library = library
+    self.query = query
+    self.stale = stale
+    self.total = total
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case items = "items"
+    case library = "library"
+    case query = "query"
+    case stale = "stale"
+    case total = "total"
+  }
+}
+
 public struct SkillsShowOptions: Codable, Sendable {
   public var file: String?
   public var installed: Bool?
+  public var project: String?
   public var raw: Bool?
   public var source: String?
 
-  public init(file: String? = nil, installed: Bool? = nil, raw: Bool? = nil, source: String? = nil) {
+  public init(file: String? = nil, installed: Bool? = nil, project: String? = nil, raw: Bool? = nil, source: String? = nil) {
     self.file = file
     self.installed = installed
+    self.project = project
     self.raw = raw
     self.source = source
   }
@@ -26652,6 +26786,7 @@ public struct SkillsShowOptions: Codable, Sendable {
   enum CodingKeys: String, CodingKey {
     case file = "file"
     case installed = "installed"
+    case project = "project"
     case raw = "raw"
     case source = "source"
   }
@@ -26662,6 +26797,9 @@ public struct SkillsShowOptions: Codable, Sendable {
     }
     if let value = self.installed {
       body["installed"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.raw {
       body["raw"] = try RaviJSON.fromEncodable(value)

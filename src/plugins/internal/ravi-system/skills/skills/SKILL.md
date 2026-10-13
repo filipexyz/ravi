@@ -5,6 +5,7 @@ description: |
   - Instalar skills oficiais do catálogo do Ravi
   - Instalar skills de um repositório ou path local
   - Listar ou ver o conteúdo de skills pelo CLI
+  - Buscar, carregar e publicar skills da Biblioteca (organização e projeto)
   - Criar uma nova skill
   - Entender como skills funcionam
   - Configurar frontmatter de skills
@@ -35,6 +36,8 @@ Matriz KISS de `skills install`:
 | Qualquer fonte com `--overwrite` | dry-run (exit 3) antes de substituir arquivos | revise o plano mínimo e repita com `--execute` |
 
 O plano usa um `sourceLabel` controlado: exatamente `catalog`, `local` ou `git`, nunca um rótulo derivado da entrada. Ele não repete URL, path local, nome da fonte/repositório/skill nem conteúdo. Em Git, a seleção fica adiada e erros como `SKILL_NOT_FOUND` só podem aparecer depois de `--execute`; catálogo e fonte local podem validar a seleção antes de escrever.
+
+`skills publish` (Biblioteca) sempre tem freio: sem `--execute` devolve o plano (exit 3). `skills search` e `skills show` só leem.
 
 Sem freio (declarado): instalações aditivas do catálogo ou de path local; `skills sync` (re-materializa o que já existe no repo local; idempotente e reversível); e `skills grant`/`skills revoke` (reversíveis entre si, efeito ao vivo). Todos escrevem na hora.
 
@@ -148,6 +151,58 @@ Skill que já vem no catálogo do Ravi (ex.: `bases`) não se instala: basta `ra
 ```bash
 ravi skills sync
 ```
+
+## Biblioteca: skills da organização e do projeto
+
+A Biblioteca guarda no Console as skills que a organização compartilha. Uma skill é da organização (todo agente de todo projeto vê) ou de um projeto (só os agentes daquele projeto veem). O formato é o mesmo de qualquer skill: uma pasta com `SKILL.md` e, se quiser, `references/`.
+
+Refs:
+
+- `org/<slug>`: skill da organização.
+- `<projeto>/<slug>`: skill de um projeto (ex.: `clinica/triagem`).
+
+### Buscar
+
+```bash
+ravi skills search agenda                 # locais + Biblioteca, ignora maiúsculas e acentos
+ravi skills search "nota fiscal" --json   # cada item traz ref, source, scope, version, authorized e next
+ravi skills search bases --local          # só as locais, sem Console
+```
+
+`source` é `system` (vem com o Ravi), `installed` ou `library`. O campo `next` traz o comando exato para carregar. Sem `ravi login`, a busca devolve só as locais e avisa em `library.hint`. Sem rede, a Biblioteca responde do cache local e o resultado vem com `stale: true`.
+
+### Carregar
+
+```bash
+ravi skills show org/agenda-semanal
+ravi skills show clinica/triagem --file references/horarios.md
+```
+
+Um nome sem barra resolve primeiro nas skills locais (as do Ravi e as instaladas sempre ganham); só sem match local o Ravi procura na Biblioteca (organização + projeto do agente). Dentro de um agente, use sempre o ref completo que o `search` devolve: o gate de skills confere o nome antes de o comando rodar e não sabe a que skill da Biblioteca um nome solto se refere. Uma skill carregada fica no cache e continua funcionando sem rede (`stale: true`).
+
+Permissão: igual às skills locais. `full-access` (`use:skill:*`) passa; os outros agentes precisam de grant ou capability:
+
+```bash
+ravi skills grant atendente org/agenda-semanal     # grava o id org:agenda-semanal
+ravi skills grant atendente clinica/triagem        # grava project:clinica:triagem
+```
+
+Capabilities usam os mesmos ids: `use:skill:org:agenda-semanal`, `use:skill:org:*` (todas da organização), `use:skill:project:clinica:*` (todas do projeto). Skill de outro projeto que não o do agente só passa com grant explícito daquele ref (`LIBRARY_SKILL_OUT_OF_VIEW`, exit 3).
+
+Conversa com gente de fora da organização: só skills publicadas com `--external` são carregadas em turnos que não são do próprio operador (o terminal, a conversa direta dele, as rotinas dele). As outras falham com `LIBRARY_SKILL_EXTERNAL_DENIED` (exit 3) e nem aparecem no `search`. Responda sem a skill.
+
+### Publicar
+
+Publicar muda o que todo agente da organização ou do projeto carrega, então tem freio: sem `--execute` o comando valida a pasta, lê a versão publicada e devolve o plano (exit 3); com `--execute` publica.
+
+```bash
+ravi skills publish ./agenda-semanal --scope org                     # plano (exit 3)
+ravi skills publish ./agenda-semanal --scope org --execute
+ravi skills publish ./triagem --scope clinica --note "novos horários" --execute
+ravi skills publish ./faq --scope org --external --execute           # liberada para conversa com gente de fora
+```
+
+Regras checadas antes de qualquer request: `SKILL.md` na raiz com `description` no frontmatter; até 100 arquivos de texto UTF-8, 256 KiB cada e 1 MiB no total; caminhos com `A-Z a-z 0-9 . _ - /` (dotfiles e `node_modules` ficam fora). O slug vem de `--slug`, senão do `name` do frontmatter, senão do nome da pasta. Os nomes das skills do Ravi e o prefixo `ravi-` são reservados (`LIBRARY_SLUG_RESERVED`). Conteúdo idêntico ao publicado não cria versão (`unchanged: true`). Se alguém publicou antes de você, o `--execute` falha com `CONFLICT` (`reason: stale_base`): rode de novo sem `--execute` para ver o plano novo.
 
 ## Estrutura de uma Skill
 

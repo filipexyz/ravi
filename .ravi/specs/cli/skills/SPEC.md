@@ -116,6 +116,8 @@ the global envelope, exit taxonomy, authorization or transport behavior.
 | sync | idempotent local re-materialization | immediate |
 | grant / revoke | reversible visibility change | immediate |
 | grant-batch / revoke-batch | bulk reversible visibility change | pre-existing `--dry-run`, exit 0 preview |
+| search / show of a Library skill | read; `show` refreshes the local Library cache | immediate |
+| publish to the Library | new version every agent of the org or project loads | dry-run exit 3 with the plan, then `--execute` |
 
 `skills install` remains `kind: "mutate"` with
 `requiresConfirmation: true`: it always writes, but confirmation is decided
@@ -136,6 +138,9 @@ per invocation from source kind and overwrite intent.
 | selected skill already installed without `--overwrite` | `SKILL_ALREADY_INSTALLED` (suggests grant or overwrite) | 1 |
 | runtime agent reads a skill it is not authorized for | `SKILL_NOT_AUTHORIZED` (`Skill '<skill>' is not authorized for agent '<agent>'.` + grant action; `install --source` only for a skill outside Ravi) | 1 |
 | Git install or overwrite without `--execute` | `WRITE_REQUIRES_EXECUTE` + source-appropriate minimal plan | 3 |
+| Library publish without `--execute` | `WRITE_REQUIRES_EXECUTE` + publish plan | 3 |
+| malformed Library ref or `--scope`; folder fails a local check; reserved slug | `LIBRARY_REF_INVALID`, `LIBRARY_PACKAGE_INVALID`, `LIBRARY_SLUG_RESERVED` | 2 |
+| Library skill not marked `externalAllowed` in a turn that is not the operator's own; project item outside the agent's view | `LIBRARY_SKILL_EXTERNAL_DENIED`, `LIBRARY_SKILL_OUT_OF_VIEW` | 3 |
 
 ## Domain exceptions and ordering
 
@@ -150,6 +155,9 @@ per invocation from source kind and overwrite intent.
   brake and expose only `skillCount`, never names or content.
 - `grant-batch` and `revoke-batch` intentionally retain the earlier preview
   contract instead of gaining another confirmation spelling.
+
+Library refs, resolution, authorization and cache are specified in
+`skills/library`; this table only classifies the CLI effects.
 
 ## Internal consumers
 

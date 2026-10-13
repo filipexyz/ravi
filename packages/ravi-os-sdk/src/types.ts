@@ -16721,6 +16721,7 @@ export type SkillsInspectReturn = {
   agentId: string;
   allowlist: string[];
   hasConfiguration: boolean;
+  libraryGrants: string[];
   provenance: {
     baseline: string[];
     fromCapabilities: string[];
@@ -16795,6 +16796,48 @@ export type SkillsListReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `skills.publish`. */
+export type SkillsPublishInput = {
+  dir: string;
+  execute?: boolean;
+  external?: boolean;
+  name?: string;
+  note?: string;
+  scope?: string;
+  slug?: string;
+};
+
+/** Return shape for `skills.publish`. */
+export type SkillsPublishReturn = {
+  contentHash: string;
+  item: {
+    archived: boolean;
+    contentHash: string;
+    description: string;
+    externalAllowed: boolean;
+    kind: string;
+    name: string;
+    project: ({
+      id: string;
+      name?: string | null;
+      slug: string;
+    }) | null;
+    publishedAt: string | null;
+    publishedBy: ({
+      name?: string | null;
+    }) | null;
+    ref: string;
+    scope: "org" | "project";
+    slug: string;
+    updatedAt: string | null;
+    version: number;
+  };
+  ref: string;
+  success: true;
+  unchanged: boolean;
+  version: number;
+};
+
 /** Input shape for `skills.revoke`. */
 export type SkillsRevokeInput = {
   agent: string;
@@ -16840,11 +16883,49 @@ export type SkillsRevokeBatchReturn = {
   skillsTargeted: number;
 };
 
+/** Input shape for `skills.search`. */
+export type SkillsSearchInput = {
+  limit?: string;
+  local?: boolean;
+  project?: string;
+  query: string;
+};
+
+/** Return shape for `skills.search`. */
+export type SkillsSearchReturn = {
+  items: Array<{
+    authorized?: boolean;
+    description: string | null;
+    externalAllowed?: boolean;
+    name: string;
+    next: string;
+    project: string | null;
+    ref: string;
+    scope: ("org" | "project") | null;
+    score: number;
+    source: "system" | "installed" | "library";
+    version: number | null;
+  }>;
+  library: {
+    error?: {
+      code: string;
+      message: string;
+    };
+    hint?: string;
+    project: string | null;
+    status: "ok" | "stale" | "skipped" | "error";
+  };
+  query: string;
+  stale: boolean;
+  total: number;
+};
+
 /** Input shape for `skills.show`. */
 export type SkillsShowInput = {
   file?: string;
   installed?: boolean;
   name: string;
+  project?: string;
   raw?: boolean;
   source?: string;
 };

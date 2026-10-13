@@ -5582,6 +5582,13 @@ public struct SkillsNamespace: Sendable {
     return try await transport.call(groupSegments: ["skills"], command: "list", body: requestBody, as: SkillsListReturn.self)
   }
 
+  public func publish(_ dir: String, _ options: SkillsPublishOptions = .init()) async throws -> SkillsPublishReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["dir"] = try RaviJSON.fromEncodable(dir)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["skills"], command: "publish", body: requestBody, as: SkillsPublishReturn.self)
+  }
+
   public func revoke(_ agent: String, _ skill: String) async throws -> SkillsRevokeReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["agent"] = try RaviJSON.fromEncodable(agent)
@@ -5593,6 +5600,13 @@ public struct SkillsNamespace: Sendable {
     var requestBody: [String: RaviJSON] = [:]
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["skills"], command: "revoke-batch", body: requestBody, as: SkillsRevokeBatchReturn.self)
+  }
+
+  public func search(_ query: String, _ options: SkillsSearchOptions = .init()) async throws -> SkillsSearchReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["query"] = try RaviJSON.fromEncodable(query)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["skills"], command: "search", body: requestBody, as: SkillsSearchReturn.self)
   }
 
   public func show(_ name: String, _ options: SkillsShowOptions = .init()) async throws -> SkillsShowReturn {

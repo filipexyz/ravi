@@ -1,10 +1,10 @@
 ---
 title: Skills
-description: Read the system skills that ship with Ravi, copy their reference files, understand how agents load them, and install or grant your own.
+description: Read the system skills that ship with Ravi, copy their reference files, understand how agents load them, use your organization's Library skills, and install or grant your own.
 icon: book-open
 ---
 
-A skill is a guide (`SKILL.md` plus optional files under `references/`) that teaches an agent how to use one part of Ravi. At the end of this page you will know how to list and read the skills that ship with Ravi, copy reference files such as the Pages skeletons, why an agent's first command in a group returns a skill instead of running, and how to install and grant skills of your own.
+A skill is a guide (`SKILL.md` plus optional files under `references/`) that teaches an agent how to use one part of Ravi. At the end of this page you will know how to list and read the skills that ship with Ravi, copy reference files such as the Pages skeletons, why an agent's first command in a group returns a skill instead of running, how to search, load and publish your organization's Library skills, and how to install and grant skills of your own.
 
 ## System skills
 
@@ -110,6 +110,55 @@ ravi skills who --agent main      # explicit grants of one agent
 `ravi skills grant-batch` and `ravi skills revoke-batch` do the same in bulk; preview with `--dry-run`.
 
 Skills that ship with Ravi need no install: grant them directly, or give the agent `use:skill:<skill>`. `use:skill:*` (which the `full-access` profile includes) and `admin:system:*` let an agent read any catalog or installed skill on demand. Run a grant as its own command: a shell line that also reads the denied skill is rejected as a whole, so the grant on that line never runs.
+
+## Library skills (organization and project)
+
+The Library keeps skills in the Ravi Console so every agent of your organization can use them. A Library skill belongs either to the organization, so every project's agents see it, or to one project, so only the agents of that project see it. It is the same folder format as any skill: `SKILL.md` plus optional `references/`. The Library needs a Ravi Cloud login (`ravi login`); without one, everything else on this page still works.
+
+Library skills have refs:
+
+- `org/<slug>` for an organization skill, such as `org/weekly-agenda`
+- `<project>/<slug>` for a project skill, such as `clinic/triage`
+
+### Search and load
+
+```bash
+ravi skills search agenda                 # local skills and the Library, case and accent insensitive
+ravi skills search "invoice" --json       # each result has ref, source, scope, version, authorized and next
+ravi skills search bases --local          # local skills only, no Console
+ravi skills show org/weekly-agenda
+ravi skills show clinic/triage --file references/hours.md
+```
+
+`source` is `system` (ships with Ravi), `installed` or `library`, and `next` is the exact command that loads the result. A name without a slash resolves to your local skills first: Ravi's own skills and installed skills always win. Only when nothing local matches does Ravi look in the Library, in the organization's skills and the agent's Console project. Inside an agent session, use the full ref that `search` returns.
+
+`show` keeps a copy of every Library skill it loads under `~/.ravi/library/`. When the Console cannot be reached, `show` and `search` answer from that copy and add `stale: true`, so a skill an agent already used keeps working.
+
+### Who can load a Library skill
+
+Library skills are authorized like local ones. An agent on the `full-access` profile can load any of them. Other agents need a grant or a capability:
+
+```bash
+ravi skills grant support org/weekly-agenda   # stored as org:weekly-agenda
+ravi skills grant support clinic/triage       # stored as project:clinic:triage
+```
+
+The capability form uses the same ids: `use:skill:org:weekly-agenda`, `use:skill:org:*` for every organization skill, `use:skill:project:clinic:*` for every skill of one project. A project skill of another project than the agent's own is refused (`LIBRARY_SKILL_OUT_OF_VIEW`) unless an operator grants that exact ref.
+
+Only skills published with `--external` load in conversations with people outside your organization. Your own turns are your terminal, your linked direct chat and your routines; in any other turn the rest fail with `LIBRARY_SKILL_EXTERNAL_DENIED` (exit 3), and `search` leaves them out.
+
+### Publish
+
+Publishing changes what every agent of the organization or project loads, so it is a dry run until you confirm it. Without `--execute`, Ravi checks the folder, reads the version published now and prints the plan (exit 3). With `--execute`, it publishes the next version.
+
+```bash
+ravi skills publish ./weekly-agenda --scope org              # plan only (exit 3)
+ravi skills publish ./weekly-agenda --scope org --execute
+ravi skills publish ./triage --scope clinic --note "new hours" --execute
+ravi skills publish ./faq --scope org --external --execute   # may load in conversations with outsiders
+```
+
+Before sending anything, Ravi checks that `SKILL.md` is at the root with a `description` in its frontmatter, that there are at most 100 UTF-8 text files of at most 256 KiB each and 1 MiB in total, and that file paths use only `A-Z a-z 0-9 . _ - /`. Dot files and `node_modules` are left out. The slug is `--slug`, else the `name` in `SKILL.md`, else the folder name. The names of Ravi's own skills and the `ravi-` prefix are reserved. Publishing content identical to the current version creates nothing (`unchanged: true`). If someone published in the meantime, `--execute` fails with `CONFLICT` and `reason: stale_base`; run it again without `--execute` to see the new plan.
 
 ## Install your own skills
 

@@ -1133,6 +1133,69 @@ export const skillShowReturnSchema = z
   })
   .passthrough();
 
+export const skillsSearchReturnSchema = z
+  .object({
+    query: z.string(),
+    total: z.number(),
+    stale: z.boolean(),
+    library: z
+      .object({
+        status: z.enum(["ok", "stale", "skipped", "error"]),
+        project: z.string().nullable(),
+        hint: z.string().optional(),
+        error: z.object({ code: z.string(), message: z.string() }).strict().optional(),
+      })
+      .strict(),
+    items: z.array(
+      z
+        .object({
+          ref: z.string(),
+          source: z.enum(["system", "installed", "library"]),
+          scope: z.enum(["org", "project"]).nullable(),
+          project: z.string().nullable(),
+          name: z.string(),
+          description: z.string().nullable(),
+          version: z.number().nullable(),
+          externalAllowed: z.boolean().optional(),
+          authorized: z.boolean().optional(),
+          next: z.string(),
+          score: z.number(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+export const libraryItemReturnSchema = z
+  .object({
+    ref: z.string(),
+    kind: z.string(),
+    scope: z.enum(["org", "project"]),
+    project: z.object({ id: z.string(), slug: z.string(), name: z.string().nullable().optional() }).strict().nullable(),
+    slug: z.string(),
+    name: z.string(),
+    description: z.string(),
+    externalAllowed: z.boolean(),
+    version: z.number(),
+    contentHash: z.string(),
+    publishedAt: z.string().nullable(),
+    publishedBy: z.object({ name: z.string().nullable().optional() }).strict().nullable(),
+    archived: z.boolean(),
+    updatedAt: z.string().nullable(),
+  })
+  .strict();
+
+export const skillsPublishReturnSchema = z
+  .object({
+    success: z.literal(true),
+    ref: z.string(),
+    version: z.number(),
+    contentHash: z.string(),
+    unchanged: z.boolean(),
+    item: libraryItemReturnSchema,
+  })
+  .strict();
+
 export const skillsInstallReturnSchema = z
   .object({
     success: z.literal(true),
@@ -1196,6 +1259,7 @@ export const skillInspectReturnSchema = z
     agentId: z.string(),
     hasConfiguration: z.boolean(),
     allowlist: z.array(z.string()),
+    libraryGrants: z.array(z.string()),
     provenance: z
       .object({
         baseline: z.array(z.string()),
