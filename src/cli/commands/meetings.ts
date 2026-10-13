@@ -14,7 +14,6 @@ import {
   createArtifact,
   getArtifact,
   updateArtifact,
-  type ArtifactRecord,
 } from "../../artifacts/store.js";
 import {
   looseObjectSchema,
@@ -25,6 +24,7 @@ import {
   meetingVoiceRuntimesReturnSchema,
 } from "./operational-return-schemas.js";
 import { finalizeGoogleMeetRecorderRun } from "../../meetings/google-meet/recorder-run.js";
+import { notifyMeetingOwnerSession, spawnDetachedCli } from "../../meetings/handoff.js";
 import {
   DEFAULT_MEETING_VOICE_RUNTIME_ID,
   listMeetingVoiceRuntimeCandidates,
@@ -95,43 +95,6 @@ function contextDefaults() {
     threadId: ctx?.source?.threadId,
     messageId: process.env.RAVI_MESSAGE_ID,
   };
-}
-
-function spawnDetachedCli(args: string[], envOverrides?: NodeJS.ProcessEnv): number | undefined {
-  const entrypoint = process.argv[1];
-  if (!entrypoint) {
-    throw new Error("Cannot resolve Ravi CLI entrypoint for async worker.");
-  }
-  const child = spawn(process.execPath, [entrypoint, ...args], {
-    detached: true,
-    stdio: "ignore",
-    env: envOverrides ? { ...process.env, ...envOverrides } : process.env,
-  });
-  child.unref();
-  return child.pid;
-}
-
-function notifyOwnerSession(artifact: ArtifactRecord, status: "completed" | "failed", message: string): void {
-  const target = artifact.sessionName ?? artifact.sessionKey;
-  if (!target) return;
-  try {
-    const pid = spawnDetachedCli(["sessions", "inform", target, message, "--barrier", "after_response"]);
-    appendArtifactEvent(artifact.id, {
-      eventType: "notified",
-      status,
-      message: `Owner session notification queued${pid ? ` (pid ${pid})` : ""}`,
-      source: "ravi.meetings",
-      ...(artifact.agentId ? { actor: artifact.agentId } : {}),
-    });
-  } catch (error) {
-    appendArtifactEvent(artifact.id, {
-      eventType: "notification_failed",
-      status,
-      message: errorMessage(error),
-      source: "ravi.meetings",
-      ...(artifact.agentId ? { actor: artifact.agentId } : {}),
-    });
-  }
 }
 
 function errorMessage(error: unknown): string {
@@ -1112,9 +1075,9 @@ export class MeetingsCommands {
         });
 
         if (finalArtifact.handoffMessage) {
-          notifyOwnerSession(completedArtifact, "completed", finalArtifact.handoffMessage);
+          notifyMeetingOwnerSession(completedArtifact, "completed", finalArtifact.handoffMessage);
         } else {
-          notifyOwnerSession(
+          notifyMeetingOwnerSession(
             completedArtifact,
             "completed",
             [
@@ -1162,7 +1125,7 @@ export class MeetingsCommands {
           source: "ravi.meetings",
           ...(ctx.agentId ? { actor: ctx.agentId } : {}),
         });
-        notifyOwnerSession(
+        notifyMeetingOwnerSession(
           failedArtifact,
           "failed",
           ["[System] Inform: Meeting join failed.", "", `Artifact: ${failedArtifact.id}`, `Error: ${message}`].join(
