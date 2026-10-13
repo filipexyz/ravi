@@ -5,6 +5,12 @@ import { readActiveCloudAuthUserId, readCloudCredentials } from "../cloud-auth/s
 import { LEGACY_CLOUD_AUTH_USER_ID } from "../cloud-auth/types.js";
 import { resolveConnectorTurn, type ConnectorTurnDeps } from "../link/connector-turn.js";
 import { createAuthenticatedPagesContext, type PagesClientDeps, type PagesClientOptions } from "./client.js";
+import {
+  downloadPageFiles,
+  type PageReadDownload,
+  type PageReadFetch,
+  type PageReadRemoteFile,
+} from "./read-download.js";
 
 /**
  * `ravi pages read <url>`: one published Ravi Page as text, through Console.
@@ -12,19 +18,31 @@ import { createAuthenticatedPagesContext, type PagesClientDeps, type PagesClient
  *   POST /api/cli/pages/read  { url, publicOnly, format, cursor, maxChars }
  *
  * Console resolves the URL like the Pages Worker, applies the browser viewer
- * rule to the `ravi login` user and returns Markdown extracted from the
- * published file. This side only decides `publicOnly`: a private Page is read
+ * rule to the `ravi login` user and returns the route in the format the agent
+ * picks: Markdown extracted from the entry file, the entry file's HTML source,
+ * or every published file (downloaded here to a directory or a zip). This side
+ * decides `publicOnly`: a private Page is read
  * with the operator's session, so only the operator's own turns (terminal,
  * their linked direct chat, their routines) may ask for one. Every other turn
  * reads public Pages only.
  */
 export const PAGES_READ_PATH = "/api/cli/pages/read";
 export const RAVI_PAGES_HOST_SUFFIX = ".ravi.page";
-export const PAGE_READ_FORMATS = ["markdown", "html"] as const;
+export const PAGE_READ_FORMATS = ["markdown", "html", "files", "zip"] as const;
 export const PAGE_READ_MIN_CHARS = 1_000;
 export const PAGE_READ_MAX_CHARS = 256_000;
 
 export type PageReadFormat = (typeof PAGE_READ_FORMATS)[number];
+export type PageReadRepresentation = "extracted_markdown" | "entry_source" | "file_list";
+
+/** What each answer's text is, so an agent never takes the Markdown for the page itself. */
+export const PAGE_READ_NOTES: Record<PageReadRepresentation, string> = {
+  extracted_markdown:
+    "Markdown extracted from the page's HTML: text, headings, lists, tables and links only. Styles, layout, scripts and images are not included, so it does not show how the page looks. For the design, use --format html (entry file source) or --format zip|files --out <path> (every published file).",
+  entry_source:
+    "Source of the route's entry file as published. Stylesheets, scripts and images it links to are separate files: use --format zip|files --out <path> to get them all.",
+  file_list: "Every file published for this route (HTML, CSS, JS, images), downloaded as published.",
+};
 
 export interface PageReadOptions extends PagesClientOptions {
   url: string;
@@ -33,12 +51,17 @@ export interface PageReadOptions extends PagesClientOptions {
   maxChars?: number;
   /** Accept a host that is not *.ravi.page (a custom domain bound to a Pages site). */
   customDomain?: boolean;
+  /** Where --format files writes a directory and --format zip writes a .zip. */
+  out?: string;
 }
 
 export interface PageReadDeps extends PagesClientDeps {
   turn?: ConnectorTurnDeps;
   /** Overrides the turn classification (tests). */
   publicOnly?: boolean;
+  /** Downloads the presigned file URLs (tests). */
+  fetchFile?: PageReadFetch;
+  now?: () => Date;
 }
 
 export interface PageReadLink {
@@ -73,12 +96,16 @@ export interface PageReadResult {
   };
   content: {
     format: PageReadFormat;
+    representation: PageReadRepresentation;
+    note: string;
     text: string;
     cursor: number;
     nextCursor: number | null;
     totalChars: number;
     truncated: boolean;
   };
+  /** Files written by --format files|zip (never the signed URLs). */
+  download?: PageReadDownload;
   links: PageReadLink[];
   routes: PageReadRoute[];
   signals: {
@@ -126,7 +153,10 @@ export function normalizePageReadFormat(value: string | undefined): PageReadForm
   const normalized = value.trim().toLowerCase();
   const format = PAGE_READ_FORMATS.find((candidate) => candidate === normalized);
   if (!format) {
-    throw new CloudAuthError("PAYLOAD_INVALID", `--format must be markdown or html. Received "${value.trim()}".`);
+    throw new CloudAuthError(
+      "PAYLOAD_INVALID",
+      `--format must be markdown, html, files or zip. Received "${value.trim()}".`,
+    );
   }
   return format;
 }
@@ -168,17 +198,40 @@ export function pageReadIsPublicOnly(deps: PageReadDeps = {}): boolean {
 
 export async function readPage(options: PageReadOptions, deps: PageReadDeps = {}): Promise<PageReadResult> {
   const url = normalizePageReadUrl(options.url, { customDomain: options.customDomain });
+  const format = options.format ?? "markdown";
+  const downloads = format === "files" || format === "zip";
+  const out = options.out?.trim();
+  if (downloads && !out) {
+    throw new CloudAuthError(
+      "PAYLOAD_INVALID",
+      `--format ${format} needs --out <path>: ${format === "zip" ? "the .zip file to write" : "an empty directory to write the files into"}.`,
+    );
+  }
+  if (!downloads && out) {
+    throw new CloudAuthError("PAYLOAD_INVALID", "--out is only used with --format files or zip.");
+  }
   const publicOnly = pageReadIsPublicOnly(deps);
   const context = await createAuthenticatedPagesContext(options, deps);
   const body = {
     url,
     publicOnly,
-    format: options.format ?? "markdown",
+    format: downloads ? "files" : format,
     ...(options.cursor !== undefined ? { cursor: options.cursor } : {}),
     ...(options.maxChars !== undefined ? { maxChars: options.maxChars } : {}),
   };
   const payload = await context.client.requestJson<unknown>("POST", PAGES_READ_PATH, body, context.accessToken);
-  return { ...normalizePageReadPayload(payload), success: true, consoleUrl: context.consoleUrl, publicOnly };
+  const { files, ...normalized } = normalizePageReadPayload(payload, format);
+  const result: PageReadResult = { ...normalized, success: true, consoleUrl: context.consoleUrl, publicOnly };
+  if (downloads && out) {
+    result.download = await downloadPageFiles({
+      files,
+      kind: format === "zip" ? "zip" : "directory",
+      out,
+      fetch: deps.fetchFile,
+      now: deps.now?.(),
+    });
+  }
+  return result;
 }
 
 /** Wraps page text so an agent sees where untrusted content starts and ends. */
@@ -241,8 +294,8 @@ export function describePageReadFailure(error: unknown, url: string): PageReadFa
       code: "PAGE_CONTENT_UNSUPPORTED",
       message:
         error.status === 413
-          ? `The file behind ${url} is larger than 2 MB.`
-          : `${url} serves a file that is not text (only HTML, Markdown and plain text are read).`,
+          ? `${url} is too large for this format (a 2 MB entry file, or 1000 files / 100 MB for files and zip).`
+          : `${url} serves a file that is not text. Download it with --format files or zip --out <path>.`,
       exitCode: 1,
       details: { ...(error.details ?? {}) },
     };
@@ -250,7 +303,10 @@ export function describePageReadFailure(error: unknown, url: string): PageReadFa
   return null;
 }
 
-function normalizePageReadPayload(payload: unknown): Omit<PageReadResult, "success" | "consoleUrl" | "publicOnly"> {
+function normalizePageReadPayload(
+  payload: unknown,
+  requestedFormat: PageReadFormat,
+): Omit<PageReadResult, "success" | "consoleUrl" | "publicOnly"> & { files: PageReadRemoteFile[] } {
   const record = objectValue(payload) ?? {};
   const page = objectValue(record.page) ?? {};
   const content = objectValue(record.content) ?? {};
@@ -259,6 +315,7 @@ function normalizePageReadPayload(payload: unknown): Omit<PageReadResult, "succe
   const release = objectValue(page.release) ?? {};
   const artifact = objectValue(page.artifact) ?? {};
   const file = objectValue(page.file) ?? {};
+  const representation = representationFor(content.representation, requestedFormat);
   return {
     page: {
       url: text(page.url),
@@ -284,7 +341,9 @@ function normalizePageReadPayload(payload: unknown): Omit<PageReadResult, "succe
       },
     },
     content: {
-      format: content.format === "html" ? "html" : "markdown",
+      format: requestedFormat,
+      representation,
+      note: PAGE_READ_NOTES[representation],
       text: typeof content.text === "string" ? content.text : "",
       cursor: integer(content.cursor),
       nextCursor: nullableInteger(content.nextCursor),
@@ -306,8 +365,23 @@ function normalizePageReadPayload(payload: unknown): Omit<PageReadResult, "succe
       staticTextChars: integer(signals.staticTextChars),
       renderSuggested: signals.renderSuggested === true,
     },
+    files: arrayValue(record.files)
+      .map((item) => ({
+        path: text(item.path),
+        contentType: text(item.contentType) || "application/octet-stream",
+        sizeBytes: nullableInteger(item.sizeBytes),
+        sha256: nullableText(item.sha256),
+        entrypoint: item.entrypoint === true,
+        url: text(item.url),
+      }))
+      .filter((item) => item.path && item.url),
     contentTrust: "untrusted",
   };
+}
+
+function representationFor(value: unknown, format: PageReadFormat): PageReadRepresentation {
+  if (value === "extracted_markdown" || value === "entry_source" || value === "file_list") return value;
+  return format === "html" ? "entry_source" : format === "markdown" ? "extracted_markdown" : "file_list";
 }
 
 function activeCloudUserId(env: NodeJS.ProcessEnv, fallback: unknown): string | null {

@@ -11,6 +11,7 @@ tags:
   - console
 applies_to:
   - src/pages/read.ts
+  - src/pages/read-download.ts
   - src/cli/commands/pages.ts
   - src/hooks/pages-link-guard.ts
   - src/runtime/host-hooks.ts
@@ -57,3 +58,13 @@ nudges that send agents to the command.
    shell commands. `ravi pages read` itself MUST never be denied by the guard.
 7. The runtime prompt MUST mount "Ravi Page Links" for non-sentinel agents
    whose context can run the `pages` group, and never for sentinels.
+8. `--format` MUST let the agent pick: `markdown` (default), `html`, `files`
+   or `zip`. `files` and `zip` send Console `format: "files"`, require `--out`
+   (an empty or new directory, or a new zip file) and download every listed
+   file, checking its size and sha256. Paths that are absolute or contain `..`
+   are refused. The presigned URLs MUST NOT appear in any output.
+9. Every answer MUST say what its text is (`content.representation` and
+   `content.note`, also printed as a `Format:` line): Markdown is an extraction
+   without styles, layout or images and points to `html` and `zip|files` for
+   the design. The prompt section says the same, so an agent asked for a page
+   in the same style reads the source, not the Markdown.

@@ -5103,6 +5103,7 @@ export class RaviClient {
       customDomain?: boolean;
       format?: string;
       maxChars?: string;
+      out?: string;
     }): Promise<PagesReadReturn> => {
       return this.transport.call({
         groupSegments: ["pages"],

@@ -1,4 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
+import { existsSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { ConsoleApiClient } from "../cloud-auth/client.js";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 import type { CloudCredentials } from "../cloud-auth/types.js";
@@ -35,6 +38,8 @@ describe("normalizePageReadUrl", () => {
   it("validates format and numbers as usage errors", () => {
     expect(normalizePageReadFormat(undefined)).toBe("markdown");
     expect(normalizePageReadFormat(" HTML ")).toBe("html");
+    expect(normalizePageReadFormat("zip")).toBe("zip");
+    expect(normalizePageReadFormat("files")).toBe("files");
     expect(() => normalizePageReadFormat("pdf")).toThrow(CloudAuthError);
     expect(normalizePageReadNumber("2000", "--max-chars", { min: 1000, max: 256000 })).toBe(2000);
     expect(() => normalizePageReadNumber("10", "--max-chars", { min: 1000, max: 256000 })).toThrow(/--max-chars/);
@@ -99,6 +104,68 @@ describe("readPage", () => {
       links: [{ text: "Q3", url: "https://acme.ravi.page/q3" }],
       contentTrust: "untrusted",
     });
+  });
+
+  it("says that markdown is an extraction without the page's design", async () => {
+    const client = makeClient(async () => consoleResponse());
+    const result = await readPage(
+      { url: "https://acme.ravi.page/weekly" },
+      { client, readCredentials: () => makeCredentials(), publicOnly: false },
+    );
+    expect(result.content.representation).toBe("extracted_markdown");
+    expect(result.content.note).toContain("Styles, layout, scripts and images are not included");
+    expect(result.content.note).toContain("--format html");
+  });
+
+  it("asks Console for files on --format zip and writes the zip without exposing signed URLs", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ravi-page-read-"));
+    const calls: unknown[] = [];
+    const client = makeClient(async (_method, _path, body) => {
+      calls.push(body);
+      return {
+        ...consoleResponse(),
+        content: { ...consoleResponse().content, format: "files", representation: "file_list", text: "- index.html" },
+        files: [
+          {
+            path: "index.html",
+            contentType: "text/html",
+            sizeBytes: 5,
+            sha256: null,
+            entrypoint: true,
+            url: "https://r2.example/signed?X-Amz-Signature=secret",
+          },
+        ],
+      };
+    });
+    const result = await readPage(
+      { url: "https://acme.ravi.page/weekly", format: "zip", out: join(dir, "weekly.zip") },
+      {
+        client,
+        readCredentials: () => makeCredentials(),
+        publicOnly: false,
+        fetchFile: async () => new Response("hello"),
+      },
+    );
+    expect(calls).toEqual([{ url: "https://acme.ravi.page/weekly", publicOnly: false, format: "files" }]);
+    expect(result.content).toMatchObject({ format: "zip", representation: "file_list" });
+    expect(result.download).toMatchObject({
+      kind: "zip",
+      path: join(dir, "weekly.zip"),
+      files: [{ path: "index.html", sizeBytes: 5, entrypoint: true }],
+      totalBytes: 5,
+    });
+    expect(existsSync(join(dir, "weekly.zip"))).toBe(true);
+    expect(JSON.stringify(result)).not.toContain("X-Amz-Signature");
+  });
+
+  it("requires --out for files and zip, and refuses it for text formats", async () => {
+    const client = makeClient(async () => consoleResponse());
+    const deps = { client, readCredentials: () => makeCredentials(), publicOnly: false };
+    await expect(readPage({ url: "https://acme.ravi.page/", format: "zip" }, deps)).rejects.toThrow(/--out/);
+    await expect(readPage({ url: "https://acme.ravi.page/", format: "html", out: "x" }, deps)).rejects.toThrow(
+      /--out is only/,
+    );
+    expect(client.requestJson).not.toHaveBeenCalled();
   });
 
   it("never calls Console for a host that is not a Page", async () => {

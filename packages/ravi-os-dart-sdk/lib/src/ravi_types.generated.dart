@@ -15816,13 +15816,14 @@ class PagesPublishedReturn {
 PagesPublishedReturn pagesPublishedReturnFromJson(Object? json) => PagesPublishedReturn.fromJsonValue(json);
 
 class PagesReadOptions {
-  const PagesReadOptions({this.console, this.cursor, this.customDomain, this.format, this.maxChars});
+  const PagesReadOptions({this.console, this.cursor, this.customDomain, this.format, this.maxChars, this.out});
 
   final String? console;
   final String? cursor;
   final bool? customDomain;
   final String? format;
   final String? maxChars;
+  final String? out;
 
   void encodeBody(Map<String, RaviJson> into) {
     if (console != null) {
@@ -15840,15 +15841,19 @@ class PagesReadOptions {
     if (maxChars != null) {
       into["maxChars"] = RaviJson.from(maxChars);
     }
+    if (out != null) {
+      into["out"] = RaviJson.from(out);
+    }
   }
 }
 
 class PagesReadReturn {
-  const PagesReadReturn({required this.consoleUrl, required this.content, required this.contentTrust, required this.links, required this.page, required this.publicOnly, required this.routes, required this.signals, required this.success});
+  const PagesReadReturn({required this.consoleUrl, required this.content, required this.contentTrust, this.download, required this.links, required this.page, required this.publicOnly, required this.routes, required this.signals, required this.success});
 
   final String consoleUrl;
   final RaviJson content;
   final String contentTrust;
+  final RaviJson? download;
   final List<RaviJson> links;
   final RaviJson page;
   final bool publicOnly;
@@ -15861,6 +15866,7 @@ class PagesReadReturn {
       consoleUrl: raviJsonAsString(json["consoleUrl"]),
       content: RaviJson.from(json["content"]),
       contentTrust: raviJsonAsString(json["contentTrust"]),
+      download: json["download"] == null ? null : RaviJson.from(json["download"]),
       links: raviJsonAsList(json["links"], RaviJson.from),
       page: RaviJson.from(json["page"]),
       publicOnly: raviJsonAsBool(json["publicOnly"]),

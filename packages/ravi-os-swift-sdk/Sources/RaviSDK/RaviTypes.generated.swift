@@ -18602,13 +18602,15 @@ public struct PagesReadOptions: Codable, Sendable {
   public var customDomain: Bool?
   public var format: String?
   public var maxChars: String?
+  public var out: String?
 
-  public init(console: String? = nil, cursor: String? = nil, customDomain: Bool? = nil, format: String? = nil, maxChars: String? = nil) {
+  public init(console: String? = nil, cursor: String? = nil, customDomain: Bool? = nil, format: String? = nil, maxChars: String? = nil, out: String? = nil) {
     self.console = console
     self.cursor = cursor
     self.customDomain = customDomain
     self.format = format
     self.maxChars = maxChars
+    self.out = out
   }
 
   enum CodingKeys: String, CodingKey {
@@ -18617,6 +18619,7 @@ public struct PagesReadOptions: Codable, Sendable {
     case customDomain = "customDomain"
     case format = "format"
     case maxChars = "maxChars"
+    case out = "out"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
@@ -18635,6 +18638,9 @@ public struct PagesReadOptions: Codable, Sendable {
     if let value = self.maxChars {
       body["maxChars"] = try RaviJSON.fromEncodable(value)
     }
+    if let value = self.out {
+      body["out"] = try RaviJSON.fromEncodable(value)
+    }
   }
 }
 
@@ -18642,6 +18648,7 @@ public struct PagesReadReturn: Codable, Sendable {
   public var consoleUrl: String
   public var content: RaviJSON
   public var contentTrust: String
+  public var download: RaviJSON?
   public var links: [RaviJSON]
   public var page: RaviJSON
   public var publicOnly: Bool
@@ -18649,10 +18656,11 @@ public struct PagesReadReturn: Codable, Sendable {
   public var signals: RaviJSON
   public var success: Bool
 
-  public init(consoleUrl: String, content: RaviJSON, contentTrust: String, links: [RaviJSON], page: RaviJSON, publicOnly: Bool, routes: [RaviJSON], signals: RaviJSON, success: Bool) {
+  public init(consoleUrl: String, content: RaviJSON, contentTrust: String, download: RaviJSON? = nil, links: [RaviJSON], page: RaviJSON, publicOnly: Bool, routes: [RaviJSON], signals: RaviJSON, success: Bool) {
     self.consoleUrl = consoleUrl
     self.content = content
     self.contentTrust = contentTrust
+    self.download = download
     self.links = links
     self.page = page
     self.publicOnly = publicOnly
@@ -18665,6 +18673,7 @@ public struct PagesReadReturn: Codable, Sendable {
     case consoleUrl = "consoleUrl"
     case content = "content"
     case contentTrust = "contentTrust"
+    case download = "download"
     case links = "links"
     case page = "page"
     case publicOnly = "publicOnly"

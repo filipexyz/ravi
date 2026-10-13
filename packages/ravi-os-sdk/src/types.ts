@@ -12193,6 +12193,7 @@ export type PagesReadInput = {
   customDomain?: boolean;
   format?: string;
   maxChars?: string;
+  out?: string;
   url: string;
 };
 
@@ -12201,13 +12202,26 @@ export type PagesReadReturn = {
   consoleUrl: string;
   content: {
     cursor: number;
-    format: "markdown" | "html";
+    format: "markdown" | "html" | "files" | "zip";
     nextCursor: number | null;
+    note: string;
+    representation: "extracted_markdown" | "entry_source" | "file_list";
     text: string;
     totalChars: number;
     truncated: boolean;
   };
   contentTrust: "untrusted";
+  download?: {
+    files: Array<{
+      contentType: string;
+      entrypoint: boolean;
+      path: string;
+      sizeBytes: number;
+    }>;
+    kind: "directory" | "zip";
+    path: string;
+    totalBytes: number;
+  };
   links: Array<{
     text: string;
     url: string;

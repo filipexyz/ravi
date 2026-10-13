@@ -15,3 +15,11 @@
   `echo`, other hosts and non-fetch tools.
 - "Ravi Page Links" mounts for full access and for the `pages` group, not for
   unrelated groups, no capabilities, or sentinels.
+- Markdown answers carry `representation: "extracted_markdown"` and a note
+  that styles and layout are missing.
+- `--format zip --out x.zip` asks Console for `files`, writes a zip that
+  standard tools open, and the result never contains the signed URLs.
+- `--format files|zip` without `--out`, and `--out` with a text format, are
+  usage errors before any Console call.
+- A tampered file (sha256 mismatch), an unsafe path, a non-empty target
+  directory and an existing zip file are refused.

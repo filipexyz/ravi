@@ -62268,11 +62268,15 @@ export const PagesReadInputSchema = {
       "type": "boolean"
     },
     "format": {
-      "description": "markdown (default) or html (the raw published file)",
+      "description": "markdown (default, text only), html (entry source), zip or files (every published file, with --out)",
       "type": "string"
     },
     "maxChars": {
       "description": "Characters to return (1000-256000, default 256000)",
+      "type": "string"
+    },
+    "out": {
+      "description": "Where --format zip writes the .zip, or --format files the directory",
       "type": "string"
     },
     "url": {
@@ -62302,7 +62306,9 @@ export const PagesReadReturnSchema = {
         "format": {
           "enum": [
             "markdown",
-            "html"
+            "html",
+            "files",
+            "zip"
           ],
           "type": "string"
         },
@@ -62316,6 +62322,17 @@ export const PagesReadReturnSchema = {
             }
           ]
         },
+        "note": {
+          "type": "string"
+        },
+        "representation": {
+          "enum": [
+            "extracted_markdown",
+            "entry_source",
+            "file_list"
+          ],
+          "type": "string"
+        },
         "text": {
           "type": "string"
         },
@@ -62328,6 +62345,8 @@ export const PagesReadReturnSchema = {
       },
       "required": [
         "format",
+        "representation",
+        "note",
         "text",
         "cursor",
         "nextCursor",
@@ -62339,6 +62358,58 @@ export const PagesReadReturnSchema = {
     "contentTrust": {
       "const": "untrusted",
       "type": "string"
+    },
+    "download": {
+      "additionalProperties": false,
+      "properties": {
+        "files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "contentType": {
+                "type": "string"
+              },
+              "entrypoint": {
+                "type": "boolean"
+              },
+              "path": {
+                "type": "string"
+              },
+              "sizeBytes": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "path",
+              "contentType",
+              "sizeBytes",
+              "entrypoint"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "enum": [
+            "directory",
+            "zip"
+          ],
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "totalBytes": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "path",
+        "files",
+        "totalBytes"
+      ],
+      "type": "object"
     },
     "links": {
       "items": {
