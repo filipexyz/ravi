@@ -13,7 +13,10 @@ import { isRaviPagesUrl } from "../pages/read.js";
 
 const URL_PATTERN = /https?:\/\/[^\s"'<>`)]+/gi;
 const BROWSER_TOOL_PATTERN = /(navigate|browser|open_?url|goto|web_?fetch|fetch_?url)/i;
-const SHELL_FETCH_PATTERN = /\b(curl|wget|http|xh|lynx|w3m)\b/;
+// A fetch tool in command position: line start or after ; & | ( or $( and an
+// optional sudo/env, so `echo 'curl ...'` or a comment does not match.
+const SHELL_FETCH_PATTERN =
+  /(?:^|[;&|(\n]|\$\()\s*(?:(?:sudo|env|command)\s+)*(?:curl|wget|https?|xh|lynx|w3m)(?:\s|$)/m;
 
 export function pagesLinkGuardReason(toolName: unknown, toolInput: unknown): string | null {
   if (typeof toolName !== "string") return null;

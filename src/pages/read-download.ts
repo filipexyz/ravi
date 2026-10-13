@@ -50,7 +50,14 @@ export async function downloadPageFiles(input: {
 }): Promise<PageReadDownload> {
   const target = resolve(input.out);
   assertWritableTarget(target, input.kind);
-  for (const file of input.files) safeRelativePath(file.path);
+  const seen = new Set<string>();
+  for (const file of input.files) {
+    const path = safeRelativePath(file.path);
+    if (seen.has(path)) {
+      throw new CloudAuthError("SERVER_UNAVAILABLE", `Console listed ${path.slice(0, 200)} twice.`);
+    }
+    seen.add(path);
+  }
 
   const fetchFile = input.fetch ?? ((url: string) => fetch(url));
   const bytes = await mapWithConcurrency(input.files, DOWNLOAD_CONCURRENCY, async (file) => {

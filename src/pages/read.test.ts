@@ -158,6 +158,26 @@ describe("readPage", () => {
     expect(JSON.stringify(result)).not.toContain("X-Amz-Signature");
   });
 
+  it("refuses a file URL that is not https", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ravi-page-read-"));
+    const client = makeClient(async () => ({
+      ...consoleResponse(),
+      files: [{ path: "index.html", contentType: "text/html", sizeBytes: 5, sha256: null, url: "http://r2.example/x" }],
+    }));
+    await expect(
+      readPage(
+        { url: "https://acme.ravi.page/weekly", format: "zip", out: join(dir, "a.zip") },
+        {
+          client,
+          readCredentials: () => makeCredentials(),
+          publicOnly: false,
+          fetchFile: async () => new Response("hello"),
+        },
+      ),
+    ).rejects.toThrow(/not https/);
+    expect(existsSync(join(dir, "a.zip"))).toBe(false);
+  });
+
   it("requires --out for files and zip, and refuses it for text formats", async () => {
     const client = makeClient(async () => consoleResponse());
     const deps = { client, readCredentials: () => makeCredentials(), publicOnly: false };
@@ -233,12 +253,16 @@ describe("pagesLinkGuardReason", () => {
     expect(pagesLinkGuardReason("Bash", { command: "curl -s https://acme.ravi.page/weekly | head" })).toContain(
       "ravi pages read https://acme.ravi.page/weekly",
     );
+    expect(pagesLinkGuardReason("Bash", { command: "cd /tmp && sudo wget https://acme.ravi.page/x" })).not.toBeNull();
+    expect(pagesLinkGuardReason("Bash", { command: "echo $(curl https://acme.ravi.page/x)" })).not.toBeNull();
   });
 
   it("leaves everything else alone", () => {
     expect(pagesLinkGuardReason("WebFetch", { url: "https://example.com/" })).toBeNull();
     expect(pagesLinkGuardReason("Bash", { command: "ravi pages read https://acme.ravi.page/weekly" })).toBeNull();
     expect(pagesLinkGuardReason("Bash", { command: "echo https://acme.ravi.page/" })).toBeNull();
+    expect(pagesLinkGuardReason("Bash", { command: "echo 'curl https://acme.ravi.page/'" })).toBeNull();
+    expect(pagesLinkGuardReason("Bash", { command: "ls # curl https://acme.ravi.page/" })).toBeNull();
     expect(pagesLinkGuardReason("Read", { url: "https://acme.ravi.page/" })).toBeNull();
   });
 });

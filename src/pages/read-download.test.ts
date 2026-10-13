@@ -43,6 +43,10 @@ describe("downloadPageFiles", () => {
     await expect(
       downloadPageFiles({ files: escaping, kind: "directory", out: join(base, "b"), fetch: fakeFetch }),
     ).rejects.toThrow(/unsafe/);
+    const duplicated = [remoteFiles()[0], { ...remoteFiles()[0], path: "./index.html" }];
+    await expect(
+      downloadPageFiles({ files: duplicated, kind: "zip", out: join(base, "dup.zip"), fetch: fakeFetch }),
+    ).rejects.toThrow(/twice/);
     mkdirSync(join(base, "c"));
     writeFileSync(join(base, "c", "keep.txt"), "x");
     await expect(

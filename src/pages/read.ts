@@ -223,6 +223,9 @@ export async function readPage(options: PageReadOptions, deps: PageReadDeps = {}
   const { files, ...normalized } = normalizePageReadPayload(payload, format);
   const result: PageReadResult = { ...normalized, success: true, consoleUrl: context.consoleUrl, publicOnly };
   if (downloads && out) {
+    if (files.some((file) => parseHttpUrl(file.url)?.protocol !== "https:")) {
+      throw new CloudAuthError("SERVER_UNAVAILABLE", "Console returned a file URL that is not https.");
+    }
     result.download = await downloadPageFiles({
       files,
       kind: format === "zip" ? "zip" : "directory",

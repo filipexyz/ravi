@@ -43,9 +43,9 @@ nudges that send agents to the command.
    the terminal, the operator's linked direct chat and routines the operator
    owns. The operator's session never returns a private Page to another
    person's turn.
-3. Only `*.ravi.page` hosts are sent to Console. Any other host is a usage
-   error unless `--custom-domain` is passed, so Console never sees the URLs an
-   agent browses.
+3. Without `--custom-domain`, only `*.ravi.page` hosts are sent to Console and
+   any other host is a usage error. With `--custom-domain`, the given URL is
+   sent to Console, so Console sees only the URLs an agent explicitly reads.
 4. A `public_only` refusal MUST exit 3 (`PAGE_ACCESS_DENIED`, policy block);
    other access refusals exit 1. Not found is `PAGE_NOT_FOUND`; non-text
    routes are `PAGE_CONTENT_UNSUPPORTED`.
