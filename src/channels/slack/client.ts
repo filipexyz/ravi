@@ -542,8 +542,8 @@ export class SlackWebApiClient {
     };
   }
 
-  async usersInfo(user: string): Promise<SlackUserInfoResponse> {
-    return this.apiRequest<SlackUserInfoResponse>("users.info", this.botToken, { user });
+  async usersInfo(user: string, options: { signal?: AbortSignal } = {}): Promise<SlackUserInfoResponse> {
+    return this.apiRequest<SlackUserInfoResponse>("users.info", this.botToken, { user }, options);
   }
 
   async addReaction(input: SlackReactionInput): Promise<Record<string, unknown>> {

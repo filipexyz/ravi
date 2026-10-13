@@ -109,6 +109,7 @@ const log = logger.child("channels:slack");
 const SLACK_THREAD_CREATED_TOPIC = "ravi.inbound.thread.created";
 const DEFAULT_SLACK_AUTH_TEST_FAILURE_RETRY_MS = 5_000;
 const DEFAULT_SLACK_AUTH_TEST_TIMEOUT_MS = 5_000;
+const DEFAULT_SLACK_USER_LOOKUP_TIMEOUT_MS = 5_000;
 const DEFAULT_SLACK_HEARTBEAT_INTERVAL_MS = 10_000;
 const DEFAULT_SLACK_PONG_TIMEOUT_MS = 5_000;
 const DEFAULT_SLACK_HELLO_TIMEOUT_MS = 10_000;
@@ -202,6 +203,8 @@ export interface SlackSocketModeServiceOptions {
   readonly authTestFailureRetryMs?: number;
   /** Maximum time bot intake waits for Slack auth.test before failing closed. */
   readonly authTestTimeoutMs?: number;
+  /** Maximum time an inbound turn waits for one users.info lookup before using the raw id. */
+  readonly userLookupTimeoutMs?: number;
   /** Clock injection for bounded auth.test retry tests. */
   readonly now?: () => number;
   readonly transcribeAudio?: typeof transcribeAudio;
@@ -616,6 +619,7 @@ export class SlackSocketModeService {
   private readonly cancelTimeout: typeof clearTimeout;
   private readonly authTestFailureRetryMs: number;
   private readonly authTestTimeoutMs: number;
+  private readonly userLookupTimeoutMs: number;
   private readonly now: () => number;
   private readonly seenEnvelopeIds = new RecentIdCache();
   private readonly userProfiles = new Map<string, SlackUserProfile | null>();
@@ -672,6 +676,12 @@ export class SlackSocketModeService {
       Number.isFinite(options.authTestTimeoutMs)
         ? (options.authTestTimeoutMs ?? DEFAULT_SLACK_AUTH_TEST_TIMEOUT_MS)
         : DEFAULT_SLACK_AUTH_TEST_TIMEOUT_MS,
+    );
+    this.userLookupTimeoutMs = Math.max(
+      1,
+      Number.isFinite(options.userLookupTimeoutMs)
+        ? (options.userLookupTimeoutMs ?? DEFAULT_SLACK_USER_LOOKUP_TIMEOUT_MS)
+        : DEFAULT_SLACK_USER_LOOKUP_TIMEOUT_MS,
     );
     this.now = options.now ?? Date.now;
   }
@@ -1375,7 +1385,11 @@ export class SlackSocketModeService {
     if (typeof usersInfo !== "function") return null;
     if (this.slackLookupRecentlyFailed(`user:${userId}`)) return null;
     try {
-      const response = await usersInfo.call(this.webClient, userId);
+      const response = await withAbortableTimeout(
+        (signal) => usersInfo.call(this.webClient, userId, { signal }),
+        this.userLookupTimeoutMs,
+        "Slack users.info timed out",
+      );
       const user = recordField(response, "user");
       const profile = recordField(user, "profile");
       const resolved = {
