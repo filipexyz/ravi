@@ -19,3 +19,13 @@
   `COMMAND_FAILED` compatibility error, never the not-found envelope.
 - `bun test src/cli/commands/meetings.test.ts` SHOULD pass after any change to
   the meetings contract surface (login spawn test may skip on Windows).
+- `meetings join --url <meet> --dry-run --json` without `--local` MUST return
+  `runtime: "cloud"` with the normalized Console request and MUST NOT need the
+  recorder executable or call the Console.
+- `meetings join --url <meet> --out <dir>` without `--local` MUST exit 2 with
+  `LOCAL_RECORDER_OPTION`; `--live` MUST still run locally.
+- `meetings fetch <id>` MUST finalize a `done` meeting once (a second run
+  returns `already_finalized` and informs nobody), close the join artifact of a
+  `failed` meeting, and leave a running one alone.
+- The inbox runner MUST hand each newly delivered `meetings.recording.*` item to
+  `meetings fetch` exactly once, after the item is delivered locally.

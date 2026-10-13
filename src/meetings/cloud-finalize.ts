@@ -41,6 +41,35 @@ export interface CloudMeetingFinalizeDeps {
   notify?: typeof notifyMeetingOwnerSession;
 }
 
+export type CloudMeetingFetchResult =
+  | ({ outcome: "finalized" } & CloudMeetingFinalizeResult)
+  | { outcome: "failed"; meeting: CloudMeeting; joinArtifactId: string | null; notified: boolean }
+  | { outcome: "pending"; meeting: CloudMeeting };
+
+/**
+ * What `ravi meetings fetch` and the inbox handoff do: finalize a finished
+ * recording, close the join artifact of a bot that failed, or report that the
+ * bot is still working.
+ */
+export async function fetchCloudMeeting(
+  input: {
+    client: MeetingsCloudClient;
+    meetingId: string;
+    outputDir?: string;
+    video?: boolean;
+    actor?: string;
+    notify?: boolean;
+  },
+  deps: CloudMeetingFinalizeDeps = {},
+): Promise<CloudMeetingFetchResult> {
+  const meeting = await input.client.show(input.meetingId);
+  if (meeting.status === "failed") {
+    return { outcome: "failed", meeting, ...failCloudMeetingJoin(meeting, input, deps) };
+  }
+  if (meeting.status !== "done") return { outcome: "pending", meeting };
+  return { outcome: "finalized", ...(await finalizeCloudMeeting(input, deps)) };
+}
+
 /** The local `meeting.join` artifact for a Console meeting, found through the `clientRef` the CLI sent. */
 export function findCloudMeetingJoinArtifact(meeting: Pick<CloudMeeting, "id" | "clientRef">): ArtifactRecord | null {
   if (!meeting.clientRef) return null;
@@ -83,8 +112,9 @@ export async function finalizeCloudMeeting(
   const mediaRefs = await downloadCloudMeetingMedia({
     recording,
     outputDir,
+    consoleUrl: input.client.consoleUrl,
+    download: (path, destination) => input.client.downloadMedia(path, destination, deps.fetchImpl),
     video: input.video,
-    fetchImpl: deps.fetchImpl,
   });
   const session = buildCloudMeetingSession({ recording, origin: originFrom(join), mediaRefs });
   const registered = registerMeetingRawArtifact({ session, outputDir, actor: input.actor ?? SOURCE });
@@ -137,7 +167,7 @@ export async function finalizeCloudMeeting(
 
 /**
  * The bot ended without a recording (nobody admitted it, it was removed, the
- * vendor failed). Closes the join artifact as failed and says why.
+ * cloud bot failed). Closes the join artifact as failed and says why.
  */
 export function failCloudMeetingJoin(
   meeting: Pick<CloudMeeting, "id" | "clientRef" | "failureReason" | "statusSubCode" | "title" | "meetingCode">,

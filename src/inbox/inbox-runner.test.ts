@@ -216,6 +216,46 @@ describe("inbox runner pending lease recovery", () => {
     });
   });
 
+  it("hands each newly delivered item to the meetings handoff once, after it is delivered", async () => {
+    writeCloudCredentials(makeCredentials());
+    const handedOff: string[] = [];
+    globalThis.fetch = mock(async (input: string | URL | Request) => {
+      const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
+      if (url.pathname === "/api/cli/inbox/subscriptions/global") {
+        return jsonResponse({ subscription: makeSubscription() });
+      }
+      if (url.pathname === "/api/cli/inbox/pulse") {
+        return jsonResponse(makePendingPulse({ latestSequence: 1, subscription: makeSubscription() }));
+      }
+      if (url.pathname === "/api/cli/inbox/poll") {
+        return jsonResponse(
+          makePoll({
+            items: [
+              makeInboxItem(1, {
+                eventType: "meetings.recording.ready",
+                category: "meetings",
+                payload: { meetingId: "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f" },
+              }),
+            ],
+          }),
+        );
+      }
+      if (url.pathname === "/api/cli/inbox/ack") return jsonResponse({ acked: 1 });
+      throw new Error(`Unexpected inbox request: ${url.pathname}`);
+    }) as unknown as typeof fetch;
+
+    const runner = new InboxRunner({
+      nats: { publish: async () => {}, flush: async () => {} },
+      meetingHandoff: (payload) => {
+        expect(getItemByItemId("https://console.ravi.bot", "org_1", payload.eventId)?.deliveredAt).not.toBeNull();
+        handedOff.push(`${payload.eventType}:${(payload.payload as { meetingId?: string } | null)?.meetingId}`);
+      },
+    });
+    await runner.tickOnce();
+
+    expect(handedOff).toEqual(["meetings.recording.ready:6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f"]);
+  });
+
   it("heals a delivered row from an advanced Console cursor after a partial ack response", async () => {
     writeCloudCredentials(makeCredentials());
     const actions: string[] = [];

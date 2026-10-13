@@ -2,6 +2,7 @@
 name: meetings
 description: |
   Opera reunioes nativas do Ravi. Use quando precisar:
+  - Mandar o bot do Ravi gravar um Google Meet pela nuvem (padrao)
   - Fazer um agent entrar em Google Meet como participante visivel
   - Gravar/capturar uma reuniao e gerar artifact raw meet.md
   - Rodar modo live com runtime nativo do Ravi e agent registrado
@@ -55,6 +56,9 @@ removido) — nao e uma escrita externa irreversivel.
 
 Sem freio (declaradas, com racional):
 
+- `meetings leave <id>` — so tira da call um bot que ja esta gravando.
+- `meetings fetch <id>` — baixa uma gravacao pronta para artifacts LOCAIS;
+  idempotente.
 - `meetings login` — fluxo interativo humano no browser: o humano no browser E
   a confirmacao; um gate quebraria o fluxo.
 - `meetings finalize` — registra artifact LOCAL de um run ja concluido; sem
@@ -84,9 +88,40 @@ Checklist antes de responder sobre meetings:
 - O artifact final deve preservar transcricao completa, timestamps, speakers
   quando disponiveis, referencias de audio/video e diagnosticos.
 
+## Nuvem Ou Local
+
+`ravi meetings join` manda o bot do Ravi pela nuvem por padrao: o Console
+entra na call, grava e transcreve, e esta instalacao recebe o resultado. Nao
+precisa de Chrome nem de `meet-record` nesta maquina. Exige `ravi login` e a
+feature `console.meetings` ligada na organizacao.
+
+```bash
+ravi meetings join --url https://meet.google.com/abc-defg-hij --json
+ravi meetings list --json
+ravi meetings show <meeting-id> --json
+ravi meetings leave <meeting-id>
+```
+
+- `--name` muda o nome visivel do bot (padrao `Ravi`); `--max-duration
+  <segundos>` limita a gravacao; `--project <ref>` escolhe o projeto do
+  Console.
+- O bot avisa no chat da call que esta gravando. Quem nao concordar pode
+  remove-lo.
+- Quando a gravacao fica pronta, o inbox do Console avisa esta instalacao, que
+  roda `ravi meetings fetch <id>` sozinha: gera o `meeting.raw` e informa a
+  sessao que pediu. Nao fique checando. Para refazer na mao:
+  `ravi meetings fetch <meeting-id> --json` (`--video` baixa tambem o video).
+- Erros de limite do Console (`RATE_LIMITED`) dizem se foi concorrencia ou o
+  orcamento do mes.
+
+Use `--local` para o recorder em Chrome nesta maquina. Live mode (`--live`)
+sempre roda local, porque so o recorder local fala na call. Opcoes do recorder
+local (`--out`, `--profile-dir`, `--capture`, `--agent`, `--tools`...) sem
+`--local` saem com exit 2 `LOCAL_RECORDER_OPTION`.
+
 ## Modelo Mental
 
-Fluxo esperado:
+Fluxo local (`--local`):
 
 ```text
 ravi meetings join
@@ -122,7 +157,8 @@ ravi meetings join \
 ```
 
 O retorno contem um artifact `meeting.join` e, quando finalizar, a propria
-sessao recebe o handoff com o `meeting.raw` final.
+sessao recebe o handoff com o `meeting.raw` final. Sem `--local`, quem entra e
+o bot da nuvem; os exemplos abaixo com perfil Chrome usam `--local`.
 
 ## Login Google Meet
 
@@ -148,6 +184,7 @@ Depois use o mesmo perfil no join:
 
 ```bash
 ravi meetings join \
+  --local \
   --provider google-meet \
   --url https://meet.google.com/abc-defg-hij \
   --profile-dir ~/.ravi/meet-recorder/chrome-profile-ravi \

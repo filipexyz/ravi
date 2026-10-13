@@ -1,6 +1,6 @@
-// Cloud meeting bots: the Console sends a bot into a Google Meet call and
+// Cloud meeting bots: the Console sends a Ravi bot into a Google Meet call and
 // tells this installation, through the agent inbox, when the recording is
-// ready. Transport only: the Console owns the vendor, the limits and the
+// ready. Transport only: the Console owns the bot runtime, the limits and the
 // billing. This module turns the Console's recording into the same
 // `meeting.raw` artifact the local recorder produces.
 //
@@ -9,8 +9,9 @@
 //   GET  /api/cli/projects/:projectRef/meetings/:id
 //   POST /api/cli/projects/:projectRef/meetings/:id/leave
 //   GET  /api/cli/projects/:projectRef/meetings/:id/recording
+//   GET  /api/cli/projects/:projectRef/meetings/:id/media/:kind?part=N
 
-import { createWriteStream, existsSync, mkdirSync, statSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -46,7 +47,6 @@ export type CloudMeetingStatus =
 export interface CloudMeeting {
   id: string;
   projectId: string | null;
-  provider: string;
   platform: string;
   meetingUrl: string;
   meetingCode: string | null;
@@ -97,8 +97,15 @@ export interface CloudMeetingRecording {
     to: string | null;
     text: string;
   }>;
-  media: Array<{ kind: "video" | "audio" | string; format: string; url: string; expiresAt: string | null }>;
-  recordings: Array<{ id: string; startedAt: string | null; completedAt: string | null; expiresAt: string | null }>;
+  /** `path` is a Console path, downloaded with the same CLI credentials. */
+  media: Array<{
+    kind: "video" | "audio" | string;
+    format: string;
+    path: string;
+    part: number;
+    expiresAt: string | null;
+  }>;
+  recordings: Array<{ startedAt: string | null; completedAt: string | null; expiresAt: string | null }>;
 }
 
 export interface CloudMeetingCreateBody {
@@ -201,6 +208,40 @@ export class MeetingsCloudClient {
     return { ...payload, meeting: requireMeeting(payload.meeting) };
   }
 
+  /** Streams one media file from a Console path into `destination`. */
+  async downloadMedia(path: string, destination: string, fetchImpl: typeof fetch = fetch): Promise<void> {
+    if (!path.startsWith(`${meetingsApiRoot(this.session.projectRef)}/`)) {
+      throw new CloudAuthError("SERVER_UNAVAILABLE", "The Console returned a media path outside this project.");
+    }
+    const get = (token: string) =>
+      fetchImpl(`${this.consoleUrl}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+    let response: Response;
+    try {
+      response = await get(this.credentials.accessToken);
+      if (response.status === 401) {
+        this.credentials = await refreshCredentialsForStore({
+          client: this.session.client,
+          credentials: this.credentials,
+          write: this.session.write,
+          delete: this.session.delete,
+        });
+        response = await get(this.credentials.accessToken);
+      }
+    } catch (error) {
+      if (error instanceof CloudAuthError) throw error;
+      throw classifyConsoleNetworkError(error, inspectExecutionPlane());
+    }
+    if (!response.ok || !response.body) {
+      throw new CloudAuthError("SERVER_UNAVAILABLE", `Meeting media download failed (${response.status}).`);
+    }
+    const partial = `${destination}.part`;
+    await pipeline(
+      Readable.fromWeb(response.body as unknown as WebReadableStream<Uint8Array>),
+      createWriteStream(partial),
+    );
+    renameSync(partial, destination);
+  }
+
   private async request<T>(method: string, relativePath: string, body?: unknown): Promise<T> {
     const path = `${meetingsApiRoot(this.session.projectRef)}${relativePath}`;
     try {
@@ -278,7 +319,7 @@ export interface CloudMeetingOrigin {
 /**
  * The Console recording as a `MeetingSession`: transcript segments with
  * speakers and offsets, participants, chat, and the media this installation
- * downloaded (or the vendor link, with its expiry, when it did not).
+ * downloaded (or its Console link, with its expiry, when it did not).
  */
 export function buildCloudMeetingSession(input: {
   recording: CloudMeetingRecording;
@@ -348,7 +389,6 @@ export function buildCloudMeetingSession(input: {
       providerRuntime: MEETING_CLOUD_PROVIDER_RUNTIME,
       consoleMeetingId: meeting.id,
       consoleProjectId: meeting.projectId,
-      vendor: meeting.provider,
       botName: meeting.botName,
       language: meeting.language,
       statusSubCode: meeting.statusSubCode,
@@ -373,23 +413,24 @@ const MEDIA_MIME: Record<string, string> = { mp3: "audio/mpeg", mp4: "video/mp4"
 /**
  * Downloads the recording's media next to the artifact. Audio always; video
  * only when asked, because it is large. A failed or skipped download keeps the
- * vendor link with its expiry, so nothing is silently dropped.
+ * Console link with its expiry, so nothing is silently dropped.
  */
 export async function downloadCloudMeetingMedia(input: {
   recording: CloudMeetingRecording;
   outputDir: string;
+  consoleUrl: string;
+  download: (path: string, destination: string) => Promise<void>;
   video?: boolean;
-  fetchImpl?: typeof fetch;
 }): Promise<MeetingMediaRef[]> {
-  const fetchImpl = input.fetchImpl ?? fetch;
   mkdirSync(input.outputDir, { recursive: true });
   const refs: MeetingMediaRef[] = [];
   for (const media of input.recording.media) {
     const kind = media.kind === "video" ? "video" : "audio";
-    const mimeType = MEDIA_MIME[media.format] ?? (kind === "video" ? "video/mp4" : "audio/mpeg");
+    const format = media.format || (kind === "video" ? "mp4" : "mp3");
+    const mimeType = MEDIA_MIME[format] ?? (kind === "video" ? "video/mp4" : "audio/mpeg");
     const linkRef: MeetingMediaRef = {
       kind,
-      uri: media.url,
+      uri: `${input.consoleUrl}${media.path}`,
       mimeType,
       source: MEETING_CLOUD_PROVIDER_RUNTIME,
       rawProvenance: { expiresAt: media.expiresAt, downloaded: false },
@@ -398,16 +439,10 @@ export async function downloadCloudMeetingMedia(input: {
       refs.push(linkRef);
       continue;
     }
-    const path = join(input.outputDir, `${kind}.${media.format || (kind === "video" ? "mp4" : "mp3")}`);
+    const suffix = media.part > 0 ? `-${media.part + 1}` : "";
+    const path = join(input.outputDir, `${kind}${suffix}.${format}`);
     try {
-      if (!existsSync(path)) {
-        const response = await fetchImpl(media.url);
-        if (!response.ok || !response.body) throw new Error(`download failed (${response.status})`);
-        await pipeline(
-          Readable.fromWeb(response.body as unknown as WebReadableStream<Uint8Array>),
-          createWriteStream(path),
-        );
-      }
+      if (!existsSync(path)) await input.download(media.path, path);
       refs.push({
         kind,
         path,

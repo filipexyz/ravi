@@ -70,6 +70,9 @@ describe("MeetingsCommands", () => {
         undefined,
         true,
         true,
+        undefined,
+        undefined,
+        true,
       ),
     );
 
@@ -155,6 +158,7 @@ describe("MeetingsCommands", () => {
         true,
         undefined,
         "default",
+        true,
       ),
     );
 
@@ -398,13 +402,76 @@ describe("MeetingsCommands", () => {
           undefined,
           true,
           true,
+          undefined,
+          undefined,
+          true,
         ),
       );
 
       expect(result).toMatchObject({ mode: "dry-run", provider: "google-meet" });
     });
+
+    it("join sends the cloud bot by default: dry-run shows the Console request and needs no recorder", async () => {
+      delete process.env.RAVI_GOOGLE_MEET_RECORDER_BIN;
+      process.env.PATH = "";
+      const { output, result } = await captureConsole(() =>
+        cloudJoin({ url: "meet.google.com/ABC-defg-hij?authuser=1", name: "Notas", maxDuration: "3700" }),
+      );
+      const expected = {
+        mode: "dry-run",
+        runtime: "cloud",
+        provider: "google-meet",
+        request: { meetingUrl: "https://meet.google.com/abc-defg-hij", botName: "Notas", maxMinutes: 62 },
+      };
+      expect(result).toMatchObject(expected);
+      expect(JSON.parse(output)).toMatchObject(expected);
+    });
+
+    it("join refuses local recorder options without --local and links that are not Meet", async () => {
+      const localOnly = await captureConsole(() =>
+        cloudJoin({ url: "https://meet.google.com/abc-defg-hij", out: "/tmp/x" }),
+      ).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      expect(localOnly).toBeInstanceOf(ContractError);
+      expect(localOnly).toMatchObject({ code: "LOCAL_RECORDER_OPTION", exitCode: 2 });
+
+      const notMeet = await captureConsole(() => cloudJoin({ url: "https://zoom.us/j/123" })).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      expect(notMeet).toMatchObject({ code: "INVALID_ARGUMENT", exitCode: 2 });
+    });
   });
 });
+
+function cloudJoin(input: { url: string; name?: string; maxDuration?: string; out?: string }) {
+  return new MeetingsCommands().join(
+    undefined,
+    input.url,
+    input.name,
+    input.out,
+    undefined,
+    undefined,
+    input.maxDuration,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    true,
+    true,
+  );
+}
 
 async function captureConsole<T>(run: () => T | Promise<T>): Promise<{ output: string; result: T }> {
   const originalLog = console.log;

@@ -4,7 +4,25 @@ import { createHash } from "node:crypto";
 import { accessSync, constants, mkdirSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { z } from "zod";
-import { contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import {
+  ContractError,
+  CONTRACT_EXIT_USAGE,
+  contractFail,
+  pickFields,
+  renderContractError,
+  suggestSimilar,
+} from "../agent-contract.js";
+import { cloudErrorToContractError } from "../cloud-error-contract.js";
+import { isCloudAuthError } from "../../cloud-auth/errors.js";
+import {
+  MEETING_CLOUD_PROVIDER_RUNTIME,
+  normalizeGoogleMeetUrl,
+  openMeetingsCloudClient,
+  type CloudMeeting,
+  type CloudMeetingCreateBody,
+  type MeetingsCloudClient,
+} from "../../meetings/cloud.js";
+import { fetchCloudMeeting } from "../../meetings/cloud-finalize.js";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
@@ -547,6 +565,203 @@ function buildResolvedProfileInput(input: {
   };
 }
 
+const MEETINGS_CLOUD_SOURCE = "ravi.meetings.cloud";
+
+/** Turns Console errors into the CLI contract envelope, rendered once. */
+async function withMeetingsCloud<T>(op: string, asJson: boolean | undefined, run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    if (error instanceof ContractError || !isCloudAuthError(error)) throw error;
+    const contract = cloudErrorToContractError(op, error);
+    renderContractError(contract, asJson);
+    throw contract;
+  }
+}
+
+function openCloudClient(op: string, project: string | undefined, asJson: boolean | undefined) {
+  return withMeetingsCloud(op, asJson, () => openMeetingsCloudClient({ project: project?.trim() || undefined }));
+}
+
+/** Seconds from --max-duration as whole minutes inside the Console's 5-480 window. */
+function cloudMaxMinutes(maxDuration: string | undefined, asJson: boolean | undefined): number | undefined {
+  if (!maxDuration) return undefined;
+  const seconds = Number(maxDuration);
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    contractFail("meetings join", "INVALID_ARGUMENT", "--max-duration must be a positive number of seconds.", {
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+    });
+  }
+  return Math.min(480, Math.max(5, Math.ceil(seconds / 60)));
+}
+
+function publicCloudMeeting(meeting: CloudMeeting) {
+  return {
+    id: meeting.id,
+    status: meeting.status,
+    statusSubCode: meeting.statusSubCode,
+    meetingUrl: meeting.meetingUrl,
+    meetingCode: meeting.meetingCode,
+    botName: meeting.botName,
+    title: meeting.title,
+    clientRef: meeting.clientRef,
+    ready: meeting.ready,
+    joinAt: meeting.joinAt,
+    recordingStartedAt: meeting.recordingStartedAt,
+    endedAt: meeting.endedAt,
+    recordingSeconds: meeting.recordingSeconds,
+    maxRecordingSeconds: meeting.maxRecordingSeconds,
+    failureReason: meeting.failureReason,
+    createdAt: meeting.createdAt,
+  };
+}
+
+function printCloudMeetingLine(meeting: CloudMeeting): void {
+  const label = meeting.title ?? meeting.meetingCode ?? meeting.meetingUrl;
+  const minutes =
+    typeof meeting.recordingSeconds === "number" ? ` ${Math.round(meeting.recordingSeconds / 60)} min` : "";
+  console.log(`${meeting.id}  ${meeting.status.padEnd(12)} ${label}${minutes}`);
+}
+
+/**
+ * `ravi meetings join` without --local: asks the Console for a cloud bot and
+ * records a `meeting.join` artifact that the inbox handoff closes when the
+ * recording is ready (or the bot fails).
+ */
+async function joinWithCloudBot(input: {
+  url: string;
+  name?: string;
+  maxDuration?: string;
+  project?: string;
+  dryRun: boolean;
+  asJson?: boolean;
+}) {
+  const op = "meetings join";
+  const meetingUrl = normalizeGoogleMeetUrl(input.url);
+  if (!meetingUrl) {
+    contractFail(
+      op,
+      "INVALID_ARGUMENT",
+      "The cloud bot joins Google Meet links only (https://meet.google.com/abc-defg-hij).",
+      {
+        asJson: input.asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: { suggestedAction: "Pass a Google Meet link, or use --local" },
+      },
+    );
+  }
+  const maxMinutes = cloudMaxMinutes(input.maxDuration, input.asJson);
+  const request: CloudMeetingCreateBody = {
+    meetingUrl,
+    ...(input.name ? { botName: input.name } : {}),
+    ...(maxMinutes ? { maxMinutes } : {}),
+  };
+
+  if (input.dryRun) {
+    const payload = {
+      mode: "dry-run",
+      runtime: "cloud",
+      provider: GOOGLE_MEET_PROVIDER_ID,
+      providerRuntime: MEETING_CLOUD_PROVIDER_RUNTIME,
+      project: input.project?.trim() || null,
+      request,
+    };
+    if (input.asJson) printJson(payload);
+    else {
+      console.log("Cloud meeting bot request validated; nothing was sent.");
+      console.log(`Meeting: ${meetingUrl}`);
+      if (input.name) console.log(`Bot name: ${input.name}`);
+      if (maxMinutes) console.log(`Max minutes: ${maxMinutes}`);
+    }
+    return payload;
+  }
+
+  const client = await openCloudClient(op, input.project, input.asJson);
+  const ctx = contextDefaults();
+  const artifact = createArtifact({
+    kind: "meeting.join",
+    status: "pending",
+    title: buildMeetingJoinTitle(meetingUrl),
+    summary: "Cloud meeting bot requested",
+    provider: GOOGLE_MEET_PROVIDER_ID,
+    command: "ravi meetings join",
+    ...ctx,
+    metadata: {
+      providerRuntime: MEETING_CLOUD_PROVIDER_RUNTIME,
+      cloud: true,
+      consoleProjectRef: client.projectRef,
+    },
+    lineage: {
+      source: "ravi meetings join",
+      provider: GOOGLE_MEET_PROVIDER_ID,
+      providerRuntime: MEETING_CLOUD_PROVIDER_RUNTIME,
+    },
+    input: { url: meetingUrl, options: { ...request, project: client.projectRef } },
+    tags: ["meeting", "meeting-join", GOOGLE_MEET_PROVIDER_ID, "cloud"],
+  });
+
+  let created: Awaited<ReturnType<MeetingsCloudClient["create"]>>;
+  try {
+    created = await withMeetingsCloud(op, input.asJson, () => client.create({ ...request, clientRef: artifact.id }));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    updateArtifact(
+      artifact.id,
+      { status: "failed", summary: `Cloud meeting bot request failed: ${message}`, metadata: { error: message } },
+      { actor: ctx.agentId, mergeMetadata: true },
+    );
+    appendArtifactEvent(artifact.id, {
+      eventType: "failed",
+      status: "failed",
+      message: `Cloud meeting bot request failed: ${message}`,
+      source: MEETINGS_CLOUD_SOURCE,
+      ...(ctx.agentId ? { actor: ctx.agentId } : {}),
+    });
+    throw error;
+  }
+
+  const { meeting, limits } = created;
+  const running = updateArtifact(
+    artifact.id,
+    {
+      status: "running",
+      summary: `Cloud meeting bot ${meeting.status}`,
+      metadata: { consoleMeetingId: meeting.id, cloudStatus: meeting.status },
+    },
+    { actor: ctx.agentId, mergeMetadata: true },
+  );
+  appendArtifactEvent(artifact.id, {
+    eventType: "cloud_bot_requested",
+    status: "running",
+    message: `Cloud meeting bot ${meeting.status}: ${meeting.id}`,
+    payload: { consoleMeetingId: meeting.id, status: meeting.status, maxRecordingSeconds: meeting.maxRecordingSeconds },
+    source: MEETINGS_CLOUD_SOURCE,
+    ...(ctx.agentId ? { actor: ctx.agentId } : {}),
+  });
+
+  const payload = {
+    success: true,
+    runtime: "cloud",
+    artifact_id: running.id,
+    artifactId: running.id,
+    kind: running.kind,
+    status: running.status,
+    meeting: publicCloudMeeting(meeting),
+    limits,
+    hint: "No polling needed: when the recording is ready this installation builds the meeting.raw artifact and informs the owner session.",
+    events: `ravi artifacts events ${running.id}`,
+    leave: `ravi meetings leave ${meeting.id}`,
+  };
+  if (input.asJson) printJson(payload);
+  else {
+    console.log(`Cloud meeting bot ${meeting.status}: ${meeting.id}`);
+    console.log(`Artifact: ${running.id}`);
+    console.log(`Leave: ravi meetings leave ${meeting.id}`);
+  }
+  return payload;
+}
+
 @Group({
   name: "meetings",
   description: "Meeting artifact and provider operations",
@@ -674,6 +889,13 @@ export class MeetingsCommands {
     liveTools?: string,
     @Option({ flags: "--profile <id>", description: "Reusable meeting profile id" })
     meetingProfileId?: string,
+    @Option({
+      flags: "--local",
+      description: "Run the recorder in Chrome on this machine instead of sending the cloud bot",
+    })
+    local?: boolean,
+    @Option({ flags: "--project <ref>", description: "Console project for the cloud bot (default: linked project)" })
+    project?: string,
   ) {
     const requestedMeetingProfileId = meetingProfileId?.trim();
     let meetingProfile: ResolvedMeetingProfile | undefined;
@@ -693,6 +915,57 @@ export class MeetingsCommands {
     if (!url?.trim()) fail("Missing --url <url>.");
     if (artifactId && !asyncWorker) fail("--artifact-id is reserved for internal meeting async workers.");
     if (asyncWorker && !artifactId) fail("--artifact-id is required in meeting async worker mode.");
+
+    // The cloud bot is the default. The local recorder runs with --local, for
+    // its own worker, and for live mode, which needs Ravi's voice in the call.
+    const runsLocally = Boolean(
+      local ||
+        asyncWorker ||
+        live ||
+        meetingProfile?.live.enabled ||
+        process.env[RAVI_MEET_RESOLVED_PROFILE_ENV]?.trim(),
+    );
+    if (!runsLocally) {
+      const localOnly = Object.entries({
+        "--out": out,
+        "--profile-dir": profileDir,
+        "--duration": duration,
+        "--empty-grace": emptyGrace,
+        "--capture": capture,
+        "--initial-prompt": initialPrompt,
+        "--initial-prompt-delay": initialPromptDelay,
+        "--voice-runtime": voiceRuntime,
+        "--agent": liveAgentId,
+        "--context": liveContext,
+        "--include-session-context": includeSessionContext,
+        "--tools": liveTools,
+        "--skip-finalize": skipFinalize,
+        "--sync": syncMode,
+      })
+        .filter(([, value]) => value !== undefined && value !== false)
+        .map(([flag]) => flag);
+      if (localOnly.length > 0) {
+        contractFail(
+          "meetings join",
+          "LOCAL_RECORDER_OPTION",
+          `${localOnly.join(", ")} only appl${localOnly.length === 1 ? "ies" : "y"} to the local recorder.`,
+          {
+            asJson,
+            exitCode: CONTRACT_EXIT_USAGE,
+            details: { options: localOnly, suggestedAction: "Add --local, or drop these options to use the cloud bot" },
+          },
+        );
+      }
+      return joinWithCloudBot({
+        url: url.trim(),
+        name: firstTrimmed(name, meetingProfile?.defaults.name),
+        maxDuration: firstTrimmed(maxDuration, meetingProfile?.defaults.maxDuration),
+        project,
+        dryRun: Boolean(dryRun),
+        asJson,
+      });
+    }
+    if (project?.trim()) fail("--project applies to the cloud bot; drop it with --local.");
 
     const command = resolveGoogleMeetRecorderExecutable();
     const ctx = contextDefaults();
@@ -1212,6 +1485,134 @@ export class MeetingsCommands {
       console.log(`Path: ${result.artifactPath}`);
       console.log(`Transcript segments: ${result.transcriptSegments.length}`);
       console.log(`Media refs: ${result.mediaRefs.length}`);
+    }
+    return payload;
+  }
+
+  // Read-only: lists the project's cloud bots.
+  @Command({ name: "list", description: "List the project's cloud meeting bots" })
+  @CommandAccess({ kind: "read", resource: "meetings", action: "list", risk: "low" })
+  @CliOnly()
+  @Returns(looseObjectSchema)
+  async list(
+    @Option({ flags: "--project <ref>", description: "Console project (default: linked project)" }) project?: string,
+    @Option({ flags: "--limit <n>", description: "At most this many bots, newest first (default 20, max 100)" })
+    limit?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const op = "meetings list";
+    const parsedLimit = limit ? Number(limit) : undefined;
+    if (parsedLimit !== undefined && (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 100)) {
+      contractFail(op, "INVALID_ARGUMENT", "--limit must be an integer from 1 to 100.", {
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+      });
+    }
+    const client = await openCloudClient(op, project, asJson);
+    const meetings = await withMeetingsCloud(op, asJson, () => client.list(parsedLimit));
+    const payload = { project: client.projectRef, meetings: meetings.map(publicCloudMeeting) };
+    if (asJson) printJson(payload);
+    else if (meetings.length === 0) console.log("No cloud meeting bots yet.");
+    else for (const meeting of meetings) printCloudMeetingLine(meeting);
+    return payload;
+  }
+
+  @Command({ name: "show", description: "Show one cloud meeting bot" })
+  @CommandAccess({ kind: "read", resource: "meetings", action: "show", risk: "low" })
+  @CliOnly()
+  @Returns(looseObjectSchema)
+  async show(
+    @Arg("meetingId", { description: "Cloud meeting id (from join or list)" }) meetingId: string,
+    @Option({ flags: "--project <ref>", description: "Console project (default: linked project)" }) project?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const op = "meetings show";
+    const client = await openCloudClient(op, project, asJson);
+    const meeting = await withMeetingsCloud(op, asJson, () => client.show(meetingId));
+    const payload = { meeting: publicCloudMeeting(meeting) };
+    if (asJson) printJson(payload);
+    else {
+      printCloudMeetingLine(meeting);
+      if (meeting.failureReason) console.log(`Reason: ${meeting.failureReason}`);
+    }
+    return payload;
+  }
+
+  // Declared UNBRAKED: leaving only reduces what the bot does (it stops
+  // recording and leaves the call); nothing new is sent or exposed.
+  @Command({ name: "leave", description: "Ask a cloud meeting bot to leave the call now" })
+  @CommandAccess({ kind: "mutate", resource: "meetings", action: "leave", risk: "low" })
+  @CliOnly()
+  @Returns(looseObjectSchema)
+  async leave(
+    @Arg("meetingId", { description: "Cloud meeting id (from join or list)" }) meetingId: string,
+    @Option({ flags: "--project <ref>", description: "Console project (default: linked project)" }) project?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const op = "meetings leave";
+    const client = await openCloudClient(op, project, asJson);
+    const result = await withMeetingsCloud(op, asJson, () => client.leave(meetingId));
+    const payload = { left: result.left, meeting: publicCloudMeeting(result.meeting) };
+    if (asJson) printJson(payload);
+    else console.log(result.left ? `Leaving: ${meetingId}` : `Not in a call (${result.meeting.status}): ${meetingId}`);
+    return payload;
+  }
+
+  // Declared UNBRAKED: fetch only downloads a finished recording and
+  // registers LOCAL artifacts; it is idempotent and changes nothing remote.
+  @Command({
+    name: "fetch",
+    description: "Download a finished cloud recording into a meeting.raw artifact",
+  })
+  @CommandAccess({ kind: "mutate", resource: "meetings", action: "fetch", risk: "medium" })
+  @CliOnly()
+  @Returns(looseObjectSchema)
+  async fetch(
+    @Arg("meetingId", { description: "Cloud meeting id (from join, list or the inbox item)" }) meetingId: string,
+    @Option({ flags: "--project <ref>", description: "Console project (default: linked project)" }) project?: string,
+    @Option({ flags: "--out <dir>", description: "Where to save media (default ~/.ravi/meetings/cloud/<id>)" })
+    out?: string,
+    @Option({ flags: "--video", description: "Also download the video" }) video?: boolean,
+    @Option({ flags: "--no-notify", description: "Do not inform the session that asked for the meeting" })
+    noNotify?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const op = "meetings fetch";
+    const client = await openCloudClient(op, project, asJson);
+    const ctx = contextDefaults();
+    const result = await withMeetingsCloud(op, asJson, () =>
+      fetchCloudMeeting({
+        client,
+        meetingId,
+        outputDir: out?.trim() || undefined,
+        video: Boolean(video),
+        actor: ctx.agentId ?? MEETINGS_CLOUD_SOURCE,
+        notify: !noNotify,
+      }),
+    );
+    const payload =
+      result.outcome === "pending"
+        ? { outcome: result.outcome, meeting: publicCloudMeeting(result.meeting) }
+        : result.outcome === "failed"
+          ? {
+              outcome: result.outcome,
+              meeting: publicCloudMeeting(result.meeting),
+              joinArtifactId: result.joinArtifactId,
+              notified: result.notified,
+            }
+          : result;
+    if (asJson) printJson(payload);
+    else if (result.outcome === "pending") console.log(`Not finished yet (${result.meeting.status}): ${meetingId}`);
+    else if (result.outcome === "failed") {
+      console.log(
+        `The bot ended without a recording: ${result.meeting.failureReason ?? result.meeting.statusSubCode ?? "unknown"}`,
+      );
+    } else {
+      console.log(
+        `Meeting artifact ${result.status === "already_finalized" ? "already registered" : "registered"}: ${result.rawArtifactId}`,
+      );
+      if (result.rawArtifactPath) console.log(`Path: ${result.rawArtifactPath}`);
+      console.log(`Transcript segments: ${result.transcriptSegmentCount}`);
     }
     return payload;
   }

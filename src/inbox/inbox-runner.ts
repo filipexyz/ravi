@@ -28,6 +28,7 @@ import {
 } from "../mailbox/console-ingest.js";
 import { flushNats, publish } from "../nats.js";
 import { logger } from "../utils/logger.js";
+import { handOffMeetingInboxItem } from "../meetings/inbox-handoff.js";
 import { watchEventFromInboxPayload } from "../watch/events.js";
 import {
   ackInboxItems as ackInboxItemsRemote,
@@ -79,6 +80,8 @@ const POLL_LOCK_TTL_MS = 120_000;
 const POLL_LOCK_RENEW_MS = 30_000;
 
 interface RunnerOptions {
+  /** Called once per newly delivered item; turns cloud meeting events into local artifacts. */
+  meetingHandoff?: (payload: InboxNatsPayload) => void;
   intervalMs?: number;
   nats?: InboxNatsPublishDependencies;
 }
@@ -121,10 +124,12 @@ export class InboxRunner {
   private readonly lockOwnerId = randomUUID();
   private readonly natsDependencies: InboxNatsPublishDependencies;
   private tickInFlight: Promise<void> | null = null;
+  private readonly meetingHandoff: (payload: InboxNatsPayload) => void;
 
   constructor(options: RunnerOptions = {}) {
     this.intervalMs = options.intervalMs ?? DEFAULT_POLL_INTERVAL_MS;
     this.natsDependencies = options.nats ?? { publish, flush: flushNats };
+    this.meetingHandoff = options.meetingHandoff ?? ((payload) => void handOffMeetingInboxItem(payload));
   }
 
   async start(): Promise<void> {
@@ -663,6 +668,8 @@ export class InboxRunner {
     // 3. Mark delivered locally so we can ack to Console.
     input.assertPollLock();
     markItemDelivered(localItem.id, Date.now());
+    // 4. Side work that must not hold the poll: cloud meeting recordings.
+    this.meetingHandoff(enrichedNatsPayload);
     return { delivered: true };
   }
 
