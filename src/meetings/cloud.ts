@@ -11,11 +11,9 @@
 //   GET  /api/cli/projects/:projectRef/meetings/:id/recording
 //   GET  /api/cli/projects/:projectRef/meetings/:id/media/:kind?part=N
 
-import { createWriteStream, existsSync, mkdirSync, renameSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, rmSync, statSync } from "node:fs";
+import { open } from "node:fs/promises";
 import { join } from "node:path";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
-import type { ReadableStream as WebReadableStream } from "node:stream/web";
 
 import { ConsoleApiClient, normalizeConsoleUrl, refreshCredentialsForStore } from "../cloud-auth/client.js";
 import { CloudAuthError, classifyConsoleNetworkError, isCloudAuthError } from "../cloud-auth/errors.js";
@@ -238,11 +236,15 @@ export class MeetingsCloudClient {
       throw new CloudAuthError("SERVER_UNAVAILABLE", `Meeting media download failed (${response.status}).`);
     }
     const partial = `${destination}.part`;
+    // Read the body directly: under Bun, piping an errored web stream through
+    // Readable.fromWeb never settles, so a reset or a timeout would hang here.
+    const file = await open(partial, "w");
     try {
-      await pipeline(
-        Readable.fromWeb(response.body as unknown as WebReadableStream<Uint8Array>),
-        createWriteStream(partial),
-      );
+      try {
+        for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) await file.write(chunk);
+      } finally {
+        await file.close();
+      }
     } catch (error) {
       rmSync(partial, { force: true });
       throw error;

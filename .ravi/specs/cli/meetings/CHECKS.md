@@ -27,6 +27,7 @@
 - `meetings fetch <id>` MUST finalize a `done` meeting once (a second run
   returns `already_finalized` and informs nobody, with or without a join
   artifact; a later `--video` run updates the same artifact), close the join artifact of a
-  `failed` meeting, and leave a running one alone.
+  `failed` meeting, and leave a running one alone. A run that finds the
+  recorded artifact with the join still open MUST close it and inform once.
 - The inbox runner MUST hand each newly delivered `meetings.recording.*` item to
   `meetings fetch` exactly once, after the item is delivered locally.

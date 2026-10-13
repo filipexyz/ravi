@@ -143,6 +143,38 @@ describe("cloud meetings", () => {
     expect(listArtifacts({ kind: "meeting.raw" })).toHaveLength(1);
   });
 
+  it("completes a join a previous run left open after it recorded the raw artifact, and only once", async () => {
+    // The first run recorded its raw artifact but died before closing the join.
+    const first = await fetchCloudMeeting(
+      { client: fakeClient(meeting({ status: "done", ready: true })), meetingId: MEETING_ID },
+      { notify: () => {} },
+    );
+    if (first.outcome !== "finalized") throw new Error("expected finalized");
+    const joinArtifact = createArtifact({
+      kind: "meeting.join",
+      status: "running",
+      sessionName: "dev-main",
+      metadata: { consoleMeetingId: MEETING_ID },
+    });
+    const client = fakeClient(meeting({ status: "done", ready: true, clientRef: joinArtifact.id }));
+    const notified: string[] = [];
+    const notify = (_artifact: unknown, status: string, message: string) => {
+      notified.push(`${status}:${message.split("\n")[0]}`);
+    };
+
+    const retry = await fetchCloudMeeting({ client, meetingId: MEETING_ID }, { notify });
+    expect(retry).toMatchObject({ status: "already_finalized", rawArtifactId: first.rawArtifactId, notified: true });
+    expect(getArtifact(joinArtifact.id)?.status).toBe("completed");
+    expect(getArtifact(joinArtifact.id)?.metadata?.finalArtifactId).toBe(first.rawArtifactId);
+    expect(notified).toEqual(["completed:[System] Inform: Meeting raw artifact generated."]);
+    expect(client.downloads).toEqual([]);
+
+    const again = await fetchCloudMeeting({ client, meetingId: MEETING_ID }, { notify });
+    expect(again).toMatchObject({ status: "already_finalized", notified: false });
+    expect(notified).toHaveLength(1);
+    expect(listArtifacts({ kind: "meeting.raw" })).toHaveLength(1);
+  });
+
   it("bounds a media download and removes the partial file when it fails", async () => {
     const client = new MeetingsCloudClient({
       client: {} as never,

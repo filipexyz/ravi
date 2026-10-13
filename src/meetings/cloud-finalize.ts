@@ -34,7 +34,11 @@ import {
   type MeetingsCloudClient,
 } from "./cloud.js";
 import { notifyMeetingOwnerSession } from "./handoff.js";
-import { registerMeetingRawArtifact, rewriteMeetingRawArtifact } from "./raw-artifact.js";
+import {
+  buildMeetingRawArtifactHandoffMessage,
+  registerMeetingRawArtifact,
+  rewriteMeetingRawArtifact,
+} from "./raw-artifact.js";
 
 const SOURCE = "ravi.meetings.cloud";
 const RECORD_FILE = "fetch.json";
@@ -130,7 +134,9 @@ export async function finalizeCloudMeeting(
     const existingRaw = getArtifactOrNull(record?.rawArtifactId ?? joinRawId);
     if (existingRaw) {
       if (!input.video || (record?.video ?? hasDownloadedVideo(existingRaw))) {
-        return unchanged("already_finalized", existingRaw);
+        // A run that died after recording its artifact may have left the join open.
+        const notified = await reconcileJoin({ input, deps, meeting, join, raw: existingRaw });
+        return { ...unchanged("already_finalized", existingRaw), notified };
       }
       // Asked for the video this time: add it to the same artifact.
       const outputDir =
@@ -148,6 +154,14 @@ export async function finalizeCloudMeeting(
         actor: input.actor ?? SOURCE,
       });
       writeFetchRecord(claimDir, { rawArtifactId: existingRaw.id, outputDir, video: downloadedVideo(mediaRefs) });
+      const notified = await reconcileJoin({
+        input,
+        deps,
+        meeting,
+        join,
+        raw: { ...existingRaw, filePath: written.filePath },
+        recording,
+      });
       return {
         status: "enriched",
         meetingId: meeting.id,
@@ -157,7 +171,7 @@ export async function finalizeCloudMeeting(
         transcriptSegmentCount: session.transcriptSegments?.length ?? 0,
         mediaRefCount: mediaRefs.length,
         downloadedMediaCount: mediaRefs.filter((ref) => Boolean(ref.path)).length,
-        notified: false,
+        notified,
       };
     }
 
@@ -173,38 +187,17 @@ export async function finalizeCloudMeeting(
       video: downloadedVideo(mediaRefs),
     });
 
-    let notified = false;
-    if (join) {
-      attachArtifact(registered.artifact.id, "artifact", join.id, "generated-by", { source: SOURCE });
-      const completed = updateArtifact(
-        join.id,
-        {
-          status: "completed",
-          summary: `Meeting ended; raw artifact generated: ${registered.artifact.id}`,
-          ...(session.durationMs !== undefined ? { durationMs: session.durationMs } : {}),
-          metadata: {
-            finalArtifactId: registered.artifact.id,
-            finalArtifactPath: registered.filePath,
-            cloudStatus: meeting.status,
-            recordingSeconds: meeting.recordingSeconds,
-          },
-          output: { finalArtifactId: registered.artifact.id, finalArtifactPath: registered.filePath },
-        },
-        { actor: input.actor, mergeMetadata: true },
-      );
-      appendArtifactEvent(completed.id, {
-        eventType: "completed",
-        status: "completed",
-        message: `Meeting raw artifact generated: ${registered.artifact.id}`,
-        payload: { finalArtifactId: registered.artifact.id, consoleMeetingId: meeting.id },
-        source: SOURCE,
-        ...(input.actor ? { actor: input.actor } : {}),
-      });
-      if (input.notify !== false) {
-        (deps.notify ?? notifyMeetingOwnerSession)(completed, "completed", registered.handoffMessage);
-        notified = true;
-      }
-    }
+    const notified = join
+      ? completeJoin({
+          input,
+          deps,
+          meeting,
+          join,
+          raw: { id: registered.artifact.id, filePath: registered.filePath },
+          durationMs: session.durationMs,
+          handoffMessage: registered.handoffMessage,
+        })
+      : false;
 
     return {
       status: "finalized",
@@ -220,6 +213,79 @@ export async function finalizeCloudMeeting(
   } finally {
     releaseFetchLock(claimDir);
   }
+}
+
+type FinalizeInput = { actor?: string; notify?: boolean; client: MeetingsCloudClient };
+
+/** Closes the `meeting.join` artifact with its raw artifact and tells the owner session. */
+function completeJoin(args: {
+  input: FinalizeInput;
+  deps: CloudMeetingFinalizeDeps;
+  meeting: CloudMeeting;
+  join: ArtifactRecord;
+  raw: { id: string; filePath: string };
+  durationMs?: number;
+  handoffMessage: string;
+}): boolean {
+  const { input, meeting, join, raw } = args;
+  attachArtifact(raw.id, "artifact", join.id, "generated-by", { source: SOURCE });
+  const completed = updateArtifact(
+    join.id,
+    {
+      status: "completed",
+      summary: `Meeting ended; raw artifact generated: ${raw.id}`,
+      ...(args.durationMs !== undefined ? { durationMs: args.durationMs } : {}),
+      metadata: {
+        finalArtifactId: raw.id,
+        finalArtifactPath: raw.filePath,
+        cloudStatus: meeting.status,
+        recordingSeconds: meeting.recordingSeconds,
+      },
+      output: { finalArtifactId: raw.id, finalArtifactPath: raw.filePath },
+    },
+    { actor: input.actor, mergeMetadata: true },
+  );
+  appendArtifactEvent(completed.id, {
+    eventType: "completed",
+    status: "completed",
+    message: `Meeting raw artifact generated: ${raw.id}`,
+    payload: { finalArtifactId: raw.id, consoleMeetingId: meeting.id },
+    source: SOURCE,
+    ...(input.actor ? { actor: input.actor } : {}),
+  });
+  if (input.notify === false) return false;
+  (args.deps.notify ?? notifyMeetingOwnerSession)(completed, "completed", args.handoffMessage);
+  return true;
+}
+
+/** Completes a join a previous run left open after it recorded its raw artifact; a completed join is left alone. */
+async function reconcileJoin(args: {
+  input: FinalizeInput;
+  deps: CloudMeetingFinalizeDeps;
+  meeting: CloudMeeting;
+  join: ArtifactRecord | null;
+  raw: ArtifactRecord;
+  recording?: Awaited<ReturnType<MeetingsCloudClient["recording"]>>;
+}): Promise<boolean> {
+  const { join, raw } = args;
+  if (!join || join.status === "completed" || !raw.filePath) return false;
+  const recording = args.recording ?? (await args.input.client.recording(args.meeting.id));
+  const session = buildCloudMeetingSession({ recording, origin: originFrom(join) });
+  const transcriptionJsonPath = raw.metadata?.transcriptionJsonPath;
+  return completeJoin({
+    input: args.input,
+    deps: args.deps,
+    meeting: args.meeting,
+    join,
+    raw: { id: raw.id, filePath: raw.filePath },
+    durationMs: session.durationMs,
+    handoffMessage: buildMeetingRawArtifactHandoffMessage({
+      session: { ...session, artifactId: raw.id },
+      artifact: raw,
+      filePath: raw.filePath,
+      ...(typeof transcriptionJsonPath === "string" ? { transcriptionJsonPath } : {}),
+    }),
+  });
 }
 
 function downloadMedia(

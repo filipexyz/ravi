@@ -71,7 +71,9 @@ documented write-brake equivalent instead of being renamed.
    the session that asked. `fetch` is idempotent per meeting: a lock and a
    record in the meeting's state folder let one run register and notify, a run
    that finds the lock held returns `in_progress`, and `--video` on a later run
-   adds the video to the same artifact (`enriched`).
+   adds the video to the same artifact (`enriched`). A later run that finds
+   the recorded artifact with the join artifact still open (an earlier run
+   died in between) closes the join and informs the session once.
 9. Nothing in this surface names the Console's bot vendor: media is downloaded
    from Console paths with the CLI credentials.
 
