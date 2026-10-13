@@ -566,6 +566,8 @@ function buildResolvedProfileInput(input: {
 }
 
 const MEETINGS_CLOUD_SOURCE = "ravi.meetings.cloud";
+/** The Console lists at most this many bots per project, newest first. */
+const CLOUD_MEETINGS_WINDOW = 100;
 
 /** Turns Console errors into the CLI contract envelope, rendered once. */
 async function withMeetingsCloud<T>(op: string, asJson: boolean | undefined, run: () => Promise<T>): Promise<T> {
@@ -1489,31 +1491,34 @@ export class MeetingsCommands {
     return payload;
   }
 
-  // Read-only: lists the project's cloud bots.
+  // Read-only: lists the project's cloud bots, newest first. The Console
+  // returns at most its 100 newest; --offset pages inside that window.
   @Command({ name: "list", description: "List the project's cloud meeting bots" })
   @CommandAccess({ kind: "read", resource: "meetings", action: "list", risk: "low" })
   @CliOnly()
   @Returns(looseObjectSchema)
   async list(
     @Option({ flags: "--project <ref>", description: "Console project (default: linked project)" }) project?: string,
-    @Option({ flags: "--limit <n>", description: "At most this many bots, newest first (default 20, max 100)" })
-    limit?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 20, max: 100)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of newer bots to skip (default: 0)" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const op = "meetings list";
-    const parsedLimit = limit ? Number(limit) : undefined;
-    if (parsedLimit !== undefined && (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 100)) {
-      contractFail(op, "INVALID_ARGUMENT", "--limit must be an integer from 1 to 100.", {
-        asJson,
-        exitCode: CONTRACT_EXIT_USAGE,
-      });
-    }
     const client = await openCloudClient(op, project, asJson);
-    const meetings = await withMeetingsCloud(op, asJson, () => client.list(parsedLimit));
-    const payload = { project: client.projectRef, meetings: meetings.map(publicCloudMeeting) };
+    const meetings = await withMeetingsCloud(op, asJson, () => client.list(CLOUD_MEETINGS_WINDOW));
+    const page = paginateCliItems(meetings, { limit, offset }, { defaultLimit: 20, maxLimit: CLOUD_MEETINGS_WINDOW });
+    const items = page.items.map(publicCloudMeeting);
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "meetings", "list", ...(project?.trim() ? ["--project", project.trim()] : [])],
+      limit: page.limit,
+      offset: page.offset,
+      returned: items.length,
+      total: page.total,
+    });
+    const payload = { project: client.projectRef, total: page.total, pagination, items, meetings: items };
     if (asJson) printJson(payload);
-    else if (meetings.length === 0) console.log("No cloud meeting bots yet.");
-    else for (const meeting of meetings) printCloudMeetingLine(meeting);
+    else if (items.length === 0) console.log("No cloud meeting bots yet.");
+    else for (const meeting of page.items) printCloudMeetingLine(meeting);
     return payload;
   }
 
