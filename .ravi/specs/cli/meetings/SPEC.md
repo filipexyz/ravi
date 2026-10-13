@@ -68,7 +68,10 @@ documented write-brake equivalent instead of being renamed.
    `meetings.recording.failed`, the inbox runner starts a detached
    `ravi meetings fetch <id>`, which builds the same `meeting.raw` artifact the
    local recorder produces (or closes the join artifact as failed) and informs
-   the session that asked. `fetch` is idempotent.
+   the session that asked. `fetch` is idempotent per meeting: a lock and a
+   record in the meeting's state folder let one run register and notify, a run
+   that finds the lock held returns `in_progress`, and `--video` on a later run
+   adds the video to the same artifact (`enriched`).
 9. Nothing in this surface names the Console's bot vendor: media is downloaded
    from Console paths with the CLI credentials.
 

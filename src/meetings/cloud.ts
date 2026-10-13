@@ -11,7 +11,7 @@
 //   GET  /api/cli/projects/:projectRef/meetings/:id/recording
 //   GET  /api/cli/projects/:projectRef/meetings/:id/media/:kind?part=N
 
-import { createWriteStream, existsSync, mkdirSync, renameSync, statSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, renameSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -213,8 +213,11 @@ export class MeetingsCloudClient {
     if (!path.startsWith(`${meetingsApiRoot(this.session.projectRef)}/`)) {
       throw new CloudAuthError("SERVER_UNAVAILABLE", "The Console returned a media path outside this project.");
     }
+    // One signal for the whole download, body included: a stalled stream must
+    // not keep a detached fetch alive forever.
+    const signal = AbortSignal.timeout(MEDIA_DOWNLOAD_TIMEOUT_MS);
     const get = (token: string) =>
-      fetchImpl(`${this.consoleUrl}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+      fetchImpl(`${this.consoleUrl}${path}`, { headers: { Authorization: `Bearer ${token}` }, signal });
     let response: Response;
     try {
       response = await get(this.credentials.accessToken);
@@ -235,10 +238,15 @@ export class MeetingsCloudClient {
       throw new CloudAuthError("SERVER_UNAVAILABLE", `Meeting media download failed (${response.status}).`);
     }
     const partial = `${destination}.part`;
-    await pipeline(
-      Readable.fromWeb(response.body as unknown as WebReadableStream<Uint8Array>),
-      createWriteStream(partial),
-    );
+    try {
+      await pipeline(
+        Readable.fromWeb(response.body as unknown as WebReadableStream<Uint8Array>),
+        createWriteStream(partial),
+      );
+    } catch (error) {
+      rmSync(partial, { force: true });
+      throw error;
+    }
     renameSync(partial, destination);
   }
 
@@ -300,6 +308,9 @@ function requireMeeting(value: unknown): CloudMeeting {
   }
   return value as CloudMeeting;
 }
+
+/** Above the Console's own 800-second cap on a media response. */
+const MEDIA_DOWNLOAD_TIMEOUT_MS = 15 * 60_000;
 
 export function defaultCloudMeetingDir(meetingId: string): string {
   return join(getRaviStateDir(), "meetings", "cloud", meetingId);

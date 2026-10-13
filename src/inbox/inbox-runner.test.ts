@@ -256,6 +256,38 @@ describe("inbox runner pending lease recovery", () => {
     expect(handedOff).toEqual(["meetings.recording.ready:6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f"]);
   });
 
+  it("still acks a delivered item when the meetings handoff throws", async () => {
+    writeCloudCredentials(makeCredentials());
+    let acks = 0;
+    globalThis.fetch = mock(async (input: string | URL | Request) => {
+      const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
+      if (url.pathname === "/api/cli/inbox/subscriptions/global") {
+        return jsonResponse({ subscription: makeSubscription() });
+      }
+      if (url.pathname === "/api/cli/inbox/pulse") {
+        return jsonResponse(makePendingPulse({ latestSequence: 1, subscription: makeSubscription() }));
+      }
+      if (url.pathname === "/api/cli/inbox/poll") {
+        return jsonResponse(makePoll({ items: [makeInboxItem(1, { eventType: "meetings.recording.ready" })] }));
+      }
+      if (url.pathname === "/api/cli/inbox/ack") {
+        acks += 1;
+        return jsonResponse({ acked: 1 });
+      }
+      throw new Error(`Unexpected inbox request: ${url.pathname}`);
+    }) as unknown as typeof fetch;
+
+    const runner = new InboxRunner({
+      nats: { publish: async () => {}, flush: async () => {} },
+      meetingHandoff: () => {
+        throw new Error("spawn failed");
+      },
+    });
+    await runner.tickOnce();
+
+    expect(acks).toBe(1);
+  });
+
   it("heals a delivered row from an advanced Console cursor after a partial ack response", async () => {
     writeCloudCredentials(makeCredentials());
     const actions: string[] = [];

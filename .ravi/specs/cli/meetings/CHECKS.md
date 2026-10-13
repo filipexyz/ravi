@@ -25,7 +25,8 @@
 - `meetings join --url <meet> --out <dir>` without `--local` MUST exit 2 with
   `LOCAL_RECORDER_OPTION`; `--live` MUST still run locally.
 - `meetings fetch <id>` MUST finalize a `done` meeting once (a second run
-  returns `already_finalized` and informs nobody), close the join artifact of a
+  returns `already_finalized` and informs nobody, with or without a join
+  artifact; a later `--video` run updates the same artifact), close the join artifact of a
   `failed` meeting, and leave a running one alone.
 - The inbox runner MUST hand each newly delivered `meetings.recording.*` item to
   `meetings fetch` exactly once, after the item is delivered locally.

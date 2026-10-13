@@ -668,8 +668,13 @@ export class InboxRunner {
     // 3. Mark delivered locally so we can ack to Console.
     input.assertPollLock();
     markItemDelivered(localItem.id, Date.now());
-    // 4. Side work that must not hold the poll: cloud meeting recordings.
-    this.meetingHandoff(enrichedNatsPayload);
+    // 4. Side work that must not hold the poll or undo the delivery: cloud
+    // meeting recordings.
+    try {
+      this.meetingHandoff(enrichedNatsPayload);
+    } catch (error) {
+      log.warn("Meeting inbox handoff failed", { itemId: input.item.itemId, error: errMessage(error) });
+    }
     return { delivered: true };
   }
 

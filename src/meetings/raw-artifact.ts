@@ -1,6 +1,12 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { appendArtifactEvent, createArtifact, type ArtifactEvent, type ArtifactRecord } from "../artifacts/store.js";
+import {
+  appendArtifactEvent,
+  createArtifact,
+  updateArtifact,
+  type ArtifactEvent,
+  type ArtifactRecord,
+} from "../artifacts/store.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import { buildMeetingEventPayload, emitMeetingEvent, MEETING_EVENT_TOPICS } from "./events.js";
 import {
@@ -330,6 +336,35 @@ export function registerMeetingRawArtifact(input: RegisterMeetingRawArtifactInpu
       transcriptionJsonPath: written.transcriptionJson?.filePath,
     }),
   };
+}
+
+/**
+ * Re-renders an existing `meeting.raw` artifact in place, for example after a
+ * later fetch downloaded media the first one only linked to.
+ */
+export function rewriteMeetingRawArtifact(
+  input: WriteMeetingRawArtifactInput & { artifactId: string; actor?: string },
+): WriteMeetingRawArtifactResult {
+  const written = writeMeetingRawArtifact(input);
+  const { session } = input;
+  updateArtifact(
+    input.artifactId,
+    {
+      filePath: written.filePath,
+      metadata: buildArtifactMetadata(session, written),
+      lineage: buildArtifactLineage(session),
+    },
+    { actor: input.actor, mergeMetadata: true, mergeLineage: true },
+  );
+  appendArtifactEvent(input.artifactId, {
+    eventType: "updated",
+    status: "completed",
+    message: "Meeting raw artifact updated with new media",
+    source: RENDERER_SOURCE,
+    actor: input.actor,
+    payload: { meetingId: session.id, filePath: written.filePath, mediaRefCount: session.mediaRefs?.length ?? 0 },
+  });
+  return written;
 }
 
 export function buildMeetingRawArtifactHandoffMessage(input: {

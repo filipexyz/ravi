@@ -1612,10 +1612,16 @@ export class MeetingsCommands {
       console.log(
         `The bot ended without a recording: ${result.meeting.failureReason ?? result.meeting.statusSubCode ?? "unknown"}`,
       );
+    } else if (result.status === "in_progress") {
+      console.log(`Another fetch of this meeting is running: ${meetingId}`);
     } else {
-      console.log(
-        `Meeting artifact ${result.status === "already_finalized" ? "already registered" : "registered"}: ${result.rawArtifactId}`,
-      );
+      const verb =
+        result.status === "already_finalized"
+          ? "already registered"
+          : result.status === "enriched"
+            ? "updated with the video"
+            : "registered";
+      console.log(`Meeting artifact ${verb}: ${result.rawArtifactId}`);
       if (result.rawArtifactPath) console.log(`Path: ${result.rawArtifactPath}`);
       console.log(`Transcript segments: ${result.transcriptSegmentCount}`);
     }

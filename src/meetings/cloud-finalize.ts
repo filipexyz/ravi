@@ -1,8 +1,22 @@
 // Turns a finished cloud meeting into local artifacts: downloads the media,
 // registers the `meeting.raw` artifact, closes the `meeting.join` artifact
 // that `ravi meetings join` created, and hands the result to the session that
-// asked for it. Safe to run twice: a join artifact that already points at its
-// raw artifact is returned as is.
+// asked for it. Safe to run twice, or twice at once: a lock and a record in
+// the meeting's state folder make one run the owner, and later runs reuse its
+// artifact (adding the video when a later run asks for it).
+
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
 
 import {
   appendArtifactEvent,
@@ -20,15 +34,20 @@ import {
   type MeetingsCloudClient,
 } from "./cloud.js";
 import { notifyMeetingOwnerSession } from "./handoff.js";
-import { registerMeetingRawArtifact } from "./raw-artifact.js";
+import { registerMeetingRawArtifact, rewriteMeetingRawArtifact } from "./raw-artifact.js";
 
 const SOURCE = "ravi.meetings.cloud";
+const RECORD_FILE = "fetch.json";
+const LOCK_FILE = "fetch.lock";
+/** A lock older than this belongs to a run that died; the next run takes over. */
+const LOCK_STALE_MS = 30 * 60_000;
 
 export interface CloudMeetingFinalizeResult {
-  status: "finalized" | "already_finalized";
+  /** `in_progress`: another run holds this meeting; `enriched`: an existing artifact gained its video. */
+  status: "finalized" | "already_finalized" | "enriched" | "in_progress";
   meetingId: string;
   joinArtifactId: string | null;
-  rawArtifactId: string;
+  rawArtifactId: string | null;
   rawArtifactPath: string | null;
   transcriptSegmentCount: number;
   mediaRefCount: number;
@@ -91,78 +110,188 @@ export async function finalizeCloudMeeting(
 ): Promise<CloudMeetingFinalizeResult> {
   const meeting = await input.client.show(input.meetingId);
   const join = findCloudMeetingJoinArtifact(meeting);
-  const existingRawId = typeof join?.metadata?.finalArtifactId === "string" ? join.metadata.finalArtifactId : null;
-  const existingRaw = existingRawId ? getArtifact(existingRawId) : null;
-  if (join && existingRaw) {
-    return {
-      status: "already_finalized",
-      meetingId: meeting.id,
-      joinArtifactId: join.id,
-      rawArtifactId: existingRaw.id,
-      rawArtifactPath: existingRaw.filePath ?? null,
-      transcriptSegmentCount: 0,
-      mediaRefCount: 0,
-      downloadedMediaCount: 0,
-      notified: false,
-    };
-  }
+  const claimDir = defaultCloudMeetingDir(meeting.id);
+  const unchanged = (status: "already_finalized" | "in_progress", raw: ArtifactRecord | null) => ({
+    status,
+    meetingId: meeting.id,
+    joinArtifactId: join?.id ?? null,
+    rawArtifactId: raw?.id ?? null,
+    rawArtifactPath: raw?.filePath ?? null,
+    transcriptSegmentCount: 0,
+    mediaRefCount: 0,
+    downloadedMediaCount: 0,
+    notified: false,
+  });
+  if (!acquireFetchLock(claimDir)) return unchanged("in_progress", null);
 
-  const recording = await input.client.recording(meeting.id);
-  const outputDir = input.outputDir ?? defaultCloudMeetingDir(meeting.id);
-  const mediaRefs = await downloadCloudMeetingMedia({
+  try {
+    const record = readFetchRecord(claimDir);
+    const joinRawId = typeof join?.metadata?.finalArtifactId === "string" ? join.metadata.finalArtifactId : null;
+    const existingRaw = getArtifactOrNull(record?.rawArtifactId ?? joinRawId);
+    if (existingRaw) {
+      if (!input.video || (record?.video ?? hasDownloadedVideo(existingRaw))) {
+        return unchanged("already_finalized", existingRaw);
+      }
+      // Asked for the video this time: add it to the same artifact.
+      const outputDir =
+        record?.outputDir ??
+        (typeof join?.metadata?.finalArtifactPath === "string" ? dirname(join.metadata.finalArtifactPath) : null) ??
+        input.outputDir ??
+        defaultCloudMeetingDir(meeting.id);
+      const recording = await input.client.recording(meeting.id);
+      const mediaRefs = await downloadMedia(input, recording, outputDir, deps, true);
+      const session = buildCloudMeetingSession({ recording, origin: originFrom(join), mediaRefs });
+      const written = rewriteMeetingRawArtifact({
+        artifactId: existingRaw.id,
+        session,
+        outputDir,
+        actor: input.actor ?? SOURCE,
+      });
+      writeFetchRecord(claimDir, { rawArtifactId: existingRaw.id, outputDir, video: downloadedVideo(mediaRefs) });
+      return {
+        status: "enriched",
+        meetingId: meeting.id,
+        joinArtifactId: join?.id ?? null,
+        rawArtifactId: existingRaw.id,
+        rawArtifactPath: written.filePath,
+        transcriptSegmentCount: session.transcriptSegments?.length ?? 0,
+        mediaRefCount: mediaRefs.length,
+        downloadedMediaCount: mediaRefs.filter((ref) => Boolean(ref.path)).length,
+        notified: false,
+      };
+    }
+
+    const recording = await input.client.recording(meeting.id);
+    const outputDir = input.outputDir ?? defaultCloudMeetingDir(meeting.id);
+    const mediaRefs = await downloadMedia(input, recording, outputDir, deps, input.video);
+    const session = buildCloudMeetingSession({ recording, origin: originFrom(join), mediaRefs });
+    const registered = registerMeetingRawArtifact({ session, outputDir, actor: input.actor ?? SOURCE });
+    // Recorded before anyone is told, so a later run never registers or notifies again.
+    writeFetchRecord(claimDir, {
+      rawArtifactId: registered.artifact.id,
+      outputDir,
+      video: downloadedVideo(mediaRefs),
+    });
+
+    let notified = false;
+    if (join) {
+      attachArtifact(registered.artifact.id, "artifact", join.id, "generated-by", { source: SOURCE });
+      const completed = updateArtifact(
+        join.id,
+        {
+          status: "completed",
+          summary: `Meeting ended; raw artifact generated: ${registered.artifact.id}`,
+          ...(session.durationMs !== undefined ? { durationMs: session.durationMs } : {}),
+          metadata: {
+            finalArtifactId: registered.artifact.id,
+            finalArtifactPath: registered.filePath,
+            cloudStatus: meeting.status,
+            recordingSeconds: meeting.recordingSeconds,
+          },
+          output: { finalArtifactId: registered.artifact.id, finalArtifactPath: registered.filePath },
+        },
+        { actor: input.actor, mergeMetadata: true },
+      );
+      appendArtifactEvent(completed.id, {
+        eventType: "completed",
+        status: "completed",
+        message: `Meeting raw artifact generated: ${registered.artifact.id}`,
+        payload: { finalArtifactId: registered.artifact.id, consoleMeetingId: meeting.id },
+        source: SOURCE,
+        ...(input.actor ? { actor: input.actor } : {}),
+      });
+      if (input.notify !== false) {
+        (deps.notify ?? notifyMeetingOwnerSession)(completed, "completed", registered.handoffMessage);
+        notified = true;
+      }
+    }
+
+    return {
+      status: "finalized",
+      meetingId: meeting.id,
+      joinArtifactId: join?.id ?? null,
+      rawArtifactId: registered.artifact.id,
+      rawArtifactPath: registered.filePath,
+      transcriptSegmentCount: session.transcriptSegments?.length ?? 0,
+      mediaRefCount: mediaRefs.length,
+      downloadedMediaCount: mediaRefs.filter((ref) => Boolean(ref.path)).length,
+      notified,
+    };
+  } finally {
+    releaseFetchLock(claimDir);
+  }
+}
+
+function downloadMedia(
+  input: { client: MeetingsCloudClient },
+  recording: Awaited<ReturnType<MeetingsCloudClient["recording"]>>,
+  outputDir: string,
+  deps: CloudMeetingFinalizeDeps,
+  video: boolean | undefined,
+) {
+  return downloadCloudMeetingMedia({
     recording,
     outputDir,
     consoleUrl: input.client.consoleUrl,
     download: (path, destination) => input.client.downloadMedia(path, destination, deps.fetchImpl),
-    video: input.video,
+    video,
   });
-  const session = buildCloudMeetingSession({ recording, origin: originFrom(join), mediaRefs });
-  const registered = registerMeetingRawArtifact({ session, outputDir, actor: input.actor ?? SOURCE });
+}
 
-  let notified = false;
-  if (join) {
-    attachArtifact(registered.artifact.id, "artifact", join.id, "generated-by", { source: SOURCE });
-    const completed = updateArtifact(
-      join.id,
-      {
-        status: "completed",
-        summary: `Meeting ended; raw artifact generated: ${registered.artifact.id}`,
-        ...(session.durationMs !== undefined ? { durationMs: session.durationMs } : {}),
-        metadata: {
-          finalArtifactId: registered.artifact.id,
-          finalArtifactPath: registered.filePath,
-          cloudStatus: meeting.status,
-          recordingSeconds: meeting.recordingSeconds,
-        },
-        output: { finalArtifactId: registered.artifact.id, finalArtifactPath: registered.filePath },
-      },
-      { actor: input.actor, mergeMetadata: true },
-    );
-    appendArtifactEvent(completed.id, {
-      eventType: "completed",
-      status: "completed",
-      message: `Meeting raw artifact generated: ${registered.artifact.id}`,
-      payload: { finalArtifactId: registered.artifact.id, consoleMeetingId: meeting.id },
-      source: SOURCE,
-      ...(input.actor ? { actor: input.actor } : {}),
-    });
-    if (input.notify !== false) {
-      (deps.notify ?? notifyMeetingOwnerSession)(completed, "completed", registered.handoffMessage);
-      notified = true;
+interface CloudFetchRecord {
+  rawArtifactId: string;
+  outputDir: string;
+  video: boolean;
+}
+
+function readFetchRecord(dir: string): CloudFetchRecord | null {
+  try {
+    const parsed = JSON.parse(readFileSync(join(dir, RECORD_FILE), "utf8")) as Partial<CloudFetchRecord>;
+    if (typeof parsed.rawArtifactId !== "string" || typeof parsed.outputDir !== "string") return null;
+    return { rawArtifactId: parsed.rawArtifactId, outputDir: parsed.outputDir, video: parsed.video === true };
+  } catch {
+    return null;
+  }
+}
+
+function writeFetchRecord(dir: string, record: CloudFetchRecord) {
+  const path = join(dir, RECORD_FILE);
+  writeFileSync(`${path}.tmp`, `${JSON.stringify(record, null, 2)}\n`);
+  renameSync(`${path}.tmp`, path);
+}
+
+/** Exclusive create: one run per meeting at a time, across processes. */
+function acquireFetchLock(dir: string): boolean {
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, LOCK_FILE);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      closeSync(openSync(path, "wx"));
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      if (attempt > 0 || !existsSync(path) || Date.now() - statSync(path).mtimeMs < LOCK_STALE_MS) return false;
+      rmSync(path, { force: true });
     }
   }
+  return false;
+}
 
-  return {
-    status: "finalized",
-    meetingId: meeting.id,
-    joinArtifactId: join?.id ?? null,
-    rawArtifactId: registered.artifact.id,
-    rawArtifactPath: registered.filePath,
-    transcriptSegmentCount: session.transcriptSegments?.length ?? 0,
-    mediaRefCount: mediaRefs.length,
-    downloadedMediaCount: mediaRefs.filter((ref) => Boolean(ref.path)).length,
-    notified,
-  };
+function releaseFetchLock(dir: string) {
+  rmSync(join(dir, LOCK_FILE), { force: true });
+}
+
+function getArtifactOrNull(id: string | null | undefined) {
+  return id ? getArtifact(id) : null;
+}
+
+function downloadedVideo(refs: Array<{ kind: string; path?: string }>) {
+  return refs.some((ref) => ref.kind === "video" && Boolean(ref.path));
+}
+
+function hasDownloadedVideo(raw: ArtifactRecord) {
+  const refs = raw.metadata?.mediaRefs;
+  return Array.isArray(refs) && downloadedVideo(refs as Array<{ kind: string; path?: string }>);
 }
 
 /**

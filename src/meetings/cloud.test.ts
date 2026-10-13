@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { createArtifact, getArtifact, listArtifactEvents } from "../artifacts/store.js";
+import { createArtifact, getArtifact, listArtifactEvents, listArtifacts } from "../artifacts/store.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import type { CloudMeeting, CloudMeetingRecording, MeetingsCloudClient } from "./cloud.js";
-import { normalizeGoogleMeetUrl } from "./cloud.js";
+import type { CloudMeeting, CloudMeetingRecording } from "./cloud.js";
+import { defaultCloudMeetingDir, MeetingsCloudClient, normalizeGoogleMeetUrl } from "./cloud.js";
 import { fetchCloudMeeting } from "./cloud-finalize.js";
 import { setMeetingEventPublisherForTests } from "./events.js";
 import { handOffMeetingInboxItem, meetingFetchArgsForInboxItem } from "./inbox-handoff.js";
@@ -58,7 +58,7 @@ describe("cloud meetings", () => {
     expect(client.downloads).toEqual([`${ROOT}/media/audio?part=0`]);
     expect(notified).toHaveLength(1);
 
-    const raw = getArtifact(first.rawArtifactId);
+    const raw = getArtifact(first.rawArtifactId!);
     expect(raw?.kind).toBe("meeting.raw");
     const transcription = readFileSync(join(first.rawArtifactPath!, "..", "transcription.json"), "utf8");
     expect(transcription).toContain("Ana");
@@ -117,6 +117,69 @@ describe("cloud meetings", () => {
     );
     expect(result).toMatchObject({ outcome: "finalized", joinArtifactId: null, notified: false });
     expect(getArtifact(other.id)?.status).toBe("running");
+  });
+
+  it("registers one raw artifact per meeting even without a join artifact, and adds the video later in place", async () => {
+    const client = fakeClient(meeting({ status: "done", ready: true }));
+    const notify = () => {};
+
+    const first = await fetchCloudMeeting({ client, meetingId: MEETING_ID }, { notify });
+    expect(first).toMatchObject({ outcome: "finalized", status: "finalized", joinArtifactId: null });
+    if (first.outcome !== "finalized") throw new Error("expected finalized");
+
+    const again = await fetchCloudMeeting({ client, meetingId: MEETING_ID }, { notify });
+    expect(again).toMatchObject({ status: "already_finalized", rawArtifactId: first.rawArtifactId });
+    expect(client.downloads).toEqual([`${ROOT}/media/audio?part=0`]);
+
+    const withVideo = await fetchCloudMeeting({ client, meetingId: MEETING_ID, video: true }, { notify });
+    expect(withVideo).toMatchObject({ status: "enriched", rawArtifactId: first.rawArtifactId });
+    expect(client.downloads).toEqual([`${ROOT}/media/audio?part=0`, `${ROOT}/media/video?part=0`]);
+    const refs = getArtifact(first.rawArtifactId!)?.metadata?.mediaRefs as Array<{ kind: string; path: string | null }>;
+    expect(refs.find((ref) => ref.kind === "video")?.path).toMatch(/video\.mp4$/);
+
+    const videoAgain = await fetchCloudMeeting({ client, meetingId: MEETING_ID, video: true }, { notify });
+    expect(videoAgain).toMatchObject({ status: "already_finalized" });
+    expect(client.downloads).toHaveLength(2);
+    expect(listArtifacts({ kind: "meeting.raw" })).toHaveLength(1);
+  });
+
+  it("bounds a media download and removes the partial file when it fails", async () => {
+    const client = new MeetingsCloudClient({
+      client: {} as never,
+      credentials: { accessToken: "token", consoleUrl: "https://console.example" } as never,
+      projectRef: "ravi",
+      write: (() => {}) as never,
+      delete: (() => {}) as never,
+    });
+    const dir = defaultCloudMeetingDir(MEETING_ID);
+    mkdirSync(dir, { recursive: true });
+    const destination = join(dir, "audio.mp3");
+    let signal: AbortSignal | null | undefined;
+    const fetchImpl = (async (_url: string, init?: RequestInit) => {
+      signal = init?.signal;
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode("partial"));
+          controller.error(new Error("connection reset"));
+        },
+      });
+      return new Response(body, { status: 200 });
+    }) as unknown as typeof fetch;
+
+    await expect(client.downloadMedia(`${ROOT}/media/audio?part=0`, destination, fetchImpl)).rejects.toThrow();
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(existsSync(`${destination}.part`)).toBe(false);
+    expect(existsSync(destination)).toBe(false);
+  });
+
+  it("leaves a meeting alone while another fetch holds it", async () => {
+    const client = fakeClient(meeting({ status: "done", ready: true }));
+    mkdirSync(defaultCloudMeetingDir(MEETING_ID), { recursive: true });
+    writeFileSync(join(defaultCloudMeetingDir(MEETING_ID), "fetch.lock"), "");
+
+    const busy = await fetchCloudMeeting({ client, meetingId: MEETING_ID }, { notify: () => {} });
+    expect(busy).toMatchObject({ outcome: "finalized", status: "in_progress", rawArtifactId: null, notified: false });
+    expect(client.downloads).toEqual([]);
   });
 
   it("hands ready and failed inbox items to `ravi meetings fetch`, and nothing else", () => {
