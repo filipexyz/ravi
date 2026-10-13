@@ -63048,6 +63048,408 @@ class RaviSchemas {
 }
 ''';
 
+  static const pagesReadInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "cursor": {
+      "description": "Character offset to continue a long page (from nextCursor)",
+      "type": "string"
+    },
+    "customDomain": {
+      "description": "Allow a host that is not *.ravi.page (a custom Pages domain)",
+      "type": "boolean"
+    },
+    "format": {
+      "description": "markdown (default, text only), html (entry source), zip or files (every published file, with --out)",
+      "type": "string"
+    },
+    "maxChars": {
+      "description": "Characters to return (1000-256000, default 256000)",
+      "type": "string"
+    },
+    "out": {
+      "description": "Where --format zip writes the .zip, or --format files the directory",
+      "type": "string"
+    },
+    "url": {
+      "description": "Ravi Page URL, such as https://acme.ravi.page/weekly",
+      "type": "string"
+    }
+  },
+  "required": [
+    "url"
+  ],
+  "type": "object"
+}
+''';
+
+  static const pagesReadReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "consoleUrl": {
+      "type": "string"
+    },
+    "content": {
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "type": "number"
+        },
+        "format": {
+          "enum": [
+            "markdown",
+            "html",
+            "files",
+            "zip"
+          ],
+          "type": "string"
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "note": {
+          "type": "string"
+        },
+        "representation": {
+          "enum": [
+            "extracted_markdown",
+            "entry_source",
+            "file_list"
+          ],
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "totalChars": {
+          "type": "number"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "format",
+        "representation",
+        "note",
+        "text",
+        "cursor",
+        "nextCursor",
+        "totalChars",
+        "truncated"
+      ],
+      "type": "object"
+    },
+    "contentTrust": {
+      "const": "untrusted",
+      "type": "string"
+    },
+    "download": {
+      "additionalProperties": false,
+      "properties": {
+        "files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "contentType": {
+                "type": "string"
+              },
+              "entrypoint": {
+                "type": "boolean"
+              },
+              "path": {
+                "type": "string"
+              },
+              "sizeBytes": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "path",
+              "contentType",
+              "sizeBytes",
+              "entrypoint"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "enum": [
+            "directory",
+            "zip"
+          ],
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "totalBytes": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "path",
+        "files",
+        "totalBytes"
+      ],
+      "type": "object"
+    },
+    "links": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "url"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "page": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "versionId": {
+              "type": "string"
+            },
+            "versionNumber": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "versionId",
+            "versionNumber"
+          ],
+          "type": "object"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "file": {
+          "additionalProperties": false,
+          "properties": {
+            "contentType": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "sha256": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sizeBytes": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "path",
+            "contentType",
+            "sizeBytes",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        "host": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "release": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "number": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "number"
+          ],
+          "type": "object"
+        },
+        "route": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "matchType": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "path",
+            "matchType"
+          ],
+          "type": "object"
+        },
+        "siteId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "visibility": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "host",
+        "path",
+        "title",
+        "description",
+        "visibility",
+        "siteId",
+        "projectId",
+        "route",
+        "release",
+        "artifact",
+        "file"
+      ],
+      "type": "object"
+    },
+    "publicOnly": {
+      "type": "boolean"
+    },
+    "routes": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "matchType": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "visibility": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "matchType",
+          "url",
+          "visibility"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "signals": {
+      "additionalProperties": false,
+      "properties": {
+        "raviElements": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "renderSuggested": {
+          "type": "boolean"
+        },
+        "scripts": {
+          "type": "number"
+        },
+        "staticTextChars": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "scripts",
+        "raviElements",
+        "staticTextChars",
+        "renderSuggested"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "publicOnly",
+    "page",
+    "content",
+    "links",
+    "routes",
+    "signals",
+    "contentTrust"
+  ],
+  "type": "object"
+}
+''';
+
   static const pagesShipInputSchema = r'''
 {
   "additionalProperties": false,

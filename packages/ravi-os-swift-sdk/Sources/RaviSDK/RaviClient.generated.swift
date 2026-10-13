@@ -3810,6 +3810,13 @@ public struct PagesNamespace: Sendable {
     return try await transport.call(groupSegments: ["pages"], command: "published", body: requestBody, as: PagesPublishedReturn.self)
   }
 
+  public func read(_ url: String, _ options: PagesReadOptions = .init()) async throws -> PagesReadReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["url"] = try RaviJSON.fromEncodable(url)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["pages"], command: "read", body: requestBody, as: PagesReadReturn.self)
+  }
+
   public func ship(_ args: [String]? = nil, _ options: PagesShipOptions = .init()) async throws -> PagesShipReturn {
     var requestBody: [String: RaviJSON] = [:]
     if let args {

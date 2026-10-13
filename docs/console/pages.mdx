@@ -216,6 +216,23 @@ Your agent runs the same `ravi pages ship` through the daemon, using the daemon'
 
 The daemon gives a CLI call from an agent 30 seconds. A large `--dir` upload can time out on the agent's side even though the publish finished; check `ravi pages published` before shipping again.
 
+## Let your agent read a page
+
+When you send your agent a Page link, it reads it with `ravi pages read` instead of a browser. A browser would stop at the Console login on a private page; `pages read` goes through the Console with the daemon's login and returns the page as Markdown, with its links and the host's other routes.
+
+```bash
+ravi pages read https://acme-website.ravi.page/report
+ravi pages read https://acme-website.ravi.page/report --json
+ravi pages read https://acme-website.ravi.page/report --format html
+ravi pages read https://acme-website.ravi.page/report --format zip --out ./report.zip
+ravi pages read https://docs.acme.com/ --custom-domain
+```
+
+- The agent picks the format. The default Markdown is the page's text without its styles, layout or images, and the output says so. `--format html` returns the entry file's source, and `--format zip --out <file>` (or `--format files --out <dir>`) downloads every published file, so the agent can see the design or build a page in the same style.
+- Public routes are always readable. Private, `protected_link` and password routes are read only on your own turns (the terminal, your direct chat with the agent, routines you own) and only when your login can read the project. When someone else sends the agent a private link, the command exits 3 and the agent tells them it cannot open it.
+- The read is static: the published file, not run in a browser. A data page built with JavaScript shows little text, and the result says so.
+- Ravi blocks browser and fetch tools aimed at `*.ravi.page` links and points the agent to `ravi pages read`. Every read of a private route is recorded in the Console audit log.
+
 ## Data pages
 
 Pages that read and write a Base (`--uses ravi.bases.*`) work only for signed-in members of the organization, on `private` or `protected_link` routes. `ship` refuses them on a public route (exit 2) unless you pass `--members-best-effort` on purpose. `--uses` applies to the whole host. See [Interactive pages with Bases](/console/bases).

@@ -10,6 +10,7 @@ import { createBashPermissionHook, createToolPermissionHook } from "../bash/inde
 import { createPreCompactHook } from "../hooks/index.js";
 import { createRtkRewriteHook } from "../hooks/rtk-rewrite.js";
 import { createJobPromotionHook } from "../hooks/jobs-promote.js";
+import { createPagesLinkGuardHook } from "../hooks/pages-link-guard.js";
 import { createSanitizeBashHook } from "../hooks/sanitize-bash.js";
 import { nats } from "../nats.js";
 import type { AgentConfig } from "../router/index.js";
@@ -82,6 +83,8 @@ export function createRuntimeHostHooks({
   const hookOpts = { getAgentId: () => agent.id };
   const hooks: Record<string, RuntimeHookMatcher[]> = {
     PreToolUse: [
+      // Ravi Page links go to `ravi pages read`, not a browser or fetch.
+      createPagesLinkGuardHook(),
       createToolPermissionHook(hookOpts),
       createBashPermissionHook(hookOpts),
       createSanitizeBashHook(),

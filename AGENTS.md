@@ -157,6 +157,12 @@ ravi pages create <project-ref> <site-slug> --visibility public
 ravi pages publish <project-ref> <site-slug> <artifact-id> --route / --visibility public
 ```
 
+Read a Page link with `ravi pages read <url>`, never a browser or fetch: it reads
+private Pages through Console (only on the operator's own turns; others get public
+routes only, exit 3). The default Markdown is text without the page's design; use
+`--format html`, or `--format zip|files --out <path>` for every published file, to
+see or reuse the style.
+
 `ship` executes immediately. Leftover `--execute` on `ship` is ignored.
 `create`, `publish`, domain binding, password changes, and switching a site
 to public visibility are dry-run by default (exit 3): re-run with `--execute`.

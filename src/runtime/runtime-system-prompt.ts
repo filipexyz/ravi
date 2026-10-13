@@ -47,6 +47,7 @@ export async function buildRuntimeSystemPrompt(input: RuntimeSystemPromptInput):
     ...buildSystemPromptSections(input.agent.id, input.ctx, undefined, input.sessionName, {
       agentMode: input.agent.mode,
       buildingSolutions: shouldMountBuildingSolutions(input),
+      pagesLinks: shouldMountPagesLinks(input),
     }),
     buildRuntimeOperationalContextSection(input),
     ...buildSessionGoalPromptSections(input),
@@ -84,11 +85,26 @@ function shouldMountBuildingSolutions(input: RuntimeSystemPromptInput): boolean 
 }
 
 function canRunBuildingSolutionsGroup(capabilities: readonly ContextCapability[]): boolean {
+  return canRunAnyGroup(capabilities, BUILDING_SOLUTIONS_GROUP_RULE_IDS);
+}
+
+const PAGES_GROUP_RULE_IDS: ReadonlySet<string> = new Set(["pages"]);
+
+/**
+ * "Ravi Page Links" tells the agent to read Page links with `ravi pages read`:
+ * mount it only for a non-sentinel agent that can run the pages group.
+ */
+function shouldMountPagesLinks(input: RuntimeSystemPromptInput): boolean {
+  if (input.agent.mode === "sentinel") return false;
+  return canRunAnyGroup(input.runtimeContext?.capabilities ?? [], PAGES_GROUP_RULE_IDS);
+}
+
+function canRunAnyGroup(capabilities: readonly ContextCapability[], ruleIds: ReadonlySet<string>): boolean {
   if (isAdminAll(capabilities) || selectGroupCaps(capabilities).some((cap) => cap.objectId === "*")) {
     return true;
   }
   return listGroupSkillRules()
-    .filter((rule) => BUILDING_SOLUTIONS_GROUP_RULE_IDS.has(rule.id))
+    .filter((rule) => ruleIds.has(rule.id))
     .some((rule) => capabilities.some((capability) => capabilityMatchesGroupRule(capability, rule.pattern)));
 }
 

@@ -117,6 +117,7 @@ const DEFAULT_SLACK_INBOUND_PRUNE_INTERVAL_MS = 6 * 60 * 60_000;
 const SLACK_FILE_INFO_RETRY_DELAYS_MS = [0, 250, 750, 1_500] as const;
 const SLACK_USER_MENTION_RE = /<@([UW][A-Z0-9]+)(?:\|([^>]*))?>/g;
 const SLACK_MAX_RESOLVED_MENTIONS = 20;
+const SLACK_LOOKUP_FAILURE_BACKOFF_MS = 10 * 60_000;
 
 type PublishPrompt = typeof publishSessionPrompt;
 type PublishInteraction = (topic: string, payload: Record<string, unknown>) => Promise<void>;
@@ -618,6 +619,8 @@ export class SlackSocketModeService {
   private readonly now: () => number;
   private readonly seenEnvelopeIds = new RecentIdCache();
   private readonly userProfiles = new Map<string, SlackUserProfile | null>();
+  private readonly channelNames = new Map<string, string>();
+  private readonly lookupFailures = new Map<string, number>();
   private localBotIdentity: SlackLocalBotIdentity | null = null;
   private localBotIdentityInFlight: Promise<SlackLocalBotIdentity | null> | null = null;
   private nextLocalBotIdentityAttemptAt = 0;
@@ -1370,6 +1373,7 @@ export class SlackSocketModeService {
     if (cached !== undefined) return cached;
     const usersInfo = (this.webClient as Partial<SlackWebApiClient>).usersInfo;
     if (typeof usersInfo !== "function") return null;
+    if (this.slackLookupRecentlyFailed(`user:${userId}`)) return null;
     try {
       const response = await usersInfo.call(this.webClient, userId);
       const user = recordField(response, "user");
@@ -1396,6 +1400,7 @@ export class SlackSocketModeService {
       this.userProfiles.set(userId, resolved);
       return resolved;
     } catch (error) {
+      this.lookupFailures.set(`user:${userId}`, this.now());
       log.warn("Slack user profile could not be resolved", {
         accountId: this.options.accountId,
         userId,
@@ -1428,6 +1433,47 @@ export class SlackSocketModeService {
       const name = names.get(userId) ?? label?.trim();
       return name ? `@${name} (<@${userId}>)` : match;
     });
+  }
+
+  private async slackChannelName(channelId: string): Promise<string | null> {
+    const cached = this.channelNames.get(channelId);
+    if (cached !== undefined) return cached;
+    const conversationsInfo = (this.webClient as Partial<SlackWebApiClient>).conversationsInfo;
+    if (typeof conversationsInfo !== "function") return null;
+    if (this.slackLookupRecentlyFailed(`channel:${channelId}`)) return null;
+    try {
+      const response = await conversationsInfo.call(this.webClient, { channel: channelId });
+      const name = stringField(recordField(response, "channel"), "name");
+      if (!name) {
+        // A response without a name is retried after the backoff, not cached for the process lifetime.
+        this.lookupFailures.set(`channel:${channelId}`, this.now());
+        return null;
+      }
+      if (this.channelNames.size >= 1_000) {
+        const oldest = this.channelNames.keys().next().value;
+        if (oldest) this.channelNames.delete(oldest);
+      }
+      this.channelNames.set(channelId, name);
+      return name;
+    } catch (error) {
+      this.lookupFailures.set(`channel:${channelId}`, this.now());
+      log.warn("Slack channel name could not be resolved", {
+        accountId: this.options.accountId,
+        channelId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+
+  // A failed users.info / conversations.info (missing scope, rate limit) is not
+  // retried on every inbound message; the next lookup waits out the backoff.
+  private slackLookupRecentlyFailed(key: string): boolean {
+    const failedAt = this.lookupFailures.get(key);
+    if (failedAt === undefined) return false;
+    if (this.now() - failedAt < SLACK_LOOKUP_FAILURE_BACKOFF_MS) return true;
+    this.lookupFailures.delete(key);
+    return false;
   }
 
   private async intakeSlackHumanSender(input: {
@@ -1781,6 +1827,12 @@ export class SlackSocketModeService {
       normalizedSenderId: message.userId,
       ...actorIdentity,
     };
+    const senderProfileUserId = message.slackUserId ?? message.userId;
+    const senderDisplayName =
+      message.senderKind !== "bot" && isSlackHumanUserId(senderProfileUserId)
+        ? ((await this.slackUserProfile(senderProfileUserId))?.displayName ?? null)
+        : null;
+    const channelName = peerKind !== "dm" ? await this.slackChannelName(message.channelId) : null;
     const context: MessageContext = {
       channelId: "slack",
       channelName: "Slack",
@@ -1789,10 +1841,10 @@ export class SlackSocketModeService {
       chatId: message.channelId,
       messageId: message.ts,
       senderId: message.userId,
-      senderName: `<@${message.userId}>`,
+      senderName: senderDisplayName ?? `<@${message.userId}>`,
       isGroup: peerKind !== "dm",
       groupId: peerKind !== "dm" ? message.channelId : undefined,
-      groupName: peerKind !== "dm" ? message.channelId : undefined,
+      groupName: peerKind !== "dm" ? (channelName ?? message.channelId) : undefined,
       timestamp: message.eventTimeMs,
       canonicalChatId: canonicalChat.id,
       rawSenderId: message.userId,
@@ -1837,7 +1889,7 @@ export class SlackSocketModeService {
           name: sessionName,
         },
         prompt: {
-          prompt: formatSlackPrompt({ ...message, text: promptText }, processedFiles),
+          prompt: formatSlackPrompt({ ...message, text: promptText }, processedFiles, senderDisplayName),
           source: { ...source },
           context: { ...context },
           deliveryBarrier: "after_tool",
@@ -2610,14 +2662,19 @@ function parseSlackMessagePrefix(text: string): ChannelMessagePrefix | null {
   );
 }
 
-function formatSlackPrompt(message: SlackNormalizedMessage, files: readonly ProcessedSlackFile[] = []): string {
+function formatSlackPrompt(
+  message: SlackNormalizedMessage,
+  files: readonly ProcessedSlackFile[] = [],
+  senderDisplayName: string | null = null,
+): string {
   const parts = [
     `Slack ${message.channelId}`,
     message.thread.inboundThreadTs ? `thread:${message.thread.inboundThreadTs}` : undefined,
     `mid:${message.ts}`,
     new Date(message.eventTimeMs).toISOString(),
   ].filter(Boolean);
-  return `[${parts.join(" ")}]\n<@${message.userId}>: ${formatSlackMessageBody(message, files)}`;
+  const sender = senderDisplayName ? `${senderDisplayName} (<@${message.userId}>)` : `<@${message.userId}>`;
+  return `[${parts.join(" ")}]\n${sender}: ${formatSlackMessageBody(message, files)}`;
 }
 
 function slackBackendIngressIdentity(input: {

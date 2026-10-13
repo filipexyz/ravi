@@ -420,6 +420,20 @@ describe("buildRuntimeSystemPrompt Building Solutions", () => {
     expectMounted(await promptFor(null), false);
   });
 
+  it("mounts Ravi Page Links for agents that can run the pages group, never for sentinels", async () => {
+    const hasLinks = (prompt: { sections: { id: string }[] }) =>
+      prompt.sections.some((section) => section.id === "pages.links");
+
+    const fullAccess = profileCapabilities("builder", "full-access");
+    expect(hasLinks(await promptFor(fullAccess))).toBe(true);
+    expect(hasLinks(await promptFor([{ permission: "execute", objectType: "group", objectId: "pages" }]))).toBe(true);
+    expect(hasLinks(await promptFor([{ permission: "execute", objectType: "group", objectId: "sessions" }]))).toBe(
+      false,
+    );
+    expect(hasLinks(await promptFor(null))).toBe(false);
+    expect(hasLinks(await promptFor(fullAccess, { mode: "sentinel" }))).toBe(false);
+  });
+
   it("follows solucoes visibility in the skill allowlist", async () => {
     const capabilities = profileCapabilities("builder", "full-access");
 

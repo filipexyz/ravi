@@ -12186,6 +12186,92 @@ export type PagesPublishedReturn = {
   total: number;
 };
 
+/** Input shape for `pages.read`. */
+export type PagesReadInput = {
+  console?: string;
+  cursor?: string;
+  customDomain?: boolean;
+  format?: string;
+  maxChars?: string;
+  out?: string;
+  url: string;
+};
+
+/** Return shape for `pages.read`. */
+export type PagesReadReturn = {
+  consoleUrl: string;
+  content: {
+    cursor: number;
+    format: "markdown" | "html" | "files" | "zip";
+    nextCursor: number | null;
+    note: string;
+    representation: "extracted_markdown" | "entry_source" | "file_list";
+    text: string;
+    totalChars: number;
+    truncated: boolean;
+  };
+  contentTrust: "untrusted";
+  download?: {
+    files: Array<{
+      contentType: string;
+      entrypoint: boolean;
+      path: string;
+      sizeBytes: number;
+    }>;
+    kind: "directory" | "zip";
+    path: string;
+    totalBytes: number;
+  };
+  links: Array<{
+    text: string;
+    url: string;
+  }>;
+  page: {
+    artifact: {
+      id: string;
+      versionId: string;
+      versionNumber: number;
+    };
+    description: string | null;
+    file: {
+      contentType: string;
+      path: string;
+      sha256: string | null;
+      sizeBytes: number | null;
+    };
+    host: string;
+    path: string;
+    projectId: string;
+    release: {
+      id: string;
+      number: number;
+    };
+    route: {
+      id: string;
+      matchType: string;
+      path: string;
+    };
+    siteId: string;
+    title: string;
+    url: string;
+    visibility: string;
+  };
+  publicOnly: boolean;
+  routes: Array<{
+    matchType: string;
+    path: string;
+    url: string;
+    visibility: string;
+  }>;
+  signals: {
+    raviElements: string[];
+    renderSuggested: boolean;
+    scripts: number;
+    staticTextChars: number;
+  };
+  success: true;
+};
+
 /** Input shape for `pages.ship`. */
 export type PagesShipInput = {
   args?: string[];

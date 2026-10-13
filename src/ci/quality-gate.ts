@@ -123,6 +123,10 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/hooks/gh-watch.test.ts",
     // Decisão de promoção de comando longo para job, aplicada por host-services.
     "src/jobs/promotion.test.ts",
+    // System prompt sections mounted by capability (runtime-system-prompt.ts).
+    "src/runtime/runtime-system-prompt.test.ts",
+    // The Page link guard installed in host-hooks.ts PreToolUse.
+    "src/hooks/pages-link-guard.test.ts",
   ],
   "src/jobs/": ["src/jobs/jobs.test.ts", "src/jobs/promotion.test.ts"],
   "src/watch/": [
@@ -144,6 +148,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/hooks/rtk-rewrite.test.ts",
     // Safe/unsafe classification that gates prompt-lane interrupts while a tool runs.
     "src/hooks/tool-safety.test.ts",
+    // Ravi Page links: browser, WebFetch and shell fetches go to `ravi pages read`.
+    "src/hooks/pages-link-guard.test.ts",
   ],
   "src/session-trace/": ["src/session-trace/session-trace.test.ts"],
   "src/triggers/": [

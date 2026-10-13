@@ -15815,6 +15815,74 @@ class PagesPublishedReturn {
 
 PagesPublishedReturn pagesPublishedReturnFromJson(Object? json) => PagesPublishedReturn.fromJsonValue(json);
 
+class PagesReadOptions {
+  const PagesReadOptions({this.console, this.cursor, this.customDomain, this.format, this.maxChars, this.out});
+
+  final String? console;
+  final String? cursor;
+  final bool? customDomain;
+  final String? format;
+  final String? maxChars;
+  final String? out;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (cursor != null) {
+      into["cursor"] = RaviJson.from(cursor);
+    }
+    if (customDomain != null) {
+      into["customDomain"] = RaviJson.from(customDomain);
+    }
+    if (format != null) {
+      into["format"] = RaviJson.from(format);
+    }
+    if (maxChars != null) {
+      into["maxChars"] = RaviJson.from(maxChars);
+    }
+    if (out != null) {
+      into["out"] = RaviJson.from(out);
+    }
+  }
+}
+
+class PagesReadReturn {
+  const PagesReadReturn({required this.consoleUrl, required this.content, required this.contentTrust, this.download, required this.links, required this.page, required this.publicOnly, required this.routes, required this.signals, required this.success});
+
+  final String consoleUrl;
+  final RaviJson content;
+  final String contentTrust;
+  final RaviJson? download;
+  final List<RaviJson> links;
+  final RaviJson page;
+  final bool publicOnly;
+  final List<RaviJson> routes;
+  final RaviJson signals;
+  final bool success;
+
+  factory PagesReadReturn.fromJson(Map<String, Object?> json) {
+    return PagesReadReturn(
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      content: RaviJson.from(json["content"]),
+      contentTrust: raviJsonAsString(json["contentTrust"]),
+      download: json["download"] == null ? null : RaviJson.from(json["download"]),
+      links: raviJsonAsList(json["links"], RaviJson.from),
+      page: RaviJson.from(json["page"]),
+      publicOnly: raviJsonAsBool(json["publicOnly"]),
+      routes: raviJsonAsList(json["routes"], RaviJson.from),
+      signals: RaviJson.from(json["signals"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static PagesReadReturn fromJsonValue(Object? json) {
+    return PagesReadReturn.fromJson(raviJsonObject(json, "PagesReadReturn"));
+  }
+}
+
+PagesReadReturn pagesReadReturnFromJson(Object? json) => PagesReadReturn.fromJsonValue(json);
+
 class PagesShipOptions {
   const PagesShipOptions({this.body, this.console, this.dir, this.entrypoint, this.execute, this.html, this.membersBestEffort, this.project, this.route, this.title, this.uses, this.visibility});
 
