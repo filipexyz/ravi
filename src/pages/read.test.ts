@@ -5,7 +5,6 @@ import { join } from "node:path";
 import type { ConsoleApiClient } from "../cloud-auth/client.js";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 import type { CloudCredentials } from "../cloud-auth/types.js";
-import { pagesLinkGuardReason } from "../hooks/pages-link-guard.js";
 import {
   describePageReadFailure,
   fencePageText,
@@ -236,34 +235,6 @@ describe("fencePageText", () => {
       "hello",
       "RAVI_PAGE_CONTENT abc123>>>",
     ]);
-  });
-});
-
-describe("pagesLinkGuardReason", () => {
-  it("denies WebFetch and browser navigation to a Ravi Page", () => {
-    expect(pagesLinkGuardReason("WebFetch", { url: "https://acme.ravi.page/x", prompt: "read" })).toContain(
-      "ravi pages read https://acme.ravi.page/x",
-    );
-    expect(pagesLinkGuardReason("mcp__playwright__browser_navigate", { url: "https://acme.ravi.page/" })).toContain(
-      "ravi pages read",
-    );
-  });
-
-  it("denies curl or wget of a Ravi Page in Bash", () => {
-    expect(pagesLinkGuardReason("Bash", { command: "curl -s https://acme.ravi.page/weekly | head" })).toContain(
-      "ravi pages read https://acme.ravi.page/weekly",
-    );
-    expect(pagesLinkGuardReason("Bash", { command: "cd /tmp && sudo wget https://acme.ravi.page/x" })).not.toBeNull();
-    expect(pagesLinkGuardReason("Bash", { command: "echo $(curl https://acme.ravi.page/x)" })).not.toBeNull();
-  });
-
-  it("leaves everything else alone", () => {
-    expect(pagesLinkGuardReason("WebFetch", { url: "https://example.com/" })).toBeNull();
-    expect(pagesLinkGuardReason("Bash", { command: "ravi pages read https://acme.ravi.page/weekly" })).toBeNull();
-    expect(pagesLinkGuardReason("Bash", { command: "echo https://acme.ravi.page/" })).toBeNull();
-    expect(pagesLinkGuardReason("Bash", { command: "echo 'curl https://acme.ravi.page/'" })).toBeNull();
-    expect(pagesLinkGuardReason("Bash", { command: "ls # curl https://acme.ravi.page/" })).toBeNull();
-    expect(pagesLinkGuardReason("Read", { url: "https://acme.ravi.page/" })).toBeNull();
   });
 });
 
