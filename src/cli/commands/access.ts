@@ -154,9 +154,7 @@ function printRequest(result: AccessRequestCreateResult): void {
     return;
   }
   const request = result.request;
-  console.log(
-    `Access requested for ${request.url || request.host + request.path} (request ${request.id}, ${request.status}).`,
-  );
+  console.log(`Access requested for ${request.host + request.path} (request ${request.id}, ${request.status}).`);
   console.log(`Approval link: ${result.approvalUrl}`);
   console.log(result.approvalNote);
   console.log(`Check it with: ravi access status ${request.id}`);
@@ -165,7 +163,7 @@ function printRequest(result: AccessRequestCreateResult): void {
 function printStatus(result: AccessRequestStatusResult): void {
   const request = result.request;
   console.log(`Request ${request.id}: ${request.status}`);
-  console.log(`Page: ${request.url || request.host + request.path}`);
+  console.log(`Page: ${request.host + request.path}`);
   if (request.decidedAt) console.log(`Decided: ${request.decidedAt}`);
   else if (request.expiresAt) console.log(`Expires: ${request.expiresAt}`);
   if (request.status === "pending") {

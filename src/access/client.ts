@@ -674,9 +674,10 @@ function agentBody(agent: AccessAgent): { id: string; name?: string } {
   return { id: agent.id, ...(agent.name ? { name: agent.name } : {}) };
 }
 
-/** Console's own link when it sends one (https only), else `<console>/access/requests/<id>`. */
+/** Console's own link (`request.url`, https only), else `<console>/access/requests/<id>`. */
 function approvalUrl(consoleUrl: string, requestId: string, payload: Record<string, unknown>): string {
-  const given = text(payload.approvalUrl) || text(record(payload.request).approvalUrl);
+  const request = record(payload.request);
+  const given = text(request.url) || text(payload.approvalUrl) || text(request.approvalUrl);
   if (given.startsWith("https://")) return given;
   return `${consoleUrl.replace(/\/+$/, "")}/access/requests/${encodeURIComponent(requestId)}`;
 }
@@ -715,6 +716,7 @@ function normalizeRequest(value: unknown): AccessRequest {
   return {
     id: text(request.id),
     status: text(request.status),
+    /** The forwardable approval link, not the page. */
     url: text(request.url),
     path: text(request.path),
     host: text(request.host),

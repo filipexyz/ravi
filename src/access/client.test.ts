@@ -268,7 +268,7 @@ describe("Console calls", () => {
     const request = {
       id: "req_1",
       status: "pending",
-      url: "https://other.ravi.page/x",
+      url: "https://console.example/access/requests/req_1",
       path: "/x",
       host: "other.ravi.page",
       createdAt: "2026-10-13T12:00:00.000Z",
