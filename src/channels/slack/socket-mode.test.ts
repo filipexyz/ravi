@@ -1205,6 +1205,77 @@ describe("Slack Socket Mode routing", () => {
     expect(dbLegacySessionChatBindingsTableExists()).toBe(false);
   });
 
+  it("names the Slack sender and channel in the prompt and falls back to ids when lookups fail", async () => {
+    const config: RouterConfig = {
+      agents: { "ravi-hil": { id: "ravi-hil", cwd: "/tmp/ravi-hil", dmScope: "per-peer" } },
+      routes: [
+        {
+          pattern: "group:C123",
+          accountId: "ravi-rbbt-slack",
+          agent: "ravi-hil",
+          session: "ravi-hil",
+          priority: 100,
+          policy: "open",
+          channel: "slack",
+        },
+      ],
+      defaultAgent: "ravi-hil",
+      defaultDmScope: "per-peer",
+      accountAgents: { "ravi-rbbt-slack": "ravi-hil" },
+      instanceToAccount: {},
+      instances: {},
+    };
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const usersInfo = mock(async (user: string) => {
+      if (user === "U404") throw new Error("slack_users.info_user_not_found");
+      return {
+        ok: true,
+        user: { id: user, name: "ana", profile: { display_name: "Ana", real_name: "Ana Example" } },
+      };
+    });
+    const conversationsInfo = mock(async () => ({ ok: true, channel: { id: "C123", name: "general" } }));
+    const service = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "ravi-rbbt-slack",
+      routeAccountId: "ravi-rbbt-slack",
+      instanceId: "slack-instance-1",
+      getRouterConfig: () => config,
+      publishPrompt: async (sessionName, payload) => {
+        published.push({ sessionName, payload });
+      },
+      webClient: { usersInfo, conversationsInfo } as never,
+    });
+    const envelope = (id: string, user: string, ts: string): SlackSocketEnvelope => ({
+      envelope_id: id,
+      payload: {
+        team_id: "T1",
+        event_id: id,
+        event_time: 1_713_000_000,
+        event: { type: "message", channel: "C123", channel_type: "channel", user, text: "oi", ts },
+      },
+    });
+
+    await service.handleEnvelope(envelope("Ev-name-1", "U123", "1713000000.000100"));
+    await service.handleEnvelope(envelope("Ev-name-2", "U123", "1713000000.000200"));
+    await service.handleEnvelope(envelope("Ev-name-3", "U404", "1713000000.000300"));
+    await service.handleEnvelope(envelope("Ev-name-4", "U404", "1713000000.000400"));
+
+    expect(published).toHaveLength(4);
+    expect(String(published[0]?.payload.prompt)).toEndWith("\nAna (<@U123>): oi");
+    expect(published[0]?.payload.context).toMatchObject({
+      senderId: "U123",
+      senderName: "Ana",
+      groupId: "C123",
+      groupName: "general",
+    });
+    expect(String(published[2]?.payload.prompt)).toEndWith("\n<@U404>: oi");
+    expect(published[2]?.payload.context).toMatchObject({ senderName: "<@U404>", groupName: "general" });
+    // Cached: one users.info per user (the failure is not retried right away), one conversations.info per channel.
+    expect(usersInfo).toHaveBeenCalledTimes(2);
+    expect(conversationsInfo).toHaveBeenCalledTimes(1);
+  });
+
   it("interprets leading >> and !! prefixes on Slack messages", async () => {
     const config: RouterConfig = {
       agents: {
