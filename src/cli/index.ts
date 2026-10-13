@@ -76,6 +76,7 @@ registerCommands(program, Object.values(allCommands) as Array<new () => object>)
 // envelope instead of plain text with exit 1. Unlisted groups keep commander's
 // default behavior until they are migrated.
 const AGENT_CONTRACT_DOMAINS = [
+  "access",
   "agents",
   "artifacts",
   "audio",
@@ -103,6 +104,7 @@ const AGENT_CONTRACT_DOMAINS = [
   "inbox",
   "insights",
   "instances",
+  "invites",
   "mail",
   "media",
   "meetings",

@@ -2,6 +2,74 @@
 // Run `ravi sdk client generate` to regenerate.
 // Drift is detected by `ravi sdk client check` (CI).
 
+/** Input shape for `access.request`. */
+export type AccessRequestInput = {
+  console?: string;
+  execute?: boolean;
+  message?: string;
+  url: string;
+};
+
+/** Return shape for `access.request`. */
+export type AccessRequestReturn = ({
+  actedBy: ({
+    kind: "operator";
+  }) | ({
+    contactId: string;
+    kind: "contact";
+  });
+  approvalNote: string;
+  approvalUrl: string;
+  consoleUrl: string;
+  request: {
+    createdAt: string;
+    decidedAt: string | null;
+    expiresAt: string | null;
+    host: string;
+    id: string;
+    path: string;
+    status: string;
+    url: string;
+  };
+  status: "requested";
+  success: true;
+}) | ({
+  actedBy: ({
+    kind: "operator";
+  }) | ({
+    contactId: string;
+    kind: "contact";
+  });
+  consoleUrl: string;
+  status: "already_allowed";
+  success: true;
+  url: string;
+});
+
+/** Input shape for `access.status`. */
+export type AccessStatusInput = {
+  console?: string;
+  requestId: string;
+};
+
+/** Return shape for `access.status`. */
+export type AccessStatusReturn = {
+  approvalNote: string;
+  approvalUrl: string;
+  consoleUrl: string;
+  request: {
+    createdAt: string;
+    decidedAt: string | null;
+    expiresAt: string | null;
+    host: string;
+    id: string;
+    path: string;
+    status: string;
+    url: string;
+  };
+  success: true;
+};
+
 /** Input shape for `adapters.list`. */
 export type AdaptersListInput = {
   limit?: string;
@@ -10129,6 +10197,86 @@ export type InstancesTargetInput = {
 /** Return shape for `instances.target`. */
 export type InstancesTargetReturn = Record<string, unknown>;
 
+/** Input shape for `invites.create`. */
+export type InvitesCreateInput = {
+  console?: string;
+  email?: string;
+  execute?: boolean;
+  reason?: string;
+  role?: string;
+};
+
+/** Return shape for `invites.create`. */
+export type InvitesCreateReturn = {
+  actedBy: ({
+    kind: "operator";
+  }) | ({
+    contactId: string;
+    kind: "contact";
+  });
+  consoleUrl: string;
+  invite: {
+    createdAt: string;
+    email: string;
+    expiresAt: string;
+    id: string;
+    invitedBy: string | null;
+    role: string;
+  };
+  success: true;
+  url: string;
+};
+
+/** Input shape for `invites.list`. */
+export type InvitesListInput = {
+  console?: string;
+  limit?: string;
+  offset?: string;
+};
+
+/** Return shape for `invites.list`. */
+export type InvitesListReturn = {
+  consoleUrl: string;
+  invites: Array<{
+    createdAt: string;
+    email: string;
+    expiresAt: string;
+    id: string;
+    invitedBy: string | null;
+    role: string;
+  }>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  success: true;
+  total: number;
+};
+
+/** Input shape for `invites.revoke`. */
+export type InvitesRevokeInput = {
+  console?: string;
+  inviteId: string;
+};
+
+/** Return shape for `invites.revoke`. */
+export type InvitesRevokeReturn = {
+  actedBy: ({
+    kind: "operator";
+  }) | ({
+    contactId: string;
+    kind: "contact";
+  });
+  consoleUrl: string;
+  revoked: boolean;
+  success: true;
+};
+
 /** Input shape for `jobs.kill`. */
 export type JobsKillInput = {
   id: string;
@@ -11835,6 +11983,42 @@ export type ObserversShowReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `pages.access`. */
+export type PagesAccessInput = {
+  console?: string;
+  url: string;
+};
+
+/** Return shape for `pages.access`. */
+export type PagesAccessReturn = {
+  actedBy: ({
+    kind: "operator";
+  }) | ({
+    contactId: string;
+    kind: "contact";
+  });
+  consoleUrl: string;
+  grants: Array<{
+    createdAt: string;
+    createdBy: string | null;
+    email: string;
+    expiresAt: string | null;
+    id: string;
+    name: string | null;
+    routeId: string | null;
+    routePath: string | null;
+    scope: "route" | "site";
+    url: string;
+    userId: string;
+  }>;
+  site: {
+    host: string;
+    id: string;
+  };
+  success: true;
+  total: number;
+};
+
 /** Input shape for `pages.assertion.audiences.list`. */
 export type PagesAssertionAudiencesListInput = {
   console?: string;
@@ -12272,6 +12456,44 @@ export type PagesReadReturn = {
   success: true;
 };
 
+/** Input shape for `pages.share`. */
+export type PagesShareInput = {
+  console?: string;
+  execute?: boolean;
+  expires?: string;
+  reason?: string;
+  site?: boolean;
+  url: string;
+  with?: string;
+};
+
+/** Return shape for `pages.share`. */
+export type PagesShareReturn = {
+  actedBy: ({
+    kind: "operator";
+  }) | ({
+    contactId: string;
+    kind: "contact";
+  });
+  consoleUrl: string;
+  created: boolean;
+  grant: {
+    createdAt: string;
+    createdBy: string | null;
+    email: string;
+    expiresAt: string | null;
+    id: string;
+    name: string | null;
+    routeId: string | null;
+    routePath: string | null;
+    scope: "route" | "site";
+    url: string;
+    userId: string;
+  };
+  success: true;
+  userCreated: boolean;
+};
+
 /** Input shape for `pages.ship`. */
 export type PagesShipInput = {
   args?: string[];
@@ -12314,6 +12536,28 @@ export type PagesShipReturn = {
   uses?: string[];
   visibility: string;
   warnings?: string[];
+};
+
+/** Input shape for `pages.unshare`. */
+export type PagesUnshareInput = {
+  console?: string;
+  grant?: string;
+  site?: boolean;
+  url?: string;
+  with?: string;
+};
+
+/** Return shape for `pages.unshare`. */
+export type PagesUnshareReturn = {
+  actedBy: ({
+    kind: "operator";
+  }) | ({
+    contactId: string;
+    kind: "contact";
+  });
+  consoleUrl: string;
+  revoked: boolean;
+  success: true;
 };
 
 /** Input shape for `pages.update`. */

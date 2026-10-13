@@ -163,6 +163,20 @@ routes only, exit 3). The default Markdown is text without the page's design; us
 `--format html`, or `--format zip|files --out <path>` for every published file, to
 see or reuse the style.
 
+To show a private page to one person, share it by email; never make it public or
+add a password for that. To bring someone into the organization, invite them. When
+a page is denied, ask its managers (the printed approval link may be forwarded;
+only the page's managers approve). Chat turns from someone else act for that
+person through their `ravi link` (`ACTOR_NOT_LINKED`: send them `ravi link`).
+
+```bash
+ravi pages share <url> --with <email> --execute
+ravi pages access <url>
+ravi pages unshare <url> --with <email>
+ravi invites create --email <email> --role developer --execute
+ravi access request <url> --message "..." --execute
+```
+
 `ship` executes immediately. Leftover `--execute` on `ship` is ignored.
 `create`, `publish`, domain binding, password changes, and switching a site
 to public visibility are dry-run by default (exit 3): re-run with `--execute`.

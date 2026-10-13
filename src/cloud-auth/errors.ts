@@ -42,6 +42,7 @@ export const CLOUD_AUTH_ERROR_CODES = [
   "CONNECTOR_PERMISSION_REQUIRED",
   "CONNECTOR_POLICY_ABOVE_CEILING",
   "CONNECTOR_FORBIDDEN",
+  "ACTOR_NOT_LINKED",
 ] as const;
 
 export type CloudAuthErrorCode = (typeof CLOUD_AUTH_ERROR_CODES)[number];
@@ -71,6 +72,9 @@ export const CONNECTOR_POLICY_CODES: ReadonlySet<CloudAuthErrorCode> = new Set([
   "CONNECTOR_APPROVAL_DENIED",
   "CONNECTOR_CONSENT_REQUIRED",
   "CONNECTOR_NOT_LINKED",
+  // Console access calls (`ravi pages share`, `ravi invites`, `ravi access`)
+  // that name a chat author with no `ravi link` binding.
+  "ACTOR_NOT_LINKED",
 ]);
 
 export function isConnectorPolicyCode(code: CloudAuthErrorCode): boolean {

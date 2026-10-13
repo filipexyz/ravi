@@ -11,6 +11,7 @@ class RaviClient {
 
   final RaviTransport _transport;
 
+  AccessNamespace get access => AccessNamespace(_transport);
   AdaptersNamespace get adapters => AdaptersNamespace(_transport);
   AgentsNamespace get agents => AgentsNamespace(_transport);
   AppsNamespace get apps => AppsNamespace(_transport);
@@ -43,6 +44,7 @@ class RaviClient {
   InboxNamespace get inbox => InboxNamespace(_transport);
   InsightsNamespace get insights => InsightsNamespace(_transport);
   InstancesNamespace get instances => InstancesNamespace(_transport);
+  InvitesNamespace get invites => InvitesNamespace(_transport);
   JobsNamespace get jobs => JobsNamespace(_transport);
   MailNamespace get mail => MailNamespace(_transport);
   MediaNamespace get media => MediaNamespace(_transport);
@@ -80,6 +82,36 @@ class RaviClient {
   WorkObjectsNamespace get workObjects => WorkObjectsNamespace(_transport);
   WorkflowsNamespace get workflows => WorkflowsNamespace(_transport);
   YtNamespace get yt => YtNamespace(_transport);
+}
+
+class AccessNamespace {
+  const AccessNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<AccessRequestReturn> request(String url, [AccessRequestOptions options = const AccessRequestOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["url"] = RaviJson.from(url);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["access"],
+      command: "request",
+      body: requestBody,
+      decode: accessRequestReturnFromJson,
+    );
+  }
+
+  Future<AccessStatusReturn> status(String requestId, [AccessStatusOptions options = const AccessStatusOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["requestId"] = RaviJson.from(requestId);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["access"],
+      command: "status",
+      body: requestBody,
+      decode: accessStatusReturnFromJson,
+    );
+  }
 }
 
 class AdaptersNamespace {
@@ -4411,6 +4443,46 @@ class InstancesRoutesNamespace {
   }
 }
 
+class InvitesNamespace {
+  const InvitesNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<InvitesCreateReturn> create([InvitesCreateOptions options = const InvitesCreateOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["invites"],
+      command: "create",
+      body: requestBody,
+      decode: invitesCreateReturnFromJson,
+    );
+  }
+
+  Future<InvitesListReturn> list([InvitesListOptions options = const InvitesListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["invites"],
+      command: "list",
+      body: requestBody,
+      decode: invitesListReturnFromJson,
+    );
+  }
+
+  Future<InvitesRevokeReturn> revoke(String inviteId, [InvitesRevokeOptions options = const InvitesRevokeOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["inviteId"] = RaviJson.from(inviteId);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["invites"],
+      command: "revoke",
+      body: requestBody,
+      decode: invitesRevokeReturnFromJson,
+    );
+  }
+}
+
 class JobsNamespace {
   const JobsNamespace(this._transport);
 
@@ -5256,6 +5328,18 @@ class PagesNamespace {
 
   PagesPasswordNamespace get password => PagesPasswordNamespace(_transport);
 
+  Future<PagesAccessReturn> access(String url, [PagesAccessOptions options = const PagesAccessOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["url"] = RaviJson.from(url);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["pages"],
+      command: "access",
+      body: requestBody,
+      decode: pagesAccessReturnFromJson,
+    );
+  }
+
   Future<PagesCreateReturn> create(List<String> args, [PagesCreateOptions options = const PagesCreateOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["args"] = RaviJson.from(args);
@@ -5332,6 +5416,18 @@ class PagesNamespace {
     );
   }
 
+  Future<PagesShareReturn> share(String url, [PagesShareOptions options = const PagesShareOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["url"] = RaviJson.from(url);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["pages"],
+      command: "share",
+      body: requestBody,
+      decode: pagesShareReturnFromJson,
+    );
+  }
+
   Future<PagesShipReturn> ship([List<String>? args, PagesShipOptions options = const PagesShipOptions()]) async {
     final requestBody = <String, RaviJson>{};
     if (args != null) {
@@ -5343,6 +5439,20 @@ class PagesNamespace {
       command: "ship",
       body: requestBody,
       decode: pagesShipReturnFromJson,
+    );
+  }
+
+  Future<PagesUnshareReturn> unshare([String? url, PagesUnshareOptions options = const PagesUnshareOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    if (url != null) {
+      requestBody["url"] = RaviJson.from(url);
+    }
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["pages"],
+      command: "unshare",
+      body: requestBody,
+      decode: pagesUnshareReturnFromJson,
     );
   }
 

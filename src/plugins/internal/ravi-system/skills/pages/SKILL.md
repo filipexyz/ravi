@@ -6,6 +6,7 @@ description: |
   - ler o conteúdo de um link de Page (`ravi pages read <url>`) em vez de abrir no navegador
   - publicar uma página de dados sobre uma view de Bases (`--uses ravi.bases.*`, lista que vale para o host inteiro)
   - mudar visibilidade, senha ou domínio de uma rota sem reenviar arquivos
+  - mostrar uma página privada a uma pessoa (`ravi pages share`), trazer alguém para a org (`ravi invites create`) ou pedir acesso a uma página negada (`ravi access request`)
   - dar à página a asserção do viewer para chamar a sua própria API
   - ligar ou ajustar o Page Chat (agente de voz da página) e registrar ações que ele pode executar
   page, pages, HTML, rota, URL, publicar, hospedar, landing, snapshot, site
@@ -32,7 +33,7 @@ Rode com `--json` sempre que for decidir programaticamente. Com `--json`, falha 
 
 Exit: `0` sucesso · `1` erro de execução (`SITE_NOT_FOUND`, `ROUTE_NOT_FOUND`, `CONFLICT` de comentário não lido, auth/provider) · `2` uso (falta `--title`, `--body`/`--html`/`--dir` conflitantes, slug reservado) · `3` freio de escrita, não erro: nada foi enviado; o envelope traz `dryRun:true` e `plan`. Revise e repita com `--execute`.
 
-Exit 3 não se aplica a `pages ship`. O ship escreve na hora, e `--execute` nele é no-op (aceito por compatibilidade). O freio continua em `pages create`, `pages publish`, `password set/remove`, `domains`, `assertion audiences set/remove`, `visibility`/`update` para `public` e `chat set --enabled true`.
+Exit 3 não se aplica a `pages ship`. O ship escreve na hora, e `--execute` nele é no-op (aceito por compatibilidade). O freio continua em `pages create`, `pages publish`, `password set/remove`, `domains`, `assertion audiences set/remove`, `visibility`/`update` para `public`, `chat set --enabled true`, `pages share`, `invites create` e `access request`.
 
 `--json` de sucesso do ship. `slug` é o host do projeto. `route` é a página. O campo `site` é o registro desse host:
 
@@ -94,6 +95,47 @@ ravi pages read https://relatorios.acme.com/ --custom-domain            # domín
 - Rota pública: sempre. Rota private, protected_link ou com senha: só no turno do próprio operador (terminal, a DM dele, as rotinas dele) e se o `ravi login` lê o projeto. Em outro turno sai exit 3 (`PAGE_ACCESS_DENIED`, `reason: public_only`): diga à pessoa que não dá para abrir essa página privada aqui e não tente outro caminho.
 - Leitura estática: página montada por JavaScript (página de dados com Bases) traz pouco texto e avisa (`signals.renderSuggested`).
 - Exit: `1` com `PAGE_NOT_FOUND` (link sem página publicada) ou `PAGE_CONTENT_UNSUPPORTED` (rota que não serve texto); `2` host que não é `*.ravi.page` sem `--custom-domain`.
+
+## Dar acesso a uma pessoa
+
+Para mostrar uma página privada a UMA pessoa, compartilhe com o e-mail dela. Não torne a rota `public` nem ponha senha para isso.
+
+```bash
+ravi pages share https://acme-proj.ravi.page/relatorio --with ana@example.com --execute
+ravi pages share https://acme-proj.ravi.page/relatorio --with ana@example.com --expires 30d --reason "Revisão do board" --execute
+ravi pages share https://acme-proj.ravi.page/ --with ana@example.com --site --execute   # todas as rotas privadas do host
+ravi pages access https://acme-proj.ravi.page/relatorio          # quem recebeu acesso, por quê, até quando
+ravi pages unshare https://acme-proj.ravi.page/relatorio --with ana@example.com
+ravi pages unshare --grant <grant-id>
+```
+
+- `share` tem freio: sem `--execute` sai o plano (exit 3). `unshare` só reduz acesso e aplica na hora.
+- A pessoa entra no Console com aquele e-mail (verificado) e vê só o que recebeu: a rota, ou com `--site` toda rota privada do host. Não vira membro: sem barra do Pages, sem Page Chat e sem dados vivos de Bases (página de dados continua só para membros).
+- `--expires`: `30d`, `12h`, `2w` ou data ISO, até 365 dias. Compartilhar de novo com a mesma pessoa atualiza validade e motivo.
+- Quem pode: quem publica no projeto (owner, admin ou developer da org, ou admin/developer do projeto).
+
+Para trazer alguém para a org (vira membro com um papel), use convite:
+
+```bash
+ravi invites create --email bia@example.com --role developer --execute
+ravi invites list
+ravi invites revoke <invite-id>
+```
+
+- Papéis: `viewer` (padrão), `developer`, `admin`, `billing`, `owner`. Só owner/admin convida; só owner convida owner.
+- O Ravi não manda e-mail: a saída traz a URL do convite (vale 7 dias, uma vez, só para aquele e-mail). Envie você mesmo à pessoa.
+
+Página negada (de outra org, ou sem acesso)? Peça acesso a quem cuida dela:
+
+```bash
+ravi access request https://outra-org.ravi.page/relatorio --message "Para a revisão do Q3" --execute
+ravi access status <request-id>
+```
+
+- `request` tem freio (avisa os admins de outra org). A saída traz o link de aprovação: qualquer pessoa pode encaminhá-lo, abrir não muda nada, e só quem gerencia a página aprova. Já tem acesso? Sai `already_allowed`.
+- Aprovado: leia de novo com `ravi pages read <url>`.
+
+Quem age: no turno do próprio operador (terminal, a DM dele, as rotinas dele) age o usuário do `ravi login`. Quando outra pessoa escreveu a mensagem, o Console age por ELA, pelo `ravi link` dela, e ela e o operador precisam ter o papel. Sem link sai `ACTOR_NOT_LINKED` (exit 3): rode `ravi link` no chat dela e tente de novo. Turno que o Ravi não consegue atribuir é recusado antes de qualquer chamada (`ACTOR_UNKNOWN`, exit 3). `invites list` só roda no turno do operador.
 
 ## Página de dados
 

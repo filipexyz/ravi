@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 import { readActiveCloudAuthUserId, readCloudCredentials } from "../cloud-auth/storage.js";
 import { LEGACY_CLOUD_AUTH_USER_ID } from "../cloud-auth/types.js";
-import { resolveConnectorTurn, type ConnectorTurnDeps } from "../link/connector-turn.js";
+import { resolveConnectorTurn, type ConnectorTurnDeps, type ConnectorTurnResult } from "../link/connector-turn.js";
 import { createAuthenticatedPagesContext, type PagesClientDeps, type PagesClientOptions } from "./client.js";
 import {
   downloadPageFiles,
@@ -183,17 +183,27 @@ export function normalizePageReadNumber(
  */
 export function pageReadIsPublicOnly(deps: PageReadDeps = {}): boolean {
   if (deps.publicOnly !== undefined) return deps.publicOnly;
+  return !resolveTurnForActiveLogin(deps).ok;
+}
+
+/**
+ * The connector classification of the current turn, with the operator taken
+ * from the active `ravi login` session (the stored user and organization)
+ * unless the caller's turn deps name them.
+ */
+export function resolveTurnForActiveLogin(
+  deps: { turn?: ConnectorTurnDeps; readCredentials?: PagesClientDeps["readCredentials"] } = {},
+): ConnectorTurnResult {
   const env = deps.turn?.env ?? process.env;
   const active = (deps.readCredentials ?? readCloudCredentials)(env);
   const activeUserId =
     deps.turn?.activeUserId !== undefined ? deps.turn.activeUserId : activeCloudUserId(env, active?.user?.id);
-  const result = resolveConnectorTurn({
+  return resolveConnectorTurn({
     ...deps.turn,
     env,
     activeUserId,
     activeOrgId: deps.turn?.activeOrgId !== undefined ? deps.turn.activeOrgId : (active?.organization?.id ?? null),
   });
-  return !result.ok;
 }
 
 export async function readPage(options: PageReadOptions, deps: PageReadDeps = {}): Promise<PageReadResult> {
@@ -281,7 +291,13 @@ export function describePageReadFailure(error: unknown, url: string): PageReadFa
       code: "PAGE_ACCESS_DENIED",
       message,
       exitCode: 1,
-      details: { reason, suggestedAction: "Check the URL, or ask the operator for access to that project." },
+      details: {
+        reason,
+        suggestedAction:
+          reason === "password_route"
+            ? "Check the URL, or ask the page's owner for the password."
+            : `Check the URL, or ask the page's managers for access: ravi access request ${url} --execute`,
+      },
     };
   }
   if (error.status === 404) {

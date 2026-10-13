@@ -69,6 +69,23 @@ import {
   type PageReadResult,
 } from "../../pages/read.js";
 import {
+  ACCESS_REASON_MAX_CHARS,
+  accessDryRunPlan,
+  buildShareBody,
+  listPageAccess,
+  normalizeAccessEmail,
+  normalizeAccessExpiry,
+  normalizeAccessText,
+  requireAccessActor,
+  sharePageAccess,
+  unsharePageAccess,
+  type AccessDeps,
+  type AccessGrant,
+  type PagesAccessResult,
+  type PagesShareResult,
+} from "../../access/client.js";
+import { accessGrantSchema, actedBySchema, runAccessCommand } from "../../access/command-support.js";
+import {
   ensurePageCommentFollow,
   pageCommentCreatorFromContext,
   type PageCommentFollowDeps,
@@ -180,6 +197,60 @@ Output:
 JSON:
   { page, content: { format, representation, note, text, cursor, nextCursor, truncated },
     download?, links, routes, signals, contentTrust }
+`;
+
+const ACCESS_WHO_ACTS_HELP = `Who acts:
+  On the operator's own turns (terminal, their direct chat, their routines)
+  the ravi login user acts. When someone else wrote the chat message, Console
+  acts for that person through their ravi link, and both they and the ravi
+  login user must be allowed. A person without a link gets ACTOR_NOT_LINKED
+  (exit 3): run ravi link in their chat. A turn Ravi cannot attribute is
+  refused before any Console call (ACTOR_UNKNOWN, exit 3).`;
+
+const PAGES_SHARE_HELP = `
+Examples:
+  ravi pages share https://acme-site.ravi.page/report --with ana@example.com
+  ravi pages share https://acme-site.ravi.page/report --with ana@example.com --expires 30d --execute
+  ravi pages share https://acme-site.ravi.page/ --with ana@example.com --site --reason "Board review" --execute
+
+To show a private page to one person, share it. Do not make it public or add
+a password for that. The person signs in to the Console with that email
+(verified) and sees only what was shared: the route, or with --site every
+private route of the site. It is not organization membership: no Pages bar,
+no Page Chat and no live Bases data. Public and password routes need no grant.
+Sharing again with the same person updates the expiry and reason.
+
+Write brake:
+  Without --execute nothing is shared: the plan is printed and the command
+  exits 3. Re-run with --execute.
+
+${ACCESS_WHO_ACTS_HELP}
+
+To bring someone into the organization instead, use ravi invites create.
+`;
+
+const PAGES_UNSHARE_HELP = `
+Examples:
+  ravi pages unshare https://acme-site.ravi.page/report --with ana@example.com
+  ravi pages unshare https://acme-site.ravi.page/ --with ana@example.com --site
+  ravi pages unshare --grant <grant-id>
+
+Only reduces access, so it applies immediately (no --execute). Grant ids come
+from ravi pages access <url>.
+
+${ACCESS_WHO_ACTS_HELP}
+`;
+
+const PAGES_ACCESS_HELP = `
+Examples:
+  ravi pages access https://acme-site.ravi.page/report
+  ravi pages access https://acme-site.ravi.page/report --json
+
+Lists the people given access on the page's site: whole-site grants and route
+grants, who shared, and until when. Organization and project members see
+private pages through their role and are not listed.
+
+${ACCESS_WHO_ACTS_HELP}
 `;
 
 const PAGES_CREATE_HELP = `
@@ -864,6 +935,119 @@ export class PagesCommands {
       const payload = { ...result, scope: resolved.scope };
       printPayload(payload, asJson, () => printDomainBindings(result));
       return payload;
+    });
+  }
+
+  @Command({
+    name: "share",
+    description: "Give one person, by email, access to a private page (or its whole site with --site)",
+    helpAfter: PAGES_SHARE_HELP,
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "pages.access",
+    action: "share",
+    risk: "high",
+    requiresConfirmation: true,
+  })
+  async share(
+    @Arg("url", { description: "Ravi Page URL, such as https://acme.ravi.page/report" }) url: string,
+    @Option({ flags: "--with <email>", description: "Email of the person who gets access" }) withEmail?: string,
+    @Option({ flags: "--site", description: "Share every private route of the page's site, not only this route" })
+    site?: boolean,
+    @Option({ flags: "--expires <when>", description: "End of access: 30d, 12h, 2w, or an ISO date (max 365 days)" })
+    expires?: string,
+    @Option({ flags: "--reason <text>", description: "Why this person gets access (kept on the grant, max 500)" })
+    reason?: string,
+    @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--execute", description: "Give the access. Without it, share prints the plan and exits 3" })
+    execute?: boolean,
+  ) {
+    return runAccessCommand("pages share", asJson, async () => {
+      const deps = this.deps as AccessDeps;
+      const options = {
+        url,
+        email: normalizeAccessEmail(withEmail),
+        site: site === true,
+        expiresAt: normalizeAccessExpiry(expires, deps.now?.()),
+        reason: normalizeAccessText(reason, "--reason", ACCESS_REASON_MAX_CHARS),
+        console: consoleUrl,
+      };
+      const actor = requireAccessActor(deps);
+      if (execute !== true) {
+        // Write brake: sharing lets someone outside see a private page.
+        contractDryRun(
+          "pages share",
+          accessDryRunPlan(buildShareBody(options, actor), actor, { scope: options.site ? "site" : "route" }),
+          { asJson },
+        );
+      }
+      const result = await sharePageAccess(options, { ...deps, actor });
+      printPayload(result, asJson, () => printShareResult(result));
+      return result;
+    });
+  }
+
+  @Command({
+    name: "unshare",
+    description: "Remove one person's access to a page or site (applies immediately)",
+    helpAfter: PAGES_UNSHARE_HELP,
+  })
+  @CommandAccess({ kind: "mutate", resource: "pages.access", action: "unshare", risk: "medium" })
+  async unshare(
+    @Arg("url", { required: false, description: "Ravi Page URL; omit with --grant" }) url?: string,
+    @Option({ flags: "--with <email>", description: "Email of the person whose access is removed" })
+    withEmail?: string,
+    @Option({ flags: "--site", description: "Remove the whole-site grant instead of the route grant" })
+    site?: boolean,
+    @Option({ flags: "--grant <id>", description: "Grant id from ravi pages access (instead of <url> --with)" })
+    grant?: string,
+    @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    return runAccessCommand("pages unshare", asJson, async () => {
+      const grantId = grant?.trim();
+      if (grantId && (url?.trim() || withEmail?.trim() || site)) {
+        throw new CloudAuthError(
+          "PAYLOAD_INVALID",
+          "Conflicting target: pass either --grant <id> or <url> --with <email>, not both.",
+        );
+      }
+      if (!grantId && (!url?.trim() || !withEmail?.trim())) {
+        throw new CloudAuthError(
+          "PAYLOAD_INVALID",
+          "Missing target: pass <url> --with <email> [--site], or --grant <id>.",
+        );
+      }
+      const result = await unsharePageAccess(
+        grantId
+          ? { grantId, console: consoleUrl }
+          : { url: url ?? "", email: withEmail ?? "", site: site === true, console: consoleUrl },
+        this.deps as AccessDeps,
+      );
+      printPayload(result, asJson, () =>
+        console.log(result.revoked ? "Access removed." : "Nothing to remove: that access was not active."),
+      );
+      return result;
+    });
+  }
+
+  @Command({
+    name: "access",
+    description: "Show who was given access to a page's site, for what and until when",
+    helpAfter: PAGES_ACCESS_HELP,
+  })
+  @CommandAccess({ kind: "read", resource: "pages.access", action: "list", risk: "low" })
+  async access(
+    @Arg("url", { description: "Ravi Page URL, such as https://acme.ravi.page/report" }) url: string,
+    @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    return runAccessCommand("pages access", asJson, async () => {
+      const result = await listPageAccess({ url, console: consoleUrl }, this.deps as AccessDeps);
+      printPayload(result, asJson, () => printPageAccess(result));
+      return result;
     });
   }
 }
@@ -1893,6 +2077,31 @@ const pageChatUpdateReturnSchema = pageChatReturnSchema.extend({
   changed: z.array(z.enum(["enabled", "assistantName", "voice", "language", "instructions"])),
 });
 
+const pageShareReturnSchema = z.object({
+  success: z.literal(true),
+  consoleUrl: z.string(),
+  actedBy: actedBySchema,
+  created: z.boolean(),
+  userCreated: z.boolean(),
+  grant: accessGrantSchema,
+});
+
+const pageUnshareReturnSchema = z.object({
+  success: z.literal(true),
+  consoleUrl: z.string(),
+  actedBy: actedBySchema,
+  revoked: z.boolean(),
+});
+
+const pageAccessReturnSchema = z.object({
+  success: z.literal(true),
+  consoleUrl: z.string(),
+  actedBy: actedBySchema,
+  site: z.object({ id: z.string(), host: z.string() }),
+  total: z.number(),
+  grants: z.array(accessGrantSchema),
+});
+
 declareCommandReturns(PagesCommands, {
   list: pagesListReturnSchema,
   published: publishedPagesListReturnSchema,
@@ -1903,6 +2112,9 @@ declareCommandReturns(PagesCommands, {
   update: pageSiteUpdateReturnSchema,
   visibility: pageSiteUpdateReturnSchema,
   domains: pageDomainBindReturnSchema,
+  share: pageShareReturnSchema,
+  unshare: pageUnshareReturnSchema,
+  access: pageAccessReturnSchema,
 });
 
 declareCommandReturns(PagesPasswordCommands, {
@@ -1969,6 +2181,34 @@ function printPayload(payload: unknown, asJson: boolean | undefined, printHuman:
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
+}
+
+function printShareResult(result: PagesShareResult): void {
+  const grant = result.grant;
+  const what = grant.scope === "site" ? "every private route of the site" : grant.url || grant.routePath || "the page";
+  console.log(`${result.created ? "Shared" : "Updated access to"} ${what} with ${grant.email}.`);
+  console.log(`Until: ${grant.expiresAt ?? "no end date"}`);
+  if (result.userCreated) {
+    console.log(`${grant.email} has no Console account yet: they sign in with that email (verified) to open it.`);
+  }
+  console.log(`They open ${grant.url || "the page"} and sign in with ${grant.email}. Grant: ${grant.id}`);
+}
+
+function printPageAccess(result: PagesAccessResult): void {
+  console.log(`Access on ${result.site.host || result.site.id}:`);
+  if (result.grants.length === 0) {
+    console.log("  Nobody was given access by email. Organization and project members see private pages by role.");
+    return;
+  }
+  for (const grant of result.grants) console.log(`  - ${accessGrantLine(grant)}`);
+}
+
+function accessGrantLine(grant: AccessGrant): string {
+  const who = grant.name && grant.name !== grant.email ? `${grant.name} <${grant.email}>` : grant.email;
+  const what = grant.scope === "site" ? "whole site" : grant.routePath || grant.url;
+  const until = grant.expiresAt ? `until ${grant.expiresAt}` : "no end date";
+  const by = grant.createdBy ? `, shared by ${grant.createdBy}` : "";
+  return `${who}: ${what}, ${until}${by} (grant ${grant.id})`;
 }
 
 function printPageRead(result: PageReadResult): void {

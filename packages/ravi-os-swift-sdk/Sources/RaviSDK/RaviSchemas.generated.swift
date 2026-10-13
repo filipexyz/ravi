@@ -5,6 +5,325 @@
 import Foundation
 
 public enum RaviSchemas {
+  public static let AccessRequestInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Send the request. Without it, prints the plan and exits 3",
+        "type": "boolean"
+      },
+      "message": {
+        "description": "Why access is needed (shown to the managers, max 500)",
+        "type": "string"
+      },
+      "url": {
+        "description": "The Ravi Page URL that was denied",
+        "type": "string"
+      }
+    },
+    "required": [
+      "url"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let AccessRequestReturnSchema = #"""
+  {
+    "oneOf": [
+      {
+        "additionalProperties": false,
+        "properties": {
+          "actedBy": {
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "const": "operator",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "contactId": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "contact",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "contactId"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "approvalNote": {
+            "type": "string"
+          },
+          "approvalUrl": {
+            "type": "string"
+          },
+          "consoleUrl": {
+            "type": "string"
+          },
+          "request": {
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": {
+                "type": "string"
+              },
+              "decidedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "expiresAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "host": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "status",
+              "url",
+              "path",
+              "host",
+              "createdAt",
+              "expiresAt",
+              "decidedAt"
+            ],
+            "type": "object"
+          },
+          "status": {
+            "const": "requested",
+            "type": "string"
+          },
+          "success": {
+            "const": true,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "consoleUrl",
+          "actedBy",
+          "status",
+          "request",
+          "approvalUrl",
+          "approvalNote"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "actedBy": {
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "const": "operator",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "contactId": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "contact",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "contactId"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "consoleUrl": {
+            "type": "string"
+          },
+          "status": {
+            "const": "already_allowed",
+            "type": "string"
+          },
+          "success": {
+            "const": true,
+            "type": "boolean"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "success",
+          "consoleUrl",
+          "actedBy",
+          "status",
+          "url"
+        ],
+        "type": "object"
+      }
+    ]
+  }
+  """#
+
+  public static let AccessStatusInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "requestId": {
+        "description": "Request id printed by ravi access request",
+        "type": "string"
+      }
+    },
+    "required": [
+      "requestId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let AccessStatusReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "approvalNote": {
+        "type": "string"
+      },
+      "approvalUrl": {
+        "type": "string"
+      },
+      "consoleUrl": {
+        "type": "string"
+      },
+      "request": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "host": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "url",
+          "path",
+          "host",
+          "createdAt",
+          "expiresAt",
+          "decidedAt"
+        ],
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "consoleUrl",
+      "request",
+      "approvalUrl",
+      "approvalNote"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let AdaptersListInputSchema = #"""
   {
     "additionalProperties": false,
@@ -50587,6 +50906,349 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let InvitesCreateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "email": {
+        "description": "Email of the person to invite",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Create the invite. Without it, prints the plan and exits 3",
+        "type": "boolean"
+      },
+      "reason": {
+        "description": "Why this person is invited (audit note, max 500)",
+        "type": "string"
+      },
+      "role": {
+        "description": "Organization role: viewer|developer|admin|billing|owner (default viewer)",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let InvitesCreateReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "actedBy": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "operator",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "contactId": {
+                "type": "string"
+              },
+              "kind": {
+                "const": "contact",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "contactId"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "consoleUrl": {
+        "type": "string"
+      },
+      "invite": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "invitedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "role",
+          "createdAt",
+          "expiresAt",
+          "invitedBy"
+        ],
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "url": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "success",
+      "consoleUrl",
+      "actedBy",
+      "invite",
+      "url"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let InvitesListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "limit": {
+        "description": "Maximum invites to return (default: 50)",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Number of invites to skip (default: 0)",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let InvitesListReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "consoleUrl": {
+        "type": "string"
+      },
+      "invites": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "createdAt": {
+              "type": "string"
+            },
+            "email": {
+              "type": "string"
+            },
+            "expiresAt": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "invitedBy": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "role": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "email",
+            "role",
+            "createdAt",
+            "expiresAt",
+            "invitedBy"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": false,
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total"
+        ],
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "success",
+      "consoleUrl",
+      "total",
+      "pagination",
+      "invites"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let InvitesRevokeInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "inviteId": {
+        "description": "Invite id from ravi invites list",
+        "type": "string"
+      }
+    },
+    "required": [
+      "inviteId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let InvitesRevokeReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "actedBy": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "operator",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "contactId": {
+                "type": "string"
+              },
+              "kind": {
+                "const": "contact",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "contactId"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "consoleUrl": {
+        "type": "string"
+      },
+      "revoked": {
+        "type": "boolean"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "consoleUrl",
+      "actedBy",
+      "revoked"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let JobsKillInputSchema = #"""
   {
     "additionalProperties": false,
@@ -61135,6 +61797,197 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let PagesAccessInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "url": {
+        "description": "Ravi Page URL, such as https://acme.ravi.page/report",
+        "type": "string"
+      }
+    },
+    "required": [
+      "url"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let PagesAccessReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "actedBy": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "operator",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "contactId": {
+                "type": "string"
+              },
+              "kind": {
+                "const": "contact",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "contactId"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "consoleUrl": {
+        "type": "string"
+      },
+      "grants": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "createdAt": {
+              "type": "string"
+            },
+            "createdBy": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "email": {
+              "type": "string"
+            },
+            "expiresAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "routeId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "routePath": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "scope": {
+              "enum": [
+                "route",
+                "site"
+              ],
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            },
+            "userId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "email",
+            "name",
+            "userId",
+            "scope",
+            "routeId",
+            "routePath",
+            "url",
+            "expiresAt",
+            "createdAt",
+            "createdBy"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "site": {
+        "additionalProperties": false,
+        "properties": {
+          "host": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "host"
+        ],
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "success",
+      "consoleUrl",
+      "actedBy",
+      "site",
+      "total",
+      "grants"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let PagesAssertionAudiencesListInputSchema = #"""
   {
     "additionalProperties": false,
@@ -63450,6 +64303,201 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let PagesShareInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Give the access. Without it, share prints the plan and exits 3",
+        "type": "boolean"
+      },
+      "expires": {
+        "description": "End of access: 30d, 12h, 2w, or an ISO date (max 365 days)",
+        "type": "string"
+      },
+      "reason": {
+        "description": "Why this person gets access (kept on the grant, max 500)",
+        "type": "string"
+      },
+      "site": {
+        "description": "Share every private route of the page's site, not only this route",
+        "type": "boolean"
+      },
+      "url": {
+        "description": "Ravi Page URL, such as https://acme.ravi.page/report",
+        "type": "string"
+      },
+      "with": {
+        "description": "Email of the person who gets access",
+        "type": "string"
+      }
+    },
+    "required": [
+      "url"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let PagesShareReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "actedBy": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "operator",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "contactId": {
+                "type": "string"
+              },
+              "kind": {
+                "const": "contact",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "contactId"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "consoleUrl": {
+        "type": "string"
+      },
+      "created": {
+        "type": "boolean"
+      },
+      "grant": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "createdBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "email": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "routeId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "routePath": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scope": {
+            "enum": [
+              "route",
+              "site"
+            ],
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "name",
+          "userId",
+          "scope",
+          "routeId",
+          "routePath",
+          "url",
+          "expiresAt",
+          "createdAt",
+          "createdBy"
+        ],
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "userCreated": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "consoleUrl",
+      "actedBy",
+      "created",
+      "userCreated",
+      "grant"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let PagesShipInputSchema = #"""
   {
     "additionalProperties": false,
@@ -63690,6 +64738,94 @@ public enum RaviSchemas {
       "success",
       "url",
       "visibility"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let PagesUnshareInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "grant": {
+        "description": "Grant id from ravi pages access (instead of <url> --with)",
+        "type": "string"
+      },
+      "site": {
+        "description": "Remove the whole-site grant instead of the route grant",
+        "type": "boolean"
+      },
+      "url": {
+        "description": "Ravi Page URL; omit with --grant",
+        "type": "string"
+      },
+      "with": {
+        "description": "Email of the person whose access is removed",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let PagesUnshareReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "actedBy": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "operator",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "contactId": {
+                "type": "string"
+              },
+              "kind": {
+                "const": "contact",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "contactId"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "consoleUrl": {
+        "type": "string"
+      },
+      "revoked": {
+        "type": "boolean"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "consoleUrl",
+      "actedBy",
+      "revoked"
     ],
     "type": "object"
   }

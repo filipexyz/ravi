@@ -136,6 +136,43 @@ ravi pages password set acme-website --route /report --stdin --execute < /secure
 
 Never put the password in a command argument, an environment variable, a log or a JSON payload. The CLI has no flag for it, and its output never contains it. `remove` requires a replacement `--visibility`, so removing a password never makes a page public by accident.
 
+## Share a page with one person
+
+To show a private page to one person, share it with their email. Do not make the route public or add a password for that.
+
+```bash
+ravi pages share https://acme-website.ravi.page/report --with ana@example.com             # plan only, exit 3
+ravi pages share https://acme-website.ravi.page/report --with ana@example.com --expires 30d --execute
+ravi pages share https://acme-website.ravi.page/ --with ana@example.com --site --execute  # every private route
+ravi pages access https://acme-website.ravi.page/report                                    # who has access, until when
+ravi pages unshare https://acme-website.ravi.page/report --with ana@example.com            # applies at once
+```
+
+- The person signs in to the Console with that email (verified) and sees only what was shared: the route, or with `--site` every private route of the host. It is not membership: no operator bar, no Page Chat and no live Bases data.
+- `--expires` takes `30d`, `12h`, `2w` or an ISO date, up to 365 days. Sharing again updates the expiry and reason. `unshare --grant <id>` removes one grant by the id `pages access` lists.
+- Anyone who can publish to the project can share: an organization `owner`, `admin` or `developer`, or a project admin or developer.
+
+To bring someone into the organization instead, create an invite. Ravi does not email it: the command prints a link that works once, for that email only, for 7 days.
+
+```bash
+ravi invites create --email bia@example.com --role developer --execute
+ravi invites list
+ravi invites revoke <invite-id>
+```
+
+Roles are `viewer` (default), `developer`, `admin`, `billing` and `owner`. Only an owner or admin invites, and only an owner invites an owner.
+
+When a page answers that you have no access, ask its managers:
+
+```bash
+ravi access request https://other-org.ravi.page/report --message "For the Q3 review" --execute
+ravi access status <request-id>
+```
+
+The answer carries an approval link. Anyone can forward it; opening it changes nothing, and only the page's managers can approve.
+
+When your agent runs these commands, it acts for whoever wrote the message: you on your own turns, and otherwise that person through their `ravi link` (to share or invite, both of you must have the role; a request is made in their name). A person without a link gets `ACTOR_NOT_LINKED` and the agent sends them `ravi link`. To let a narrower agent use them, grant `mutate:pages.access:*`, `read:pages.access:*`, `mutate:invites:*`, `read:invites:*` or `mutate:access.requests:create` as needed.
+
 ## The operator bar and comments
 
 When a project member opens a page from the Console (the project's **Pages** list), a bar appears at the top of the page. Ordinary visitors never see it. Its labels are in Portuguese today. From the bar you can:
