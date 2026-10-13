@@ -1,4 +1,5 @@
 import "reflect-metadata";
+import { pagesLinkGuardReason } from "../../hooks/pages-link-guard.js";
 import { readFileSync } from "node:fs";
 import { Arg, Group, Command, CommandAccess, Option } from "../decorators.js";
 import { CONTRACT_EXIT_USAGE, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
@@ -696,6 +697,8 @@ export class ContextCommands {
       if (!command) {
         return buildPreToolUseDenyResult("Codex hook payload is missing tool_input.command");
       }
+      const pagesLinkReason = pagesLinkGuardReason("Bash", { command });
+      if (pagesLinkReason) return buildPreToolUseDenyResult(pagesLinkReason);
 
       const bashContext = {
         contextId: context.contextId,
