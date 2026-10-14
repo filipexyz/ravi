@@ -17,6 +17,7 @@
  */
 
 import { execFileSync } from "node:child_process";
+import { isAbsolute, resolve as resolvePath } from "node:path";
 import { dbGetAgent } from "../router/router-db.js";
 import type { ContextSource } from "../router/router-db.js";
 import { dbCreateTrigger, dbListTriggers, type Trigger, type TriggerInput } from "../triggers/index.js";
@@ -764,6 +765,37 @@ function resolveCwd(ctx: GhBashObservationContext): string | null {
   }
 }
 
+/**
+ * Diretório em que o `gh` do comando roda: os `cd` que o antecedem, aplicados
+ * em ordem sobre o cwd da sessão. `cd /srv && cd checkout/repo` termina em
+ * `/srv/checkout/repo`, não em `<cwd>/checkout/repo`.
+ *
+ * O cwd da sessão pode não ser um repo (ex.: o workspace do agent), então este
+ * é o último recurso antes de desistir — e é o diretório que o autor do comando
+ * realmente quis.
+ */
+function shellCdTarget(command: string, base: string | null): string | null {
+  const tokens = tokenizeShellCommand(command);
+  // Mesma descoberta de executável do parser de intenção: `cd /repo && env gh pr ...`
+  // também é `gh`, e um `gh` bruto no começo de segmento não acharia isso.
+  const ghIndex = commandStartIndexes(tokens)
+    .map((start) => executableIndex(tokens, start))
+    .find((index) => isGhExecutable(tokens[index]));
+  if (ghIndex === undefined) return null;
+  let dir: string | null = base;
+  let changed = false;
+  for (const start of commandStartIndexes(tokens)) {
+    if (start >= ghIndex) break;
+    const executable = executableIndex(tokens, start);
+    if (tokens[executable] !== "cd") continue;
+    const next = tokens[executable + 1];
+    if (!next || next.startsWith("-") || COMMAND_SEPARATORS.has(next)) continue;
+    dir = isAbsolute(next) || !dir ? next : resolvePath(dir, next);
+    changed = true;
+  }
+  return changed ? dir : null;
+}
+
 export interface GhWatchObservationDeps extends GhWatchFollowDeps {
   resolveRepoFromCwd?: (cwd: string) => string | null;
   addPending?: (entry: PendingGhFollow) => void;
@@ -793,8 +825,20 @@ export async function observeGhBashCommand(
     if (!intent?.follow) return;
 
     const cwd = resolveCwd(ctx);
-    const repo = intent.repo ?? (cwd ? (deps.resolveRepoFromCwd ?? defaultResolveRepoFromCwd)(cwd) : null);
-    if (!repo) return;
+    // O `cd` que antecede o `gh` é o diretório onde ele rodou: o sweep precisa
+    // dele para resolver a PR recém-criada, mesmo quando o repo veio de `--repo`.
+    const cdTarget = shellCdTarget(command, cwd);
+    const effectiveCwd = cdTarget ?? cwd;
+    const resolveRepo = deps.resolveRepoFromCwd ?? defaultResolveRepoFromCwd;
+    let repo: string | null = intent.repo;
+    if (!repo && cwd) repo = resolveRepo(cwd);
+    if (!repo && cdTarget) repo = resolveRepo(cdTarget);
+    if (!repo) {
+      // Silêncio aqui foi o que escondeu a PR que nunca ganhou follow: o cwd do
+      // agent não era repo e nada foi registrado. Um miss precisa de rastro.
+      log.warn("gh watch observation skipped", { reason: "no_repo", cwd, cdTarget, session: ctx.sessionName });
+      return;
+    }
 
     const key = `${repo}#${intent.prNumber ?? "*"}`;
 
@@ -816,12 +860,15 @@ export async function observeGhBashCommand(
       if (watch.watchId) {
         (deps.addPending ?? ((entry: PendingGhFollow) => addPendingGhFollow(entry)))({
           repo,
-          cwd,
+          cwd: effectiveCwd,
           ...context,
           createdAt: Date.now(),
         });
+        log.info("gh follow pending queued", { repo, cwd: effectiveCwd });
+      } else {
+        // Sem watch não há pendente: logar "queued" aqui mentia e escondia o miss.
+        log.warn("gh follow pending not queued", { repo, reason: "no_watch" });
       }
-      log.info("gh follow pending queued", { repo, cwd });
       return;
     }
 

@@ -508,6 +508,109 @@ describe("gh watch observation", () => {
     expect(asked).toBe(0);
   });
 
+  it("resolves the repo from an explicit cd when the session cwd is not a repo", async () => {
+    resetGhWatchCaches();
+    const queued: Array<{ repo: string; cwd: string | null }> = [];
+
+    await observeGhBashCommand(
+      "cd /srv/checkout/repo && gh pr create --head fix/x --title x",
+      { sessionName: "agent-workspace" },
+      deps({
+        resolveRepoFromCwd: (cwd) => (cwd.endsWith("/repo") ? "o/r" : null),
+        addPending: (entry) => {
+          queued.push({ repo: entry.repo, cwd: entry.cwd });
+        },
+      }),
+    );
+
+    // Sem isto, um cwd que não é repo (workspace de agent) engolia a intenção em silêncio.
+    // O pendente guarda o diretório do `cd` para o sweep conseguir resolver a PR.
+    expect(queued).toEqual([{ repo: "o/r", cwd: "/srv/checkout/repo" }]);
+  });
+
+  it("finds gh through wrappers and resolves a relative cd against the session cwd", async () => {
+    resetGhWatchCaches();
+    const asked: string[] = [];
+    const queued: Array<{ repo: string; cwd: string | null }> = [];
+
+    await observeGhBashCommand(
+      "cd checkout/repo && env gh pr create --head fix/x --title x",
+      { cwd: "/workspace", sessionName: "agent-workspace" },
+      deps({
+        resolveRepoFromCwd: (cwd) => {
+          asked.push(cwd);
+          return cwd === "/workspace/checkout/repo" ? "o/r" : null;
+        },
+        addPending: (entry) => {
+          queued.push({ repo: entry.repo, cwd: entry.cwd });
+        },
+      }),
+    );
+
+    expect(asked).toEqual(["/workspace", "/workspace/checkout/repo"]);
+    expect(queued).toEqual([{ repo: "o/r", cwd: "/workspace/checkout/repo" }]);
+  });
+
+  it("keeps the cd directory for the pending entry when the repository is explicit", async () => {
+    resetGhWatchCaches();
+    const queued: Array<{ repo: string; cwd: string | null }> = [];
+
+    await observeGhBashCommand(
+      "cd /srv/checkout/repo && gh pr create --repo o/r --head fix/x --title x",
+      { sessionName: "agent-workspace" },
+      deps({
+        resolveRepoFromCwd: () => null,
+        addPending: (entry) => {
+          queued.push({ repo: entry.repo, cwd: entry.cwd });
+        },
+      }),
+    );
+
+    // Sem cwd de sessão, o único diretório útil é o do `cd`: é onde o sweep acha a PR.
+    expect(queued).toEqual([{ repo: "o/r", cwd: "/srv/checkout/repo" }]);
+  });
+
+  it("resolves consecutive cd commands in order", async () => {
+    resetGhWatchCaches();
+    const asked: string[] = [];
+    const queued: Array<{ repo: string; cwd: string | null }> = [];
+
+    await observeGhBashCommand(
+      "cd /srv && cd checkout/repo && gh pr create --head fix/x --title x",
+      { cwd: "/workspace", sessionName: "agent-workspace" },
+      deps({
+        resolveRepoFromCwd: (cwd) => {
+          asked.push(cwd);
+          return cwd === "/srv/checkout/repo" ? "o/r" : null;
+        },
+        addPending: (entry) => {
+          queued.push({ repo: entry.repo, cwd: entry.cwd });
+        },
+      }),
+    );
+
+    // O segundo `cd` é relativo ao primeiro, não ao cwd da sessão.
+    expect(asked).toEqual(["/workspace", "/srv/checkout/repo"]);
+    expect(queued).toEqual([{ repo: "o/r", cwd: "/srv/checkout/repo" }]);
+  });
+
+  it("stays quiet when neither the cwd nor the command names a repo", async () => {
+    resetGhWatchCaches();
+    let queued = 0;
+
+    await observeGhBashCommand(
+      "gh pr create --head fix/x --title x",
+      { sessionName: "agent-workspace" },
+      deps({
+        addPending: () => {
+          queued += 1;
+        },
+      }),
+    );
+
+    expect(queued).toBe(0);
+  });
+
   it("queues a pending follow for gh pr create, which has no number yet", async () => {
     resetGhWatchCaches();
     const queued: Array<{ repo: string; cwd: string | null; sessionName?: string }> = [];
