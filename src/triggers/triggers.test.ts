@@ -58,6 +58,35 @@ describe("triggers native automation support", () => {
     expect(entry?.examples.some((example) => example.includes("ravi.inbound.thread.created"))).toBe(true);
   });
 
+  it("catalogs Slack session creation as a first-class trigger event", () => {
+    const entry = findTriggerTopicCatalogEntry("ravi.inbound.session.created");
+    const fields = new Set(entry?.schema?.fields.map((field) => field.path));
+
+    expect(entry?.category).toBe("inbound");
+    expect(entry?.payload).toContain("sessionKey");
+    expect(fields).toContain("provider");
+    expect(fields).toContain("channelId");
+    expect(fields).toContain("sessionKey");
+    expect(fields).toContain("sessionName");
+    expect(fields).toContain("agentId");
+    expect(entry?.examples.some((example) => example.includes("ravi.inbound.session.created"))).toBe(true);
+    expect(entry?.notes?.some((note) => note.includes("ravi.inbound.thread.created"))).toBe(true);
+  });
+
+  it("documents a root-session filter example that matches sessions without a thread timestamp", () => {
+    const entry = findTriggerTopicCatalogEntry("ravi.inbound.session.created");
+    const example = entry?.examples.find((line) => line.includes("Configure new channel session"));
+    const filter = example?.match(/--filter '(.+)' --message/)?.[1];
+
+    expect(filter).toBeDefined();
+    const compiled = compileFilter(filter);
+    expect(compiled.valid).toBe(true);
+    // Root-channel session: threadTs is omitted from the payload.
+    expect(compiled.evaluate({ provider: "slack", channelId: "C123" })).toBe(true);
+    // Thread session: threadTs is present, so the root-session example must not match.
+    expect(compiled.evaluate({ provider: "slack", channelId: "C123", threadTs: "1792019187.321239" })).toBe(false);
+  });
+
   it("catalogs exhausted runtime recovery as an operator alert event", () => {
     const entry = findTriggerTopicCatalogEntry("ravi.inbox.system.runtime_recovery_exhausted");
     const fields = new Set(entry?.schema?.fields.map((field) => field.path));
