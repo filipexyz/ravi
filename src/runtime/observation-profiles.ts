@@ -845,6 +845,13 @@ function buildBaseRenderContext(input: {
   event?: ObserverProfileRenderEvent;
 }): Record<string, unknown> {
   const instructions = observerInstructions(input.binding);
+  // One hash per delivery: the idempotency key and the boundary token are two slices of the same
+  // value, so the token stays stable for a given delivery and no second digest is computed.
+  const deliveryHash = sha256(
+    [input.binding.id, input.deliveryPolicy, input.runId ?? "", input.events.map((event) => event.id).join(",")].join(
+      "\x1f",
+    ),
+  );
   return {
     source: {
       sessionKey: input.source.sessionKey,
@@ -882,24 +889,10 @@ function buildBaseRenderContext(input: {
       eventCount: input.events.length,
       timestamp: Date.now(),
       timestampIso: new Date().toISOString(),
-      idempotencyKey: sha256(
-        [
-          input.binding.id,
-          input.deliveryPolicy,
-          input.runId ?? "",
-          input.events.map((event) => event.id).join(","),
-        ].join("\x1f"),
-      ).slice(0, 24),
+      idempotencyKey: deliveryHash.slice(0, 24),
       // Per-delivery boundary token. Observed content is written before this render and cannot know
       // it, so a preview cannot close the observed-events block by echoing the marker text.
-      boundaryId: sha256(
-        [
-          input.binding.id,
-          input.deliveryPolicy,
-          input.runId ?? "",
-          input.events.map((event) => event.id).join(","),
-        ].join("\x1f"),
-      ).slice(0, 12),
+      boundaryId: deliveryHash.slice(0, 12),
     },
     events: {
       rendered: input.renderedEvents ?? "",
