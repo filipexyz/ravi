@@ -107,6 +107,7 @@ import type {
 
 const log = logger.child("channels:slack");
 const SLACK_THREAD_CREATED_TOPIC = "ravi.inbound.thread.created";
+const SLACK_SESSION_CREATED_TOPIC = "ravi.inbound.session.created";
 const DEFAULT_SLACK_AUTH_TEST_FAILURE_RETRY_MS = 5_000;
 const DEFAULT_SLACK_AUTH_TEST_TIMEOUT_MS = 5_000;
 const DEFAULT_SLACK_USER_LOOKUP_TIMEOUT_MS = 5_000;
@@ -1812,6 +1813,24 @@ export class SlackSocketModeService {
       });
     }
 
+    if (resolved.createdSession && !createdEventOwnedByProgrammaticLifecycle) {
+      await this.publishSlackSessionCreatedEvent({
+        message,
+        resolved,
+        canonicalChatId: canonicalChat.id,
+        instanceId,
+        peerKind,
+        threadTs: routeThreadId,
+      }).catch((error) => {
+        log.warn("Failed to publish Slack session created event", {
+          channelId: message.channelId,
+          threadTs: routeThreadId,
+          sessionKey: resolved.sessionKey,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
+
     if (this.routingPolicy.subscriptionScope === "chat_and_thread" && routeThreadId) {
       const rootChat = dbUpsertChat({
         channel: "slack",
@@ -1918,6 +1937,52 @@ export class SlackSocketModeService {
     if (ingress.disposition === "rejected") {
       throw new Error(`slack_channel_backend_${ingress.error?.code.toLowerCase() ?? "rejected"}`);
     }
+  }
+
+  private async publishSlackSessionCreatedEvent(input: {
+    message: SlackNormalizedMessage;
+    resolved: ResolvedRoute;
+    canonicalChatId: string;
+    instanceId: string;
+    peerKind: "dm" | "group";
+    threadTs?: string;
+  }): Promise<void> {
+    await this.publishInteraction(
+      SLACK_SESSION_CREATED_TOPIC,
+      compactInteractionPayload({
+        provider: "slack",
+        source: "slack.socket_mode",
+        eventType: "session.created",
+        accountId: this.options.accountId,
+        routeAccountId: this.options.routeAccountId ?? this.options.accountId,
+        instanceId: input.instanceId,
+        teamId: input.message.teamId,
+        originTeamId: input.message.originTeamId,
+        sourceTeamId: input.message.sourceTeamId,
+        userTeamId: input.message.userTeamId,
+        eventTeamId: input.message.eventTeamId,
+        payloadTeamId: input.message.payloadTeamId,
+        authorizedTeamIds: input.message.authorizedTeamIds,
+        localTeamId: input.message.localTeamId,
+        channelId: input.message.channelId,
+        channelType: input.message.channelType,
+        peerKind: input.peerKind,
+        userId: input.message.userId,
+        messageTs: input.message.ts,
+        sourceMessageTs: input.message.ts,
+        ...(input.threadTs ? { threadTs: input.threadTs } : {}),
+        canonicalChatId: input.canonicalChatId,
+        sessionKey: input.resolved.sessionKey,
+        sessionName: input.resolved.sessionName,
+        agentId: input.resolved.agent.id,
+        routePattern: input.resolved.route?.pattern,
+        routeSession: input.resolved.route?.session,
+        envelopeId: input.message.envelopeId,
+        eventId: input.message.eventId,
+        eventTimeMs: input.message.eventTimeMs,
+        createdAt: Date.now(),
+      }),
+    );
   }
 
   private async publishSlackThreadCreatedEvent(input: {

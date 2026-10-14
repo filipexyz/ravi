@@ -44,6 +44,23 @@ describe("trigger topic catalog", () => {
     });
   });
 
+  it("registers native session creation events", () => {
+    expect(findTriggerTopicCatalogEntry("ravi.inbound.session.created")).toMatchObject({
+      id: "inbound.session.created",
+      schema: {
+        version: 1,
+        fields: expect.arrayContaining([
+          expect.objectContaining({ path: "provider", required: true }),
+          expect.objectContaining({ path: "eventType", required: true }),
+          expect.objectContaining({ path: "channelId", required: true }),
+          expect.objectContaining({ path: "userId" }),
+          expect.objectContaining({ path: "sessionName", required: true }),
+          expect.objectContaining({ path: "agentId", required: true }),
+        ]),
+      },
+    });
+  });
+
   it("warns about inferred channel reaction aliases", () => {
     expect(getTriggerTopicDiagnostic("whatsapp.*.reaction")).toMatchObject({
       level: "warning",
