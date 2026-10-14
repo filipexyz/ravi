@@ -195,7 +195,7 @@ describe("cloudErrorToContractError", () => {
     ["LINK_REQUESTS_UNAVAILABLE", "This Console does not support link approval requests yet.", false],
     ["LINK_DM_UNSUPPORTED", "Ravi cannot send a private message to this person on this channel.", false],
     ["LINK_DM_FAILED", "Ravi could not send the private message to the person who asked.", false],
-    ["CONNECTOR_GROUP_BLOCKED", "Personal connections are not used in group chats.", false],
+    ["CONNECTOR_GROUP_BLOCKED", "In a group, a personal connection is only used when its owner asks there.", false],
     ["CONNECTOR_SPEAKER_NOT_OWNER", "This connection only serves its owner's own requests.", false],
     ["CONNECTOR_DISABLED_BY_ORG", "The organization turned this connector off.", false],
     ["CONNECTOR_TOOL_BLOCKED", "The account owner or the organization blocked this tool.", false],
@@ -269,7 +269,7 @@ describe("cloudErrorToContractError", () => {
     );
     const contract = cloudErrorToContractError("gmail list", source);
 
-    expect(contract.message).toBe("Personal connections are not used in group chats.");
+    expect(contract.message).toBe("In a group, a personal connection is only used when its owner asks there.");
     expect(contract.details.chatLine).toBeUndefined();
   });
 

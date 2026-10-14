@@ -305,6 +305,7 @@ export async function execCapability(
     ownerName: ctx.ownerName,
     service: serviceForCapability(options.capability),
     approvalId: options.approvalId,
+    conversation: ctx.turn.conversation,
   };
   const extraHeaders: Record<string, string> = {
     ...(options.stepUpToken ? { "X-Ravi-Step-Up": options.stepUpToken } : {}),
@@ -326,7 +327,12 @@ export async function execCapability(
         },
       );
     } catch (error) {
-      throw connectorAnswerError(error, { ...answer, audience: mode, agentId: turn.agentId ?? null });
+      throw connectorAnswerError(error, {
+        ...answer,
+        audience: mode,
+        agentId: turn.agentId ?? null,
+        conversation: turn.conversation,
+      });
     }
   }
   const connectorId = options.connectorId?.trim();
@@ -505,6 +511,8 @@ export interface ConnectorAnswerInput {
   service?: string;
   approvalId?: string;
   audience?: ConnectorUseMode;
+  /** Where the answer goes: a group never receives an approval link. */
+  conversation?: ConnectorTurn["conversation"];
   /** The executing agent (agent exec). */
   agentId?: string | null;
 }
@@ -515,7 +523,7 @@ function accountHolder(input: Pick<ConnectorAnswerInput, "ownerName" | "audience
   label: string;
   /** Instruction for where the line goes, with a colon. */
   tell: string;
-  replyTo: "owner_privately" | "same_chat";
+  replyTo: "same_chat";
 } {
   if (input.audience === "person_asking") {
     return {
@@ -528,7 +536,7 @@ function accountHolder(input: Pick<ConnectorAnswerInput, "ownerName" | "audience
     return { label: "the manager of the shared account", tell: "Reply:", replyTo: "same_chat" };
   }
   const label = stringValue(input.ownerName) ?? "the account owner";
-  return { label, tell: `Tell ${label} privately, never in a group:`, replyTo: "owner_privately" };
+  return { label, tell: `Tell ${label}:`, replyTo: "same_chat" };
 }
 
 function capitalize(value: string): string {
@@ -556,6 +564,7 @@ export function connectorApprovalError(error: CloudAuthError, input: ConnectorAn
   const retryWith = `--approval ${approvalId}`;
   const expiresAt = stringValue(error.details?.expiresAt);
   const pending = error.code === "CONNECTOR_APPROVAL_PENDING";
+  const inGroup = input.conversation === "group";
   const holder = accountHolder(input);
   let chatLine = `Please approve this ${service} action: ${approvalLink}`;
   let chatLinePt = `Aprove esta ação do ${service}: ${approvalLink}`;
@@ -568,6 +577,14 @@ export function connectorApprovalError(error: CloudAuthError, input: ConnectorAn
     message = pending
       ? `The approval for this ${service} action is still waiting for the manager of the shared account (Ravi Console, Connectors, Waiting for you). Once it is approved, run the same command again with ${retryWith}.`
       : `The manager of the shared ${service} account must approve this action first; they see it in Ravi Console under Connectors, Waiting for you. Reply: "${chatLine}" Once it is approved, run the same command again with ${retryWith}.`;
+  } else if (inGroup) {
+    // A group never receives the link: whoever is in the room would read it.
+    // The approver opens the Console (Connectors, Waiting for you) instead.
+    chatLine = "This needs an approval before I can do it. I'll say when it's approved.";
+    chatLinePt = "Isso precisa de uma aprovação antes. Aviso quando for aprovado.";
+    message = pending
+      ? `The approval for this ${service} action is still waiting. Its link is not posted here: the approver opens Ravi Console, Connectors, Waiting for you. Once approved, run the same command again with ${retryWith}.`
+      : `The approver must allow this ${service} action first, in Ravi Console under Connectors, Waiting for you. Do not post the approval link in this chat. Reply: "${chatLine}" Once approved, run the same command again with ${retryWith}.`;
   } else if (input.audience === "person_asking") {
     message = pending
       ? `The approval for this ${service} action is still waiting for the person asking. Once they approve, run the same command again with ${retryWith}. If they have not seen it, send them the link again in this direct chat: "${quotedLine}"`
@@ -587,7 +604,7 @@ export function connectorApprovalError(error: CloudAuthError, input: ConnectorAn
       chatLinePt,
       replyTo: holder.replyTo,
       approvalId,
-      approvalLink,
+      ...(inGroup ? {} : { approvalLink }),
       retryWith,
       ...(expiresAt ? { expiresAt } : {}),
     },

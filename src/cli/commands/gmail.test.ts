@@ -140,9 +140,9 @@ describe("gmail default connection", () => {
       error: {
         code: "CONNECTOR_REAUTH_REQUIRED",
         message:
-          'The Gmail connection expired. Tell the account owner privately, never in a group: "Your Gmail connection expired. Reconnect: console.ravi.bot/connectors"',
+          'The Gmail connection expired. Tell the account owner: "Your Gmail connection expired. Reconnect: console.ravi.bot/connectors"',
         chatLine: "Your Gmail connection expired. Reconnect: https://console.ravi.bot/connectors",
-        replyTo: "owner_privately",
+        replyTo: "same_chat",
         reconnectLink: "https://console.ravi.bot/connectors",
         suggestedAction: "tell the account owner privately to reconnect it on the Console Connectors page",
       },
@@ -229,7 +229,7 @@ describe("gmail send approvals", () => {
       approvalId: "apr_9",
       approvalLink: "https://console.ravi.bot/connectors/approvals/apr_9",
       retryWith: "--approval apr_9",
-      replyTo: "owner_privately",
+      replyTo: "same_chat",
     });
   });
   it("sends --approval on list and read too, for a read tool set to Needs approval", async () => {
@@ -424,7 +424,7 @@ describe("gmail send for an agent, through the host gateway", () => {
       approvalLink: `https://console.ravi.bot/connectors/approvals/${APPROVAL_ID}`,
       expiresAt: "2026-10-10T12:15:00.000Z",
       retryWith: `--approval ${APPROVAL_ID}`,
-      replyTo: "owner_privately",
+      replyTo: "same_chat",
     });
     expect(error?.message).toContain("never in a group");
 

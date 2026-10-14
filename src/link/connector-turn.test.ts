@@ -555,7 +555,7 @@ describe("connector turn classification", () => {
   });
 
   describe("group compartments", () => {
-    it("blocks the owner in a group and tells the agent to answer privately", () => {
+    it("lets the owner read their own data in a group", () => {
       const context = turnContext({
         actorPrincipal: "contact:c_luis",
         consoleUserId: "user_luis",
@@ -563,10 +563,11 @@ describe("connector turn classification", () => {
         agentIdentityCompartment: "chat:120363012345678901@g.us",
       });
 
-      const error = expectBlocked(classify(context), "CONNECTOR_GROUP_BLOCKED");
-
-      expect(error.details).toMatchObject({ chatLine: "I'll send this to you privately.", replyTo: "same_chat" });
-      expect(error.message).toContain("direct chat");
+      // Quem pediu é o dono, e a sala é a que ele escolheu: o consentimento é dele.
+      expect(classify(context)).toMatchObject({
+        ok: true,
+        turn: { speaker: { kind: "owner", contactId: "c_luis" }, conversation: "group" },
+      });
     });
 
     it("blocks someone else in a group with the other-person line", () => {
@@ -947,11 +948,17 @@ describe("connector turn classification", () => {
 
       // A block without its own next step keeps the code's catalog one.
       const inGroup = expectBlocked(
-        classify(turnContext({ ...LUIS, agentIdentityCompartment: "chat:120363012345678901@g.us" })),
+        classify(
+          turnContext({
+            actorPrincipal: "contact:c_ana",
+            consoleUserId: "user_ana",
+            agentIdentityCompartment: "chat:120363012345678901@g.us",
+          }),
+        ),
         "CONNECTOR_GROUP_BLOCKED",
       );
       expect(cloudErrorToContractError("gmail list", inGroup).envelope().error.suggestedAction).toBe(
-        "say in the group that you will answer privately, and ask the owner to repeat the request in their direct chat with you",
+        "tell the person in the group that this connection is not theirs; do not retry as is (a person_asking agent uses the asker's own account, a shared one the account granted to the room)",
       );
     });
 
@@ -1120,7 +1127,11 @@ describe("connector turn classification", () => {
         },
       });
 
-      expectBlocked(classify(projected), "CONNECTOR_GROUP_BLOCKED");
+      // O compartimento (chat vs dm) vem do turno de origem, e no grupo o dono lê.
+      expect(classify(projected)).toMatchObject({
+        ok: true,
+        turn: { speaker: { kind: "owner", contactId: "c_luis" }, conversation: "group" },
+      });
     });
   });
 
@@ -1397,7 +1408,8 @@ describe("per-agent connector mode", () => {
       expectRefused(route(ANA_DM, "owner"), "CONNECTOR_SPEAKER_NOT_OWNER");
       expectRefused(route(NEW_DM, "owner"), "CONNECTOR_SPEAKER_NOT_OWNER");
       expectRefused(route(ANA_GROUP, "owner"), "CONNECTOR_GROUP_BLOCKED");
-      expectRefused(route(LUIS_GROUP, "owner"), "CONNECTOR_GROUP_BLOCKED");
+      // O dono pedindo o próprio dado no grupo: consentimento dele, passa.
+      expect(expectRoute(route(LUIS_GROUP, "owner"), "owner").conversation).toBe("group");
     });
   });
 
@@ -1420,15 +1432,14 @@ describe("per-agent connector mode", () => {
       expect(turn.speaker).toEqual({ kind: "contact", contactId: "c_new" });
     });
 
-    it("keeps groups blocked, with the line for the person asking", () => {
-      const error = expectRefused(route(ANA_GROUP, "person_asking"), "CONNECTOR_GROUP_BLOCKED");
+    it("uses the asker's own account in a group too", () => {
+      // No grupo quem pediu é quem consente: a conta é a dele e a resposta fica
+      // na sala que ele escolheu.
+      const turn = expectRoute(route(ANA_GROUP, "person_asking"), "person_asking");
 
-      expect(error.exitCode).toBe(3);
-      expect(error.details).toMatchObject({
-        source: "connector-turn",
-        chatLine: "I can only use your Gmail in a direct chat with me. Ask me there.",
-        chatLinePt: "Só posso usar o seu Gmail numa conversa direta comigo. Me peça por lá.",
-        replyTo: "same_chat",
+      expect(turn).toMatchObject({
+        speaker: { kind: "contact", contactId: "c_ana" },
+        conversation: "group",
       });
     });
 
@@ -1436,7 +1447,7 @@ describe("per-agent connector mode", () => {
       expectRoute(route(null, "person_asking"), "owner");
       expectRoute(route(LUIS_DM, "person_asking"), "owner");
       expectRoute(route(HEARTBEAT, "person_asking"), "owner");
-      expectRefused(route(LUIS_GROUP, "person_asking"), "CONNECTOR_GROUP_BLOCKED");
+      expect(expectRoute(route(LUIS_GROUP, "person_asking"), "owner").conversation).toBe("group");
     });
 
     it("refuses an unresolved sender", () => {
@@ -1711,7 +1722,7 @@ describe("per-agent connector mode", () => {
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.code).toBe("CONNECTOR_GROUP_BLOCKED");
+      expect(result.error.code).toBe("CONNECTOR_SPEAKER_NOT_OWNER");
       expect(result.error.exitCode).toBe(3);
       expect(result.error.details).toMatchObject({
         chatLine: "Ask me in our private chat and I'll change it.",

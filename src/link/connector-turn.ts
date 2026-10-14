@@ -264,12 +264,22 @@ export function resolveConnectorTurn(deps: ConnectorTurnDeps = {}): ConnectorTur
           }
         : undefined;
     if (surface?.type === "chat") {
-      return withCandidate(
-        isOwner
-          ? groupBlockedForOwner(actorPrincipal, owner)
-          : notOwnerContact(actorPrincipal, owner, false, "CONNECTOR_GROUP_BLOCKED"),
-        candidate,
-      );
+      // No grupo, quem pediu é quem consente: o dono pedindo o próprio dado
+      // passa, com a resposta na sala que ele escolheu. Um contato pedindo não
+      // usa a conta do dono; só uma conta dele (`person_asking`) ou uma
+      // compartilhada com a sala (`shared`) respondem.
+      if (isOwner) {
+        return {
+          ok: true,
+          turn: {
+            ...base,
+            actorPrincipal,
+            speaker: { kind: "owner", contactId: principalId, ...(consoleUserId ? { consoleUserId } : {}) },
+            conversation: "group",
+          },
+        };
+      }
+      return withCandidate(notOwnerContact(actorPrincipal, owner, false, "CONNECTOR_GROUP_BLOCKED"), candidate);
     }
     if (!isOwner) {
       return withCandidate(notOwnerContact(actorPrincipal, owner, !consoleUserId), candidate);
@@ -415,8 +425,10 @@ export function resolveConnectorExecRoute(deps: ConnectorExecRouteDeps): Connect
   if (result.ok) return ownerRoute(result.turn);
   if (mode === "shared" && !ownTurn) return agentRoute("shared", turn, deps);
   if (mode === "person_asking" && turn.speaker.kind === "contact") {
+    // No grupo quem pediu é quem consente: a conta é a dele e a resposta fica
+    // na sala que ele escolheu. Em DM a sessão ainda precisa ser só dele.
+    if (turn.conversation === "group") return agentRoute("person_asking", turn, deps);
     const owner = resolveOwner(deps, deps.env ?? process.env);
-    if (turn.conversation !== "dm") return personAskingGroupBlocked(turn.actorPrincipal, owner);
     if (!isPrivateDirectChat(turn, deps)) return personAskingSharedSessionBlocked(turn, owner);
     return agentRoute("person_asking", turn, deps);
   }
@@ -527,17 +539,6 @@ function personAskingSharedSessionBlocked(turn: ConnectorTurn, owner: OwnerIdent
   );
 }
 
-function personAskingGroupBlocked(actorPrincipal: string, owner: OwnerIdentity): BlockedTurn {
-  const chatLine = `I can only use your ${owner.service} in a direct chat with me. Ask me there.`;
-  const chatLinePt = `Só posso usar o seu ${owner.service} numa conversa direta comigo. Me peça por lá.`;
-  return blocked(
-    "CONNECTOR_GROUP_BLOCKED",
-    actorPrincipal,
-    `This agent uses the ${owner.service} of the person asking, but never in a group chat, where other people would read the answer. Reply in the group: "${chatLine}"`,
-    { chatLine, chatLinePt, replyTo: "same_chat" },
-  );
-}
-
 /**
  * The operator's own turn (the terminal, the owner's own linked direct chat,
  * also in a shared session, or the owner's own `ravi sessions send|ask`,
@@ -546,7 +547,11 @@ function personAskingGroupBlocked(actorPrincipal: string, owner: OwnerIdentity):
  */
 export function resolveOperatorTurn(deps: ConnectorTurnDeps & { action: string }): ConnectorTurnResult {
   const result = resolveConnectorTurn(deps);
-  if (result.ok && (result.turn.speaker.kind === "terminal" || result.turn.speaker.kind === "owner")) return result;
+  if (result.ok && result.turn.speaker.kind === "terminal") return result;
+  // O dono lendo o próprio dado no grupo passa (é o consentimento dele), mas
+  // mudar como a conta é usada continua sendo coisa de terminal ou do DM dele.
+  const ownerInGroup = result.ok && result.turn.speaker.kind === "owner" && result.turn.conversation === "group";
+  if (result.ok && result.turn.speaker.kind === "owner" && !ownerInGroup) return result;
   // The owner's own direct chat in a shared session: changing a mode returns
   // nothing from an account, so the transcript is no reason to refuse it.
   if (!result.ok && result.sharedSession && result.candidate?.speaker.kind === "owner") {
@@ -556,13 +561,15 @@ export function resolveOperatorTurn(deps: ConnectorTurnDeps & { action: string }
   // same, and the operator is the one asking, not the people in that chat.
   if (!result.ok && result.relay?.speaker.kind === "owner") return { ok: true, turn: result.relay };
   const owner = resolveOwner(deps, deps.env ?? process.env);
-  if (!result.ok && (result.speakerIsOwner || result.candidate?.speaker.kind === "owner")) {
+  if (ownerInGroup || (!result.ok && (result.speakerIsOwner || result.candidate?.speaker.kind === "owner"))) {
     // The owner, only in the wrong place (a group): send them to their own chat.
     const chatLine = "Ask me in our private chat and I'll change it.";
     const chatLinePt = "Me peça no nosso chat privado que eu mudo.";
     return blocked(
-      result.error.code === "CONNECTOR_GROUP_BLOCKED" ? "CONNECTOR_GROUP_BLOCKED" : "CONNECTOR_SPEAKER_NOT_OWNER",
-      result.actorPrincipal,
+      !result.ok && result.error.code === "CONNECTOR_GROUP_BLOCKED"
+        ? "CONNECTOR_GROUP_BLOCKED"
+        : "CONNECTOR_SPEAKER_NOT_OWNER",
+      result.ok ? result.turn.actorPrincipal : result.actorPrincipal,
       `${owner.label} asked outside their own direct chat with you. Only ${owner.label} can ${deps.action}, and only from their terminal or that direct chat, so nothing changes from this turn. Reply: "${chatLine}"`,
       { chatLine, chatLinePt, replyTo: "same_chat" },
     );
@@ -1014,26 +1021,12 @@ function terminalTurn(): ConnectorTurnResult {
   return { ok: true, turn: { speaker: { kind: "terminal" }, conversation: "terminal", actorPrincipal: "terminal" } };
 }
 
-function groupBlockedForOwner(actorPrincipal: string, owner: OwnerIdentity): BlockedTurn {
-  const chatLine = "I'll send this to you privately.";
-  const chatLinePt = "Vou te mandar isso no privado.";
-  return {
-    ...blocked(
-      "CONNECTOR_GROUP_BLOCKED",
-      actorPrincipal,
-      `Personal connections are never used in group chats, where other people would read the answer. Reply in the group: "${chatLine}" and ask ${owner.label} to repeat the request in their direct chat with you.`,
-      { chatLine, chatLinePt, replyTo: "same_chat" },
-    ),
-    speakerIsOwner: true,
-  };
-}
-
 /**
  * A routine, or the operator's relay (`relay`: the relay turn), answering
  * into a chat that is not the owner's direct chat.
  */
 function groupBlockedForAutomation(actorPrincipal: string, owner: OwnerIdentity, relay?: ConnectorTurn): BlockedTurn {
-  const message = `This turn answers into a chat that is not known to be ${owner.label}'s direct chat, and personal connections are never used where other people may read the answer.`;
+  const message = `This turn answers into a chat that is not known to be ${owner.label}'s direct chat, and ${owner.label} did not ask for it in that chat: the account is only used for a read the owner asked for where the answer is read.`;
   if (!relay) return blocked("CONNECTOR_GROUP_BLOCKED", actorPrincipal, message, {});
   return relayBlocked(
     actorPrincipal,
@@ -1115,7 +1108,7 @@ function blocked(
   details: {
     chatLine?: string;
     chatLinePt?: string;
-    replyTo?: "same_chat" | "owner_privately";
+    replyTo?: "same_chat";
     /** Only where the code's catalog next step would contradict the message. */
     suggestedAction?: string;
   },

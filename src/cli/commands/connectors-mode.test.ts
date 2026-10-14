@@ -166,8 +166,7 @@ describe("ravi connectors mode", () => {
     expect(stored()).toBe("person_asking");
   });
 
-  it("sends the owner who asks in a group to their own chat, and changes nothing", async () => {
-    writeAgentConnectorMode("main", "google", "shared");
+  it("sends the owner who asks in a group to their own chat, and changes nothing", async () => {    writeAgentConnectorMode("main", "google", "shared");
     writeCloudCredentials({
       version: 1,
       consoleUrl: "https://console.example",
@@ -202,7 +201,7 @@ describe("ravi connectors mode", () => {
     expect(result).toBeUndefined();
     const contract = cloudErrorToContractError("connectors mode", error as CloudAuthError);
     expect(contract.exitCode).toBe(3);
-    expect(contract.code).toBe("CONNECTOR_GROUP_BLOCKED");
+    expect(contract.code).toBe("CONNECTOR_SPEAKER_NOT_OWNER");
     expect(contract.details.chatLine).toBe("Ask me in our private chat and I'll change it.");
     expect(stored()).toBe("shared");
   });

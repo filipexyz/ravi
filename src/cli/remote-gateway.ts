@@ -422,7 +422,7 @@ function isConnectorOp(op: string): boolean {
 
 const CONNECTOR_REMOTE_MESSAGE_MAX = 1_200;
 const CONNECTOR_CHAT_LINE_MAX = 300;
-const CONNECTOR_REPLY_TO_VALUES = new Set(["same_chat", "owner_privately"]);
+const CONNECTOR_REPLY_TO_VALUES = new Set(["same_chat"]);
 
 /**
  * A connector block built by the daemon's turn classification: it is the only

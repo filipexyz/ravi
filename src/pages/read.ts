@@ -180,6 +180,11 @@ export function normalizePageReadNumber(
 /**
  * Whether this call may only read public Pages: every turn that is not the
  * operator's own, as the connector classifier decides it.
+ *
+ * A group is the owner's call: the same consent that lets their connectors
+ * answer there lets a private Page be read there. Open follow-up: when the room
+ * holds people outside the page's organization, nothing yet checks that
+ * everyone who will read it may read it.
  */
 export function pageReadIsPublicOnly(deps: PageReadDeps = {}): boolean {
   if (deps.publicOnly !== undefined) return deps.publicOnly;

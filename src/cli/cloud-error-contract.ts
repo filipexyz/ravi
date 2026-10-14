@@ -135,7 +135,7 @@ function publicMessage(code: CloudAuthError["code"], sourceMessage: string): str
     case "VERSION_CONFLICT":
       return "Console resource changed since it was read.";
     case "CONNECTOR_GROUP_BLOCKED":
-      return "Personal connections are not used in group chats.";
+      return "In a group, a personal connection is only used when its owner asks there.";
     case "CONNECTOR_SPEAKER_NOT_OWNER":
       return "This connection only serves its owner's own requests.";
     case "CONNECTOR_DISABLED_BY_ORG":
@@ -189,8 +189,7 @@ export function renderCloudContractError(error: ContractError, asJson: boolean |
   // A connector line the message refers to without quoting it (one with a link).
   const chatLine = error.details.chatLine;
   if (typeof chatLine === "string" && chatLine.length > 0 && !error.message.includes(chatLine)) {
-    const replyTo = error.details.replyTo === "owner_privately" ? " (to the owner, privately)" : "";
-    console.error(`Chat line${replyTo}: ${chatLine}`);
+    console.error(`Chat line: ${chatLine}`);
   }
   const next = error.details.suggestedAction;
   if (typeof next === "string" && next.length > 0) console.error(`Next: ${next}.`);
@@ -244,7 +243,7 @@ function suggestedAction(code: CloudAuthError["code"]): string {
     case "VERSION_CONFLICT":
       return "re-read the resource and retry with its current version";
     case "CONNECTOR_GROUP_BLOCKED":
-      return "say in the group that you will answer privately, and ask the owner to repeat the request in their direct chat with you";
+      return "tell the person in the group that this connection is not theirs; do not retry as is (a person_asking agent uses the asker's own account, a shared one the account granted to the room)";
     case "CONNECTOR_SPEAKER_NOT_OWNER":
       return "tell the person you cannot use the owner's account for their request; do not retry with another flag or connector";
     case "CONNECTOR_DISABLED_BY_ORG":

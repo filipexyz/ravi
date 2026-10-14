@@ -863,13 +863,13 @@ describe("personal connector blocks over the gateway", () => {
       "connectors list",
       new CloudAuthError(
         "CONNECTOR_GROUP_BLOCKED",
-        'Personal connections are never used in group chats, where other people would read the answer. Reply in the group: "I\'ll send this to you privately." and ask Luis to repeat the request in their direct chat with you.',
+        'This message came from someone other than Luis, and personal connections serve only Luis\'s own requests. Reply in this chat: "I can\'t use Luis\'s Gmail for your request."',
         {
           exitCode: 3,
           details: {
             source: "connector-turn",
-            chatLine: "I'll send this to you privately.",
-            chatLinePt: "Vou te mandar isso no privado.",
+            chatLine: "I can't use Luis's Gmail for your request.",
+            chatLinePt: "Não posso usar o Gmail do Luis para o seu pedido.",
             replyTo: "same_chat",
           },
         },
@@ -880,7 +880,7 @@ describe("personal connector blocks over the gateway", () => {
       code: "CONNECTOR_GROUP_BLOCKED",
       exitCode: 3,
       message: local.message,
-      details: { chatLine: "I'll send this to you privately.", replyTo: "same_chat" },
+      details: { chatLine: "I can't use Luis's Gmail for your request.", replyTo: "same_chat" },
     });
   });
 
@@ -890,12 +890,12 @@ describe("personal connector blocks over the gateway", () => {
       "gmail list",
       new CloudAuthError(
         "CONNECTOR_REAUTH_REQUIRED",
-        'The Gmail connection expired. Tell Luis privately, never in a group: "Your Gmail connection expired. Reconnect: console.ravi.bot/connectors"',
+        'The Gmail connection expired. Tell Luis: "Your Gmail connection expired. Reconnect: console.ravi.bot/connectors"',
         {
           details: {
             source: "connector-turn",
             chatLine: `Your Gmail connection expired. Reconnect: ${link}`,
-            replyTo: "owner_privately",
+            replyTo: "same_chat",
             reconnectLink: link,
           },
         },
@@ -905,7 +905,7 @@ describe("personal connector blocks over the gateway", () => {
     expect(remote?.message).toContain("Reconnect: console.ravi.bot/connectors");
     expect(remote?.details).toMatchObject({
       chatLine: `Your Gmail connection expired. Reconnect: ${link}`,
-      replyTo: "owner_privately",
+      replyTo: "same_chat",
       reconnectLink: link,
     });
   });
@@ -951,7 +951,7 @@ describe("personal connector blocks over the gateway", () => {
           source: "connector-turn",
           chatLine: `Please approve this Gmail action: ${APPROVAL_LINK}`,
           chatLinePt: `Aprove esta ação do Gmail: ${APPROVAL_LINK}`,
-          replyTo: "owner_privately",
+          replyTo: "same_chat",
           approvalId: APPROVAL_ID,
           approvalLink: APPROVAL_LINK,
           retryWith: `--approval ${APPROVAL_ID}`,
@@ -973,7 +973,7 @@ describe("personal connector blocks over the gateway", () => {
         message: local.message,
         details: {
           chatLine: `Please approve this Gmail action: ${APPROVAL_LINK}`,
-          replyTo: "owner_privately",
+          replyTo: "same_chat",
           approvalId: APPROVAL_ID,
           approvalLink: APPROVAL_LINK,
           retryWith: `--approval ${APPROVAL_ID}`,

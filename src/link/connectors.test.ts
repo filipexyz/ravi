@@ -10,6 +10,7 @@ import { decodeExecContextHeader, type ConnectorTurnDeps } from "./connector-tur
 import {
   APPROVAL_HEADER,
   CONSOLE_CONNECT_START_PATH,
+  connectorApprovalError,
   connectorReconnectError,
   execCapability,
   execCapabilityWithApproval,
@@ -106,7 +107,7 @@ describe("connector link helpers", () => {
     expect(contract.exitCode).toBe(3);
     expect(contract.envelope().error).toMatchObject({
       code: "CONNECTOR_DISABLED_BY_ORG",
-      replyTo: "owner_privately",
+      replyTo: "same_chat",
       chatLine:
         "Your organization turned off Google connections in Ravi Console. An organization owner or admin can turn them back on.",
     });
@@ -235,7 +236,7 @@ describe("connector link helpers", () => {
       details: {
         source: "connector-turn",
         chatLine: "Your Gmail connection expired. Reconnect: https://console.example/connectors",
-        replyTo: "owner_privately",
+        replyTo: "same_chat",
         reconnectLink: "https://console.example/connectors",
       },
     });
@@ -253,12 +254,12 @@ describe("connector link helpers", () => {
       code: "CONNECTOR_REAUTH_REQUIRED",
       chatLine: "Your Gmail connection expired. Reconnect: https://console.ravi.bot/connectors",
       chatLinePt: "Sua conexão do Gmail expirou. Reconecte: https://console.ravi.bot/connectors",
-      replyTo: "owner_privately",
+      replyTo: "same_chat",
       reconnectLink: "https://console.ravi.bot/connectors",
     });
     expect(JSON.stringify(envelope)).not.toContain("REDACTED");
     expect(envelope.error.message).toBe(
-      'The Gmail connection expired. Tell Luis Filipe privately, never in a group: "Your Gmail connection expired. Reconnect: console.ravi.bot/connectors"',
+      'The Gmail connection expired. Tell Luis Filipe: "Your Gmail connection expired. Reconnect: console.ravi.bot/connectors"',
     );
 
     const lines: string[] = [];
@@ -270,7 +271,7 @@ describe("connector link helpers", () => {
       console.error = originalError;
     }
     expect(lines).toContain(
-      "Chat line (to the owner, privately): Your Gmail connection expired. Reconnect: https://console.ravi.bot/connectors",
+      "Chat line: Your Gmail connection expired. Reconnect: https://console.ravi.bot/connectors",
     );
   });
 });
@@ -281,6 +282,31 @@ describe("connector approvals", () => {
       status: 409,
       details: { approvalId: "apr_123", expiresAt: "2026-10-10T12:00:00.000Z" },
     });
+
+  it("never hands the approval link to a group", () => {
+    const error = connectorApprovalError(
+      new CloudAuthError("CONNECTOR_APPROVAL_REQUIRED", "Ravi Link request failed (409): connector_approval_required", {
+        status: 409,
+        details: { approvalId: "apr_123", expiresAt: "2026-10-10T12:00:00.000Z" },
+      }),
+      { consoleUrl: "https://console.example", ownerName: "Luis", service: "Gmail", conversation: "group" },
+    );
+
+    // Nem a linha nem o envelope levam o link: quem estiver na sala o leria.
+    expect(error.details?.chatLine).toBe("This needs an approval before I can do it. I'll say when it's approved.");
+    expect(error.details?.approvalLink).toBeUndefined();
+    expect(error.message).not.toContain("/connectors/approvals/");
+    expect(error.message).toContain("Connectors, Waiting for you");
+    expect(error.details).toMatchObject({
+      approvalId: "apr_123",
+      retryWith: "--approval apr_123",
+      replyTo: "same_chat",
+    });
+
+    const envelope = cloudErrorToContractError("gmail send", error).envelope();
+    expect(JSON.stringify(envelope)).not.toContain("/connectors/approvals/");
+    expect(JSON.stringify(envelope)).toContain("apr_123");
+  });
 
   it("sends the approval id on a re-run", async () => {
     const seen: Array<Record<string, string> | undefined> = [];
@@ -324,7 +350,7 @@ describe("connector approvals", () => {
       approvalLink: "https://console.example/connectors/approvals/apr_123",
       retryWith: "--approval apr_123",
       expiresAt: "2026-10-10T12:00:00.000Z",
-      replyTo: "owner_privately",
+      replyTo: "same_chat",
       chatLine: "Please approve this Gmail action: https://console.example/connectors/approvals/apr_123",
     });
 
@@ -553,7 +579,7 @@ describe("approval flow against a fake Worker", () => {
       approvalLink: `https://console.example/connectors/approvals/${APPROVAL_ID}`,
       expiresAt: "2026-10-10T12:15:00.000Z",
       retryWith: `--approval ${APPROVAL_ID}`,
-      replyTo: "owner_privately",
+      replyTo: "same_chat",
       chatLine: `Please approve this Gmail action: https://console.example/connectors/approvals/${APPROVAL_ID}`,
     });
     expect(contract.message).toContain("never in a group");
@@ -758,7 +784,7 @@ describe("Worker connector answers on exec", () => {
     expect(contract.exitCode).toBe(3);
     expect(contract.envelope().error).toMatchObject({
       code: "CONNECTOR_TOOL_BLOCKED",
-      replyTo: "owner_privately",
+      replyTo: "same_chat",
       reconnectLink: "https://console.example/connectors",
     });
     expect(String(contract.details.chatLine)).toContain("https://console.example/connectors");
