@@ -19,7 +19,7 @@ import {
   setObservationPromptPublisherForTests,
   validateObserverRules,
 } from "./observation-plane.js";
-import { classifyTurnProvenance } from "./turn-provenance.js";
+import { classifyTurnProvenance, isObserverOriginated } from "./turn-provenance.js";
 
 let stateDir: string | null = null;
 const publishedPrompts: Array<{
@@ -886,5 +886,28 @@ rendererHints:
 
     expect(result.bindings).toHaveLength(0);
     expect(result.skipped[0]?.reason).toBe("observer_session");
+  });
+
+  it("records turn provenance on observation events so an observer-originated turn can be skipped", () => {
+    // The delivery path skips observation events for observer-originated turns. That guard depends on
+    // the event carrying the provenance of the turn it describes, so this locks the contract.
+    const observado = createObservationEvent({
+      runId: "run-provenance",
+      sequence: 1,
+      type: "message.assistant",
+      preview: "an observation delivery was answered",
+      turn: classifyTurnProvenance({ source: { identityProvenance: { source: "observer" } } }),
+    });
+    expect(observado.turn?.origin).toBe("observer");
+    expect(isObserverOriginated(observado.turn)).toBe(true);
+
+    const humano = createObservationEvent({
+      runId: "run-provenance",
+      sequence: 2,
+      type: "message.user",
+      preview: "a human wrote something",
+      turn: classifyTurnProvenance({ source: { actorType: "contact" } }),
+    });
+    expect(isObserverOriginated(humano.turn)).toBe(false);
   });
 });
