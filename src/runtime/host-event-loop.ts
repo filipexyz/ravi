@@ -124,7 +124,7 @@ import type {
   RuntimeSessionHandle,
   RuntimeSkillVisibilitySnapshot,
 } from "./types.js";
-import { classifyTurnProvenance } from "./turn-provenance.js";
+import { classifyTurnProvenance, isObserverOriginated } from "./turn-provenance.js";
 import { buildRuntimeToolPresentation } from "./tool-presentation.js";
 import type { ResponseContentPart, ResponseMediaAttachment } from "./message-types.js";
 import {
@@ -1137,6 +1137,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       turnId?: string;
     } = {},
   ) => {
+    const turnProvenance =
+      streaming.currentTurnProvenance ?? classifyTurnProvenance({ source: streaming.currentSource });
+    // Anti-loop: a turn caused by an observation delivery must not produce new observations.
+    // Without this, the chain observer -> source session -> observer only stops when the receiving
+    // session goes silent.
+    if (isObserverOriginated(turnProvenance)) {
+      log.debug("Skipping observation event for observer-originated turn", { type, sessionName, runId });
+      return;
+    }
     const event = createObservationEvent({
       runId,
       sequence: ++observationSequence,
@@ -1144,7 +1153,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       turnId: input.turnId ?? streaming.currentTraceTurnId,
       preview: input.preview,
       payload: input.payload,
-      turn: streaming.currentTurnProvenance ?? classifyTurnProvenance({ source: streaming.currentSource }),
+      turn: turnProvenance,
     });
     observationEvents.push(event);
     deliverObservationBatch([event], ["realtime"], "realtime");

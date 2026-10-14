@@ -179,3 +179,14 @@ export function classifyTurnProvenance(input: TurnProvenanceInput = {}): TurnPro
 export function isBackgroundTurn(input: TurnProvenanceInput = {}): boolean {
   return classifyTurnProvenance(input).background;
 }
+
+/**
+ * Anti-loop guard for the Observation Plane.
+ *
+ * A turn whose provenance is `observer` was caused by an observation delivery. Observing it again
+ * closes a loop (observer -> source session -> observer) that only stops when the receiving session
+ * goes silent, so such turns must never produce new observation events.
+ */
+export function isObserverOriginated(provenance: TurnProvenance | null | undefined): boolean {
+  return provenance?.origin === "observer";
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { classifyTurnProvenance } from "./turn-provenance.js";
+import { classifyTurnProvenance, isObserverOriginated } from "./turn-provenance.js";
 import { buildSessionRelayTurnOrigin } from "./turn-origin.js";
 
 describe("classifyTurnProvenance", () => {
@@ -160,5 +160,14 @@ describe("classifyTurnProvenance", () => {
         source: { identityProvenance: { source: "observer" } },
       }).origin,
     ).toBe("observer");
+  });
+
+  it("flags observer-originated turns so the observation plane can skip them", () => {
+    const observado = classifyTurnProvenance({ source: { identityProvenance: { source: "observer" } } });
+    expect(isObserverOriginated(observado)).toBe(true);
+    expect(isObserverOriginated(undefined)).toBe(false);
+    expect(isObserverOriginated(null)).toBe(false);
+    expect(isObserverOriginated(classifyTurnProvenance({ source: { actorType: "contact" } }))).toBe(false);
+    expect(isObserverOriginated(classifyTurnProvenance({ prompt: { _cron: true, _jobId: "job-1" } }))).toBe(false);
   });
 });
