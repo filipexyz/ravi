@@ -229,7 +229,7 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
     },
     examples: [
       'ravi triggers add "Slack session bootstrap" --topic "ravi.inbound.session.created" --filter \'data.provider == "slack"\' --message "..."',
-      'ravi triggers add "Configure new channel session" --topic "ravi.inbound.session.created" --filter \'data.provider == "slack" && data.threadTs == ""\' --message "..."',
+      'ravi triggers add "Configure new channel session" --topic "ravi.inbound.session.created" --filter \'data.provider == "slack" && !(data.threadTs != "")\' --message "..."',
     ],
     filters: [
       'data.provider == "slack"',
