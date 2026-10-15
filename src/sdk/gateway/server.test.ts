@@ -7,7 +7,7 @@ import { buildRegistry } from "../../cli/registry-snapshot.js";
 import { CALLER_CWD_HEADER } from "../../cli/caller-cwd.js";
 import { startGateway, type GatewayHandle } from "./server.js";
 import { ADMIN_BOOTSTRAP_KIND, createRuntimeContext } from "../../runtime/context-registry.js";
-import { getDb, type ContextRecord } from "../../router/router-db.js";
+import { dbCreateAgent, dbDeleteAgent, dbGetAgent, getDb, type ContextRecord } from "../../router/router-db.js";
 import type { StreamAuditEvent, StreamChannel } from "./streaming/types.js";
 
 @Group({ name: "demo", description: "Server demo", scope: "open" })
@@ -423,5 +423,66 @@ describe("gateway server — CORS", () => {
       headers: { Origin: listedOrigin },
     });
     expect(opened.headers.get("Access-Control-Allow-Origin")).toBe(listedOrigin);
+  });
+});
+
+describe("gateway server — bearer auth against the context store", () => {
+  // No `auth.resolveContext` override: keys resolve through ravi.db, where only
+  // their digest is stored.
+  let storeHandle: GatewayHandle;
+  let storedContextId: string;
+  let plaintextKey: string;
+  let createdAgent = false;
+  const storeAgentId = "gateway-key-digest-agent";
+
+  beforeAll(() => {
+    if (!dbGetAgent(storeAgentId)) {
+      dbCreateAgent({ id: storeAgentId, cwd: "/tmp/gateway-key-digest-agent" });
+      createdAgent = true;
+    }
+    const created = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: storeAgentId,
+      capabilities: allowedContext.capabilities,
+      metadata: { authorityMode: "delegated" },
+    });
+    storedContextId = created.contextId;
+    plaintextKey = created.contextKey;
+    storeHandle = startGateway({
+      host: "127.0.0.1",
+      port: 0,
+      registry,
+      streaming: { channels: testStreamChannels, keepaliveMs: 10_000, emitAudit() {} },
+    });
+  });
+
+  afterAll(async () => {
+    if (storeHandle) await storeHandle.stop();
+    if (storedContextId) getDb().prepare("DELETE FROM contexts WHERE context_id = ?").run(storedContextId);
+    if (createdAgent) dbDeleteAgent(storeAgentId);
+  });
+
+  // Streams always require an authenticated context, so they show auth itself.
+  const openStream = (token: string) =>
+    fetch(`${storeHandle.url}/api/v1/_stream/events`, {
+      headers: { authorization: `Bearer ${token}`, accept: "text/event-stream" },
+    });
+
+  it("accepts the plaintext key handed out at issuance", async () => {
+    expect(plaintextKey.startsWith("rctx_")).toBe(true);
+    const res = await openStream(plaintextKey);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("event: message");
+  });
+
+  it("rejects the stored digest presented as a bearer with 401", async () => {
+    const row = getDb().prepare("SELECT context_key FROM contexts WHERE context_id = ?").get(storedContextId) as {
+      context_key: string;
+    };
+    expect(row.context_key.startsWith("kh1:")).toBe(true);
+    expect(row.context_key).not.toContain(plaintextKey);
+
+    const res = await openStream(row.context_key);
+    expect(res.status).toBe(401);
   });
 });

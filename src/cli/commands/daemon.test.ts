@@ -20,6 +20,8 @@ import {
 } from "../../test/ravi-state.js";
 import { ContractError } from "../agent-contract.js";
 import { runWithContext } from "../context.js";
+import { CliExpectedError } from "../expected-error.js";
+import { MIN_CONTEXT_KEY_LENGTH } from "../../runtime/context-registry.js";
 import {
   DaemonCommands,
   findSourceProjectRoot,
@@ -589,6 +591,79 @@ describe("DaemonCommands init-admin-key negated storage", () => {
 
     expect(failure).toBeInstanceOf(ContractError);
     expect(failure).toMatchObject({ code: "ADMIN_CONTEXT_EXISTS", exitCode: 3, op: "daemon init-admin-key" });
+  });
+});
+
+describe("DaemonCommands init-admin-key --from-env", () => {
+  let stateDir: string | null = null;
+  let previousCredentialsPath: string | undefined;
+  let previousBootstrapKey: string | undefined;
+
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-daemon-admin-key-env-");
+    previousCredentialsPath = process.env.RAVI_CREDENTIALS_PATH;
+    previousBootstrapKey = process.env.RAVI_BOOTSTRAP_KEY;
+    process.env.RAVI_CREDENTIALS_PATH = join(stateDir, "credentials.json");
+  });
+
+  afterEach(async () => {
+    if (previousCredentialsPath === undefined) delete process.env.RAVI_CREDENTIALS_PATH;
+    else process.env.RAVI_CREDENTIALS_PATH = previousCredentialsPath;
+    if (previousBootstrapKey === undefined) delete process.env.RAVI_BOOTSTRAP_KEY;
+    else process.env.RAVI_BOOTSTRAP_KEY = previousBootstrapKey;
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  function importFromEnv(envKey: string) {
+    process.env.RAVI_BOOTSTRAP_KEY = envKey;
+    return runWithContext({ suppressCliOutput: true }, () =>
+      new DaemonCommands().initAdminKey("test", false, true, true, true),
+    );
+  }
+
+  function captureFailure(envKey: string): unknown {
+    try {
+      importFromEnv(envKey);
+    } catch (error) {
+      return error;
+    }
+    throw new Error(`expected --from-env to refuse ${JSON.stringify(envKey)}`);
+  }
+
+  it("refuses a bootstrap key shorter than rctx_ + 24 characters", () => {
+    expect(MIN_CONTEXT_KEY_LENGTH).toBe(29);
+    const shortKey = `rctx_${"a".repeat(23)}`;
+
+    const failure = captureFailure(shortKey);
+
+    expect(failure).toBeInstanceOf(CliExpectedError);
+    expect((failure as CliExpectedError).message).toContain("too short");
+    expect((failure as CliExpectedError).message).toContain("at least 29 characters (rctx_ + 24)");
+    expect((failure as CliExpectedError).message).toContain("got 28");
+    expect((failure as CliExpectedError).suggestedAction).toContain("ravi daemon init-admin-key");
+    // Nothing was imported.
+    expect(existsSync(process.env.RAVI_CREDENTIALS_PATH!)).toBe(false);
+    expect(() => importFromEnv(`rctx_${"b".repeat(24)}`)).not.toThrow();
+  });
+
+  it("still refuses a key without the rctx_ prefix before checking its length", () => {
+    const failure = captureFailure(`token_${"a".repeat(40)}`);
+    expect(failure).toBeInstanceOf(CliExpectedError);
+    expect((failure as CliExpectedError).message).toContain("must be an rctx_* runtime context key");
+  });
+
+  it("imports a key of a generated key's length and resolves it afterwards", () => {
+    const envKey = `rctx_${"c".repeat(24)}`;
+
+    const result = importFromEnv(envKey);
+
+    expect("persisted" in result).toBe(true);
+    if (!("persisted" in result)) throw new Error("expected a newly imported admin key");
+    expect(result.persisted).toBe(false);
+    // Idempotent: the same key resolves (by its digest) to the context just created.
+    const again = importFromEnv(envKey);
+    expect(again).toMatchObject({ changed: false, reason: "idempotent" });
   });
 });
 

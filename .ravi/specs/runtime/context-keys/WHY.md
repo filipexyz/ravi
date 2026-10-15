@@ -42,3 +42,35 @@ created.
 Session reset and runtime abort are explicit lifecycle boundaries for revoking
 live runtime contexts. Cleanup of historical `agent-runtime` records is an
 operator action, not a daemon side effect.
+
+## Keys At Rest
+
+A context key is a bearer credential: whoever holds it acts with the
+context's authority until expiry or revocation. Storing it in plaintext made
+`ravi.db` a credential store, so a readable copy of the database (a backup, a
+sync folder, a loose file mode) handed out live authority. The column now
+holds a SHA-256 digest with a `kh1:` version prefix, and lookups hash the
+presented key first. A generated key is `rctx_` + 18 random bytes
+(`randomBytes(18)`, 144 bits, 24 base64url characters), so a fast unsalted
+hash is enough: 2^144 candidates leave nothing to guess or precompute, and a
+salt or KDF would only slow down every authority check. That argument holds
+only for keys as random as generated ones, which is why an imported bootstrap
+key (`init-admin-key --from-env`) must be at least `rctx_` + 24 characters.
+
+Lookups hash the presented key and consult a legacy plaintext row only when no
+digest matched. A plaintext twin of a hashed key (reachable only by editing
+the DB by hand) therefore never shadows the digest row, and the boot
+migration skips it rather than overwrite a row it did not create; the skipped
+ids are logged and listed by `ravi doctor`, because a plaintext row that
+survives a boot is one the operator has to revoke, not one that will fix
+itself.
+
+The migration runs at daemon boot rather than on `getDb()` because the daemon
+is the single writer of live authority. If a newer CLI hashed rows while an
+older daemon still compared plaintext, every live agent would lose its
+authority until the daemon restarted. Lookups accept legacy plaintext rows
+until boot hashes them, so a mixed-version window is safe in both directions
+except for a rollback: a digest cannot be turned back into a key, so a Ravi
+that compares plaintext no longer recognizes migrated keys. That costs little,
+because turn and child contexts are reissued every turn and the admin
+bootstrap key is re-imported from `RAVI_BOOTSTRAP_KEY`.

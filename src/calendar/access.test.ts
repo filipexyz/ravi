@@ -6,7 +6,9 @@ import {
   calendarAccessLevel,
   canUseAnyCalendar,
   canUseCalendar,
+  calendarScopeSubjects,
   canUseCalendarProvider,
+  getCalendarScopeContext,
   resolveDefaultCalendarOwnerSubject,
 } from "./access.js";
 import { addCalendarMember, createCalendar, createCalendarAccount } from "./db.js";
@@ -139,6 +141,33 @@ describe("calendar access gate", () => {
     }
   });
 
+  it("ignores legacy RAVI_CONTACT_ID when RAVI_CONTEXT_KEY is set but does not resolve", () => {
+    const previous = {
+      RAVI_CONTEXT_KEY: process.env.RAVI_CONTEXT_KEY,
+      RAVI_CONTACT_ID: process.env.RAVI_CONTACT_ID,
+      RAVI_AGENT_ID: process.env.RAVI_AGENT_ID,
+    };
+    process.env.RAVI_CONTEXT_KEY = "rctx_does_not_exist";
+    process.env.RAVI_CONTACT_ID = "victim";
+    delete process.env.RAVI_AGENT_ID;
+    try {
+      const victims = calendar({ ownerType: "contact", ownerId: "victim" });
+      const ctx = getCalendarScopeContext();
+
+      expect(ctx.unresolvedContextKey).toBe(true);
+      expect(calendarScopeSubjects(ctx)).toEqual([]);
+      expect(canUseCalendar(ctx, "read", victims)).toBe(false);
+      expect(canUseCalendar(ctx, "manage", victims)).toBe(false);
+      expect(calendarAccessLevel(ctx, victims)).toBe("none");
+      expect(canUseAnyCalendar(ctx, "read")).toBe(false);
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
   it("allows public calendars for read/search/free-busy but not writes", () => {
     const pub = calendar({ visibility: "public" });
     expect(canUseCalendar(DEV, "read", pub)).toBe(true);
@@ -167,5 +196,28 @@ describe("calendar access gate", () => {
 
     expect(canUseCalendarProvider(DEV, "sync", "google")).toBe(false);
     expect(canUseCalendarProvider(ctxWith([cap("sync", "calendar-provider", "google")]), "sync", "google")).toBe(true);
+  });
+
+  it("never gives a context record without an agent local-operator authority", () => {
+    const agentlessContext: ScopeContext = {
+      context: {
+        contextId: "ctx_calendar_agentless",
+        contextKey: "ctx_key_calendar_agentless",
+        kind: "test-agentless",
+        capabilities: [],
+        metadata: {},
+        createdAt: 0,
+      },
+    };
+    expect(canUseCalendar(agentlessContext, "read", calendar())).toBe(false);
+    expect(canUseAnyCalendar(agentlessContext, "read")).toBe(false);
+    expect(canUseCalendarProvider(agentlessContext, "sync", "google")).toBe(false);
+    expect(calendarAccessLevel(agentlessContext, calendar())).toBe("none");
+
+    const granted: ScopeContext = {
+      context: { ...agentlessContext.context!, capabilities: [cap("read", "calendar", "cal-1")] },
+    };
+    expect(canUseCalendar(granted, "read", calendar())).toBe(true);
+    expect(canUseCalendar(granted, "write", calendar())).toBe(false);
   });
 });

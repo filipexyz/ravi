@@ -4,9 +4,11 @@ import { dbEnsureContactChatGrant } from "../permissions/contact-chat-grants.js"
 import { canWithCapabilities } from "../permissions/provider-runtime.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
+  contextKeyDigest,
   dbCreateAgent,
   dbGetContext,
   dbListContexts,
+  getDb,
   dbUpdateAgent,
   dbUpsertChat,
   type ChatRecord,
@@ -775,6 +777,56 @@ describe("runtime request context authority", () => {
       runtimeContext.contextId,
     );
     expect(dbGetContext(runtimeContext.contextId)?.revokedAt).toBeUndefined();
+  });
+
+  it("keeps the live plaintext key when in-place persistence reads the record back as a digest", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    const prompt = promptForContact("luis", "read");
+    const { runtimeContext, toolContext, raviEnv } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "pi",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+    const runtimeEnv: Record<string, string> = { ...raviEnv };
+    const publishedKey = runtimeContext.contextKey;
+    expect(publishedKey.startsWith("rctx_")).toBe(true);
+
+    const nextPrompt = promptForContact("ana", "run");
+    refreshRuntimeRequestContextForTurn({
+      runtimeContext,
+      toolContext,
+      runtimeEnv,
+      raviEnv,
+      rotateContext: false,
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt: nextPrompt,
+      runtimeProviderId: "pi",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: nextPrompt.source,
+    });
+
+    const stored = getDb()
+      .prepare("SELECT context_key FROM contexts WHERE context_id = ?")
+      .get(runtimeContext.contextId) as { context_key: string };
+    expect(stored.context_key).toBe(contextKeyDigest(publishedKey));
+    expect(dbGetContext(runtimeContext.contextId)?.contextKey).toBe(stored.context_key);
+    // The in-memory record, the tool context and the published env keep the key.
+    expect(runtimeContext.contextKey).toBe(publishedKey);
+    expect(toolContext.context?.contextKey).toBe(publishedKey);
+    expect(runtimeEnv.RAVI_CONTEXT_KEY).toBe(publishedKey);
+    expect(runtimeContext.metadata).toMatchObject({ actorPrincipal: "contact:ana" });
   });
 
   it("records where the turn's answer goes, and drops it on a turn that has none", () => {

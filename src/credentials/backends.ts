@@ -1,4 +1,11 @@
-import { spawnSync } from "node:child_process";
+import {
+  buildAddGenericPasswordLine,
+  findGenericPasswordArgs,
+  parseSecurityPasswordOutput,
+  redactSecurityOutput,
+  runSecurityCommand,
+  type SecurityCommandRunner,
+} from "../security/macos-keychain.js";
 import type { CredentialBackend } from "./types.js";
 
 export interface SecretWriteInput {
@@ -12,6 +19,13 @@ export interface SecretWriteInput {
 }
 
 const DEFAULT_KEYCHAIN_SERVICE = "ravi.credentials";
+
+let securityRunner: SecurityCommandRunner = runSecurityCommand;
+
+/** Replace the `security` runner so tests never reach the real macOS Keychain; no argument restores it. */
+export function setKeychainCommandRunnerForTests(runner?: SecurityCommandRunner): void {
+  securityRunner = runner ?? runSecurityCommand;
+}
 
 export async function readSecretFromStdin(): Promise<string> {
   const chunks: Buffer[] = [];
@@ -67,35 +81,47 @@ function parseKeychainRef(secretRef: string): { service: string; account: string
 function writeKeychainSecret(provider: string, connection: string, secret: string): string {
   const secretRef = keychainRef(provider, connection);
   const { service, account } = parseKeychainRef(secretRef);
-  runSecurity(["add-generic-password", "-a", account, "-s", service, "-w", secret, "-U"]);
+  // The secret never goes in argv: `security -i` reads the command from stdin
+  // and the secret travels hex-encoded (see src/security/macos-keychain.ts).
+  const command = buildAddGenericPasswordLine({ account, service, secret });
+  if (!command.ok) {
+    throw new Error(
+      command.reason === "too_long"
+        ? `${command.message} Use the vault backend for this secret.`
+        : `${command.message} Check RAVI_CREDENTIALS_KEYCHAIN_SERVICE.`,
+    );
+  }
+  runSecurity(["-i"], command.line);
   return secretRef;
 }
 
 function readKeychainSecret(secretRef: string): string {
   const { service, account } = parseKeychainRef(secretRef);
-  return runSecurity(["find-generic-password", "-a", account, "-s", service, "-w"]).trim();
+  // `-g` prints the secret unambiguously on stderr (`-w` would hex-decode a
+  // printable secret such as `123456`); see src/security/macos-keychain.ts.
+  const result = securityRunner(findGenericPasswordArgs({ account, service }));
+  if (result.status !== 0) {
+    throw new Error(`security failed: ${redactSecurityOutput(result.stderr || result.stdout)}`);
+  }
+  const parsed = parseSecurityPasswordOutput(result.stderr);
+  if (!parsed.ok) throw new Error(`security failed: ${parsed.message}`);
+  return parsed.secret;
 }
 
 function deleteKeychainSecret(secretRef: string): boolean {
   const { service, account } = parseKeychainRef(secretRef);
-  const result = spawnSync("security", ["delete-generic-password", "-a", account, "-s", service], {
-    encoding: "utf8",
-  });
+  const result = securityRunner(["delete-generic-password", "-a", account, "-s", service]);
   if (result.status === 0) return true;
-  if ((result.stderr ?? "").includes("could not be found")) return false;
-  throw new Error(`security failed: ${redactSecurityError(result.stderr || result.stdout)}`);
+  if (result.stderr.includes("could not be found")) return false;
+  throw new Error(`security failed: ${redactSecurityOutput(result.stderr || result.stdout)}`);
 }
 
-function runSecurity(args: string[]): string {
-  const result = spawnSync("security", args, { encoding: "utf8" });
+function runSecurity(args: string[], input?: string): string {
+  const result = securityRunner(args, input === undefined ? {} : { input });
   if (result.status !== 0) {
-    throw new Error(`security failed: ${redactSecurityError(result.stderr || result.stdout)}`);
+    throw new Error(`security failed: ${redactSecurityOutput(result.stderr || result.stdout)}`);
   }
-  return result.stdout ?? "";
-}
-
-function redactSecurityError(value: string): string {
-  return value.replace(/(-w\s+)\S+/g, "$1[redacted]").trim();
+  return result.stdout;
 }
 
 function vaultRef(input: Pick<SecretWriteInput, "provider" | "connection" | "vaultMount" | "vaultPath" | "vaultKey">) {
