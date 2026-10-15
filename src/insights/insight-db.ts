@@ -5,6 +5,7 @@ import { Database } from "bun:sqlite";
 import { getRaviStateDir } from "../utils/paths.js";
 import { executeWrite } from "../db/write-retry.js";
 import { reconcileColumns } from "../db/reconcile-columns.js";
+import { preparePrivateSqliteFile } from "../security/private-files.js";
 import type {
   AddInsightCommentInput,
   CreateInsightInput,
@@ -101,6 +102,7 @@ function ensureDb(): Database {
 
   mkdirSync(getRaviStateDir(), { recursive: true });
 
+  preparePrivateSqliteFile(nextDbPath);
   const db = new Database(nextDbPath);
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA busy_timeout = 5000");

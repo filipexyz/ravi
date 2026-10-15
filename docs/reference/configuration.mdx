@@ -241,7 +241,7 @@ The scope is chosen by: the matching route's `dmScope`, then the agent's `dmScop
 | Path | Contents |
 |---|---|
 | `~/.ravi/.env` | Process environment, read by the daemon and the CLI. |
-| `~/.ravi/ravi.db` | Agents, instances, routes, channels, sessions, settings, cron jobs, triggers, chats and more (SQLite). |
+| `~/.ravi/ravi.db` | Agents, instances, routes, channels, sessions, settings, cron jobs, triggers, chats and more (SQLite). Runtime context records hold only a digest of each key; the key itself is shown once, when it is issued. |
 | `~/.ravi/chat.db` | Contacts, platform identities, contact policies and messages. |
 | `~/.ravi/credentials.db` | Credential broker metadata. The secrets themselves live in the Keychain or Vault. |
 | `~/.ravi/credentials.json` | Runtime context keys (`rctx_...`) for the SDK, mode `0600`. |

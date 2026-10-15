@@ -4,6 +4,8 @@ import type { CloudCredentials } from "../../cloud-auth/types.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { listMailMailboxes, listMailMessages, listMailOutbox } from "../../mailbox/index.js";
 import { ContractError } from "../agent-contract.js";
+import { runWithContext, type ToolContext } from "../context.js";
+import type { ContextRecord } from "../../router/router-db.js";
 import {
   MailAccountsCommands,
   MailCommands,
@@ -211,6 +213,83 @@ describe("mail CLI commands", () => {
     expect(thread.messages.every((message: Record<string, unknown>) => message.bodyText === undefined)).toBe(true);
     expect(thread.messages.every((message: Record<string, unknown>) => message.bodyHtml === undefined)).toBe(true);
     expect(thread.messages.every((message: Record<string, unknown>) => message.rawHeaders === undefined)).toBe(true);
+  });
+
+  it("never lets a context record without an agent read threads or list messages as the operator", async () => {
+    const accounts = new MailAccountsCommands();
+    const mailboxes = new MailMailboxesCommands();
+    const messages = new MailMessagesCommands();
+    const threads = new MailThreadsCommands();
+
+    await captureConsole(() => accounts.create("ravi-mail", "acct_1", undefined, undefined, true));
+    const { output: mailboxOutput } = await captureConsole(() =>
+      mailboxes.create("luis@ravi.bot", "acct_1", undefined, undefined, undefined, true, true),
+    );
+    const mailboxId = JSON.parse(mailboxOutput).mailbox.id as string;
+    const { output: importOutput } = await captureConsole(() =>
+      messages.importMessage(
+        "luis@ravi.bot",
+        "alice@example.com",
+        "luis@ravi.bot",
+        "Private",
+        "Secret body",
+        "ravi-mail",
+        "remote_msg_private",
+        undefined,
+        "<msg-private@example.com>",
+        true,
+      ),
+    );
+    const threadId = JSON.parse(importOutput).message.threadId as string;
+
+    const record = (agentId: string | undefined, capabilities: ContextRecord["capabilities"]): ToolContext => ({
+      ...(agentId ? { agentId } : {}),
+      context: {
+        contextId: `ctx_mail_${agentId ?? "agentless"}`,
+        contextKey: `rctx_mail_${agentId ?? "agentless"}`,
+        kind: agentId ? "turn-runtime" : "test-agentless",
+        ...(agentId ? { agentId } : {}),
+        // Command access alone (no mailbox read) must not open the thread.
+        capabilities: [{ permission: "read", objectType: "mail.threads", objectId: "read" }, ...capabilities],
+        metadata: {},
+        createdAt: 0,
+      },
+    });
+    const readMailbox = { permission: "read", objectType: "mailbox", objectId: mailboxId };
+
+    // Local operator (no agent, no record): unchanged, reads the thread.
+    const { output: operatorOutput } = await captureConsole(() => threads.read(threadId, undefined, true));
+    expect(JSON.parse(operatorOutput).messages).toHaveLength(1);
+
+    // Agentless record without mailbox read: denied, nothing printed.
+    const agentlessDenied = await captureConsole(() =>
+      runWithContext(record(undefined, []), () => threads.read(threadId, undefined, true)).then(
+        () => null,
+        (error: unknown) => error,
+      ),
+    );
+    expect(agentlessDenied.output).toBe("");
+    expect(String((agentlessDenied.result as Error)?.message)).toContain(
+      `agent:unknown requires read on a mailbox in thread:${threadId}`,
+    );
+    await expect(
+      runWithContext(record(undefined, []), () =>
+        messages.list(undefined, undefined, undefined, undefined, undefined, undefined, true),
+      ),
+    ).rejects.toThrow("agent:unknown requires search on mailbox:*");
+
+    // Agent-bound record: unchanged, denied without the grant.
+    await expect(runWithContext(record("dev", []), () => threads.read(threadId, undefined, true))).rejects.toThrow(
+      `agent:dev requires read on a mailbox in thread:${threadId}`,
+    );
+
+    // Both are decided by the record's own capabilities.
+    for (const agentId of [undefined, "dev"]) {
+      const { output } = await captureConsole(() =>
+        runWithContext(record(agentId, [readMailbox]), () => threads.read(threadId, undefined, true)),
+      );
+      expect(JSON.parse(output).messages).toHaveLength(1);
+    }
   });
 
   it("syncs Ravi Mail provider metadata into the local mailbox", async () => {

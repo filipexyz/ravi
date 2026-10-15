@@ -41,6 +41,8 @@ export interface InheritedClientResult {
 export async function createInheritedClient(options: CreateInheritedClientOptions = {}): Promise<InheritedClientResult> {
   const env = options.env ?? defaultEnv();
   const baseUrl = resolveInheritedBaseUrl(env, options.baseUrl);
+  // Every request carries the context key as a bearer token.
+  assertSecureInheritedBaseUrl(baseUrl);
   const contextKey = resolveInheritedContextKey(env, options.contextKey);
   const parent = new RaviClient(createHttpTransport(httpConfig(options, baseUrl, contextKey)));
 
@@ -80,6 +82,39 @@ export function resolveInheritedBaseUrl(env: RaviInheritedClientEnv = defaultEnv
   throw new Error(
     "createInheritedClient: missing Ravi gateway URL. Set RAVI_BASE_URL, RAVI_GATEWAY_URL, or RAVI_HTTP_HOST/RAVI_HTTP_PORT.",
   );
+}
+
+export const INSECURE_GATEWAY_ERROR_CODE = "REMOTE_GATEWAY_INSECURE";
+
+/**
+ * Refuse plaintext HTTP unless it stays on this machine: `https:` anywhere,
+ * `http:` only for `localhost` or a literal 127.0.0.0/8 or `::1` address.
+ * `hostname` comes from WHATWG URL parsing, the parser `fetch` uses, so
+ * `http://user@127.0.0.1@evil` is `evil`. Names such as `*.localhost` or
+ * `127.0.0.1.evil.com` are refused: DNS decides where they go.
+ */
+export function assertSecureInheritedBaseUrl(baseUrl: string): void {
+  let url: URL;
+  try {
+    url = new URL(baseUrl);
+  } catch {
+    throw new Error(`createInheritedClient: invalid Ravi gateway URL: ${baseUrl}`);
+  }
+  if (url.protocol !== "http:" || isLoopbackHostname(url.hostname)) return;
+  throw Object.assign(
+    new Error(
+      `createInheritedClient: refusing to send the Ravi context key over plain http to ${url.hostname}. ` +
+        "Use an https:// gateway URL, or http:// only for localhost, 127.0.0.0/8 or [::1].",
+    ),
+    { code: INSECURE_GATEWAY_ERROR_CODE },
+  );
+}
+
+export function isLoopbackHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (host === "localhost" || host === "::1") return true;
+  const ipv4 = /^127\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  return ipv4 !== null && ipv4.slice(1).every((octet) => Number(octet) <= 255);
 }
 
 export function resolveInheritedContextKey(env: RaviInheritedClientEnv = defaultEnv(), explicit?: string): string {

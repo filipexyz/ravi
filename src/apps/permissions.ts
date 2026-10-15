@@ -1,7 +1,9 @@
 import { getContext } from "../cli/context.js";
 import { buildAuditContextProvenance } from "../permissions/audit-provenance.js";
 import { recordAndEmitPermissionDenial } from "../permissions/denials.js";
+import { authorizationAgentId, authorizationContext } from "../permissions/authorization-agent.js";
 import { agentCan, canWithCapabilityContext, localOperatorCan } from "../permissions/provider-runtime.js";
+import { isLocalOperatorScope } from "../permissions/scope.js";
 import { normalizeAppId } from "./service.js";
 import { RaviAppError, type RaviAppCheckResult, type RaviAppManifestRecord } from "./types.js";
 
@@ -23,16 +25,11 @@ export function canExecuteApp(appId: string): boolean {
 export function canAccessApp(appId: string, relation: "use" | "execute"): boolean {
   const normalizedAppId = normalizeAppId(appId);
   const ctx = getContext();
-  if (!ctx?.agentId) return localOperatorCan(relation, "app", normalizedAppId);
+  if (isLocalOperatorScope(ctx)) return localOperatorCan(relation, "app", normalizedAppId);
 
-  return ctx.context
-    ? canWithCapabilityContext(
-        { ...ctx.context, agentId: ctx.context.agentId ?? ctx.agentId },
-        relation,
-        "app",
-        normalizedAppId,
-      )
-    : agentCan(ctx.agentId, relation, "app", normalizedAppId);
+  return ctx?.context
+    ? canWithCapabilityContext(authorizationContext(ctx.context, ctx.agentId), relation, "app", normalizedAppId)
+    : agentCan(authorizationAgentId(ctx?.agentId), relation, "app", normalizedAppId);
 }
 
 export function filterVisibleAppManifests<T extends RaviAppManifestRecord>(records: T[]): T[] {
@@ -68,19 +65,16 @@ function recordAppPermissionDenial(
   operationId?: string,
 ): void {
   const ctx = getContext();
-  if (!ctx?.agentId) return;
-  const context = ctx.context
-    ? {
-        ...ctx.context,
-        agentId: ctx.context.agentId ?? ctx.agentId,
-      }
-    : undefined;
-  const provenance = buildAuditContextProvenance(context ? { context } : { agentId: ctx.agentId });
+  // Denials are recorded against a real agent; an audit-only label is not one.
+  const agentId = authorizationAgentId(ctx?.agentId);
+  if (!ctx || !agentId) return;
+  const context = ctx.context ? authorizationContext(ctx.context, agentId) : undefined;
+  const provenance = buildAuditContextProvenance(context ? { context } : { agentId });
 
   recordAndEmitPermissionDenial({
     subjectType: "agent",
-    subjectId: ctx.agentId,
-    agentId: ctx.agentId,
+    subjectId: agentId,
+    agentId,
     sessionKey: ctx.sessionKey ?? context?.sessionKey,
     sessionName: ctx.sessionName ?? context?.sessionName,
     contextId: ctx.contextId ?? context?.contextId,
@@ -94,7 +88,7 @@ function recordAppPermissionDenial(
     },
     audit: {
       type: "scope",
-      agentId: ctx.agentId,
+      agentId,
       denied: `app:${appId}`,
       reason,
       blockType: "app_permission_missing_grant",

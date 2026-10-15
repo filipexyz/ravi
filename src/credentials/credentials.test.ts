@@ -1,9 +1,17 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { serve } from "bun";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { deleteSecret, readSecret, redactSecretRef, writeSecret } from "./backends.js";
+import { SECURITY_INTERACTIVE_MAX_LINE_BYTES } from "../security/macos-keychain.js";
+import { createFakeSecurity } from "../test/fake-security.js";
+import {
+  deleteSecret,
+  readSecret,
+  redactSecretRef,
+  setKeychainCommandRunnerForTests,
+  writeSecret,
+} from "./backends.js";
 import { explainCredentialPolicy, publicCredentialConnection } from "./broker.js";
 import {
   closeCredentialsDb,
@@ -19,6 +27,7 @@ const originalVaultAddr = process.env.VAULT_ADDR;
 const originalVaultToken = process.env.VAULT_TOKEN;
 
 afterEach(() => {
+  setKeychainCommandRunnerForTests();
   closeCredentialsDb();
   if (stateDir) rmSync(stateDir, { recursive: true, force: true });
   stateDir = null;
@@ -115,6 +124,141 @@ describe("credential broker", () => {
     expect(await readSecret(ref)).toBe("dummy-provider-secret");
     expect(await deleteSecret(ref)).toBe(true);
     expect(vaultData.get("ravi/credentials/slack/rbbt")).toEqual({ marker: "keep" });
+  });
+});
+
+describe("credential broker Keychain backend", () => {
+  /** The shared fake `security` (src/test/fake-security.ts); never runs the real binary. */
+  function fakeSecurity() {
+    const fake = createFakeSecurity();
+    setKeychainCommandRunnerForTests(fake.run);
+    return { calls: fake.calls, items: fake.items, fake };
+  }
+
+  it("writes the secret through stdin: it is in no argv element", async () => {
+    const { calls } = fakeSecurity();
+    const secret = 'xoxb-secret"; delete-keychain login.keychain\n-w leak';
+
+    const ref = await writeSecret({ backend: "keychain", provider: "slack", connection: "rbbt", secret });
+
+    expect(ref).toBe("keychain:ravi.credentials/slack:rbbt");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.args).toEqual(["-i"]);
+    for (const call of calls) {
+      for (const arg of call.args) expect(arg).not.toContain("xoxb");
+    }
+    expect(calls[0]!.input).toBe(
+      `add-generic-password -U -a slack:rbbt -s ravi.credentials -X ${Buffer.from(secret).toString("hex")}\n`,
+    );
+  });
+
+  it("reads and deletes what it wrote", async () => {
+    fakeSecurity();
+    const ref = await writeSecret({ backend: "keychain", provider: "slack", connection: "rbbt", secret: "s3cr3t" });
+
+    expect(await readSecret(ref)).toBe("s3cr3t");
+    expect(await deleteSecret(ref)).toBe(true);
+    expect(await deleteSecret(ref)).toBe(false);
+  });
+
+  it("stores a ~3.5 KB printable secret (service-account JSON) through the quoted form", async () => {
+    const { calls } = fakeSecurity();
+    const secret = JSON.stringify({
+      type: "service_account",
+      private_key: `-----BEGIN PRIVATE KEY-----\n${"M".repeat(3200)}\n-----END PRIVATE KEY-----\n`,
+      client_email: "bot@project.iam.gserviceaccount.com",
+    });
+
+    const ref = await writeSecret({ backend: "keychain", provider: "gcp", connection: "main", secret });
+
+    expect(calls[0]!.args).toEqual(["-i"]);
+    expect(calls[0]!.input).toContain(' -w "{\\"type\\":');
+    expect(Buffer.byteLength(calls[0]!.input!)).toBeLessThanOrEqual(SECURITY_INTERACTIVE_MAX_LINE_BYTES);
+    expect(await readSecret(ref)).toBe(secret);
+  });
+
+  it("reads back a non-ASCII secret (printed as hex by `security -g`)", async () => {
+    fakeSecurity();
+    const ref = await writeSecret({ backend: "keychain", provider: "slack", connection: "rbbt", secret: "senha-ç✓" });
+    expect(await readSecret(ref)).toBe("senha-ç✓");
+  });
+
+  it("reads with `find-generic-password -g`, so hex-shaped printable secrets come back verbatim", async () => {
+    const { calls } = fakeSecurity();
+    const secrets = ["123456", "000000", "0a", "c3a9", "deadbeef", '{"a":"\\u00e9"}', "é", 'x "q" \\ \n'];
+    for (const secret of secrets) {
+      const ref = await writeSecret({ backend: "keychain", provider: "p", connection: "c", secret });
+      expect(await readSecret(ref)).toBe(secret);
+    }
+    const reads = calls.filter((call) => call.args[0] === "find-generic-password");
+    expect(reads).toHaveLength(secrets.length);
+    for (const read of reads) {
+      expect(read.args).toContain("-g");
+      expect(read.args).not.toContain("-w");
+    }
+  });
+
+  it("reads a legacy item an older Ravi wrote with `add-generic-password -w <secret>` in argv", async () => {
+    const { fake } = fakeSecurity();
+    fake.run(["add-generic-password", "-U", "-a", "slack:rbbt", "-s", "ravi.credentials", "-w", "000000"]);
+    fake.run(["add-generic-password", "-U", "-a", "slack:old", "-s", "ravi.credentials", "-w", "xoxb-ç"]);
+
+    expect(await readSecret("keychain:ravi.credentials/slack:rbbt")).toBe("000000");
+    expect(await readSecret("keychain:ravi.credentials/slack:old")).toBe("xoxb-ç");
+  });
+
+  it("round-trips a printable secret that fills the `security -i` line exactly", async () => {
+    const { calls } = fakeSecurity();
+    const overhead = Buffer.byteLength('add-generic-password -U -a slack:rbbt -s ravi.credentials -w ""\n');
+    const secret = "7".repeat(SECURITY_INTERACTIVE_MAX_LINE_BYTES - overhead);
+
+    const ref = await writeSecret({ backend: "keychain", provider: "slack", connection: "rbbt", secret });
+
+    expect(Buffer.byteLength(calls[0]!.input!)).toBe(SECURITY_INTERACTIVE_MAX_LINE_BYTES);
+    expect(await readSecret(ref)).toBe(secret);
+    await expect(
+      writeSecret({ backend: "keychain", provider: "slack", connection: "rbbt", secret: `${secret}7` }),
+    ).rejects.toThrow("vault backend");
+  });
+
+  it("fails a read whose output it cannot parse, without the output in the error", async () => {
+    setKeychainCommandRunnerForTests(() => ({ status: 0, stdout: "", stderr: "password: 0xZZ \n" }));
+    await expect(readSecret("keychain:ravi.credentials/slack:rbbt")).rejects.toThrow("cannot parse");
+  });
+
+  it("refuses a secret too large for one `security -i` line instead of truncating it", async () => {
+    const { calls } = fakeSecurity();
+    const secret = "x".repeat(SECURITY_INTERACTIVE_MAX_LINE_BYTES);
+
+    await expect(writeSecret({ backend: "keychain", provider: "slack", connection: "rbbt", secret })).rejects.toThrow(
+      "vault backend",
+    );
+    expect(calls).toHaveLength(0);
+  });
+
+  it("refuses a Keychain service name the interactive parser would split", async () => {
+    const { calls } = fakeSecurity();
+    const previous = process.env.RAVI_CREDENTIALS_KEYCHAIN_SERVICE;
+    process.env.RAVI_CREDENTIALS_KEYCHAIN_SERVICE = "ravi creds";
+    try {
+      await expect(
+        writeSecret({ backend: "keychain", provider: "slack", connection: "rbbt", secret: "s3cr3t" }),
+      ).rejects.toThrow("RAVI_CREDENTIALS_KEYCHAIN_SERVICE");
+    } finally {
+      if (previous === undefined) delete process.env.RAVI_CREDENTIALS_KEYCHAIN_SERVICE;
+      else process.env.RAVI_CREDENTIALS_KEYCHAIN_SERVICE = previous;
+    }
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe("credential broker DB file", () => {
+  const posixOnly = process.platform === "win32" ? it.skip : it;
+
+  posixOnly("is 0600 after open", () => {
+    const options = tempOptions();
+    listCredentialConnections({}, options);
+    expect(statSync(options.dbPath!).mode & 0o777).toBe(0o600);
   });
 });
 
