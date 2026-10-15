@@ -78,10 +78,10 @@ export function buildRemoteEnvSetup(
   // A loopback SSH agent shares the daemon's network namespace, but not its
   // home/state directory. Other hosts need an explicitly reachable gateway URL.
   if (!forwardedEnv.RAVI_GATEWAY_URL && ["127.0.0.1", "localhost", "::1", "[::1]"].includes(host)) {
-    const portText = hostEnv.RAVI_HTTP_PORT || hostEnv.RAVI_WEBHOOK_PORT;
+    const portText = hostEnv.RAVI_HTTP_PORT ?? hostEnv.RAVI_WEBHOOK_PORT;
     const port = Number(portText);
     if (portText?.trim() && Number.isInteger(port) && port > 0 && port <= 65535) {
-      const bindHost = hostEnv.RAVI_HTTP_HOST || hostEnv.RAVI_WEBHOOK_HOST;
+      const bindHost = hostEnv.RAVI_HTTP_HOST?.trim() || hostEnv.RAVI_WEBHOOK_HOST?.trim() || "127.0.0.1";
       const gatewayHost = bindHost === "::1" || bindHost === "::" ? "[::1]" : "127.0.0.1";
       forwardedEnv.RAVI_GATEWAY_URL = `http://${gatewayHost}:${port}`;
     }

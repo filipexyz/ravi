@@ -91,6 +91,8 @@ The Claude Code provider adapts the current default cloud execution bridge into 
   SSH agents only, it MAY derive that URL from the enabled daemon HTTP listener
   (`RAVI_HTTP_PORT`, or its webhook alias). It MUST NOT infer that a different
   host can reach the daemon through loopback or forward unrelated host secrets.
+  Derivation MUST use the listener's port precedence (an explicitly empty HTTP
+  port disables the listener) and trimmed HTTP/webhook host selection.
 - A successful result MUST produce `turn.complete` with session id and usage.
 - A non-success result MUST produce `turn.failed`.
 - A query exception MUST become recoverable `turn.failed`, not an unhandled event-loop error.

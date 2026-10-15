@@ -21,6 +21,9 @@
   unrelated remote host does not receive an inferred loopback URL.
 - An explicit gateway URL takes precedence, invalid HTTP ports do not create a
   URL, and unrelated secrets never enter the forwarded environment.
+- Gateway derivation follows the listener's configuration precedence: an
+  explicitly empty HTTP port disables fallback to the webhook port, and HTTP
+  and webhook host values are trimmed before selecting the IPv6 loopback URL.
 
 ## Regression Cases
 

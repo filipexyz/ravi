@@ -4,7 +4,12 @@ import { buildRemoteEnvSetup } from "./remote-spawn.js";
 
 const keys = ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "RAVI_CONTEXT_KEY", "RAVI_GATEWAY_URL"];
 
-function readRemoteEnv(env: Record<string, string>, host = "127.0.0.1", hostEnv: Record<string, string> = {}) {
+/** Execute the SSH export script in a real shell and read its forwarded values. */
+function readRemoteEnv(
+  env: Record<string, string>,
+  host = "127.0.0.1",
+  hostEnv: Record<string, string | undefined> = {},
+) {
   const setup = buildRemoteEnvSetup(host, env, hostEnv);
   const probe = `console.log(JSON.stringify(Object.fromEntries(${JSON.stringify(keys)}.map(k=>[k,process.env[k]??null]))))`;
   const quote = (value: string) => `'${value.replace(/'/g, "'\\''")}'`;
@@ -66,5 +71,23 @@ describe("SSH remote runtime environment", () => {
     expect(
       readRemoteEnv({}, "localhost", { RAVI_WEBHOOK_PORT: "7777", RAVI_WEBHOOK_HOST: "::1" }).RAVI_GATEWAY_URL,
     ).toBe("http://[::1]:7777");
+  });
+
+  it("does not revive the webhook port alias when the HTTP port is explicitly disabled", () => {
+    for (const port of ["", "   "]) {
+      expect(
+        readRemoteEnv({}, "localhost", { RAVI_HTTP_PORT: port, RAVI_WEBHOOK_PORT: "7777" }).RAVI_GATEWAY_URL,
+      ).toBeNull();
+    }
+  });
+
+  it("normalizes the preferred listener host and its alias before selecting IPv6", () => {
+    for (const hostEnv of [
+      { RAVI_HTTP_PORT: "7777", RAVI_HTTP_HOST: " ::1 " },
+      { RAVI_HTTP_PORT: "7777", RAVI_WEBHOOK_HOST: " ::1 " },
+      { RAVI_HTTP_PORT: "7777", RAVI_HTTP_HOST: "   ", RAVI_WEBHOOK_HOST: " ::1 " },
+    ]) {
+      expect(readRemoteEnv({}, "localhost", hostEnv).RAVI_GATEWAY_URL).toBe("http://[::1]:7777");
+    }
   });
 });
