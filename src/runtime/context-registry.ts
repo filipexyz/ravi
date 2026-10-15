@@ -34,6 +34,14 @@ export const DEFAULT_CONTEXT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const DEFAULT_DERIVED_CONTEXT_TTL_MS = 60 * 60 * 1000;
 export const DEFAULT_BOOTSTRAP_CONTEXT_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 export const ADMIN_BOOTSTRAP_KIND = "admin-bootstrap";
+/** Random bytes behind a generated context key: 18 bytes = 144 bits = 24 base64url characters. */
+export const CONTEXT_KEY_RANDOM_BYTES = 18;
+/**
+ * Shortest key an import (`init-admin-key --from-env`) accepts: `rctx_` + the 24
+ * characters a generated key carries. Keys are stored as unsalted SHA-256
+ * digests, which is only safe while the key itself is unguessable.
+ */
+export const MIN_CONTEXT_KEY_LENGTH = "rctx_".length + Math.ceil((CONTEXT_KEY_RANDOM_BYTES * 8) / 6);
 export const ADMIN_BOOTSTRAP_AGENT_ID = "bootstrap";
 
 export interface CreateRuntimeContextInput {
@@ -243,7 +251,7 @@ export function resolveRuntimeContextOrThrow(
 }
 
 export function getRuntimeContextFromEnv(env: NodeJS.ProcessEnv = process.env): ContextRecord | undefined {
-  const key = env[RAVI_CONTEXT_KEY_ENV];
+  const key = env[RAVI_CONTEXT_KEY_ENV]?.trim();
   if (!key) return undefined;
   return resolveRuntimeContext(key) ?? undefined;
 }
@@ -582,5 +590,5 @@ function resolveChildExpiresAt(
 }
 
 function generateOpaqueToken(prefix: string): string {
-  return `${prefix}_${randomBytes(18).toString("base64url")}`;
+  return `${prefix}_${randomBytes(CONTEXT_KEY_RANDOM_BYTES).toString("base64url")}`;
 }

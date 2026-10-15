@@ -20,6 +20,7 @@ import { normalizePhone, normalizeRoutePattern } from "../utils/phone.js";
 import { normalizeLimitOffsetPage, type ListPage } from "../utils/pagination.js";
 import { timestampLikeToMs } from "../utils/provider-timestamp.js";
 import { executeWrite } from "../db/write-retry.js";
+import { preparePrivateSqliteFile } from "../security/private-files.js";
 import {
   CLI_COMMAND_ACCESS_KIND_MIGRATION_KEYS,
   migrateAgentDefaultsRecord,
@@ -1245,6 +1246,9 @@ function getDb(): Database {
     }
   }
 
+  // Owner-only from the start: SQLite would create ravi.db with the umask
+  // (usually 0644). The -wal/-shm files it creates inherit the db's mode.
+  preparePrivateSqliteFile(nextDbPath);
   const db = new Database(nextDbPath);
   instrumentSlowQueries(db);
   routerDbState.db = db;
@@ -6222,7 +6226,7 @@ function getStatements(): PreparedStatements {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
     getContextById: database.prepare("SELECT * FROM contexts WHERE context_id = ?"),
-    getContextByKey: database.prepare("SELECT * FROM contexts WHERE context_key = ?"),
+    getContextByKey: database.prepare(CONTEXT_BY_KEY_SQL),
     listContexts: database.prepare("SELECT * FROM contexts ORDER BY created_at DESC"),
     touchContext: database.prepare("UPDATE contexts SET last_used_at = ? WHERE context_id = ?"),
     revokeContext: database.prepare("UPDATE contexts SET revoked_at = ? WHERE context_id = ?"),
@@ -6418,10 +6422,54 @@ function rowToChannel(row: ChannelRow): ChannelConfig {
   return result;
 }
 
-function rowToContext(row: ContextRow): ContextRecord {
+/**
+ * Context keys are bearer credentials, so `contexts.context_key` stores only a
+ * digest: `kh1:` + base64url(sha256(key)). Keys are random opaque tokens
+ * (`rctx_` + 144 random bits), so an unsalted fast hash is enough and the column
+ * stays UNIQUE. A digest is never a valid bearer: hashing it again never yields
+ * itself, and gateway auth requires the `rctx_` prefix anyway.
+ */
+export const CONTEXT_KEY_DIGEST_PREFIX = "kh1:";
+
+export function contextKeyDigest(contextKey: string): string {
+  return `${CONTEXT_KEY_DIGEST_PREFIX}${createHash("sha256").update(contextKey, "utf8").digest("base64url")}`;
+}
+
+export function isContextKeyDigest(value: string): boolean {
+  return value.startsWith(CONTEXT_KEY_DIGEST_PREFIX);
+}
+
+/**
+ * Values to match `context_key` against for a presented key: its digest, plus
+ * the key itself for legacy rows that still hold plaintext (written by an older
+ * Ravi and not migrated yet). A presented digest is never matched as plaintext,
+ * so reading the database never yields a usable bearer.
+ */
+function contextKeyLookupValues(contextKey: string): [string, string] {
+  const digest = contextKeyDigest(contextKey);
+  return [digest, isContextKeyDigest(contextKey) ? digest : contextKey];
+}
+
+/** SQL predicate (on `contexts`) for rows that still hold a plaintext key. */
+export const PLAINTEXT_CONTEXT_KEY_SQL = `substr(context_key, 1, ${CONTEXT_KEY_DIGEST_PREFIX.length}) <> '${CONTEXT_KEY_DIGEST_PREFIX}'`;
+
+/**
+ * Lookup by presented key. The digest row wins; a legacy plaintext row is
+ * consulted only when no digest matched (the ORDER BY sorts digest rows first,
+ * so a plaintext twin of a hashed key never shadows it, whatever the insertion
+ * order). One statement keeps `dbGetContextByKeyReadOnly` read-only.
+ */
+const CONTEXT_BY_KEY_SQL = `SELECT * FROM contexts WHERE context_key IN (?, ?) ORDER BY (${PLAINTEXT_CONTEXT_KEY_SQL}) ASC LIMIT 1`;
+
+/**
+ * Map a row to a record. `contextKey` is the key the caller presented when the
+ * row was found by key, and otherwise the stored value: a digest, never a
+ * usable bearer.
+ */
+function rowToContext(row: ContextRow, presentedKey?: string): ContextRecord {
   const result: ContextRecord = {
     contextId: row.context_id,
-    contextKey: row.context_key,
+    contextKey: presentedKey ?? row.context_key,
     kind: row.kind,
     capabilities: [],
     createdAt: row.created_at,
@@ -9889,19 +9937,30 @@ export function dbListDeletedInstances(): InstanceConfig[] {
 // Context Registry
 // ============================================================================
 
+/**
+ * Create a context. Only the key's digest is stored; the returned record is the
+ * one place the plaintext key is handed back, so the issuer must pass it on now.
+ */
 export function dbCreateContext(input: z.input<typeof ContextInputSchema>): ContextRecord {
   const validated = ContextInputSchema.parse(input);
+  if (isContextKeyDigest(validated.contextKey)) {
+    throw new Error(`Context key must not use the reserved ${CONTEXT_KEY_DIGEST_PREFIX} digest prefix`);
+  }
   if (validated.agentId && !dbGetAgent(validated.agentId)) {
     throw new Error(`Agent not found: ${validated.agentId}`);
   }
 
   const s = getStatements();
   const createdAt = validated.createdAt ?? Date.now();
+  // A legacy plaintext row with the same key would not trip the UNIQUE index.
+  if (s.getContextByKey.get(...contextKeyLookupValues(validated.contextKey))) {
+    throw new Error(`Context already exists: ${validated.contextId}`);
+  }
 
   try {
     s.insertContext.run(
       validated.contextId,
-      validated.contextKey,
+      contextKeyDigest(validated.contextKey),
       validated.kind,
       validated.agentId ?? null,
       validated.sessionKey ?? null,
@@ -9921,7 +9980,7 @@ export function dbCreateContext(input: z.input<typeof ContextInputSchema>): Cont
     throw err;
   }
 
-  return dbGetContext(validated.contextId)!;
+  return { ...dbGetContext(validated.contextId)!, contextKey: validated.contextKey };
 }
 
 export function dbGetContext(contextId: string): ContextRecord | null {
@@ -9932,8 +9991,8 @@ export function dbGetContext(contextId: string): ContextRecord | null {
 
 export function dbGetContextByKey(contextKey: string): ContextRecord | null {
   const s = getStatements();
-  const row = s.getContextByKey.get(contextKey) as ContextRow | undefined;
-  return row ? rowToContext(row) : null;
+  const row = s.getContextByKey.get(...contextKeyLookupValues(contextKey)) as ContextRow | undefined;
+  return row ? rowToContext(row, contextKey) : null;
 }
 
 export function dbGetContextByKeyReadOnly(contextKey: string): ContextRecord | null {
@@ -9943,8 +10002,8 @@ export function dbGetContextByKeyReadOnly(contextKey: string): ContextRecord | n
   const db = new Database(dbPath, { readonly: true, create: false });
   try {
     db.exec("PRAGMA busy_timeout = 1000");
-    const row = db.prepare("SELECT * FROM contexts WHERE context_key = ?").get(contextKey) as ContextRow | undefined;
-    return row ? rowToContext(row) : null;
+    const row = db.prepare(CONTEXT_BY_KEY_SQL).get(...contextKeyLookupValues(contextKey)) as ContextRow | undefined;
+    return row ? rowToContext(row, contextKey) : null;
   } catch (error) {
     if (error instanceof Error && /no such table: contexts/i.test(error.message)) {
       return null;
@@ -9953,6 +10012,74 @@ export function dbGetContextByKeyReadOnly(contextKey: string): ContextRecord | n
   } finally {
     db.close();
   }
+}
+
+export interface ContextKeyDigestMigrationResult {
+  /** Rows whose plaintext key was replaced by its digest. */
+  migrated: number;
+  /** Rows left as they were because their digest is already taken by another row. */
+  skipped: number;
+  /** Context ids of the skipped rows (ids are not secrets; keys are never logged). */
+  skippedContextIds: string[];
+}
+
+const CONTEXT_KEY_MIGRATION_BATCH = 500;
+
+/**
+ * Replace every plaintext `context_key` with its digest, in one write
+ * transaction, `CONTEXT_KEY_MIGRATION_BATCH` rows per read. Idempotent: rows
+ * that already hold a digest are never selected, so a second run changes 0.
+ *
+ * The daemon runs this at boot, not `getDb()`: the daemon is the single writer
+ * of live authority, and a newer CLI hashing rows under an older daemon (which
+ * looks keys up by plaintext) would strip live agents of their authority until
+ * the daemon restarted. Lookups accept legacy plaintext rows until then.
+ */
+export function migrateContextKeysToDigest(db: Database = getDb()): ContextKeyDigestMigrationResult {
+  const result = executeWrite(
+    db,
+    (database) => {
+      const select = database.prepare(
+        `SELECT rowid AS rid, context_id, context_key FROM contexts WHERE rowid > ? AND ${PLAINTEXT_CONTEXT_KEY_SQL} ORDER BY rowid LIMIT ?`,
+      );
+      const taken = database.prepare("SELECT 1 FROM contexts WHERE context_key = ?");
+      const update = database.prepare("UPDATE contexts SET context_key = ? WHERE rowid = ?");
+      let migrated = 0;
+      const skippedContextIds: string[] = [];
+      let cursor = 0;
+      while (true) {
+        const rows = select.all(cursor, CONTEXT_KEY_MIGRATION_BATCH) as Array<{
+          rid: number;
+          context_id: string;
+          context_key: string;
+        }>;
+        if (rows.length === 0) break;
+        for (const row of rows) {
+          cursor = row.rid;
+          const digest = contextKeyDigest(row.context_key);
+          if (taken.get(digest)) {
+            skippedContextIds.push(row.context_id);
+            continue;
+          }
+          update.run(digest, row.rid);
+          migrated++;
+        }
+      }
+      return { migrated, skipped: skippedContextIds.length, skippedContextIds };
+    },
+    { label: "router:migrateContextKeysToDigest" },
+  );
+  if (result.migrated > 0 || result.skipped > 0) {
+    log.info("Stored legacy context keys as digests", { migrated: result.migrated, skipped: result.skipped });
+  }
+  if (result.skipped > 0) {
+    // Ids only: the plaintext keys are bearers and must never reach the log.
+    log.warn(
+      "Some legacy context keys were left in plaintext because their digest is already in use; revoke them with `ravi context revoke <id>`",
+      { skipped: result.skipped, skippedContextIds: result.skippedContextIds },
+    );
+  }
+  return result;
 }
 
 export function dbListContexts(options: ListContextsOptions = {}): ContextRecord[] {

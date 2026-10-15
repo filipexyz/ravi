@@ -1044,7 +1044,7 @@ function requireCalendarPermission(
   if (canUseCalendar(ctx, permission, calendar)) return;
   throw new CloudAuthError(
     "ORG_ACCESS_DENIED",
-    `Permission denied: agent:${ctx.agentId} requires ${permission} on calendar:${calendar.id}`,
+    `Permission denied: agent:${ctx.agentId ?? "unknown"} requires ${permission} on calendar:${calendar.id}`,
   );
 }
 
@@ -1053,7 +1053,7 @@ function requireProviderPermission(permission: "sync" | "manage", provider: stri
   if (canUseCalendarProvider(ctx, permission, provider)) return;
   throw new CloudAuthError(
     "ORG_ACCESS_DENIED",
-    `Permission denied: agent:${ctx.agentId} requires ${permission} on calendar-provider:${provider}`,
+    `Permission denied: agent:${ctx.agentId ?? "unknown"} requires ${permission} on calendar-provider:${provider}`,
   );
 }
 

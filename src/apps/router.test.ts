@@ -993,6 +993,38 @@ describe("Ravi app router", () => {
     expect(allowed.ok).toBe(true);
   });
 
+  it("denies app operations under a context record without an agent instead of treating it as the local operator", async () => {
+    const root = makeRepo();
+    writeManifest(root, "khal-tasks", manifest("khal-tasks"));
+    const agentless = (capabilities: ContextCapability[]): { context: ContextRecord } => ({
+      context: { ...appToolContext(capabilities).context, kind: "test-agentless", agentId: undefined },
+    });
+
+    // No agent and no record: the local operator may run it.
+    const operator = await runAppOperation({ appId: "khal-tasks", operation: "check", json: true });
+    expect(operator.ok).toBe(true);
+
+    const denied = await runWithContext(agentless([]), () =>
+      runAppOperation({ appId: "khal-tasks", operation: "check", json: true }),
+    );
+    expect(denied).toMatchObject({ ok: false, errorCode: "not_found", error: "Ravi app was not found." });
+    expect(
+      runWithContext(agentless([]), () =>
+        resolveAppAliasInvocation(["khal-tasks", "check", "--json"], { staticRootCommands: new Set(["apps"]) }),
+      ),
+    ).toBe(null);
+
+    const mutating = await runWithContext(agentless([appCapability("use")]), () =>
+      runAppOperation({ appId: "khal-tasks", operation: "create", json: true, execute: true }),
+    );
+    expect(mutating).toMatchObject({ ok: false, errorCode: "PERMISSION_DENIED" });
+
+    const allowed = await runWithContext(agentless([appCapability("use")]), () =>
+      runAppOperation({ appId: "khal-tasks", operation: "check", json: true }),
+    );
+    expect(allowed.ok).toBe(true);
+  });
+
   it("does not leak invalid hidden app manifests before app use permission", async () => {
     const root = makeRepo();
     writeManifest(root, "hidden-invalid", {

@@ -37,6 +37,10 @@ export interface CliAuditEventOptions {
   parentContextId?: string | null;
   /** Agent bound to the context. */
   agentId?: string | null;
+  /** Sandbox run the command was dispatched for (sandbox listener only). */
+  runId?: string;
+  /** Gate request id (`X-Ravi-Request-Id`) of the dispatched request (sandbox listener only). */
+  requestId?: string;
 }
 
 export async function emitCliAuditEvent(options: CliAuditEventOptions): Promise<void> {
@@ -77,6 +81,8 @@ export function buildCliAuditPayload(options: CliAuditEventOptions, explicitTool
     ...(options.contextId !== undefined ? { contextId: options.contextId } : {}),
     ...(options.parentContextId !== undefined ? { parentContextId: options.parentContextId } : {}),
     ...(options.agentId !== undefined ? { agentId: options.agentId } : {}),
+    ...(options.runId !== undefined ? { runId: options.runId } : {}),
+    ...(options.requestId !== undefined ? { requestId: options.requestId } : {}),
     timestamp: new Date().toISOString(),
     sessionKey: "_cli",
     cliInvocation,
