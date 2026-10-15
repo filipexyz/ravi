@@ -1,8 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { runWithContext, type ToolContext } from "../cli/context.js";
-import type { ContextCapability } from "../router/router-db.js";
+import {
+  dbCreateAgent,
+  dbCreateContext,
+  dbDeleteAgent,
+  dbGetContext,
+  type ContextCapability,
+} from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { listPermissionDenials } from "./denials.js";
+import { flushPermissionAuditEvents, listPermissionDenials, setPermissionAuditPublisherForTest } from "./denials.js";
 import {
   getScopeContext,
   isScopeEnforced,
@@ -14,6 +20,9 @@ import {
   canAccessResource,
   recordResourceAccessDenial,
   enforceScopeCheck,
+  canViewAgent,
+  filterVisibleAgents,
+  isLocalOperatorScope,
   type ScopeContext,
 } from "./scope.js";
 
@@ -884,6 +893,141 @@ describe("Scope Isolation", () => {
         objectType: "agent",
         objectId: "main",
       });
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Context record without an agent (orphaned context, test fixtures)
+  // --------------------------------------------------------------------------
+
+  describe("context record without an agent", () => {
+    function agentlessCtx(capabilities: ContextCapability[]): ScopeContext {
+      return {
+        context: {
+          contextId: "ctx_agentless",
+          contextKey: "rctx_agentless",
+          kind: "test-agentless",
+          capabilities,
+          metadata: {},
+          createdAt: 0,
+        },
+      };
+    }
+
+    it("only the caller with neither agent nor context record is the local operator", () => {
+      expect(isLocalOperatorScope({})).toBe(true);
+      expect(isLocalOperatorScope(undefined)).toBe(true);
+      expect(isLocalOperatorScope({ agentId: "dev" })).toBe(false);
+      expect(isLocalOperatorScope(agentlessCtx([]))).toBe(false);
+    });
+
+    it("authorizes from the record's capabilities only", () => {
+      const ctx = agentlessCtx([cap("access", "session", "allowed-session")]);
+      const sessions: MinimalSession[] = [
+        { name: "allowed-session", sessionKey: "agent:main:allowed" },
+        { name: "other-session", sessionKey: "agent:main:other" },
+      ];
+
+      expect(isScopeEnforced(ctx)).toBe(true);
+      expect(canAccessSession(ctx, "allowed-session")).toBe(true);
+      expect(canAccessSession(ctx, "other-session")).toBe(false);
+      expect(canModifySession(ctx, "allowed-session")).toBe(false);
+      expect(
+        filterAccessibleSessions(ctx, sessions as Parameters<typeof filterAccessibleSessions>[1]).map((s) => s.name),
+      ).toEqual(["allowed-session"]);
+      expect(canViewAgent(ctx, "main")).toBe(false);
+      expect(filterVisibleAgents(ctx, [{ id: "main" }, { id: "dev" }])).toEqual([]);
+      expect(canAccessContact(ctx, { id: "contact-1", tags: [] })).toBe(false);
+      expect(canWriteContacts(ctx)).toBe(false);
+      expect(canAccessResource(ctx, "main", "read")).toBe(false);
+      expect(canAccessResource(ctx, undefined, "read")).toBe(false);
+    });
+
+    it("refuses open-scope command groups without a grant on the record", () => {
+      runWithContext(agentlessCtx([]) as ToolContext, () => {
+        const open = enforceScopeCheck("open", "sessions", "list");
+        expect(open.allowed).toBe(false);
+        expect(open.errorMessage).toContain("agent:unknown requires execute on group:sessions_list");
+        expect(open.errorMessage).not.toContain("undefined");
+        const superadmin = enforceScopeCheck("superadmin", "permissions", "grant");
+        expect(superadmin.allowed).toBe(false);
+        expect(superadmin.errorMessage).toContain("agent:unknown requires admin on system:*");
+      });
+      const denial = recordResourceAccessDenial({
+        ctx: agentlessCtx([]),
+        resourceAgentId: "main",
+        mode: "read",
+        resourceLabel: "cron job abc12345",
+        command: "cron show",
+      });
+      expect(denial.message).toContain("agent:unknown cannot read cron job abc12345");
+      expect(denial.message).not.toContain("local operator");
+      runWithContext(agentlessCtx([cap("execute", "group", "sessions")]) as ToolContext, () => {
+        expect(enforceScopeCheck("open", "sessions", "list").allowed).toBe(true);
+      });
+    });
+
+    it("never recommends the unknown agent as a grant subject", async () => {
+      const events: Record<string, unknown>[] = [];
+      const suppressed = process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+      delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+      setPermissionAuditPublisherForTest(async (_topic, data) => {
+        events.push(data);
+      });
+      try {
+        runWithContext(agentlessCtx([]) as ToolContext, () => {
+          expect(enforceScopeCheck("open", "sessions", "list").allowed).toBe(false);
+        });
+        await flushPermissionAuditEvents();
+      } finally {
+        setPermissionAuditPublisherForTest();
+        if (suppressed !== undefined) process.env.RAVI_SUPPRESS_AUDIT_EVENTS = suppressed;
+      }
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ blockType: "agent_scope_missing_grant", recommendedGrantSubjects: [] });
+    });
+
+    it("decides an agentless record with admin capabilities by those capabilities, not by operator fallback", () => {
+      const admin = agentlessCtx([cap("admin", "system", "*")]);
+      expect(isLocalOperatorScope(admin)).toBe(false);
+      expect(isScopeEnforced(admin)).toBe(false);
+      runWithContext(admin as ToolContext, () => {
+        expect(enforceScopeCheck("superadmin", "permissions", "grant").allowed).toBe(true);
+        expect(enforceScopeCheck("open", "sessions", "list").allowed).toBe(true);
+      });
+
+      // The same record without the grant loses that authority: it never came from the operator.
+      const bare = agentlessCtx([]);
+      expect(isScopeEnforced(bare)).toBe(true);
+      runWithContext(bare as ToolContext, () => {
+        expect(enforceScopeCheck("superadmin", "permissions", "grant").allowed).toBe(false);
+      });
+    });
+
+    it("gives an orphaned context (its agent deleted) no operator fallback", () => {
+      dbCreateAgent({ id: "doomed", cwd: "/tmp/doomed" });
+      dbCreateContext({
+        contextId: "ctx_orphan",
+        contextKey: "rctx_orphan",
+        kind: "agent-runtime",
+        agentId: "doomed",
+        capabilities: [],
+      });
+      expect(dbDeleteAgent("doomed")).toBe(true);
+
+      // FK ON DELETE SET NULL leaves the record alive with no agent.
+      const orphan = dbGetContext("ctx_orphan");
+      expect(orphan?.agentId).toBeUndefined();
+
+      process.env.RAVI_CONTEXT_KEY = "rctx_orphan";
+      const ctx = getScopeContext();
+      expect(ctx.agentId).toBeUndefined();
+      expect(ctx.context?.contextId).toBe("ctx_orphan");
+      expect(isLocalOperatorScope(ctx)).toBe(false);
+      expect(isScopeEnforced(ctx)).toBe(true);
+      expect(canAccessSession(ctx, "doomed-main")).toBe(false);
+      expect(canAccessResource(ctx, "main", "read")).toBe(false);
+      expect(enforceScopeCheck("open", "sessions", "list").allowed).toBe(false);
     });
   });
 });

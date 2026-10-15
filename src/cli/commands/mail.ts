@@ -51,6 +51,7 @@ import {
   type MailOutboxStatus,
 } from "../../mailbox/index.js";
 import { projectMailMessageToInbox } from "../../inbox/index.js";
+import { isLocalOperatorScope } from "../../permissions/scope.js";
 import { ContractError, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { jsonObjectSchema, jsonValueSchema, stringNumberRecordSchema } from "../return-schemas.js";
 import { declareCommandReturns } from "./operational-return-schemas.js";
@@ -258,7 +259,7 @@ export class MailMessagesCommands {
         const mailboxRecord = getMailMailbox(mailbox);
         if (!mailboxRecord) failMailMailboxNotFound("mail messages list", mailbox, asJson);
         requireMailboxPermission("search", mailboxRecord);
-      } else if (getMailScopeContext().agentId && !canUseAnyMailbox(getMailScopeContext(), "search")) {
+      } else if (!isLocalOperatorScope(getMailScopeContext()) && !canUseAnyMailbox(getMailScopeContext(), "search")) {
         requireAnyMailboxPermission("search");
       }
       const messages = listMailMessages({
@@ -388,7 +389,7 @@ export class MailOutboxCommands {
         const mailboxRecord = getMailMailbox(mailbox);
         if (!mailboxRecord) failMailMailboxNotFound("mail outbox list", mailbox, asJson);
         requireMailboxPermission("send", mailboxRecord);
-      } else if (getMailScopeContext().agentId && !canUseAnyMailbox(getMailScopeContext(), "send")) {
+      } else if (!isLocalOperatorScope(getMailScopeContext()) && !canUseAnyMailbox(getMailScopeContext(), "send")) {
         requireAnyMailboxPermission("send");
       }
       const outbox = listMailOutbox({
@@ -624,10 +625,12 @@ export class MailThreadsCommands {
         includeAddresses,
         limit: 500,
       }).filter((message) => canUseRowMailbox("read", message.mailboxId));
-      if (!messages.length && getMailScopeContext().agentId) {
+      // A context record without an agent is not the operator: it must hold read on the thread's mailbox too.
+      const scopeCtx = getMailScopeContext();
+      if (!messages.length && !isLocalOperatorScope(scopeCtx)) {
         throw new CloudAuthError(
           "ORG_ACCESS_DENIED",
-          `Permission denied: agent:${getMailScopeContext().agentId} requires read on a mailbox in thread:${threadId}`,
+          `Permission denied: ${mailPrincipalLabel(scopeCtx)} requires read on a mailbox in thread:${threadId}`,
         );
       }
       const payload = { thread: safeMailThread(thread), messages: safeMailMessages(messages) };
@@ -1583,12 +1586,16 @@ function readMailMessageForContract(
   }
 }
 
+function mailPrincipalLabel(ctx: { agentId?: string }): string {
+  return `agent:${ctx.agentId ?? "unknown"}`;
+}
+
 function requireMailboxPermission(permission: "read" | "search" | "send" | "manage", mailbox: MailMailbox): void {
   const ctx = getMailScopeContext();
   if (canUseMailMailbox(ctx, permission, mailbox)) return;
   throw new CloudAuthError(
     "ORG_ACCESS_DENIED",
-    `Permission denied: agent:${ctx.agentId} requires ${permission} on mailbox:${mailbox.normalizedAddress}`,
+    `Permission denied: ${mailPrincipalLabel(ctx)} requires ${permission} on mailbox:${mailbox.normalizedAddress}`,
   );
 }
 
@@ -1597,7 +1604,7 @@ function requireProviderPermission(permission: "sync" | "manage", provider: stri
   if (canUseMailProvider(ctx, permission, provider)) return;
   throw new CloudAuthError(
     "ORG_ACCESS_DENIED",
-    `Permission denied: agent:${ctx.agentId} requires ${permission} on mail-provider:${provider}`,
+    `Permission denied: ${mailPrincipalLabel(ctx)} requires ${permission} on mail-provider:${provider}`,
   );
 }
 
@@ -1606,7 +1613,7 @@ function requireAnyMailboxPermission(permission: "read" | "search" | "send" | "m
   if (canUseAnyMailbox(ctx, permission)) return;
   throw new CloudAuthError(
     "ORG_ACCESS_DENIED",
-    `Permission denied: agent:${ctx.agentId} requires ${permission} on mailbox:*`,
+    `Permission denied: ${mailPrincipalLabel(ctx)} requires ${permission} on mailbox:*`,
   );
 }
 

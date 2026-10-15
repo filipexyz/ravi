@@ -13,6 +13,7 @@ applies_to:
   - src/runtime/runtime-request-context.ts
   - src/router/router-db.ts
   - src/cli/commands/context.ts
+  - src/cli/context.ts
 owners:
   - ravi-dev
 status: active
@@ -40,6 +41,12 @@ Runtime context keys are opaque credentials that connect provider turns, Ravi to
   compartment `agent_identity:<agent-id>:workspace:default`.
 - Child contexts issued from a `turn-runtime` context MUST remain derived
   credentials and MUST NOT bypass `resolveRuntimeContext`.
+- A process with a non-blank `RAVI_CONTEXT_KEY` acts only for that key. When
+  the key does not resolve (unknown, revoked, expired, or from another
+  install), CLI context resolution MUST NOT fall back to the
+  `~/.ravi/credentials.json` default credential or to legacy `RAVI_AGENT_ID` /
+  `RAVI_SESSION_*` identity. The caller is marked unresolved: it has no agent
+  and no capabilities and is never the local operator.
 - Daemon bootstrap admin detection MUST only consider `admin-bootstrap`
   contexts. Agent identity turn contexts that happen to snapshot
   `admin:system:*` MUST NOT count as bootstrap admin credentials.

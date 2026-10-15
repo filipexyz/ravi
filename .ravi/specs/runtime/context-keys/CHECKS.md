@@ -12,5 +12,12 @@
   with no materialized tool, executable, CLI, session, or contact authority.
 - Daemon bootstrap admin detection MUST only consider `admin-bootstrap`
   contexts.
+- With an admin default credential in `credentials.json` and
+  `RAVI_CONTEXT_KEY` set to an unknown, revoked or expired key, `getContext()`
+  returns `{ unresolvedContextKey: true }` (not the admin context), scope checks
+  are enforced and deny, and CLI command access denies with "requires a
+  resolved runtime principal". With `RAVI_CONTEXT_KEY` unset or blank, the
+  default credential is still used
+  (`bun test src/cli/command-access.test.ts src/cli/context.test.ts`).
 - `bun test src/runtime/context-registry.test.ts src/runtime/runtime-request-context.test.ts src/cli/commands/context.test.ts`
   SHOULD pass after changing context-key behavior.
