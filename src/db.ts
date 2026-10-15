@@ -1,6 +1,7 @@
 import { Database, type SQLQueryBindings } from "bun:sqlite";
 import { join } from "node:path";
 import { mkdirSync } from "node:fs";
+import { preparePrivateSqliteFile } from "./security/private-files.js";
 import { getRaviStateDir } from "./utils/paths.js";
 
 let db: Database | null = null;
@@ -25,6 +26,8 @@ function getDb(): Database {
 
   mkdirSync(getRaviStateDir(), { recursive: true });
 
+  // chat.db holds message contents: owner-only from the start.
+  preparePrivateSqliteFile(nextDbPath);
   db = new Database(nextDbPath);
   dbPath = nextDbPath;
 

@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
-import { runWithContext } from "./context.js";
+import { getContext, runWithContext } from "./context.js";
 import {
   buildCliCommandOperation,
   enforceCliCommandAccess,
@@ -11,7 +11,16 @@ import {
   redactCommandAccessInput,
 } from "./command-access.js";
 import type { CommandAccessOptions } from "./decorators.js";
-import { createRuntimeContext } from "../runtime/context-registry.js";
+import { createRuntimeContext, revokeRuntimeContext } from "../runtime/context-registry.js";
+import {
+  canAccessResource,
+  canAccessSession,
+  canModifySession,
+  enforceScopeCheck,
+  getScopeContext,
+  isLocalOperatorScope,
+  isScopeEnforced,
+} from "../permissions/scope.js";
 import { emptyCredentialsFile, upsertCredentialsEntry, writeCredentialsFile } from "../runtime/credentials-store.js";
 import {
   cleanupIsolatedRaviState,
@@ -373,6 +382,111 @@ describe("CLI command access enforcement", () => {
     }
   });
 
+  it("never fills a resolved agentless record's identity from RAVI_AGENT_ID or RAVI_SESSION_*", () => {
+    const record = createRuntimeContext({ kind: "test-agentless", capabilities: [], ttlMs: 0 });
+    process.env.RAVI_CONTEXT_KEY = record.contextKey;
+    process.env.RAVI_AGENT_ID = "main";
+    process.env.RAVI_SESSION_KEY = "agent:main:victim";
+    process.env.RAVI_SESSION_NAME = "victim";
+
+    const scope = getScopeContext();
+    expect(scope.context?.contextId).toBe(record.contextId);
+    expect(scope.agentId).toBeUndefined();
+    expect(scope.sessionName).toBeUndefined();
+    expect(isLocalOperatorScope(scope)).toBe(false);
+    expect(canAccessResource(scope, "main", "read")).toBe(false);
+    expect(canAccessResource(scope, "main", "mutate")).toBe(false);
+    expect(canAccessSession(scope, "victim")).toBe(false);
+    expect(canModifySession(scope, "victim")).toBe(false);
+  });
+
+  describe("a set but unresolvable RAVI_CONTEXT_KEY with an admin default credential", () => {
+    function writeAdminDefaultCredential(): ContextRecord {
+      const admin = createRuntimeContext({
+        kind: "admin-bootstrap",
+        agentId: "main",
+        capabilities: [{ permission: "admin", objectType: "system", objectId: "*" }],
+        ttlMs: 0,
+      });
+      const credentialsPath = join(stateDir!, "credentials.json");
+      process.env.RAVI_CREDENTIALS_PATH = credentialsPath;
+      writeCredentialsFile(
+        upsertCredentialsEntry(
+          emptyCredentialsFile(),
+          admin.contextKey,
+          {
+            context_id: admin.contextId,
+            agent_id: "main",
+            label: "admin",
+            kind: admin.kind,
+            issued_at: admin.createdAt,
+            expires_at: admin.expiresAt ?? null,
+          },
+          { setDefault: true },
+        ),
+        credentialsPath,
+      );
+      return admin;
+    }
+
+    function expectFailClosed(admin: ContextRecord): void {
+      const ctx = getContext();
+      expect(ctx?.contextId).not.toBe(admin.contextId);
+      expect(ctx?.context).toBeUndefined();
+      expect(ctx?.agentId).toBeUndefined();
+      expect(ctx?.unresolvedContextKey).toBe(true);
+
+      const scope = getScopeContext();
+      expect(isLocalOperatorScope(scope)).toBe(false);
+      expect(isScopeEnforced(scope)).toBe(true);
+      expect(enforceScopeCheck("open", "sessions", "list").allowed).toBe(false);
+      expect(enforceScopeCheck("superadmin", "permissions", "grant").allowed).toBe(false);
+
+      const result = enforceCliCommandAccess({ group: "demo", command: "create", access: ACCESS, source: "cli" });
+      expect(result.allowed).toBe(false);
+      expect(result.errorMessage).toContain("requires a resolved runtime principal");
+      expect(result.attempted).toEqual([]);
+    }
+
+    it("denies an unknown key instead of acting as the default credential", () => {
+      const admin = writeAdminDefaultCredential();
+      process.env.RAVI_CONTEXT_KEY = "rctx_does_not_exist";
+      process.env.RAVI_AGENT_ID = "main";
+      expectFailClosed(admin);
+    });
+
+    it("denies a revoked key instead of acting as the default credential", () => {
+      const admin = writeAdminDefaultCredential();
+      const revoked = createRuntimeContext({ kind: "cli-runtime", agentId: "main", capabilities: [], ttlMs: 0 });
+      revokeRuntimeContext(revoked.contextId);
+      process.env.RAVI_CONTEXT_KEY = revoked.contextKey;
+      expectFailClosed(admin);
+    });
+
+    it("denies an expired key instead of acting as the default credential", () => {
+      const admin = writeAdminDefaultCredential();
+      const expired = createRuntimeContext({
+        kind: "cli-runtime",
+        agentId: "main",
+        capabilities: [],
+        expiresAt: Date.now() - 1_000,
+      });
+      process.env.RAVI_CONTEXT_KEY = expired.contextKey;
+      expectFailClosed(admin);
+    });
+
+    it("still uses the default credential when RAVI_CONTEXT_KEY is unset or blank", () => {
+      const admin = writeAdminDefaultCredential();
+      for (const value of [undefined, "", "   "]) {
+        if (value === undefined) delete process.env.RAVI_CONTEXT_KEY;
+        else process.env.RAVI_CONTEXT_KEY = value;
+        const ctx = getContext();
+        expect(ctx?.contextId).toBe(admin.contextId);
+        expect(ctx?.unresolvedContextKey).toBeUndefined();
+      }
+    });
+  });
+
   it("respects commands that disallow local operator fallback", () => {
     const result = enforceCliCommandAccess({
       group: "demo",
@@ -677,6 +791,31 @@ describe("CLI command access enforcement", () => {
     expect(result.errorMessage).toContain("agent:dev cannot execute demo create");
     expect(result.attempted).toHaveLength(5);
     expect(result.attempted.every((decision) => decision.providerId === "context-capabilities")).toBe(true);
+  });
+
+  it("authorizes a gateway call under an agentless context record from the record only", () => {
+    const agentless = (capabilities: ContextRecord["capabilities"]): ContextRecord => ({
+      ...context(capabilities),
+      contextId: "ctx_command_access_agentless",
+      contextKey: "rctx_command_access_agentless",
+      kind: "test-agentless",
+      agentId: undefined,
+    });
+    const run = (record: ContextRecord) =>
+      runWithContext({ context: record }, () =>
+        enforceCliCommandAccess({ group: "demo", command: "create", access: ACCESS, source: "gateway" }),
+      );
+
+    const denied = run(agentless([]));
+    expect(denied.allowed).toBe(false);
+    expect(denied.errorMessage).toContain("agent:unknown cannot execute demo create");
+    expect(denied.attempted.length).toBeGreaterThan(0);
+    expect(denied.attempted.every((decision) => decision.providerId === "context-capabilities")).toBe(true);
+
+    const allowed = run(agentless([{ permission: "mutate", objectType: "demo.items", objectId: "create" }]));
+    expect(allowed.allowed).toBe(true);
+    expect(allowed.decision?.providerId).toBe("context-capabilities");
+    expect(allowed.decision?.objectId).toBe("create");
   });
 
   it("includes matching provider-owned permission tags in command denial guidance", () => {

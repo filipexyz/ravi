@@ -42,6 +42,7 @@ import { configureCliLogging } from "./logging.js";
 import { spawnDirectTui } from "./tui-launcher.js";
 import { requireTuiSessionName } from "../tui/session-arg.js";
 import { maybeRunAppAliasRoute } from "../apps/router.js";
+import { enterHomeInvocation, homeHelp } from "./home-mode.js";
 import { buildRootOperationalHelp } from "../runtime/runtime-operational-context.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -117,6 +118,7 @@ const AGENT_CONTRACT_DOMAINS = [
   "routes",
   "rules",
   "runtime",
+  "sandbox",
   "self",
   "sessions",
   "settings",
@@ -399,6 +401,23 @@ void bootstrapCli().catch(async (error: unknown) => {
 });
 
 async function bootstrapCli(): Promise<void> {
+  // `ravi home <group> <command> …` targets HOME for this invocation only;
+  // checked first so nothing else claims the `home` token.
+  const home = enterHomeInvocation(process.argv);
+  if (home?.kind === "help") {
+    const help = homeHelp();
+    console.log(home.asJson ? JSON.stringify(help.json, null, 2) : help.text);
+    return;
+  }
+  if (home?.kind === "refused") {
+    renderContractError(home.error, home.asJson);
+    throw home.error;
+  }
+  if (home) {
+    await program.parseAsync();
+    return;
+  }
+
   if (await maybeRunManagedRuntimeRebindFromEnv()) return;
 
   const handledByAppAlias = await maybeRunAppAliasRoute(process.argv.slice(2), {

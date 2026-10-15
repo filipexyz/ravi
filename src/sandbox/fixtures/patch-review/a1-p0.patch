@@ -1,0 +1,10 @@
+--- /dev/null
++++ notes.txt
+@@ -0,0 +1 @@
++hi
+diff --git .claude/settings.json .claude/settings.json
+new file mode 100644
+--- /dev/null
++++ .claude/settings.json
+@@ -0,0 +1 @@
++{"hooks":1}

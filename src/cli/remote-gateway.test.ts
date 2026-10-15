@@ -25,7 +25,11 @@ import {
   CALLER_CWD_HEADER,
   dispatchRemote,
   gatewayRequiredError,
+  getHomeGatewayConfig,
   getRemoteGatewayConfig,
+  HOME_RESPONSE_MAX_BYTES,
+  homeGatewayErrorToContractError,
+  isLoopbackGatewayHost,
   requiresRemoteGateway,
   resolveHostCliGatewayStateDirs,
   resolveRemoteGatewayConfig,
@@ -86,6 +90,69 @@ describe("remote gateway configuration", () => {
       }
       expect(failure).toMatchObject({ code: "REMOTE_GATEWAY_INVALID", exitCode: 2 });
     }
+  });
+
+  it("accepts plaintext HTTP only for a loopback host, and any HTTPS host", () => {
+    for (const value of [
+      "http://127.0.0.1:7777",
+      "http://localhost",
+      "http://[::1]:1",
+      "http://127.4.5.6/",
+      "https://x",
+    ]) {
+      expect(getRemoteGatewayConfig({ RAVI_GATEWAY_URL: value })).toEqual({
+        url: value.replace(/\/+$/, ""),
+        source: "env",
+      });
+    }
+  });
+
+  it("refuses plaintext HTTP to any other host with REMOTE_GATEWAY_INSECURE (exit 2)", () => {
+    for (const value of [
+      "http://gateway.example",
+      "http://127.0.0.1.evil.com",
+      "http://0.0.0.0",
+      "http://10.0.0.5",
+      "HTTP://EXAMPLE",
+      "http://user@127.0.0.1@evil",
+      "http://127.0.0.1:80@evil.example",
+      "http://localhost.evil.example",
+      "http://evil.localhost",
+      "http://[::ffff:10.0.0.5]",
+      "http://192.168.1.10:7777",
+    ]) {
+      let failure: unknown;
+      try {
+        getRemoteGatewayConfig({ RAVI_GATEWAY_URL: value });
+      } catch (error) {
+        failure = error;
+      }
+      expect({ value, failure }).toMatchObject({
+        value,
+        failure: { code: "REMOTE_GATEWAY_INSECURE", exitCode: 2 },
+      });
+    }
+  });
+
+  it("refuses an insecure RAVI_GATEWAY_URL before auto-bridging", async () => {
+    await expect(
+      resolveRemoteGatewayConfig(
+        { RAVI_CONTEXT_KEY: "rctx_test", RAVI_GATEWAY_URL: "http://gateway.example" },
+        "pages published",
+        { stateDir: "/home/user/.ravi", probeSocket: async () => true },
+      ),
+    ).rejects.toMatchObject({ code: "REMOTE_GATEWAY_INSECURE", exitCode: 2 });
+  });
+
+  it("treats only literal loopback addresses and localhost as loopback", () => {
+    expect(isLoopbackGatewayHost("127.0.0.1")).toBe(true);
+    expect(isLoopbackGatewayHost("127.255.255.254")).toBe(true);
+    expect(isLoopbackGatewayHost("[::1]")).toBe(true);
+    expect(isLoopbackGatewayHost("LOCALHOST")).toBe(true);
+    expect(isLoopbackGatewayHost("127.0.0.1.nip.io")).toBe(false);
+    expect(isLoopbackGatewayHost("128.0.0.1")).toBe(false);
+    expect(isLoopbackGatewayHost("[::]")).toBe(false);
+    expect(isLoopbackGatewayHost("app.localhost")).toBe(false);
   });
 
   it("accepts an explicit unix socket URL without opening loopback HTTP", () => {
@@ -863,7 +930,7 @@ describe("personal connector blocks over the gateway", () => {
       "connectors list",
       new CloudAuthError(
         "CONNECTOR_GROUP_BLOCKED",
-        'This message came from someone other than Luis, and personal connections serve only Luis\'s own requests. Reply in this chat: "I can\'t use Luis\'s Gmail for your request."',
+        "This message came from someone other than Luis, and personal connections serve only Luis's own requests. Reply in this chat: \"I can't use Luis's Gmail for your request.\"",
         {
           exitCode: 3,
           details: {
@@ -1242,5 +1309,365 @@ describe("gateway requirement for runtime context keys", () => {
     expect(resolveHostCliGatewayStateDirs({ RAVI_STATE_DIR: "/srv/ravi-state", HOME: "/tmp/x" })).toEqual([
       "/srv/ravi-state",
     ]);
+  });
+});
+
+describe("home gateway (ravi home)", () => {
+  const homeUrl = "https://gw.example.test/i/0b6c2f0e-6a3b-4f0e-9d7a-2c1f3e4d5a6b";
+  const grant = "eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJzYW5kYm94In0.SENTINEL_GRANT_SIG_2H7K";
+  const requestId = "4f1d2c3b-5a6e-4b7c-8d9e-0a1b2c3d4e5f";
+
+  function homeError(op: string, status: number, body: unknown, headerRequestId: string | null = null) {
+    return homeGatewayErrorToContractError(op, {
+      status,
+      ok: false,
+      body: typeof body === "string" ? body : JSON.stringify(body),
+      contentType: typeof body === "string" ? "text/html" : "application/json",
+      requestId: headerRequestId,
+    });
+  }
+
+  function thrown(fn: () => unknown): { code?: string; exitCode?: number; message?: string } {
+    try {
+      fn();
+    } catch (error) {
+      return error as { code?: string; exitCode?: number; message?: string };
+    }
+    throw new Error("expected a throw");
+  }
+
+  it("accepts an https URL and marks it as grant-authenticated", () => {
+    expect(getHomeGatewayConfig({ RAVI_HOME_GATEWAY_URL: `${homeUrl}//` })).toEqual({
+      url: homeUrl,
+      source: "home",
+      auth: "sandbox-grant",
+    });
+  });
+
+  it("requires RAVI_HOME_GATEWAY_URL and ignores RAVI_GATEWAY_URL", () => {
+    const error = thrown(() =>
+      getHomeGatewayConfig({ RAVI_GATEWAY_URL: "https://gateway.example.test", RAVI_CONTEXT_KEY: "rctx_x" }),
+    );
+    expect(error.code).toBe("HOME_GATEWAY_REQUIRED");
+    expect(error.exitCode).toBe(1);
+  });
+
+  it("refuses http (even loopback) and unix URLs with exit 2", () => {
+    for (const raw of ["http://gw.example.test/i/x", "http://127.0.0.1:7790", "unix:///tmp/ravi.sock"]) {
+      const error = thrown(() => getHomeGatewayConfig({ RAVI_HOME_GATEWAY_URL: raw }));
+      expect(error.code).toBe("HOME_GATEWAY_INSECURE");
+      expect(error.exitCode).toBe(2);
+    }
+  });
+
+  it("refuses credentials, a query or a fragment without echoing the URL", () => {
+    for (const raw of [
+      "https://SECRET_USER_1A:SECRET_PASS_1A@gw.example.test/i/x",
+      "https://SECRET_USER_1A@gw.example.test/i/x",
+      "https://gw.example.test/i/x?token=SECRET_QUERY_1A",
+      "https://gw.example.test/i/x?",
+      "https://gw.example.test/i/x#SECRET_FRAGMENT_1A",
+      "https://gw.example.test/i/x#",
+    ]) {
+      const error = thrown(() => getHomeGatewayConfig({ RAVI_HOME_GATEWAY_URL: raw }));
+      expect(error.code).toBe("HOME_GATEWAY_INVALID");
+      expect(error.exitCode).toBe(2);
+      expect(error.message).not.toContain("SECRET_");
+    }
+  });
+
+  it("sends neither the context key nor the cwd nor the internal marker, and does not follow redirects", async () => {
+    const seen: Array<{ url: string; init: RequestInit | undefined }> = [];
+    await dispatchRemote({
+      groupSegments: ["tasks"],
+      command: "report",
+      body: { taskId: "task-1", message: "hi" },
+      config: getHomeGatewayConfig({ RAVI_HOME_GATEWAY_URL: homeUrl }),
+      contextKey: "rctx_SENTINEL_KEY_6V2N",
+      cwd: "/SENTINEL_CWD_8B1X",
+      env: { RAVI_CONTEXT_KEY: "rctx_SENTINEL_KEY_6V2N", RAVI_GATEWAY_URL: "https://gateway.example.test" },
+      fetchImpl: (async (url: string, init?: RequestInit) => {
+        seen.push({ url, init });
+        return Response.json({ ok: true });
+      }) as typeof fetch,
+    });
+    expect(seen).toHaveLength(1);
+    const headers = new Headers(seen[0]?.init?.headers);
+    expect(seen[0]?.url).toBe(`${homeUrl}/api/v1/tasks/report`);
+    expect(Object.fromEntries(headers.entries())).toEqual({
+      "content-type": "application/json",
+      accept: "application/json",
+    });
+    expect(seen[0]?.init?.redirect).toBe("manual");
+    expect(seen[0]?.init?.body).toBe(JSON.stringify({ taskId: "task-1", message: "hi" }));
+    expect(JSON.stringify(seen)).not.toContain("SENTINEL");
+  });
+
+  it("adds the grant header only from RAVI_SANDBOX_GRANT", async () => {
+    const grants: Array<string | null> = [];
+    const fetchImpl = (async (_url: string, init?: RequestInit) => {
+      grants.push(new Headers(init?.headers).get("x-ravi-sandbox-grant"));
+      return Response.json({ ok: true });
+    }) as typeof fetch;
+    const config = getHomeGatewayConfig({ RAVI_HOME_GATEWAY_URL: homeUrl });
+    const base = { groupSegments: ["tasks"], command: "show", body: { taskId: "task-1" }, config, fetchImpl };
+    await dispatchRemote({ ...base, env: {} });
+    await dispatchRemote({ ...base, env: { RAVI_SANDBOX_GRANT: "  " } });
+    await dispatchRemote({ ...base, env: { RAVI_SANDBOX_GRANT: ` ${grant}\n` } });
+    expect(grants).toEqual([null, null, grant]);
+  });
+
+  it("refuses a malformed grant before sending and never echoes it", async () => {
+    let called = false;
+    const config = getHomeGatewayConfig({ RAVI_HOME_GATEWAY_URL: homeUrl });
+    for (const bad of [`${grant}\r\nx-injected: 1`, `${grant},${grant}`, "SENTINEL_GRANT_SIG not-a-jws"]) {
+      const error = await dispatchRemote({
+        groupSegments: ["tasks"],
+        command: "show",
+        body: { taskId: "task-1" },
+        config,
+        env: { RAVI_SANDBOX_GRANT: bad },
+        fetchImpl: (async () => {
+          called = true;
+          return Response.json({ ok: true });
+        }) as unknown as typeof fetch,
+      }).catch((caught: unknown) => caught as { code?: string; exitCode?: number; message?: string });
+      expect((error as { code?: string }).code).toBe("HOME_GRANT_INVALID");
+      expect((error as { exitCode?: number }).exitCode).toBe(2);
+      expect(JSON.stringify({ message: (error as Error).message, ...(error as object) })).not.toContain(
+        "SENTINEL_GRANT_SIG",
+      );
+    }
+    expect(called).toBe(false);
+  });
+
+  it("projects a Gate envelope with its request id", () => {
+    const error = homeError("tasks report", 401, { error: { code: "grant_missing", requestId } });
+    expect(error?.code).toBe("HOME_GRANT_MISSING");
+    expect(error?.exitCode).toBe(1);
+    expect(error?.message).toContain(requestId);
+    expect(error?.details).toMatchObject({ status: 401, homeCode: "grant_missing", source: "gate", requestId });
+  });
+
+  it("projects a listener envelope and maps usage and policy statuses", () => {
+    const listener = homeError("tasks report", 403, {
+      error: { code: "resource_forbidden", requestId, source: "ravi-listener" },
+    });
+    expect(listener?.code).toBe("HOME_RESOURCE_FORBIDDEN");
+    expect(listener?.exitCode).toBe(1);
+    expect(listener?.details.source).toBe("ravi-listener");
+
+    const notAllowed = homeError("tasks report", 403, { error: { code: "command_not_allowed", requestId } });
+    expect(notAllowed?.exitCode).toBe(3);
+
+    const invalid = homeError("tasks report", 400, {
+      error: { code: "body_invalid", requestId, source: "ravi-listener" },
+    });
+    expect(invalid?.exitCode).toBe(2);
+
+    const offline = homeError("tasks report", 503, { error: { code: "daemon_offline", requestId } });
+    expect(offline?.details.retryable).toBe(true);
+  });
+
+  it("takes the request id from the response header and drops a malformed one", () => {
+    const fromHeader = homeError("tasks show", 429, { error: { code: "rate_limited", requestId: null } }, requestId);
+    expect(fromHeader?.message).toContain(requestId);
+
+    const forged = homeError("tasks show", 401, {
+      error: { code: "grant_invalid", requestId: `${grant}\u001b[2J` },
+    });
+    expect(forged?.message).not.toContain("SENTINEL_GRANT_SIG");
+    expect(forged?.details.requestId).toBeNull();
+  });
+
+  it("never reflects an envelope that does not match the HOME shape", () => {
+    for (const body of [
+      { error: { code: grant, requestId } },
+      { error: { code: "grant_invalid", requestId, source: "SENTINEL_GRANT_SIG" } },
+      { error: "grant_invalid" },
+    ]) {
+      const error = homeError("tasks show", 401, body);
+      expect(error?.code).toBe("HOME_GATEWAY_FAILED");
+      expect(JSON.stringify(error?.envelope())).not.toContain("SENTINEL_GRANT_SIG");
+    }
+  });
+
+  it("keeps the remote projection for a dispatcher contract envelope relayed by the listener", () => {
+    const error = homeError("tasks show", 404, {
+      success: false,
+      op: "tasks show",
+      exitCode: 1,
+      outcome: "failed",
+      error: { code: "NOT_FOUND", message: "Task not found", retryable: false },
+    });
+    expect(error?.code).toBe("NOT_FOUND");
+    expect(error?.exitCode).toBe(1);
+  });
+
+  it("maps an edge HTML page and a redirect to HOME failures", () => {
+    const edge = homeError("tasks show", 502, "<html>bad gateway</html>", requestId);
+    expect(edge?.code).toBe("HOME_GATEWAY_FAILED");
+    expect(edge?.details.retryable).toBe(true);
+    expect(edge?.message).toContain(requestId);
+    expect(edge?.message).not.toContain("html");
+
+    const redirect = homeGatewayErrorToContractError("tasks show", {
+      status: 302,
+      ok: false,
+      body: "",
+      contentType: null,
+    });
+    expect(redirect?.code).toBe("HOME_GATEWAY_REDIRECT");
+    expect(redirect?.exitCode).toBe(1);
+  });
+
+  // The reviewer's probe: a relayed contract envelope echoing the grant in
+  // its message, issues or suggestions.
+  it("scrubs the known grant from every field of a relayed contract envelope", () => {
+    const jws = "eyJhbGciOiJFZERTQSIsImtpZCI6ImsxIn0.eyJzdWIiOiJydW4xIiwidGFzayI6InQxIn0.c2lnbmF0dXJlc2lnbmF0dXJl";
+    for (const known of [jws, "abc.def.ghi"]) {
+      for (const where of ["issue", "message", "suggestion"] as const) {
+        const error: Record<string, unknown> = {
+          code: "PAYLOAD_INVALID",
+          message: where === "message" ? `bad grant ${known}` : "x",
+          retryable: false,
+        };
+        if (where === "issue") error.issues = [{ path: ["taskId"], code: "invalid", message: `bad ${known}` }];
+        if (where === "suggestion") error.suggestions = [known, `use ${known}`];
+        const projected = homeGatewayErrorToContractError(
+          "tasks report",
+          {
+            status: 400,
+            ok: false,
+            body: JSON.stringify({ success: false, op: "tasks report", exitCode: 2, outcome: "usage_error", error }),
+            contentType: "application/json",
+            requestId: null,
+          },
+          { RAVI_SANDBOX_GRANT: known },
+        );
+        const shown = JSON.stringify({ message: projected?.message, envelope: projected?.envelope() });
+        expect(shown).not.toContain(known);
+        if (where === "issue") expect(shown).toContain("bad [grant]");
+      }
+    }
+  });
+
+  it("scrubs a JWS-shaped token even when the egress proxy injected it and the CLI never saw it", () => {
+    const injected = "eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJydW4yIn0.UNSEEN_PROXY_GRANT_SIG_4M";
+    const projected = homeError("tasks report", 400, {
+      success: false,
+      op: "tasks report",
+      exitCode: 2,
+      outcome: "usage_error",
+      error: {
+        code: "PAYLOAD_INVALID",
+        message: "x",
+        retryable: false,
+        issues: [{ path: ["taskId"], code: "invalid", message: `bad ${injected}` }],
+      },
+    });
+    expect(JSON.stringify({ message: projected?.message, envelope: projected?.envelope() })).not.toContain(
+      "UNSEEN_PROXY_GRANT_SIG",
+    );
+  });
+
+  it("maps grant_header_invalid to exit 1 with the double-header advice", () => {
+    const error = homeError("tasks report", 400, { error: { code: "grant_header_invalid", requestId } });
+    expect(error?.code).toBe("HOME_GRANT_HEADER_INVALID");
+    expect(error?.exitCode).toBe(1);
+    expect(String(error?.details.suggestedAction)).toContain("unset RAVI_SANDBOX_GRANT");
+  });
+
+  it("suggests an action for the other Gate codes", () => {
+    for (const [code, status] of [
+      ["gate_unavailable", 503],
+      ["gateway_misconfigured", 502],
+      ["payload_too_large", 413],
+      ["response_too_large", 502],
+      ["not_found", 404],
+      ["method_not_allowed", 405],
+    ] as const) {
+      const error = homeError("tasks report", status, { error: { code, requestId } });
+      expect(error?.code).toBe(`HOME_${code.toUpperCase()}`);
+      expect(error?.details.suggestedAction).not.toBe("Inspect HOME's audit for this request id");
+    }
+  });
+
+  it("does not mark a Gate response_too_large as retryable", () => {
+    const tooLarge = homeError("tasks show", 502, { error: { code: "response_too_large", requestId } });
+    expect(tooLarge?.code).toBe("HOME_RESPONSE_TOO_LARGE");
+    expect(tooLarge?.details.retryable).toBe(false);
+    const unavailable = homeError("tasks show", 502, { error: { code: "gateway_misconfigured", requestId } });
+    expect(unavailable?.details.retryable).toBe(true);
+  });
+
+  it("refuses a HOME gateway on the same origin as RAVI_GATEWAY_URL", () => {
+    const error = thrown(() =>
+      getHomeGatewayConfig({ RAVI_HOME_GATEWAY_URL: homeUrl, RAVI_GATEWAY_URL: "https://gw.example.test/other/" }),
+    );
+    expect(error.code).toBe("HOME_GATEWAY_CONFLICT");
+    expect(error.exitCode).toBe(2);
+    expect(error.message).not.toContain("gw.example.test");
+    expect(
+      getHomeGatewayConfig({ RAVI_HOME_GATEWAY_URL: homeUrl, RAVI_GATEWAY_URL: "https://gw.example.test:8443" }).url,
+    ).toBe(homeUrl);
+  });
+
+  it("aborts a HOME response larger than the bound and keeps nothing of it", async () => {
+    let pulled = 0;
+    let cancelled = false;
+    const chunk = new Uint8Array(64 * 1024).fill(0x61);
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += chunk.byteLength;
+        controller.enqueue(chunk);
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    let signal: AbortSignal | undefined;
+    const error = await dispatchRemote({
+      groupSegments: ["tasks"],
+      command: "show",
+      body: { taskId: "task-1" },
+      config: getHomeGatewayConfig({ RAVI_HOME_GATEWAY_URL: homeUrl }),
+      env: {},
+      fetchImpl: (async (_url: string, init?: RequestInit) => {
+        signal = init?.signal ?? undefined;
+        return new Response(endless, { headers: { "content-type": "application/json" } });
+      }) as typeof fetch,
+    }).catch((caught: unknown) => caught as { code?: string; exitCode?: number });
+    expect((error as { code?: string }).code).toBe("HOME_RESPONSE_TOO_LARGE");
+    expect((error as { exitCode?: number }).exitCode).toBe(1);
+    expect(cancelled).toBe(true);
+    expect(signal?.aborted).toBe(true);
+    expect(pulled).toBeLessThan(HOME_RESPONSE_MAX_BYTES + 4 * chunk.byteLength);
+
+    const declared = await dispatchRemote({
+      groupSegments: ["tasks"],
+      command: "show",
+      body: { taskId: "task-1" },
+      config: getHomeGatewayConfig({ RAVI_HOME_GATEWAY_URL: homeUrl }),
+      env: {},
+      fetchImpl: (async () =>
+        new Response("{}", {
+          headers: { "content-type": "application/json", "content-length": String(HOME_RESPONSE_MAX_BYTES + 1) },
+        })) as unknown as typeof fetch,
+    }).catch((caught: unknown) => caught as { code?: string });
+    expect((declared as { code?: string }).code).toBe("HOME_RESPONSE_TOO_LARGE");
+
+    const atLimit = await dispatchRemote({
+      groupSegments: ["tasks"],
+      command: "show",
+      body: { taskId: "task-1" },
+      config: getHomeGatewayConfig({ RAVI_HOME_GATEWAY_URL: homeUrl }),
+      env: {},
+      fetchImpl: (async () =>
+        new Response(new Uint8Array(HOME_RESPONSE_MAX_BYTES).fill(0x20), {
+          headers: { "content-type": "text/plain" },
+        })) as unknown as typeof fetch,
+    });
+    expect(atLimit.body.length).toBe(HOME_RESPONSE_MAX_BYTES);
   });
 });
