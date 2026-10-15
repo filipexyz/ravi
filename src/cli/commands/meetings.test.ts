@@ -489,15 +489,15 @@ async function captureConsole<T>(run: () => T | Promise<T>): Promise<{ output: s
 }
 
 describe("meetings command annotations", () => {
-  it("keeps the provider commands behind @CliOnly until they carry typed returns", () => {
+  it("exposes the provider commands to a session, keeping only login CLI-only", () => {
     const cliOnly = getCliOnlyMetadata(MeetingsCommands);
-    // These answer JSON through the provider and are the reason an agent cannot
-    // reach meetings from a session yet. They stay CLI-only because the SDK
-    // surface (return-schema-baseline is empty) requires a typed return schema,
-    // and they still declare the loose object. Dropping the flag without the
-    // schemas fails the SDK returns gate.
-    for (const method of ["login", "join", "list", "show", "leave", "fetch"]) {
-      expect([...cliOnly]).toContain(method);
+    // `login` opens a browser on the host: it has no remote-call semantics.
+    expect([...cliOnly]).toEqual(["login"]);
+    // These answer JSON through the provider and now carry typed returns, so an
+    // agent reaches them from a session: they used to be CLI-only for lack of a
+    // return schema, and the gateway answered 404 for them.
+    for (const method of ["join", "list", "show", "leave", "fetch"]) {
+      expect([...cliOnly]).not.toContain(method);
     }
   });
 });

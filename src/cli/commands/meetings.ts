@@ -40,6 +40,11 @@ import {
   meetingProfilesListReturnSchema,
   meetingProfilesValidateReturnSchema,
   meetingVoiceRuntimesReturnSchema,
+  meetingsCloudFetchReturnSchema,
+  meetingsCloudJoinReturnSchema,
+  meetingsCloudLeaveReturnSchema,
+  meetingsCloudListReturnSchema,
+  meetingsCloudShowReturnSchema,
 } from "./operational-return-schemas.js";
 import { finalizeGoogleMeetRecorderRun } from "../../meetings/google-meet/recorder-run.js";
 import { notifyMeetingOwnerSession, spawnDetachedCli } from "../../meetings/handoff.js";
@@ -838,8 +843,7 @@ export class MeetingsCommands {
     description: "Join a meeting through a native Ravi meeting provider",
   })
   @CommandAccess({ kind: "mutate", resource: "meetings", action: "join", risk: "high" })
-  @CliOnly()
-  @Returns(looseObjectSchema)
+  @Returns(meetingsCloudJoinReturnSchema)
   async join(
     @Option({ flags: "--provider <provider>", description: "Meeting provider id. Currently: google-meet" })
     provider?: string,
@@ -1495,8 +1499,7 @@ export class MeetingsCommands {
   // returns at most its 100 newest; --offset pages inside that window.
   @Command({ name: "list", description: "List the project's cloud meeting bots" })
   @CommandAccess({ kind: "read", resource: "meetings", action: "list", risk: "low" })
-  @CliOnly()
-  @Returns(looseObjectSchema)
+  @Returns(meetingsCloudListReturnSchema)
   async list(
     @Option({ flags: "--project <ref>", description: "Console project (default: linked project)" }) project?: string,
     @Option({ flags: "--limit <n>", description: "Page size (default: 20, max: 100)" }) limit?: string,
@@ -1524,8 +1527,7 @@ export class MeetingsCommands {
 
   @Command({ name: "show", description: "Show one cloud meeting bot" })
   @CommandAccess({ kind: "read", resource: "meetings", action: "show", risk: "low" })
-  @CliOnly()
-  @Returns(looseObjectSchema)
+  @Returns(meetingsCloudShowReturnSchema)
   async show(
     @Arg("meetingId", { description: "Cloud meeting id (from join or list)" }) meetingId: string,
     @Option({ flags: "--project <ref>", description: "Console project (default: linked project)" }) project?: string,
@@ -1547,8 +1549,7 @@ export class MeetingsCommands {
   // recording and leaves the call); nothing new is sent or exposed.
   @Command({ name: "leave", description: "Ask a cloud meeting bot to leave the call now" })
   @CommandAccess({ kind: "mutate", resource: "meetings", action: "leave", risk: "low" })
-  @CliOnly()
-  @Returns(looseObjectSchema)
+  @Returns(meetingsCloudLeaveReturnSchema)
   async leave(
     @Arg("meetingId", { description: "Cloud meeting id (from join or list)" }) meetingId: string,
     @Option({ flags: "--project <ref>", description: "Console project (default: linked project)" }) project?: string,
@@ -1570,8 +1571,7 @@ export class MeetingsCommands {
     description: "Download a finished cloud recording into a meeting.raw artifact",
   })
   @CommandAccess({ kind: "mutate", resource: "meetings", action: "fetch", risk: "medium" })
-  @CliOnly()
-  @Returns(looseObjectSchema)
+  @Returns(meetingsCloudFetchReturnSchema)
   async fetch(
     @Arg("meetingId", { description: "Cloud meeting id (from join, list or the inbox item)" }) meetingId: string,
     @Option({ flags: "--project <ref>", description: "Console project (default: linked project)" }) project?: string,

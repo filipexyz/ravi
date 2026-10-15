@@ -3035,3 +3035,113 @@ export const runtimeModelPresetMutationReturnSchema = z
   .strict();
 
 export const runtimeModelPresetImpactReturnSchema = runtimeModelPresetImpactSchema;
+
+/**
+ * One cloud meeting bot, exactly as `ravi meetings` reports it to a caller.
+ * Fields follow `publicCloudMeeting()`: status and timestamps are whatever the
+ * Console sent, so the nullable ones stay nullable.
+ */
+export const meetingsCloudMeetingSchema = z.object({
+  id: z.string(),
+  status: z.string(),
+  statusSubCode: z.string().nullable(),
+  meetingUrl: z.string(),
+  meetingCode: z.string().nullable(),
+  botName: z.string(),
+  title: z.string().nullable(),
+  clientRef: z.string().nullable(),
+  ready: z.boolean(),
+  joinAt: z.string().nullable(),
+  recordingStartedAt: z.string().nullable(),
+  endedAt: z.string().nullable(),
+  recordingSeconds: z.number().nullable(),
+  maxRecordingSeconds: z.number(),
+  failureReason: z.string().nullable(),
+  createdAt: z.string(),
+});
+
+/** Accounting limits the Console reports alongside a created bot. */
+export const meetingsCloudLimitsSchema = z.object({
+  maxConcurrentBots: z.number(),
+  maxRecordingSeconds: z.number(),
+  monthlyBudgetUsd: z.number(),
+});
+
+export const meetingsCloudListReturnSchema = z.object({
+  project: z.string().nullable(),
+  total: z.number(),
+  pagination: strictCliOffsetPaginationSchema,
+  items: z.array(meetingsCloudMeetingSchema),
+  meetings: z.array(meetingsCloudMeetingSchema),
+});
+
+export const meetingsCloudShowReturnSchema = z.object({
+  meeting: meetingsCloudMeetingSchema,
+});
+
+export const meetingsCloudLeaveReturnSchema = z.object({
+  left: z.boolean(),
+  meeting: meetingsCloudMeetingSchema,
+});
+
+/**
+ * `join` answers one of four shapes: the cloud dry-run request, the cloud bot it
+ * created, or the local recorder invocation (dry-run, foreground or async). The
+ * local branch reports the invocation, so its payload differs per mode.
+ */
+export const meetingsCloudJoinReturnSchema = z.union([
+  z.object({
+    mode: z.literal("dry-run"),
+    runtime: z.literal("cloud"),
+    provider: z.string(),
+    providerRuntime: z.string(),
+    project: z.string().nullable(),
+    request: z.object({
+      meetingUrl: z.string(),
+      botName: z.string().optional(),
+      maxMinutes: z.number().optional(),
+    }),
+  }),
+  z.object({
+    success: z.literal(true),
+    runtime: z.literal("cloud"),
+    artifact_id: z.string(),
+    artifactId: z.string(),
+    kind: z.string(),
+    status: z.string(),
+    meeting: meetingsCloudMeetingSchema,
+    limits: meetingsCloudLimitsSchema.nullable(),
+    hint: z.string().optional(),
+    events: z.string().optional(),
+    leave: z.string().optional(),
+  }),
+  z.object({
+    mode: z.string(),
+    provider: z.string(),
+    providerRuntime: z.string(),
+    args: z.array(z.string()).optional(),
+  }),
+]);
+
+/** `fetch` answers `pending`, `failed`, or the finalized artifact outcome. */
+export const meetingsCloudFetchReturnSchema = z.union([
+  z.object({ outcome: z.literal("pending"), meeting: meetingsCloudMeetingSchema }),
+  z.object({
+    outcome: z.literal("failed"),
+    meeting: meetingsCloudMeetingSchema,
+    joinArtifactId: z.string().nullable(),
+    notified: z.boolean(),
+  }),
+  z.object({
+    outcome: z.literal("finalized"),
+    status: z.enum(["finalized", "already_finalized", "enriched", "in_progress"]),
+    meetingId: z.string(),
+    joinArtifactId: z.string().nullable(),
+    rawArtifactId: z.string().nullable(),
+    rawArtifactPath: z.string().nullable(),
+    transcriptSegmentCount: z.number(),
+    mediaRefCount: z.number(),
+    downloadedMediaCount: z.number(),
+    notified: z.boolean(),
+  }),
+]);

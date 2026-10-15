@@ -59756,6 +59756,435 @@ class RaviSchemas {
 }
 ''';
 
+  static const meetingsFetchInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "meetingId": {
+      "description": "Cloud meeting id (from join, list or the inbox item)",
+      "type": "string"
+    },
+    "noNotify": {
+      "default": false,
+      "description": "Do not inform the session that asked for the meeting",
+      "type": "boolean"
+    },
+    "out": {
+      "description": "Where to save media (default ~/.ravi/meetings/cloud/<id>)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project (default: linked project)",
+      "type": "string"
+    },
+    "video": {
+      "description": "Also download the video",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "meetingId"
+  ],
+  "type": "object"
+}
+''';
+
+  static const meetingsFetchReturnSchema = r'''
+{
+  "anyOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "meeting": {
+          "additionalProperties": false,
+          "properties": {
+            "botName": {
+              "type": "string"
+            },
+            "clientRef": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "createdAt": {
+              "type": "string"
+            },
+            "endedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "failureReason": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "joinAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "maxRecordingSeconds": {
+              "type": "number"
+            },
+            "meetingCode": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "meetingUrl": {
+              "type": "string"
+            },
+            "ready": {
+              "type": "boolean"
+            },
+            "recordingSeconds": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "recordingStartedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "type": "string"
+            },
+            "statusSubCode": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "status",
+            "statusSubCode",
+            "meetingUrl",
+            "meetingCode",
+            "botName",
+            "title",
+            "clientRef",
+            "ready",
+            "joinAt",
+            "recordingStartedAt",
+            "endedAt",
+            "recordingSeconds",
+            "maxRecordingSeconds",
+            "failureReason",
+            "createdAt"
+          ],
+          "type": "object"
+        },
+        "outcome": {
+          "const": "pending",
+          "type": "string"
+        }
+      },
+      "required": [
+        "outcome",
+        "meeting"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "joinArtifactId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "meeting": {
+          "additionalProperties": false,
+          "properties": {
+            "botName": {
+              "type": "string"
+            },
+            "clientRef": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "createdAt": {
+              "type": "string"
+            },
+            "endedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "failureReason": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "joinAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "maxRecordingSeconds": {
+              "type": "number"
+            },
+            "meetingCode": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "meetingUrl": {
+              "type": "string"
+            },
+            "ready": {
+              "type": "boolean"
+            },
+            "recordingSeconds": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "recordingStartedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "type": "string"
+            },
+            "statusSubCode": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "status",
+            "statusSubCode",
+            "meetingUrl",
+            "meetingCode",
+            "botName",
+            "title",
+            "clientRef",
+            "ready",
+            "joinAt",
+            "recordingStartedAt",
+            "endedAt",
+            "recordingSeconds",
+            "maxRecordingSeconds",
+            "failureReason",
+            "createdAt"
+          ],
+          "type": "object"
+        },
+        "notified": {
+          "type": "boolean"
+        },
+        "outcome": {
+          "const": "failed",
+          "type": "string"
+        }
+      },
+      "required": [
+        "outcome",
+        "meeting",
+        "joinArtifactId",
+        "notified"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "downloadedMediaCount": {
+          "type": "number"
+        },
+        "joinArtifactId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mediaRefCount": {
+          "type": "number"
+        },
+        "meetingId": {
+          "type": "string"
+        },
+        "notified": {
+          "type": "boolean"
+        },
+        "outcome": {
+          "const": "finalized",
+          "type": "string"
+        },
+        "rawArtifactId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rawArtifactPath": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "finalized",
+            "already_finalized",
+            "enriched",
+            "in_progress"
+          ],
+          "type": "string"
+        },
+        "transcriptSegmentCount": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "outcome",
+        "status",
+        "meetingId",
+        "joinArtifactId",
+        "rawArtifactId",
+        "rawArtifactPath",
+        "transcriptSegmentCount",
+        "mediaRefCount",
+        "downloadedMediaCount",
+        "notified"
+      ],
+      "type": "object"
+    }
+  ]
+}
+''';
+
   static const meetingsFinalizeInputSchema = r'''
 {
   "additionalProperties": false,
@@ -59869,6 +60298,955 @@ class RaviSchemas {
     "mediaRefCount",
     "diagnosticCount",
     "session"
+  ],
+  "type": "object"
+}
+''';
+
+  static const meetingsJoinInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Registered Ravi agent id for live meeting mode",
+      "type": "string"
+    },
+    "artifactId": {
+      "description": "Internal artifact id for async worker continuation",
+      "type": "string"
+    },
+    "asyncWorker": {
+      "description": "Internal background worker mode",
+      "type": "boolean"
+    },
+    "capture": {
+      "description": "Capture mode passed to the provider",
+      "type": "string"
+    },
+    "context": {
+      "description": "Freeform context injected into the live meeting agent prompt",
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Validate and print provider invocation without joining",
+      "type": "boolean"
+    },
+    "duration": {
+      "description": "Recorder duration hint",
+      "type": "string"
+    },
+    "emptyGrace": {
+      "description": "Seconds to wait after the meeting appears empty",
+      "type": "string"
+    },
+    "includeSessionContext": {
+      "description": "Inject recent Ravi session history into the live meeting prompt",
+      "type": "boolean"
+    },
+    "initialPrompt": {
+      "description": "Initial prompt for the native Ravi meeting session after join",
+      "type": "string"
+    },
+    "initialPromptDelay": {
+      "description": "Delay before --initial-prompt is spoken",
+      "type": "string"
+    },
+    "live": {
+      "description": "Enable native Ravi live agent mode",
+      "type": "boolean"
+    },
+    "local": {
+      "description": "Run the recorder in Chrome on this machine instead of sending the cloud bot",
+      "type": "boolean"
+    },
+    "maxDuration": {
+      "description": "Hard cap while waiting for the meeting to end",
+      "type": "string"
+    },
+    "name": {
+      "description": "Visible meeting participant name",
+      "type": "string"
+    },
+    "out": {
+      "description": "Recorder output base directory",
+      "type": "string"
+    },
+    "profile": {
+      "description": "Reusable meeting profile id",
+      "type": "string"
+    },
+    "profileDir": {
+      "description": "Persistent browser profile directory",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project for the cloud bot (default: linked project)",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Meeting provider id. Currently: google-meet",
+      "type": "string"
+    },
+    "skipFinalize": {
+      "description": "Skip final meeting.raw artifact registration",
+      "type": "boolean"
+    },
+    "sync": {
+      "description": "Wait for provider completion before returning",
+      "type": "boolean"
+    },
+    "tools": {
+      "description": "Comma-separated Ravi tool names allowlist for live mode",
+      "type": "string"
+    },
+    "url": {
+      "description": "Meeting URL",
+      "type": "string"
+    },
+    "voiceRuntime": {
+      "description": "Voice runtime for live meeting mode. Current ready default: ravi-native",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const meetingsJoinReturnSchema = r'''
+{
+  "anyOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "const": "dry-run",
+          "type": "string"
+        },
+        "project": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "type": "string"
+        },
+        "providerRuntime": {
+          "type": "string"
+        },
+        "request": {
+          "additionalProperties": false,
+          "properties": {
+            "botName": {
+              "type": "string"
+            },
+            "maxMinutes": {
+              "type": "number"
+            },
+            "meetingUrl": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "meetingUrl"
+          ],
+          "type": "object"
+        },
+        "runtime": {
+          "const": "cloud",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode",
+        "runtime",
+        "provider",
+        "providerRuntime",
+        "project",
+        "request"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "artifactId": {
+          "type": "string"
+        },
+        "artifact_id": {
+          "type": "string"
+        },
+        "events": {
+          "type": "string"
+        },
+        "hint": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "leave": {
+          "type": "string"
+        },
+        "limits": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "maxConcurrentBots": {
+                  "type": "number"
+                },
+                "maxRecordingSeconds": {
+                  "type": "number"
+                },
+                "monthlyBudgetUsd": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "maxConcurrentBots",
+                "maxRecordingSeconds",
+                "monthlyBudgetUsd"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "meeting": {
+          "additionalProperties": false,
+          "properties": {
+            "botName": {
+              "type": "string"
+            },
+            "clientRef": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "createdAt": {
+              "type": "string"
+            },
+            "endedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "failureReason": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "joinAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "maxRecordingSeconds": {
+              "type": "number"
+            },
+            "meetingCode": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "meetingUrl": {
+              "type": "string"
+            },
+            "ready": {
+              "type": "boolean"
+            },
+            "recordingSeconds": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "recordingStartedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "type": "string"
+            },
+            "statusSubCode": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "status",
+            "statusSubCode",
+            "meetingUrl",
+            "meetingCode",
+            "botName",
+            "title",
+            "clientRef",
+            "ready",
+            "joinAt",
+            "recordingStartedAt",
+            "endedAt",
+            "recordingSeconds",
+            "maxRecordingSeconds",
+            "failureReason",
+            "createdAt"
+          ],
+          "type": "object"
+        },
+        "runtime": {
+          "const": "cloud",
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "success": {
+          "const": true,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "success",
+        "runtime",
+        "artifact_id",
+        "artifactId",
+        "kind",
+        "status",
+        "meeting",
+        "limits"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "args": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "providerRuntime": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode",
+        "provider",
+        "providerRuntime"
+      ],
+      "type": "object"
+    }
+  ]
+}
+''';
+
+  static const meetingsLeaveInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "meetingId": {
+      "description": "Cloud meeting id (from join or list)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project (default: linked project)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "meetingId"
+  ],
+  "type": "object"
+}
+''';
+
+  static const meetingsLeaveReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "left": {
+      "type": "boolean"
+    },
+    "meeting": {
+      "additionalProperties": false,
+      "properties": {
+        "botName": {
+          "type": "string"
+        },
+        "clientRef": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "endedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "failureReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "joinAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "maxRecordingSeconds": {
+          "type": "number"
+        },
+        "meetingCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "meetingUrl": {
+          "type": "string"
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "recordingSeconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordingStartedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "statusSubCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "statusSubCode",
+        "meetingUrl",
+        "meetingCode",
+        "botName",
+        "title",
+        "clientRef",
+        "ready",
+        "joinAt",
+        "recordingStartedAt",
+        "endedAt",
+        "recordingSeconds",
+        "maxRecordingSeconds",
+        "failureReason",
+        "createdAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "left",
+    "meeting"
+  ],
+  "type": "object"
+}
+''';
+
+  static const meetingsListInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 20, max: 100)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of newer bots to skip (default: 0)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project (default: linked project)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const meetingsListReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "botName": {
+            "type": "string"
+          },
+          "clientRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "endedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "failureReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "joinAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "maxRecordingSeconds": {
+            "type": "number"
+          },
+          "meetingCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meetingUrl": {
+            "type": "string"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "recordingSeconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recordingStartedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "statusSubCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "statusSubCode",
+          "meetingUrl",
+          "meetingCode",
+          "botName",
+          "title",
+          "clientRef",
+          "ready",
+          "joinAt",
+          "recordingStartedAt",
+          "endedAt",
+          "recordingSeconds",
+          "maxRecordingSeconds",
+          "failureReason",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "meetings": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "botName": {
+            "type": "string"
+          },
+          "clientRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "endedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "failureReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "joinAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "maxRecordingSeconds": {
+            "type": "number"
+          },
+          "meetingCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meetingUrl": {
+            "type": "string"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "recordingSeconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recordingStartedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "statusSubCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "statusSubCode",
+          "meetingUrl",
+          "meetingCode",
+          "botName",
+          "title",
+          "clientRef",
+          "ready",
+          "joinAt",
+          "recordingStartedAt",
+          "endedAt",
+          "recordingSeconds",
+          "maxRecordingSeconds",
+          "failureReason",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "project": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "project",
+    "total",
+    "pagination",
+    "items",
+    "meetings"
   ],
   "type": "object"
 }
@@ -60551,6 +61929,173 @@ class RaviSchemas {
   "required": [
     "valid",
     "results"
+  ],
+  "type": "object"
+}
+''';
+
+  static const meetingsShowInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "meetingId": {
+      "description": "Cloud meeting id (from join or list)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project (default: linked project)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "meetingId"
+  ],
+  "type": "object"
+}
+''';
+
+  static const meetingsShowReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "meeting": {
+      "additionalProperties": false,
+      "properties": {
+        "botName": {
+          "type": "string"
+        },
+        "clientRef": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "endedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "failureReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "joinAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "maxRecordingSeconds": {
+          "type": "number"
+        },
+        "meetingCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "meetingUrl": {
+          "type": "string"
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "recordingSeconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordingStartedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "statusSubCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "statusSubCode",
+        "meetingUrl",
+        "meetingCode",
+        "botName",
+        "title",
+        "clientRef",
+        "ready",
+        "joinAt",
+        "recordingStartedAt",
+        "endedAt",
+        "recordingSeconds",
+        "maxRecordingSeconds",
+        "failureReason",
+        "createdAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "meeting"
   ],
   "type": "object"
 }

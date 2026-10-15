@@ -11469,6 +11469,71 @@ export type MediaSendReturn = {
   };
 };
 
+/** Input shape for `meetings.fetch`. */
+export type MeetingsFetchInput = {
+  meetingId: string;
+  noNotify?: boolean;
+  out?: string;
+  project?: string;
+  video?: boolean;
+};
+
+/** Return shape for `meetings.fetch`. */
+export type MeetingsFetchReturn = ({
+  meeting: {
+    botName: string;
+    clientRef: string | null;
+    createdAt: string;
+    endedAt: string | null;
+    failureReason: string | null;
+    id: string;
+    joinAt: string | null;
+    maxRecordingSeconds: number;
+    meetingCode: string | null;
+    meetingUrl: string;
+    ready: boolean;
+    recordingSeconds: number | null;
+    recordingStartedAt: string | null;
+    status: string;
+    statusSubCode: string | null;
+    title: string | null;
+  };
+  outcome: "pending";
+}) | ({
+  joinArtifactId: string | null;
+  meeting: {
+    botName: string;
+    clientRef: string | null;
+    createdAt: string;
+    endedAt: string | null;
+    failureReason: string | null;
+    id: string;
+    joinAt: string | null;
+    maxRecordingSeconds: number;
+    meetingCode: string | null;
+    meetingUrl: string;
+    ready: boolean;
+    recordingSeconds: number | null;
+    recordingStartedAt: string | null;
+    status: string;
+    statusSubCode: string | null;
+    title: string | null;
+  };
+  notified: boolean;
+  outcome: "failed";
+}) | ({
+  downloadedMediaCount: number;
+  joinArtifactId: string | null;
+  mediaRefCount: number;
+  meetingId: string;
+  notified: boolean;
+  outcome: "finalized";
+  rawArtifactId: string | null;
+  rawArtifactPath: string | null;
+  status: "finalized" | "already_finalized" | "enriched" | "in_progress";
+  transcriptSegmentCount: number;
+});
+
 /** Input shape for `meetings.finalize`. */
 export type MeetingsFinalizeInput = {
   noPostTranscribe?: boolean;
@@ -11492,6 +11557,174 @@ export type MeetingsFinalizeReturn = {
     title: string | null;
   };
   transcriptSegmentCount: number;
+};
+
+/** Input shape for `meetings.join`. */
+export type MeetingsJoinInput = {
+  agent?: string;
+  artifactId?: string;
+  asyncWorker?: boolean;
+  capture?: string;
+  context?: string;
+  dryRun?: boolean;
+  duration?: string;
+  emptyGrace?: string;
+  includeSessionContext?: boolean;
+  initialPrompt?: string;
+  initialPromptDelay?: string;
+  live?: boolean;
+  local?: boolean;
+  maxDuration?: string;
+  name?: string;
+  out?: string;
+  profile?: string;
+  profileDir?: string;
+  project?: string;
+  provider?: string;
+  skipFinalize?: boolean;
+  sync?: boolean;
+  tools?: string;
+  url?: string;
+  voiceRuntime?: string;
+};
+
+/** Return shape for `meetings.join`. */
+export type MeetingsJoinReturn = ({
+  mode: "dry-run";
+  project: string | null;
+  provider: string;
+  providerRuntime: string;
+  request: {
+    botName?: string;
+    maxMinutes?: number;
+    meetingUrl: string;
+  };
+  runtime: "cloud";
+}) | ({
+  artifactId: string;
+  artifact_id: string;
+  events?: string;
+  hint?: string;
+  kind: string;
+  leave?: string;
+  limits: ({
+    maxConcurrentBots: number;
+    maxRecordingSeconds: number;
+    monthlyBudgetUsd: number;
+  }) | null;
+  meeting: {
+    botName: string;
+    clientRef: string | null;
+    createdAt: string;
+    endedAt: string | null;
+    failureReason: string | null;
+    id: string;
+    joinAt: string | null;
+    maxRecordingSeconds: number;
+    meetingCode: string | null;
+    meetingUrl: string;
+    ready: boolean;
+    recordingSeconds: number | null;
+    recordingStartedAt: string | null;
+    status: string;
+    statusSubCode: string | null;
+    title: string | null;
+  };
+  runtime: "cloud";
+  status: string;
+  success: true;
+}) | ({
+  args?: string[];
+  mode: string;
+  provider: string;
+  providerRuntime: string;
+});
+
+/** Input shape for `meetings.leave`. */
+export type MeetingsLeaveInput = {
+  meetingId: string;
+  project?: string;
+};
+
+/** Return shape for `meetings.leave`. */
+export type MeetingsLeaveReturn = {
+  left: boolean;
+  meeting: {
+    botName: string;
+    clientRef: string | null;
+    createdAt: string;
+    endedAt: string | null;
+    failureReason: string | null;
+    id: string;
+    joinAt: string | null;
+    maxRecordingSeconds: number;
+    meetingCode: string | null;
+    meetingUrl: string;
+    ready: boolean;
+    recordingSeconds: number | null;
+    recordingStartedAt: string | null;
+    status: string;
+    statusSubCode: string | null;
+    title: string | null;
+  };
+};
+
+/** Input shape for `meetings.list`. */
+export type MeetingsListInput = {
+  limit?: string;
+  offset?: string;
+  project?: string;
+};
+
+/** Return shape for `meetings.list`. */
+export type MeetingsListReturn = {
+  items: Array<{
+    botName: string;
+    clientRef: string | null;
+    createdAt: string;
+    endedAt: string | null;
+    failureReason: string | null;
+    id: string;
+    joinAt: string | null;
+    maxRecordingSeconds: number;
+    meetingCode: string | null;
+    meetingUrl: string;
+    ready: boolean;
+    recordingSeconds: number | null;
+    recordingStartedAt: string | null;
+    status: string;
+    statusSubCode: string | null;
+    title: string | null;
+  }>;
+  meetings: Array<{
+    botName: string;
+    clientRef: string | null;
+    createdAt: string;
+    endedAt: string | null;
+    failureReason: string | null;
+    id: string;
+    joinAt: string | null;
+    maxRecordingSeconds: number;
+    meetingCode: string | null;
+    meetingUrl: string;
+    ready: boolean;
+    recordingSeconds: number | null;
+    recordingStartedAt: string | null;
+    status: string;
+    statusSubCode: string | null;
+    title: string | null;
+  }>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  project: string | null;
+  total: number;
 };
 
 /** Input shape for `meetings.profiles.init`. */
@@ -11646,6 +11879,34 @@ export type MeetingsProfilesValidateReturn = {
     valid: boolean;
   }>;
   valid: boolean;
+};
+
+/** Input shape for `meetings.show`. */
+export type MeetingsShowInput = {
+  meetingId: string;
+  project?: string;
+};
+
+/** Return shape for `meetings.show`. */
+export type MeetingsShowReturn = {
+  meeting: {
+    botName: string;
+    clientRef: string | null;
+    createdAt: string;
+    endedAt: string | null;
+    failureReason: string | null;
+    id: string;
+    joinAt: string | null;
+    maxRecordingSeconds: number;
+    meetingCode: string | null;
+    meetingUrl: string;
+    ready: boolean;
+    recordingSeconds: number | null;
+    recordingStartedAt: string | null;
+    status: string;
+    statusSubCode: string | null;
+    title: string | null;
+  };
 };
 
 /** Input shape for `meetings.voice-runtimes`. */

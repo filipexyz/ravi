@@ -4999,6 +4999,18 @@ class MeetingsNamespace {
 
   MeetingsProfilesNamespace get profiles => MeetingsProfilesNamespace(_transport);
 
+  Future<MeetingsFetchReturn> fetch(String meetingId, [MeetingsFetchOptions options = const MeetingsFetchOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["meetingId"] = RaviJson.from(meetingId);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["meetings"],
+      command: "fetch",
+      body: requestBody,
+      decode: meetingsFetchReturnFromJson,
+    );
+  }
+
   Future<MeetingsFinalizeReturn> finalize([MeetingsFinalizeOptions options = const MeetingsFinalizeOptions()]) async {
     final requestBody = <String, RaviJson>{};
     options.encodeBody(requestBody);
@@ -5007,6 +5019,52 @@ class MeetingsNamespace {
       command: "finalize",
       body: requestBody,
       decode: meetingsFinalizeReturnFromJson,
+    );
+  }
+
+  Future<MeetingsJoinReturn> join([MeetingsJoinOptions options = const MeetingsJoinOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["meetings"],
+      command: "join",
+      body: requestBody,
+      decode: meetingsJoinReturnFromJson,
+    );
+  }
+
+  Future<MeetingsLeaveReturn> leave(String meetingId, [MeetingsLeaveOptions options = const MeetingsLeaveOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["meetingId"] = RaviJson.from(meetingId);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["meetings"],
+      command: "leave",
+      body: requestBody,
+      decode: meetingsLeaveReturnFromJson,
+    );
+  }
+
+  Future<MeetingsListReturn> list([MeetingsListOptions options = const MeetingsListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["meetings"],
+      command: "list",
+      body: requestBody,
+      decode: meetingsListReturnFromJson,
+    );
+  }
+
+  Future<MeetingsShowReturn> show(String meetingId, [MeetingsShowOptions options = const MeetingsShowOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["meetingId"] = RaviJson.from(meetingId);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["meetings"],
+      command: "show",
+      body: requestBody,
+      decode: meetingsShowReturnFromJson,
     );
   }
 

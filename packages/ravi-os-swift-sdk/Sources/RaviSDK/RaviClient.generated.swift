@@ -3602,10 +3602,43 @@ public struct MeetingsNamespace: Sendable {
     MeetingsProfilesNamespace(transport: transport)
   }
 
+  public func fetch(_ meetingId: String, _ options: MeetingsFetchOptions = .init()) async throws -> MeetingsFetchReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["meetingId"] = try RaviJSON.fromEncodable(meetingId)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["meetings"], command: "fetch", body: requestBody, as: MeetingsFetchReturn.self)
+  }
+
   public func finalize(_ options: MeetingsFinalizeOptions = .init()) async throws -> MeetingsFinalizeReturn {
     var requestBody: [String: RaviJSON] = [:]
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["meetings"], command: "finalize", body: requestBody, as: MeetingsFinalizeReturn.self)
+  }
+
+  public func join(_ options: MeetingsJoinOptions = .init()) async throws -> MeetingsJoinReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["meetings"], command: "join", body: requestBody, as: MeetingsJoinReturn.self)
+  }
+
+  public func leave(_ meetingId: String, _ options: MeetingsLeaveOptions = .init()) async throws -> MeetingsLeaveReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["meetingId"] = try RaviJSON.fromEncodable(meetingId)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["meetings"], command: "leave", body: requestBody, as: MeetingsLeaveReturn.self)
+  }
+
+  public func list(_ options: MeetingsListOptions = .init()) async throws -> MeetingsListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["meetings"], command: "list", body: requestBody, as: MeetingsListReturn.self)
+  }
+
+  public func show(_ meetingId: String, _ options: MeetingsShowOptions = .init()) async throws -> MeetingsShowReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["meetingId"] = try RaviJSON.fromEncodable(meetingId)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["meetings"], command: "show", body: requestBody, as: MeetingsShowReturn.self)
   }
 
   public func voiceRuntimes() async throws -> MeetingsVoiceRuntimesReturn {

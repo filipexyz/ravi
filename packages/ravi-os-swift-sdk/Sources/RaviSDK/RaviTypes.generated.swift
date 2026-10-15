@@ -16902,6 +16902,44 @@ public struct MediaSendReturn: Codable, Sendable {
   }
 }
 
+public struct MeetingsFetchOptions: Codable, Sendable {
+  public var noNotify: Bool?
+  public var out: String?
+  public var project: String?
+  public var video: Bool?
+
+  public init(noNotify: Bool? = nil, out: String? = nil, project: String? = nil, video: Bool? = nil) {
+    self.noNotify = noNotify
+    self.out = out
+    self.project = project
+    self.video = video
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case noNotify = "noNotify"
+    case out = "out"
+    case project = "project"
+    case video = "video"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.noNotify {
+      body["noNotify"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.out {
+      body["out"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.video {
+      body["video"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public typealias MeetingsFetchReturn = RaviJSON
+
 public struct MeetingsFinalizeOptions: Codable, Sendable {
   public var noPostTranscribe: Bool?
   public var runDir: String?
@@ -16959,6 +16997,257 @@ public struct MeetingsFinalizeReturn: Codable, Sendable {
     case mediaRefCount = "mediaRefCount"
     case session = "session"
     case transcriptSegmentCount = "transcriptSegmentCount"
+  }
+}
+
+public struct MeetingsJoinOptions: Codable, Sendable {
+  public var agent: String?
+  public var artifactId: String?
+  public var asyncWorker: Bool?
+  public var capture: String?
+  public var context: String?
+  public var dryRun: Bool?
+  public var duration: String?
+  public var emptyGrace: String?
+  public var includeSessionContext: Bool?
+  public var initialPrompt: String?
+  public var initialPromptDelay: String?
+  public var live: Bool?
+  public var local: Bool?
+  public var maxDuration: String?
+  public var name: String?
+  public var out: String?
+  public var profile: String?
+  public var profileDir: String?
+  public var project: String?
+  public var provider: String?
+  public var skipFinalize: Bool?
+  public var sync: Bool?
+  public var tools: String?
+  public var url: String?
+  public var voiceRuntime: String?
+
+  public init(agent: String? = nil, artifactId: String? = nil, asyncWorker: Bool? = nil, capture: String? = nil, context: String? = nil, dryRun: Bool? = nil, duration: String? = nil, emptyGrace: String? = nil, includeSessionContext: Bool? = nil, initialPrompt: String? = nil, initialPromptDelay: String? = nil, live: Bool? = nil, local: Bool? = nil, maxDuration: String? = nil, name: String? = nil, out: String? = nil, profile: String? = nil, profileDir: String? = nil, project: String? = nil, provider: String? = nil, skipFinalize: Bool? = nil, sync: Bool? = nil, tools: String? = nil, url: String? = nil, voiceRuntime: String? = nil) {
+    self.agent = agent
+    self.artifactId = artifactId
+    self.asyncWorker = asyncWorker
+    self.capture = capture
+    self.context = context
+    self.dryRun = dryRun
+    self.duration = duration
+    self.emptyGrace = emptyGrace
+    self.includeSessionContext = includeSessionContext
+    self.initialPrompt = initialPrompt
+    self.initialPromptDelay = initialPromptDelay
+    self.live = live
+    self.local = local
+    self.maxDuration = maxDuration
+    self.name = name
+    self.out = out
+    self.profile = profile
+    self.profileDir = profileDir
+    self.project = project
+    self.provider = provider
+    self.skipFinalize = skipFinalize
+    self.sync = sync
+    self.tools = tools
+    self.url = url
+    self.voiceRuntime = voiceRuntime
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agent = "agent"
+    case artifactId = "artifactId"
+    case asyncWorker = "asyncWorker"
+    case capture = "capture"
+    case context = "context"
+    case dryRun = "dryRun"
+    case duration = "duration"
+    case emptyGrace = "emptyGrace"
+    case includeSessionContext = "includeSessionContext"
+    case initialPrompt = "initialPrompt"
+    case initialPromptDelay = "initialPromptDelay"
+    case live = "live"
+    case local = "local"
+    case maxDuration = "maxDuration"
+    case name = "name"
+    case out = "out"
+    case profile = "profile"
+    case profileDir = "profileDir"
+    case project = "project"
+    case provider = "provider"
+    case skipFinalize = "skipFinalize"
+    case sync = "sync"
+    case tools = "tools"
+    case url = "url"
+    case voiceRuntime = "voiceRuntime"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.agent {
+      body["agent"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.artifactId {
+      body["artifactId"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.asyncWorker {
+      body["asyncWorker"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.capture {
+      body["capture"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.context {
+      body["context"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.dryRun {
+      body["dryRun"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.duration {
+      body["duration"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.emptyGrace {
+      body["emptyGrace"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.includeSessionContext {
+      body["includeSessionContext"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.initialPrompt {
+      body["initialPrompt"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.initialPromptDelay {
+      body["initialPromptDelay"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.live {
+      body["live"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.local {
+      body["local"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.maxDuration {
+      body["maxDuration"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.name {
+      body["name"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.out {
+      body["out"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.profile {
+      body["profile"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.profileDir {
+      body["profileDir"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.provider {
+      body["provider"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.skipFinalize {
+      body["skipFinalize"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.sync {
+      body["sync"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.tools {
+      body["tools"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.url {
+      body["url"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.voiceRuntime {
+      body["voiceRuntime"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public typealias MeetingsJoinReturn = RaviJSON
+
+public struct MeetingsLeaveOptions: Codable, Sendable {
+  public var project: String?
+
+  public init(project: String? = nil) {
+    self.project = project
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case project = "project"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct MeetingsLeaveReturn: Codable, Sendable {
+  public var left: Bool
+  public var meeting: RaviJSON
+
+  public init(left: Bool, meeting: RaviJSON) {
+    self.left = left
+    self.meeting = meeting
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case left = "left"
+    case meeting = "meeting"
+  }
+}
+
+public struct MeetingsListOptions: Codable, Sendable {
+  public var limit: String?
+  public var offset: String?
+  public var project: String?
+
+  public init(limit: String? = nil, offset: String? = nil, project: String? = nil) {
+    self.limit = limit
+    self.offset = offset
+    self.project = project
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case limit = "limit"
+    case offset = "offset"
+    case project = "project"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct MeetingsListReturn: Codable, Sendable {
+  public var items: [RaviJSON]
+  public var meetings: [RaviJSON]
+  public var pagination: RaviJSON
+  public var project: RaviJSON
+  public var total: Double
+
+  public init(items: [RaviJSON], meetings: [RaviJSON], pagination: RaviJSON, project: RaviJSON, total: Double) {
+    self.items = items
+    self.meetings = meetings
+    self.pagination = pagination
+    self.project = project
+    self.total = total
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case items = "items"
+    case meetings = "meetings"
+    case pagination = "pagination"
+    case project = "project"
+    case total = "total"
   }
 }
 
@@ -17100,6 +17389,36 @@ public struct MeetingsProfilesValidateReturn: Codable, Sendable {
   enum CodingKeys: String, CodingKey {
     case results = "results"
     case valid = "valid"
+  }
+}
+
+public struct MeetingsShowOptions: Codable, Sendable {
+  public var project: String?
+
+  public init(project: String? = nil) {
+    self.project = project
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case project = "project"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct MeetingsShowReturn: Codable, Sendable {
+  public var meeting: RaviJSON
+
+  public init(meeting: RaviJSON) {
+    self.meeting = meeting
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case meeting = "meeting"
   }
 }
 

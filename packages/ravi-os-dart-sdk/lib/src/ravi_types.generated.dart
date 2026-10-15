@@ -14373,6 +14373,34 @@ class MediaSendReturn {
 
 MediaSendReturn mediaSendReturnFromJson(Object? json) => MediaSendReturn.fromJsonValue(json);
 
+class MeetingsFetchOptions {
+  const MeetingsFetchOptions({this.noNotify, this.out, this.project, this.video});
+
+  final bool? noNotify;
+  final String? out;
+  final String? project;
+  final bool? video;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (noNotify != null) {
+      into["noNotify"] = RaviJson.from(noNotify);
+    }
+    if (out != null) {
+      into["out"] = RaviJson.from(out);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (video != null) {
+      into["video"] = RaviJson.from(video);
+    }
+  }
+}
+
+typedef MeetingsFetchReturn = RaviJson;
+
+MeetingsFetchReturn meetingsFetchReturnFromJson(Object? json) => RaviJson.from(json);
+
 class MeetingsFinalizeOptions {
   const MeetingsFinalizeOptions({this.noPostTranscribe, this.runDir, this.title});
 
@@ -14422,6 +14450,196 @@ class MeetingsFinalizeReturn {
 }
 
 MeetingsFinalizeReturn meetingsFinalizeReturnFromJson(Object? json) => MeetingsFinalizeReturn.fromJsonValue(json);
+
+class MeetingsJoinOptions {
+  const MeetingsJoinOptions({this.agent, this.artifactId, this.asyncWorker, this.capture, this.context, this.dryRun, this.duration, this.emptyGrace, this.includeSessionContext, this.initialPrompt, this.initialPromptDelay, this.live, this.local, this.maxDuration, this.name, this.out, this.profile, this.profileDir, this.project, this.provider, this.skipFinalize, this.sync, this.tools, this.url, this.voiceRuntime});
+
+  final String? agent;
+  final String? artifactId;
+  final bool? asyncWorker;
+  final String? capture;
+  final String? context;
+  final bool? dryRun;
+  final String? duration;
+  final String? emptyGrace;
+  final bool? includeSessionContext;
+  final String? initialPrompt;
+  final String? initialPromptDelay;
+  final bool? live;
+  final bool? local;
+  final String? maxDuration;
+  final String? name;
+  final String? out;
+  final String? profile;
+  final String? profileDir;
+  final String? project;
+  final String? provider;
+  final bool? skipFinalize;
+  final bool? sync;
+  final String? tools;
+  final String? url;
+  final String? voiceRuntime;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (agent != null) {
+      into["agent"] = RaviJson.from(agent);
+    }
+    if (artifactId != null) {
+      into["artifactId"] = RaviJson.from(artifactId);
+    }
+    if (asyncWorker != null) {
+      into["asyncWorker"] = RaviJson.from(asyncWorker);
+    }
+    if (capture != null) {
+      into["capture"] = RaviJson.from(capture);
+    }
+    if (context != null) {
+      into["context"] = RaviJson.from(context);
+    }
+    if (dryRun != null) {
+      into["dryRun"] = RaviJson.from(dryRun);
+    }
+    if (duration != null) {
+      into["duration"] = RaviJson.from(duration);
+    }
+    if (emptyGrace != null) {
+      into["emptyGrace"] = RaviJson.from(emptyGrace);
+    }
+    if (includeSessionContext != null) {
+      into["includeSessionContext"] = RaviJson.from(includeSessionContext);
+    }
+    if (initialPrompt != null) {
+      into["initialPrompt"] = RaviJson.from(initialPrompt);
+    }
+    if (initialPromptDelay != null) {
+      into["initialPromptDelay"] = RaviJson.from(initialPromptDelay);
+    }
+    if (live != null) {
+      into["live"] = RaviJson.from(live);
+    }
+    if (local != null) {
+      into["local"] = RaviJson.from(local);
+    }
+    if (maxDuration != null) {
+      into["maxDuration"] = RaviJson.from(maxDuration);
+    }
+    if (name != null) {
+      into["name"] = RaviJson.from(name);
+    }
+    if (out != null) {
+      into["out"] = RaviJson.from(out);
+    }
+    if (profile != null) {
+      into["profile"] = RaviJson.from(profile);
+    }
+    if (profileDir != null) {
+      into["profileDir"] = RaviJson.from(profileDir);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (provider != null) {
+      into["provider"] = RaviJson.from(provider);
+    }
+    if (skipFinalize != null) {
+      into["skipFinalize"] = RaviJson.from(skipFinalize);
+    }
+    if (sync != null) {
+      into["sync"] = RaviJson.from(sync);
+    }
+    if (tools != null) {
+      into["tools"] = RaviJson.from(tools);
+    }
+    if (url != null) {
+      into["url"] = RaviJson.from(url);
+    }
+    if (voiceRuntime != null) {
+      into["voiceRuntime"] = RaviJson.from(voiceRuntime);
+    }
+  }
+}
+
+typedef MeetingsJoinReturn = RaviJson;
+
+MeetingsJoinReturn meetingsJoinReturnFromJson(Object? json) => RaviJson.from(json);
+
+class MeetingsLeaveOptions {
+  const MeetingsLeaveOptions({this.project});
+
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class MeetingsLeaveReturn {
+  const MeetingsLeaveReturn({required this.left, required this.meeting});
+
+  final bool left;
+  final RaviJson meeting;
+
+  factory MeetingsLeaveReturn.fromJson(Map<String, Object?> json) {
+    return MeetingsLeaveReturn(
+      left: raviJsonAsBool(json["left"]),
+      meeting: RaviJson.from(json["meeting"]),
+    );
+  }
+
+  static MeetingsLeaveReturn fromJsonValue(Object? json) {
+    return MeetingsLeaveReturn.fromJson(raviJsonObject(json, "MeetingsLeaveReturn"));
+  }
+}
+
+MeetingsLeaveReturn meetingsLeaveReturnFromJson(Object? json) => MeetingsLeaveReturn.fromJsonValue(json);
+
+class MeetingsListOptions {
+  const MeetingsListOptions({this.limit, this.offset, this.project});
+
+  final String? limit;
+  final String? offset;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class MeetingsListReturn {
+  const MeetingsListReturn({required this.items, required this.meetings, required this.pagination, required this.project, required this.total});
+
+  final List<RaviJson> items;
+  final List<RaviJson> meetings;
+  final RaviJson pagination;
+  final RaviJson project;
+  final double total;
+
+  factory MeetingsListReturn.fromJson(Map<String, Object?> json) {
+    return MeetingsListReturn(
+      items: raviJsonAsList(json["items"], RaviJson.from),
+      meetings: raviJsonAsList(json["meetings"], RaviJson.from),
+      pagination: RaviJson.from(json["pagination"]),
+      project: RaviJson.from(json["project"]),
+      total: raviJsonAsDouble(json["total"]),
+    );
+  }
+
+  static MeetingsListReturn fromJsonValue(Object? json) {
+    return MeetingsListReturn.fromJson(raviJsonObject(json, "MeetingsListReturn"));
+  }
+}
+
+MeetingsListReturn meetingsListReturnFromJson(Object? json) => MeetingsListReturn.fromJsonValue(json);
 
 class MeetingsProfilesInitOptions {
   const MeetingsProfilesInitOptions({this.source});
@@ -14556,6 +14774,36 @@ class MeetingsProfilesValidateReturn {
 }
 
 MeetingsProfilesValidateReturn meetingsProfilesValidateReturnFromJson(Object? json) => MeetingsProfilesValidateReturn.fromJsonValue(json);
+
+class MeetingsShowOptions {
+  const MeetingsShowOptions({this.project});
+
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class MeetingsShowReturn {
+  const MeetingsShowReturn({required this.meeting});
+
+  final RaviJson meeting;
+
+  factory MeetingsShowReturn.fromJson(Map<String, Object?> json) {
+    return MeetingsShowReturn(
+      meeting: RaviJson.from(json["meeting"]),
+    );
+  }
+
+  static MeetingsShowReturn fromJsonValue(Object? json) {
+    return MeetingsShowReturn.fromJson(raviJsonObject(json, "MeetingsShowReturn"));
+  }
+}
+
+MeetingsShowReturn meetingsShowReturnFromJson(Object? json) => MeetingsShowReturn.fromJsonValue(json);
 
 class MeetingsVoiceRuntimesReturn {
   const MeetingsVoiceRuntimesReturn({required this.candidates, required this.defaultRuntimeId, required this.recommendation});
