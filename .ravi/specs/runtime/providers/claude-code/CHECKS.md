@@ -15,6 +15,12 @@
   not survive, and the Claude session id is still resumed.
 - Resume session id is read from `RuntimeSessionState.params`.
 - Fork is passed only when requested by session continuity.
+- A real POSIX shell preserves a single auth token and multiple forwarded auth,
+  context and gateway values, including shell metacharacters and newlines.
+- A loopback SSH agent receives the enabled daemon HTTP gateway URL; an
+  unrelated remote host does not receive an inferred loopback URL.
+- An explicit gateway URL takes precedence, invalid HTTP ports do not create a
+  URL, and unrelated secrets never enter the forwarded environment.
 
 ## Regression Cases
 

@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
@@ -85,6 +85,26 @@ function runtimeEvent(sessionName: string, data: Record<string, unknown>) {
 }
 
 describe("CronRunner agent job outcome tracking", () => {
+  it("caps distant timers and re-arms without dispatching a job before its due time", async () => {
+    const dueAt = Date.now() + 60 * 24 * 60 * 60 * 1000;
+    const job = createAgentJob({ schedule: { type: "at", at: dueAt } });
+    const runner = new CronRunner();
+    const timer = spyOn(globalThis, "setTimeout");
+    try {
+      await runner.start();
+      expect(timer.mock.calls[0]?.[1]).toBe(2_147_483_647);
+      const wakeup = timer.mock.calls[0]?.[0] as () => void;
+      wakeup();
+      expect(timer.mock.calls[1]?.[1]).toBe(2_147_483_647);
+      expect(publishCalls).toHaveLength(0);
+      expect(dbGetCronJob(job.id)?.nextRunAt).toBe(dueAt);
+      expect(dbGetCronJob(job.id)?.lastRunAt).toBeUndefined();
+    } finally {
+      await runner.stop();
+      timer.mockRestore();
+    }
+  });
+
   it("does not report ok on dispatch and records the error when the turn fails", async () => {
     const job = createAgentJob();
     const runner = new CronRunner();

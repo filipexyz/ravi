@@ -132,7 +132,7 @@ export class CronRunner {
       return;
     }
 
-    const delay = Math.max(0, nextJob.nextRunAt - Date.now());
+    const delay = Math.min(2_147_483_647, Math.max(0, nextJob.nextRunAt - Date.now()));
     log.debug("Timer armed", {
       jobId: nextJob.id,
       jobName: nextJob.name,

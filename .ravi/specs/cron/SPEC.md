@@ -33,6 +33,9 @@ target resolution, and operational inspection.
 ## Invariants
 
 - Cron jobs MUST NOT mutate routing, sessions, agents, or channel state.
+- Cron timer delays MUST stay within the signed 32-bit millisecond limit.
+  Jobs further in the future MUST be rechecked and re-armed without dispatching
+  before their persisted due time.
 - Shell jobs and agent jobs are distinct execution modes with different target semantics.
 - Target resolution MUST be read-only and computed at inspection time.
 - `cron add --idempotency-key <key>` MUST create at most one normalized action for that key and MUST reject reuse with different action content.

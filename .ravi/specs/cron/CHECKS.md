@@ -1,5 +1,11 @@
 # Cron / CHECKS
 
+## Distant Jobs MUST NOT Overflow The Timer
+
+- `bun test src/cron/runner.test.ts` MUST prove a job more than 2,147,483,647 ms
+  away arms a capped timer, re-arms when checked early, and neither dispatches
+  nor changes the persisted due time before the job is due.
+
 ## List Output MUST Include Target State
 
 ```bash

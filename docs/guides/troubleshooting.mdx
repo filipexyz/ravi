@@ -94,6 +94,39 @@ ravi events stream --only audit
 
 [Permissions](/guides/permissions) covers profiles, contact tags and governed chats.
 
+### Claude answers but its SSH-side Ravi CLI fails
+
+For an agent configured with `remote`, the SSH user has its own home and local
+Ravi state. Forward both the issued `RAVI_CONTEXT_KEY` and `RAVI_GATEWAY_URL` so
+its CLI authenticates to the actual daemon instead of opening an empty local
+database. Do not give the SSH user access to the operator's database.
+
+The SSH launcher derives a gateway URL for loopback agents when the daemon HTTP
+server is enabled with `RAVI_HTTP_PORT` (or `RAVI_WEBHOOK_PORT`). For another
+host, configure an explicit URL reachable from that host. An explicitly
+configured `RAVI_GATEWAY_URL` takes precedence.
+
+Check `command -v ravi` and `ravi --version` as the SSH user. That installation
+needs a version compatible with the daemon and its production dependencies.
+An old wrapper can select a stale checkout despite a current package being
+installed elsewhere. With the issued context and gateway, verify:
+
+```bash
+ravi self whoami --json
+ravi self explain --json
+ravi self permissions --json
+```
+
+If local Claude accepts a token but SSH Claude returns 401, check the launcher
+before replacing the credential. Older launchers used literal `\\n` between
+exports, corrupting the forwarded token. After correcting the launcher and
+validating the token through SSH, clear the stale pool health entry with
+`ravi runtime credentials reset-health <credential-id> --json`.
+
+The `full-access` runtime profile includes `admin system:*`; explicit
+read-only Page capabilities listed beside it do not reduce that profile to
+read-only. Inspect effective authority before adding grants.
+
 ## Read the session trace
 
 The trace is stored in `~/.ravi/ravi.db` and records every step of a session, from the incoming message to delivery.
@@ -159,6 +192,15 @@ ravi pages published --json # what is live on the project host
 [Publish pages](/console/pages) and [Interactive pages with Bases](/console/bases) cover these flows in depth.
 
 ## Inspect NATS and JetStream
+
+If the daemon repeatedly exits while ensuring `RAVI_EVENTS`, inspect the NATS
+log for `10047: insufficient storage resources available` and check disk space
+with `df -h`. A connected Slack runner does not prove the daemon is running.
+Free only verified disposable caches, then restart the managed NATS server
+(`pm2 restart omni-nats`) so its storage budget is recalculated. Confirm that
+`RAVI_EVENTS` restores and the daemon reaches `Daemon ready`; preserve the
+JetStream data and Ravi databases. This is operator recovery, not automatic
+cache deletion by Ravi.
 
 Ravi needs NATS with JetStream at `NATS_URL` (default `nats://127.0.0.1:4222`). These streams exist on a typical install:
 

@@ -16,3 +16,22 @@
 - Hooks should not be attached when capabilities say unsupported.
 - Remote spawn should not be attached unless the agent has remote config.
 - Spec server should not be attached unless the agent is in spec mode.
+
+## SSH Authentication And CLI Recovery
+
+1. If a token works in a direct local Claude invocation but the SSH agent gets
+   401, validate the launcher with `bun test src/remote-spawn.test.ts` before
+   requesting a replacement token. Literal newline escapes in the export script
+   can corrupt an otherwise valid credential.
+2. Check that the SSH process receives `RAVI_CONTEXT_KEY` and
+   `RAVI_GATEWAY_URL`, without printing either credential. Loopback agents can
+   use the daemon HTTP listener; other hosts need an explicit reachable URL.
+3. Run `ravi --version` as the SSH user and align that CLI with the daemon.
+   Install its production dependencies too. A stale PATH wrapper can select an
+   older checkout even when the current package is already installed.
+4. Validate `ravi self whoami --json`, `ravi self explain --json` and
+   `ravi self permissions --json` from that user with the issued context. Do not
+   grant access to the operator's state directory to repair gateway routing.
+5. Only after validating the registered credential through the corrected
+   launcher, clear its stale health failure with
+   `ravi runtime credentials reset-health <credential-id> --json`.
