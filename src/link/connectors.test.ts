@@ -270,9 +270,7 @@ describe("connector link helpers", () => {
     } finally {
       console.error = originalError;
     }
-    expect(lines).toContain(
-      "Chat line: Your Gmail connection expired. Reconnect: https://console.ravi.bot/connectors",
-    );
+    expect(lines).toContain("Chat line: Your Gmail connection expired. Reconnect: https://console.ravi.bot/connectors");
   });
 });
 

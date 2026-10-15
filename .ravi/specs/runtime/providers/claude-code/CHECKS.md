@@ -16,7 +16,9 @@
 - Resume session id is read from `RuntimeSessionState.params`.
 - Fork is passed only when requested by session continuity.
 - A real POSIX shell preserves a single auth token and multiple forwarded auth,
-  context and gateway values, including shell metacharacters and newlines.
+  context and gateway values read from stdin, including shell metacharacters,
+  backslashes and literal `\\n` sequences; a value with a real newline is
+  refused, and no forwarded value appears in the ssh argv or the ssh child env.
 - A loopback SSH agent receives the enabled daemon HTTP gateway URL; an
   unrelated remote host does not receive an inferred loopback URL.
 - An explicit gateway URL takes precedence, invalid HTTP ports do not create a
