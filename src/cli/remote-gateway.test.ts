@@ -863,7 +863,7 @@ describe("personal connector blocks over the gateway", () => {
       "connectors list",
       new CloudAuthError(
         "CONNECTOR_GROUP_BLOCKED",
-        'This message came from someone other than Luis, and personal connections serve only Luis\'s own requests. Reply in this chat: "I can\'t use Luis\'s Gmail for your request."',
+        "This message came from someone other than Luis, and personal connections serve only Luis's own requests. Reply in this chat: \"I can't use Luis's Gmail for your request.\"",
         {
           exitCode: 3,
           details: {

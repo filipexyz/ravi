@@ -3,6 +3,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inspectDoctor, runDoctor } from "./doctor.js";
+import type { NatsExposureReport } from "../../security/nats-exposure.js";
+import type { StateDirPermissionsInspection } from "../../security/state-dir-permissions.js";
 
 const tempDirs: string[] = [];
 
@@ -11,6 +13,51 @@ function makeTempDir(prefix: string): string {
   tempDirs.push(dir);
   return dir;
 }
+
+function natsReport(overrides: Partial<NatsExposureReport> = {}): NatsExposureReport {
+  return {
+    status: "loopback_only",
+    natsUrl: "nats://127.0.0.1:4222",
+    host: "127.0.0.1",
+    port: 4222,
+    reachableAddresses: [],
+    authRequired: null,
+    tlsRequired: null,
+    firewall: "on",
+    message: "NATS port 4222 is not reachable on any non-loopback address",
+    remediation: [],
+    ...overrides,
+  };
+}
+
+function stateDirPermissions(
+  path: string,
+  overrides: Partial<StateDirPermissionsInspection> = {},
+): StateDirPermissionsInspection {
+  return {
+    path,
+    supported: true,
+    exists: true,
+    isDirectory: true,
+    isSymlink: false,
+    ownedByCurrentUser: true,
+    mode: 0o700,
+    modeOctal: "0700",
+    groupOrOtherAccess: false,
+    setgid: false,
+    ...overrides,
+  };
+}
+
+const EXPOSED_NATS = natsReport({
+  status: "exposed",
+  reachableAddresses: ["192.168.1.10:4222"],
+  authRequired: false,
+  tlsRequired: false,
+  firewall: "off",
+  message: "NATS port 4222 accepts unauthenticated connections from the network (192.168.1.10:4222)",
+  remediation: ["bind nats-server to loopback: start it with `-a 127.0.0.1`", "enable the host firewall"],
+});
 
 function makeHealthyDeps() {
   const home = makeTempDir("ravi-doctor-home-");
@@ -189,6 +236,8 @@ function makeHealthyDeps() {
     tempDir: () => tempDir,
     statDisk: () => ({ totalBytes: 500 * 1024 ** 3, freeBytes: 200 * 1024 ** 3, deviceId: 66 }),
     probeDir: () => ({ ok: true }),
+    probeNatsExposure: async () => natsReport(),
+    inspectStateDirPermissions: (path: string) => stateDirPermissions(path),
   };
 }
 
@@ -817,8 +866,136 @@ describe("inspectDoctor", () => {
   });
 });
 
+describe("doctor security checks", () => {
+  it("passes NATS exposure and state dir permissions when private", () => {
+    const deps = makeHealthyDeps();
+    const report = inspectDoctor(deps, { natsExposure: natsReport() });
+
+    expect(report.summary.warnings).toBe(0);
+    const nats = report.checks.find((check) => check.id === "runtime.nats_exposure");
+    expect(nats?.status).toBe("pass");
+    expect(nats?.domain).toBe("runtime");
+    expect(report.checks.find((check) => check.id === "substrate.state-dir-permissions")?.status).toBe("pass");
+  });
+
+  it("skips the NATS exposure check when it was not probed", () => {
+    const report = inspectDoctor(makeHealthyDeps());
+    expect(report.checks.find((check) => check.id === "runtime.nats_exposure")?.status).toBe("skip");
+  });
+
+  it("warns when NATS is exposed to the network, with evidence and remediation", () => {
+    const report = inspectDoctor(makeHealthyDeps(), { natsExposure: EXPOSED_NATS });
+
+    const check = report.checks.find((item) => item.id === "runtime.nats_exposure");
+    expect(check?.status).toBe("fail");
+    expect(check?.severity).toBe("warn");
+    expect(report.summary.errors).toBe(0);
+    expect(report.summary.warnings).toBe(1);
+
+    const finding = report.findings.find((item) => item.id === "runtime.nats_exposure");
+    const labels = finding?.evidence.map((evidence) => evidence.label) ?? [];
+    expect(labels).toContain("status: exposed");
+    expect(labels).toContain("reachable: 192.168.1.10:4222");
+    expect(labels).toContain("host firewall: off");
+    expect(labels.some((label) => label.includes("-a 127.0.0.1"))).toBe(true);
+    expect(finding?.fixHint).toContain("-a 127.0.0.1");
+    expect(finding?.data).toMatchObject({ status: "exposed", firewall: "off" });
+  });
+
+  it("warns when NATS is remote over plaintext", () => {
+    const report = inspectDoctor(makeHealthyDeps(), {
+      natsExposure: natsReport({ status: "remote_plaintext", message: "NATS is remote over plaintext" }),
+    });
+    const check = report.checks.find((item) => item.id === "runtime.nats_exposure");
+    expect(check?.status).toBe("fail");
+    expect(check?.severity).toBe("warn");
+  });
+
+  it("does not warn when NATS is reachable but requires auth, or remote over TLS", () => {
+    for (const status of ["exposed_auth_required", "remote"] as const) {
+      const report = inspectDoctor(makeHealthyDeps(), { natsExposure: natsReport({ status }) });
+      expect(report.checks.find((item) => item.id === "runtime.nats_exposure")?.status).toBe("pass");
+      expect(report.summary.warnings).toBe(0);
+    }
+  });
+
+  it("warns when the state dir has group/other permission bits", () => {
+    const deps = makeHealthyDeps();
+    const stateDir = deps.getRaviStateDir();
+    const report = inspectDoctor({
+      ...deps,
+      inspectStateDirPermissions: (path: string) =>
+        stateDirPermissions(path, { mode: 0o755, modeOctal: "0755", groupOrOtherAccess: true }),
+    });
+
+    const check = report.checks.find((item) => item.id === "substrate.state-dir-permissions");
+    expect(check?.status).toBe("fail");
+    expect(check?.severity).toBe("warn");
+    const finding = report.findings.find((item) => item.id === "substrate.state-dir-permissions");
+    expect(finding?.evidence.map((evidence) => evidence.label)).toEqual([`path: ${stateDir}`, "mode: 0755"]);
+    expect(finding?.fixHint).toContain(`chmod 700 ${stateDir}`);
+    expect(finding?.data).toMatchObject({ path: stateDir, mode: "0755" });
+  });
+
+  it("skips state dir permissions when unsupported or missing", () => {
+    const deps = makeHealthyDeps();
+    for (const overrides of [{ supported: false }, { exists: false, mode: null, modeOctal: null }]) {
+      const report = inspectDoctor({
+        ...deps,
+        inspectStateDirPermissions: (path: string) => stateDirPermissions(path, overrides),
+      });
+      expect(report.checks.find((item) => item.id === "substrate.state-dir-permissions")?.status).toBe("skip");
+    }
+  });
+});
+
 describe("runDoctor", () => {
-  it("prints JSON output when requested", () => {
+  it("runs the async NATS probe and reports exposure", async () => {
+    const deps = makeHealthyDeps();
+    const originalLog = console.log;
+    console.log = () => {};
+    let report: Awaited<ReturnType<typeof runDoctor>>;
+    try {
+      report = await runDoctor({ json: true }, { ...deps, probeNatsExposure: async () => EXPOSED_NATS });
+    } finally {
+      console.log = originalLog;
+    }
+    expect(report.checks.find((item) => item.id === "runtime.nats_exposure")?.status).toBe("fail");
+  });
+
+  it("skips the NATS probe for unrelated domains and survives probe failures", async () => {
+    const deps = makeHealthyDeps();
+    let probes = 0;
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      await runDoctor(
+        { json: true, domain: "apps" },
+        {
+          ...deps,
+          probeNatsExposure: async () => {
+            probes++;
+            return EXPOSED_NATS;
+          },
+        },
+      );
+      const report = await runDoctor(
+        { json: true },
+        {
+          ...deps,
+          probeNatsExposure: async () => {
+            throw new Error("probe exploded");
+          },
+        },
+      );
+      expect(report.checks.find((item) => item.id === "runtime.nats_exposure")?.status).toBe("skip");
+    } finally {
+      console.log = originalLog;
+    }
+    expect(probes).toBe(0);
+  });
+
+  it("prints JSON output when requested", async () => {
     const deps = makeHealthyDeps();
     const lines: string[] = [];
     const originalLog = console.log;
@@ -827,7 +1004,7 @@ describe("runDoctor", () => {
     };
 
     try {
-      runDoctor({ json: true }, deps);
+      await runDoctor({ json: true }, deps);
     } finally {
       console.log = originalLog;
     }
