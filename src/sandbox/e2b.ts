@@ -9,27 +9,90 @@
  * runE2bSandboxTask: create sandbox -> clone the repo -> start the Ravi daemon
  * with this task's credentials -> create a Claude-backed worker agent whose cwd
  * is the clone -> create and dispatch the task -> poll until done/failed/blocked
- * -> save TASK.md, task.json, the git patch and the daemon log locally -> kill
- * the sandbox (or pause it when keep is set).
+ * -> save TASK.md, task.json, the git patch, the daemon log, Ravi's session
+ * traces and the Claude transcripts locally -> kill the sandbox (or pause it when
+ * keep is set) -> save what E2B recorded about it (logs, events, metrics).
  */
 
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { createHash, randomBytes } from "node:crypto";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { readOrCreateInstallationKey } from "../cloud-auth/installation-key.js";
+import { classifyAnthropicSecretShape } from "../runtime/credential-secret-shape.js";
 import { getRaviStateDir } from "../utils/paths.js";
+import {
+  type CollectE2bTelemetryOptions,
+  type E2bTelemetrySummary,
+  SANDBOX_PLACEHOLDER_API_KEY,
+  collectE2bTelemetry,
+  redactSecrets,
+} from "./observe.js";
+
+export { SANDBOX_PLACEHOLDER_API_KEY };
 
 export const DEFAULT_E2B_TEMPLATE = "ravi-runner";
 export const DEFAULT_E2B_TEMPLATE_REF = "dev";
 export const DEFAULT_SANDBOX_MODEL = "sonnet";
 export const DEFAULT_SANDBOX_TIMEOUT_MIN = 55;
+/** E2B Hobby caps a sandbox at 1 h; the sandbox lives 5 min longer than the task, so 55 + 5 fits. */
+export const MAX_SANDBOX_TIMEOUT_MIN = 55;
+/** Same value the e2b package exports; mirrored so the pure network builder never loads the SDK. */
+export const ALL_TRAFFIC = "0.0.0.0/0";
+export const ANTHROPIC_API_HOST = "api.anthropic.com";
+export const SANDBOX_MODEL_AUTH_MODES = ["broker", "header", "env"] as const;
+export type SandboxModelAuthMode = (typeof SANDBOX_MODEL_AUTH_MODES)[number];
+export const SANDBOX_EGRESS_MODES = ["dev-registries", "strict"] as const;
+export type SandboxEgressMode = (typeof SANDBOX_EGRESS_MODES)[number];
+/**
+ * How GITHUB_TOKEN reaches the clone: `header` (default) as a secret-store placeholder
+ * in a clone-phase transform rule, `file` through git's credential file (#623), which
+ * also forces that path when the proxy's rule is not being honoured.
+ */
+export const SANDBOX_GITHUB_AUTH_MODES = ["header", "file"] as const;
+export type SandboxGithubAuthMode = (typeof SANDBOX_GITHUB_AUTH_MODES)[number];
+/** Title and instructions together; checked on the host before anything is created. */
+export const MAX_TASK_TEXT_BYTES = 100 * 1024;
+/**
+ * Hosts a coding task needs to install dependencies and run tests. They serve fixed
+ * content and publishing to any of them needs credentials the sandbox does not
+ * have, so they are poor exfiltration targets. GOPROXY (`proxy.golang.org`) is left
+ * out on purpose: it fetches arbitrary module origins on demand, so a request for
+ * `attacker.tld/<payload>` reaches the attacker through an allowlisted host. Go
+ * users add it with `--allow-host proxy.golang.org`; `--egress strict` drops the
+ * whole preset.
+ */
+export const DEV_REGISTRY_HOSTS = [
+  "registry.npmjs.org",
+  "registry.yarnpkg.com",
+  "pypi.org",
+  "files.pythonhosted.org",
+  "crates.io",
+  "index.crates.io",
+  "static.crates.io",
+  "rubygems.org",
+  "index.rubygems.org",
+  "github.com",
+  "codeload.github.com",
+  "objects.githubusercontent.com",
+] as const;
 
 const RAVI_REPO = "https://github.com/filipexyz/ravi.git";
 const NATS_VERSION = "2.11.8";
 const TEMPLATE_RAVI_DIR = "/home/user/ravi";
 const REPO_DIR = "/home/user/work/repo";
 const DAEMON_LOG = "/home/user/.ravi/daemon.log";
+const CLAUDE_PROJECTS_DIR = "/home/user/.claude/projects";
+const MAX_TRANSCRIPTS = 50;
 const TERMINAL_STATUSES = new Set(["done", "failed", "blocked"]);
-const CLAUDE_CREDENTIAL_KEYS = ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"] as const;
 const CLONE_TIMEOUT_MS = 10 * 60_000;
+// Title and instructions reach `ravi tasks create` through these files and `$(cat …)`:
+// E2B logs every command string and keeps the logs for days, and task text may hold
+// anything from customer data to shell metacharacters.
+const TASK_TEXT_DIR = "/home/user/.ravi-task";
+// GITHUB_TOKEN reaches git through this file, never a command line or a per-command
+// env var: E2B logs both (args and envs) and keeps those logs for days. File writes
+// are logged by path only.
+const GIT_CREDENTIALS_FILE = "/home/user/.ravi-clone-credentials";
 const SIGNAL_CLEANUP_TIMEOUT_MS = 15_000;
 
 export class SandboxConfigError extends Error {
@@ -39,17 +102,31 @@ export class SandboxConfigError extends Error {
   }
 }
 
+/**
+ * How the worker's Claude Code reaches the model. Sandboxes take an Anthropic API
+ * key only, never a subscription (OAuth) token.
+ * - `broker`: requests go to a Ravi broker (`RAVI_SANDBOX_ANTHROPIC_BASE_URL`); the
+ *   sandbox holds the placeholder key and `headers` (the grant, filled in by connected
+ *   runs) are added by E2B's egress proxy on that host only.
+ * - `header`: the real key lives in E2B's secret store for the run and is injected as
+ *   `x-api-key` on api.anthropic.com; the sandbox env holds the placeholder.
+ * - `env`: legacy; the real key is in the sandbox env, where E2B logs and `--keep`
+ *   snapshots can see it. Explicit opt-in only.
+ */
+export type SandboxModelAuth =
+  | { mode: "broker"; baseUrl: string; headers?: Record<string, string> }
+  | { mode: "header"; apiKey: string }
+  | { mode: "env"; apiKey: string };
+
 export interface SandboxCredentials {
   e2bApiKey: string;
-  /** Claude credentials passed into the sandbox under the names Claude Code reads. */
-  agentEnv: Record<string, string>;
+  modelAuth: SandboxModelAuth;
   githubToken?: string;
 }
 
 /**
  * Resolve credentials from the environment. Claude Code on the web hides
- * CLAUDE_CODE_OAUTH_TOKEN and ANTHROPIC_API_KEY from sessions, so the
- * RAVI_-prefixed names are accepted as well.
+ * ANTHROPIC_API_KEY from sessions, so the RAVI_-prefixed name is accepted as well.
  */
 export function resolveE2bApiKey(env: NodeJS.ProcessEnv = process.env): string {
   const apiKey = env.E2B_API_KEY?.trim();
@@ -57,22 +134,140 @@ export function resolveE2bApiKey(env: NodeJS.ProcessEnv = process.env): string {
   return apiKey;
 }
 
-export function resolveSandboxCredentials(env: NodeJS.ProcessEnv = process.env): SandboxCredentials {
-  const e2bApiKey = resolveE2bApiKey(env);
+const OAUTH_REFUSED =
+  "Sandboxes take an Anthropic API key only (ANTHROPIC_API_KEY or RAVI_ANTHROPIC_API_KEY). " +
+  "CLAUDE_CODE_OAUTH_TOKEN is a subscription token: it is not scoped to one run, cannot be " +
+  "injected per host and would sit in a machine E2B can snapshot, so it is refused.";
 
-  const agentEnv: Record<string, string> = {};
-  for (const key of CLAUDE_CREDENTIAL_KEYS) {
-    const value = (env[key] || env[`RAVI_${key}`])?.trim();
-    if (value) agentEnv[key] = value;
-  }
-  if (Object.keys(agentEnv).length === 0) {
-    throw new SandboxConfigError(
-      "Set CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY (or RAVI_CLAUDE_CODE_OAUTH_TOKEN / RAVI_ANTHROPIC_API_KEY).",
-    );
+/**
+ * Model auth defaults to `broker` when RAVI_SANDBOX_ANTHROPIC_BASE_URL is set and to
+ * `header` otherwise. `env` is never chosen implicitly.
+ */
+export function resolveSandboxCredentials(
+  env: NodeJS.ProcessEnv = process.env,
+  modelAuthMode?: SandboxModelAuthMode,
+): SandboxCredentials {
+  const e2bApiKey = resolveE2bApiKey(env);
+  const brokerUrl = env.RAVI_SANDBOX_ANTHROPIC_BASE_URL?.trim();
+  const mode = modelAuthMode ?? (brokerUrl ? "broker" : "header");
+
+  let modelAuth: SandboxModelAuth;
+  if (mode === "broker") {
+    if (!brokerUrl) throw new SandboxConfigError("Model auth `broker` needs RAVI_SANDBOX_ANTHROPIC_BASE_URL.");
+    let parsed: URL;
+    try {
+      parsed = new URL(brokerUrl);
+    } catch {
+      throw new SandboxConfigError(`RAVI_SANDBOX_ANTHROPIC_BASE_URL is not a URL: ${brokerUrl}`);
+    }
+    if (parsed.protocol !== "https:") {
+      throw new SandboxConfigError(
+        "RAVI_SANDBOX_ANTHROPIC_BASE_URL must be https: the sandbox sends model traffic to it.",
+      );
+    }
+    modelAuth = { mode, baseUrl: brokerUrl };
+  } else {
+    const apiKey = (env.ANTHROPIC_API_KEY || env.RAVI_ANTHROPIC_API_KEY)?.trim();
+    const oauthToken = (env.CLAUDE_CODE_OAUTH_TOKEN || env.RAVI_CLAUDE_CODE_OAUTH_TOKEN)?.trim();
+    if (!apiKey) {
+      if (oauthToken) throw new SandboxConfigError(OAUTH_REFUSED);
+      throw new SandboxConfigError("Set ANTHROPIC_API_KEY (or RAVI_ANTHROPIC_API_KEY).");
+    }
+    if (classifyAnthropicSecretShape(apiKey) === "oauth") throw new SandboxConfigError(OAUTH_REFUSED);
+    modelAuth = { mode, apiKey };
   }
 
   const githubToken = env.GITHUB_TOKEN?.trim() || undefined;
-  return { e2bApiKey, agentEnv, githubToken };
+  return { e2bApiKey, modelAuth, githubToken };
+}
+
+/** Every credential value a run holds, for log redaction. */
+export function sandboxSecretValues(credentials: SandboxCredentials): string[] {
+  const { modelAuth } = credentials;
+  return [
+    credentials.e2bApiKey,
+    ...(modelAuth.mode === "broker" ? Object.values(modelAuth.headers ?? {}) : [modelAuth.apiKey]),
+    ...(credentials.githubToken ? [credentials.githubToken] : []),
+  ];
+}
+
+/** Host of the model endpoint the sandbox talks to: the broker in broker mode, Anthropic otherwise. */
+export function modelHostOf(modelAuth: SandboxModelAuth): string {
+  return modelAuth.mode === "broker" ? new URL(modelAuth.baseUrl).hostname : ANTHROPIC_API_HOST;
+}
+
+/** Host a clone URL reaches: http(s) and ssh URLs, or scp-style `user@host:path`. */
+export function repoHostOf(repo: string): string | null {
+  try {
+    const host = new URL(repo).hostname;
+    if (host) return host;
+  } catch {
+    // Not a URL; try scp-style below.
+  }
+  const scp = /^(?:[^@/\s]+@)?([A-Za-z0-9.-]+):/.exec(repo);
+  return scp?.[1] ?? null;
+}
+
+/** First 16 hex chars of sha256(installation key): identifies this host in E2B metadata without naming it. */
+export function sandboxHostId(installationKey: string = readOrCreateInstallationKey()): string {
+  return createHash("sha256").update(installationKey).digest("hex").slice(0, 16);
+}
+
+/**
+ * Placeholder E2B's proxy resolves to a stored secret's value (what `Secret.fill` returns).
+ * Header values set this way never appear in sandbox info, unlike literal header values.
+ */
+export function e2bSecretPlaceholder(name: string): string {
+  return `\${e2b.secrets.${name}}`;
+}
+
+/** The slice of E2B's secret store the runner uses; tests pass a fake. */
+export interface SandboxSecretStore {
+  put(name: string, value: string): Promise<void>;
+  destroy(name: string): Promise<void>;
+}
+
+export interface SandboxNetworkRule {
+  transform: { headers: Record<string, string> };
+}
+
+export interface SandboxNetwork {
+  allowOut: string[];
+  denyOut: string[];
+  rules: Record<string, SandboxNetworkRule[]>;
+}
+
+export interface SandboxNetworkConfig {
+  repoHost: string | null;
+  modelHost: string;
+  /** Headers E2B adds on the model host (`x-api-key` placeholder, broker grant); none in env mode. */
+  modelHeaders: Record<string, string>;
+  /** `Authorization` value E2B adds on github.com while cloning; dropped afterwards. */
+  githubAuthorization: string | null;
+  allowHosts: string[];
+  egress: SandboxEgressMode;
+}
+
+/**
+ * Egress policy for one phase of a run. Everything is denied except what is listed:
+ * the clone phase reaches the repo host and the model host; the run phase reaches
+ * the model host, `--allow-host` entries and (unless strict) the dev registries.
+ * Rules only add headers; a host still has to be in allowOut to be reachable.
+ */
+export function buildSandboxNetwork(phase: "clone" | "run", cfg: SandboxNetworkConfig): SandboxNetwork {
+  const allowOut = new Set<string>([cfg.modelHost]);
+  const rules: Record<string, SandboxNetworkRule[]> = {};
+  if (Object.keys(cfg.modelHeaders).length > 0) rules[cfg.modelHost] = [{ transform: { headers: cfg.modelHeaders } }];
+  if (phase === "clone") {
+    if (cfg.repoHost) allowOut.add(cfg.repoHost);
+    if (cfg.githubAuthorization && cfg.repoHost === "github.com") {
+      rules["github.com"] = [{ transform: { headers: { Authorization: cfg.githubAuthorization } } }];
+    }
+  } else {
+    for (const host of cfg.allowHosts) allowOut.add(host);
+    if (cfg.egress === "dev-registries") for (const host of DEV_REGISTRY_HOSTS) allowOut.add(host);
+  }
+  return { allowOut: [...allowOut], denyOut: [ALL_TRAFFIC], rules };
 }
 
 export function shellQuote(value: string): string {
@@ -90,6 +285,36 @@ export function githubCloneAuth(repo: string, token?: string): { username: strin
     // Not a URL (e.g. scp-style git@host:path); never attach the token.
   }
   return null;
+}
+
+/**
+ * What to clone and the credential line git reads from the credential file, if any.
+ * Credentials embedded in an http(s) URL move to that file too, so they never reach
+ * a command line, which E2B logs. Otherwise GITHUB_TOKEN applies (github.com only).
+ */
+export function resolveCloneSource(
+  repo: string,
+  githubToken?: string,
+): { url: string; credentialLine: string | null; urlPassword: string | null } {
+  try {
+    const parsed = new URL(repo);
+    if ((parsed.protocol === "https:" || parsed.protocol === "http:") && (parsed.username || parsed.password)) {
+      // username/password come back percent-encoded, which is what git's store file expects.
+      const credentialLine = `${parsed.protocol}//${parsed.username}:${parsed.password}@${parsed.host}\n`;
+      const urlPassword = parsed.password ? decodeURIComponent(parsed.password) : null;
+      parsed.username = "";
+      parsed.password = "";
+      return { url: parsed.toString(), credentialLine, urlPassword };
+    }
+  } catch {
+    // Not a URL (e.g. scp-style git@host:path): nothing to move.
+  }
+  const auth = githubCloneAuth(repo, githubToken);
+  return {
+    url: repo,
+    credentialLine: auth ? `https://${auth.username}:${encodeURIComponent(auth.password)}@github.com\n` : null,
+    urlPassword: null,
+  };
 }
 
 /** Turn an E2B CommandExitError into an error that says which command failed and why. */
@@ -181,22 +406,14 @@ export interface SandboxHandle {
   commands: {
     run(
       cmd: string,
-      opts?: { timeoutMs?: number; background?: boolean },
-    ): Promise<{ stdout: string; stderr?: string; exitCode?: number }>;
+      opts?: { timeoutMs?: number; background?: boolean; onStdout?: (data: string) => void },
+    ): Promise<{ stdout?: string; stderr?: string; exitCode?: number; disconnect?: () => Promise<unknown> }>;
   };
-  git: {
-    clone(
-      url: string,
-      opts: {
-        path: string;
-        branch?: string;
-        depth?: number;
-        username?: string;
-        password?: string;
-        timeoutMs?: number;
-      },
-    ): Promise<unknown>;
+  files: {
+    write(path: string, data: string): Promise<unknown>;
   };
+  /** Replaces the whole egress policy: a missing field is cleared on the server, so every field is required here. */
+  updateNetwork(network: SandboxNetwork): Promise<unknown>;
   kill(): Promise<unknown>;
   pause(): Promise<unknown>;
 }
@@ -207,6 +424,8 @@ export interface CreateSandboxInput {
   timeoutMs: number;
   envs: Record<string, string>;
   metadata: Record<string, string>;
+  network: SandboxNetwork & { allowPublicTraffic: false };
+  lifecycle: { onTimeout: "kill"; autoResume: false };
 }
 
 export interface RunSandboxTaskOptions {
@@ -220,13 +439,30 @@ export interface RunSandboxTaskOptions {
   keep?: boolean;
   outputDir?: string;
   credentials: SandboxCredentials;
+  /** Extra hosts the worker may reach after the clone (`--allow-host`). */
+  allowHosts?: string[];
+  egress?: SandboxEgressMode;
+  /** How GITHUB_TOKEN reaches the clone (`--github-auth`); defaults to `header`. */
+  githubAuth?: SandboxGithubAuthMode;
+  /** `ravi_host` metadata; defaults to sandboxHostId(). */
+  hostId?: string;
   onStep?: (message: string) => void;
   pollIntervalMs?: number;
   createSandbox?: (input: CreateSandboxInput) => Promise<SandboxHandle>;
+  /** Holds the per-run secrets E2B's proxy injects; defaults to E2B's secret store. */
+  secretStore?: SandboxSecretStore;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
   /** Called after Ctrl-C/SIGTERM cleanup; defaults to process.exit. */
   exit?: (code: number) => void;
+  /** Longest the Ctrl-C/SIGTERM cleanup (kill or pause, then secret removal) may take before exiting anyway; tests shorten it. */
+  signalCleanupTimeoutMs?: number;
+  /** Receives each daemon log line as it is written inside the sandbox. */
+  onDaemonLog?: (line: string) => void;
+  /** Fetches E2B's logs, events and metrics after the sandbox ends; tests pass a fake. */
+  collectTelemetry?: (
+    options: CollectE2bTelemetryOptions,
+  ) => Promise<{ summary: E2bTelemetrySummary; files: string[] } | null>;
 }
 
 export interface RunSandboxTaskResult {
@@ -238,6 +474,13 @@ export interface RunSandboxTaskResult {
   files: string[];
   durationMs: number;
   error: string | null;
+  /** What E2B recorded about the sandbox (null when it could not be fetched). */
+  e2b: E2bTelemetrySummary | null;
+}
+
+/** File name for a session or transcript path, safe on any filesystem. */
+export function safeFileName(value: string): string {
+  return value.replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^[._]+|_+$/g, "") || "unnamed";
 }
 
 async function createE2bSandbox(input: CreateSandboxInput): Promise<SandboxHandle> {
@@ -247,55 +490,266 @@ async function createE2bSandbox(input: CreateSandboxInput): Promise<SandboxHandl
     timeoutMs: input.timeoutMs,
     envs: input.envs,
     metadata: input.metadata,
+    network: input.network,
+    lifecycle: input.lifecycle,
   })) as unknown as SandboxHandle;
+}
+
+function e2bSecretStore(apiKey: string): SandboxSecretStore {
+  return {
+    async put(name, value) {
+      const { Secret } = await import("e2b");
+      if (await Secret.exists(name, { apiKey })) await Secret.update(name, value, { apiKey });
+      else await Secret.create(name, value, { apiKey });
+    },
+    async destroy(name) {
+      const { Secret } = await import("e2b");
+      await Secret.destroy(name, { apiKey });
+    },
+  };
 }
 
 export async function runE2bSandboxTask(options: RunSandboxTaskOptions): Promise<RunSandboxTaskResult> {
   const now = options.now ?? Date.now;
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const startedAt = now();
-  const step = (message: string) => options.onStep?.(`[${((now() - startedAt) / 1000).toFixed(1)}s] ${message}`);
-  const template = options.template ?? DEFAULT_E2B_TEMPLATE;
+  const { credentials } = options;
+  const { modelAuth } = credentials;
+  const timeoutMin = options.timeoutMin ?? DEFAULT_SANDBOX_TIMEOUT_MIN;
+  if (!Number.isInteger(timeoutMin) || timeoutMin < 1 || timeoutMin > MAX_SANDBOX_TIMEOUT_MIN) {
+    throw new SandboxConfigError(`timeoutMin must be an integer from 1 to ${MAX_SANDBOX_TIMEOUT_MIN}.`);
+  }
+  if (options.keep && modelAuth.mode === "env") {
+    throw new SandboxConfigError(
+      "--keep is refused with `env` model auth: a paused sandbox would keep the real API key in its snapshot. " +
+        "Use header or broker mode.",
+    );
+  }
   const title = options.title ?? "Sandbox task";
-  const timeoutMs = (options.timeoutMin ?? DEFAULT_SANDBOX_TIMEOUT_MIN) * 60_000;
+  const taskTextBytes = Buffer.byteLength(title) + Buffer.byteLength(options.instructions);
+  if (taskTextBytes > MAX_TASK_TEXT_BYTES) {
+    throw new SandboxConfigError(
+      `Title and instructions are ${taskTextBytes} bytes; the limit is ${MAX_TASK_TEXT_BYTES} (100 KiB). ` +
+        "Put the long material in the repository and refer to it.",
+    );
+  }
+  const secrets = sandboxSecretValues(credentials);
+  // Every step also goes to run.log; lines before the output dir exists are buffered.
+  let runLog: string | null = null;
+  const pendingRunLog: string[] = [];
+  const step = (message: string) => {
+    const line = `[${((now() - startedAt) / 1000).toFixed(1)}s] ${message}`;
+    options.onStep?.(line);
+    if (!runLog) {
+      pendingRunLog.push(line);
+      return;
+    }
+    try {
+      appendFileSync(runLog, `${redactSecrets(line, secrets)}\n`);
+    } catch {
+      // A failed diagnostic write must never stand between the run and the sandbox's cleanup.
+    }
+  };
+  const template = options.template ?? DEFAULT_E2B_TEMPLATE;
+  const timeoutMs = timeoutMin * 60_000;
+  const runId = randomBytes(12).toString("hex");
+
+  // Per-run secrets E2B's proxy injects as headers. Only placeholders reach the sandbox
+  // config, so `getInfo` (anyone with the E2B key) never shows the values.
+  const secretStore = options.secretStore ?? e2bSecretStore(credentials.e2bApiKey);
+  const storedSecrets: string[] = [];
+  const storeSecret = async (suffix: string, value: string): Promise<string> => {
+    const name = `ravi-sbx-${runId}-${suffix}`;
+    await secretStore.put(name, value);
+    storedSecrets.push(name);
+    return e2bSecretPlaceholder(name);
+  };
+  // Each name is taken off the list before its destroy call, so a destroy that hangs or
+  // a second cleanup pass (signal handler, then the normal path) never repeats it.
+  const destroySecret = async (name: string) => {
+    const at = storedSecrets.indexOf(name);
+    if (at < 0) return;
+    storedSecrets.splice(at, 1);
+    await secretStore.destroy(name).catch((err) => {
+      step(`Could not remove E2B secret ${name}: ${err instanceof Error ? err.message : String(err)}`);
+    });
+  };
+  const destroySecrets = async () => {
+    for (const name of [...storedSecrets]) await destroySecret(name);
+  };
+
+  const envs: Record<string, string> = {
+    RAVI_ALLOW_STALE_BUNDLE: "1",
+    // Denied hosts would otherwise be hammered by telemetry and update checks.
+    DISABLE_TELEMETRY: "1",
+    DISABLE_ERROR_REPORTING: "1",
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+    ANTHROPIC_API_KEY: modelAuth.mode === "env" ? modelAuth.apiKey : SANDBOX_PLACEHOLDER_API_KEY,
+  };
+  if (modelAuth.mode === "broker") envs.ANTHROPIC_BASE_URL = modelAuth.baseUrl;
+  const source = resolveCloneSource(options.repo, credentials.githubToken);
+  if (source.urlPassword) secrets.push(source.urlPassword);
+  const networkConfig: SandboxNetworkConfig = {
+    repoHost: repoHostOf(source.url),
+    modelHost: modelHostOf(modelAuth),
+    // Broker mode: `headers` is the grant slice 06b fills. Every value in `rules` is
+    // visible to anyone holding the E2B key (SandboxInfo), so 06b must store the grant
+    // in the secret store and pass `${e2b.secrets.<name>}` placeholders here, never the
+    // literal value. The test "puts only secret-store placeholders in rules" guards it.
+    modelHeaders: modelAuth.mode === "broker" ? { ...modelAuth.headers } : {},
+    githubAuthorization: null,
+    allowHosts: options.allowHosts ?? [],
+    egress: options.egress ?? "dev-registries",
+  };
+  // Whether the clone's credential goes through git's credential file (#623) instead of a header.
+  let cloneCredentialLine = source.credentialLine;
+  const githubAuth = source.urlPassword ? null : githubCloneAuth(options.repo, credentials.githubToken);
+  // The GitHub secret is destroyed right after the clone, not at run end; its name is kept for that.
+  let githubSecretName: string | null = null;
+  try {
+    if (modelAuth.mode === "header") {
+      networkConfig.modelHeaders["x-api-key"] = await storeSecret("anthropic", modelAuth.apiKey);
+    }
+    if (githubAuth && (options.githubAuth ?? "header") === "header") {
+      const basic = Buffer.from(`${githubAuth.username}:${githubAuth.password}`).toString("base64");
+      try {
+        networkConfig.githubAuthorization = await storeSecret("github", `Basic ${basic}`);
+        githubSecretName = storedSecrets[storedSecrets.length - 1] ?? null;
+        cloneCredentialLine = null;
+      } catch (err) {
+        step(
+          `E2B secret store unavailable (${err instanceof Error ? err.message : String(err)}); the clone uses a credential file`,
+        );
+      }
+    }
+  } catch (err) {
+    await destroySecrets();
+    throw err;
+  }
+
+  // Ctrl-C or SIGTERM must not leave a billable, credential-holding sandbox running,
+  // not even one whose create call has not returned yet.
+  const exit = options.exit ?? ((code: number) => process.exit(code));
+  const exitCodeFor = (signal: NodeJS.Signals) => (signal === "SIGINT" ? 130 : 143);
+  const cleanupTimeoutMs = options.signalCleanupTimeoutMs ?? SIGNAL_CLEANUP_TIMEOUT_MS;
+  // One limit over the whole cleanup (kill or pause, then the secrets): a hanging E2B
+  // call, in either step, must not keep the process alive longer than this.
+  const withCleanupLimit = (cleanup: () => Promise<unknown>) => {
+    const limit = new Promise((resolve) => setTimeout(resolve, cleanupTimeoutMs).unref?.());
+    return Promise.race([
+      cleanup()
+        .catch(() => {})
+        .then(destroySecrets),
+      limit,
+    ]).catch(() => {});
+  };
+  // A kept sandbox is paused with no egress, no injected credentials and no daemon
+  // waiting for work, so resuming it later cannot reach out with anything.
+  const pauseLocked = async (handle: SandboxHandle) => {
+    await handle.updateNetwork({ allowOut: [], denyOut: [ALL_TRAFFIC], rules: {} });
+    if (daemonStarted) {
+      // `[r]avi` keeps the pattern from matching the shell that runs this very pkill.
+      await handle.commands.run("pkill -f '[r]avi daemon run' || true", { timeoutMs: 10_000 }).catch(() => {});
+    }
+    await handle.pause();
+  };
+  let sandboxRef: SandboxHandle | null = null;
+  let pendingSignal: NodeJS.Signals | null = null;
+  // Set by the first signal; later ones are ignored (noted once) so that a second Ctrl-C
+  // during a slow kill neither removes the handler nor exits with the sandbox still up.
+  let signalCleanup: Promise<unknown> | null = null;
+  let repeatNoted = false;
+  const onSignal = (signal: NodeJS.Signals) => {
+    if (signalCleanup || pendingSignal) {
+      if (!repeatNoted) {
+        repeatNoted = true;
+        step(`${signal} received again; cleanup in progress, the sandbox is removed before this exits`);
+      }
+      return;
+    }
+    const live = sandboxRef;
+    if (!live) {
+      pendingSignal = signal;
+      step(`${signal} received while the sandbox is being created; it is killed as soon as E2B returns it`);
+      return;
+    }
+    step(
+      `${signal} received, ${options.keep ? "pausing" : "killing"} sandbox ${live.sandboxId}; ` +
+        `\`ravi sandbox logs ${live.sandboxId}\` fetches what E2B recorded`,
+    );
+    // Handlers stay installed until the cleanup has settled (or hit its limit).
+    signalCleanup = withCleanupLimit(() => (options.keep ? pauseLocked(live) : live.kill())).finally(() => {
+      offSignals();
+      exit(exitCodeFor(signal));
+    });
+  };
+  process.on("SIGINT", onSignal);
+  process.on("SIGTERM", onSignal);
+  const offSignals = () => {
+    process.off("SIGINT", onSignal);
+    process.off("SIGTERM", onSignal);
+  };
 
   step(`Creating sandbox from ${template}`);
-  const sandbox = await (options.createSandbox ?? createE2bSandbox)({
-    template,
-    apiKey: options.credentials.e2bApiKey,
-    // Sandbox lifetime; the task poll below stops a little earlier.
-    timeoutMs: timeoutMs + 5 * 60_000,
-    envs: { ...options.credentials.agentEnv, RAVI_ALLOW_STALE_BUNDLE: "1" },
-    metadata: { purpose: "ravi-task", title },
-  });
+  let created: SandboxHandle;
+  try {
+    created = await (options.createSandbox ?? createE2bSandbox)({
+      template,
+      apiKey: credentials.e2bApiKey,
+      // Sandbox lifetime; the task poll below stops a little earlier.
+      timeoutMs: timeoutMs + 5 * 60_000,
+      envs,
+      metadata: { purpose: "ravi-task", ravi_run: runId, ravi_host: options.hostId ?? sandboxHostId() },
+      network: { ...buildSandboxNetwork("clone", networkConfig), allowPublicTraffic: false },
+      lifecycle: { onTimeout: "kill", autoResume: false },
+    });
+  } catch (err) {
+    offSignals();
+    await destroySecrets();
+    throw err;
+  }
+  const sandbox = created;
+  sandboxRef = sandbox;
+  if (pendingSignal) {
+    step(`Killing sandbox ${sandbox.sandboxId} (${pendingSignal} arrived during create)`);
+    await withCleanupLimit(() => sandbox.kill());
+    offSignals();
+    exit(exitCodeFor(pendingSignal));
+    return {
+      sandboxId: sandbox.sandboxId,
+      taskId: null,
+      status: "aborted",
+      kept: false,
+      outputDir: options.outputDir ?? join(getRaviStateDir(), "sandbox-runs", sandbox.sandboxId),
+      files: [],
+      durationMs: now() - startedAt,
+      error: `${pendingSignal} received during sandbox creation`,
+      e2b: null,
+    };
+  }
   step(`Sandbox ${sandbox.sandboxId} is up`);
 
   const outputDir = options.outputDir ?? join(getRaviStateDir(), "sandbox-runs", sandbox.sandboxId);
+  const files: string[] = [];
   try {
     mkdirSync(outputDir, { recursive: true });
+    writeFileSync(
+      join(outputDir, "run.log"),
+      pendingRunLog.map((line) => `${redactSecrets(line, secrets)}\n`).join(""),
+    );
   } catch (err) {
     // Don't leave a billable, credential-holding sandbox running until its timeout.
+    offSignals();
     await sandbox.kill().catch(() => {});
+    await destroySecrets();
     throw err;
   }
-  const files: string[] = [];
-
-  // Ctrl-C or SIGTERM must not leave a billable, credential-holding sandbox running.
-  const exit = options.exit ?? ((code: number) => process.exit(code));
-  const onSignal = (signal: NodeJS.Signals) => {
-    step(`${signal} received, ${options.keep ? "pausing" : "killing"} sandbox ${sandbox.sandboxId}`);
-    const cleanup = options.keep ? sandbox.pause() : sandbox.kill();
-    const limit = new Promise((resolve) => setTimeout(resolve, SIGNAL_CLEANUP_TIMEOUT_MS).unref?.());
-    void Promise.race([cleanup, limit])
-      .catch(() => {})
-      .finally(() => exit(signal === "SIGINT" ? 130 : 143));
-  };
-  process.once("SIGINT", onSignal);
-  process.once("SIGTERM", onSignal);
+  runLog = join(outputDir, "run.log");
+  files.push("run.log");
 
   const run = async (cmd: string, cmdTimeoutMs = 120_000) => {
     try {
-      return (await sandbox.commands.run(cmd, { timeoutMs: cmdTimeoutMs })).stdout;
+      return (await sandbox.commands.run(cmd, { timeoutMs: cmdTimeoutMs })).stdout ?? "";
     } catch (err) {
       throw describeCommandError(cmd, err);
     }
@@ -311,19 +765,52 @@ export async function runE2bSandboxTask(options: RunSandboxTaskOptions): Promise
   // task's changes (committed or not) and not Ravi's AGENTS.md/CLAUDE.md files.
   let baselineTree: string | null = null;
 
+  // The daemon log is copied as it is written, so a sandbox that dies mid-run
+  // still leaves its log behind; the full file replaces the copy at the end.
+  const daemonLogPath = join(outputDir, "daemon.log");
+  let daemonTail: { disconnect?: () => Promise<unknown> } | null = null;
+  let partialLine = "";
+  const onDaemonChunk = (chunk: string) => {
+    const lines = (partialLine + chunk).split("\n");
+    partialLine = lines.pop() ?? "";
+    if (lines.length === 0) return;
+    const redacted = lines.map((line) => redactSecrets(line, secrets));
+    try {
+      appendFileSync(daemonLogPath, redacted.map((line) => `${line}\n`).join(""));
+    } catch {
+      // The full log is read again at the end; losing the live copy is not fatal.
+    }
+    for (const line of redacted) options.onDaemonLog?.(line);
+  };
+
   const collectOutputs = async (taskId: string | null) => {
-    const grab = async (name: string, cmd: string, raw = false) => {
+    const grab = async (name: string, cmd: string, raw = false, keepOnFailure = false) => {
       let content: string;
       try {
         // The patch is written byte for byte; trimming would corrupt it.
-        content = raw ? await run(cmd) : `${await sh(cmd)}\n`;
+        content = raw ? await run(cmd, 300_000) : `${await sh(cmd, 300_000)}\n`;
       } catch (error) {
-        content = `(failed: ${error instanceof Error ? error.message : error})\n`;
+        const message = error instanceof Error ? error.message : String(error);
+        if (keepOnFailure && existsSync(join(outputDir, name))) {
+          // Keep the last line the daemon wrote even if it never got its newline.
+          const unfinished = partialLine ? `${redactSecrets(partialLine, secrets)}\n` : "";
+          appendFileSync(
+            join(outputDir, name),
+            `${unfinished}(log copied live; full read failed: ${redactSecrets(message, secrets)})\n`,
+          );
+          files.push(name);
+          return;
+        }
+        content = `(failed: ${message})\n`;
       }
-      writeFileSync(join(outputDir, name), content);
+      mkdirSync(dirname(join(outputDir, name)), { recursive: true });
+      writeFileSync(join(outputDir, name), redactSecrets(content, secrets));
       files.push(name);
     };
-    await grab("daemon.log", `tail -500 ${DAEMON_LOG}`);
+    // Stop streaming but leave `tail` running: killing it would show up as a failed process in E2B's log.
+    await daemonTail?.disconnect?.().catch(() => {});
+    daemonTail = null;
+    await grab("daemon.log", `cat ${DAEMON_LOG}`, true, true);
     await grab(
       "changes.patch",
       `cur=$( ${worktreeTreeCmd} ) && cd ${REPO_DIR} && git diff --binary ${baselineTree ?? "HEAD"} "$cur"`,
@@ -333,9 +820,57 @@ export async function runE2bSandboxTask(options: RunSandboxTaskOptions): Promise
       await grab("task.json", `ravi tasks show ${taskId} --json`);
       await grab("TASK.md", `cat /home/user/.ravi/tasks/${taskId}/TASK.md`);
     }
+    if (!daemonStarted) return;
+
+    // Ravi's own timeline per session: prompts, turns, tool calls, deliveries, errors.
+    // The task's own work session can be gone from `sessions list` once the task
+    // ends, but its trace stays, so take its name from task.json as well.
+    const sessionNames: string[] = [];
+    try {
+      const taskJson = taskId ? readFileSync(join(outputDir, "task.json"), "utf8") : "";
+      for (const match of taskJson.matchAll(/"sessionName"\s*:\s*"([^"]+)"/g)) sessionNames.push(match[1]);
+    } catch {
+      // No task.json; the session list below still applies.
+    }
+    try {
+      const listed = JSON.parse(await sh("ravi sessions list --json --limit 500")) as {
+        items?: Array<{ name?: string; sessionKey?: string }>;
+        sessions?: Array<{ name?: string; sessionKey?: string }>;
+      };
+      for (const session of listed.items ?? listed.sessions ?? []) {
+        const name = session.name ?? session.sessionKey;
+        if (name) sessionNames.push(name);
+      }
+    } catch (error) {
+      step(`Could not list sessions: ${error instanceof Error ? error.message : error}`);
+    }
+    for (const name of new Set(sessionNames)) {
+      const base = `sessions/${safeFileName(name)}`;
+      await grab(`${base}.trace.txt`, `ravi sessions trace ${shellQuote(name)} --explain`);
+      await grab(`${base}.trace.jsonl`, `ravi sessions trace ${shellQuote(name)} --json`, true);
+    }
+
+    // Claude Code's own transcripts: every message, tool call and tool result.
+    let transcripts: string[] = [];
+    try {
+      transcripts = (await sh(`find ${CLAUDE_PROJECTS_DIR} -name '*.jsonl' -type f 2>/dev/null | sort`))
+        .split("\n")
+        .filter(Boolean);
+    } catch {
+      transcripts = [];
+    }
+    for (const path of transcripts.slice(0, MAX_TRANSCRIPTS)) {
+      const relative = path.slice(CLAUDE_PROJECTS_DIR.length + 1);
+      const name = relative.split("/").map(safeFileName).join("/");
+      await grab(`transcripts/${name}`, `cat ${shellQuote(path)}`, true);
+    }
+    if (transcripts.length > MAX_TRANSCRIPTS) {
+      step(`Saved ${MAX_TRANSCRIPTS} of ${transcripts.length} transcripts`);
+    }
   };
 
   let taskId: string | null = null;
+  let daemonStarted = false;
   let status = "unknown";
   let error: string | null = null;
   try {
@@ -345,27 +880,47 @@ export async function runE2bSandboxTask(options: RunSandboxTaskOptions): Promise
     );
     step("NATS already listening (restored from snapshot)");
 
-    step(`Cloning ${options.repo}`);
-    const githubToken = options.credentials.githubToken;
-    try {
-      await sandbox.git.clone(options.repo, {
-        path: REPO_DIR,
-        branch: options.branch,
-        depth: 50,
-        timeoutMs: CLONE_TIMEOUT_MS,
-        ...githubCloneAuth(options.repo, githubToken),
-      });
-    } catch (err) {
-      const cloneError = describeCommandError(`git clone ${options.repo}`, err);
-      if (githubToken) cloneError.message = cloneError.message.replaceAll(githubToken, "***");
-      throw cloneError;
+    step(`Cloning ${source.url}`);
+    const branchArgs = options.branch ? `--branch ${shellQuote(options.branch)} --single-branch ` : "";
+    const cloneArgs = `clone --depth 50 ${branchArgs}${shellQuote(source.url)} ${REPO_DIR}`;
+    let cloneCmd = `git ${cloneArgs}`;
+    if (cloneCredentialLine) {
+      await sandbox.files.write(GIT_CREDENTIALS_FILE, cloneCredentialLine);
+      // `git -c` applies to this clone only; the file is removed whatever the outcome.
+      cloneCmd =
+        `git -c credential.helper=${shellQuote(`store --file=${GIT_CREDENTIALS_FILE}`)} ${cloneArgs}; ` +
+        `rc=$?; rm -f ${GIT_CREDENTIALS_FILE}; exit $rc`;
     }
+    try {
+      await run(`GIT_TERMINAL_PROMPT=0 ${cloneCmd}`, CLONE_TIMEOUT_MS);
+    } catch (err) {
+      if (cloneCredentialLine) await run(`rm -f ${GIT_CREDENTIALS_FILE}`).catch(() => {});
+      throw new Error(redactSecrets(err instanceof Error ? err.message : String(err), secrets));
+    }
+    // The update replaces the whole policy, so the model rule is sent again and the
+    // repo host and the GitHub credential rule are gone from here on.
+    const runNetwork = buildSandboxNetwork("run", networkConfig);
+    await sandbox.updateNetwork(runNetwork);
+    // Nothing references the GitHub secret any more; it does not wait for the run to end.
+    if (githubSecretName) await destroySecret(githubSecretName);
+    step(`Egress: deny-all except ${runNetwork.allowOut.join(", ")}`);
     // Ravi writes .claude/settings.json into the agent cwd; keep it out of the
     // patch unless the repo already tracks that file.
     await sh(`echo .claude/settings.json >> ${REPO_DIR}/.git/info/exclude`);
 
     step("Starting Ravi daemon");
     await sandbox.commands.run(`ravi daemon run </dev/null > ${DAEMON_LOG} 2>&1`, { background: true, timeoutMs: 0 });
+    daemonStarted = true;
+    try {
+      daemonTail = await sandbox.commands.run(`tail -n +1 -F ${DAEMON_LOG} 2>/dev/null`, {
+        background: true,
+        timeoutMs: 0,
+        onStdout: onDaemonChunk,
+      });
+    } catch (err) {
+      // Only the live copy is lost; the full log is still read at the end.
+      step(`Live daemon log unavailable: ${err instanceof Error ? err.message : String(err)}`);
+    }
     await sh(
       `for i in $(seq 1 60); do grep -q 'Daemon ready' ${DAEMON_LOG} && exit 0; sleep 1; done; ` +
         `tail -20 ${DAEMON_LOG} >&2; exit 1`,
@@ -376,17 +931,25 @@ export async function runE2bSandboxTask(options: RunSandboxTaskOptions): Promise
     // The default runtime provider is codex; sandbox tasks run on Claude.
     const model = options.model ?? DEFAULT_SANDBOX_MODEL;
     await sh(`ravi agents create worker ${REPO_DIR} --provider claude --model ${shellQuote(model)}`);
-    await sh("ravi agents permissions worker full-access --execute");
+    // The bootstrap floor already covers tools and the tasks group; the worker only adds
+    // arbitrary executables (build, test). `full-access` would also grant admin:system:*.
+    await sh("ravi agents permissions worker bootstrap --capabilities 'execute:executable:*' --execute");
     baselineTree = await sh(worktreeTreeCmd);
     // `tasks create` outside a Ravi session needs an existing session to report to.
     await sh("ravi agents create operator /home/user/work --provider claude --model haiku");
+    await sh("ravi agents permissions operator chat-only");
     await sh('ravi sessions send -a operator operator "Operator inbox for sandbox task reports. Reply OK."');
 
     step("Creating and dispatching the task");
+    // Title and instructions never appear in a command string: E2B logs the unexpanded
+    // command, and `$(cat …)` output is data, not shell syntax. The title comes after
+    // `--`, so one starting with `-` is a title and not an option.
+    await sandbox.files.write(`${TASK_TEXT_DIR}/title`, title);
+    await sandbox.files.write(`${TASK_TEXT_DIR}/instructions.md`, options.instructions);
     const created = JSON.parse(
       await sh(
-        `ravi tasks create ${shellQuote(title)} --instructions ${shellQuote(options.instructions)} ` +
-          "--agent worker --report-to operator --json",
+        `ravi tasks create --instructions "$(cat ${TASK_TEXT_DIR}/instructions.md)" ` +
+          `--agent worker --report-to operator --json -- "$(cat ${TASK_TEXT_DIR}/title)"`,
       ),
     ) as { task?: { id?: string } };
     taskId = created.task?.id ?? null;
@@ -426,12 +989,11 @@ export async function runE2bSandboxTask(options: RunSandboxTaskOptions): Promise
   try {
     await collectOutputs(taskId);
   } finally {
-    process.off("SIGINT", onSignal);
-    process.off("SIGTERM", onSignal);
+    offSignals();
     try {
       if (options.keep) {
-        await sandbox.pause();
-        step(`Sandbox ${sandbox.sandboxId} paused`);
+        await pauseLocked(sandbox);
+        step(`Sandbox ${sandbox.sandboxId} paused with egress denied`);
       } else {
         await sandbox.kill();
         step("Sandbox killed");
@@ -442,6 +1004,31 @@ export async function runE2bSandboxTask(options: RunSandboxTaskOptions): Promise
       error = error ? `${error}; ${message}` : message;
       step(message);
     }
+    await destroySecrets();
+  }
+
+  // E2B keeps these after the sandbox is gone, including why it ended.
+  let e2b: E2bTelemetrySummary | null = null;
+  try {
+    const collected = await (options.collectTelemetry ?? collectE2bTelemetry)({
+      sandboxId: sandbox.sandboxId,
+      apiKey: credentials.e2bApiKey,
+      outputDir,
+      secrets,
+      waitForEnd: true,
+    });
+    if (collected) {
+      e2b = collected.summary;
+      files.push(...collected.files);
+      step(
+        `E2B: ${e2b.processes} processes (${e2b.failedProcesses} failed), ` +
+          `peak CPU ${e2b.peakCpuPct ?? "?"}%, peak memory ${e2b.peakMemMB ?? "?"}/${e2b.memTotalMB ?? "?"} MB` +
+          (e2b.killReason ? `, ended by ${e2b.killReason}` : "") +
+          (e2b.errors.length ? ` (missing: ${e2b.errors.join("; ")})` : ""),
+      );
+    }
+  } catch (err) {
+    step(`Could not fetch E2B logs: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   return {
@@ -453,5 +1040,6 @@ export async function runE2bSandboxTask(options: RunSandboxTaskOptions): Promise
     files,
     durationMs: now() - startedAt,
     error,
+    e2b,
   };
 }

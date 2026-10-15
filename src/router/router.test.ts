@@ -1,15 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
+import { chmodSync, existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { enqueueTraceExportBatch } from "../session-trace/cloud-trace-export.js";
 import { recordSessionEvent } from "../session-trace/session-trace-db.js";
+import { saveMessage } from "../db.js";
 import { getSyncCursor } from "../sync/db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   dbCreateAgent,
   dbCreateChatReadingList,
+  contextKeyDigest,
   dbCreateContext,
   dbGetContext,
+  dbGetContextByKey,
+  dbGetContextByKeyReadOnly,
   dbUpdateContextRuntimeState,
   dbDeleteChannel,
   dbDeleteInstance,
@@ -28,6 +33,7 @@ import {
   dbUpsertInstance,
   closeRouterDb,
   getDb,
+  migrateContextKeysToDigest,
 } from "./router-db.js";
 import { getOrCreateSession } from "./sessions.js";
 import { createRuntimeModelPreset } from "../runtime/model-preset-store.js";
@@ -472,6 +478,160 @@ describe("router context queries", () => {
   });
 });
 
+function insertLegacyPlaintextContext(contextId: string, contextKey: string): void {
+  getDb()
+    .prepare(
+      "INSERT INTO contexts (context_id, context_key, kind, capabilities_json, created_at) VALUES (?, ?, 'turn-runtime', '[]', ?)",
+    )
+    .run(contextId, contextKey, Date.now());
+}
+
+function storedContextKey(contextId: string): string | undefined {
+  return (
+    getDb().prepare("SELECT context_key FROM contexts WHERE context_id = ?").get(contextId) as
+      | { context_key: string }
+      | undefined
+  )?.context_key;
+}
+
+describe("context keys at rest", () => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-router-context-key-digest-test-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  it("stores only the digest and hands the plaintext key back once, at creation", () => {
+    const key = "rctx_digest_at_rest_example";
+    const created = dbCreateContext({ contextId: "ctx_digest", contextKey: key, capabilities: [] });
+
+    expect(created.contextKey).toBe(key);
+    const raw = getDb().prepare("SELECT context_key FROM contexts").all() as Array<{ context_key: string }>;
+    expect(raw).toHaveLength(1);
+    expect(raw.some((row) => row.context_key.includes("rctx_"))).toBe(false);
+    expect(raw[0]?.context_key).toBe(contextKeyDigest(key));
+    expect(raw[0]?.context_key.startsWith("kh1:")).toBe(true);
+
+    // Reads that are not a lookup by key never return the plaintext.
+    expect(dbGetContext("ctx_digest")?.contextKey).toBe(contextKeyDigest(key));
+    expect(dbListContexts({ includeInactive: true }).map((ctx) => ctx.contextKey)).toEqual([contextKeyDigest(key)]);
+  });
+
+  it("finds a context by its plaintext key and never by its stored digest", () => {
+    const key = "rctx_lookup_example";
+    dbCreateContext({ contextId: "ctx_lookup", contextKey: key, capabilities: [] });
+    const digest = storedContextKey("ctx_lookup")!;
+
+    expect(dbGetContextByKey(key)).toMatchObject({ contextId: "ctx_lookup", contextKey: key });
+    expect(dbGetContextByKeyReadOnly(key)).toMatchObject({ contextId: "ctx_lookup", contextKey: key });
+    expect(dbGetContextByKey(digest)).toBeNull();
+    expect(dbGetContextByKeyReadOnly(digest)).toBeNull();
+  });
+
+  it("refuses a key that uses the digest prefix or collides with a legacy plaintext row", () => {
+    expect(() => dbCreateContext({ contextId: "ctx_prefixed", contextKey: "kh1:abc", capabilities: [] })).toThrow(
+      "reserved kh1: digest prefix",
+    );
+
+    insertLegacyPlaintextContext("ctx_legacy_dup", "rctx_legacy_dup");
+    expect(() =>
+      dbCreateContext({ contextId: "ctx_new_dup", contextKey: "rctx_legacy_dup", capabilities: [] }),
+    ).toThrow("Context already exists");
+  });
+
+  it("serves legacy plaintext rows before migration (mixed versions) and after it", () => {
+    insertLegacyPlaintextContext("ctx_legacy", "rctx_legacy_key");
+    // Opening the DB alone never migrates: only daemon boot does.
+    closeRouterDb();
+    getDb();
+    expect(storedContextKey("ctx_legacy")).toBe("rctx_legacy_key");
+
+    expect(dbGetContextByKey("rctx_legacy_key")).toMatchObject({
+      contextId: "ctx_legacy",
+      contextKey: "rctx_legacy_key",
+    });
+    expect(dbGetContextByKeyReadOnly("rctx_legacy_key")?.contextId).toBe("ctx_legacy");
+
+    expect(migrateContextKeysToDigest()).toEqual({ migrated: 1, skipped: 0, skippedContextIds: [] });
+
+    expect(storedContextKey("ctx_legacy")).toBe(contextKeyDigest("rctx_legacy_key"));
+    expect(dbGetContextByKey("rctx_legacy_key")).toMatchObject({
+      contextId: "ctx_legacy",
+      contextKey: "rctx_legacy_key",
+    });
+    expect(dbGetContextByKeyReadOnly("rctx_legacy_key")?.contextId).toBe("ctx_legacy");
+    expect(dbGetContextByKey(contextKeyDigest("rctx_legacy_key"))).toBeNull();
+  });
+
+  it("migrates every plaintext row across batches and is idempotent", () => {
+    dbCreateContext({ contextId: "ctx_already_digest", contextKey: "rctx_already_digest", capabilities: [] });
+    const total = 1_234;
+    const db = getDb();
+    db.exec("BEGIN");
+    for (let i = 0; i < total; i++) insertLegacyPlaintextContext(`ctx_legacy_${i}`, `rctx_legacy_${i}`);
+    db.exec("COMMIT");
+
+    expect(migrateContextKeysToDigest()).toEqual({ migrated: total, skipped: 0, skippedContextIds: [] });
+    const plaintext = db.prepare("SELECT COUNT(*) AS n FROM contexts WHERE context_key NOT LIKE 'kh1:%'").get() as {
+      n: number;
+    };
+    expect(plaintext.n).toBe(0);
+    expect(dbGetContextByKey("rctx_legacy_1233")?.contextId).toBe("ctx_legacy_1233");
+    expect(dbGetContextByKey("rctx_already_digest")?.contextId).toBe("ctx_already_digest");
+
+    expect(migrateContextKeysToDigest()).toEqual({ migrated: 0, skipped: 0, skippedContextIds: [] });
+  });
+
+  it("leaves a plaintext row in place when its digest is already taken, and reports its id", () => {
+    dbCreateContext({ contextId: "ctx_hashed", contextKey: "rctx_shared", capabilities: [] });
+    // Only reachable by hand-editing the DB: dbCreateContext refuses this pair.
+    insertLegacyPlaintextContext("ctx_plain_twin", "rctx_shared");
+    insertLegacyPlaintextContext("ctx_plain_other", "rctx_other");
+
+    const result = migrateContextKeysToDigest();
+    expect(result).toEqual({ migrated: 1, skipped: 1, skippedContextIds: ["ctx_plain_twin"] });
+    expect(JSON.stringify(result)).not.toContain("rctx_");
+    expect(storedContextKey("ctx_plain_twin")).toBe("rctx_shared");
+    expect(storedContextKey("ctx_plain_other")).toBe(contextKeyDigest("rctx_other"));
+  });
+
+  it.each([
+    ["plaintext twin inserted after the digest row", false],
+    ["plaintext twin inserted before the digest row", true],
+  ])("resolves the digest row over a legacy plaintext twin (%s)", (_label, plaintextFirst) => {
+    // Raw inserts: dbCreateContext refuses a twin, so this pair is only reachable by hand-editing the DB.
+    const insertDigestRow = () => insertLegacyPlaintextContext("ctx_hashed", contextKeyDigest("rctx_twin"));
+    if (plaintextFirst) insertLegacyPlaintextContext("ctx_plain_twin", "rctx_twin");
+    insertDigestRow();
+    if (!plaintextFirst) insertLegacyPlaintextContext("ctx_plain_twin", "rctx_twin");
+
+    expect(getDb().prepare("SELECT COUNT(*) AS n FROM contexts").get()).toEqual({ n: 2 });
+    expect(dbGetContextByKey("rctx_twin")?.contextId).toBe("ctx_hashed");
+    expect(dbGetContextByKeyReadOnly("rctx_twin")?.contextId).toBe("ctx_hashed");
+
+    // The plaintext row is only consulted when no digest matches.
+    getDb().prepare("DELETE FROM contexts WHERE context_id = 'ctx_hashed'").run();
+    expect(dbGetContextByKey("rctx_twin")?.contextId).toBe("ctx_plain_twin");
+    expect(dbGetContextByKeyReadOnly("rctx_twin")?.contextId).toBe("ctx_plain_twin");
+  });
+
+  it("keeps a revoked digest row ahead of a live legacy plaintext twin", () => {
+    // Falling through to the twin would let a hand-inserted plaintext row bypass revocation.
+    insertLegacyPlaintextContext("ctx_hashed", contextKeyDigest("rctx_twin"));
+    insertLegacyPlaintextContext("ctx_plain_twin", "rctx_twin");
+    getDb().prepare("UPDATE contexts SET revoked_at = ? WHERE context_id = 'ctx_hashed'").run(Date.now());
+
+    for (const lookup of [dbGetContextByKey, dbGetContextByKeyReadOnly]) {
+      const record = lookup("rctx_twin");
+      expect(record?.contextId).toBe("ctx_hashed");
+      expect(record?.revokedAt).toBeDefined();
+    }
+  });
+});
+
 describe("agent model preset persistence", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-router-agent-preset-test-");
@@ -553,5 +713,44 @@ describe("canonical message receipts", () => {
       providerMessageId: "1713000000.000100",
       providerTimestamp: 1_713_000_000_999,
     });
+  });
+});
+
+describe("ravi.db file permissions", () => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-router-db-mode-test-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  const posixOnly = process.platform === "win32" ? it.skip : it;
+  const modeOf = (path: string) => statSync(path).mode & 0o777;
+
+  posixOnly("ravi.db and its WAL files are 0600 after getDb", () => {
+    getDb();
+    const dbPath = join(stateDir!, "ravi.db");
+    for (const path of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
+      if (existsSync(path)) expect(modeOf(path)).toBe(0o600);
+    }
+    expect(modeOf(dbPath)).toBe(0o600);
+  });
+
+  posixOnly("chat.db (message contents) is created 0600", () => {
+    saveMessage("agent:main:main", "user", "hello");
+    expect(modeOf(join(stateDir!, "chat.db"))).toBe(0o600);
+  });
+
+  posixOnly("an existing 0644 ravi.db is tightened when it is reopened", () => {
+    getDb();
+    closeRouterDb();
+    const dbPath = join(stateDir!, "ravi.db");
+    chmodSync(dbPath, 0o644);
+
+    getDb();
+
+    expect(modeOf(dbPath)).toBe(0o600);
   });
 });

@@ -5,6 +5,7 @@ import { CloudAuthError } from "./errors.js";
 import {
   CLOUD_AUTH_BACKEND_ENV,
   getCloudUserCredentialsPath,
+  getCloudUserDir,
   selectCloudAuthBackend,
   writeUserOnlyFile,
   type CloudAuthBackendDeps,
@@ -68,7 +69,7 @@ export function readCloudCredentialsForUser(
   env: NodeJS.ProcessEnv = process.env,
 ): CloudCredentials | null {
   migrateLegacyCloudAuthStore(env);
-  const backend = resolveBackend(env);
+  const backend = resolveUserBackend(sanitizeUserId(userId), env);
   const raw = backend.read(sanitizeUserId(userId));
   if (raw == null) return null;
   return parseStoredCredentials(raw, getCloudUserCredentialsPath(getCloudAuthUsersDir(env), sanitizeUserId(userId)));
@@ -88,11 +89,22 @@ export function writeCloudCredentials(credentials: CloudCredentials, env: NodeJS
       const fileBackend = resolveBackend({ ...env, [CLOUD_AUTH_BACKEND_ENV]: "file" }, "file");
       fileBackend.write(userId, `${JSON.stringify(credentials, null, 2)}\n`);
       writePointer({ version: 1, activeUserId: userId, backend: "file" }, env);
+      // An item from an earlier optional-backend write must not outlive this
+      // one: reads follow the file store now, and stale tokens are still tokens.
+      // A failed delete (locked Keychain) is reported, never thrown: the pointer
+      // already sends reads to the file store, and logout clears both stores.
+      const survivingItem = deleteFromBackend(backend, userId);
+      warnFileStoreFallback(backend.name, userId, error, env, survivingItem);
       maybeDeletePromotedLegacy(userId, previousActive, env);
       removeLegacyCredentialsFile(env);
       return;
     }
     throw error;
+  }
+  if (backend.name !== "file") {
+    // A file copy from an earlier fallback is stale now; reads of a user who is
+    // not active prefer the file store when one exists.
+    rmSync(getCloudUserCredentialsPath(getCloudAuthUsersDir(env), userId), { force: true });
   }
 
   writePointer({ version: 1, activeUserId: userId, backend: backend.name }, env);
@@ -102,41 +114,38 @@ export function writeCloudCredentials(credentials: CloudCredentials, env: NodeJS
 
 export function deleteCloudCredentials(env: NodeJS.ProcessEnv = process.env): void {
   migrateLegacyCloudAuthStore(env);
-  const pointer = readPointer(env);
-  const activeUserId = pointer?.activeUserId;
+  const activeUserId = readPointer(env)?.activeUserId ?? null;
   if (activeUserId) {
-    resolveBackend(env).delete(sanitizeUserId(activeUserId));
+    deleteStoredCredentials(sanitizeUserId(activeUserId), env);
   }
   rmSync(getCloudCredentialsPath(env), { force: true });
-
-  const remaining = listCloudAuthUserIds(env).filter((userId) => userId !== activeUserId);
-  if (remaining[0]) {
-    writePointer(
-      {
-        version: 1,
-        activeUserId: remaining[0],
-        backend: pointer?.backend ?? "file",
-      },
-      env,
-    );
-    return;
-  }
-  rmSync(getActiveCloudAuthPointerPath(env), { force: true });
+  promoteNextUser(activeUserId, env);
 }
 
 export function deleteCloudCredentialsForUser(userId: string, env: NodeJS.ProcessEnv = process.env): void {
   migrateLegacyCloudAuthStore(env);
   const sanitized = sanitizeUserId(userId);
-  resolveBackend(env).delete(sanitized);
-  const pointer = readPointer(env);
-  if (pointer?.activeUserId === sanitized) {
-    const remaining = listCloudAuthUserIds(env);
-    if (remaining[0]) {
-      writePointer({ version: 1, activeUserId: remaining[0], backend: pointer.backend }, env);
-    } else {
-      rmSync(getActiveCloudAuthPointerPath(env), { force: true });
-    }
+  deleteStoredCredentials(sanitized, env);
+  if (readPointer(env)?.activeUserId === sanitized) {
+    promoteNextUser(sanitized, env);
   }
+}
+
+/**
+ * After `departing` logs out, point at the next stored user, recording the
+ * store that holds that user's credentials (a file copy left by a Keychain
+ * fallback wins over the configured backend). The departing user's backend
+ * says nothing about the promoted one: reusing it sent reads to a stale
+ * Keychain item, or to a Keychain that never held them while a live `0600`
+ * token file lingered. Without another user the pointer is removed.
+ */
+function promoteNextUser(departing: string | null, env: NodeJS.ProcessEnv): void {
+  const next = listCloudAuthUserIds(env).find((userId) => userId !== departing);
+  if (!next) {
+    rmSync(getActiveCloudAuthPointerPath(env), { force: true });
+    return;
+  }
+  writePointer({ version: 1, activeUserId: next, backend: resolveUserBackendName(next, env) }, env);
 }
 
 export function toSafeCloudAuthSession(credentials: CloudCredentials): SafeCloudAuthSession {
@@ -226,7 +235,9 @@ function resolveWriteUserId(credentials: CloudCredentials): string {
 function maybeDeletePromotedLegacy(userId: string, previousActive: string | null, env: NodeJS.ProcessEnv): void {
   if (userId === LEGACY_CLOUD_AUTH_USER_ID) return;
   if (previousActive === LEGACY_CLOUD_AUTH_USER_ID) {
-    resolveBackend(env).delete(LEGACY_CLOUD_AUTH_USER_ID);
+    // Through the store that holds the slot, and the file copy either way: a
+    // legacy copy left by a Keychain fallback must not outlive its promotion.
+    deleteStoredCredentials(LEGACY_CLOUD_AUTH_USER_ID, env);
   }
 }
 
@@ -234,13 +245,128 @@ function removeLegacyCredentialsFile(env: NodeJS.ProcessEnv): void {
   rmSync(getCloudCredentialsPath(env), { force: true });
 }
 
+type CloudAuthBackendTestDeps = Pick<CloudAuthBackendDeps, "platform" | "commandExists" | "runCommand"> & {
+  warn?: (message: string) => void;
+};
+
+let backendTestDeps: CloudAuthBackendTestDeps | null = null;
+let warnedFileStoreFallback = false;
+
+/** Fake the platform and the `security`/`secret-tool` runner in tests; no argument restores the real ones. */
+export function setCloudAuthBackendDepsForTests(deps?: CloudAuthBackendTestDeps): void {
+  backendTestDeps = deps ?? null;
+  warnedFileStoreFallback = false;
+}
+
 function resolveBackend(env: NodeJS.ProcessEnv, forceName?: CloudAuthBackendName): CloudAuthSecretBackend {
   const deps: CloudAuthBackendDeps = {
     env: forceName ? { ...env, [CLOUD_AUTH_BACKEND_ENV]: forceName } : env,
     usersDir: getCloudAuthUsersDir(env),
-    platform: process.platform,
+    platform: backendTestDeps?.platform ?? process.platform,
+    ...(backendTestDeps?.commandExists ? { commandExists: backendTestDeps.commandExists } : {}),
+    ...(backendTestDeps?.runCommand ? { runCommand: backendTestDeps.runCommand } : {}),
   };
   return selectCloudAuthBackend(deps);
+}
+
+/**
+ * The store that holds `userId`'s credentials: the backend the active pointer
+ * recorded at the last write (a failed Keychain write falls back to the file
+ * store), the file store when it holds a copy, else the configured backend.
+ * Reads and logout promotion share this rule, so the pointer written for a
+ * promoted user names the store a read of that user would have used.
+ */
+function resolveUserBackendName(userId: string, env: NodeJS.ProcessEnv): CloudAuthBackendName {
+  const pointer = readPointer(env);
+  if (pointer?.activeUserId === userId) return pointer.backend;
+  if (existsSync(getCloudUserCredentialsPath(getCloudAuthUsersDir(env), userId))) return "file";
+  return resolveBackend(env).name;
+}
+
+function resolveUserBackend(userId: string, env: NodeJS.ProcessEnv): CloudAuthSecretBackend {
+  return resolveBackend(env, resolveUserBackendName(userId, env));
+}
+
+/**
+ * Remove `userId` from every store that may hold a copy: the resolved store,
+ * the file copy, and the configured optional backend when it differs (a
+ * Keychain item left behind by a locked-Keychain fallback is still a token,
+ * and `readCloudCredentialsForUser` would hand it out after logout). A
+ * backend delete that fails is warned about, never thrown past logout.
+ */
+function deleteStoredCredentials(userId: string, env: NodeJS.ProcessEnv): void {
+  const resolved = resolveUserBackend(userId, env);
+  const configured = resolveBackend(env);
+  const failures: Array<{ backend: CloudAuthBackendName; error: unknown }> = [];
+
+  if (resolved.name !== "file") {
+    const error = deleteFromBackend(resolved, userId);
+    if (error) failures.push({ backend: resolved.name, error });
+  }
+  // The file store either way: the resolved store, or a copy a fallback left.
+  rmSync(getCloudUserDir(getCloudAuthUsersDir(env), userId), { recursive: true, force: true });
+  if (configured.name !== "file" && configured.name !== resolved.name) {
+    const error = deleteFromBackend(configured, userId);
+    if (error) failures.push({ backend: configured.name, error });
+  }
+  for (const failure of failures) warnBackendDeleteFailed(failure.backend, userId, failure.error);
+}
+
+/** Best-effort delete in an optional backend; returns the error instead of throwing. */
+function deleteFromBackend(backend: CloudAuthSecretBackend, userId: string): unknown {
+  try {
+    backend.delete(userId);
+    return null;
+  } catch (error) {
+    return error ?? new Error("delete failed");
+  }
+}
+
+const BACKEND_LABELS: Record<CloudAuthBackendName, string> = {
+  file: "the file store",
+  keychain: "macOS Keychain",
+  libsecret: "the Secret Service",
+};
+
+function warnFileStoreFallback(
+  backend: CloudAuthBackendName,
+  userId: string,
+  error: unknown,
+  env: NodeJS.ProcessEnv,
+  survivingItem: unknown = null,
+): void {
+  if (warnedFileStoreFallback) return;
+  warnedFileStoreFallback = true;
+  const cause = errorCause(error);
+  const path = getCloudUserCredentialsPath(getCloudAuthUsersDir(env), userId);
+  let message =
+    `Ravi Cloud credentials were saved to the private file store (${path}, mode 0600) because ` +
+    `${BACKEND_LABELS[backend]} could not store them${cause ? `: ${cause}` : "."}`;
+  if (survivingItem) {
+    const deleteCause = errorCause(survivingItem);
+    message +=
+      ` An older ${BACKEND_LABELS[backend]} item for this user could not be removed` +
+      `${deleteCause ? ` (${deleteCause})` : ""}; it will be deleted at the next logout.`;
+  }
+  emitWarning(message);
+}
+
+function warnBackendDeleteFailed(backend: CloudAuthBackendName, userId: string, error: unknown): void {
+  const cause = errorCause(error);
+  emitWarning(
+    `The ${BACKEND_LABELS[backend]} item for Ravi Cloud user ${userId} could not be removed` +
+      `${cause ? ` (${cause})` : ""}; run \`ravi logout\` again once ${BACKEND_LABELS[backend]} is unlocked.`,
+  );
+}
+
+/** The backend's redacted `cause` message; never the payload. */
+function errorCause(error: unknown): string {
+  return error instanceof Error && error.cause instanceof Error ? error.cause.message : "";
+}
+
+function emitWarning(message: string): void {
+  if (backendTestDeps?.warn) backendTestDeps.warn(message);
+  else process.stderr.write(`warning: ${message}\n`);
 }
 
 function ensureStoreDirs(env: NodeJS.ProcessEnv): void {

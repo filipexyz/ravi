@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
 import { resolveRaviAppCommand } from "../apps/command.js";
 import { getContext } from "../cli/context.js";
+import { authorizationAgentId } from "./authorization-agent.js";
 import {
   RAVI_APP_BUILTIN_OPERATION_HANDLERS,
   RAVI_APP_PERMISSION_PROVIDER_MAX_CACHE_TTL_SEC,
@@ -401,7 +402,7 @@ function buildPermissionProviderContext(
     actor: principalFromMetadata(metadata.actorPrincipal),
     surface: principalFromMetadata(metadata.surfacePrincipal) ?? surfacePrincipalFromContext(ctx?.source),
     executorAgent: {
-      id: ctx?.agentId ?? ctx?.context?.agentId ?? null,
+      id: authorizationAgentId(ctx?.agentId) ?? ctx?.context?.agentId ?? null,
     },
   };
 }

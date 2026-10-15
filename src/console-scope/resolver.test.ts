@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { chmodSync, statSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 import type { CloudCredentials } from "../cloud-auth/types.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
@@ -284,3 +286,18 @@ function makeCredentials(): CloudCredentials {
     updatedAt: "2026-05-09T00:00:00.000Z",
   };
 }
+
+describe("console scope store file", () => {
+  const posixOnly = process.platform === "win32" ? it.skip : it;
+
+  posixOnly("keeps ravi.db 0600 when the store opens it", async () => {
+    stateDir = await createIsolatedRaviState("ravi-console-scope-mode-");
+    const dbPath = join(stateDir, "ravi.db");
+    writeFileSync(dbPath, "");
+    chmodSync(dbPath, 0o644);
+
+    getConsoleScopeDefault({ scopeKind: "global", scopeKey: "default" }, "https://console.example");
+
+    expect(statSync(dbPath).mode & 0o777).toBe(0o600);
+  });
+});
