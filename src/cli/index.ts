@@ -117,6 +117,7 @@ const AGENT_CONTRACT_DOMAINS = [
   "routes",
   "rules",
   "runtime",
+  "sandbox",
   "self",
   "sessions",
   "settings",

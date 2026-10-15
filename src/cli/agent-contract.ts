@@ -274,14 +274,24 @@ export function contractFail(op: string, code: string, message: string, options:
  * mutation. The planned input is shown so the agent can inspect exactly what
  * `--execute` would do.
  */
-export function contractDryRun(op: string, plan: Record<string, unknown>, options: { asJson?: boolean } = {}): never {
+export function contractDryRun(
+  op: string,
+  plan: Record<string, unknown>,
+  options: {
+    asJson?: boolean;
+    /** Names the effect when it is not a write (e.g. `{ past: "killed", verb: "kill" }`); the default is the write wording. */
+    effect?: { past: string; verb: string };
+  } = {},
+): never {
+  const past = options.effect?.past ?? "written";
+  const verb = options.effect?.verb ?? "perform the write";
   const error = new ContractError(
     op,
     "WRITE_REQUIRES_EXECUTE",
-    `Dry-run: nothing was written. Re-run with --execute to perform the write.`,
+    `Dry-run: nothing was ${past}. Re-run with --execute to ${verb}.`,
     CONTRACT_EXIT_POLICY,
     {
-      suggestedAction: `Re-run '${op}' adding --execute to perform the write`,
+      suggestedAction: `Re-run '${op}' adding --execute to ${verb}`,
       dryRun: true,
       plan,
     },
@@ -290,10 +300,10 @@ export function contractDryRun(op: string, plan: Record<string, unknown>, option
     if (options.asJson) {
       console.log(JSON.stringify(error.envelope(), null, 2));
     } else {
-      console.log(`[dry-run] ${op}: nothing was written.`);
+      console.log(`[dry-run] ${op}: nothing was ${past}.`);
       console.log(`Planned input:`);
       console.log(JSON.stringify(error.details.plan, null, 2));
-      console.log(`Re-run with --execute to perform the write.`);
+      console.log(`Re-run with --execute to ${verb}.`);
     }
   }
   throw error;

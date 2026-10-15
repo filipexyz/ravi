@@ -1,0 +1,7 @@
+diff --git a/link b/link
+new file mode 0120000
+--- /dev/null
++++ b/link
+@@ -0,0 +1 @@
++/Users/x/.zshrc
+\ No newline at end of file

