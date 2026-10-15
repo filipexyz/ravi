@@ -12,6 +12,7 @@ import {
 import {
   ADMIN_BOOTSTRAP_KIND,
   createRuntimeContext,
+  getRuntimeContextFromEnv,
   issueRuntimeContext,
   LEGACY_AGENT_RUNTIME_CONTEXT_KIND,
   listLiveAdminContexts,
@@ -243,6 +244,17 @@ describe("runtime context registry", () => {
 
     expect(resolveRuntimeContext(context.contextKey, { touch: false })).toBeNull();
     expect(() => resolveRuntimeContextOrThrow(context.contextKey, { touch: false })).toThrow("Context revoked");
+  });
+
+  it("resolves RAVI_CONTEXT_KEY from env trimmed, and treats a blank key as absent", () => {
+    const context = createRuntimeContext({ agentId: TEST_AGENT_ID, ttlMs: 60_000 });
+
+    expect(getRuntimeContextFromEnv({ RAVI_CONTEXT_KEY: `  ${context.contextKey}\n` })?.contextId).toBe(
+      context.contextId,
+    );
+    expect(getRuntimeContextFromEnv({ RAVI_CONTEXT_KEY: "   " })).toBeUndefined();
+    expect(getRuntimeContextFromEnv({})).toBeUndefined();
+    expect(getRuntimeContextFromEnv({ RAVI_CONTEXT_KEY: "rctx_does_not_exist" })).toBeUndefined();
   });
 
   it("issues a child context with explicit least-privilege capabilities", () => {

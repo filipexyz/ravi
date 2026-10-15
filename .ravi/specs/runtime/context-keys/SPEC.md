@@ -13,6 +13,11 @@ applies_to:
   - src/runtime/runtime-request-context.ts
   - src/router/router-db.ts
   - src/cli/commands/context.ts
+  - src/cli/context.ts
+  - src/cli/remote-gateway.ts
+  - src/cli/host-cli-gateway.ts
+  - src/security/private-files.ts
+  - packages/ravi-os-sdk/src/inherit.ts
 owners:
   - ravi-dev
 status: active
@@ -40,6 +45,12 @@ Runtime context keys are opaque credentials that connect provider turns, Ravi to
   compartment `agent_identity:<agent-id>:workspace:default`.
 - Child contexts issued from a `turn-runtime` context MUST remain derived
   credentials and MUST NOT bypass `resolveRuntimeContext`.
+- A process with a non-blank `RAVI_CONTEXT_KEY` acts only for that key. When
+  the key does not resolve (unknown, revoked, expired, or from another
+  install), CLI context resolution MUST NOT fall back to the
+  `~/.ravi/credentials.json` default credential or to legacy `RAVI_AGENT_ID` /
+  `RAVI_SESSION_*` identity. The caller is marked unresolved: it has no agent
+  and no capabilities and is never the local operator.
 - Daemon bootstrap admin detection MUST only consider `admin-bootstrap`
   contexts. Agent identity turn contexts that happen to snapshot
   `admin:system:*` MUST NOT count as bootstrap admin credentials.
@@ -48,6 +59,29 @@ Runtime context keys are opaque credentials that connect provider turns, Ravi to
 - Bulk cleanup of historical `agent-runtime` contexts MUST be opt-in and
   exposed through an explicit CLI path. It MUST NOT run automatically during
   dispatch or daemon startup.
+- `ravi.db` (which holds context records) and its `-wal`/`-shm` files MUST be
+  owner-only: a missing db is created empty with mode `0600` before SQLite
+  opens it (its `-wal`/`-shm` inherit that mode), and an existing one loses its
+  group/other bits on every open when it is a regular file owned by the current
+  user. Symlinks and files owned by another user are left alone,
+  `RAVI_STATE_DIR_KEEP_PERMISSIONS=1` opts out, and a failure never stops the
+  open. The credential broker DB, `chat.db` (message contents) and
+  `insights.db` follow the same rule.
+- A CLI sends its context key as a bearer token to `RAVI_GATEWAY_URL`. An
+  `http:` URL MUST be refused with `REMOTE_GATEWAY_INSECURE` (exit 2) unless its
+  host, as WHATWG URL parsing reads it, is `localhost` or a literal
+  127.0.0.0/8 or `::1` address. There is no override; use `https:` or `unix://`.
+  The SDK's `createInheritedClient` applies the same rule to the URL it
+  resolves (`RAVI_BASE_URL`, `RAVI_HTTP_BASE_URL`, `RAVI_GATEWAY_URL`,
+  `RAVI_HTTP_HOST`/`RAVI_HTTP_PORT` or an explicit `baseUrl`) and throws with
+  `code: "REMOTE_GATEWAY_INSECURE"` before sending any request.
+- A starting daemon MUST NOT unlink the host CLI gateway socket while another
+  process accepts connections on it, nor a path that is not a socket owned by
+  the current user; it starts without the gateway instead. The public socket
+  name is claimed atomically (listen on a private name in the same directory,
+  then `link(2)`), so of daemons starting at once exactly one serves it; only a
+  dead socket of ours is moved aside, and the claim is retried once. Stopping
+  the gateway MUST NOT remove a socket file that another daemon bound after it.
 
 ## Acceptance
 

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { listCalendarEvents, listCalendarMembers, listCalendarOutbox } from "../../calendar/index.js";
 import { ContractError } from "../agent-contract.js";
+import { runWithContext, type ToolContext } from "../context.js";
 import { hashForAudit } from "../provenance.js";
 import { buildRegistry } from "../registry-snapshot.js";
 import {
@@ -53,6 +54,29 @@ describe("calendar CLI commands", () => {
     expect(registry.commands.map((command) => command.fullName).sort()).toContain("calendars.events.create");
     expect(registry.commands.some((command) => command.fullName.startsWith("calendars.sources."))).toBe(false);
     expect(registry.commands.some((command) => command.fullName.startsWith("calendars.outbox."))).toBe(false);
+  });
+
+  it("labels an agentless context record agent:unknown when calendar access is denied", async () => {
+    const accounts = new CalendarAccountsCommands();
+    const agentless: ToolContext = {
+      context: {
+        contextId: "ctx_calendar_cli_agentless",
+        contextKey: "rctx_calendar_cli_agentless",
+        kind: "test-agentless",
+        capabilities: [],
+        metadata: {},
+        createdAt: 0,
+      },
+    };
+
+    const error = await runWithContext(agentless, () =>
+      accounts.create("google-calendar", "acct_g", undefined, undefined, true),
+    ).then(
+      () => null,
+      (err: unknown) => err as Error,
+    );
+    expect(error?.message).toContain("agent:unknown requires manage on calendar-provider:google-calendar");
+    expect(error?.message).not.toContain("undefined");
   });
 
   it("creates local sources and calendars with JSON output", async () => {

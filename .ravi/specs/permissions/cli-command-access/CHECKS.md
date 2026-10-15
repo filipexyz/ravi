@@ -40,6 +40,11 @@ capability: cli-command-access
   boundary and `admin:system:*` authority.
 - Missing subject/context MUST deny unless `localOperator=true`.
 - Runtime execution MUST NOT use direct local operator fallback.
+- A tool or gateway call whose runtime context record has no `agentId` MUST be
+  labeled `agent:unknown` and authorized from the record's capabilities only:
+  an empty record is denied with every attempted decision from
+  `context-capabilities`, and a record holding the semantic grant is allowed.
+  A record's own `agentId` is never replaced by the caller's.
 - Provider requests generated from CLI commands MUST include command group,
   command name, access metadata, canonical principals, and selected redacted
   input only.

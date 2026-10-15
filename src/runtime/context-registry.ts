@@ -243,7 +243,7 @@ export function resolveRuntimeContextOrThrow(
 }
 
 export function getRuntimeContextFromEnv(env: NodeJS.ProcessEnv = process.env): ContextRecord | undefined {
-  const key = env[RAVI_CONTEXT_KEY_ENV];
+  const key = env[RAVI_CONTEXT_KEY_ENV]?.trim();
   if (!key) return undefined;
   return resolveRuntimeContext(key) ?? undefined;
 }

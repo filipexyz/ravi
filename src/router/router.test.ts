@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
+import { chmodSync, existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { enqueueTraceExportBatch } from "../session-trace/cloud-trace-export.js";
 import { recordSessionEvent } from "../session-trace/session-trace-db.js";
+import { saveMessage } from "../db.js";
 import { getSyncCursor } from "../sync/db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
@@ -553,5 +555,44 @@ describe("canonical message receipts", () => {
       providerMessageId: "1713000000.000100",
       providerTimestamp: 1_713_000_000_999,
     });
+  });
+});
+
+describe("ravi.db file permissions", () => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-router-db-mode-test-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  const posixOnly = process.platform === "win32" ? it.skip : it;
+  const modeOf = (path: string) => statSync(path).mode & 0o777;
+
+  posixOnly("ravi.db and its WAL files are 0600 after getDb", () => {
+    getDb();
+    const dbPath = join(stateDir!, "ravi.db");
+    for (const path of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
+      if (existsSync(path)) expect(modeOf(path)).toBe(0o600);
+    }
+    expect(modeOf(dbPath)).toBe(0o600);
+  });
+
+  posixOnly("chat.db (message contents) is created 0600", () => {
+    saveMessage("agent:main:main", "user", "hello");
+    expect(modeOf(join(stateDir!, "chat.db"))).toBe(0o600);
+  });
+
+  posixOnly("an existing 0644 ravi.db is tightened when it is reopened", () => {
+    getDb();
+    closeRouterDb();
+    const dbPath = join(stateDir!, "ravi.db");
+    chmodSync(dbPath, 0o644);
+
+    getDb();
+
+    expect(modeOf(dbPath)).toBe(0o600);
   });
 });

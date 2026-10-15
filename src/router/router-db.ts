@@ -20,6 +20,7 @@ import { normalizePhone, normalizeRoutePattern } from "../utils/phone.js";
 import { normalizeLimitOffsetPage, type ListPage } from "../utils/pagination.js";
 import { timestampLikeToMs } from "../utils/provider-timestamp.js";
 import { executeWrite } from "../db/write-retry.js";
+import { preparePrivateSqliteFile } from "../security/private-files.js";
 import {
   CLI_COMMAND_ACCESS_KIND_MIGRATION_KEYS,
   migrateAgentDefaultsRecord,
@@ -1245,6 +1246,9 @@ function getDb(): Database {
     }
   }
 
+  // Owner-only from the start: SQLite would create ravi.db with the umask
+  // (usually 0644). The -wal/-shm files it creates inherit the db's mode.
+  preparePrivateSqliteFile(nextDbPath);
   const db = new Database(nextDbPath);
   instrumentSlowQueries(db);
   routerDbState.db = db;

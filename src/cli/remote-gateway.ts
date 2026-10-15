@@ -23,6 +23,7 @@
  */
 
 import { request as httpRequest } from "node:http";
+import { isIP } from "node:net";
 import { userInfo } from "node:os";
 import { join } from "node:path";
 import {
@@ -32,6 +33,7 @@ import {
   probeUnixSocket,
 } from "../isolation/execution-plane.js";
 import { resolveRuntimeContext } from "../runtime/context-registry.js";
+import { isLoopbackHost } from "../security/nats-exposure.js";
 import { readCredentialsFile, selectDefaultCredentialsKey } from "../runtime/credentials-store.js";
 import {
   ContractError,
@@ -131,7 +133,24 @@ export function getRemoteGatewayConfig(env: NodeJS.ProcessEnv = process.env, op 
     throw invalidRemoteGatewayError(op);
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw invalidRemoteGatewayError(op);
+  // The gateway request carries the runtime context-key as a bearer token:
+  // plaintext HTTP is only acceptable when it never leaves this host.
+  if (parsed.protocol === "http:" && !isLoopbackGatewayHost(parsed.hostname)) throw insecureRemoteGatewayError(op);
   return { url: raw.replace(/\/+$/, ""), source: "env" };
+}
+
+/**
+ * `localhost`, or an IP literal in 127.0.0.0/8 or ::1. `hostname` comes from
+ * WHATWG URL parsing (the same parser `fetch` uses for the request), so
+ * userinfo tricks such as `http://user@127.0.0.1@evil` resolve to `evil`.
+ * Other names (`*.localhost`, `127.0.0.1.evil.com`) are refused: DNS decides
+ * where they go.
+ */
+export function isLoopbackGatewayHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  if (host === "localhost") return true;
+  const bare = host.replace(/^\[|\]$/g, "");
+  return isIP(bare) !== 0 && isLoopbackHost(bare);
 }
 
 export interface ResolveRemoteGatewayConfigOptions {
@@ -260,6 +279,16 @@ export function parseUnixGatewayUrl(raw: string): string | null {
   if (rest.startsWith("//")) rest = rest.slice(2);
   if (!rest.startsWith("/")) return null;
   return rest.replace(/\/+$/, "") || null;
+}
+
+function insecureRemoteGatewayError(op: string): ContractError {
+  return new ContractError(
+    op,
+    "REMOTE_GATEWAY_INSECURE",
+    `${REMOTE_GATEWAY_URL_ENV} must use https:// unless it points at this machine (localhost, 127.0.0.0/8 or [::1]).`,
+    CONTRACT_EXIT_USAGE,
+    { suggestedAction: `Use an https:// URL or a unix:// socket in ${REMOTE_GATEWAY_URL_ENV} before retrying` },
+  );
 }
 
 function invalidRemoteGatewayError(op: string): ContractError {
