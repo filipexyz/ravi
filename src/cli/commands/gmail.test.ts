@@ -467,8 +467,8 @@ async function runAgentCli(
   writeFileSync(
     entry,
     [
-      'import "reflect-metadata";',
-      'import { Command } from "commander";',
+      `import ${JSON.stringify(import.meta.resolve("reflect-metadata"))};`,
+      `import { Command } from ${JSON.stringify(import.meta.resolve("commander"))};`,
       `import { GmailCommands } from ${JSON.stringify(join(import.meta.dir, "gmail.ts"))};`,
       `import { registerCommands } from ${JSON.stringify(join(import.meta.dir, "../registry.ts"))};`,
       "const program = new Command();",
