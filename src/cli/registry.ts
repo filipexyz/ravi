@@ -12,6 +12,7 @@ import {
   getArgsMetadata,
   getOptionsMetadata,
   getScopeMetadata,
+  getCliOnlyMetadata,
   type CommandAccessOptions,
   type CommandMetadata,
   type ScopeType,
@@ -43,6 +44,7 @@ import {
   remoteGatewayExitCode,
   remoteDispatchOutput,
   resolveContextKeyForRemote,
+  cliOnlyCommandError,
   gatewayRequiredError,
   requiresRemoteGateway,
   type RemoteDispatchResult,
@@ -191,6 +193,9 @@ function registerCommand(
   }
 
   const toolName = `${groupName}_${cmdMeta.name}`;
+  // `@CliOnly()` excludes the command from the gateway route table, so a remote
+  // dispatch can only ever answer 404 there. The flag has to be consulted here.
+  const cliOnly = getCliOnlyMetadata(instance.constructor as Function).has(cmdMeta.method);
 
   // Set up the action handler
   sub.action(async (...commanderArgs: unknown[]) => {
@@ -253,6 +258,15 @@ function registerCommand(
         return;
       }
       if (!(error instanceof ContractError)) throw error;
+      renderContractError(error, input.json === true);
+      process.exit(error.exitCode);
+    }
+
+    // A CLI-only command dispatched to the gateway answers 404, which reads as a
+    // transport outage. It has no remote-call semantics: refuse it with the real
+    // reason instead of sending it to a route table that excludes it by design.
+    if (cliOnly && (remoteConfig || requiresRemoteGateway(process.env))) {
+      const error = cliOnlyCommandError(commandOperation(groupName, cmdMeta.name));
       renderContractError(error, input.json === true);
       process.exit(error.exitCode);
     }

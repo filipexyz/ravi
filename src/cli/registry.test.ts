@@ -2,7 +2,7 @@ import "reflect-metadata";
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { Command as CommanderCommand } from "commander";
 import { runWithContext } from "./context.js";
-import { Arg, Command, CommandAccess, Group, Option } from "./decorators.js";
+import { Arg, Command, CommandAccess, CliOnly, Group, Option } from "./decorators.js";
 import { registerCommands } from "./registry.js";
 import type { ContextRecord } from "../router/router-db.js";
 
@@ -27,6 +27,16 @@ class GroupAliasCommands {
   show() {}
 }
 
+@Group({ name: "clionly", description: "CLI-only commands", scope: "open" })
+class CliOnlyCommands {
+  @Command({ name: "run", description: "Run only from the local CLI" })
+  @CommandAccess({ kind: "read", resource: "clionly", action: "run", risk: "low" })
+  @CliOnly()
+  run() {
+    capturedCliOnlyRan = true;
+  }
+}
+
 @Group({ name: "internal", description: "Internal commands", scope: "open", hidden: true })
 class HiddenGroupCommands {
   @Command({ name: "debug", description: "Hidden debug command" })
@@ -43,6 +53,7 @@ const capturedDirect: CapturedCall[] = [];
 const capturedNested: CapturedCall[] = [];
 const capturedNegated: boolean[] = [];
 const capturedPaired: Array<{ resumable: boolean | undefined; noResumable: boolean }> = [];
+let capturedCliOnlyRan = false;
 
 const semanticOnlyContext: ContextRecord = {
   contextId: "ctx_registry_semantic_only",
@@ -196,6 +207,58 @@ describe("registerCommands", () => {
     expect(exitCode).toBe(1);
     expect(capturedNegated).toEqual([]);
     expect(output.join("\n")).toContain("must go through the Ravi gateway");
+  });
+
+  it("refuses a CLI-only command instead of dispatching it to the gateway", async () => {
+    capturedCliOnlyRan = false;
+    const program = new CommanderCommand();
+    program.exitOverride();
+    registerCommands(program, [CliOnlyCommands]);
+
+    const previousGatewayUrl = process.env.RAVI_GATEWAY_URL;
+    const previousContextKey = process.env.RAVI_CONTEXT_KEY;
+    const previousSuppressAudit = process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+    const originalFetch = globalThis.fetch;
+    const originalError = console.error;
+    const originalExit = process.exit;
+    const requests: string[] = [];
+    const output: string[] = [];
+    let exitCode: number | undefined;
+    // A reachable gateway is what used to turn this into a 404: the route table
+    // excludes CLI-only commands by design, so the dispatch could never succeed.
+    process.env.RAVI_GATEWAY_URL = "https://gateway.example.test";
+    process.env.RAVI_CONTEXT_KEY = "rctx_cli_only";
+    process.env.RAVI_SUPPRESS_AUDIT_EVENTS = "1";
+    globalThis.fetch = (async (input: unknown) => {
+      requests.push(String(input));
+      return Response.json({ ok: true });
+    }) as typeof fetch;
+    console.error = (...args: unknown[]) => output.push(args.map(String).join(" "));
+    process.exit = ((code?: number) => {
+      exitCode = code;
+      throw new Error("__cli_only_exit__");
+    }) as typeof process.exit;
+
+    try {
+      await expect(
+        runWithContext({}, () => program.parseAsync(["node", "test", "clionly", "run"])),
+      ).rejects.toThrow("__cli_only_exit__");
+    } finally {
+      globalThis.fetch = originalFetch;
+      console.error = originalError;
+      process.exit = originalExit;
+      if (previousGatewayUrl === undefined) delete process.env.RAVI_GATEWAY_URL;
+      else process.env.RAVI_GATEWAY_URL = previousGatewayUrl;
+      if (previousContextKey === undefined) delete process.env.RAVI_CONTEXT_KEY;
+      else process.env.RAVI_CONTEXT_KEY = previousContextKey;
+      if (previousSuppressAudit === undefined) delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+      else process.env.RAVI_SUPPRESS_AUDIT_EVENTS = previousSuppressAudit;
+    }
+
+    expect(requests).toEqual([]);
+    expect(capturedCliOnlyRan).toBe(false);
+    expect(exitCode).toBe(2);
+    expect(output.join("\n")).toContain("exclusive to the local CLI");
   });
 
   it("lets the remote gateway authorize a context key that is not registered locally", async () => {

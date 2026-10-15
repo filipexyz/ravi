@@ -235,6 +235,24 @@ export function gatewayRequiredError(op: string): ContractError {
   );
 }
 
+/**
+ * A `@CliOnly()` command inside a runtime session. It is excluded from the
+ * gateway route table by design, so the dispatch could only ever answer 404; the
+ * real reason is that the command belongs to the operator's terminal.
+ */
+export function cliOnlyCommandError(op: string): ContractError {
+  return new ContractError(
+    op,
+    "CLI_ONLY_COMMAND",
+    "This command is exclusive to the local CLI and has no remote-call semantics: it cannot run from a turn inside a runtime session.",
+    2,
+    {
+      retryable: false,
+      suggestedAction: "Run it from a terminal on the host, outside a session turn.",
+    },
+  );
+}
+
 export function parseUnixGatewayUrl(raw: string): string | null {
   const trimmed = raw.trim();
   if (!trimmed.startsWith("unix:")) return null;

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ContractError } from "../agent-contract.js";
 import { runWithContext } from "../context.js";
+import { getCliOnlyMetadata } from "../decorators.js";
 import { MeetingProfileCommands, MeetingsCommands } from "./meetings.js";
 
 let tempDir: string | undefined;
@@ -486,3 +487,17 @@ async function captureConsole<T>(run: () => T | Promise<T>): Promise<{ output: s
     console.log = originalLog;
   }
 }
+
+describe("meetings command annotations", () => {
+  it("keeps the provider commands behind @CliOnly until they carry typed returns", () => {
+    const cliOnly = getCliOnlyMetadata(MeetingsCommands);
+    // These answer JSON through the provider and are the reason an agent cannot
+    // reach meetings from a session yet. They stay CLI-only because the SDK
+    // surface (return-schema-baseline is empty) requires a typed return schema,
+    // and they still declare the loose object. Dropping the flag without the
+    // schemas fails the SDK returns gate.
+    for (const method of ["login", "join", "list", "show", "leave", "fetch"]) {
+      expect([...cliOnly]).toContain(method);
+    }
+  });
+});
