@@ -212,6 +212,11 @@ const executeInstructions = [
     path: "docs/console/pages.mdx",
     instruction: 'ravi access request https://other-org.ravi.page/report --message "For the Q3 review" --execute',
   },
+  {
+    name: "sandbox reap root instructions",
+    path: "AGENTS.md",
+    instruction: "ravi sandbox reap --execute",
+  },
 ] as const;
 
 const obsoleteExecuteConsumers = [

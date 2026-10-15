@@ -232,21 +232,57 @@ Nothing is pushed; apply the patch yourself.
 
 ```bash
 # Once (and whenever the Ravi baked into the template should be updated)
-ravi sandbox template build                    # [name] --ref dev --cpu 2 --memory 4096
+ravi sandbox template build                    # [name] --ref dev|<tag>|<40-hex sha> --cpu 2 --memory 4096
 
 # Per task
 ravi sandbox run --repo https://github.com/owner/repo.git --task "..." \
-  [--branch b] [--title t] [--model sonnet] [--timeout-min 55] [--keep] [--output dir] [--json]
+  [--branch b] [--title t] [--model sonnet] [--timeout-min 55] [--keep] [--follow] [--output dir] [--json] \
+  [--allow-host h...] [--egress dev-registries|strict] [--model-auth broker|header|env] [--allow-key-in-env]
+ravi sandbox logs <sandbox-id> [--output dir] [--json]   # E2B's process log, events and metrics
+ravi sandbox reap [--older-than <min>] [--all-hosts] [--json]   # dry-run: lists orphaned sandboxes (exit 3)
+ravi sandbox reap --execute                    # kills them
 ```
 
-- Credentials come from the environment: `E2B_API_KEY`, plus `CLAUDE_CODE_OAUTH_TOKEN` or
-  `ANTHROPIC_API_KEY` (the `RAVI_`-prefixed names also work, for hosts that hide the standard ones).
-  `GITHUB_TOKEN` is used only to clone private repos, and only for `https://github.com/...` URLs.
+- `template build` resolves `--ref` to a commit SHA on this host (`git ls-remote`), checks that exact
+  commit out in the sandbox and installs Bun 1.3.11 and nats-server from pinned release archives
+  verified with `sha256sum -c`; the build is tagged with the short SHA and recorded in
+  `~/.ravi/sandbox-templates.json`. `sandbox run` prints the recorded commit (`Template:` line, run.log,
+  `templateSha` in `--json`) and warns when the template has no record.
+- `sandbox reap` kills task sandboxes this host created and then lost: paused ones, running ones
+  older than 65 min (`--older-than`), and ones whose `ravi` process (`ravi_pid` metadata) is gone.
+  Other hosts' sandboxes are left alone unless `--all-hosts`, and then only those tagged
+  `purpose: ravi-task` that are paused or overdue.
+
+- Credentials come from the environment: `E2B_API_KEY` plus `ANTHROPIC_API_KEY` (the `RAVI_`-prefixed
+  name also works, for hosts that hide the standard one). Sandboxes take an API key only:
+  `CLAUDE_CODE_OAUTH_TOKEN` is refused. `--model-auth` decides how the worker reaches the model: `header`
+  (default) stores the key in E2B's secret store for the run and injects it as `x-api-key` on
+  `api.anthropic.com`; `broker` (default when `RAVI_SANDBOX_ANTHROPIC_BASE_URL` is set) sends model traffic
+  to that https host; in both the sandbox env holds a placeholder key. `env` puts the real key in the
+  sandbox env (visible to E2B logs and snapshots) and needs `--allow-key-in-env`.
+  `GITHUB_TOKEN` is used only to clone private repos, only for `https://github.com/...` URLs, and only
+  during the clone (an `Authorization` header E2B adds on `github.com`, dropped once the clone is done).
+- Egress is deny-all. While cloning, the sandbox reaches the repo host and the model host; afterwards the
+  model host, `--allow-host` entries and, unless `--egress strict`, the package registries (npm, PyPI,
+  crates.io, Go proxy, RubyGems, GitHub). Inbound sandbox URLs are off; the sandbox is killed, not
+  paused, when its time is up. `--timeout-min` is a whole number from 1 to 55 (E2B's 1 h cap).
+- The worker agent gets the bootstrap profile plus `execute:executable:*` (build and test commands),
+  not `full-access`; the operator helper is `chat-only`. Task title and instructions reach `ravi tasks
+  create` through files, never a command line, since E2B keeps every command string in its logs.
 - Outputs default to `~/.ravi/sandbox-runs/<sandbox-id>/`. Exit code is 1 unless the task ends `done`.
+- To see what happened inside, the same folder holds `run.log` (step timeline), the full `daemon.log`
+  (copied live, kept even if the sandbox dies), `sessions/<name>.trace.txt|.jsonl` (`ravi sessions trace`
+  per session, task session included), `transcripts/` (Claude Code JSONL) and `e2b/`: `processes.txt`
+  (every command E2B ran, with exit status), `logs.jsonl`, `events.json` (created/paused/killed, kill reason),
+  `metrics.csv` (CPU/memory/disk every 5 s) and `summary.json`. Credentials are masked in all of them.
+- `--follow` prints the daemon log live. `ravi sandbox logs <sandbox-id>` re-fetches the `e2b/` part for any
+  sandbox E2B still remembers (about 7 days), e.g. when its logs were still being ingested at the end of a run.
 - `changes.patch` holds everything the task changed, committed or not, minus the `AGENTS.md`/`CLAUDE.md`
   scaffolding Ravi adds to the worker's cwd. Apply it with `git apply`.
-- `--keep` pauses the sandbox instead of killing it. Ctrl-C kills (or, with `--keep`, pauses) it too.
-- Both commands are CLI-only (not exposed through the gateway/SDK): they run for minutes and use host paths.
+- `--keep` pauses the sandbox instead of killing it, after denying all egress, dropping the injected
+  headers and stopping the daemon, so the resumed machine cannot reach out; it is refused with
+  `--model-auth env`. Ctrl-C kills (or, with `--keep`, pauses) it too, even while E2B is still creating it.
+- All sandbox commands are CLI-only (not exposed through the gateway/SDK): they run for minutes and use host paths.
 
 ## Where everything else lives
 

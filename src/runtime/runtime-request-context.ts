@@ -316,7 +316,10 @@ function persistRuntimeContextInPlace(
       source: derived.source,
       metadata: derived.metadata,
     });
-    Object.assign(runtimeContext, persisted);
+    // A record read back from the DB carries the key's digest, not the key.
+    // Keep the live plaintext key: it is what RAVI_CONTEXT_KEY already publishes.
+    const { contextKey: _storedDigest, ...persistedState } = persisted;
+    Object.assign(runtimeContext, persistedState);
     return true;
   } catch {
     return false;

@@ -43,10 +43,32 @@ function writeExecutable(path: string, contents: string): void {
   chmodSync(path, 0o755);
 }
 
+/**
+ * Git exports GIT_DIR and friends to hooks (absolute paths in a linked worktree). When these tests run
+ * from the pre-push hook, an inherited GIT_DIR makes the fixture's `git commit` land in the developer's
+ * repository. Every child process here gets an environment without them.
+ */
+const INHERITED_GIT_REPO_ENV = [
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_INDEX_FILE",
+  "GIT_COMMON_DIR",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_PREFIX",
+] as const;
+
+function envWithoutInheritedGitRepo(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...base };
+  for (const key of INHERITED_GIT_REPO_ENV) delete env[key];
+  return env;
+}
+
 function git(cwd: string, ...args: string[]): void {
   const result = spawnSync("git", ["-c", "user.email=fixture@example.com", "-c", "user.name=fixture", ...args], {
     cwd,
     encoding: "utf8",
+    env: envWithoutInheritedGitRepo(),
     stdio: ["ignore", "pipe", "pipe"],
   });
   if (result.status !== 0) throw new Error(`git ${args.join(" ")} failed: ${result.stderr}`);
@@ -121,7 +143,7 @@ function createSourceUpdateScenario(options: { linkPathToCheckout?: boolean } = 
   writeExecutable(join(bin, "pm2"), '#!/usr/bin/env bash\n[ "$1" = "jlist" ] && echo "[]" && exit 0\nexit 1\n');
 
   const env: NodeJS.ProcessEnv = {
-    ...process.env,
+    ...envWithoutInheritedGitRepo(),
     PATH: `${bin}${delimiter}${process.env.PATH ?? ""}`,
     RAVI_REPO: checkout,
     RAVI_STATE_DIR: stateDir,
@@ -213,7 +235,7 @@ describe("update command helpers", () => {
   it("returns one machine-readable usage error for an invalid exact version", () => {
     const stateDir = join(tmpdir(), `ravi-update-contract-${process.pid}`);
     const env: NodeJS.ProcessEnv = {
-      ...process.env,
+      ...envWithoutInheritedGitRepo(),
       RAVI_STATE_DIR: stateDir,
       RAVI_SUPPRESS_AUDIT_EVENTS: "1",
     };

@@ -26,6 +26,7 @@ import {
   dispatchRemote,
   gatewayRequiredError,
   getRemoteGatewayConfig,
+  isLoopbackGatewayHost,
   requiresRemoteGateway,
   resolveHostCliGatewayStateDirs,
   resolveRemoteGatewayConfig,
@@ -86,6 +87,69 @@ describe("remote gateway configuration", () => {
       }
       expect(failure).toMatchObject({ code: "REMOTE_GATEWAY_INVALID", exitCode: 2 });
     }
+  });
+
+  it("accepts plaintext HTTP only for a loopback host, and any HTTPS host", () => {
+    for (const value of [
+      "http://127.0.0.1:7777",
+      "http://localhost",
+      "http://[::1]:1",
+      "http://127.4.5.6/",
+      "https://x",
+    ]) {
+      expect(getRemoteGatewayConfig({ RAVI_GATEWAY_URL: value })).toEqual({
+        url: value.replace(/\/+$/, ""),
+        source: "env",
+      });
+    }
+  });
+
+  it("refuses plaintext HTTP to any other host with REMOTE_GATEWAY_INSECURE (exit 2)", () => {
+    for (const value of [
+      "http://gateway.example",
+      "http://127.0.0.1.evil.com",
+      "http://0.0.0.0",
+      "http://10.0.0.5",
+      "HTTP://EXAMPLE",
+      "http://user@127.0.0.1@evil",
+      "http://127.0.0.1:80@evil.example",
+      "http://localhost.evil.example",
+      "http://evil.localhost",
+      "http://[::ffff:10.0.0.5]",
+      "http://192.168.1.10:7777",
+    ]) {
+      let failure: unknown;
+      try {
+        getRemoteGatewayConfig({ RAVI_GATEWAY_URL: value });
+      } catch (error) {
+        failure = error;
+      }
+      expect({ value, failure }).toMatchObject({
+        value,
+        failure: { code: "REMOTE_GATEWAY_INSECURE", exitCode: 2 },
+      });
+    }
+  });
+
+  it("refuses an insecure RAVI_GATEWAY_URL before auto-bridging", async () => {
+    await expect(
+      resolveRemoteGatewayConfig(
+        { RAVI_CONTEXT_KEY: "rctx_test", RAVI_GATEWAY_URL: "http://gateway.example" },
+        "pages published",
+        { stateDir: "/home/user/.ravi", probeSocket: async () => true },
+      ),
+    ).rejects.toMatchObject({ code: "REMOTE_GATEWAY_INSECURE", exitCode: 2 });
+  });
+
+  it("treats only literal loopback addresses and localhost as loopback", () => {
+    expect(isLoopbackGatewayHost("127.0.0.1")).toBe(true);
+    expect(isLoopbackGatewayHost("127.255.255.254")).toBe(true);
+    expect(isLoopbackGatewayHost("[::1]")).toBe(true);
+    expect(isLoopbackGatewayHost("LOCALHOST")).toBe(true);
+    expect(isLoopbackGatewayHost("127.0.0.1.nip.io")).toBe(false);
+    expect(isLoopbackGatewayHost("128.0.0.1")).toBe(false);
+    expect(isLoopbackGatewayHost("[::]")).toBe(false);
+    expect(isLoopbackGatewayHost("app.localhost")).toBe(false);
   });
 
   it("accepts an explicit unix socket URL without opening loopback HTTP", () => {
@@ -863,7 +927,7 @@ describe("personal connector blocks over the gateway", () => {
       "connectors list",
       new CloudAuthError(
         "CONNECTOR_GROUP_BLOCKED",
-        'This message came from someone other than Luis, and personal connections serve only Luis\'s own requests. Reply in this chat: "I can\'t use Luis\'s Gmail for your request."',
+        "This message came from someone other than Luis, and personal connections serve only Luis's own requests. Reply in this chat: \"I can't use Luis's Gmail for your request.\"",
         {
           exitCode: 3,
           details: {

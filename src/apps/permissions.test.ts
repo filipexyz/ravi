@@ -182,4 +182,27 @@ describe("app permission gate", () => {
       expect(canUseApp("secret")).toBe(false);
     });
   });
+
+  it("never falls back to the local operator when a context record has no agent", () => {
+    const agentlessContext = (capabilities: ContextCapability[]): ToolContext => ({
+      context: {
+        contextId: "ctx_apps_agentless",
+        contextKey: "ctx_key_apps_agentless",
+        kind: "test-agentless",
+        capabilities,
+        metadata: {},
+        createdAt: 0,
+      },
+    });
+
+    runWithContext(agentlessContext([]), () => {
+      expect(canUseApp("apps")).toBe(false);
+      expect(canExecuteApp("apps")).toBe(false);
+    });
+    runWithContext(agentlessContext([appCapability("use", "slides")]), () => {
+      expect(canUseApp("slides")).toBe(true);
+      expect(canUseApp("apps")).toBe(false);
+      expect(canExecuteApp("slides")).toBe(false);
+    });
+  });
 });
