@@ -77,6 +77,10 @@ bun run lint:fix      # apply Biome fixes in src/
 - **pre-commit** runs `biome check` on staged `.ts`, `.tsx`, `.js` and `.jsx` files.
 - **pre-push** mirrors CI: `bun run sdk:check`, then `bun run build`, `bun run typecheck` and `bun run test`. If the generated TypeScript SDK is stale, the hook regenerates it with `bun run sdk:generate`, leaves the changed files in your worktree and blocks the push until you commit them.
 
+The pre-push checks clear both runtime identity and Git's repository-local
+environment variables. Test fixtures that initialize their own repositories must
+not inherit the pushing checkout's `GIT_DIR`, index or worktree paths.
+
 Never bypass the hooks with `--no-verify`.
 
 ## Adding or changing a CLI command

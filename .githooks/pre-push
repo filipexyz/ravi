@@ -10,8 +10,16 @@ fi
 
 echo "Running pre-push checks..."
 
+# Git exports repository-local paths to hooks. Tests create their own repos;
+# inheriting GIT_DIR/GIT_INDEX_FILE can commit their fixtures into this branch.
+check_git_env_args=()
+while IFS= read -r git_env_key; do
+  check_git_env_args+=(-u "$git_env_key")
+done < <(git rev-parse --local-env-vars)
+
 run_local_check() {
   env \
+    "${check_git_env_args[@]}" \
     -u RAVI_ACCOUNT_ID \
     -u RAVI_ACTOR_AGENT_ID \
     -u RAVI_ACTOR_TYPE \
