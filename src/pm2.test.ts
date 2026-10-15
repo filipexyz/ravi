@@ -32,4 +32,19 @@ describe("buildPm2Env", () => {
     expect(env).not.toHaveProperty("RAVI_SLACK_CONNECTIONS");
     expect(env).not.toHaveProperty("RAVI_SLACK_CREDENTIAL_CONNECTION");
   });
+
+  it("drops every TUNNEL_* variable (cloudflared reads them all as flags), from the base env and overrides", () => {
+    const env = buildPm2Env(
+      { TUNNEL_ORIGIN_CERT: "/tmp/cert.pem" },
+      {
+        PATH: "/usr/bin",
+        TUNNEL_TOKEN: "eyJ-token",
+        TUNNEL_CRED_CONTENTS: '{"TunnelSecret":"s3cr3t"}',
+        TUNNEL_CRED_FILE: "/tmp/creds.json",
+        MY_TUNNEL_NAME: "kept",
+      },
+    );
+    expect(Object.keys(env).filter((key) => key.startsWith("TUNNEL_"))).toEqual([]);
+    expect(env).toMatchObject({ PATH: "/usr/bin", MY_TUNNEL_NAME: "kept" });
+  });
 });

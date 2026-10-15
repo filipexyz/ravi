@@ -6,6 +6,7 @@ import {
   type PermissionProviderDecision,
 } from "../permissions/provider-runtime.js";
 import { buildAuditContextProvenance } from "../permissions/audit-provenance.js";
+import { authorizationContext } from "../permissions/authorization-agent.js";
 import { recordAndEmitPermissionDenial } from "../permissions/denials.js";
 import { enforceScopeCheck } from "../permissions/scope.js";
 import {
@@ -194,14 +195,10 @@ function resolveCommandAccessAuthority(
   const hasContextKey = Boolean(process.env[RAVI_CONTEXT_KEY_ENV]?.trim());
   const useRuntimeContext = source !== "cli" || hasContextKey;
   if (useRuntimeContext && ctx?.context) {
-    const agentId = ctx.agentId ?? ctx.context.agentId;
-    const context: CapabilityContextLike = {
-      ...ctx.context,
-      agentId: ctx.context.agentId ?? agentId,
-    };
+    const context: CapabilityContextLike = authorizationContext(ctx.context, ctx.agentId);
     return {
       allowed: true,
-      label: `agent:${context.agentId ?? agentId ?? "unknown"}`,
+      label: `agent:${context.agentId ?? "unknown"}`,
       request: { context },
     };
   }

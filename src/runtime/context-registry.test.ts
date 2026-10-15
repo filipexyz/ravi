@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { dbCreateAgent, dbDeleteAgent, dbGetContext, getDb } from "../router/router-db.js";
+import {
+  contextKeyDigest,
+  dbCreateAgent,
+  dbDeleteAgent,
+  dbGetContext,
+  getDb,
+  migrateContextKeysToDigest,
+} from "../router/router-db.js";
 import { getOrCreateSession } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
@@ -12,6 +19,7 @@ import {
 import {
   ADMIN_BOOTSTRAP_KIND,
   createRuntimeContext,
+  getRuntimeContextFromEnv,
   issueRuntimeContext,
   LEGACY_AGENT_RUNTIME_CONTEXT_KIND,
   listLiveAdminContexts,
@@ -243,6 +251,17 @@ describe("runtime context registry", () => {
 
     expect(resolveRuntimeContext(context.contextKey, { touch: false })).toBeNull();
     expect(() => resolveRuntimeContextOrThrow(context.contextKey, { touch: false })).toThrow("Context revoked");
+  });
+
+  it("resolves RAVI_CONTEXT_KEY from env trimmed, and treats a blank key as absent", () => {
+    const context = createRuntimeContext({ agentId: TEST_AGENT_ID, ttlMs: 60_000 });
+
+    expect(getRuntimeContextFromEnv({ RAVI_CONTEXT_KEY: `  ${context.contextKey}\n` })?.contextId).toBe(
+      context.contextId,
+    );
+    expect(getRuntimeContextFromEnv({ RAVI_CONTEXT_KEY: "   " })).toBeUndefined();
+    expect(getRuntimeContextFromEnv({})).toBeUndefined();
+    expect(getRuntimeContextFromEnv({ RAVI_CONTEXT_KEY: "rctx_does_not_exist" })).toBeUndefined();
   });
 
   it("issues a child context with explicit least-privilege capabilities", () => {
@@ -622,6 +641,68 @@ describe("runtime context registry", () => {
     expect(refreshedChild?.metadata?.cascadeRootContextId).toBe(parent.contextId);
     expect(refreshedGrandchild?.metadata?.cascadeRootContextId).toBe(parent.contextId);
     expect(refreshedParent?.metadata?.revocationReason).toBe("regression-test");
+  });
+
+  it("imports an explicit key (init-admin-key --from-env) that resolves by plaintext, stored as a digest", () => {
+    const envKey = "rctx_imported_from_env_example";
+    const imported = createRuntimeContext({
+      kind: ADMIN_BOOTSTRAP_KIND,
+      agentId: TEST_AGENT_ID,
+      capabilities: [{ permission: "admin", objectType: "system", objectId: "*" }],
+      contextKey: envKey,
+    });
+
+    expect(imported.contextKey).toBe(envKey);
+    const stored = getDb().prepare("SELECT context_key FROM contexts WHERE context_id = ?").get(imported.contextId) as {
+      context_key: string;
+    };
+    expect(stored.context_key).toBe(contextKeyDigest(envKey));
+
+    const resolved = resolveRuntimeContext(envKey, { touch: false });
+    expect(resolved?.contextId).toBe(imported.contextId);
+    expect(resolved?.contextKey).toBe(envKey);
+    expect(resolveRuntimeContextOrThrow(envKey, { readOnly: true }).contextId).toBe(imported.contextId);
+    expect(resolveRuntimeContext(stored.context_key, { touch: false })).toBeNull();
+
+    // Re-importing the same key is refused; the daemon command checks resolve first.
+    expect(() =>
+      createRuntimeContext({ kind: ADMIN_BOOTSTRAP_KIND, agentId: TEST_AGENT_ID, contextKey: envKey }),
+    ).toThrow("Context already exists");
+  });
+
+  it("cascades revocation from a legacy plaintext parent across the digest migration", () => {
+    const legacyKey = "rctx_legacy_parent_example";
+    getDb()
+      .prepare(
+        `INSERT INTO contexts (context_id, context_key, kind, agent_id, capabilities_json, created_at, expires_at)
+         VALUES ('ctx_legacy_parent', ?, 'agent-runtime', ?, ?, ?, ?)`,
+      )
+      .run(
+        legacyKey,
+        TEST_AGENT_ID,
+        JSON.stringify([{ permission: "execute", objectType: "group", objectId: "daemon" }]),
+        Date.now(),
+        Date.now() + 60 * 60 * 1000,
+      );
+
+    const parent = resolveRuntimeContext(legacyKey, { touch: false });
+    expect(parent?.contextKey).toBe(legacyKey);
+    const child = issueRuntimeContext({
+      parent: parent!,
+      cliName: "child-cli",
+      capabilities: [{ permission: "execute", objectType: "group", objectId: "daemon" }],
+    });
+
+    expect(migrateContextKeysToDigest()).toEqual({ migrated: 1, skipped: 0, skippedContextIds: [] });
+    expect(resolveRuntimeContext(legacyKey, { touch: false })?.contextId).toBe("ctx_legacy_parent");
+    expect(resolveRuntimeContext(child.contextKey, { touch: false })?.contextId).toBe(child.contextId);
+
+    const result = revokeRuntimeContext("ctx_legacy_parent", { reason: "digest-migration-test" });
+    expect(result.cascaded.map((ctx) => ctx.contextId)).toEqual([child.contextId]);
+    // Records read back by id carry the digest, never a usable key.
+    expect([result.context, ...result.cascaded].every((ctx) => ctx.contextKey.startsWith("kh1:"))).toBe(true);
+    expect(resolveRuntimeContext(legacyKey, { touch: false })).toBeNull();
+    expect(resolveRuntimeContext(child.contextKey, { touch: false })).toBeNull();
   });
 
   it("supports --no-cascade narrow revoke that leaves descendants live", () => {

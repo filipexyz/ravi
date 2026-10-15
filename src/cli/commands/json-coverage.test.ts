@@ -10,6 +10,7 @@ const JSON_ALLOWLIST = new Set([
   "daemon run",
   "daemon dev",
   "channels run",
+  "gateway tunnel-run",
   // Log streams. They return a live textual stream, not a bounded JSON payload.
   "channels logs",
   // Binary streams. They return raw bytes via Response, not JSON.

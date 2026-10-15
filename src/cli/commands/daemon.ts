@@ -45,6 +45,7 @@ import {
   DEFAULT_BOOTSTRAP_CONTEXT_TTL_MS,
   createRuntimeContext,
   listLiveAdminContexts,
+  MIN_CONTEXT_KEY_LENGTH,
   resolveRuntimeContext,
 } from "../../runtime/context-registry.js";
 import { dbCreateAgent, dbGetAgent, dbUpsertDaemonRestartEpoch } from "../../router/router-db.js";
@@ -1168,6 +1169,13 @@ ANTHROPIC_API_KEY=
       }
       if (!envKey.startsWith("rctx_")) {
         fail("RAVI_BOOTSTRAP_KEY must be an rctx_* runtime context key");
+      }
+      // Keys are stored as unsalted digests: only safe while the key is as unguessable as a generated one.
+      if (envKey.length < MIN_CONTEXT_KEY_LENGTH) {
+        fail(
+          `RAVI_BOOTSTRAP_KEY is too short to be a runtime context key: expected at least ${MIN_CONTEXT_KEY_LENGTH} characters (rctx_ + ${MIN_CONTEXT_KEY_LENGTH - "rctx_".length}), got ${envKey.length}`,
+          "Import the key `ravi daemon init-admin-key` printed, or issue a new one with `ravi daemon init-admin-key`",
+        );
       }
 
       if (live.length > 0) {

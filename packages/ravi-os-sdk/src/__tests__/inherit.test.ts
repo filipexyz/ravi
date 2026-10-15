@@ -1,7 +1,9 @@
 import { describe, expect, it } from "bun:test";
 
 import {
+  assertSecureInheritedBaseUrl,
   createInheritedClient,
+  INSECURE_GATEWAY_ERROR_CODE,
   resolveInheritedBaseUrl,
   resolveInheritedContextKey,
 } from "../inherit.js";
@@ -26,7 +28,7 @@ describe("createInheritedClient", () => {
 
     const inherited = await createInheritedClient({
       env: {
-        RAVI_BASE_URL: "http://ravi.test/",
+        RAVI_BASE_URL: "https://ravi.test/",
         RAVI_CONTEXT_KEY: "rctx_parent",
       },
       fetch: fetchImpl,
@@ -34,13 +36,13 @@ describe("createInheritedClient", () => {
     const me = await inherited.client.context.whoami();
 
     expect(inherited.mode).toBe("current");
-    expect(inherited.baseUrl).toBe("http://ravi.test");
+    expect(inherited.baseUrl).toBe("https://ravi.test");
     expect(inherited.contextId).toBeUndefined();
     expect(inherited.revoke).toBeUndefined();
     expect(me.sessionName).toBe("ravi-workflows");
     expect(seen).toEqual([
       {
-        url: "http://ravi.test/api/v1/context/whoami",
+        url: "https://ravi.test/api/v1/context/whoami",
         auth: "Bearer rctx_parent",
         body: {},
       },
@@ -120,13 +122,60 @@ describe("createInheritedClient", () => {
     await expect(
       createInheritedClient({
         env: {
-          RAVI_BASE_URL: "http://ravi.test",
+          RAVI_BASE_URL: "https://ravi.test",
           RAVI_CONTEXT_KEY: "rctx_parent",
         },
         child: { cliName: "sdk-inherit-test" },
         fetch: async () => jsonResponse({}),
       }),
     ).rejects.toThrow("child mode requires child.inherit === true or a non-empty child.allow");
+  });
+});
+
+describe("inherited gateway transport security", () => {
+  it("never sends the context key over plain http to a non-loopback host", async () => {
+    for (const env of [
+      { RAVI_BASE_URL: "http://ravi.test" },
+      { RAVI_HTTP_BASE_URL: "http://10.0.0.5:4211" },
+      { RAVI_GATEWAY_URL: "HTTP://EXAMPLE" },
+      { RAVI_GATEWAY_URL: "http://user@127.0.0.1@evil" },
+      { RAVI_GATEWAY_URL: "http://127.0.0.1.evil.com" },
+      { RAVI_GATEWAY_URL: "http://evil.localhost" },
+      { RAVI_HTTP_HOST: "192.168.1.10", RAVI_HTTP_PORT: "4211" },
+    ]) {
+      let fetched = 0;
+      await expect(
+        createInheritedClient({
+          env: { ...env, RAVI_CONTEXT_KEY: "rctx_parent" },
+          fetch: async () => {
+            fetched++;
+            return jsonResponse({});
+          },
+        }),
+      ).rejects.toMatchObject({ code: INSECURE_GATEWAY_ERROR_CODE });
+      expect(fetched).toBe(0);
+    }
+  });
+
+  it("refuses an explicit plain-http baseUrl off loopback too", async () => {
+    await expect(
+      createInheritedClient({ baseUrl: "http://gateway.example", contextKey: "rctx_parent" }),
+    ).rejects.toMatchObject({ code: INSECURE_GATEWAY_ERROR_CODE });
+  });
+
+  it("accepts https anywhere and http on loopback", () => {
+    for (const url of [
+      "https://ravi.test",
+      "http://127.0.0.1:4211",
+      "http://127.9.8.7",
+      "http://localhost:4211",
+      "http://[::1]:4211",
+    ]) {
+      expect(() => assertSecureInheritedBaseUrl(url)).not.toThrow();
+    }
+    expect(resolveInheritedBaseUrl({ RAVI_HTTP_HOST: "0.0.0.0", RAVI_HTTP_PORT: "4211" })).toBe(
+      "http://127.0.0.1:4211",
+    );
   });
 });
 

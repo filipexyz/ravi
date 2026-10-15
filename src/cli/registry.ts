@@ -156,7 +156,7 @@ function registerCommand(
   // If the nested group was registered first, Commander already has the node.
   const sub =
     group.commands.find((c) => c.name() === cmdMeta.name) ??
-    group.command(cmdMeta.name).description(cmdMeta.description);
+    group.command(cmdMeta.name, cmdMeta.hidden ? { hidden: true } : {}).description(cmdMeta.description);
 
   // Add aliases if specified
   if (cmdMeta.aliases) {

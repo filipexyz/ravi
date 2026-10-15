@@ -8,6 +8,15 @@ import { execSync, spawnSync } from "node:child_process";
 
 export const PM2_PROCESS_NAME = "ravi";
 export const CHANNELS_PM2_PROCESS_NAME = "ravi-channels";
+/** Optional: the gateway tunnel runner (`ravi gateway tunnel-run`, cloudflared's parent). */
+export const GATEWAY_PM2_PROCESS_NAME = "ravi-gateway";
+/**
+ * cloudflared reads every `TUNNEL_*` variable as a flag (`TUNNEL_TOKEN`,
+ * `TUNNEL_CRED_CONTENTS`, `TUNNEL_ORIGIN_CERT`, ...): none may reach a PM2
+ * entry, which `pm2 save` persists. The credentials only ever travel in the
+ * tunnel runner's child env.
+ */
+const PM2_ENV_DENY_PREFIXES = ["TUNNEL_"] as const;
 const PM2_ENV_DENYLIST = [
   "RAVI_CONTEXT_KEY",
   "RAVI_INTERNAL_UPDATE_RUNTIME_REBIND",
@@ -23,9 +32,15 @@ const PM2_ENV_DENYLIST = [
   "RAVI_SLACK_CREDENTIAL_CONNECTION",
 ] as const;
 
-export function buildPm2Env(envOverrides?: Record<string, string>): Record<string, string> {
-  const env = { ...process.env, ...(envOverrides ?? {}) } as Record<string, string>;
+export function buildPm2Env(
+  envOverrides?: Record<string, string>,
+  baseEnv: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  const env = { ...baseEnv, ...(envOverrides ?? {}) } as Record<string, string>;
   for (const key of PM2_ENV_DENYLIST) delete env[key];
+  for (const key of Object.keys(env)) {
+    if (PM2_ENV_DENY_PREFIXES.some((prefix) => key.startsWith(prefix))) delete env[key];
+  }
   return env;
 }
 

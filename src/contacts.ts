@@ -23,6 +23,7 @@ export {
   formatPhone,
 } from "./utils/phone.js";
 
+import { preparePrivateSqliteFile } from "./security/private-files.js";
 import { normalizePhone } from "./utils/phone.js";
 
 function resolveDbPath(env: NodeJS.ProcessEnv = process.env): string {
@@ -108,6 +109,7 @@ function ensureDb(): Database {
 
   mkdirSync(getRaviStateDir(), { recursive: true });
 
+  preparePrivateSqliteFile(nextDbPath);
   const database = new Database(nextDbPath);
 
   // WAL mode for concurrent read/write access (CLI + daemon)
@@ -8099,6 +8101,7 @@ function uniqueNonEmptyStrings(values: Array<string | null | undefined>): string
 function openBackfillRouterDb(): Database | null {
   const routerDbPath = resolveRouterDbPath();
   if (!existsSync(routerDbPath)) return null;
+  preparePrivateSqliteFile(routerDbPath);
   const database = new Database(routerDbPath);
   database.exec("PRAGMA busy_timeout = 5000");
   database.exec("PRAGMA foreign_keys = ON");

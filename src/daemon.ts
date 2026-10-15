@@ -35,6 +35,7 @@ import {
   dbListEligibleDaemonRestartSessionSnapshots,
   dbMarkDaemonRestartResumeDelivered,
   dbUpsertDaemonRestartEpoch,
+  migrateContextKeysToDigest,
   type DaemonRestartSessionSnapshotRecord,
 } from "./router/router-db.js";
 import { getMainSession, getSession, getSessionByName } from "./router/sessions.js";
@@ -57,6 +58,8 @@ import { resolveOmniConnection } from "./omni-config.js";
 import { ensureSessionPromptsStream, publishSessionPrompt } from "./omni/session-stream.js";
 import { ensureRaviEventsStream } from "./events/audit-stream.js";
 import { startWebhookHttpServerFromEnv, type WebhookHttpServerHandle } from "./webhooks/http-server.js";
+import { pruneSandboxRunsAtStart } from "./sandbox/run-context.js";
+import { SandboxListenerSupervisor, watchSandboxListenerConfig } from "./sandbox-listener/supervisor.js";
 import { startHostCliGateway, type HostCliGatewayHandle } from "./cli/host-cli-gateway.js";
 import type { MessageTarget } from "./runtime/message-types.js";
 import { deliverDaemonRestartSessionEvent } from "./runtime/daemon-restart-resume.js";
@@ -71,6 +74,17 @@ import {
   releaseLeadership,
 } from "./leader/index.js";
 import { scheduleChannelRunnerLivenessReport } from "./channels/runner-liveness.js";
+import {
+  decideNatsExposureBootAction,
+  isPrivateNatsRequired,
+  natsExposureLogData,
+  probeNatsExposure,
+  redactNatsUrl,
+  REQUIRE_PRIVATE_NATS_ENV,
+  type NatsExposureReport,
+} from "./security/nats-exposure.js";
+import { tightenStateDirPermissions } from "./security/state-dir-permissions.js";
+import { getRaviStateDir } from "./utils/paths.js";
 
 const log = logger.child("daemon");
 
@@ -201,6 +215,8 @@ let sessionAdapterBus: ReturnType<typeof createSessionAdapterBus> | null = null;
 let shuttingDown = false;
 let omniConsumer: OmniConsumer | null = null;
 let webhookHttpServer: WebhookHttpServerHandle | null = null;
+let sandboxListener: SandboxListenerSupervisor | null = null;
+let stopSandboxListenerWatch: (() => void) | null = null;
 let hostCliGateway: HostCliGatewayHandle | null = null;
 let workObjectNatsService: WorkObjectNatsServiceHandle | null = null;
 
@@ -282,6 +298,13 @@ async function shutdown(signal: string, exitCode = 0) {
       await webhookHttpServer.stop();
     }
 
+    stopSandboxListenerWatch?.();
+    stopSandboxListenerWatch = null;
+    if (sandboxListener) {
+      await sandboxListener.stop();
+      sandboxListener = null;
+    }
+
     if (hostCliGateway) {
       await hostCliGateway.stop();
       hostCliGateway = null;
@@ -320,13 +343,69 @@ function restartAfterFatalRuntimeError(error: Error): void {
   void shutdown("fatal runtime ownership error", 1);
 }
 
+/** Best-effort: keep the state dir (credentials, DBs) private to the owner. */
+function tightenStateDirAtBoot(): void {
+  const result = tightenStateDirPermissions(getRaviStateDir());
+  if (result.action === "tightened") {
+    log.info("Tightened state dir permissions", result);
+  } else if (result.action === "error") {
+    log.warn("Could not tighten state dir permissions", result);
+  }
+}
+
+/**
+ * Warn when NATS is reachable from the network or remote in plaintext. The
+ * probe runs in the background unless RAVI_REQUIRE_PRIVATE_NATS=1, in which
+ * case boot waits for it and refuses to continue on a risky result.
+ */
+async function checkNatsExposureAtBoot(natsUrl: string): Promise<void> {
+  const requirePrivate = isPrivateNatsRequired();
+  const evaluate = (report: NatsExposureReport) => {
+    const action = decideNatsExposureBootAction(report, { requirePrivate });
+    if (action === "warn") log.warn(`NATS exposure: ${report.message}`, natsExposureLogData(report));
+    return action;
+  };
+
+  if (!requirePrivate) {
+    void probeNatsExposure(natsUrl)
+      .then(evaluate)
+      .catch((err) => log.debug("NATS exposure probe failed", { err }));
+    return;
+  }
+
+  const report = await probeNatsExposure(natsUrl);
+  if (evaluate(report) === "refuse") {
+    log.error(`Refusing to start: ${REQUIRE_PRIVATE_NATS_ENV}=1 and ${report.message}`, natsExposureLogData(report));
+    await closeNats();
+    throw new Error(`Refusing to start: ${REQUIRE_PRIVATE_NATS_ENV}=1 and NATS is ${report.status}`);
+  }
+}
+
+/**
+ * Store legacy plaintext context keys as digests. Boot is the only place this
+ * runs: the daemon is the single writer of live authority, so a newer CLI never
+ * hashes rows an older daemon still looks up by plaintext.
+ */
+function migrateContextKeysAtBoot(): void {
+  try {
+    migrateContextKeysToDigest();
+  } catch (error) {
+    log.warn("Could not store legacy context keys as digests; lookups still accept them", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 export async function startDaemon() {
   maybeNeuterDaemonStdin();
+  tightenStateDirAtBoot();
+  migrateContextKeysAtBoot();
 
   // Step 1: Connect to NATS (with retry for PM2 parallel startup)
   const natsUrl = process.env.NATS_URL || "nats://127.0.0.1:4222";
-  log.info("Connecting to NATS...", { natsUrl });
+  log.info("Connecting to NATS...", { natsUrl: redactNatsUrl(natsUrl) });
   await connectNats(natsUrl, { explicit: true });
+  await checkNatsExposureAtBoot(natsUrl);
   setChannelBackendEgressRequesterForRuntime(createChannelBackendEgressRequester());
 
   const config = loadConfig();
@@ -479,6 +558,25 @@ export async function startDaemon() {
   } else {
     log.info("Webhook HTTP server disabled (set RAVI_HTTP_PORT to enable)");
   }
+
+  // Sandbox run records are pruned at every start, listener or not: an
+  // expired or revoked run's contexts are revoked and its stored grant goes.
+  try {
+    const pruned = pruneSandboxRunsAtStart();
+    if (pruned.runsDeleted > 0 || pruned.jtisPruned > 0) log.info("Sandbox runs pruned at start", pruned);
+  } catch (error) {
+    log.error("Sandbox run prune at start failed", error);
+  }
+
+  // Loopback-only origin for Gate-forwarded sandbox task commands; in process,
+  // like the webhook server (the daemon spawns no child processes). Settings
+  // are written by `ravi gateway expose`; without them the listener is off.
+  // The supervisor starts, stops or restarts it on `ravi.config.changed`
+  // (ADR 0002 #8), so a gateway settings change needs no daemon restart.
+  sandboxListener = new SandboxListenerSupervisor();
+  const listenerBoot = await sandboxListener.reconcile("boot");
+  if (!listenerBoot.enabled) log.info("Sandbox listener disabled (no complete gateway.* settings)");
+  stopSandboxListenerWatch = watchSandboxListenerConfig(sandboxListener);
 
   try {
     hostCliGateway = await startHostCliGateway();

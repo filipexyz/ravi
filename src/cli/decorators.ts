@@ -78,6 +78,8 @@ export interface CommandOptions {
    * commands that legitimately run longer (e.g. `eval run`).
    */
   remoteTimeoutMs?: number;
+  /** Left out of `--help` listings (internal entry points such as a PM2-run foreground process). Still registered. */
+  hidden?: boolean;
 }
 
 export interface ArgOptions {
