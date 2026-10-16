@@ -207,9 +207,7 @@ function applyBindingToContext(
   try {
     const current = dbGetContext(context.contextId);
     if (!current) return;
-    dbUpdateContextRuntimeState(context.contextId, {
-      metadata: { ...(current.metadata ?? {}), consoleUserId, consoleOrgId },
-    });
+    updateContextMetadata(current, { ...(current.metadata ?? {}), consoleUserId, consoleOrgId });
   } catch {
     // Best effort: the next turn reads the binding cache anyway.
   }
@@ -223,10 +221,24 @@ function clearBindingFromContext(context: ContextRecord | null | undefined): voi
     const next = { ...current.metadata };
     delete next.consoleUserId;
     delete next.consoleOrgId;
-    dbUpdateContextRuntimeState(context.contextId, { metadata: next });
+    updateContextMetadata(current, next);
   } catch {
     // Best effort: the cache entry is already gone.
   }
+}
+
+/**
+ * Replace only the context's metadata. The runtime-state update writes
+ * session name and source too, clearing whichever is omitted, and the live
+ * turn context needs both: without its session name, the private-DM check
+ * fails and the rest of the turn reads Pages as public only.
+ */
+function updateContextMetadata(current: ContextRecord, metadata: Record<string, unknown>): void {
+  dbUpdateContextRuntimeState(current.contextId, {
+    sessionName: current.sessionName,
+    source: current.source,
+    metadata,
+  });
 }
 
 function errorText(error: unknown): string {
