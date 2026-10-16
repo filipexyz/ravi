@@ -123,6 +123,12 @@ export function executeWriteWithStats<T>(
   const label = options.label;
   const checkpointEveryN = Math.max(0, options.checkpointEveryNWrites ?? DEFAULT_CHECKPOINT_EVERY_N_WRITES);
 
+  // Already inside a caller's transaction: join it instead of issuing a nested
+  // BEGIN (which SQLite rejects). The outermost writer owns commit and retry.
+  if (db.inTransaction) {
+    return { value: fn(db), stats: { attempts: 1, retried: false, totalSleepMs: 0 } };
+  }
+
   let lastErr: unknown = null;
   let totalSleepMs = 0;
 

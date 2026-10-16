@@ -370,6 +370,15 @@ export function dbListWorkflowSpecs(): WorkflowSpec[] {
   return rows.map(rowToWorkflowSpec);
 }
 
+/**
+ * Run several workflow writes as one IMMEDIATE transaction (with lock retry),
+ * so a failure leaves no partial run graph behind.
+ */
+export function dbWorkflowWriteTransaction<T>(label: string, fn: () => T): T {
+  ensureWorkflowSchema();
+  return executeWrite(getDb(), () => fn(), { label });
+}
+
 export function dbCreateWorkflowRun(spec: WorkflowSpec, input: StartWorkflowRunInput = {}): WorkflowRun {
   ensureWorkflowSchema();
   const now = Date.now();
@@ -608,40 +617,48 @@ export function dbListWorkflowNodeRunTaskAttempts(nodeRunId: string): WorkflowNo
 export function dbLinkTaskToWorkflowNodeRun(nodeRunId: string, taskId: string): WorkflowNodeRunTaskAttempt {
   ensureWorkflowSchema();
   const db = getDb();
-  const nodeRun = dbGetWorkflowNodeRun(nodeRunId);
-  if (!nodeRun) {
-    throw new Error(`Workflow node run not found: ${nodeRunId}`);
-  }
+  // Read the attempt counter, insert the attempt row and advance the node run
+  // in one transaction so a failure cannot leave a half-bound attempt.
+  return executeWrite(
+    db,
+    () => {
+      const nodeRun = dbGetWorkflowNodeRun(nodeRunId);
+      if (!nodeRun) {
+        throw new Error(`Workflow node run not found: ${nodeRunId}`);
+      }
 
-  const existing = getDb().prepare("SELECT * FROM workflow_node_run_tasks WHERE task_id = ?").get(taskId) as
-    | WorkflowNodeRunTaskAttemptRow
-    | undefined;
-  if (existing) {
-    throw new Error(`Task ${taskId} already belongs to workflow node run ${existing.workflow_node_run_id}.`);
-  }
+      const existing = db.prepare("SELECT * FROM workflow_node_run_tasks WHERE task_id = ?").get(taskId) as
+        | WorkflowNodeRunTaskAttemptRow
+        | undefined;
+      if (existing) {
+        throw new Error(`Task ${taskId} already belongs to workflow node run ${existing.workflow_node_run_id}.`);
+      }
 
-  const attempt = nodeRun.attemptCount + 1;
-  const now = Date.now();
-  db.prepare(
-    `
-      INSERT INTO workflow_node_run_tasks (workflow_node_run_id, task_id, attempt, created_at)
-      VALUES (?, ?, ?, ?)
-    `,
-  ).run(nodeRunId, taskId, attempt, now);
-  db.prepare(
-    `
-      UPDATE workflow_node_runs
-      SET current_task_id = ?, attempt_count = ?, updated_at = ?
-      WHERE id = ?
-    `,
-  ).run(taskId, attempt, now, nodeRunId);
+      const attempt = nodeRun.attemptCount + 1;
+      const now = Date.now();
+      db.prepare(
+        `
+          INSERT INTO workflow_node_run_tasks (workflow_node_run_id, task_id, attempt, created_at)
+          VALUES (?, ?, ?, ?)
+        `,
+      ).run(nodeRunId, taskId, attempt, now);
+      db.prepare(
+        `
+          UPDATE workflow_node_runs
+          SET current_task_id = ?, attempt_count = ?, updated_at = ?
+          WHERE id = ?
+        `,
+      ).run(taskId, attempt, now, nodeRunId);
 
-  return {
-    workflowNodeRunId: nodeRunId,
-    taskId,
-    attempt,
-    createdAt: now,
-  };
+      return {
+        workflowNodeRunId: nodeRunId,
+        taskId,
+        attempt,
+        createdAt: now,
+      };
+    },
+    { label: "workflow:linkTaskAttempt" },
+  );
 }
 
 type WorkflowRunPatch = Partial<

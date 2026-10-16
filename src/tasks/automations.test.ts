@@ -27,10 +27,17 @@ mock.module("../nats.js", () => ({
   },
 }));
 
-const { createTaskAutomation, listTaskAutomationRuns } = await import("./automations.js");
+const { TASK_AUTOMATION_STALE_CLAIM_MS, createTaskAutomation, listTaskAutomationRuns, recoverStaleTaskAutomationRuns } =
+  await import("./automations.js");
+const {
+  dbBindTaskAutomationRunSpawnedTask,
+  dbClaimTaskAutomationRun,
+  dbFinalizeTaskAutomationRun,
+  dbGetTaskAutomation,
+} = await import("./automations-db.js");
 const { completeTask, createTask, dispatchTask, emitTaskEvent, listTasks } = await import("./service.js");
 const { setTaskSessionPromptPublisherForTests } = await import("./session-publisher.js");
-const { dbCreateAgent, dbDeleteAgent } = await import("../router/router-db.js");
+const { dbCreateAgent, dbDeleteAgent, getDb } = await import("../router/router-db.js");
 
 function writeVideoProfileFixture(stateRoot: string): void {
   const profileDir = join(stateRoot, "task-profiles", "video-rapha");
@@ -273,5 +280,179 @@ describe("task automations", () => {
     expect(runs[0]?.message).toContain("Filter is invalid");
     expect(runs[0]?.message).toContain("Expected quoted string value");
     expect(publishedPrompts).toHaveLength(0);
+  });
+  it("keeps the created child on a run that fails after spawning", async () => {
+    dbCreateAgent({ id: "qa-gone", cwd: "/tmp/ravi-qa-gone" });
+    const automation = createTaskAutomation({
+      name: "Missing agent follow-up",
+      eventTypes: ["task.done"],
+      titleTemplate: "QC :: {{data.task.title}}",
+      instructionsTemplate: "Review delivery for {{data.task.id}}",
+      agentId: "qa-gone",
+    });
+    // The agent disappears after the automation was configured, so dispatch fails after the child exists.
+    dbDeleteAgent("qa-gone");
+
+    const created = createTask({ title: "Ship", instructions: "Ship it.", priority: "high" });
+    const completed = await completeTask(created.task.id, {
+      actor: "dev-session",
+      agentId: "dev",
+      sessionName: "dev-session",
+      message: "Shipped.",
+    });
+    await emitTaskEvent(completed.task, completed.event);
+
+    const child = listTasks({ archiveMode: "include" }).find((task) => task.id !== created.task.id);
+    expect(child).toBeDefined();
+    const runs = listTaskAutomationRuns(automation.id, 10);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]?.status).toBe("failed");
+    expect(runs[0]?.message).toContain("Agent not found");
+    expect(runs[0]?.spawnedTaskId).toBe(child?.id);
+  });
+});
+
+describe("task automation stale-claim recovery", () => {
+  function createRecoveryAutomation() {
+    return createTaskAutomation({
+      name: "Recovery follow-up",
+      eventTypes: ["task.done"],
+      titleTemplate: "QC :: {{data.task.title}}",
+      instructionsTemplate: "Review delivery for {{data.task.id}}",
+    });
+  }
+
+  function claim(automationId: string, triggerTaskId: string, triggerEventId: number) {
+    const run = dbClaimTaskAutomationRun({
+      automationId,
+      triggerTaskId,
+      triggerEventId,
+      triggerEventType: "task.done",
+      message: "Claimed",
+    });
+    expect(run?.status).toBe("claimed");
+    return run!;
+  }
+
+  const staleNow = () => Date.now() + TASK_AUTOMATION_STALE_CLAIM_MS + 1_000;
+
+  it("links the bound child task instead of spawning a duplicate, idempotently", () => {
+    const automation = createRecoveryAutomation();
+    const trigger = createTask({ title: "Trigger", instructions: "Trigger.", priority: "normal" });
+    const run = claim(automation.id, trigger.task.id, 1);
+    const child = createTask({
+      title: "Child",
+      instructions: "Child.",
+      priority: "normal",
+      parentTaskId: trigger.task.id,
+      createdBy: `task automation:${automation.id}`,
+    });
+    dbBindTaskAutomationRunSpawnedTask(run.id, child.task.id);
+    // Process dies here: the run never gets finalized.
+
+    const recovered = recoverStaleTaskAutomationRuns({ now: staleNow() });
+    expect(recovered).toHaveLength(1);
+    expect(recovered[0]?.status).toBe("spawned");
+    expect(recovered[0]?.spawnedTaskId).toBe(child.task.id);
+    expect(recovered[0]?.message).toContain("Recovered stale claim");
+
+    expect(recoverStaleTaskAutomationRuns({ now: staleNow() })).toHaveLength(0);
+    expect(listTasks({ archiveMode: "include" })).toHaveLength(2);
+    expect(listTaskAutomationRuns(automation.id, 10)[0]?.status).toBe("spawned");
+    expect(publishedPrompts).toHaveLength(0);
+  });
+
+  it("does not let a late executor overwrite or re-count a recovered run", () => {
+    const automation = createRecoveryAutomation();
+    const trigger = createTask({ title: "Trigger", instructions: "Trigger.", priority: "normal" });
+    const run = claim(automation.id, trigger.task.id, 1);
+    const child = createTask({
+      title: "Child",
+      instructions: "Child.",
+      priority: "normal",
+      parentTaskId: trigger.task.id,
+      createdBy: `task automation:${automation.id}`,
+    });
+    dbBindTaskAutomationRunSpawnedTask(run.id, child.task.id);
+
+    expect(recoverStaleTaskAutomationRuns({ now: staleNow() })).toHaveLength(1);
+    const firesAfterRecovery = dbGetTaskAutomation(automation.id)?.fireCount;
+
+    // The executor resumes after recovery and tries to settle the run itself.
+    const late = dbFinalizeTaskAutomationRun(run.id, { status: "failed", message: "late executor" });
+    expect(late.finalized).toBe(false);
+    expect(late.run.status).toBe("spawned");
+    expect(late.run.message).toContain("Recovered stale claim");
+    expect(dbGetTaskAutomation(automation.id)?.fireCount).toBe(firesAfterRecovery);
+  });
+
+  it("settles a run and counts its fire atomically", () => {
+    const automation = createRecoveryAutomation();
+    const trigger = createTask({ title: "Trigger", instructions: "Trigger.", priority: "normal" });
+    const run = claim(automation.id, trigger.task.id, 1);
+    const firesBefore = dbGetTaskAutomation(automation.id)?.fireCount;
+
+    // The fire counter write fails after the run update: both must roll back.
+    getDb().exec(`
+      CREATE TEMP TRIGGER fail_fire_count BEFORE UPDATE OF fire_count ON task_automations
+      BEGIN SELECT RAISE(ABORT, 'fire count write failed'); END;
+    `);
+    try {
+      expect(() =>
+        dbFinalizeTaskAutomationRun(run.id, { status: "spawned", message: "done", recordFire: true }),
+      ).toThrow("fire count write failed");
+    } finally {
+      getDb().exec("DROP TRIGGER IF EXISTS fail_fire_count");
+    }
+    expect(listTaskAutomationRuns(automation.id, 10)[0]?.status).toBe("claimed");
+    expect(dbGetTaskAutomation(automation.id)?.fireCount).toBe(firesBefore);
+
+    // With the counter writable again, the same settle commits both writes.
+    const settled = dbFinalizeTaskAutomationRun(run.id, { status: "spawned", message: "done", recordFire: true });
+    expect(settled.finalized).toBe(true);
+    expect(dbGetTaskAutomation(automation.id)?.fireCount).toBe((firesBefore ?? 0) + 1);
+  });
+
+  it("marks a stale claim with no child as failed without re-spawning", () => {
+    const automation = createRecoveryAutomation();
+    const trigger = createTask({ title: "Trigger", instructions: "Trigger.", priority: "normal" });
+    claim(automation.id, trigger.task.id, 2);
+
+    const recovered = recoverStaleTaskAutomationRuns({ now: staleNow() });
+    expect(recovered).toHaveLength(1);
+    expect(recovered[0]?.status).toBe("failed");
+    expect(recovered[0]?.spawnedTaskId).toBeUndefined();
+    expect(listTasks({ archiveMode: "include" }).map((task) => task.id)).toEqual([trigger.task.id]);
+  });
+
+  it("leaves claims younger than the stale threshold alone", () => {
+    const automation = createRecoveryAutomation();
+    const trigger = createTask({ title: "Trigger", instructions: "Trigger.", priority: "normal" });
+    claim(automation.id, trigger.task.id, 3);
+
+    expect(recoverStaleTaskAutomationRuns({ now: Date.now() })).toHaveLength(0);
+    expect(listTaskAutomationRuns(automation.id, 10)[0]?.status).toBe("claimed");
+  });
+
+  it("links a legacy unbound run only when exactly one matching child exists", () => {
+    const automation = createRecoveryAutomation();
+    const trigger = createTask({ title: "Trigger", instructions: "Trigger.", priority: "normal" });
+    const otherTrigger = createTask({ title: "Other", instructions: "Other.", priority: "normal" });
+    claim(automation.id, trigger.task.id, 4);
+    claim(automation.id, otherTrigger.task.id, 5);
+    const child = createTask({
+      title: "Child",
+      instructions: "Child.",
+      priority: "normal",
+      parentTaskId: trigger.task.id,
+      createdBy: `task automation:${automation.id}`,
+    });
+
+    const recovered = recoverStaleTaskAutomationRuns({ now: staleNow() });
+    const byTrigger = new Map(recovered.map((run) => [run.triggerTaskId, run]));
+    expect(byTrigger.get(trigger.task.id)?.status).toBe("spawned");
+    expect(byTrigger.get(trigger.task.id)?.spawnedTaskId).toBe(child.task.id);
+    expect(byTrigger.get(otherTrigger.task.id)?.status).toBe("failed");
+    expect(listTasks({ archiveMode: "include" })).toHaveLength(3);
   });
 });

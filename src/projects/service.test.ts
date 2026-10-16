@@ -557,6 +557,53 @@ describe("projects service", () => {
     });
   });
 
+  it("does not demote the current primary when the new primary link fails to persist", () => {
+    const spec = createWorkflowSpec({
+      id: "wf-spec-project-primary-atomic",
+      title: "Project primary atomic",
+      createdBy: "test",
+      nodes: [{ key: "ship", label: "Ship", kind: "task", requirement: "required", releaseMode: "auto" }],
+    });
+    createdWorkflowSpecIds.push(spec.id);
+    const firstRun = startWorkflowRun(spec.id, { runId: `wf-run-primary-atomic-a-${randomUUID()}`, createdBy: "test" });
+    const secondRun = startWorkflowRun(spec.id, {
+      runId: `wf-run-primary-atomic-b-${randomUUID()}`,
+      createdBy: "test",
+    });
+    createdWorkflowRunIds.push(firstRun.run.id, secondRun.run.id);
+    const project = createProject({ title: "Project Primary Atomic" });
+    createdProjectIds.push(project.id);
+    linkProject({
+      projectRef: project.id,
+      assetType: "workflow",
+      assetId: firstRun.run.id,
+      role: "primary",
+      createdBy: "test",
+    });
+
+    const db = getDb();
+    db.exec(`CREATE TRIGGER fail_project_link_insert BEFORE INSERT ON project_links
+      BEGIN SELECT RAISE(ABORT, 'link insert failed'); END`);
+    try {
+      expect(() =>
+        linkProject({
+          projectRef: project.id,
+          assetType: "workflow",
+          assetId: secondRun.run.id,
+          role: "primary",
+          createdBy: "test",
+        }),
+      ).toThrow(/link insert failed/);
+    } finally {
+      db.exec("DROP TRIGGER fail_project_link_insert");
+    }
+
+    const details = getProjectDetails(project.id)!;
+    expect(details.linkedWorkflows).toEqual([
+      expect.objectContaining({ workflowRunId: firstRun.run.id, role: "primary" }),
+    ]);
+  });
+
   it("lists operational project entries sorted by runtime heat and signal", () => {
     const spec = createWorkflowSpec({
       id: "wf-spec-project-ops",

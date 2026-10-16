@@ -1,5 +1,6 @@
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
+import { recoverStaleTaskAutomationRuns } from "./automations.js";
 import { TASK_CHECKPOINT_SWEEP_INTERVAL_MS } from "./checkpoint.js";
 import { dbGetActiveAssignment, dbListTasks, dbRegisterTaskCheckpointMiss } from "./task-db.js";
 import { buildTaskCheckpointReminderPrompt, emitTaskEvent } from "./service.js";
@@ -54,6 +55,12 @@ export class TaskCheckpointRunner {
 
     this.sweeping = true;
     let reminders = 0;
+
+    try {
+      recoverStaleTaskAutomationRuns({ now });
+    } catch (error) {
+      log.error("Task automation stale-claim recovery failed", { error });
+    }
 
     try {
       const tasks = [...dbListTasks({ status: "dispatched" }), ...dbListTasks({ status: "in_progress" })];

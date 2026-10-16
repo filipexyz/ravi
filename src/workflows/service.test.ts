@@ -17,6 +17,7 @@ const {
 } = await import("./index.js");
 
 const { completeTask, createTask } = await import("../tasks/index.js");
+const { getDb } = await import("../router/router-db.js");
 
 afterAll(() => mock.restore());
 
@@ -143,6 +144,60 @@ describe("workflow substrate v1 service", () => {
     expect(() => attachTaskToWorkflowNodeRun(run.run.id, "secondary", sharedTask.task.id)).toThrow(
       /already belongs to workflow node run/,
     );
+  });
+
+  it("starts a run atomically: a failed edge insert leaves no partial run behind", () => {
+    const spec = createWorkflowSpec({
+      id: "wf-spec-atomic-start",
+      title: "Atomic start",
+      nodes: [
+        { key: "build", label: "Build" },
+        { key: "ship", label: "Ship" },
+      ],
+      edges: [{ from: "build", to: "ship" }],
+    });
+    const db = getDb();
+    db.exec(`CREATE TRIGGER fail_run_edges BEFORE INSERT ON workflow_run_edges
+      BEGIN SELECT RAISE(ABORT, 'edge insert failed'); END`);
+    try {
+      expect(() => startWorkflowRun(spec.id, { runId: "wf-run-atomic-start" })).toThrow(/edge insert failed/);
+    } finally {
+      db.exec("DROP TRIGGER fail_run_edges");
+    }
+
+    expect(getWorkflowRunDetails("wf-run-atomic-start")).toBeNull();
+    const orphans = db
+      .prepare("SELECT COUNT(*) AS n FROM workflow_node_runs WHERE workflow_run_id = ?")
+      .get("wf-run-atomic-start") as { n: number };
+    expect(orphans.n).toBe(0);
+    expect(startWorkflowRun(spec.id, { runId: "wf-run-atomic-start" }).nodes).toHaveLength(2);
+  });
+
+  it("binds a task attempt atomically: a failed node-run update keeps the task attachable", async () => {
+    const spec = createWorkflowSpec({
+      id: "wf-spec-atomic-bind",
+      title: "Atomic bind",
+      nodes: [{ key: "core", label: "Core task" }],
+      edges: [],
+    });
+    const run = startWorkflowRun(spec.id, { runId: "wf-run-atomic-bind" });
+    const task = await createTask({ title: "Bind me", instructions: "Attach atomically", createdBy: "test" });
+
+    const db = getDb();
+    db.exec(`CREATE TRIGGER fail_node_run_bind BEFORE UPDATE OF attempt_count ON workflow_node_runs
+      BEGIN SELECT RAISE(ABORT, 'node run update failed'); END`);
+    try {
+      expect(() => attachTaskToWorkflowNodeRun(run.run.id, "core", task.task.id)).toThrow(/node run update failed/);
+    } finally {
+      db.exec("DROP TRIGGER fail_node_run_bind");
+    }
+
+    const attempts = db
+      .prepare("SELECT COUNT(*) AS n FROM workflow_node_run_tasks WHERE task_id = ?")
+      .get(task.task.id) as { n: number };
+    expect(attempts.n).toBe(0);
+    const attached = attachTaskToWorkflowNodeRun(run.run.id, "core", task.task.id);
+    expect(attached.nodeRun).toMatchObject({ currentTaskId: task.task.id, attemptCount: 1 });
   });
 
   it("does not allow attaching a task to a downstream node before predecessors are satisfied", async () => {
