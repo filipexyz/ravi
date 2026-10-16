@@ -32,7 +32,7 @@ Organizations are created, and members are invited, only in the web Console. The
     A new account with no organization sees **Create your organization**. Follow it to finish the organization setup, then come back to `console.ravi.bot`.
   </Step>
   <Step title="Rename the organization slug before anything else">
-    Open the organization's settings, `console.ravi.bot/<org>/settings`, set **Name** and **Slug** (for example `acme`), and save. Every Console URL starts with the organization's slug, so a link you share opens that organization for whoever follows it.
+    Open the organization's settings, `console.ravi.bot/<org>/settings`, set **Name** and **Slug** (for example `acme`), and save. Console URLs inside an organization start with its slug, so a link you share opens that organization for whoever follows it.
 
     <Warning>
     A self-serve organization starts with a slug like `workos-01k7...`. Pages refuses host names built from it, so your first project fails with **This slug is unavailable.** on the *project* slug field, even when the project slug is fine. Rename the organization slug first. This needs the `owner` or `admin` role.
