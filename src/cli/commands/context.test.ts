@@ -185,6 +185,7 @@ let resolvedSession:
       totalTokens?: number;
     }
   | undefined;
+let registeredSessions: Array<NonNullable<typeof resolvedSession>> = [];
 let commandSkillGateDecision:
   | {
       allowed: boolean;
@@ -310,6 +311,11 @@ mock.module("../../router/sessions.js", () => ({
     resolvedSession && (resolvedSession.sessionKey === nameOrKey || resolvedSession.name === nameOrKey)
       ? resolvedSession
       : actualRouterSessionsModule.resolveSession(nameOrKey),
+
+  getSession: (sessionKey: string) =>
+    [resolvedSession, ...registeredSessions].find((session) => session?.sessionKey === sessionKey) ?? null,
+  getSessionByName: (name: string) =>
+    [resolvedSession, ...registeredSessions].find((session) => session?.name === name) ?? null,
 }));
 
 mock.module("../../approval/service.js", () => ({
@@ -380,6 +386,7 @@ describe("ContextCommands", () => {
     authorizeResult = undefined;
     issuedContext = undefined;
     lastIssuedIdentity = undefined;
+    registeredSessions = [];
     resolvedContext = {
       contextId: "ctx_123",
       contextKey: "rctx_parent_123",
@@ -944,6 +951,150 @@ describe("ContextCommands", () => {
       message: "Delegated session key must belong to agent main",
     });
     expect((caught as InstanceType<typeof ContractError>).details.suggestedAction).toContain("agent:main:");
+  });
+
+  function issueDelegated(sessionKey: string, sessionName: string, withSessionActor = false) {
+    const command = new ContextCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      return {
+        payload: command.issue(
+          "bridge",
+          undefined,
+          undefined,
+          false,
+          true,
+          "main",
+          sessionKey,
+          sessionName,
+          withSessionActor,
+        ) as unknown as Record<string, unknown>,
+        caught: undefined as unknown,
+      };
+    } catch (error) {
+      return { payload: undefined, caught: error };
+    } finally {
+      console.log = originalLog;
+    }
+  }
+
+  function grantAdminParent() {
+    resolvedContext = {
+      ...resolvedContext!,
+      capabilities: [{ permission: "admin", objectType: "system", objectId: "*" }],
+    };
+  }
+
+  it("accepts a registered named session whose bare key is owned by --as-agent", () => {
+    listedAgents = [{ id: "main", cwd: "/tmp/ravi-main" }];
+    grantAdminParent();
+    resolvedSession = {
+      sessionKey: "workspace-pages",
+      name: "workspace-pages",
+      agentId: "main",
+      agentCwd: "/tmp/ravi-main",
+      createdAt: 1000,
+      updatedAt: 2000,
+    };
+
+    const { payload, caught } = issueDelegated("workspace-pages", "workspace-pages", true);
+
+    expect(caught).toBeUndefined();
+    expect(payload).toMatchObject({ agentId: "main", sessionKey: "workspace-pages", sessionName: "workspace-pages" });
+    expect(lastIssuedIdentity).toEqual({
+      agentId: "main",
+      sessionKey: "workspace-pages",
+      sessionName: "workspace-pages",
+      projectSessionActor: true,
+    });
+  });
+
+  it("rejects a registered bare key owned by another agent", () => {
+    listedAgents = [{ id: "main", cwd: "/tmp/ravi-main" }];
+    grantAdminParent();
+    resolvedSession = {
+      sessionKey: "workspace-pages",
+      name: "workspace-pages",
+      agentId: "other",
+      agentCwd: "/tmp/ravi-other",
+      createdAt: 1000,
+      updatedAt: 2000,
+    };
+
+    const { caught } = issueDelegated("workspace-pages", "workspace-pages", true);
+
+    expect(caught).toMatchObject({ code: "USAGE_ERROR", message: "Delegated session does not belong to agent main" });
+  });
+
+  it("rejects an unregistered bare key", () => {
+    listedAgents = [{ id: "main", cwd: "/tmp/ravi-main" }];
+    grantAdminParent();
+
+    const { caught } = issueDelegated("not-registered-anywhere", "not-registered-anywhere");
+
+    expect(caught).toMatchObject({ code: "USAGE_ERROR", message: "Delegated session key must belong to agent main" });
+  });
+
+  it("rejects a session name that names a different registered session than the key", () => {
+    listedAgents = [{ id: "main", cwd: "/tmp/ravi-main" }];
+    grantAdminParent();
+    resolvedSession = {
+      sessionKey: "workspace-pages",
+      name: "workspace-pages",
+      agentId: "main",
+      agentCwd: "/tmp/ravi-main",
+      createdAt: 1000,
+      updatedAt: 2000,
+    };
+    registeredSessions = [{ ...resolvedSession, sessionKey: "agent:main:main", name: "main" }];
+
+    const { caught } = issueDelegated("workspace-pages", "main", true);
+
+    expect(caught).toMatchObject({
+      code: "USAGE_ERROR",
+      message: "--as-session-name main does not name the session of --as-session-key",
+    });
+  });
+
+  it("rejects an unregistered key paired with the name of a registered session", () => {
+    listedAgents = [{ id: "main", cwd: "/tmp/ravi-main" }];
+    grantAdminParent();
+    resolvedSession = {
+      sessionKey: "workspace-pages",
+      name: "workspace-pages",
+      agentId: "main",
+      agentCwd: "/tmp/ravi-main",
+      createdAt: 1000,
+      updatedAt: 2000,
+    };
+
+    const { caught } = issueDelegated("agent:main:new-session", "workspace-pages", true);
+
+    expect(caught).toMatchObject({
+      code: "USAGE_ERROR",
+      message: "--as-session-name workspace-pages does not name the session of --as-session-key",
+    });
+  });
+
+  it("rejects a registered key paired with a name the session does not carry", () => {
+    listedAgents = [{ id: "main", cwd: "/tmp/ravi-main" }];
+    grantAdminParent();
+    resolvedSession = {
+      sessionKey: "workspace-pages",
+      name: "workspace-pages",
+      agentId: "main",
+      agentCwd: "/tmp/ravi-main",
+      createdAt: 1000,
+      updatedAt: 2000,
+    };
+
+    const { caught } = issueDelegated("workspace-pages", "unregistered-name", true);
+
+    expect(caught).toMatchObject({
+      code: "USAGE_ERROR",
+      message: "--as-session-name unregistered-name does not name the session of --as-session-key",
+    });
   });
 
   it("issues a delegated child context when the parent has admin:system:*", async () => {
