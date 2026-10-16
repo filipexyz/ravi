@@ -222,6 +222,7 @@ ravi skills show pages      # ship, host-wide --uses, data pages
 - Live data pages are for signed-in org members, on `private` or `protected_link` routes. Outsiders use a channel and get messages or snapshots. `ravi pages ship` refuses `ravi.bases.*` in `--uses` on a public route unless `--members-best-effort` is passed on purpose.
 - `--uses` covers the whole host: every ship lists the union of the ids all data pages on that host call.
 - Row changes arrive as `ravi.console.inbox.item` (`category: "bases"`) after `ravi bases subscribe <base>`. A trigger whose agent writes the same base filters `data.actor.type == "user"`.
+- Org themes and widgets are Library items (`ravi themes`, `ravi widgets`); `pages ship` applies the active theme and turns `<ravi-view>`, `<ravi-widget>` and `<ravi-form>` tags into pages. Agents read `ravi skills show pages --file references/widgets.md` and `--file references/theme.md`, propose (`ravi widgets propose <dir> --scope org --execute`) and never publish or run `themes use`.
 
 ## Cloud Sandbox Tasks (E2B)
 

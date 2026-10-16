@@ -28,13 +28,17 @@ Regras 1 a 3 da skill solucoes, detalhadas em "Ship" e "Quem passa":
    site".
 2. **Gráficos.** Se a tela tem gráficos, crie-os sobre uma view (skill bases,
    `charts.md`).
-3. **Página.** Parta de um esqueleto (`esqueletos/board.html.txt` ou
-   `formulario.html.txt`, mais `_client.js.txt` como `client.js`). Ids de
-   view e gráfico entram como constantes.
+3. **Página.** Lista, board, tabela, galeria ou formulário: escreva a tag
+   (`<ravi-view>`, `<ravi-form>`; `widgets.md`). O que a tag não cobre:
+   parta de um esqueleto (`esqueletos/board.html.txt` ou
+   `formulario.html.txt`, mais `_client.js.txt` como `client.js`), com as
+   cores do tema (`theme.md`). Ids de view e gráfico entram como atributo ou
+   constante.
    Dados nunca entram no HTML: a página busca tudo na hora, como quem vê.
 4. **Ship.** `ravi pages ship ... --uses <ids>` com os `ravi.bases.*` que a
    página chama, mais os das outras páginas de dados do mesmo host (o
-   allowlist é do host; veja "Ship").
+   allowlist é do host; veja "Ship"). Os ids das tags o ship soma sozinho;
+   os das outras páginas continuam com você.
 5. **Verifique** e mande a URL para a pessoa abrir, junto com o aviso do
    passo 1.
 
@@ -130,6 +134,8 @@ ravi bases views query <base> <view-id> --limit 5 --json     # só as suas linha
 
 - Com os esqueletos, os ids moram em `client.js`: confira quais helpers a
   página chama (`update` = `rows.update`, `create` = `rows.create`).
+- Com tags, o `uses` do JSON do ship é a lista final (o seu `--uses` mais o
+  que as tags pedem).
 - `views query` numa view com `$viewer` mostra só as linhas de quem roda o
   comando. Não confere o que outra pessoa vê.
 - O CLI não reproduz a sessão de quem vê (no Pages ninguém é gerente). Mande a
@@ -300,7 +306,9 @@ reenviar exatamente o mesmo input (timeout, rede). Input mudou (inclusive o
 | `body` | markdown ou `null` | texto com `white-space: pre-wrap`, nunca como HTML |
 
 Cores de opção (`gray`, `brown`, `orange`, `yellow`, `green`, `blue`,
-`purple`, `pink`, `red`): mapeie por um dicionário fixo de cores CSS.
+`purple`, `pink`, `red`): fundo `var(--ravi-option-<cor>-bg)` e texto
+`var(--ravi-option-<cor>-text)` do tema, com fallback (`theme.md`). Escreva
+sempre o nome da opção: cor não é o único sinal.
 
 Para escrever:
 
