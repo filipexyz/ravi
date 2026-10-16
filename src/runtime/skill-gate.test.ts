@@ -348,6 +348,52 @@ describe("ravi skills show resource authorization", () => {
     expect(allowed.approved).toBe(true);
   });
 
+  it("does not read the folder of ravi skills propose|publish as a skill load", async () => {
+    dbUpsertSkillGrant({ agentId: "main", skillName: "allowed-skill" });
+    getOrCreateSession("agent:main:main", "main", stateDir!, {
+      name: "skill-propose-folder",
+      runtimeProvider: "codex",
+    });
+    const context = createRuntimeContext({
+      kind: "agent-runtime",
+      agentId: "main",
+      sessionKey: "agent:main:main",
+      sessionName: "skill-propose-folder",
+      capabilities: [{ permission: "use", objectType: "tool", objectId: "Bash", source: "test" }],
+    });
+    const services = createRuntimeHostServices({
+      context,
+      agentId: "main",
+      sessionName: "skill-propose-folder",
+      toolContext: {},
+    });
+    const whatsapp = listCatalogSkills().find((skill) => skill.name === "whatsapp-manager");
+    expect(whatsapp).toBeDefined();
+
+    const read = await services.authorizeCommandExecution({ command: `cat ${whatsapp!.path}/SKILL.md`, input: {} });
+    // The first `ravi skills` command delivers the group's skill; the retry is the real decision.
+    const delivery = await services.authorizeCommandExecution({ command: "ravi skills proposals", input: {} });
+    expect(delivery.reason ?? "").toStartWith("RAVI_SKILL_REQUIRED");
+    const propose = await services.authorizeCommandExecution({
+      command: `ravi skills propose ${whatsapp!.path} --scope org`,
+      input: {},
+    });
+    const proposeEntry = await services.authorizeCommandExecution({
+      command: `ravi skills propose ${whatsapp!.path}/SKILL.md --scope org`,
+      input: {},
+    });
+    const publish = await services.authorizeCommandExecution({
+      command: `ravi skills publish ${whatsapp!.path}/SKILL.md --scope org`,
+      input: {},
+    });
+
+    expect(read.approved).toBe(false);
+    expect(read.reason).toContain("SKILL_NOT_AUTHORIZED");
+    expect(propose.approved).toBe(true);
+    expect(proposeEntry.approved).toBe(true);
+    expect(publish.approved).toBe(true);
+  });
+
   it("blocks an unauthorized skill at authorizeToolUse for Read and Skill tools", async () => {
     dbUpsertSkillGrant({ agentId: "main", skillName: "allowed-skill" });
     getOrCreateSession("agent:main:main", "main", stateDir!, {
