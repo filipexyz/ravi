@@ -11,7 +11,9 @@ import {
   parseListTimeBound,
   type ListOrder,
 } from "../listing.js";
+import { dbGetAgent } from "../../router/router-db.js";
 import { resolveSession } from "../../router/sessions.js";
+import { buildTaskObserverSummary } from "../../tasks/observer-contract.js";
 import { nats } from "../../nats.js";
 import { formatDurationMs, parseDurationMs } from "../../cron/schedule.js";
 import { resolveTaskCheckpointIntervalMs } from "../../tasks/checkpoint.js";
@@ -49,6 +51,7 @@ import {
   blockTask,
   failTask,
   taskProfileUsesArtifactFirstSync,
+  taskProfileUsesObserver,
   taskProfileUsesTaskDocument,
   taskDocExists,
   unarchiveTask,
@@ -803,6 +806,10 @@ function printNextSteps(task: TaskRecord): void {
 
   if (task.status === "dispatched" || task.status === "in_progress" || task.status === "blocked") {
     console.log(`  ravi tasks watch ${task.id}`);
+    if (taskProfileUsesObserver(taskProfile)) {
+      console.log("  the task observer keeps status; report/done/block/fail stay available to override it.");
+      return;
+    }
     console.log(`  ravi tasks report ${task.id}`);
     console.log(`  ravi tasks done ${task.id}`);
     console.log(`  ravi tasks block ${task.id}`);
@@ -1470,6 +1477,10 @@ export class TaskCommands {
       dependencies: dependencySurface.dependencies,
       dependents: dependencySurface.dependents,
       launchPlan: dependencySurface.launchPlan,
+      observer: buildTaskObserverSummary(
+        details.task,
+        details.task.assigneeAgentId ? dbGetAgent(details.task.assigneeAgentId) : null,
+      ),
     };
 
     if (asJson) {
@@ -1517,6 +1528,20 @@ export class TaskCommands {
           .map(([key, value]) => `${key}=${value}`)
           .join(", ")}`,
       );
+    }
+
+    if (payload.observer) {
+      const observer = payload.observer;
+      console.log("\nTask observer:");
+      console.log(`  Model:      ${observer.model ?? "agent default"}`);
+      console.log(
+        `  Verdict:    ${observer.lastStatus ?? "-"}${observer.lastVerdictAt ? ` @ ${formatTime(observer.lastVerdictAt)}` : ""}`,
+      );
+      if (observer.lastMessage) console.log(`  Note:       ${observer.lastMessage}`);
+      console.log(`  Nudges:     ${observer.nudgesSinceProgress}${observer.stalledAt ? " · stalled" : ""}`);
+      for (const entry of observer.checklist) {
+        console.log(`  [${entry.done ? "x" : " "}] ${entry.item}`);
+      }
     }
 
     if (taskDocument) {
@@ -1880,10 +1905,15 @@ export class TaskCommands {
         console.log(`  ${result.primaryArtifact.label}:  ${result.primaryArtifact.path}`);
       }
       console.log(`\n${result.dispatchSummary}`);
-      console.log(`  ravi tasks report ${taskId}`);
-      console.log(`  ravi tasks done ${taskId}`);
-      console.log(`  ravi tasks block ${taskId}`);
-      console.log(`  ravi tasks fail ${taskId}`);
+      if (taskProfileUsesObserver(resolveTaskProfileForTask(result.task))) {
+        console.log(`  ravi tasks watch ${taskId}`);
+        console.log(`  ravi tasks show ${taskId}`);
+      } else {
+        console.log(`  ravi tasks report ${taskId}`);
+        console.log(`  ravi tasks done ${taskId}`);
+        console.log(`  ravi tasks block ${taskId}`);
+        console.log(`  ravi tasks fail ${taskId}`);
+      }
     }
     return result;
   }

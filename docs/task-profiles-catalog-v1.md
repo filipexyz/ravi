@@ -169,7 +169,8 @@ O agent:
 
 1. lê o artifact primário surfaced pelo runtime
 2. trabalha no workspace/artifacts do profile
-3. sincroniza estado via `ravi tasks report|block|done|fail`
+3. em profiles com `observer.enabled` (os built-ins), só diz claramente o que avançou, o que bloqueia e quando terminou: o observer embutido da task lê o worker e o runtime aplica o status
+4. em profiles sem `observer`, sincroniza estado via `ravi tasks report|block|done|fail`
 
 Bindings operacionais:
 
@@ -205,8 +206,9 @@ ravi tasks create "ajustar rota" --instructions "..." --profile default
 Contrato:
 
 - workspace = task workspace canônico
-- artifact primário = `TASK.md`
-- protocolo = editar `TASK.md` primeiro
+- artifact primário = `TASK.md`, o briefing da task
+- protocolo = o worker trabalha sem protocolo de status; o observer embutido (`observer.enabled: true`) lê cada turno, monta um checklist a partir das instruções e devolve um veredito que o runtime aplica; quando o worker para sem terminar recebe um único empurrão, e uma segunda parada vira `task.stalled` para quem pediu
+- `observed-task` = alias de `default`
 
 ### `devin`
 

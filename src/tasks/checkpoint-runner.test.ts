@@ -31,8 +31,17 @@ mock.module("../omni/session-stream.js", () => ({
   }),
 }));
 
-const { TaskCheckpointRunner, createTask, dbDeleteTask, dbDispatchTask, dbGetActiveAssignment, dbListTaskEvents } =
-  await import("./index.js");
+const {
+  TaskCheckpointRunner,
+  createTask,
+  dbDeleteTask,
+  dbDispatchTask,
+  dbGetActiveAssignment,
+  dbListTaskEvents,
+  dbMarkTaskAcceptedForSession,
+} = await import("./index.js");
+const { getOrCreateSession } = await import("../router/sessions.js");
+const { setTaskSessionPromptPublisherForTests } = await import("./session-publisher.js");
 
 const createdTaskIds: string[] = [];
 let stateDir: string | null = null;
@@ -41,9 +50,14 @@ beforeEach(async () => {
   stateDir = await createIsolatedRaviState("ravi-task-checkpoint-test-");
   emittedEvents.length = 0;
   publishCalls.length = 0;
+  // Other suites in the same process mock the stream differently; record through the hook.
+  setTaskSessionPromptPublisherForTests(async (sessionName, payload) => {
+    publishCalls.push({ sessionName, payload });
+  });
 });
 
 afterEach(async () => {
+  setTaskSessionPromptPublisherForTests();
   while (createdTaskIds.length > 0) {
     const id = createdTaskIds.pop();
     if (id) dbDeleteTask(id);
@@ -83,6 +97,51 @@ describe("task checkpoint runner backpressure", () => {
     expect(dbListTaskEvents(created.task.id).map((event) => event.type)).not.toContain("task.checkpoint.missed");
     const assignment = dbGetActiveAssignment(created.task.id)!;
     expect(assignment.checkpointOverdueCount ?? 0).toBe(0);
+  });
+});
+
+describe("observed task silence detector", () => {
+  it("never asks the worker for status and tells the requester once when nothing moves", async () => {
+    getOrCreateSession("agent:main:requester", "main", "/tmp/ravi-requester", { name: "requester" });
+    const created = createTask({
+      title: "Observed silence",
+      instructions: "Work while the task observer keeps status.",
+      createdBy: "test",
+    });
+    createdTaskIds.push(created.task.id);
+    const dispatched = dbDispatchTask(created.task.id, {
+      agentId: "dev",
+      sessionName: `${created.task.id}-work`,
+      assignedBy: "test",
+      reportToSessionName: "requester",
+    });
+    // The default profile turns the observer on, so the checkpoint is the long stall window.
+    expect(dispatched.assignment.checkpointIntervalMs).toBe(30 * 60 * 1000);
+    dbMarkTaskAcceptedForSession(`${created.task.id}-work`, created.task.id);
+    const accepted = dbGetActiveAssignment(created.task.id)!;
+
+    const runner = new TaskCheckpointRunner();
+    await runner.start();
+    try {
+      expect(await runner.sweep(accepted.checkpointDueAt! + 1)).toBe(1);
+      const next = dbGetActiveAssignment(created.task.id)!;
+      expect(await runner.sweep(next.checkpointDueAt! + 1)).toBe(1);
+    } finally {
+      await runner.stop();
+    }
+
+    expect(publishCalls.filter((call) => call.sessionName === `${created.task.id}-work`)).toHaveLength(0);
+    const stallReports = publishCalls.filter((call) => call.sessionName === "requester");
+    expect(stallReports).toHaveLength(1);
+    expect(String(stallReports[0]?.payload.prompt)).toContain(`Task stalled: ${created.task.id}`);
+    expect(stallReports[0]?.payload._taskRuntime).toEqual({
+      taskId: created.task.id,
+      kind: "stalled",
+      event: "task.stalled",
+    });
+    const types = dbListTaskEvents(created.task.id).map((event) => event.type);
+    expect(types.filter((type) => type === "task.stalled")).toHaveLength(1);
+    expect(types.filter((type) => type === "task.checkpoint.missed")).toHaveLength(2);
   });
 });
 

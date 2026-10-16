@@ -868,6 +868,7 @@ async function buildRuntimeStartRequestInternal(
         streamingSession.lastBoundReplyTarget = { ...replyResolution.target };
       }
       streamingSession.currentChannelBackend = turnPrompt._channelBackend;
+      streamingSession.currentObservation = turnPrompt._observation;
       streamingSession.currentTurnProvenance = classifyTurnProvenance({
         prompt: turnPrompt,
         source: turnSource,

@@ -152,12 +152,23 @@ de sessões runtime de pesquisa em lote.
 
 - `default`
   - workspace = task workspace
-  - artifact primário = `TASK.md`
+  - `TASK.md` = briefing da task
+  - protocolo = o worker só trabalha e diz claramente o que avançou, o que bloqueia e quando terminou; o observer embutido da task decide o status e o runtime aplica
 - `observed-task`
-  - workspace = task workspace
-  - artifact primário = `TASK.md`
-  - protocolo = worker executa e deixa sinais claros; observer faz `report|block|done|fail`
-  - use com uma observer rule `scope=profile --source-profile observed-task --profile tasks --mode report`
+  - alias de `default`, mantido para tasks e scripts que já usam esse id
+
+## Observer Embutido
+
+Toda task cujo profile tem `observer.enabled: true` (os dois built-ins, e os presets de `ravi tasks profiles init`) ganha uma sessão observer própria, sem regra cadastrada:
+
+- lê o worker no fim de cada turno e a cada 5 min durante um turno longo: prompt, resposta inteira, uma linha por tool
+- roda com o agent do worker num modelo leve (`haiku` no Claude, mini/spark no Codex), ou `observer.model` do profile
+- não tem tools nem grants de task (grant `none`): responde um bloco `<task-verdict>` e o runtime aplica `progress|blocked|done|failed`
+- monta um checklist a partir das instruções e mostra em `ravi tasks show <id>` (seção `Task observer`, campo `observer` no `--json`)
+- quando o worker para sem terminar, manda **um** empurrão dizendo o que falta; se parar de novo, registra `task.stalled` e avisa quem pediu (filtro `blocked` do `--report-events`)
+- o worker não recebe checkpoint overdue; 30 min sem nada visto vira `task.stalled` para quem pediu
+
+`ravi tasks report|block|done|fail` continuam valendo para o operador corrigir o status à mão. Profiles customizados sem o campo `observer` mantêm o protocolo antigo (worker reporta, checkpoint lembra).
 - `devin`
   - workspace = task workspace
   - artifact primário = `TASK.md`
@@ -265,8 +276,8 @@ ravi tasks create --profile <id>
 -> runtime model/effort/thinking vem da task/profile/dispatch quando definido
 -> agent trabalha no artifact certo
 -> sync de status vem do contrato do profile:
-   - `default`: worker chama `ravi tasks report|block|done|fail`
-   - `observed-task`: observer chama `ravi tasks report|block|done|fail`
+   - `observer.enabled` (`default`, `observed-task`): o observer embutido lê o worker e o runtime aplica o veredito
+   - profile sem `observer`: worker chama `ravi tasks report|block|done|fail`
 -> show/watch expõem profile + workspace + artifacts
 ```
 
@@ -279,18 +290,16 @@ ravi tasks create --profile <id>
 
 Turnos sem `taskBarrierTaskId` não devem receber `RAVI_TASK_*`; isso evita vazar contexto de task para conversas fora da task.
 
-### `default`
+### `default` e `observed-task` (observer embutido)
 
-- trabalhar em `TASK.md`
-- manter frontmatter/corpo coerentes
+- ler o briefing em `TASK.md`
+- não chamar `ravi tasks report|block|done|fail`
+- dizer claramente na resposta normal o que avançou, o que bloqueia e quando terminou, com como validou
+
+### Profile sem `observer`
+
+- trabalhar no artifact do profile
 - sincronizar via `report|block|done|fail`
-
-### `observed-task`
-
-- trabalhar em `TASK.md`
-- não chamar `ravi tasks report|block|done|fail` por padrão
-- declarar progresso, blockers, conclusão e falhas claramente na resposta normal
-- deixar o observer profile `tasks` transformar esses sinais em status durável
 
 Para profiles customizados, siga o contrato pinado no snapshot da task. Não assuma que um preset de scaffold é built-in disponível no catálogo system.
 

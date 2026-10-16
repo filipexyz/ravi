@@ -75,15 +75,31 @@ Report events MAY be configured at task creation or dispatch. Assignment-level v
 
 ## Checkpoints
 
-Tasks and assignments MAY carry a checkpoint interval. A checkpoint reminder is a runtime prompt to the worker session that asks for status when a task has gone silent beyond its configured checkpoint window.
+Tasks and assignments MAY carry a checkpoint interval. Any progress report resets the active assignment's checkpoint, whichever session sends it: a report from an observer or an operator shell resets the assignee's checkpoint, not a row of its own.
 
-Checkpoint reminders MUST NOT be treated as task completion, failure, or external report delivery. They are a worker-session nudge that should cause a normal progress, blocked, done, or failed update.
+For a profile without the observer, a checkpoint reminder is a runtime prompt to the worker session that asks for status when a task has gone silent beyond its configured checkpoint window. Checkpoint reminders MUST NOT be treated as task completion, failure, or external report delivery. They are a worker-session nudge that should cause a normal progress, blocked, done, or failed update.
+
+For a profile with the observer (`observer.enabled`), the worker MUST NOT receive checkpoint reminders. The checkpoint is a silence detector: the built-in task observer pushes it forward on every delivery it reads, so a miss means nothing was seen from the worker for a whole interval (30 minutes unless the task or dispatch sets one). The first miss after activity records `task.stalled` and tells the report target once; later misses only record `task.checkpoint.missed`.
 
 ## Observer Integration
 
-Observers MAY own task status synchronization when a profile explicitly delegates reporting.
+A task profile turns the built-in task observer on with `observer.enabled: true`; the system `default` and `observed-task` profiles do. Custom profiles without the field keep the worker-reported protocol.
 
-An observer that mutates task state MUST use normal task mutation commands or runtime APIs with its own permissions. Observer reports MUST be grounded in source task events, source turn ids, or observed worker statements so duplicate delivery can be deduped or ignored.
+The built-in task observer:
+
+- is a binding of role `task-observer` and rule id `builtin:task-observer`, created at runtime launch for a session working an observed task, with no stored rule; a user rule in `report` mode on the same session takes precedence and the built-in one stays off;
+- runs as the worker's agent on the profile's `observer.model`, or the provider's lightweight model (`haiku` on Claude, a mini or spark model on Codex);
+- holds the single grant `none`, so it has no tools and no task grants;
+- reads the worker's user prompts, full assistant replies, a one-line digest of each tool call and the turn terminal, at the end of each turn and every five minutes during a long turn (`pulse`);
+- answers with one `<task-verdict>{...}</task-verdict>` block whose `status` is `unchanged`, `progress`, `blocked`, `done`, `failed` or `stopped`, with an optional `progress`, `message`, `checklist`, `missing` and `evidence`.
+
+The runtime, not the observer, applies the verdict. It MUST apply a verdict only for the task the delivery was composed for, only while that task's active assignment is the source session, and only once per delivery id. Mutations go through the normal task runtime with actor `task-observer` and the observer session as session name, so they emit the same events and reports a CLI mutation would.
+
+A `stopped` verdict on an end-of-turn read sends the worker one nudge (`task.nudged`, a typed `_taskRuntime` prompt) naming what is missing. A second stop without progress in between records `task.stalled` and tells the report target; there is no third message. Progress, or a checklist item newly done, resets the count.
+
+Prompts the task runtime sends to other sessions (reports, stall notices, nudges) carry `_taskRuntime: { taskId, kind, event }` and break `[System]` markers inside worker- or observer-written text, so that text cannot pose as an internal command.
+
+Other observers MAY still own task status synchronization when a rule delegates reporting. An observer that mutates task state through task commands MUST use its own permissions, and its reports MUST be grounded in source task events, source turn ids, or observed worker statements so duplicate delivery can be deduped or ignored.
 
 ## Invariants
 
@@ -94,6 +110,9 @@ An observer that mutates task state MUST use normal task mutation commands or ru
 - A task without report delivery configuration MUST NOT publish report prompts to another session.
 - Checkpoint reminders MUST be separate from terminal report delivery.
 - Observer-driven status sync MUST NOT require the worker prompt to include the default task-sync protocol.
+- A worker on an observed profile MUST NOT receive checkpoint reminders.
+- The built-in task observer MUST NOT hold tools or task grants; its verdict is applied by the runtime, scoped to the observed task and assignee, once per delivery.
+- The worker receives at most one observer nudge per stretch without progress.
 
 ## Acceptance Criteria
 
@@ -103,11 +122,14 @@ An observer that mutates task state MUST use normal task mutation commands or ru
 - Assignment report settings override task report settings.
 - Checkpoint reminders can be emitted without changing terminal task state.
 - Observer-owned task reporting can update durable state without giving the worker extra sync burden.
+- An observer's progress report resets the worker's checkpoint.
+- A silent observed task reports `task.stalled` to its report target once.
 
 ## Validation
 
 - `bun test src/tasks/service.test.ts src/cli/commands/tasks.test.ts`
 - `bun test src/tasks/checkpoint-runner.test.ts src/tasks/notify.test.ts`
+- `bun test src/tasks/observer.test.ts`
 - `bun test src/runtime/observation-plane.test.ts`
 - `bun run typecheck`
 

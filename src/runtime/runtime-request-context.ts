@@ -873,6 +873,9 @@ function refreshManagedRaviRuntimeEnv(runtimeEnv: Record<string, string>, raviEn
   Object.assign(runtimeEnv, raviEnv);
 }
 
+export const OBSERVER_NO_TOOLS_GRANT = "none";
+export const OBSERVER_NO_TOOLS_OBJECT_ID = "observer:none";
+
 function parseObservationPermissionGrants(values?: string[]): ContextCapability[] {
   return (values ?? []).flatMap((value) => parseObservationPermissionGrant(value));
 }
@@ -880,6 +883,12 @@ function parseObservationPermissionGrants(values?: string[]): ContextCapability[
 function parseObservationPermissionGrant(value: string): ContextCapability[] {
   const grant = value.trim();
   if (!grant) return [];
+
+  // `none` keeps the turn constrained to a capability nothing matches, so the observer
+  // gets no tools. An empty grant list would instead leave the agent's own ceiling.
+  if (grant === OBSERVER_NO_TOOLS_GRANT) {
+    return [{ permission: "use", objectType: "tool", objectId: OBSERVER_NO_TOOLS_OBJECT_ID, source: "observer-rule" }];
+  }
 
   const direct = /^([^:\s]+):([^:\s]+):(.+)$/.exec(grant);
   if (direct) {

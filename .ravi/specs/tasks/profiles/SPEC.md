@@ -129,8 +129,10 @@ Profiles declare the artifacts that carry the body of work.
 
 The current system catalog MUST expose these built-in profiles:
 
-- `default`: doc-first profile where `TASK.md` is the primary artifact and the worker synchronizes status with `ravi tasks report|block|done|fail`.
-- `observed-task`: doc-first profile where `TASK.md` is still the primary artifact, but the worker leaves clear progress/blocker/done/failure signals and a sidecar observer is expected to synchronize durable task status.
+- `default`: doc-first profile where `TASK.md` holds the brief and the built-in task observer keeps status (`observer.enabled: true`). The worker gets no status protocol: it works and says plainly what advanced, what blocks it and when it is done.
+- `observed-task`: alias of `default`, kept for tasks and scripts that name it.
+
+A profile MAY declare `observer: { enabled: boolean, model?: string }`. With `enabled: true` the task gets the built-in task observer (see `tasks/reporting`), its dispatch and resume prompts MUST NOT ask the worker to run task commands, and its checkpoint is a silence detector rather than a reminder. Without the field a profile keeps the worker-reported protocol, so custom profiles written before the observer behave as before. Scaffold presets from `ravi tasks profiles init` turn the observer on.
 
 Other profiles MAY exist from plugin, workspace, or user catalogs. They MUST NOT be documented as system built-ins unless the resolved catalog exposes them with `sourceKind=system`.
 

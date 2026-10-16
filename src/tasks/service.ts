@@ -27,6 +27,7 @@ import {
   resolveTaskProfilePrimaryArtifact,
   resolveTaskProfileState,
   taskProfileRequiresTaskDocument,
+  taskProfileUsesObserver,
   taskProfileUsesTaskDocument,
   shouldPersistTaskProfileState,
 } from "./profiles.js";
@@ -71,7 +72,12 @@ import {
   type TaskDocSection,
 } from "./task-doc.js";
 import { publishTaskSessionPrompt } from "./session-publisher.js";
-import { requireTaskProgressMessage } from "./progress-contract.js";
+import { neutralizeSystemMarkers, requireTaskProgressMessage } from "./progress-contract.js";
+import {
+  DEFAULT_TASK_CHECKPOINT_INTERVAL_MS,
+  DEFAULT_TASK_OBSERVER_STALL_INTERVAL_MS,
+  resolveTaskCheckpointIntervalMs,
+} from "./checkpoint.js";
 import {
   TASK_RUNTIME_THINKING_LEVELS,
   normalizeTaskRuntimeOptions,
@@ -908,9 +914,11 @@ function buildTaskCommentSteerPrompt(task: TaskRecord, comment: TaskComment): st
   const author = comment.authorSessionName ?? comment.authorAgentId ?? comment.author ?? "unknown";
   const profile = resolveTaskProfileForTask(task);
   const primaryArtifactLine = resolvePrimaryArtifactLine(task);
-  const syncInstruction = taskProfileRequiresTaskDocument(profile)
-    ? "If this changes your plan, update TASK.md first and then sync the runtime with ravi tasks report|block|done|fail."
-    : "If this changes your plan, update the profile artifact/context and sync the runtime with ravi tasks report|block|done|fail.";
+  const syncInstruction = taskProfileUsesObserver(profile)
+    ? "Take it into account in the work. The task observer keeps the task status."
+    : taskProfileRequiresTaskDocument(profile)
+      ? "If this changes your plan, update TASK.md first and then sync the runtime with ravi tasks report|block|done|fail."
+      : "If this changes your plan, update the profile artifact/context and sync the runtime with ravi tasks report|block|done|fail.";
   return `[System] Inform: New comment on task ${task.id} (${task.title}).
 
 Author: ${author}
@@ -1548,11 +1556,48 @@ export async function reportTaskEvent(task: TaskRecord, event: TaskEvent): Promi
       ...(primaryArtifact !== undefined ? { primaryArtifact } : {}),
       ...(task.assigneeAgentId ? { agentId: task.assigneeAgentId } : {}),
       sessionName: sourceSessionName,
-      message: task.summary ?? task.blockerReason ?? event.message ?? null,
+      message: neutralizeOptionalText(task.summary ?? task.blockerReason ?? event.message ?? null),
     })}`,
     deliveryBarrier: "after_response",
+    _taskRuntime: { taskId: task.id, kind: "report", event: event.type },
   });
 
+  return resolvedReportToSessionName;
+}
+
+function neutralizeOptionalText(value: string | null): string | null {
+  return value === null ? null : neutralizeSystemMarkers(value);
+}
+
+/**
+ * Tell the task's report target that an observed task went silent. Stalls
+ * follow the `blocked` report filter: both mean the work stopped moving.
+ */
+export async function reportTaskStall(task: TaskRecord, event: TaskEvent): Promise<string | null> {
+  const latestAssignment = dbListAssignments(task.id)[0] ?? null;
+  const reportToSessionName = latestAssignment?.reportToSessionName?.trim() || task.reportToSessionName?.trim() || null;
+  const reportEvents = resolveTaskReportEvents(latestAssignment?.reportEvents ?? task.reportEvents);
+  if (!reportToSessionName || !reportEvents.includes("blocked")) {
+    return null;
+  }
+  const sourceSessionName = task.assigneeSessionName?.trim() || event.sessionName?.trim() || task.id;
+  const resolvedReportToSessionName = resolveTaskReportToSessionName(reportToSessionName, {
+    callerSessionName: sourceSessionName,
+  });
+  if (!resolvedReportToSessionName) {
+    return null;
+  }
+  const lines = [
+    `Task stalled: ${task.id} · ${neutralizeSystemMarkers(task.title)}`,
+    ...(event.message ? [neutralizeSystemMarkers(event.message)] : []),
+    `Assignee: ${task.assigneeAgentId ?? "-"}/${sourceSessionName}`,
+    `Inspect: ravi tasks show ${task.id}`,
+  ];
+  await publishTaskSessionPrompt(resolvedReportToSessionName, {
+    prompt: `[System] Answer: [from: ${sourceSessionName}] ${lines.join("\n")}`,
+    deliveryBarrier: "after_response",
+    _taskRuntime: { taskId: task.id, kind: "stalled", event: event.type },
+  });
   return resolvedReportToSessionName;
 }
 
@@ -2144,6 +2189,9 @@ export function createTask(input: CreateTaskInput): {
   );
   const created = dbCreateTask({
     ...resolvedInput,
+    ...(taskProfileUsesObserver(profile) && typeof resolvedInput.checkpointIntervalMs !== "number"
+      ? { checkpointIntervalMs: DEFAULT_TASK_OBSERVER_STALL_INTERVAL_MS }
+      : {}),
     profileId: profile.id,
     profileVersion: profile.version,
     profileSource: profile.source,
@@ -2670,11 +2718,21 @@ export async function dispatchTask(
     taskDocPath,
     primaryArtifact,
   } = prepareTaskDispatchContext(dispatchSourceTask, resolvedInput, { materializeSession: true });
+  // Observed tasks use the checkpoint only as a silence window, so it defaults
+  // far above the old worker-nudge cadence unless the caller set one.
+  // A task created before it was observed carries the old 5 min default.
+  const observerStallIntervalMs =
+    taskProfileUsesObserver(profile) &&
+    typeof resolvedInput.checkpointIntervalMs !== "number" &&
+    resolveTaskCheckpointIntervalMs(bootstrappedTask.checkpointIntervalMs) === DEFAULT_TASK_CHECKPOINT_INTERVAL_MS
+      ? DEFAULT_TASK_OBSERVER_STALL_INTERVAL_MS
+      : undefined;
 
   const { task, assignment, event } = dbDispatchTask(
     taskId,
     {
       ...resolvedInput,
+      ...(observerStallIntervalMs ? { checkpointIntervalMs: observerStallIntervalMs } : {}),
       agentId,
       sessionName,
       ...(worktree ? { worktree } : {}),

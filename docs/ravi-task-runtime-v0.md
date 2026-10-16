@@ -208,6 +208,8 @@ ravi tasks block <task-id> --reason "..."
 ravi tasks fail <task-id> --reason "..."
 ```
 
+Nos profiles com `observer.enabled` (os built-ins `default` e `observed-task`), quem muda o status é o observer embutido da task: ele lê o worker no fim de cada turno e a cada 5 min de um turno longo, e o runtime aplica o veredito. `report|done|block|fail` continuam valendo para o operador corrigir à mão. O worker não recebe checkpoint overdue; 30 min sem atividade vista vira `task.stalled` para quem pediu.
+
 ## Linguagem da Surface
 
 A linguagem certa para humanos é:
