@@ -203,7 +203,7 @@ describe("skills publish", () => {
     login();
     const error = await contractError(() =>
       runWithContext({}, () =>
-        new SkillsCommands().publish(skillDir(), "org", undefined, undefined, undefined, false, false, true),
+        new SkillsCommands().publish(skillDir(), "org", undefined, undefined, undefined, false, true, false),
       ),
     );
     expect(error).toMatchObject({ code: "WRITE_REQUIRES_EXECUTE", exitCode: 3 });

@@ -337,6 +337,9 @@ export async function showLibrarySkill(
   let shown: LibraryShowResponse | null = null;
   let stale = false;
   let cacheDir: string | null = null;
+  // With a ref the id is known up front: authorize before asking the Console,
+  // so the answer never tells an unauthorized agent whether the item exists.
+  if (caller && input.ref) assertLibraryCallerAuthorized(caller, input.ref, session, input.ref.project, null);
   try {
     shown = input.ref
       ? await session.client.showRef(input.ref)
@@ -358,28 +361,7 @@ export async function showLibrarySkill(
   }
 
   const ref = refForItem(shown.item);
-  if (caller) {
-    // A project item of another project is outside the agent's view unless
-    // a grant names it exactly.
-    if (
-      ref.scope === "project" &&
-      !projectMatches(session.project, shown.item.project?.slug, shown.item.project?.id) &&
-      !agentHasLibraryGrant(caller.agentId, ref.id)
-    ) {
-      throw new LibraryCommandError(
-        LIBRARY_SKILL_OUT_OF_VIEW,
-        `Library skill '${ref.ref}' belongs to project '${ref.project}', which is not this agent's Console project.`,
-        3,
-        {
-          suggestedAction: `Ask an operator to grant it explicitly ('ravi skills grant ${caller.agentId} ${ref.ref}') or to bind this agent to that project.`,
-        },
-      );
-    }
-    if (!isLibrarySkillAuthorizedForAgent(caller.agentId, ref.id, { capabilities: caller.capabilities })) {
-      const copy = skillNotAuthorizedCopy(ref.ref, caller.agentId);
-      throw new LibraryCommandError(SKILL_NOT_AUTHORIZED, copy.message, 1, { suggestedAction: copy.suggestedAction });
-    }
-  }
+  if (caller) assertLibraryCallerAuthorized(caller, ref, session, shown.item.project?.slug, shown.item.project?.id);
   if (!shown.item.externalAllowed && !lazyOwnTurn(deps.turn)()) {
     throw new LibraryCommandError(
       LIBRARY_SKILL_EXTERNAL_DENIED,
@@ -558,6 +540,37 @@ async function openSessionForCaller(
 
 function projectKey(project: ConsoleScopeProject | null): string | null {
   return project?.slug?.toLowerCase() ?? project?.ref?.toLowerCase() ?? null;
+}
+
+/**
+ * A project item of another project is outside the agent's view unless a
+ * grant names it exactly; any Library item then needs a grant or capability.
+ */
+function assertLibraryCallerAuthorized(
+  caller: LibraryCaller,
+  ref: LibraryRef,
+  session: { project: ConsoleScopeProject | null },
+  projectSlug: string | null | undefined,
+  projectId: string | null | undefined,
+): void {
+  if (
+    ref.scope === "project" &&
+    !projectMatches(session.project, projectSlug, projectId) &&
+    !agentHasLibraryGrant(caller.agentId, ref.id)
+  ) {
+    throw new LibraryCommandError(
+      LIBRARY_SKILL_OUT_OF_VIEW,
+      `Library skill '${ref.ref}' belongs to project '${ref.project}', which is not this agent's Console project.`,
+      3,
+      {
+        suggestedAction: `Ask an operator to grant it explicitly ('ravi skills grant ${caller.agentId} ${ref.ref}') or to bind this agent to that project.`,
+      },
+    );
+  }
+  if (!isLibrarySkillAuthorizedForAgent(caller.agentId, ref.id, { capabilities: caller.capabilities })) {
+    const copy = skillNotAuthorizedCopy(ref.ref, caller.agentId);
+    throw new LibraryCommandError(SKILL_NOT_AUTHORIZED, copy.message, 1, { suggestedAction: copy.suggestedAction });
+  }
 }
 
 function projectMatches(

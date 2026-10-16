@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "4a5bf8a7edd68885"
+    "version": "577f874880d842f8"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -100612,6 +100612,7 @@
                       "type": "boolean"
                     },
                     "libraryGrants": {
+                      "default": [],
                       "items": {
                         "type": "string"
                       },

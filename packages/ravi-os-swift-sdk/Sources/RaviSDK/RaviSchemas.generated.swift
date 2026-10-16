@@ -83591,6 +83591,7 @@ public enum RaviSchemas {
         "type": "boolean"
       },
       "libraryGrants": {
+        "default": [],
         "items": {
           "type": "string"
         },

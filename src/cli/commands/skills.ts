@@ -1322,9 +1322,9 @@ export class SkillsCommands {
       description: "Allow loading this skill in conversations with people outside the organization",
     })
     external?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--execute", description: "Confirm the publish (without it, print the plan and exit 3)" })
     execute?: boolean,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     if (!scope?.trim()) {
       const message = "Pass --scope org or --scope <project-slug>.";

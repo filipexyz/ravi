@@ -82433,6 +82433,7 @@ export const SkillsInspectReturnSchema = {
       "type": "boolean"
     },
     "libraryGrants": {
+      "default": [],
       "items": {
         "type": "string"
       },

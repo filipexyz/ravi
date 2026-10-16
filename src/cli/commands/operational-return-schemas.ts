@@ -1259,7 +1259,7 @@ export const skillInspectReturnSchema = z
     agentId: z.string(),
     hasConfiguration: z.boolean(),
     allowlist: z.array(z.string()),
-    libraryGrants: z.array(z.string()),
+    libraryGrants: z.array(z.string()).optional().default([]),
     provenance: z
       .object({
         baseline: z.array(z.string()),

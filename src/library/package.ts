@@ -88,10 +88,10 @@ export function readLibraryPackage(dir: string, options: ReadLibraryPackageOptio
   if (!stat.isDirectory()) throw invalid("Pass the skill folder (the directory that holds SKILL.md).", ["dir"]);
 
   const paths = listPackagePaths(dir);
-  if (!paths.includes(LIBRARY_ENTRY_FILE)) throw invalid("The folder has no SKILL.md at its root.", ["SKILL.md"]);
   if (paths.length > LIBRARY_LIMITS.maxFiles) {
     throw invalid(`A Library skill holds at most ${LIBRARY_LIMITS.maxFiles} files; this folder has more.`, ["files"]);
   }
+  if (!paths.includes(LIBRARY_ENTRY_FILE)) throw invalid("The folder has no SKILL.md at its root.", ["SKILL.md"]);
 
   const decoder = new TextDecoder("utf-8", { fatal: true });
   const files: LibraryPackageFile[] = [];
@@ -171,7 +171,9 @@ export function checkLibraryNote(note: string | undefined): string | undefined {
 function listPackagePaths(root: string): string[] {
   const paths: string[] = [];
   const walk = (dir: string, prefix: string, depth: number) => {
-    if (depth > MAX_DEPTH) return;
+    if (depth > MAX_DEPTH) {
+      throw invalid(`Folders nest deeper than ${MAX_DEPTH} levels: ${prefix.slice(0, 120)}.`, [prefix]);
+    }
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       if (entry.name.startsWith(".") || entry.isSymbolicLink()) continue;
       const relative = prefix ? `${prefix}/${entry.name}` : entry.name;

@@ -277,6 +277,19 @@ describe("library external turns and view", () => {
     expect(error).toMatchObject({ code: "SKILL_NOT_AUTHORIZED", exitCode: 1 });
     expect(String(error.details.suggestedAction)).toContain("ravi skills grant no-grant org/agenda");
   });
+
+  it("authorizes a ref before asking the Console, so a missing item looks the same", async () => {
+    configuredAgent("no-grant-probe");
+    const fake = createFakeConsole([fakeSkill({ slug: "agenda" })]);
+    const caller = { agentId: "no-grant-probe", capabilities: [] };
+    for (const ref of ["org/agenda", "org/nao-existe"]) {
+      const error = await showLibrarySkill({ ref: parseLibraryRef(ref)!, caller }, deps(fake)).catch(
+        (caught) => caught,
+      );
+      expect(error).toMatchObject({ code: "SKILL_NOT_AUTHORIZED", exitCode: 1 });
+    }
+    expect(fake.requests.filter((request) => request.path.includes("/skills/"))).toEqual([]);
+  });
 });
 
 describe("library search", () => {
@@ -388,6 +401,11 @@ describe("library publish", () => {
     const binary = skillDir("binario", "name: binario\ndescription: x");
     writeFileSync(join(binary, "img.png"), Buffer.from([0xff, 0xfe, 0x00, 0x81]));
     expect(() => readLibraryPackage(binary)).toThrow(/not UTF-8/);
+    const deep = skillDir("funda", "name: funda\ndescription: x");
+    const deepDir = join(deep, "a", "b", "c", "d", "e", "f", "g", "h", "i");
+    mkdirSync(deepDir, { recursive: true });
+    writeFileSync(join(deepDir, "nota.md"), "x");
+    expect(() => readLibraryPackage(deep)).toThrow(/nest deeper than 8 levels/);
   });
 
   it("defaults the slug to the folder name and skips dot entries and symlinks", () => {
