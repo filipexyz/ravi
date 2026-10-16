@@ -157,6 +157,21 @@ const executeInstructions = [
     instruction: "ravi pages chat set <host> --enabled true --execute",
   },
   {
+    name: "Library publish skill",
+    path: "src/plugins/internal/ravi-system/skills/skills/SKILL.md",
+    instruction: "ravi skills publish ./agenda-semanal --scope org --execute",
+  },
+  {
+    name: "Library publish documentation",
+    path: "docs/reference/skills.mdx",
+    instruction: "ravi skills publish ./weekly-agenda --scope org --execute",
+  },
+  {
+    name: "Library publish help",
+    path: "src/cli/commands/skills.ts",
+    instruction: "ravi skills publish ./agenda-semanal --scope org --execute",
+  },
+  {
     name: "Page Chat enable documentation",
     path: "docs/console/pages.mdx",
     instruction: "ravi pages chat set acme-website --enabled true --execute",

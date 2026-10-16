@@ -7904,6 +7904,18 @@ class SkillsNamespace {
     );
   }
 
+  Future<SkillsPublishReturn> publish(String dir, [SkillsPublishOptions options = const SkillsPublishOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["dir"] = RaviJson.from(dir);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["skills"],
+      command: "publish",
+      body: requestBody,
+      decode: skillsPublishReturnFromJson,
+    );
+  }
+
   Future<SkillsRevokeReturn> revoke(String agent, String skill) async {
     final requestBody = <String, RaviJson>{};
     requestBody["agent"] = RaviJson.from(agent);
@@ -7924,6 +7936,18 @@ class SkillsNamespace {
       command: "revoke-batch",
       body: requestBody,
       decode: skillsRevokeBatchReturnFromJson,
+    );
+  }
+
+  Future<SkillsSearchReturn> search(String query, [SkillsSearchOptions options = const SkillsSearchOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["query"] = RaviJson.from(query);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["skills"],
+      command: "search",
+      body: requestBody,
+      decode: skillsSearchReturnFromJson,
     );
   }
 

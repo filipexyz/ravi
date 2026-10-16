@@ -83390,7 +83390,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "skill": {
-        "description": "Skill name (matches SKILL.md name)",
+        "description": "Skill name (matches SKILL.md name) or Library ref (org/<slug>, <project>/<slug>)",
         "type": "string"
       }
     },
@@ -83590,6 +83590,13 @@ public enum RaviSchemas {
       "hasConfiguration": {
         "type": "boolean"
       },
+      "libraryGrants": {
+        "default": [],
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
       "provenance": {
         "additionalProperties": false,
         "properties": {
@@ -83624,6 +83631,7 @@ public enum RaviSchemas {
       "agentId",
       "hasConfiguration",
       "allowlist",
+      "libraryGrants",
       "provenance"
     ],
     "type": "object"
@@ -83914,6 +83922,211 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SkillsPublishInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "dir": {
+        "description": "Skill folder holding SKILL.md (relative to your current directory)",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Confirm the publish (without it, print the plan and exit 3)",
+        "type": "boolean"
+      },
+      "external": {
+        "description": "Allow loading this skill in conversations with people outside the organization",
+        "type": "boolean"
+      },
+      "name": {
+        "description": "Display name (default: SKILL.md name, else the slug)",
+        "type": "string"
+      },
+      "note": {
+        "description": "Version note, at most 500 characters",
+        "type": "string"
+      },
+      "scope": {
+        "description": "org, or the Console project slug the skill belongs to",
+        "type": "string"
+      },
+      "slug": {
+        "description": "Library slug (default: SKILL.md name, else the folder name)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "dir"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SkillsPublishReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "contentHash": {
+        "type": "string"
+      },
+      "item": {
+        "additionalProperties": false,
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "contentHash": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "externalAllowed": {
+            "type": "boolean"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "project": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "slug": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "slug"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "publishedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "publishedBy": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ref": {
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "org",
+              "project"
+            ],
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "ref",
+          "kind",
+          "scope",
+          "project",
+          "slug",
+          "name",
+          "description",
+          "externalAllowed",
+          "version",
+          "contentHash",
+          "publishedAt",
+          "publishedBy",
+          "archived",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "ref": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "unchanged": {
+        "type": "boolean"
+      },
+      "version": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "success",
+      "ref",
+      "version",
+      "contentHash",
+      "unchanged",
+      "item"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SkillsRevokeInputSchema = #"""
   {
     "additionalProperties": false,
@@ -83923,7 +84136,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "skill": {
-        "description": "Skill name",
+        "description": "Skill name or Library ref (org/<slug>, <project>/<slug>)",
         "type": "string"
       }
     },
@@ -84087,6 +84300,197 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SkillsSearchInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "limit": {
+        "description": "Maximum results (default: 10, max: 50)",
+        "type": "string"
+      },
+      "local": {
+        "description": "Search only local skills (catalog and installed); skip the Console",
+        "type": "boolean"
+      },
+      "project": {
+        "description": "Console project whose Library skills to include",
+        "type": "string"
+      },
+      "query": {
+        "description": "Words to look for in skill names and descriptions",
+        "type": "string"
+      }
+    },
+    "required": [
+      "query"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SkillsSearchReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "authorized": {
+              "type": "boolean"
+            },
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "externalAllowed": {
+              "type": "boolean"
+            },
+            "name": {
+              "type": "string"
+            },
+            "next": {
+              "type": "string"
+            },
+            "project": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ref": {
+              "type": "string"
+            },
+            "scope": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "org",
+                    "project"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "score": {
+              "type": "number"
+            },
+            "source": {
+              "enum": [
+                "system",
+                "installed",
+                "library"
+              ],
+              "type": "string"
+            },
+            "version": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "ref",
+            "source",
+            "scope",
+            "project",
+            "name",
+            "description",
+            "version",
+            "next",
+            "score"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "library": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "type": "object"
+          },
+          "hint": {
+            "type": "string"
+          },
+          "project": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "stale",
+              "skipped",
+              "error"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "project"
+        ],
+        "type": "object"
+      },
+      "query": {
+        "type": "string"
+      },
+      "stale": {
+        "type": "boolean"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "query",
+      "total",
+      "stale",
+      "library",
+      "items"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SkillsShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -84100,7 +84504,11 @@ public enum RaviSchemas {
         "type": "boolean"
       },
       "name": {
-        "description": "Catalog skill name, installed skill name, or source skill name",
+        "description": "Catalog or installed skill name, source skill name, or Library ref (org/<slug>, <project>/<slug>)",
+        "type": "string"
+      },
+      "project": {
+        "description": "Console project whose Library skills a bare slug may name (default: resolved project)",
         "type": "string"
       },
       "raw": {

@@ -21,6 +21,12 @@ import type { ContextCapability } from "../router/router-db.js";
 
 let stateDir: string | null = null;
 
+/** `skills show` of a local skill answers synchronously; a Library skill returns a Promise. */
+function syncShow<T>(result: T | Promise<T>): T {
+  if (result instanceof Promise) throw new Error("expected a local (synchronous) skills show result");
+  return result;
+}
+
 beforeEach(async () => {
   stateDir = await createIsolatedRaviState("ravi-skill-cap-vis-");
 });
@@ -246,16 +252,20 @@ describe("capability-aware official skill visibility", () => {
     createAgent(agentId, { runtimePermissions: { profile: "full-access" } });
     dbUpsertSkillGrant({ agentId, skillName: "gmail-pack" });
     const commands = new SkillsCommands();
-    const shown = withoutLogs(() =>
-      runWithContext({ transport: "tool", agentId }, () =>
-        commands.show("ravi-system-permissions-manager", undefined, undefined, true),
+    const shown = syncShow(
+      withoutLogs(() =>
+        runWithContext({ transport: "tool", agentId }, () =>
+          commands.show("ravi-system-permissions-manager", undefined, undefined, true),
+        ),
       ),
     );
     expect(shown.skill.name).toBe("permissions-manager");
 
-    const short = withoutLogs(() =>
-      runWithContext({ transport: "tool", agentId }, () =>
-        commands.show("permissions-manager", undefined, undefined, true),
+    const short = syncShow(
+      withoutLogs(() =>
+        runWithContext({ transport: "tool", agentId }, () =>
+          commands.show("permissions-manager", undefined, undefined, true),
+        ),
       ),
     );
     expect(short.skill.name).toBe("permissions-manager");
@@ -318,14 +328,16 @@ describe("full-access and use:skill capabilities reach every skill Ravi knows", 
     // Skills that only exist on disk still need `skills install` first.
     expect(isSkillAuthorizedForAgent(agentId, "made-up-disk-only-skill")).toBe(false);
 
-    const shown = withoutLogs(() =>
-      runWithContext(
-        {
-          transport: "tool",
-          agentId,
-          context: createRuntimeContext({ kind: "agent-runtime", agentId, capabilities: materialized }),
-        },
-        () => new SkillsCommands().show("bases", undefined, undefined, true),
+    const shown = syncShow(
+      withoutLogs(() =>
+        runWithContext(
+          {
+            transport: "tool",
+            agentId,
+            context: createRuntimeContext({ kind: "agent-runtime", agentId, capabilities: materialized }),
+          },
+          () => new SkillsCommands().show("bases", undefined, undefined, true),
+        ),
       ),
     );
     expect(shown.skill.name).toBe("bases");

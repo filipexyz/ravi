@@ -22420,11 +22420,12 @@ class SkillsGrantBatchReturn {
 SkillsGrantBatchReturn skillsGrantBatchReturnFromJson(Object? json) => SkillsGrantBatchReturn.fromJsonValue(json);
 
 class SkillsInspectReturn {
-  const SkillsInspectReturn({required this.agentId, required this.allowlist, required this.hasConfiguration, required this.provenance});
+  const SkillsInspectReturn({required this.agentId, required this.allowlist, required this.hasConfiguration, required this.libraryGrants, required this.provenance});
 
   final String agentId;
   final List<String> allowlist;
   final bool hasConfiguration;
+  final List<String> libraryGrants;
   final RaviJson provenance;
 
   factory SkillsInspectReturn.fromJson(Map<String, Object?> json) {
@@ -22432,6 +22433,7 @@ class SkillsInspectReturn {
       agentId: raviJsonAsString(json["agentId"]),
       allowlist: raviJsonAsList(json["allowlist"], raviJsonAsString),
       hasConfiguration: raviJsonAsBool(json["hasConfiguration"]),
+      libraryGrants: raviJsonAsList(json["libraryGrants"], raviJsonAsString),
       provenance: RaviJson.from(json["provenance"]),
     );
   }
@@ -22565,6 +22567,66 @@ class SkillsListReturn {
 
 SkillsListReturn skillsListReturnFromJson(Object? json) => SkillsListReturn.fromJsonValue(json);
 
+class SkillsPublishOptions {
+  const SkillsPublishOptions({this.execute, this.external_, this.name, this.note, this.scope, this.slug});
+
+  final bool? execute;
+  final bool? external_;
+  final String? name;
+  final String? note;
+  final String? scope;
+  final String? slug;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (external_ != null) {
+      into["external"] = RaviJson.from(external_);
+    }
+    if (name != null) {
+      into["name"] = RaviJson.from(name);
+    }
+    if (note != null) {
+      into["note"] = RaviJson.from(note);
+    }
+    if (scope != null) {
+      into["scope"] = RaviJson.from(scope);
+    }
+    if (slug != null) {
+      into["slug"] = RaviJson.from(slug);
+    }
+  }
+}
+
+class SkillsPublishReturn {
+  const SkillsPublishReturn({required this.contentHash, required this.item, required this.ref, required this.success, required this.unchanged, required this.version});
+
+  final String contentHash;
+  final RaviJson item;
+  final String ref;
+  final bool success;
+  final bool unchanged;
+  final double version;
+
+  factory SkillsPublishReturn.fromJson(Map<String, Object?> json) {
+    return SkillsPublishReturn(
+      contentHash: raviJsonAsString(json["contentHash"]),
+      item: RaviJson.from(json["item"]),
+      ref: raviJsonAsString(json["ref"]),
+      success: raviJsonAsBool(json["success"]),
+      unchanged: raviJsonAsBool(json["unchanged"]),
+      version: raviJsonAsDouble(json["version"]),
+    );
+  }
+
+  static SkillsPublishReturn fromJsonValue(Object? json) {
+    return SkillsPublishReturn.fromJson(raviJsonObject(json, "SkillsPublishReturn"));
+  }
+}
+
+SkillsPublishReturn skillsPublishReturnFromJson(Object? json) => SkillsPublishReturn.fromJsonValue(json);
+
 class SkillsRevokeReturn {
   const SkillsRevokeReturn({required this.agentId, this.grant, required this.skillName, required this.success});
 
@@ -22651,11 +22713,58 @@ class SkillsRevokeBatchReturn {
 
 SkillsRevokeBatchReturn skillsRevokeBatchReturnFromJson(Object? json) => SkillsRevokeBatchReturn.fromJsonValue(json);
 
+class SkillsSearchOptions {
+  const SkillsSearchOptions({this.limit, this.local, this.project});
+
+  final String? limit;
+  final bool? local;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (local != null) {
+      into["local"] = RaviJson.from(local);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class SkillsSearchReturn {
+  const SkillsSearchReturn({required this.items, required this.library_, required this.query, required this.stale, required this.total});
+
+  final List<RaviJson> items;
+  final RaviJson library_;
+  final String query;
+  final bool stale;
+  final double total;
+
+  factory SkillsSearchReturn.fromJson(Map<String, Object?> json) {
+    return SkillsSearchReturn(
+      items: raviJsonAsList(json["items"], RaviJson.from),
+      library_: RaviJson.from(json["library"]),
+      query: raviJsonAsString(json["query"]),
+      stale: raviJsonAsBool(json["stale"]),
+      total: raviJsonAsDouble(json["total"]),
+    );
+  }
+
+  static SkillsSearchReturn fromJsonValue(Object? json) {
+    return SkillsSearchReturn.fromJson(raviJsonObject(json, "SkillsSearchReturn"));
+  }
+}
+
+SkillsSearchReturn skillsSearchReturnFromJson(Object? json) => SkillsSearchReturn.fromJsonValue(json);
+
 class SkillsShowOptions {
-  const SkillsShowOptions({this.file, this.installed, this.raw, this.source});
+  const SkillsShowOptions({this.file, this.installed, this.project, this.raw, this.source});
 
   final String? file;
   final bool? installed;
+  final String? project;
   final bool? raw;
   final String? source;
 
@@ -22665,6 +22774,9 @@ class SkillsShowOptions {
     }
     if (installed != null) {
       into["installed"] = RaviJson.from(installed);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
     }
     if (raw != null) {
       into["raw"] = RaviJson.from(raw);
