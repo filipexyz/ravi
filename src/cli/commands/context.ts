@@ -41,7 +41,7 @@ import {
   dbPruneContexts,
   type ContextRecord,
 } from "../../router/router-db.js";
-import { listSessions, resolveSession } from "../../router/sessions.js";
+import { getSession, getSessionByName, listSessions, resolveSession } from "../../router/sessions.js";
 import { buildRuntimeSessionVisibilityPayload } from "../../runtime/session-visibility.js";
 import {
   CredentialsFileError,
@@ -1419,14 +1419,26 @@ function parseDelegatedIdentity(
       },
     });
   }
-  if (sessionKey && !sessionKey.startsWith(`agent:${agentId}:`)) {
+  // Ownership comes from the session registry, not from the key's shape: a
+  // named session's key is its bare name (no agent:<id>: prefix). The prefix
+  // only stands in for ownership when the key is not registered yet.
+  const registeredSession = sessionKey ? getSession(sessionKey) : null;
+  if (sessionKey && !registeredSession && !sessionKey.startsWith(`agent:${agentId}:`)) {
     failContextIssueUsage(
       `Delegated session key must belong to agent ${agentId}`,
-      `Use a session key that starts with agent:${agentId}:`,
+      `Use the key of a registered session owned by ${agentId} (ravi sessions info <name> --json), or one that starts with agent:${agentId}:`,
       asJson,
     );
   }
-  const existingSession = sessionKey ? resolveSession(sessionKey) : sessionName ? resolveSession(sessionName) : null;
+  const namedSession = sessionName ? getSessionByName(sessionName) : null;
+  if (registeredSession && namedSession && namedSession.sessionKey !== registeredSession.sessionKey) {
+    failContextIssueUsage(
+      `--as-session-name ${sessionName} names a different session than --as-session-key`,
+      "Pass the key and name of the same registered session (ravi sessions info <name> --json)",
+      asJson,
+    );
+  }
+  const existingSession = registeredSession ?? namedSession;
   if (existingSession && existingSession.agentId !== agentId) {
     failContextIssueUsage(
       `Delegated session does not belong to agent ${agentId}`,
