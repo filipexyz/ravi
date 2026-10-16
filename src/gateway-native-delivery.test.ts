@@ -257,6 +257,21 @@ describe("Gateway native channel outbound queue", () => {
     });
   });
 
+  it("delivers nothing for a Library request turn: the request runner sends its answer back", async () => {
+    const { gateway, emitted, omniSend } = await createGateway();
+
+    await handleResponse(gateway, "main-request-abc", {
+      _emitId: "emit-lr",
+      response: "The close is on the 5th.",
+      target: { channel: "library-request", accountId: "library-request", chatId: "request:abc" },
+    });
+
+    expect(omniSend).not.toHaveBeenCalled();
+    expect(publishedJobs).toHaveLength(0);
+    expect(emitted[0]?.[0]).toBe("ravi.session.main-request-abc.delivery");
+    expect(emitted[0]?.[1]).toMatchObject({ status: "dropped", reason: "library_request" });
+  });
+
   it("delivers response media to the WhatsApp target through Omni media without using session defaults", async () => {
     dbUpsertInstance({
       name: "main",

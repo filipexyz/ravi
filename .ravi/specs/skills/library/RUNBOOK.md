@@ -56,9 +56,18 @@
 16. `ravi agents update` stops with `LIBRARY_AGENT_EDITED_LOCALLY`: read the
     diff (`--json`: `details.diff`), then `--keep-local` or `--take-library`.
     The origin and hashes are in `library_agents` of `ravi.db`.
+17. A request never answered: on the asked machine, check that the agent is
+    open (`ravi agents requests <agent>`), that `ravi login` has the link
+    scope, and the daemon log for `Answering Library request` or
+    `Could not post a Library request answer` (`ravi daemon logs`). The runner
+    pulls every `RAVI_LIBRARY_PIN_INTERVAL_MS`; the turn's session is
+    `<agent>-request-<8 chars>` (`ravi sessions trace <name> --explain`).
+18. An answer that never reached the asking session: `ravi agents requests
+    list --all` shows it from the Console; the local row
+    (`library_agent_requests`) has the delivery error.
 
 ## Validation
 
 ```bash
-bun test src/library src/cli/commands/skills-library.test.ts src/cli/commands/agents-library.test.ts src/cli/commands/skills.test.ts src/runtime/allowed-skills.test.ts src/runtime/skill-visibility.test.ts src/runtime/codex-provider.test.ts
+bun test src/library src/cli/commands/skills-library.test.ts src/cli/commands/agents-library.test.ts src/cli/commands/skills.test.ts src/gateway-native-delivery.test.ts src/runtime/runtime-request-context.test.ts src/runtime/allowed-skills.test.ts src/runtime/skill-visibility.test.ts src/runtime/codex-provider.test.ts
 ```

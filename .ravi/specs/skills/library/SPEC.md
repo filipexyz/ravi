@@ -19,6 +19,7 @@ applies_to:
   - src/cli/commands/agents.ts
   - src/cli/commands/agents-library.ts
   - src/cli/library-contract.ts
+  - src/gateway.ts
   - src/runtime/skill-authorization.ts
   - src/runtime/skill-capability-implication.ts
   - src/runtime/allowed-skills.ts
@@ -279,9 +280,13 @@ plan again, `--rebase` with `--update`), `unchanged` (nothing to propose),
 `slug_taken_in_org`, `slug_taken_in_project` and `slug_reserved` (another
 `--slug`), `proposal_closed` (propose again without `--update`),
 `not_published` (publish a version, then pin), `agent_out_of_scope` (bind the
-agent to the skill's Console project, wait for the next pin sync, pin again)
-and `no_installation` (`ravi login` on this daemon so it links an
-installation).
+agent to the skill's Console project, wait for the next pin sync, pin again),
+`no_installation` (`ravi login` on this daemon so it links an
+installation), and for requests `same_installation` (use `ravi sessions
+send`), `not_accepting` (ask its operator to open it), `too_many_open` (wait or
+cancel one), `not_pending` and `not_open` (see `ravi agents requests list
+--all`). An `agents ...` command words `stale_base`, `unchanged` and the slug
+conflicts for agent definitions.
 
 ## Pins
 
@@ -539,6 +544,108 @@ authority of the machine, which is the operator's decision.
 A local reversible write (no brake): the directory description, at most 300
 characters (`USAGE_ERROR`, exit 2, above that); `clear` removes it.
 
+## Directory and requests
+
+The Console keeps a directory of the agents each linked installation reports
+with its pin sync, and relays requests between agents of different
+installations of the organization. It decides who may ask (`can.ask`), which
+agents a member sees (org-wide ones and those of projects they read), and
+refuses `same_installation`, `not_accepting`, `too_many_open` (20 open per
+installation) and `no_installation`. Requests expire after 24 hours. This
+side only transports, keeps local state and enforces its own switch.
+
+### What the pin sync reports
+
+Each agent report also carries `description` (the `ravi agents set <id>
+description` text, at most 300 characters, else null) and `acceptsRequests`
+(`library_agents.accepts_requests`, default false).
+
+### `ravi agents requests <id> [on|off]`
+
+Without a state: shows the switch (read). `on` opens the agent to requests:
+braked (exit 3 with the plan without `--execute`). `off` only takes exposure
+away and applies at once. Both refuse inside an agent runtime with
+`LIBRARY_AGENT_CANNOT_OPEN_REQUESTS` (exit 3). After storing the switch, it
+runs a pin sync when the login has the link scope, so the directory follows
+at once (`reported: true`); otherwise the daemon reports it at its next sync
+(`hint`). `--json`: `agent`, `acceptsRequests`, `changed`, `reported`, `hint`.
+
+### `ravi agents directory [query]`
+
+Read-only: `GET /directory?q=&project=`. `--json`: `query`, `project`,
+`total`, `can.ask` and `agents` (`target` = `<installation name>/<agent>`,
+`installation`, `agent` with `id`, `name`, `description`, `provider`,
+`model`, `project`; `online`, `acceptsRequests`, `reportedAt`, `self`).
+
+### `ravi agents ask <machine>/<agent> "<message>"`
+
+Braked (exit 3 with the plan without `--execute`). The target splits at the
+last `/`. The machine is matched against the directory entries of that agent
+by installation id, else by installation name (case-insensitive); two
+installations with that name are `LIBRARY_TARGET_AMBIGUOUS` (exit 2, with the
+`candidates`' ids), none is `NOT_FOUND` (exit 1). The message has 1 to 8000
+characters (`USAGE_ERROR`). `POST /requests` with `{to: {installationId,
+agentId}, message}`, plus `agent: {id}` inside an agent runtime. The local
+row (`library_agent_requests`, direction `sent`) remembers the asking agent,
+session key and name. Inside an agent runtime, a turn that is not the
+operator's own is refused before any request with
+`LIBRARY_REQUEST_EXTERNAL_DENIED` (exit 3): an agent serving someone else does
+not carry that conversation to other machines. `--json`: `target`, `request`,
+`session`, `next`.
+
+### `ravi agents requests list [--received] [--all]` and `cancel <id>`
+
+`list` reads `GET /requests?box=sent|received&state=open|all` and adds the
+local asking `session` to each sent request; when the Console cannot be
+reached it answers the local rows with `stale: true` and a `hint`. `cancel`
+posts `POST /requests/<id>/cancel` (a request already taken is `CONFLICT`
+`not_pending`) and records the new status. Neither is braked.
+
+### Request runner
+
+The daemon runs a Library request runner at start and every
+`RAVI_LIBRARY_PIN_INTERVAL_MS`, while a login with the
+`console.projects.link` scope exists (otherwise it waits quietly). Each tick:
+
+1. On the first tick, every local received row still `running` (a restart
+   cut its turn) gets `{failure: "The asked machine restarted before
+   answering."}`.
+2. `POST /requests/replies/pull`: each answer, failure or expiry goes to the
+   session that asked as a `[System] Inform` (barrier `after_response`, no
+   source, context or turn origin) whose text marks the answer as the other
+   agent's words, not instructions. A request asked from the terminal keeps the
+   answer in its local row (`reply`, or the failure in `error`). A delivery
+   that fails is recorded in `error`; the Console hands an answer out once.
+3. `POST /requests/pull`: each request is answered in the background, at most
+   three turns at a time:
+   - an agent missing here, or whose local switch is off, gets a failure
+     without a turn (the switch here decides, whatever the directory said);
+   - otherwise the turn runs in a session of its own,
+     `agent:<id>:library-request:<requestId>` (named `<id>-request-<8 chars>`),
+     not ephemeral;
+   - its reply (at most 16000 characters, cut with a marker) is posted with
+     `POST /requests/<id>/reply {reply}`; an error, an interruption, no answer,
+     or no end within `RAVI_LIBRARY_REQUEST_TIMEOUT_MS` (default 600000, at
+     least 10000) is posted as `{failure}` (at most 500 characters);
+   - a `not_open` answer (the request closed meanwhile) is recorded as
+     `closed`, not retried.
+
+### The request turn runs as the person who asked
+
+The turn is never the operator's. Its prompt carries an external surface
+(`source.channel` and `context.channelId` = `library-request`, `chatId`
+`request:<id>`, `suppressPresence`) with `actorType: "unknown"` and no
+contact, and no `_turnOrigin` or `_cliDestination`. The runtime resolves such
+an actor as `missing_contact`, the state of an unknown sender on a channel:
+no agent-identity capabilities, so tools that need authority are denied, and
+the bash hook and approvals fail closed. The prompt starts with who asked
+(the person, their machine, and the agent or terminal they asked through) and
+says the message is theirs, not the operator's. The gateway delivers nothing
+for this channel (`dropped`, reason `library_request`, not logged as a
+failure); the runner reads the answer from the session's `.response` events
+until `turn.complete`, and from the session's stored history when there was
+none.
+
 ## Error codes
 
 | case | code | exit |
@@ -569,4 +676,10 @@ characters (`USAGE_ERROR`, exit 2, above that); `clear` removes it.
 | install into a cwd that already has `AGENTS.md` | `AGENT_CWD_IN_USE` | 1 |
 | update of an agent not installed from the Library | `LIBRARY_AGENT_NO_ORIGIN` | 1 |
 | update of a file edited here and changed in the Library, without `--keep-local` or `--take-library` | `LIBRARY_AGENT_EDITED_LOCALLY` | 2 |
+| `agents requests <id> on` without `--execute`, or `agents ask` without `--execute` | `WRITE_REQUIRES_EXECUTE` | 3 |
+| `agents requests <id> on` or `off` inside an agent runtime | `LIBRARY_AGENT_CANNOT_OPEN_REQUESTS` | 3 |
+| `agents ask` from an agent turn that is not the operator's own | `LIBRARY_REQUEST_EXTERNAL_DENIED` | 3 |
+| `agents ask` target matching two installations by name | `LIBRARY_TARGET_AMBIGUOUS` | 2 |
+| `agents ask` target not in the directory | `NOT_FOUND` | 1 |
+| request refused by the Console | `CONFLICT` (`conflict`: `same_installation`, `not_accepting`, `too_many_open`, `no_installation`, `not_pending`, `not_open`) | 1 |
 | Console errors (`AUTH_REQUIRED`, `CONFLICT` with `details.conflict`, ...) | Console code | per the cloud mapping |

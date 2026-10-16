@@ -186,6 +186,48 @@ public struct AdaptersShowReturn: Codable, Sendable {
   }
 }
 
+public struct AgentsAskOptions: Codable, Sendable {
+  public var execute: Bool?
+
+  public init(execute: Bool? = nil) {
+    self.execute = execute
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case execute = "execute"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct AgentsAskReturn: Codable, Sendable {
+  public var next: String
+  public var request: RaviJSON
+  public var session: RaviJSON
+  public var success: Bool
+  public var target: String
+
+  public init(next: String, request: RaviJSON, session: RaviJSON, success: Bool, target: String) {
+    self.next = next
+    self.request = request
+    self.session = session
+    self.success = success
+    self.target = target
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case next = "next"
+    case request = "request"
+    case session = "session"
+    case success = "success"
+    case target = "target"
+  }
+}
+
 public struct AgentsCreateOptions: Codable, Sendable {
   public var allowRuntimeMismatch: Bool?
   public var model: String?
@@ -326,6 +368,48 @@ public struct AgentsDeleteReturn: Codable, Sendable {
     case agentId = "agentId"
     case before = "before"
     case changed = "changed"
+  }
+}
+
+public struct AgentsDirectoryOptions: Codable, Sendable {
+  public var project: String?
+
+  public init(project: String? = nil) {
+    self.project = project
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case project = "project"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct AgentsDirectoryReturn: Codable, Sendable {
+  public var agents: [RaviJSON]
+  public var can: RaviJSON
+  public var project: RaviJSON
+  public var query: String
+  public var total: Double
+
+  public init(agents: [RaviJSON], can: RaviJSON, project: RaviJSON, query: String, total: Double) {
+    self.agents = agents
+    self.can = can
+    self.project = project
+    self.query = query
+    self.total = total
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agents = "agents"
+    case can = "can"
+    case project = "project"
+    case query = "query"
+    case total = "total"
   }
 }
 
@@ -704,6 +788,135 @@ public struct AgentsPublishReturn: Codable, Sendable {
     case success = "success"
     case unchanged = "unchanged"
     case version = "version"
+  }
+}
+
+public struct AgentsRequestsOptions: Codable, Sendable {
+  public var execute: Bool?
+
+  public init(execute: Bool? = nil) {
+    self.execute = execute
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case execute = "execute"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct AgentsRequestsReturn: Codable, Sendable {
+  public var acceptsRequests: Bool
+  public var agent: String
+  public var changed: Bool
+  public var hint: String?
+  public var reported: Bool
+
+  public init(acceptsRequests: Bool, agent: String, changed: Bool, hint: String? = nil, reported: Bool) {
+    self.acceptsRequests = acceptsRequests
+    self.agent = agent
+    self.changed = changed
+    self.hint = hint
+    self.reported = reported
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case acceptsRequests = "acceptsRequests"
+    case agent = "agent"
+    case changed = "changed"
+    case hint = "hint"
+    case reported = "reported"
+  }
+}
+
+public struct AgentsRequestsCancelReturn: Codable, Sendable {
+  public var request: RaviJSON
+  public var success: Bool
+
+  public init(request: RaviJSON, success: Bool) {
+    self.request = request
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case request = "request"
+    case success = "success"
+  }
+}
+
+public struct AgentsRequestsListOptions: Codable, Sendable {
+  public var all: Bool?
+  public var limit: String?
+  public var offset: String?
+  public var received: Bool?
+
+  public init(all: Bool? = nil, limit: String? = nil, offset: String? = nil, received: Bool? = nil) {
+    self.all = all
+    self.limit = limit
+    self.offset = offset
+    self.received = received
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case all = "all"
+    case limit = "limit"
+    case offset = "offset"
+    case received = "received"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.all {
+      body["all"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.received {
+      body["received"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct AgentsRequestsListReturn: Codable, Sendable {
+  public var box: String
+  public var hint: String?
+  public var installation: RaviJSON
+  public var local: [RaviJSON]?
+  public var pagination: RaviJSON
+  public var requests: [RaviJSON]
+  public var stale: Bool
+  public var state: String
+  public var total: Double
+
+  public init(box: String, hint: String? = nil, installation: RaviJSON, local: [RaviJSON]? = nil, pagination: RaviJSON, requests: [RaviJSON], stale: Bool, state: String, total: Double) {
+    self.box = box
+    self.hint = hint
+    self.installation = installation
+    self.local = local
+    self.pagination = pagination
+    self.requests = requests
+    self.stale = stale
+    self.state = state
+    self.total = total
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case box = "box"
+    case hint = "hint"
+    case installation = "installation"
+    case local = "local"
+    case pagination = "pagination"
+    case requests = "requests"
+    case stale = "stale"
+    case state = "state"
+    case total = "total"
   }
 }
 

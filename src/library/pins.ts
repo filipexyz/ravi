@@ -7,6 +7,7 @@
  * `ravi-library` plugin the runtimes load. A failed sync never removes pins.
  */
 
+import { LIBRARY_AGENT_DESCRIPTION_MAX, readLibraryAgentState } from "./agents-db.js";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -145,12 +146,17 @@ export async function collectLocalAgentReports(deps: CollectAgentReportsDeps = {
     } catch {
       project = null;
     }
+    // The directory text and whether the operator opened the agent to requests
+    // from other installations (default closed).
+    const library = readLibraryAgentState(agent.id);
     reports.push({
       id: agent.id,
       name: agent.name?.trim() || null,
       provider: agent.provider ?? null,
       model: agent.model?.trim() || null,
       project,
+      description: library?.description?.trim().slice(0, LIBRARY_AGENT_DESCRIPTION_MAX) || null,
+      acceptsRequests: library?.acceptsRequests === true,
     });
   }
   return reports;

@@ -3551,3 +3551,120 @@ export const agentsPublishReturnSchema = z
     next: z.string().nullable(),
   })
   .strict();
+
+// ---------------------------------------------------------------------------
+// Library directory and requests between agents
+
+const libraryInstallationRefReturnSchema = z.object({ id: z.string(), name: z.string().nullable() }).strict();
+const libraryRequestProjectReturnSchema = z
+  .object({ id: z.string(), slug: z.string(), name: z.string().nullable() })
+  .strict();
+
+export const libraryAgentRequestReturnSchema = z
+  .object({
+    id: z.string(),
+    status: z.enum(["pending", "delivered", "answered", "failed", "expired", "cancelled"]),
+    direction: z.enum(["sent", "received"]),
+    from: z
+      .object({
+        installation: libraryInstallationRefReturnSchema.nullable(),
+        agentId: z.string().nullable(),
+        user: z.object({ id: z.string(), name: z.string().nullable() }).strict().nullable(),
+      })
+      .strict(),
+    to: z.object({ installation: libraryInstallationRefReturnSchema, agentId: z.string() }).strict(),
+    project: libraryRequestProjectReturnSchema.nullable(),
+    message: z.string(),
+    reply: z.string().nullable(),
+    failureReason: z.string().nullable(),
+    createdAt: z.string().nullable(),
+    deliveredAt: z.string().nullable(),
+    answeredAt: z.string().nullable(),
+    expiresAt: z.string().nullable(),
+  })
+  .strict();
+
+export const agentsDirectoryReturnSchema = z
+  .object({
+    query: z.string(),
+    project: z.string().nullable(),
+    total: z.number(),
+    can: z.object({ ask: z.boolean() }).strict(),
+    agents: z.array(
+      z
+        .object({
+          target: z.string(),
+          installation: libraryInstallationRefReturnSchema,
+          agent: z
+            .object({
+              id: z.string(),
+              name: z.string(),
+              description: z.string().nullable(),
+              provider: z.string().nullable(),
+              model: z.string().nullable(),
+              project: libraryRequestProjectReturnSchema.nullable(),
+            })
+            .strict(),
+          online: z.boolean(),
+          acceptsRequests: z.boolean(),
+          reportedAt: z.string().nullable(),
+          self: z.boolean(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+export const agentsAskReturnSchema = z
+  .object({
+    success: z.literal(true),
+    target: z.string(),
+    request: libraryAgentRequestReturnSchema,
+    session: z.string().nullable(),
+    next: z.string(),
+  })
+  .strict();
+
+export const agentsRequestsToggleReturnSchema = z
+  .object({
+    agent: z.string(),
+    acceptsRequests: z.boolean(),
+    changed: z.boolean(),
+    reported: z.boolean(),
+    hint: z.string().optional(),
+  })
+  .strict();
+
+const localAgentRequestReturnSchema = z
+  .object({
+    requestId: z.string(),
+    direction: z.enum(["sent", "received"]),
+    agentId: z.string().nullable(),
+    peer: z.string().nullable(),
+    sessionKey: z.string().nullable(),
+    sessionName: z.string().nullable(),
+    status: z.string(),
+    error: z.string().nullable(),
+    reply: z.string().nullable(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+  })
+  .strict();
+
+export const agentsRequestsListReturnSchema = z
+  .object({
+    box: z.enum(["sent", "received"]),
+    state: z.enum(["open", "all"]),
+    stale: z.boolean(),
+    hint: z.string().optional(),
+    installation: libraryInstallationRefReturnSchema.nullable(),
+    total: z.number(),
+    requests: z.array(libraryAgentRequestReturnSchema.extend({ session: z.string().nullable() })),
+    local: z.array(localAgentRequestReturnSchema).optional(),
+    pagination: strictCliOffsetPaginationSchema,
+  })
+  .strict();
+
+export const agentsRequestsCancelReturnSchema = z
+  .object({ success: z.literal(true), request: libraryAgentRequestReturnSchema })
+  .strict();

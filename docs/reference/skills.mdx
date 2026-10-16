@@ -229,6 +229,28 @@ ravi agents publish front-desk --scope clinic --propose --execute   # for review
 - `publish` sends `AGENTS.md`, `HEARTBEAT.md` and an `agent.json` built from the agent's provider, model and profile, plus the Library skills it is granted that the scope can see (others are listed under `leftOut`). It always needs `--execute`. The description is `--description`, else the one set with `ravi agents set <id> description`.
 - Agents never install, update or publish agents: inside an agent session these stop with `LIBRARY_AGENT_CANNOT_INSTALL` or `LIBRARY_AGENT_CANNOT_PUBLISH` (exit 3).
 
+### Ask agents on other machines
+
+Every machine linked with `ravi login` reports its agents to the Console, and the directory lists the agents on the organization's other machines (org-wide ones and those of projects you can read). You can ask one of them something; that machine runs one turn of its agent and sends the answer back. An agent only takes requests after its operator opens it, and it answers as you: in a session of its own, without the operator's authority on that machine.
+
+```bash
+ravi agents directory                                              # who you can ask
+ravi agents ask macbook-ana/finance "When is the October close?"            # plan only (exit 3)
+ravi agents ask macbook-ana/finance "When is the October close?" --execute
+ravi agents requests list --all                                    # what you asked, and the answers
+ravi agents requests list --received                               # requests to this machine's agents
+ravi agents requests cancel <id>                                   # before the other machine takes it
+ravi agents requests finance on --execute                          # open one of your agents to requests
+ravi agents requests finance off                                   # close it, at once
+ravi agents set finance description "Answers about closings and invoices"
+```
+
+- The machine is the installation name the directory shows; when two machines share a name, use the installation id (`LIBRARY_TARGET_AMBIGUOUS`, exit 2).
+- Asked from an agent session, the answer arrives in that session as a `[System] Inform`. Asked from the terminal, read it with `ravi agents requests list --all`.
+- On the asked machine, the daemon checks for requests every 5 minutes (`RAVI_LIBRARY_PIN_INTERVAL_MS`) and gives each turn up to 10 minutes (`RAVI_LIBRARY_REQUEST_TIMEOUT_MS`). Requests expire after 24 hours, and a machine can have 20 waiting at once.
+- A `CONFLICT` carries its reason in `conflict`: `not_accepting` (the agent is not open to requests), `same_installation` (it runs on this machine: use `ravi sessions send`), `too_many_open` (wait or cancel one), `no_installation` (run `ravi login` on this daemon).
+- Opening an agent is a dry run until you pass `--execute`; closing it applies at once. Agents cannot open or close agents (`LIBRARY_AGENT_CANNOT_OPEN_REQUESTS`, exit 3), and an agent serving someone other than you cannot ask other machines (`LIBRARY_REQUEST_EXTERNAL_DENIED`, exit 3).
+
 ## Install your own skills
 
 `ravi skills install` copies a skill from the catalog, a local folder or a Git source into `~/ravi/plugins/ravi-user-skills/skills/<skill>` (change the bucket with `--plugin`). Whether it runs at once depends on the risk:

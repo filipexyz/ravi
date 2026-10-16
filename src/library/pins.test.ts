@@ -515,6 +515,8 @@ describe("library agent report", () => {
       provider: "codex",
       model: "gpt-x",
       project: "clinica",
+      description: null,
+      acceptsRequests: false,
     });
     expect(byId.get("main")?.project).toBeNull();
   });

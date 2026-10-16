@@ -159,6 +159,44 @@ class AdaptersShowReturn {
 
 AdaptersShowReturn adaptersShowReturnFromJson(Object? json) => AdaptersShowReturn.fromJsonValue(json);
 
+class AgentsAskOptions {
+  const AgentsAskOptions({this.execute});
+
+  final bool? execute;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+  }
+}
+
+class AgentsAskReturn {
+  const AgentsAskReturn({required this.next, required this.request, required this.session, required this.success, required this.target});
+
+  final String next;
+  final RaviJson request;
+  final RaviJson session;
+  final bool success;
+  final String target;
+
+  factory AgentsAskReturn.fromJson(Map<String, Object?> json) {
+    return AgentsAskReturn(
+      next: raviJsonAsString(json["next"]),
+      request: RaviJson.from(json["request"]),
+      session: RaviJson.from(json["session"]),
+      success: raviJsonAsBool(json["success"]),
+      target: raviJsonAsString(json["target"]),
+    );
+  }
+
+  static AgentsAskReturn fromJsonValue(Object? json) {
+    return AgentsAskReturn.fromJson(raviJsonObject(json, "AgentsAskReturn"));
+  }
+}
+
+AgentsAskReturn agentsAskReturnFromJson(Object? json) => AgentsAskReturn.fromJsonValue(json);
+
 class AgentsCreateOptions {
   const AgentsCreateOptions({this.allowRuntimeMismatch, this.model, this.modelPreset, this.provider});
 
@@ -286,6 +324,44 @@ class AgentsDeleteReturn {
 }
 
 AgentsDeleteReturn agentsDeleteReturnFromJson(Object? json) => AgentsDeleteReturn.fromJsonValue(json);
+
+class AgentsDirectoryOptions {
+  const AgentsDirectoryOptions({this.project});
+
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class AgentsDirectoryReturn {
+  const AgentsDirectoryReturn({required this.agents, required this.can, required this.project, required this.query, required this.total});
+
+  final List<RaviJson> agents;
+  final RaviJson can;
+  final RaviJson project;
+  final String query;
+  final double total;
+
+  factory AgentsDirectoryReturn.fromJson(Map<String, Object?> json) {
+    return AgentsDirectoryReturn(
+      agents: raviJsonAsList(json["agents"], RaviJson.from),
+      can: RaviJson.from(json["can"]),
+      project: RaviJson.from(json["project"]),
+      query: raviJsonAsString(json["query"]),
+      total: raviJsonAsDouble(json["total"]),
+    );
+  }
+
+  static AgentsDirectoryReturn fromJsonValue(Object? json) {
+    return AgentsDirectoryReturn.fromJson(raviJsonObject(json, "AgentsDirectoryReturn"));
+  }
+}
+
+AgentsDirectoryReturn agentsDirectoryReturnFromJson(Object? json) => AgentsDirectoryReturn.fromJsonValue(json);
 
 class AgentsInstallOptions {
   const AgentsInstallOptions({this.cwd, this.execute, this.id});
@@ -588,6 +664,122 @@ class AgentsPublishReturn {
 }
 
 AgentsPublishReturn agentsPublishReturnFromJson(Object? json) => AgentsPublishReturn.fromJsonValue(json);
+
+class AgentsRequestsOptions {
+  const AgentsRequestsOptions({this.execute});
+
+  final bool? execute;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+  }
+}
+
+class AgentsRequestsReturn {
+  const AgentsRequestsReturn({required this.acceptsRequests, required this.agent, required this.changed, this.hint, required this.reported});
+
+  final bool acceptsRequests;
+  final String agent;
+  final bool changed;
+  final String? hint;
+  final bool reported;
+
+  factory AgentsRequestsReturn.fromJson(Map<String, Object?> json) {
+    return AgentsRequestsReturn(
+      acceptsRequests: raviJsonAsBool(json["acceptsRequests"]),
+      agent: raviJsonAsString(json["agent"]),
+      changed: raviJsonAsBool(json["changed"]),
+      hint: json["hint"] == null ? null : raviJsonAsString(json["hint"]),
+      reported: raviJsonAsBool(json["reported"]),
+    );
+  }
+
+  static AgentsRequestsReturn fromJsonValue(Object? json) {
+    return AgentsRequestsReturn.fromJson(raviJsonObject(json, "AgentsRequestsReturn"));
+  }
+}
+
+AgentsRequestsReturn agentsRequestsReturnFromJson(Object? json) => AgentsRequestsReturn.fromJsonValue(json);
+
+class AgentsRequestsCancelReturn {
+  const AgentsRequestsCancelReturn({required this.request, required this.success});
+
+  final RaviJson request;
+  final bool success;
+
+  factory AgentsRequestsCancelReturn.fromJson(Map<String, Object?> json) {
+    return AgentsRequestsCancelReturn(
+      request: RaviJson.from(json["request"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static AgentsRequestsCancelReturn fromJsonValue(Object? json) {
+    return AgentsRequestsCancelReturn.fromJson(raviJsonObject(json, "AgentsRequestsCancelReturn"));
+  }
+}
+
+AgentsRequestsCancelReturn agentsRequestsCancelReturnFromJson(Object? json) => AgentsRequestsCancelReturn.fromJsonValue(json);
+
+class AgentsRequestsListOptions {
+  const AgentsRequestsListOptions({this.all, this.limit, this.offset, this.received});
+
+  final bool? all;
+  final String? limit;
+  final String? offset;
+  final bool? received;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (all != null) {
+      into["all"] = RaviJson.from(all);
+    }
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+    if (received != null) {
+      into["received"] = RaviJson.from(received);
+    }
+  }
+}
+
+class AgentsRequestsListReturn {
+  const AgentsRequestsListReturn({required this.box, this.hint, required this.installation, this.local, required this.pagination, required this.requests, required this.stale, required this.state, required this.total});
+
+  final String box;
+  final String? hint;
+  final RaviJson installation;
+  final List<RaviJson>? local;
+  final RaviJson pagination;
+  final List<RaviJson> requests;
+  final bool stale;
+  final String state;
+  final double total;
+
+  factory AgentsRequestsListReturn.fromJson(Map<String, Object?> json) {
+    return AgentsRequestsListReturn(
+      box: raviJsonAsString(json["box"]),
+      hint: json["hint"] == null ? null : raviJsonAsString(json["hint"]),
+      installation: RaviJson.from(json["installation"]),
+      local: json["local"] == null ? null : raviJsonAsList(json["local"], RaviJson.from),
+      pagination: RaviJson.from(json["pagination"]),
+      requests: raviJsonAsList(json["requests"], RaviJson.from),
+      stale: raviJsonAsBool(json["stale"]),
+      state: raviJsonAsString(json["state"]),
+      total: raviJsonAsDouble(json["total"]),
+    );
+  }
+
+  static AgentsRequestsListReturn fromJsonValue(Object? json) {
+    return AgentsRequestsListReturn.fromJson(raviJsonObject(json, "AgentsRequestsListReturn"));
+  }
+}
+
+AgentsRequestsListReturn agentsRequestsListReturnFromJson(Object? json) => AgentsRequestsListReturn.fromJsonValue(json);
 
 class AgentsResetOptions {
   const AgentsResetOptions({this.execute});

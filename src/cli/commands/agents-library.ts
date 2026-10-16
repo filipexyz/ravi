@@ -21,11 +21,33 @@ import {
 import { parseLibraryRef } from "../../library/refs.js";
 import { LIBRARY_AGENT_CANNOT_PUBLISH, LibraryCommandError } from "../../library/service.js";
 import { CONTRACT_EXIT_USAGE, contractDryRun, contractFail } from "../agent-contract.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
-import { failLibraryPolicy, runtimeLibraryCaller, withLibraryContract } from "../library-contract.js";
 import {
+  failLibraryPolicy,
+  runtimeLibraryCaller,
+  runtimeLibrarySession,
+  withLibraryContract,
+} from "../library-contract.js";
+import {
+  cancelLibraryRequest,
+  executeLibraryAsk,
+  LIBRARY_AGENT_CANNOT_OPEN_REQUESTS,
+  listLibraryDirectory,
+  listLibraryRequests,
+  prepareLibraryAsk,
+  readAcceptsRequests,
+  requireLocalAgent,
+  setAcceptsRequests,
+} from "../../library/requests.js";
+import {
+  agentsAskReturnSchema,
+  agentsDirectoryReturnSchema,
   agentsInstallReturnSchema,
   agentsPublishReturnSchema,
+  agentsRequestsCancelReturnSchema,
+  agentsRequestsListReturnSchema,
+  agentsRequestsToggleReturnSchema,
   agentsSearchReturnSchema,
   agentsUpdateReturnSchema,
 } from "./operational-return-schemas.js";
@@ -170,6 +192,71 @@ ON ERROR
   CONFLICT reason=stale_base           → someone published meanwhile; re-run without --execute.
   CONFLICT reason=slug_taken_in_*      → pass --slug <another>.
   ORG_ACCESS_DENIED                    → only a publisher of that scope publishes; use --propose.
+`;
+
+const AGENTS_DIRECTORY_HELP_AFTER = `
+READ — lists the agents that the organization's linked Ravi machines report
+(name, description, provider, model, project, online, and whether they take
+requests). Only org-wide agents and those of projects you can read appear.
+Never instructions, paths or credentials.
+
+EXAMPLES
+  ravi agents directory
+  ravi agents directory finance --json
+  ravi agents directory --project clinica
+
+SEE ALSO
+  ravi agents ask <machine>/<agent> "<message>" --execute
+`;
+
+const AGENTS_ASK_HELP_AFTER = `
+MUTATE (BRAKED) — sends a message to an agent on another machine of the
+organization. That machine runs one turn of its agent as you (not as its
+operator) and sends the answer back. Inside an agent, the answer arrives in the
+asking session as a [System] Inform; from the terminal, read it with
+'ravi agents requests list --all'.
+
+RULES
+  • <machine> is the installation name from 'ravi agents directory', or its id
+    when two machines share a name (LIBRARY_TARGET_AMBIGUOUS, exit 2).
+  • The asked agent must be open to requests (its operator ran
+    'ravi agents requests <agent> on --execute').
+  • Inside an agent, only the operator's own turns may ask
+    (LIBRARY_REQUEST_EXTERNAL_DENIED, exit 3).
+  • Requests expire after 24 hours; a machine has at most 20 open.
+
+EXAMPLES
+  ravi agents ask macbook-ana/finance "What was the October close date?"            # plan (exit 3)
+  ravi agents ask macbook-ana/finance "What was the October close date?" --execute
+
+ON ERROR
+  exit 3 WRITE_REQUIRES_EXECUTE       → review the plan, then re-run with --execute.
+  CONFLICT reason=not_accepting       → the agent is not open to requests.
+  CONFLICT reason=same_installation   → it runs here: use ravi sessions send.
+  CONFLICT reason=too_many_open       → wait, or cancel one (ravi agents requests cancel <id>).
+  CONFLICT reason=no_installation     → run ravi login on this daemon.
+  NOT_FOUND                           → check the target with ravi agents directory.
+`;
+
+const AGENTS_REQUESTS_HELP_AFTER = `
+Shows or changes whether an agent of this machine answers requests from agents
+on other machines of the organization (default: off). An open agent answers
+each request in a session of its own, as the person who asked, without the
+operator's authority.
+
+RULES
+  • on adds exposure: braked (exit 3 without --execute).
+  • off only takes it away: applies at once.
+  • Agents do not open or close themselves (LIBRARY_AGENT_CANNOT_OPEN_REQUESTS, exit 3).
+  • The directory learns of it right away when 'ravi login' is linked,
+    otherwise at the daemon's next pin sync.
+
+EXAMPLES
+  ravi agents requests finance                 # current state
+  ravi agents requests finance on              # plan (exit 3)
+  ravi agents requests finance on --execute
+  ravi agents requests finance off
+  ravi agents requests list --received --all
 `;
 
 @Group({
@@ -419,6 +506,240 @@ export class AgentsLibraryCommands {
         console.log(`  Others install it with: ravi agents install ${result.ref}`);
       }
       for (const left of plan.leftOut) console.log(`  Left out: ${left.skill} (${left.reason})`);
+      return payload;
+    });
+  }
+  @Command({
+    name: "directory",
+    description: "List agents on the organization's other Ravi machines that you can ask",
+    helpAfter: AGENTS_DIRECTORY_HELP_AFTER,
+  })
+  @CommandAccess({ kind: "read", resource: "agents", action: "directory", risk: "low" })
+  @Returns(agentsDirectoryReturnSchema)
+  async directory(
+    @Arg("query", { description: "Words to search for", required: false }) query?: string,
+    @Option({ flags: "--project <project>", description: "Only org-wide agents and this project's" })
+    project?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    return withLibraryContract("agents directory", asJson, async () => {
+      const payload = await listLibraryDirectory({
+        ...(query?.trim() ? { query: query.trim() } : {}),
+        project: project?.trim() || null,
+      });
+      if (asJson) {
+        printJson(payload);
+      } else if (payload.agents.length === 0) {
+        console.log("No agents in the directory.");
+      } else {
+        for (const entry of payload.agents) {
+          const marks = [
+            entry.self ? "this machine" : "",
+            entry.online ? "online" : "offline",
+            entry.acceptsRequests ? "takes requests" : "",
+          ]
+            .filter(Boolean)
+            .join(", ");
+          console.log(
+            `  ${entry.target.padEnd(36)} ${marks}${entry.agent.description ? `  ${entry.agent.description}` : ""}`,
+          );
+        }
+        if (payload.can.ask) console.log('\nAsk one with: ravi agents ask <machine>/<agent> "<message>" --execute');
+      }
+      return payload;
+    });
+  }
+
+  @Command({
+    name: "ask",
+    description: "Ask an agent on another Ravi machine of the organization. Requires --execute.",
+    helpAfter: AGENTS_ASK_HELP_AFTER,
+  })
+  @CommandAccess({ kind: "mutate", resource: "agents", action: "ask", risk: "medium", requiresConfirmation: true })
+  @Returns(agentsAskReturnSchema)
+  async ask(
+    @Arg("target", { description: "<machine>/<agent>, as 'ravi agents directory' lists it" }) target: string,
+    @Arg("message", { description: "The message (at most 8000 characters)" }) message: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--execute", description: "Send the request (without it, print the plan and exit 3)" })
+    execute?: boolean,
+  ) {
+    return withLibraryContract("agents ask", asJson, async () => {
+      const caller = runtimeLibraryCaller();
+      const session = caller ? runtimeLibrarySession() : null;
+      const prepared = await prepareLibraryAsk({
+        target,
+        message: message ?? "",
+        caller: caller
+          ? { agentId: caller.agentId, sessionKey: session?.key ?? null, sessionName: session?.name ?? null }
+          : null,
+      });
+      if (!execute) contractDryRun("agents ask", { ...prepared.plan }, { asJson });
+      const result = await executeLibraryAsk(prepared);
+      const payload = {
+        success: true as const,
+        target: result.target,
+        request: result.request,
+        session: prepared.caller?.sessionName ?? null,
+        next: result.next,
+      };
+      if (asJson) {
+        printJson(payload);
+      } else {
+        console.log(`✓ Asked ${result.target} (request ${result.request.id})`);
+        console.log(
+          payload.session
+            ? `  The answer arrives in this session as a [System] Inform.`
+            : "  Read the answer with: ravi agents requests list --all",
+        );
+      }
+      return payload;
+    });
+  }
+
+  @Command({
+    name: "requests",
+    description: "Show or set whether an agent answers requests from other machines (on requires --execute)",
+    helpAfter: AGENTS_REQUESTS_HELP_AFTER,
+  })
+  @CommandAccess({ kind: "mutate", resource: "agents", action: "requests", risk: "medium", requiresConfirmation: true })
+  @Returns(agentsRequestsToggleReturnSchema)
+  async requests(
+    @Arg("id", { description: "Local agent id" }) id: string,
+    @Arg("state", { description: "on or off (omit to show)", required: false }) state?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--execute", description: "Confirm opening the agent (without it, print the plan and exit 3)" })
+    execute?: boolean,
+  ) {
+    const wanted = state?.trim().toLowerCase();
+    if (wanted !== undefined && wanted !== "" && wanted !== "on" && wanted !== "off") {
+      contractFail("agents requests", "USAGE_ERROR", "The state is on or off.", {
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: { suggestedAction: `ravi agents requests ${id} on --execute, or ravi agents requests ${id} off` },
+      });
+    }
+    if (wanted && runtimeLibraryCaller()) {
+      failLibraryPolicy(
+        "agents requests",
+        LIBRARY_AGENT_CANNOT_OPEN_REQUESTS,
+        "Agents do not open or close agents to requests: the operator decides what other machines may ask.",
+        `Ask the operator to run: ravi agents requests ${id} ${wanted}${wanted === "on" ? " --execute" : ""}`,
+        asJson,
+      );
+    }
+    return withLibraryContract("agents requests", asJson, async () => {
+      requireLocalAgent(id);
+      const current = readAcceptsRequests(id);
+      if (!wanted) {
+        const payload = { agent: id, acceptsRequests: current, changed: false, reported: false };
+        if (asJson) printJson(payload);
+        else
+          console.log(
+            `${id}: ${current ? "answers requests from other machines" : "closed to requests from other machines"}`,
+          );
+        return payload;
+      }
+      const accepts = wanted === "on";
+      if (accepts && !current && !execute) {
+        contractDryRun(
+          "agents requests",
+          {
+            agent: id,
+            acceptsRequests: true,
+            effect: `members of the organization may ask ${id} from other machines; it answers as them, without operator authority`,
+          },
+          { asJson },
+        );
+      }
+      const payload = await setAcceptsRequests({ agentId: id, accepts });
+      if (asJson) {
+        printJson(payload);
+      } else {
+        console.log(`✓ ${id} ${accepts ? "answers" : "no longer answers"} requests from other machines`);
+        if (payload.hint) console.log(`  ${payload.hint}`);
+      }
+      return payload;
+    });
+  }
+}
+
+@Group({
+  name: "agents.requests",
+  description: "Requests between agents on the organization's Ravi machines",
+})
+export class AgentsRequestsCommands {
+  @Command({ name: "list", description: "List this machine's requests (sent by default)" })
+  @CommandAccess({ kind: "read", resource: "agents", action: "requests-list", risk: "low" })
+  @Returns(agentsRequestsListReturnSchema)
+  async list(
+    @Option({ flags: "--received", description: "Requests to this machine's agents" }) received?: boolean,
+    @Option({ flags: "--all", description: "Include answered, failed, expired and cancelled ones" }) all?: boolean,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of requests to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    return withLibraryContract("agents requests list", asJson, async () => {
+      const listed = await listLibraryRequests({ received: received === true, all: all === true });
+      const page = paginateCliItems(listed.requests, { limit, offset });
+      const localPage = listed.local ? paginateCliItems(listed.local, { limit, offset }) : null;
+      const total = localPage ? localPage.total : page.total;
+      const returned = localPage ? localPage.items.length : page.items.length;
+      const payload = {
+        ...listed,
+        total,
+        requests: page.items,
+        ...(localPage ? { local: localPage.items } : {}),
+        pagination: buildCliOffsetPagination({
+          baseCommand: ["ravi", "agents", "requests", "list"],
+          limit: page.limit,
+          offset: page.offset,
+          returned,
+          total,
+          options: [received ? "--received" : null, all ? "--all" : null],
+        }),
+      };
+      if (asJson) {
+        printJson(payload);
+        return payload;
+      }
+      if (payload.hint) console.log(payload.hint);
+      if (payload.stale) {
+        for (const row of payload.local ?? []) {
+          console.log(
+            `  ${row.requestId}  ${row.status.padEnd(9)} ${row.peer ?? "-"}${row.reply ? `\n    ${row.reply}` : ""}`,
+          );
+        }
+        return payload;
+      }
+      if (payload.requests.length === 0)
+        console.log(`No ${payload.state === "open" ? "open " : ""}${payload.box} requests.`);
+      for (const request of payload.requests) {
+        const other =
+          payload.box === "sent"
+            ? `to ${request.to.installation.name || request.to.installation.id}/${request.to.agentId}`
+            : `from ${request.from.user?.name ?? "?"} on ${request.from.installation?.name ?? "?"}${request.from.agentId ? ` via ${request.from.agentId}` : ""} to ${request.to.agentId}`;
+        console.log(`  ${request.id}  ${request.status.padEnd(9)} ${other}`);
+        console.log(`    > ${request.message.replace(/\s+/g, " ").slice(0, 160)}`);
+        if (request.reply) console.log(`    < ${request.reply}`);
+        if (request.failureReason) console.log(`    ! ${request.failureReason}`);
+      }
+      return payload;
+    });
+  }
+
+  @Command({ name: "cancel", description: "Cancel a request the asked agent has not taken yet" })
+  @CommandAccess({ kind: "mutate", resource: "agents", action: "requests-cancel", risk: "low" })
+  @Returns(agentsRequestsCancelReturnSchema)
+  async cancel(
+    @Arg("id", { description: "Request id" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    return withLibraryContract("agents requests cancel", asJson, async () => {
+      const request = await cancelLibraryRequest({ id });
+      const payload = { success: true as const, request };
+      if (asJson) printJson(payload);
+      else console.log(`✓ Cancelled request ${request.id}`);
       return payload;
     });
   }

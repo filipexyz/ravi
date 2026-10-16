@@ -176,6 +176,56 @@ export type AdaptersShowReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `agents.ask`. */
+export type AgentsAskInput = {
+  execute?: boolean;
+  message: string;
+  target: string;
+};
+
+/** Return shape for `agents.ask`. */
+export type AgentsAskReturn = {
+  next: string;
+  request: {
+    answeredAt: string | null;
+    createdAt: string | null;
+    deliveredAt: string | null;
+    direction: "sent" | "received";
+    expiresAt: string | null;
+    failureReason: string | null;
+    from: {
+      agentId: string | null;
+      installation: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      user: ({
+        id: string;
+        name: string | null;
+      }) | null;
+    };
+    id: string;
+    message: string;
+    project: ({
+      id: string;
+      name: string | null;
+      slug: string;
+    }) | null;
+    reply: string | null;
+    status: "pending" | "delivered" | "answered" | "failed" | "expired" | "cancelled";
+    to: {
+      agentId: string;
+      installation: {
+        id: string;
+        name: string | null;
+      };
+    };
+  };
+  session: string | null;
+  success: true;
+  target: string;
+};
+
 /** Input shape for `agents.create`. */
 export type AgentsCreateInput = {
   allowRuntimeMismatch?: boolean;
@@ -245,6 +295,45 @@ export type AgentsDeleteReturn = {
   before?: Record<string, unknown>;
   changed: boolean;
   [k: string]: unknown;
+};
+
+/** Input shape for `agents.directory`. */
+export type AgentsDirectoryInput = {
+  project?: string;
+  query?: string;
+};
+
+/** Return shape for `agents.directory`. */
+export type AgentsDirectoryReturn = {
+  agents: Array<{
+    acceptsRequests: boolean;
+    agent: {
+      description: string | null;
+      id: string;
+      model: string | null;
+      name: string;
+      project: ({
+        id: string;
+        name: string | null;
+        slug: string;
+      }) | null;
+      provider: string | null;
+    };
+    installation: {
+      id: string;
+      name: string | null;
+    };
+    online: boolean;
+    reportedAt: string | null;
+    self: boolean;
+    target: string;
+  }>;
+  can: {
+    ask: boolean;
+  };
+  project: string | null;
+  query: string;
+  total: number;
 };
 
 /** Input shape for `agents.install`. */
@@ -677,6 +766,146 @@ export type AgentsPublishReturn = {
   success: true;
   unchanged: boolean;
   version: number | null;
+};
+
+/** Input shape for `agents.requests`. */
+export type AgentsRequestsInput = {
+  execute?: boolean;
+  id: string;
+  state?: string;
+};
+
+/** Return shape for `agents.requests`. */
+export type AgentsRequestsReturn = {
+  acceptsRequests: boolean;
+  agent: string;
+  changed: boolean;
+  hint?: string;
+  reported: boolean;
+};
+
+/** Input shape for `agents.requests.cancel`. */
+export type AgentsRequestsCancelInput = {
+  id: string;
+};
+
+/** Return shape for `agents.requests.cancel`. */
+export type AgentsRequestsCancelReturn = {
+  request: {
+    answeredAt: string | null;
+    createdAt: string | null;
+    deliveredAt: string | null;
+    direction: "sent" | "received";
+    expiresAt: string | null;
+    failureReason: string | null;
+    from: {
+      agentId: string | null;
+      installation: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      user: ({
+        id: string;
+        name: string | null;
+      }) | null;
+    };
+    id: string;
+    message: string;
+    project: ({
+      id: string;
+      name: string | null;
+      slug: string;
+    }) | null;
+    reply: string | null;
+    status: "pending" | "delivered" | "answered" | "failed" | "expired" | "cancelled";
+    to: {
+      agentId: string;
+      installation: {
+        id: string;
+        name: string | null;
+      };
+    };
+  };
+  success: true;
+};
+
+/** Input shape for `agents.requests.list`. */
+export type AgentsRequestsListInput = {
+  all?: boolean;
+  limit?: string;
+  offset?: string;
+  received?: boolean;
+};
+
+/** Return shape for `agents.requests.list`. */
+export type AgentsRequestsListReturn = {
+  box: "sent" | "received";
+  hint?: string;
+  installation: ({
+    id: string;
+    name: string | null;
+  }) | null;
+  local?: Array<{
+    agentId: string | null;
+    createdAt: number;
+    direction: "sent" | "received";
+    error: string | null;
+    peer: string | null;
+    reply: string | null;
+    requestId: string;
+    sessionKey: string | null;
+    sessionName: string | null;
+    status: string;
+    updatedAt: number;
+  }>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  requests: Array<{
+    answeredAt: string | null;
+    createdAt: string | null;
+    deliveredAt: string | null;
+    direction: "sent" | "received";
+    expiresAt: string | null;
+    failureReason: string | null;
+    from: {
+      agentId: string | null;
+      installation: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      user: ({
+        id: string;
+        name: string | null;
+      }) | null;
+    };
+    id: string;
+    message: string;
+    project: ({
+      id: string;
+      name: string | null;
+      slug: string;
+    }) | null;
+    reply: string | null;
+    session: string | null;
+    status: "pending" | "delivered" | "answered" | "failed" | "expired" | "cancelled";
+    to: {
+      agentId: string;
+      installation: {
+        id: string;
+        name: string | null;
+      };
+    };
+  }>;
+  stale: boolean;
+  state: "open" | "all";
+  total: number;
 };
 
 /** Input shape for `agents.reset`. */

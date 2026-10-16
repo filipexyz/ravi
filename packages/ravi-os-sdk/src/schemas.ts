@@ -926,6 +926,321 @@ export const AdaptersShowReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `agents.ask`. */
+export const AgentsAskInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "execute": {
+      "description": "Send the request (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "message": {
+      "description": "The message (at most 8000 characters)",
+      "type": "string"
+    },
+    "target": {
+      "description": "<machine>/<agent>, as 'ravi agents directory' lists it",
+      "type": "string"
+    }
+  },
+  "required": [
+    "message",
+    "target"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `agents.ask`. */
+export const AgentsAskReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "next": {
+      "type": "string"
+    },
+    "request": {
+      "additionalProperties": false,
+      "properties": {
+        "answeredAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deliveredAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "direction": {
+          "enum": [
+            "sent",
+            "received"
+          ],
+          "type": "string"
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "failureReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "from": {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "installation": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "user": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "installation",
+            "agentId",
+            "user"
+          ],
+          "type": "object"
+        },
+        "id": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "project": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "slug": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "slug",
+                "name"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reply": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "delivered",
+            "answered",
+            "failed",
+            "expired",
+            "cancelled"
+          ],
+          "type": "string"
+        },
+        "to": {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "type": "string"
+            },
+            "installation": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "installation",
+            "agentId"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "direction",
+        "from",
+        "to",
+        "project",
+        "message",
+        "reply",
+        "failureReason",
+        "createdAt",
+        "deliveredAt",
+        "answeredAt",
+        "expiresAt"
+      ],
+      "type": "object"
+    },
+    "session": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "target": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "success",
+    "target",
+    "request",
+    "session",
+    "next"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `agents.create`. */
 export const AgentsCreateInputSchema = {
   "additionalProperties": false,
@@ -1173,6 +1488,212 @@ export const AgentsDeleteReturnSchema = {
     "action",
     "changed",
     "agentId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `agents.directory`. */
+export const AgentsDirectoryInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "project": {
+      "description": "Only org-wide agents and this project's",
+      "type": "string"
+    },
+    "query": {
+      "description": "Words to search for",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `agents.directory`. */
+export const AgentsDirectoryReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agents": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "acceptsRequests": {
+            "type": "boolean"
+          },
+          "agent": {
+            "additionalProperties": false,
+            "properties": {
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "model": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "project": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "slug": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "slug",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "provider": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "description",
+              "provider",
+              "model",
+              "project"
+            ],
+            "type": "object"
+          },
+          "installation": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "online": {
+            "type": "boolean"
+          },
+          "reportedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "self": {
+            "type": "boolean"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "installation",
+          "agent",
+          "online",
+          "acceptsRequests",
+          "reportedAt",
+          "self"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "can": {
+      "additionalProperties": false,
+      "properties": {
+        "ask": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ask"
+      ],
+      "type": "object"
+    },
+    "project": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "query": {
+      "type": "string"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "query",
+    "project",
+    "total",
+    "can",
+    "agents"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -3703,6 +4224,857 @@ export const AgentsPublishReturnSchema = {
     "manifest",
     "leftOut",
     "next"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `agents.requests`. */
+export const AgentsRequestsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "execute": {
+      "description": "Confirm opening the agent (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Local agent id",
+      "type": "string"
+    },
+    "state": {
+      "description": "on or off (omit to show)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `agents.requests`. */
+export const AgentsRequestsReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "acceptsRequests": {
+      "type": "boolean"
+    },
+    "agent": {
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "hint": {
+      "type": "string"
+    },
+    "reported": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "agent",
+    "acceptsRequests",
+    "changed",
+    "reported"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `agents.requests.cancel`. */
+export const AgentsRequestsCancelInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Request id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `agents.requests.cancel`. */
+export const AgentsRequestsCancelReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "request": {
+      "additionalProperties": false,
+      "properties": {
+        "answeredAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deliveredAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "direction": {
+          "enum": [
+            "sent",
+            "received"
+          ],
+          "type": "string"
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "failureReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "from": {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "installation": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "user": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "installation",
+            "agentId",
+            "user"
+          ],
+          "type": "object"
+        },
+        "id": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "project": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "slug": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "slug",
+                "name"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reply": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "delivered",
+            "answered",
+            "failed",
+            "expired",
+            "cancelled"
+          ],
+          "type": "string"
+        },
+        "to": {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "type": "string"
+            },
+            "installation": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "installation",
+            "agentId"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "direction",
+        "from",
+        "to",
+        "project",
+        "message",
+        "reply",
+        "failureReason",
+        "createdAt",
+        "deliveredAt",
+        "answeredAt",
+        "expiresAt"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `agents.requests.list`. */
+export const AgentsRequestsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "all": {
+      "description": "Include answered, failed, expired and cancelled ones",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of requests to skip (default: 0)",
+      "type": "string"
+    },
+    "received": {
+      "description": "Requests to this machine's agents",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `agents.requests.list`. */
+export const AgentsRequestsListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "box": {
+      "enum": [
+        "sent",
+        "received"
+      ],
+      "type": "string"
+    },
+    "hint": {
+      "type": "string"
+    },
+    "installation": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "local": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "direction": {
+            "enum": [
+              "sent",
+              "received"
+            ],
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "peer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reply": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "sessionKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "requestId",
+          "direction",
+          "agentId",
+          "peer",
+          "sessionKey",
+          "sessionName",
+          "status",
+          "error",
+          "reply",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "requests": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "answeredAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deliveredAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "direction": {
+            "enum": [
+              "sent",
+              "received"
+            ],
+            "type": "string"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "failureReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "from": {
+            "additionalProperties": false,
+            "properties": {
+              "agentId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "installation": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "user": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "installation",
+              "agentId",
+              "user"
+            ],
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "project": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "slug": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "slug",
+                  "name"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reply": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "session": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "delivered",
+              "answered",
+              "failed",
+              "expired",
+              "cancelled"
+            ],
+            "type": "string"
+          },
+          "to": {
+            "additionalProperties": false,
+            "properties": {
+              "agentId": {
+                "type": "string"
+              },
+              "installation": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "name"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "installation",
+              "agentId"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "direction",
+          "from",
+          "to",
+          "project",
+          "message",
+          "reply",
+          "failureReason",
+          "createdAt",
+          "deliveredAt",
+          "answeredAt",
+          "expiresAt",
+          "session"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "stale": {
+      "type": "boolean"
+    },
+    "state": {
+      "enum": [
+        "open",
+        "all"
+      ],
+      "type": "string"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "box",
+    "state",
+    "stale",
+    "installation",
+    "total",
+    "requests",
+    "pagination"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;

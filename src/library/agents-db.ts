@@ -156,9 +156,11 @@ export interface LocalAgentRequest {
   peer: string | null;
   sessionKey: string | null;
   sessionName: string | null;
-  /** sent: `open`, `answered`, `failed`, `expired`, `cancelled`, `delivered_to_session`; received: `running`, `answered`, `failed`. */
+  /** sent: `open`, then the Console's `answered`, `failed`, `expired` or `cancelled`; received: `running`, `answered`, `failed`. */
   status: string;
   error: string | null;
+  /** The answer (sent) or the reply this side posted (received), kept for the terminal. */
+  reply: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -172,6 +174,7 @@ interface RequestRow {
   session_name: string | null;
   status: string;
   error: string | null;
+  reply: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -186,23 +189,29 @@ function rowToRequest(row: RequestRow): LocalAgentRequest {
     sessionName: row.session_name,
     status: row.status,
     error: row.error,
+    reply: row.reply ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
 export function dbUpsertLocalAgentRequest(
-  input: Omit<LocalAgentRequest, "createdAt" | "updatedAt" | "error"> & { error?: string | null; now?: number },
+  input: Omit<LocalAgentRequest, "createdAt" | "updatedAt" | "error" | "reply"> & {
+    error?: string | null;
+    reply?: string | null;
+    now?: number;
+  },
 ): void {
   const now = input.now ?? Date.now();
   getDb()
     .prepare(
       `INSERT INTO library_agent_requests
-         (request_id, direction, agent_id, peer, session_key, session_name, status, error, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         (request_id, direction, agent_id, peer, session_key, session_name, status, error, reply, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(request_id) DO UPDATE SET
          status = excluded.status,
          error = excluded.error,
+         reply = coalesce(excluded.reply, library_agent_requests.reply),
          updated_at = excluded.updated_at`,
     )
     .run(
@@ -214,6 +223,7 @@ export function dbUpsertLocalAgentRequest(
       input.sessionName,
       input.status,
       input.error ?? null,
+      input.reply ?? null,
       now,
       now,
     );
@@ -222,12 +232,15 @@ export function dbUpsertLocalAgentRequest(
 export function dbSetLocalAgentRequestStatus(
   requestId: string,
   status: string,
-  error: string | null = null,
-  now = Date.now(),
+  options: { error?: string | null; reply?: string | null; now?: number } = {},
 ): void {
   getDb()
-    .prepare("UPDATE library_agent_requests SET status = ?, error = ?, updated_at = ? WHERE request_id = ?")
-    .run(status, error, now, requestId);
+    .prepare(
+      `UPDATE library_agent_requests
+          SET status = ?, error = ?, reply = coalesce(?, reply), updated_at = ?
+        WHERE request_id = ?`,
+    )
+    .run(status, options.error ?? null, options.reply ?? null, options.now ?? Date.now(), requestId);
 }
 
 export function dbGetLocalAgentRequest(requestId: string): LocalAgentRequest | null {

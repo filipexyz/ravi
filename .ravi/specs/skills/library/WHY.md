@@ -129,3 +129,30 @@ loads it natively, like Ravi's own skills.
   contacts and paths mean nothing on another machine and may be private.
 - Agents do not install, update or publish agents: these change or share the
   machine's authority, the operator's call (same reasoning as pins).
+
+## Phase 5: directory and requests (2026-10-16)
+
+- The directory rides on the pin sync the daemon already runs: two more fields
+  per agent, no new loop to report agents.
+- Opening an agent to requests is per agent and closed by default; opening is
+  braked, closing is not (it only takes exposure away). The local switch is
+  checked again when a request arrives, so closing works even before the
+  Console hears about it.
+- A request turn must not carry the operator's authority on the asked
+  machine. Rather than a new permission path, it reuses how the runtime
+  already treats an unknown sender on a channel: an external surface without a
+  resolved contact is `missing_contact` and gets no capabilities. The prompt
+  says who asked, so the model can weigh it, and the turn has its own session
+  so nothing from the operator's conversations leaks into it.
+- The answer is read from the session's own events; the gateway has no chat to
+  deliver to, so it drops the response quietly instead of logging a missing
+  instance.
+- Answers come back to the asking session as a `[System] Inform` without a
+  turn origin, worded as information from another agent: the asking agent
+  asked for it, but the text is not its operator's.
+- `ravi agents ask` from an agent turn that serves someone other than the
+  operator is refused locally, like Library items not marked for outsiders: an
+  outsider's conversation should not reach agents on other machines through
+  this agent.
+- Turns run in the background, three at a time, so a slow agent does not hold
+  the pull of answers and new requests.

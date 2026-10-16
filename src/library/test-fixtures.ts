@@ -720,3 +720,149 @@ export function withFakeAgentLibrary(skills: FakeConsole, agents: FakeConsole): 
     },
   };
 }
+
+// ---------------------------------------------------------------------------
+// Directory and requests
+
+export interface FakeRequestConsole {
+  directory: Array<{
+    installation: { id: string; name: string | null };
+    agent: { id: string; name?: string; description?: string | null; project?: null };
+    online?: boolean;
+    acceptsRequests?: boolean;
+    self?: boolean;
+  }>;
+  /** Requests as the Console would serialize them for the caller. */
+  requests: LibraryAgentRequestFixture[];
+  /** Requests waiting for this installation's agents (`/requests/pull` hands them out once). */
+  incoming: LibraryAgentRequestFixture[];
+  /** Answers waiting for this installation (`/requests/replies/pull` hands them out once). */
+  replies: LibraryAgentRequestFixture[];
+  posted: Array<{ id: string; body: unknown }>;
+  /** Conflict reason `POST /requests` answers with, if any. */
+  sendConflict: string | null;
+}
+
+export type LibraryAgentRequestFixture = import("./types.js").LibraryAgentRequest;
+
+export function fakeAgentRequest(
+  input: Partial<LibraryAgentRequestFixture> & { id: string; toAgentId?: string },
+): LibraryAgentRequestFixture {
+  const { toAgentId, ...rest } = input;
+  return {
+    status: "pending",
+    direction: "received",
+    from: {
+      installation: { id: "inst-2", name: "macbook-ana" },
+      agentId: "finance",
+      user: { id: "user-2", name: "Ana" },
+    },
+    to: { installation: { id: "inst-1", name: "macbook" }, agentId: toAgentId ?? "main" },
+    project: null,
+    message: "What is the close date?",
+    reply: null,
+    failureReason: null,
+    createdAt: "2026-10-16T00:00:00.000Z",
+    deliveredAt: null,
+    answeredAt: null,
+    expiresAt: "2026-10-17T00:00:00.000Z",
+    ...rest,
+  };
+}
+
+/** Wraps a fake Console with the directory and request routes. */
+export function withFakeRequests(base: FakeConsole, state: FakeRequestConsole): FakeConsole {
+  return {
+    ...base,
+    fetch: async (url, init) => {
+      const parsed = new URL(url);
+      const method = (init?.method ?? "GET").toUpperCase();
+      const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
+      const root = "/api/cli/library/";
+      const path = parsed.pathname.startsWith(root) ? parsed.pathname.slice(root.length) : "";
+      if (path === "directory" && method === "GET") {
+        base.requests.push({ method, path: `${parsed.pathname}${parsed.search}` });
+        const q = (parsed.searchParams.get("q") ?? "").toLowerCase();
+        const agents = state.directory
+          .filter((entry) => !q || entry.agent.id.includes(q) || (entry.installation.name ?? "").includes(q))
+          .map((entry) => ({
+            installation: entry.installation,
+            agent: {
+              id: entry.agent.id,
+              name: entry.agent.name ?? entry.agent.id,
+              description: entry.agent.description ?? null,
+              provider: null,
+              model: null,
+              project: null,
+            },
+            online: entry.online ?? true,
+            acceptsRequests: entry.acceptsRequests ?? true,
+            reportedAt: "2026-10-16T00:00:00.000Z",
+            self: entry.self ?? false,
+          }));
+        return json(200, { agents, can: { ask: true } });
+      }
+      if (!path.startsWith("requests")) return base.fetch(url, init);
+      base.requests.push({ method, path: `${parsed.pathname}${parsed.search}`, body });
+      const installation = { id: "inst-1", name: "macbook" };
+      const rest = path.split("/").slice(1);
+      if (rest.length === 0 && method === "POST") {
+        if (state.sendConflict) return conflict(state.sendConflict);
+        const input = body as {
+          to: { installationId: string; agentId: string };
+          message: string;
+          agent?: { id: string };
+        };
+        const request = fakeAgentRequest({
+          id: `req-${state.requests.length + 1}`,
+          direction: "sent",
+          from: { installation, agentId: input.agent?.id ?? null, user: { id: "user-1", name: "Op" } },
+          to: { installation: { id: input.to.installationId, name: "macbook-ana" }, agentId: input.to.agentId },
+          message: input.message,
+        });
+        state.requests.push(request);
+        return json(201, { request });
+      }
+      if (rest.length === 0 && method === "GET") {
+        const box = parsed.searchParams.get("box") ?? "sent";
+        const wanted = parsed.searchParams.get("state") ?? "open";
+        const open = new Set(["pending", "delivered"]);
+        const requests = state.requests
+          .filter((request) => request.direction === box)
+          .filter((request) => wanted === "all" || open.has(request.status));
+        return json(200, { installation, requests });
+      }
+      if (rest.length === 1 && rest[0] === "pull" && method === "POST") {
+        const requests = state.incoming.splice(0).map((request) => ({ ...request, status: "delivered" as const }));
+        return json(200, { installation, requests });
+      }
+      if (rest.length === 2 && rest[0] === "replies" && rest[1] === "pull" && method === "POST") {
+        return json(200, { installation, requests: state.replies.splice(0) });
+      }
+      if (rest.length === 2 && rest[1] === "reply" && method === "POST") {
+        state.posted.push({ id: rest[0]!, body });
+        const answer = body as { reply?: string; failure?: string };
+        return json(200, {
+          request: fakeAgentRequest({
+            id: rest[0]!,
+            status: answer.reply ? "answered" : "failed",
+            reply: answer.reply ?? null,
+            failureReason: answer.failure ?? null,
+          }),
+        });
+      }
+      if (rest.length === 2 && rest[1] === "cancel" && method === "POST") {
+        const request = state.requests.find((entry) => entry.id === rest[0]);
+        if (!request) return json(404, { error: { code: "NOT_FOUND", message: "Request not found." } });
+        if (request.status !== "pending") return conflict("not_pending", { status: request.status });
+        request.status = "cancelled";
+        return json(200, { request });
+      }
+      return json(404, { error: { code: "NOT_FOUND", message: "nope" } });
+    },
+  };
+}
+
+export function createFakeRequestConsole(input: Partial<FakeRequestConsole> = {}): FakeRequestConsole {
+  return { directory: [], requests: [], incoming: [], replies: [], posted: [], sendConflict: null, ...input };
+}

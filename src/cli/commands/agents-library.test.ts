@@ -7,23 +7,28 @@ import { writeCloudCredentials } from "../../cloud-auth/storage.js";
 import { dbGetLibraryAgentState } from "../../library/agents-db.js";
 import {
   createFakeConsole,
+  createFakeRequestConsole,
   fakeAgentDefinition,
   fakeCredentials,
   fakeSkill,
   withFakeAgentLibrary,
+  withFakeRequests,
   type FakeConsole,
+  type FakeRequestConsole,
 } from "../../library/test-fixtures.js";
+import { readAcceptsRequests } from "../../library/requests.js";
 import { getAgent } from "../../router/config.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { ContractError } from "../agent-contract.js";
 import { runWithContext } from "../context.js";
-import { AgentsLibraryCommands } from "./agents-library.js";
+import { AgentsLibraryCommands, AgentsRequestsCommands } from "./agents-library.js";
 import { AgentsCommands } from "./agents.js";
 
 let stateDir: string | null = null;
 let workDir: string;
 let agents: FakeConsole;
 let library: ReturnType<typeof withFakeAgentLibrary>;
+let requestState: FakeRequestConsole;
 let fetchSpy: ReturnType<typeof spyOn> | null = null;
 
 beforeEach(async () => {
@@ -33,7 +38,15 @@ beforeEach(async () => {
     fakeAgentDefinition({ slug: "plain", description: "Plain helper" }),
     fakeAgentDefinition({ slug: "triage", manifest: { profile: "full-access", skills: ["org/tom-de-voz"] } }),
   ]);
-  library = withFakeAgentLibrary(createFakeConsole([fakeSkill({ slug: "tom-de-voz" })]), agents);
+  requestState = createFakeRequestConsole({
+    directory: [
+      { installation: { id: "11111111-1111-4111-8111-111111111111", name: "macbook-ana" }, agent: { id: "finance" } },
+    ],
+  });
+  library = withFakeAgentLibrary(
+    withFakeRequests(createFakeConsole([fakeSkill({ slug: "tom-de-voz" })]), requestState),
+    agents,
+  );
   fetchSpy = spyOn(globalThis, "fetch").mockImplementation(((input: string | URL | Request, init?: RequestInit) =>
     library.fetch(String(input instanceof Request ? input.url : input), init)) as typeof fetch);
   writeCloudCredentials(fakeCredentials());
@@ -166,5 +179,61 @@ describe("agents show and set for the Library", () => {
       runWithContext({}, () => new AgentsCommands().set("plain", "description", "x".repeat(301), true)),
     );
     expect(tooLong.exitCode).toBe(2);
+  });
+});
+
+describe("agents directory, ask and requests from the CLI", () => {
+  it("brakes opening an agent, closes at once, and refuses both inside an agent", async () => {
+    const braked = await contractError(() => runWithContext({}, () => commands.requests("main", "on", true)));
+    expect(braked.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect(readAcceptsRequests("main")).toBe(false);
+    await quietAsync(() => runWithContext({}, () => commands.requests("main", "on", true, true)));
+    expect(readAcceptsRequests("main")).toBe(true);
+    await quietAsync(() => runWithContext({}, () => commands.requests("main", "off", true)));
+    expect(readAcceptsRequests("main")).toBe(false);
+
+    for (const state of ["on", "off"]) {
+      const refused = await contractError(() =>
+        runWithContext(asAgent, () => commands.requests("main", state, true, true)),
+      );
+      expect(refused.code).toBe("LIBRARY_AGENT_CANNOT_OPEN_REQUESTS");
+      expect(refused.exitCode).toBe(3);
+    }
+    const shown = await quietAsync(() => runWithContext(asAgent, () => commands.requests("main", undefined, true)));
+    expect(shown).toMatchObject({ agent: "main", acceptsRequests: false });
+  });
+
+  it("lists the directory and brakes ask", async () => {
+    const listed = await quietAsync(() => runWithContext({}, () => commands.directory(undefined, undefined, true)));
+    expect(listed.agents.map((entry) => entry.target)).toEqual(["macbook-ana/finance"]);
+
+    const braked = await contractError(() =>
+      runWithContext({}, () => commands.ask("macbook-ana/finance", "Close date?", true)),
+    );
+    expect(braked.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect(requestState.requests).toHaveLength(0);
+
+    const sent = await quietAsync(() =>
+      runWithContext({}, () => commands.ask("macbook-ana/finance", "Close date?", true, true)),
+    );
+    expect(sent).toMatchObject({ success: true, target: "macbook-ana/finance", session: null });
+    const list = await quietAsync(() =>
+      runWithContext({}, () => new AgentsRequestsCommands().list(undefined, undefined, undefined, undefined, true)),
+    );
+    expect(list.requests.map((request) => request.id)).toEqual([sent.request.id]);
+    const cancelled = await quietAsync(() =>
+      runWithContext({}, () => new AgentsRequestsCommands().cancel(sent.request.id, true)),
+    );
+    expect(cancelled.request.status).toBe("cancelled");
+  });
+
+  it("maps request conflicts to a next step", async () => {
+    requestState.sendConflict = "not_accepting";
+    const error = await contractError(() =>
+      runWithContext({}, () => commands.ask("macbook-ana/finance", "hi", true, true)),
+    );
+    expect(error.code).toBe("CONFLICT");
+    expect(error.details.conflict).toBe("not_accepting");
+    expect(String(error.details.suggestedAction)).toContain("ravi agents requests <agent> on --execute");
   });
 });

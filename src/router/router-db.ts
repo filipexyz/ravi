@@ -1407,6 +1407,7 @@ function getDb(): Database {
       session_name   TEXT,
       status         TEXT NOT NULL,
       error          TEXT,
+      reply          TEXT,
       created_at     INTEGER NOT NULL,
       updated_at     INTEGER NOT NULL
     );

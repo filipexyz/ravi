@@ -147,6 +147,21 @@ class AgentsNamespace {
 
   final RaviTransport _transport;
 
+  AgentsRequestsNamespace get requests => AgentsRequestsNamespace(_transport);
+
+  Future<AgentsAskReturn> ask(String target, String message, [AgentsAskOptions options = const AgentsAskOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["target"] = RaviJson.from(target);
+    requestBody["message"] = RaviJson.from(message);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["agents"],
+      command: "ask",
+      body: requestBody,
+      decode: agentsAskReturnFromJson,
+    );
+  }
+
   Future<AgentsCreateReturn> create(String id, String cwd, [AgentsCreateOptions options = const AgentsCreateOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["id"] = RaviJson.from(id);
@@ -198,6 +213,20 @@ class AgentsNamespace {
       command: "delete",
       body: requestBody,
       decode: agentsDeleteReturnFromJson,
+    );
+  }
+
+  Future<AgentsDirectoryReturn> directory([String? query, AgentsDirectoryOptions options = const AgentsDirectoryOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    if (query != null) {
+      requestBody["query"] = RaviJson.from(query);
+    }
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["agents"],
+      command: "directory",
+      body: requestBody,
+      decode: agentsDirectoryReturnFromJson,
     );
   }
 
@@ -260,6 +289,21 @@ class AgentsNamespace {
       command: "publish",
       body: requestBody,
       decode: agentsPublishReturnFromJson,
+    );
+  }
+
+  Future<AgentsRequestsReturn> requestsCommand(String id, [String? state, AgentsRequestsOptions options = const AgentsRequestsOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    if (state != null) {
+      requestBody["state"] = RaviJson.from(state);
+    }
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["agents"],
+      command: "requests",
+      body: requestBody,
+      decode: agentsRequestsReturnFromJson,
     );
   }
 
@@ -362,6 +406,34 @@ class AgentsNamespace {
       command: "update",
       body: requestBody,
       decode: agentsUpdateReturnFromJson,
+    );
+  }
+}
+
+class AgentsRequestsNamespace {
+  const AgentsRequestsNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<AgentsRequestsCancelReturn> cancel(String id) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    return _transport.callJson(
+      groupSegments: const ["agents", "requests"],
+      command: "cancel",
+      body: requestBody,
+      decode: agentsRequestsCancelReturnFromJson,
+    );
+  }
+
+  Future<AgentsRequestsListReturn> list([AgentsRequestsListOptions options = const AgentsRequestsListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["agents", "requests"],
+      command: "list",
+      body: requestBody,
+      decode: agentsRequestsListReturnFromJson,
     );
   }
 }
