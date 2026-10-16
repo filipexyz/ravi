@@ -66,6 +66,13 @@ const executeConsumers: readonly ExecuteConsumer[] = [
     matches: 1,
   },
   {
+    name: "Library pin refusal inside an agent",
+    path: "src/cli/commands/skills.ts",
+    marker: "Ask the operator to run: ravi skills pin",
+    expected: "--execute",
+    matches: 1,
+  },
+  {
     name: "sentinel WhatsApp DM reply hint",
     path: "src/omni/consumer.ts",
     marker: "use whatsapp dm send",
@@ -206,6 +213,21 @@ const executeInstructions = [
     instruction: "ravi skills propose <dir> --scope ... --update <n> --execute",
   },
   {
+    name: "Library pin skill",
+    path: "src/plugins/internal/ravi-system/skills/skills/SKILL.md",
+    instruction: "ravi skills pin org/tom-de-voz --agent main --execute",
+  },
+  {
+    name: "Library pin documentation",
+    path: "docs/reference/skills.mdx",
+    instruction: "ravi skills pin org/tone-of-voice --agent main --execute",
+  },
+  {
+    name: "Library pin help",
+    path: "src/cli/commands/skills.ts",
+    instruction: "ravi skills pin org/tom-de-voz --agent main --execute",
+  },
+  {
     name: "Page Chat enable documentation",
     path: "docs/console/pages.mdx",
     instruction: "ravi pages chat set acme-website --enabled true --execute",
@@ -264,6 +286,24 @@ const executeInstructions = [
 ] as const;
 
 const obsoleteExecuteConsumers = [
+  {
+    name: "Library unpin skill: reducing what an agent loads applies at once",
+    path: "src/plugins/internal/ravi-system/skills/skills/SKILL.md",
+    obsolete: "ravi skills unpin org/tom-de-voz --agent main --execute",
+    current: "ravi skills unpin org/tom-de-voz --agent main",
+  },
+  {
+    name: "Library unpin documentation: reducing what an agent loads applies at once",
+    path: "docs/reference/skills.mdx",
+    obsolete: "ravi skills unpin org/tone-of-voice --agent main --execute",
+    current: "ravi skills unpin org/tone-of-voice --agent main",
+  },
+  {
+    name: "Library unpin help: reducing what an agent loads applies at once",
+    path: "src/cli/commands/skills.ts",
+    obsolete: "ravi skills unpin org/tom-de-voz --agent main --execute",
+    current: "ravi skills unpin org/tom-de-voz --agent main",
+  },
   {
     name: "contact block help",
     path: "src/cli/commands/contacts.ts",

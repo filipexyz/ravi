@@ -166,3 +166,44 @@ export interface LibraryProposalCreateBody extends LibraryProposalContent {
   project?: string;
   slug: string;
 }
+
+// ---------------------------------------------------------------------------
+// Pins (phase 3)
+
+/** One local agent as `POST /pins/sync` reports it: never instructions, paths or credentials. */
+export interface LibraryPinAgentReport {
+  id: string;
+  name?: string | null;
+  provider?: string | null;
+  model?: string | null;
+  /** The agent's Console project ref, or null when none resolves for it. */
+  project?: string | null;
+}
+
+/** One pin of the caller installation, at the item's latest published version. */
+export interface LibraryInstallationPin {
+  agentId: string;
+  ref: string;
+  item: LibraryItem;
+}
+
+/** `GET /pins` and `POST /pins/sync`. */
+export interface LibraryInstallationPinsResponse {
+  installation: { id: string; name: string | null };
+  revision: string;
+  pins: LibraryInstallationPin[];
+}
+
+/** One pin of an item, as `GET /skills/<scope>/<slug>/pins` and `POST .../pin` return it. */
+export interface LibraryItemPin {
+  id: string;
+  installation: { id: string; name: string | null };
+  agent: { id: string; name: string | null; project: string | null; reported: boolean };
+  pinnedBy: { name: string | null } | null;
+  createdAt: string | null;
+}
+
+export interface LibraryItemPinsResponse {
+  pins: LibraryItemPin[];
+  can: { pin: boolean };
+}

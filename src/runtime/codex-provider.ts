@@ -129,6 +129,7 @@ interface CodexCliTurnRequest {
   forkFrom?: string;
   systemPromptAppend: string;
   allowedSkills?: string[];
+  hiddenSkills?: string[];
   approveRuntimeRequest?: RuntimeApprovalHandler;
   dynamicTools?: RuntimeDynamicToolSpec[];
   handleRuntimeToolCall?: RuntimeDynamicToolCallHandler;
@@ -320,9 +321,12 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
         interrupted: false,
       };
       const allSyncedSkillNames = skillVisibilityByCwd.get(input.cwd)?.syncedSkillNames ?? [];
-      const syncedSkillNames = input.allowedSkills?.length
-        ? filterSkillNamesByAllowlist(allSyncedSkillNames, input.allowedSkills)
-        : allSyncedSkillNames;
+      const hidden = new Set(input.hiddenSkills ?? []);
+      const syncedSkillNames = (
+        input.allowedSkills?.length
+          ? filterSkillNamesByAllowlist(allSyncedSkillNames, input.allowedSkills)
+          : allSyncedSkillNames
+      ).filter((name) => !hidden.has(name));
       const skillVisibility = buildCodexSkillVisibilitySnapshot(syncedSkillNames);
 
       return {
@@ -370,10 +374,16 @@ function createCodexRuntimeStartRequest(
   };
 }
 
+/**
+ * `skills.config` entries disabling every inventory skill outside the
+ * allowlist (when one is given) and every skill named in `hiddenSkills`
+ * (pinned Library skills that are not this session's).
+ */
 export function buildCodexDisabledSkillConfig(
   inventory: unknown,
   cwd: string,
-  allowedSkills: readonly string[],
+  allowedSkills: readonly string[] | undefined,
+  hiddenSkills: readonly string[] = [],
 ): Array<{ path: string; enabled: false }> {
   const root = asRecord(inventory);
   const rows = Array.isArray(root?.data) ? root.data : [];
@@ -394,14 +404,13 @@ export function buildCodexDisabledSkillConfig(
     }
     return { path, identity: basename(dirname(path)) };
   });
-  const selectedNames = new Set(
-    filterSkillNamesByAllowlist(
-      entries.map((entry) => entry.identity),
-      allowedSkills,
-    ),
-  );
+  const identities = entries.map((entry) => entry.identity);
+  const selectedNames = new Set(allowedSkills ? filterSkillNamesByAllowlist(identities, allowedSkills) : identities);
+  const hidden = new Set(hiddenSkills);
   return entries.flatMap((entry) =>
-    selectedNames.has(entry.identity) ? [] : [{ path: entry.path, enabled: false as const }],
+    selectedNames.has(entry.identity) && !hidden.has(entry.identity)
+      ? []
+      : [{ path: entry.path, enabled: false as const }],
   );
 }
 
@@ -657,6 +666,7 @@ async function* normalizeCodexEvents(
         forkFrom: forkFromSessionId,
         systemPromptAppend,
         allowedSkills: input.allowedSkills,
+        ...(input.hiddenSkills?.length ? { hiddenSkills: input.hiddenSkills } : {}),
         approveRuntimeRequest: input.approveRuntimeRequest,
         dynamicTools: undefined,
         handleRuntimeToolCall: undefined,
@@ -1934,9 +1944,14 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   ): Promise<void> {
     const effort = toCodexRuntimeEffort(input.effort);
     const config: Record<string, unknown> = { model_reasoning_effort: effort };
-    if (input.allowedSkills?.length) {
+    if (input.allowedSkills?.length || input.hiddenSkills?.length) {
       const inventory = await sendRequest("skills/list", { cwds: [input.cwd], forceReload: true });
-      config["skills.config"] = buildCodexDisabledSkillConfig(inventory, input.cwd, input.allowedSkills);
+      config["skills.config"] = buildCodexDisabledSkillConfig(
+        inventory,
+        input.cwd,
+        input.allowedSkills?.length ? input.allowedSkills : undefined,
+        input.hiddenSkills,
+      );
     }
     if (!resumeThreadId && !forkThreadId) {
       // Do not let a rejected resumed thread leak into the fresh-thread fallback.

@@ -16796,6 +16796,106 @@ export type SkillsListReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `skills.pin`. */
+export type SkillsPinInput = {
+  agent?: string;
+  execute?: boolean;
+  ref: string;
+};
+
+/** Return shape for `skills.pin`. */
+export type SkillsPinReturn = {
+  agent: string;
+  created: boolean;
+  local: {
+    pinned: boolean;
+    refreshed: boolean;
+    revision: string | null;
+    skill: string | null;
+  };
+  pin: {
+    agent: {
+      id: string;
+      name: string | null;
+      project: string | null;
+      reported: boolean;
+    };
+    createdAt: string | null;
+    id: string;
+    installation: {
+      id: string;
+      name: string | null;
+    };
+    pinnedBy: ({
+      name: string | null;
+    }) | null;
+  };
+  ref: string;
+  success: true;
+};
+
+/** Input shape for `skills.pins`. */
+export type SkillsPinsInput = {
+  agent?: string;
+  ref?: string;
+};
+
+/** Return shape for `skills.pins`. */
+export type SkillsPinsReturn = ({
+  agent: string | null;
+  error?: {
+    code: string;
+    message: string;
+  };
+  hint?: string;
+  installation: {
+    id: string | null;
+    name: string | null;
+  };
+  pins: Array<{
+    agent: string;
+    description: string;
+    externalAllowed: boolean;
+    id: string;
+    name: string;
+    ref: string;
+    skill: string;
+    version: number;
+  }>;
+  revision: string | null;
+  stale: boolean;
+  syncedAt: string | null;
+  total: number;
+  unavailable: Array<{
+    agentId: string;
+    code: string;
+    ref: string;
+  }>;
+}) | ({
+  can: {
+    pin: boolean;
+  };
+  installationId: string;
+  pins: Array<{
+    agent: {
+      id: string;
+      name: string | null;
+      project: string | null;
+      reported: boolean;
+    };
+    createdAt: string | null;
+    id: string;
+    installation: {
+      id: string;
+      name: string | null;
+    };
+    pinnedBy: ({
+      name: string | null;
+    }) | null;
+  }>;
+  ref: string;
+});
+
 /** Input shape for `skills.proposal`. */
 export type SkillsProposalInput = {
   number: string;
@@ -17215,6 +17315,25 @@ export type SkillsSyncReturn = {
   success: true;
   total: number;
   [k: string]: unknown;
+};
+
+/** Input shape for `skills.unpin`. */
+export type SkillsUnpinInput = {
+  agent?: string;
+  ref: string;
+};
+
+/** Return shape for `skills.unpin`. */
+export type SkillsUnpinReturn = {
+  agent: string;
+  local: {
+    pinned: boolean;
+    refreshed: boolean;
+    revision: string | null;
+  };
+  ref: string;
+  removed: boolean;
+  success: true;
 };
 
 /** Input shape for `skills.who`. */

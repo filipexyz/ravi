@@ -25,7 +25,7 @@ local half:
   trusts for private Pages, so there is one rule for "the operator's own
   turn".
 - Delivery is on demand through `search` and `show` (decision 11). Pinned
-  skills and a generated plugin are phase 3.
+  skills and a generated plugin came in phase 3.
 - Publishing reaches every agent of the org or project, so it carries the
   write brake. The plan reads the current version first, and `--execute`
   sends it as `baseVersion`, so two people publishing at once get a
@@ -61,3 +61,48 @@ revert calls that carry `agent`.
   proposals or skills it may load.
 - The contract envelope redacts `reason` keys as free text, so Console
   conflict reasons travel as `conflict`.
+
+## Phase 3: pins (2026-10-16)
+
+Some skills an agent should always have, without searching: the tone of voice
+of a clinic's attendant, the triage procedure of its project. A person pins a
+Library skill to an agent of an installation in the Console, and the agent
+loads it natively, like Ravi's own skills.
+
+- The Console decides who may pin and keeps the pins; the daemon only reports
+  its agents, reads the pins and enforces them locally. Pins live per
+  installation because agent ids are only unique inside one daemon. The
+  report carries each agent's Console project so the Console can refuse a
+  project skill for an agent outside that project (`agent_out_of_scope`)
+  without the daemon judging it.
+- The runner polls (5 minutes by default) instead of waiting for a push: the
+  daemon already polls the Console for its inbox, a pin is not urgent, and the
+  pin and unpin commands refresh right away. The fingerprint, not only the
+  Console's `revision`, decides whether anything changed, so a new published
+  version of a pinned item is picked up even if the revision did not move.
+- A pinned skill must reach only its agent, but the providers differ. Claude
+  takes skills only as an allowlist (no deny list) and Pi only advertises
+  plugin skills, so each session gets a plugin holding only its agent's
+  pins. Codex copies every plugin skill into one shared `~/.codex/skills`; a
+  per-agent plugin there would make each session delete the others' copies,
+  so Codex gets the installation's union and each thread disables the skills
+  that are not its own through `skills.config`, which works with or without
+  an allowlist.
+- `externalAllowed` is enforced the same way: a second per-agent plugin holds
+  only the pins marked for it, chosen when the session starts from the same
+  turn classification `show` uses. A session's plugin set is fixed when it
+  starts, so the classification is too.
+- Pins authorize like grants, through plugin-qualified names only
+  (`ravi-library:<name>`), so a pin never lets a same-named local skill
+  through, and they do not configure the agent, so pinning does not narrow a
+  grandfathered agent's catalog.
+- Generations are immutable directories, renamed into place and pruned only
+  after two newer ones exist, so a session never reads half-written files.
+- Agents do not pin or unpin, for the reason they do not publish: a pin
+  changes what an agent always loads. Unpinning reduces authority, so it runs
+  without `--execute`, and a failed refresh after it still removes the pin
+  locally.
+- The sync answer has no files, so the daemon downloads each pinned version
+  with the login's read access. A project item the login cannot read is
+  reported as `LIBRARY_PIN_UNAVAILABLE` and retried, rather than loaded from
+  somewhere the Console did not authorize.

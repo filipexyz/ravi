@@ -1,10 +1,10 @@
 ---
 title: Skills
-description: Read the system skills that ship with Ravi, copy their reference files, understand how agents load them, use and propose your organization's Library skills, and install or grant your own.
+description: Read the system skills that ship with Ravi, copy their reference files, understand how agents load them, use, propose and pin your organization's Library skills, and install or grant your own.
 icon: book-open
 ---
 
-A skill is a guide (`SKILL.md` plus optional files under `references/`) that teaches an agent how to use one part of Ravi. At the end of this page you will know how to list and read the skills that ship with Ravi, copy reference files such as the Pages skeletons, why an agent's first command in a group returns a skill instead of running, how to search, load, publish and propose your organization's Library skills, and how to install and grant skills of your own.
+A skill is a guide (`SKILL.md` plus optional files under `references/`) that teaches an agent how to use one part of Ravi. At the end of this page you will know how to list and read the skills that ship with Ravi, copy reference files such as the Pages skeletons, why an agent's first command in a group returns a skill instead of running, how to search, load, publish, propose and pin your organization's Library skills, and how to install and grant skills of your own.
 
 ## System skills
 
@@ -182,6 +182,28 @@ ravi skills propose ./weekly-agenda --scope org --update 3 --rebase --execute  #
 - Inside an agent session, the proposal shows as "agent X for Y", the agent can update only proposals it wrote (`LIBRARY_PROPOSAL_NOT_YOURS`, exit 3), and `--mine` lists only its own.
 - `ravi skills proposal` prints each comment as `file:line`, marked `[outdated]` or `[resolved]` when it is. `ravi skills proposals` lists one skill's proposals when you pass its ref, and takes `--state open|closed|all` and `--project <project>`.
 - A `CONFLICT` carries its reason in `conflict`: `stale_base` (read the newer version and plan again), `unchanged` (nothing differs from the published version), `slug_taken_in_org`, `slug_taken_in_project` or `slug_reserved` (pick another `--slug`), `proposal_closed` (the proposal was decided; propose again without `--update`).
+
+### Pin a skill to an agent
+
+A pin makes an agent always load a Library skill: it arrives natively in every new session, like Ravi's own skills, always at the latest published version, and the agent may load it without a grant. A person pins a skill to an agent of one installation, in the Console or from your terminal; the Console decides who may (an admin of the skill's organization or project). Pinning is a dry run until you confirm it; unpinning only takes something away, so it runs right away.
+
+```bash
+ravi skills pin org/tone-of-voice --agent main                    # plan only (exit 3)
+ravi skills pin org/tone-of-voice --agent main --execute
+ravi skills pin clinic/triage --agent support --execute --json
+ravi skills unpin org/tone-of-voice --agent main                  # runs immediately
+ravi skills pins                                                  # what is pinned on this installation
+ravi skills pins --agent support --json
+ravi skills pins org/tone-of-voice                                # where this skill is pinned, and whether you may pin it
+```
+
+- The daemon reports its agents to the Console and reads the pins every 5 minutes (`RAVI_LIBRARY_PIN_INTERVAL_MS`). `pin --execute` and `unpin` update this installation at once, so you do not wait for that.
+- A pinned skill is named `org-<slug>` or `<project>-<slug>` inside a generated `ravi-library` plugin: `ravi-library:<name>` for Claude, `ravi-library-<name>` for Codex. `ravi skills pins --json` shows it in `skill`.
+- Only the agent it is pinned to sees it. A skill published without `--external` loads only in sessions that serve your own turns.
+- A session picks its pinned skills when it starts: open a new session after pinning.
+- A project skill can only be pinned to an agent of that project (`CONFLICT`, `conflict: agent_out_of_scope`). Set the agent's project with `ravi cloud scope set --agent <agent> --project <project>` and pin again. `not_published` means publish a version first; `no_installation` means run `ravi login` on this daemon.
+- Offline, the pins of the last sync keep loading and `ravi skills pins` answers with `stale: true`. A pinned skill this login cannot read shows in `unavailable` (`LIBRARY_PIN_UNAVAILABLE`) and does not load.
+- Agents never pin or unpin: inside an agent session both commands stop with `LIBRARY_AGENT_CANNOT_PIN` (exit 3).
 
 ## Install your own skills
 

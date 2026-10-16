@@ -5582,6 +5582,22 @@ public struct SkillsNamespace: Sendable {
     return try await transport.call(groupSegments: ["skills"], command: "list", body: requestBody, as: SkillsListReturn.self)
   }
 
+  public func pin(_ ref: String, _ options: SkillsPinOptions = .init()) async throws -> SkillsPinReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["ref"] = try RaviJSON.fromEncodable(ref)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["skills"], command: "pin", body: requestBody, as: SkillsPinReturn.self)
+  }
+
+  public func pins(_ ref: String? = nil, _ options: SkillsPinsOptions = .init()) async throws -> SkillsPinsReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    if let ref {
+      requestBody["ref"] = try RaviJSON.fromEncodable(ref)
+    }
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["skills"], command: "pins", body: requestBody, as: SkillsPinsReturn.self)
+  }
+
   public func proposal(_ ref: String, _ number: String) async throws -> SkillsProposalReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["ref"] = try RaviJSON.fromEncodable(ref)
@@ -5642,6 +5658,13 @@ public struct SkillsNamespace: Sendable {
   public func sync() async throws -> SkillsSyncReturn {
     let requestBody: [String: RaviJSON] = [:]
     return try await transport.call(groupSegments: ["skills"], command: "sync", body: requestBody, as: SkillsSyncReturn.self)
+  }
+
+  public func unpin(_ ref: String, _ options: SkillsUnpinOptions = .init()) async throws -> SkillsUnpinReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["ref"] = try RaviJSON.fromEncodable(ref)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["skills"], command: "unpin", body: requestBody, as: SkillsUnpinReturn.self)
   }
 
   public func who(_ skill: String? = nil, _ options: SkillsWhoOptions = .init()) async throws -> SkillsWhoReturn {

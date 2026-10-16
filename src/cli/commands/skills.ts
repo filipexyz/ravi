@@ -36,11 +36,20 @@ import {
   type LibraryProposalState,
   type LibraryShowOutcome,
 } from "../../library/service.js";
+import {
+  executeLibraryPin,
+  executeLibraryUnpin,
+  LIBRARY_AGENT_CANNOT_PIN,
+  listLibraryItemPins,
+  listLocalLibraryPins,
+  prepareLibraryPin,
+} from "../../library/pins.js";
 import type { LibraryProposal, LibraryProposalComment } from "../../library/types.js";
 import { fail, getContext, hasRuntimeInvocationContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { syncCodexSkills } from "../../plugins/codex-skills.js";
 import { discoverPlugins } from "../../plugins/index.js";
+import { libraryUnionPlugins } from "../../library/session-plugins.js";
 import {
   getAgent,
   getAllAgents,
@@ -86,12 +95,15 @@ import {
   skillShowReturnSchema,
   skillsInstallReturnSchema,
   skillsListReturnSchema,
+  skillsPinReturnSchema,
+  skillsPinsReturnSchema,
   skillsProposalReturnSchema,
   skillsProposalsReturnSchema,
   skillsProposeReturnSchema,
   skillsPublishReturnSchema,
   skillsSearchReturnSchema,
   skillsSyncReturnSchema,
+  skillsUnpinReturnSchema,
 } from "./operational-return-schemas.js";
 
 function printJson(payload: unknown): void {
@@ -111,7 +123,9 @@ function serializeSkill(skill: RaviSkill, options: { includeContent?: boolean } 
 }
 
 function syncCodex(): string[] {
-  return syncCodexSkills(discoverPlugins());
+  // Codex sessions copy the installation's pinned Library skills too; a sync
+  // without them would delete those copies until the next session starts.
+  return syncCodexSkills([...discoverPlugins(), ...libraryUnionPlugins()]);
 }
 
 // ============================================================
@@ -501,6 +515,22 @@ function libraryConflictCopy(op: string, reason: string): { message?: string; su
         message: "The proposal is closed (published, rejected or withdrawn).",
         suggestedAction: "Open a new proposal: run the same command without --update",
       };
+    case "not_published":
+      return {
+        message: "Only a published, non-archived Library skill can be pinned.",
+        suggestedAction: "Publish a version first (ravi skills publish <dir> --scope <scope> --execute), then pin it",
+      };
+    case "agent_out_of_scope":
+      return {
+        message: "A project skill can only be pinned to an agent reported in that project.",
+        suggestedAction:
+          "Bind the agent to the skill's Console project (ravi cloud scope set --agent <agent> --project <project>), wait for the next pin sync, then pin again",
+      };
+    case "no_installation":
+      return {
+        message: "This login has no linked installation, so it has no pins.",
+        suggestedAction: "Run `ravi login` on this daemon so it links an installation, then run the same command again",
+      };
     default:
       return { suggestedAction: "Run the same command without --execute to see the current plan" };
   }
@@ -594,6 +624,43 @@ function commentLine(comment: LibraryProposalComment): string {
     .join(" ");
   const body = comment.body.replace(/\s+/g, " ").trim();
   return `${where}${marks ? `${marks} ` : ""}${proposalAuthorLabel(comment.author)}: ${body}`;
+}
+
+function failAgentCannotPin(op: string, asJson?: boolean): never {
+  const message =
+    "Agents do not pin or unpin Library skills: a person pins a skill to an agent in the Console or from the operator's terminal.";
+  const suggestedAction = "Ask the operator to run: ravi skills pin <ref> --agent <agent> --execute";
+  contractFail(op, LIBRARY_AGENT_CANNOT_PIN, message, {
+    asJson,
+    exitCode: CONTRACT_EXIT_POLICY,
+    details: {
+      suggestedAction,
+      issues: skillContractIssues([], LIBRARY_AGENT_CANNOT_PIN, message, suggestedAction),
+    },
+  });
+}
+
+/** `--agent <id>`: required, and (for pin) a local agent. */
+function requirePinAgent(
+  op: string,
+  agent: string | undefined,
+  asJson: boolean | undefined,
+  options: { mustExist?: boolean } = {},
+): string {
+  const agentId = agent?.trim();
+  if (!agentId) {
+    const message = "Pass --agent <id>: the local agent the pin is for.";
+    contractFail(op, "USAGE_ERROR", message, {
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: {
+        suggestedAction: "List agents with: ravi agents list --json",
+        issues: skillContractIssues(["agent"], "required", message),
+      },
+    });
+  }
+  if (options.mustExist !== false && !getAgent(agentId)) failAgentNotFound(op, agentId, asJson);
+  return agentId;
 }
 
 function failLibraryRefInvalid(op: string, value: string, asJson?: boolean): never {
@@ -908,6 +975,80 @@ FORMATO
 
 FONTES
   src/cli/commands/skills.ts · src/library/service.ts · 2026-10-16
+`;
+
+const SKILLS_PIN_HELP_AFTER = `
+MUTA (FREIO) — fixa (pin) uma skill da Biblioteca num agente DESTA instalação:
+o agente passa a carregar a skill nativamente em toda sessão nova (plugin
+ravi-library, como as skills do sistema), sempre na última versão publicada, e
+a skill fica autorizada para ele (não precisa de grant). Quem pode fixar é o
+Console (admin do escopo da skill). Sem --execute: lê o item e devolve o plano
+(exit 3). Com --execute: reporta os agentes locais (pins/sync), fixa e já
+atualiza o estado local (sem esperar o runner do daemon).
+
+REGRAS
+  • Ref completo: org/<slug> ou <projeto>/<slug>.
+  • Skill sem externalAllowed só carrega nos turnos do próprio operador.
+  • Skill de projeto só fixa em agente daquele projeto (agent_out_of_scope).
+  • Agentes não fixam: dentro de um agente o comando recusa antes de qualquer
+    request (LIBRARY_AGENT_CANNOT_PIN, exit 3).
+
+EXAMPLES
+  ravi skills pin org/tom-de-voz --agent main                 # plano (exit 3)
+  ravi skills pin org/tom-de-voz --agent main --execute
+  ravi skills pin clinica/triagem --agent atendente --execute --json
+
+ON ERROR (reason → fix)
+  exit 3 WRITE_REQUIRES_EXECUTE   → revise o plano e repita com --execute.
+  exit 3 LIBRARY_AGENT_CANNOT_PIN → peça a uma pessoa (Console ou terminal do operador).
+  CONFLICT reason=not_published   → publique uma versão antes de fixar.
+  CONFLICT reason=agent_out_of_scope → o agente não está no projeto da skill.
+  CONFLICT reason=no_installation → rode \`ravi login\` neste daemon.
+  ORG_ACCESS_DENIED               → só admin do escopo fixa.
+  AGENT_NOT_FOUND                 → confira com ravi agents list.
+
+SEE ALSO
+  ravi skills unpin · ravi skills pins · ravi skills pins <ref>
+
+FONTES
+  src/cli/commands/skills.ts · src/library/pins.ts · 2026-10-16
+`;
+
+const SKILLS_UNPIN_HELP_AFTER = `
+MUTA — desfixa uma skill da Biblioteca de um agente desta instalação. Reduz
+autoridade, então executa direto (sem --execute) e atualiza o estado local na
+hora: novas sessões do agente deixam de carregar a skill. Sem rede depois do
+unpin, o pin sai do estado local mesmo assim.
+
+EXAMPLES
+  ravi skills unpin org/tom-de-voz --agent main
+  ravi skills unpin clinica/triagem --agent atendente --json
+
+FONTES
+  src/cli/commands/skills.ts · src/library/pins.ts · 2026-10-16
+`;
+
+const SKILLS_PINS_HELP_AFTER = `
+LEITURA — sem ref: as skills da Biblioteca fixadas nos agentes desta instalação
+(atualiza do Console com GET /pins quando há login; sem rede responde o último
+sync com stale: true). Com ref: onde aquele item está fixado (instalações e
+agentes) e se você pode fixar (can.pin).
+
+EXAMPLES
+  ravi skills pins
+  ravi skills pins --agent main --json
+  ravi skills pins org/tom-de-voz
+
+FORMATO
+  --json sem ref: { installation{id,name}, revision, syncedAt, stale, agent,
+  total, pins[{agent, ref, id, skill, name, description, version,
+  externalAllowed}], unavailable[] }. skill é o nome no plugin
+  (ravi-library:<skill> no Claude, ravi-library-<skill> no Codex).
+  --json com ref: { ref, installationId, pins[{id, installation, agent,
+  pinnedBy, createdAt}], can{pin} }.
+
+FONTES
+  src/cli/commands/skills.ts · src/library/pins.ts · 2026-10-16
 `;
 
 const SKILLS_INSTALL_HELP_AFTER = `
@@ -1834,6 +1975,137 @@ export class SkillsCommands {
     }
     for (const line of proposalShowLines(payload)) console.log(line);
     return payload;
+  }
+
+  @Command({
+    name: "pin",
+    description:
+      "Pin a Library skill to an agent of this installation: it loads natively and is authorized for it. Requires --execute.",
+    helpAfter: SKILLS_PIN_HELP_AFTER,
+  })
+  @CommandAccess({ kind: "mutate", resource: "skills", action: "pin", risk: "high", requiresConfirmation: true })
+  @Returns(skillsPinReturnSchema)
+  async pin(
+    @Arg("ref", { description: "Library ref (org/<slug> or <project>/<slug>)" }) ref: string,
+    @Option({ flags: "--agent <id>", description: "Local agent that loads the skill" }) agent?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--execute", description: "Confirm the pin (without it, print the plan and exit 3)" })
+    execute?: boolean,
+  ) {
+    // Agents never pin: a pin widens what an agent loads and may read. Refused before any request.
+    if (runtimeLibraryCaller()) failAgentCannotPin("skills pin", asJson);
+    const parsedRef = parseLibraryRef(ref);
+    if (!parsedRef) failLibraryRefInvalid("skills pin", ref ?? "", asJson);
+    const agentId = requirePinAgent("skills pin", agent, asJson);
+    return withLibraryContract("skills pin", asJson, async () => {
+      const prepared = await prepareLibraryPin({ ref: parsedRef, agentId });
+      if (!execute) contractDryRun("skills pin", { ...prepared.plan }, { asJson });
+      const result = await executeLibraryPin(prepared);
+      const payload = { success: true as const, ...result };
+      if (asJson) {
+        printJson(payload);
+        return payload;
+      }
+      console.log(
+        result.created
+          ? `✓ Pinned ${result.ref} to agent ${result.agent}`
+          : `= ${result.ref} was already pinned to agent ${result.agent}`,
+      );
+      if (result.local.pinned && result.local.skill) {
+        console.log(`  New sessions of ${result.agent} load it as ravi-library:${result.local.skill}`);
+      } else if (!result.local.refreshed) {
+        console.log("  The local pins could not be refreshed now; the daemon loads it at its next pin sync.");
+      }
+      return payload;
+    });
+  }
+
+  @Command({
+    name: "unpin",
+    description: "Unpin a Library skill from an agent of this installation (runs immediately: it reduces authority)",
+    helpAfter: SKILLS_UNPIN_HELP_AFTER,
+  })
+  @CommandAccess({ kind: "mutate", resource: "skills", action: "unpin", risk: "medium" })
+  @Returns(skillsUnpinReturnSchema)
+  async unpin(
+    @Arg("ref", { description: "Library ref (org/<slug> or <project>/<slug>)" }) ref: string,
+    @Option({ flags: "--agent <id>", description: "Local agent to unpin it from" }) agent?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    if (runtimeLibraryCaller()) failAgentCannotPin("skills unpin", asJson);
+    const parsedRef = parseLibraryRef(ref);
+    if (!parsedRef) failLibraryRefInvalid("skills unpin", ref ?? "", asJson);
+    const agentId = requirePinAgent("skills unpin", agent, asJson, { mustExist: false });
+    return withLibraryContract("skills unpin", asJson, async () => {
+      const result = await executeLibraryUnpin({ ref: parsedRef, agentId });
+      const payload = { success: true as const, ...result };
+      if (asJson) {
+        printJson(payload);
+        return payload;
+      }
+      console.log(
+        result.removed
+          ? `✓ Unpinned ${result.ref} from agent ${result.agent}`
+          : `= ${result.ref} was not pinned to agent ${result.agent}`,
+      );
+      return payload;
+    });
+  }
+
+  @Command({
+    name: "pins",
+    description: "List Library skills pinned to this installation's agents, or (<ref>) where one item is pinned",
+    helpAfter: SKILLS_PINS_HELP_AFTER,
+  })
+  @CommandAccess({ kind: "read", resource: "skills", action: "pins", risk: "low" })
+  @Returns(skillsPinsReturnSchema)
+  async pins(
+    @Arg("ref", { required: false, description: "Library ref (org/<slug> or <project>/<slug>) to list its pins" })
+    ref?: string,
+    @Option({ flags: "--agent <id>", description: "Only this agent's pins" }) agent?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    if (ref?.trim()) {
+      const parsedRef = parseLibraryRef(ref);
+      if (!parsedRef) failLibraryRefInvalid("skills pins", ref, asJson);
+      const outcome = await withLibraryContract("skills pins", asJson, () => listLibraryItemPins(parsedRef));
+      const filtered = agent?.trim()
+        ? { ...outcome, pins: outcome.pins.filter((pin) => pin.agent.id === agent.trim()) }
+        : outcome;
+      if (asJson) {
+        printJson(filtered);
+        return filtered;
+      }
+      if (filtered.pins.length === 0) console.log(`${filtered.ref} is not pinned to any agent.`);
+      for (const pin of filtered.pins) {
+        const here = pin.installation.id === filtered.installationId ? " (this installation)" : "";
+        const by = pin.pinnedBy?.name ? ` — pinned by ${pin.pinnedBy.name}` : "";
+        const gone = pin.agent.reported ? "" : " [agent no longer reported]";
+        console.log(
+          `${filtered.ref} → ${pin.agent.id}@${pin.installation.name ?? pin.installation.id}${here}${gone}${by}`,
+        );
+      }
+      return filtered;
+    }
+    const outcome = await withLibraryContract("skills pins", asJson, () =>
+      listLocalLibraryPins({ agentId: agent?.trim() || null, inRuntime: runtimeLibraryCaller() !== null }),
+    );
+    if (asJson) {
+      printJson(outcome);
+      return outcome;
+    }
+    if (outcome.pins.length === 0) {
+      console.log(outcome.agent ? `No Library skills pinned to agent ${outcome.agent}.` : "No Library skills pinned.");
+    }
+    for (const pin of outcome.pins) {
+      const external = pin.externalAllowed ? "" : " (operator's own turns only)";
+      console.log(`${pin.agent}: ${pin.ref} v${pin.version} as ravi-library:${pin.skill}${external}`);
+    }
+    for (const missing of outcome.unavailable) {
+      console.log(`${missing.agentId}: ${missing.ref} pinned but not loaded (this login cannot read it)`);
+    }
+    if (outcome.hint) console.log(`\n${outcome.hint}`);
+    return outcome;
   }
 
   @Command({

@@ -1346,6 +1346,38 @@ function getDb(): Database {
     );
     CREATE INDEX IF NOT EXISTS idx_skill_grants_skill ON skill_grants(skill_name);
 
+    -- Library pins (spec skills/library): the Console's pins for this
+    -- installation, as the last successful sync returned them. Replaced as a
+    -- whole on each sync; never cleared by a failed one.
+    CREATE TABLE IF NOT EXISTS library_pins (
+      agent_id         TEXT NOT NULL,
+      library_id       TEXT NOT NULL,
+      ref              TEXT NOT NULL,
+      skill_name       TEXT NOT NULL,
+      version          INTEGER NOT NULL,
+      content_hash     TEXT,
+      external_allowed INTEGER NOT NULL DEFAULT 0 CHECK(external_allowed IN (0,1)),
+      item_json        TEXT NOT NULL,
+      synced_at        INTEGER NOT NULL,
+      PRIMARY KEY (agent_id, library_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_library_pins_library ON library_pins(library_id);
+
+    CREATE TABLE IF NOT EXISTS library_pin_state (
+      id                INTEGER PRIMARY KEY CHECK(id = 1),
+      console_url       TEXT,
+      organization_id   TEXT,
+      installation_id   TEXT,
+      installation_name TEXT,
+      revision          TEXT,
+      fingerprint       TEXT,
+      plugin_dir        TEXT,
+      synced_at         INTEGER,
+      checked_at        INTEGER,
+      last_error_code   TEXT,
+      last_error_at     INTEGER
+    );
+
     CREATE TABLE IF NOT EXISTS sessions (
       session_key TEXT PRIMARY KEY,
       name TEXT,

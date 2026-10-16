@@ -11,6 +11,7 @@ tags:
   - console
   - search
   - proposals
+  - pins
 applies_to:
   - src/library/
   - src/cli/commands/skills.ts
@@ -18,6 +19,9 @@ applies_to:
   - src/runtime/skill-capability-implication.ts
   - src/runtime/allowed-skills.ts
   - src/runtime/skill-visibility.ts
+  - src/runtime/runtime-provider-bootstrap.ts
+  - src/runtime/codex-provider.ts
+  - src/daemon.ts
   - src/plugins/internal/ravi-system/skills/skills/SKILL.md
   - docs/reference/skills.mdx
 owners:
@@ -34,12 +38,13 @@ The Library keeps skills in the hosted Console, for the whole organization or
 for one project. This spec is the local half: how `ravi skills` searches the
 Library, loads a published version on demand, keeps a copy that works offline,
 publishes a folder, proposes a folder for review, reads proposals and their
-review comments, and authorizes a Library skill for an agent. The Console
+review comments, authorizes a Library skill for an agent, and loads the skills
+a person pinned to an agent natively, through a generated plugin. The Console
 contract (HTTP API under `/api/cli/library`, JSON shapes, limits, error codes,
-search ranking, who may publish or review) is the Console spec
-`console/library`; this side only consumes it. There are no pinned skills and
-no generated plugin yet: an agent reads a Library skill only through
-`ravi skills show`.
+search ranking, who may publish, review or pin) is the Console spec
+`console/library`; this side only consumes it. The Console decides who may pin
+what; this side reports its agents, transports the pins, caches them and
+enforces which agent and which turn sees each one.
 
 ## References
 
@@ -89,8 +94,9 @@ Inside an agent runtime, a Library skill is authorized like a local skill:
   `use:skill:project:*`, `use:skill:project:clinica:*`).
 
 When the turn supplies its own capabilities, they are the ceiling, as for
-local skills; explicit grants still apply. Library grants and Library
-capabilities never authorize a local skill, never join the catalog a provider
+local skills; explicit grants still apply. A pin (see Pins) authorizes its
+item for the agent it is pinned to, like a grant. Library grants, pins and
+Library capabilities never authorize a local skill, never join the catalog a provider
 announces, and do not count as skill configuration (granting a Library skill
 does not narrow a grandfathered agent's local catalog). A project item of a
 project other than the agent's resolved Console project is out of the agent's
@@ -266,7 +272,147 @@ redacts a `reason` key as free text, so the reason travels as
 reason: `stale_base` (publish: plan again; propose: read the new version and
 plan again, `--rebase` with `--update`), `unchanged` (nothing to propose),
 `slug_taken_in_org`, `slug_taken_in_project` and `slug_reserved` (another
-`--slug`), `proposal_closed` (propose again without `--update`).
+`--slug`), `proposal_closed` (propose again without `--update`),
+`not_published` (publish a version, then pin), `agent_out_of_scope` (bind the
+agent to the skill's Console project, wait for the next pin sync, pin again)
+and `no_installation` (`ravi login` on this daemon so it links an
+installation).
+
+## Pins
+
+A pin says "this agent of this installation always loads this Library skill".
+A person pins in the Console or from the operator's terminal; the Console
+decides who may (an admin of the item's scope) and keeps the pins per
+installation and agent. A pin follows the item: the agent loads the latest
+published version, and an archived or deleted item drops out of the pin list.
+
+### Sync
+
+The daemon runs a Library pin runner. At start and every
+`RAVI_LIBRARY_PIN_INTERVAL_MS` (default 300000, at least 10000) it:
+
+1. opens the `ravi login` session; without one it waits quietly for the next
+   tick;
+2. with the `console.projects.link` scope, reports every local agent
+   (`POST /pins/sync`, body `{agents:[{id, name, provider, model, project}]}`,
+   at most 500), where `project` is the agent's Console project ref as
+   `ravi cloud scope` resolves it for that agent (its agent default, else the
+   saved default, else the single visible project; `null` when none). Without
+   the scope it only reads `GET /pins`;
+3. compares the answer with what was applied, by a fingerprint of org,
+   installation and, per pin, agent, id, version, content hash,
+   `externalAllowed`, name and description. The Console's `revision` is
+   stored but not trusted alone;
+4. when something changed: caches each pinned version (from the cache, else
+   `GET /skills/<scope>/<slug>?version=<v>`, written like a `show`), writes a
+   new plugin generation, replaces the `library_pins` rows and the
+   `library_pin_state` row of `ravi.db` in one transaction, prunes old
+   generations and publishes `ravi.config.changed` (`reason: library_pins`).
+
+Errors keep the last applied pins loaded: only `last_error_code` and
+`last_error_at` are recorded. A missing, expired or revoked login (any 401) is
+logged at debug level only. A Console that cannot be reached while caching a
+version aborts the apply. A pinned item this login cannot read (`NOT_FOUND`,
+`ORG_ACCESS_DENIED`) is left out with `LIBRARY_PIN_UNAVAILABLE`; the others
+load, and the next sync tries it again.
+
+### Generated plugin
+
+Each applied set of pins is one generation,
+`<RAVI_STATE_DIR>/library/plugins/g-<fingerprint>/`, written once in a staging
+directory and renamed into place; a running session never sees its files
+change. It holds three kinds of `ravi-library` plugins:
+
+- `agents/<agent>/all/ravi-library`: every pin of the agent;
+- `agents/<agent>/external/ravi-library`: only its pins marked
+  `externalAllowed`;
+- `union/ravi-library`: every pin of the installation, for providers that
+  copy plugin skills into one shared directory (Codex).
+
+Each skill directory is the cached version without `item.json`, and its
+`SKILL.md` frontmatter `name` is the plugin skill name: `org-<slug>` or
+`<projectSlug>-<slug>`, with `-<8 hex of sha256(id)>` when two ids would get
+the same name or the name is longer than 64 characters (ids are named in
+sorted order, so names are stable). The current generation and the two before
+it are kept.
+
+### What a session loads
+
+At session start the runtime reads the pins (never failing the session):
+
+- Claude and Pi (one plugin set per session) get only the agent's own plugin:
+  `all` when every own pin is `externalAllowed` or the session's turn is the
+  operator's own, else `external`. An agent with no pins gets no
+  `ravi-library` plugin.
+- Codex copies plugin skills into the shared `~/.codex/skills`, so every Codex
+  session gets the `union` plugin (keeping that directory the same for every
+  agent) and the session disables, through `skills.config`, every
+  `ravi-library-<name>` that is not one of its visible pins, with or without
+  a skill allowlist. `ravi skills sync` copies the same union.
+- The turn classification is the one of "Turns with people outside the
+  organization", read once at session start; a session keeps its plugin until
+  it ends.
+
+### Authorization of pins
+
+A pin of agent A on item X:
+
+- authorizes X for A like a grant (`ravi skills show <ref>` inside A);
+- adds `ravi-library:<name>` and `ravi-library-<name>` (never the bare name)
+  to A's skill allowlist, so a configured agent's provider announces it and
+  the runtime skill gate lets A read its files;
+- does not count as skill configuration: pinning to a grandfathered agent
+  does not narrow its local catalog;
+- does nothing for any other agent. A `SKILL.md` inside the generated plugins
+  tree is checked by the gate as `ravi-library-<name>`.
+
+`externalAllowed: false` still holds: such a pin is not loaded in a session
+whose turn is not the operator's own, and `show` refuses it there.
+
+### `ravi skills pin <ref> --agent <id>`
+
+Flags: `--agent` (required, a local agent), `--json`, `--execute` (last).
+Braked: without `--execute` it reads the item (`GET
+/skills/<scope>/<slug>`) and exits 3 with a plan: `ref`, `id`, `agent`,
+`installationId`, `item` (`name`, `description`, `scope`, `project`,
+`version`, `externalAllowed`), `alreadyPinned` and `effect`. With `--execute`
+it syncs (reporting the agents, so the Console knows the agent), posts
+`POST /skills/<scope>/<slug>/pin` with `{agentId}` (the Console uses the login's installation), then
+refreshes the local pins (`GET /pins` and apply) without waiting for the
+runner. `--json` returns `ref`, `agent`, `created`, `pin` and `local`
+(`pinned`, `refreshed`, `revision`, `skill`). A pin the Console answers 404
+for (agent never reported, or item not visible) is `NOT_FOUND`.
+
+### `ravi skills unpin <ref> --agent <id>`
+
+Flags: `--agent` (required; the agent need not exist locally any more),
+`--json`. It reduces authority, so it runs immediately: `POST
+.../unpin` with `{agentId}`, then the same refresh. When the
+refresh fails, the pin is removed from the local state anyway (a new
+generation without it), so new sessions stop loading it. `--json` returns
+`ref`, `agent`, `removed` and `local`.
+
+### Agents do not pin
+
+`pin` and `unpin` refuse inside an agent runtime before any request:
+`LIBRARY_AGENT_CANNOT_PIN`, exit 3, `suggestedAction` `Ask the operator to
+run: ravi skills pin <ref> --agent <agent> --execute`. Like publishing, this
+is cooperative (an agent shares its installation's `ravi login`); the Console
+decides who may pin.
+
+### `ravi skills pins [ref]`
+
+Read-only. Without a ref: this installation's pins, refreshed with `GET /pins`
+when logged in, else (no login, Console unreachable or refusing) the last
+synced list with `stale: true` and a `hint`. `--agent <id>` keeps one agent.
+Inside an agent runtime, a turn that is not the operator's own leaves out pins
+not marked `externalAllowed`. `--json`: `installation` (`id`, `name`),
+`revision`, `syncedAt`, `stale`, `hint`, `error`, `agent`, `total`, `pins`
+(`agent`, `ref`, `id`, `skill`, `name`, `description`, `version`,
+`externalAllowed`) and `unavailable` (`agentId`, `ref`, `code`). With a ref:
+where that item is pinned (`GET /skills/<scope>/<slug>/pins`): `ref`,
+`installationId`, `pins` (`id`, `installation`, `agent` with `reported`,
+`pinnedBy`, `createdAt`) and `can.pin`; `--agent` filters by agent id.
 
 ## Error codes
 
@@ -281,6 +427,12 @@ plan again, `--rebase` with `--update`), `unchanged` (nothing to propose),
 | `externalAllowed: false` in a turn that is not the operator's own | `LIBRARY_SKILL_EXTERNAL_DENIED` | 3 |
 | publish or propose without `--execute` | `WRITE_REQUIRES_EXECUTE` | 3 |
 | publish inside an agent runtime | `LIBRARY_AGENT_CANNOT_PUBLISH` | 3 |
+| pin or unpin inside an agent runtime | `LIBRARY_AGENT_CANNOT_PIN` | 3 |
+| pin without `--execute` | `WRITE_REQUIRES_EXECUTE` | 3 |
+| pin or unpin without `--agent` | `USAGE_ERROR` | 2 |
+| pin to an agent that does not exist locally | `AGENT_NOT_FOUND` | 1 |
+| pin the Console answers 404 for (agent never reported, item not visible) | `NOT_FOUND` | 1 |
+| pinned item this login cannot read (sync result, not a command failure) | `LIBRARY_PIN_UNAVAILABLE` | - |
 | `--rebase` without `--update`, bad `--update`, `--draft` on a proposed proposal, bad `--state` or proposal number | `USAGE_ERROR` | 2 |
 | `--update` of a proposal by another author (or, inside an agent, another agent) | `LIBRARY_PROPOSAL_NOT_YOURS` | 3 |
 | `--update` of a closed proposal | `CONFLICT` (`conflict: proposal_closed`) | 1 |

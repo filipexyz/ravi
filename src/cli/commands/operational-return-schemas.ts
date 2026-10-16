@@ -1307,6 +1307,87 @@ export const skillsProposalReturnSchema = z
   })
   .strict();
 
+const libraryItemPinReturnSchema = z
+  .object({
+    id: z.string(),
+    installation: z.object({ id: z.string(), name: z.string().nullable() }).strict(),
+    agent: z
+      .object({ id: z.string(), name: z.string().nullable(), project: z.string().nullable(), reported: z.boolean() })
+      .strict(),
+    pinnedBy: z.object({ name: z.string().nullable() }).strict().nullable(),
+    createdAt: z.string().nullable(),
+  })
+  .strict();
+
+export const skillsPinReturnSchema = z
+  .object({
+    success: z.literal(true),
+    ref: z.string(),
+    agent: z.string(),
+    created: z.boolean(),
+    pin: libraryItemPinReturnSchema,
+    local: z
+      .object({
+        pinned: z.boolean(),
+        refreshed: z.boolean(),
+        revision: z.string().nullable(),
+        skill: z.string().nullable(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export const skillsUnpinReturnSchema = z
+  .object({
+    success: z.literal(true),
+    ref: z.string(),
+    agent: z.string(),
+    removed: z.boolean(),
+    local: z.object({ pinned: z.boolean(), refreshed: z.boolean(), revision: z.string().nullable() }).strict(),
+  })
+  .strict();
+
+const libraryPinUnavailableReturnSchema = z.object({ agentId: z.string(), ref: z.string(), code: z.string() }).strict();
+
+/** `ravi skills pins` (this installation's pins) or `ravi skills pins <ref>` (where an item is pinned). */
+export const skillsPinsReturnSchema = z.union([
+  z
+    .object({
+      installation: z.object({ id: z.string().nullable(), name: z.string().nullable() }).strict(),
+      revision: z.string().nullable(),
+      syncedAt: z.string().nullable(),
+      stale: z.boolean(),
+      hint: z.string().optional(),
+      error: z.object({ code: z.string(), message: z.string() }).strict().optional(),
+      agent: z.string().nullable(),
+      total: z.number(),
+      pins: z.array(
+        z
+          .object({
+            agent: z.string(),
+            ref: z.string(),
+            id: z.string(),
+            skill: z.string(),
+            name: z.string(),
+            description: z.string(),
+            version: z.number(),
+            externalAllowed: z.boolean(),
+          })
+          .strict(),
+      ),
+      unavailable: z.array(libraryPinUnavailableReturnSchema),
+    })
+    .strict(),
+  z
+    .object({
+      ref: z.string(),
+      installationId: z.string(),
+      pins: z.array(libraryItemPinReturnSchema),
+      can: z.object({ pin: z.boolean() }).strict(),
+    })
+    .strict(),
+]);
+
 export const skillsInstallReturnSchema = z
   .object({
     success: z.literal(true),

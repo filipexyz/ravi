@@ -22567,6 +22567,66 @@ class SkillsListReturn {
 
 SkillsListReturn skillsListReturnFromJson(Object? json) => SkillsListReturn.fromJsonValue(json);
 
+class SkillsPinOptions {
+  const SkillsPinOptions({this.agent, this.execute});
+
+  final String? agent;
+  final bool? execute;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (agent != null) {
+      into["agent"] = RaviJson.from(agent);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+  }
+}
+
+class SkillsPinReturn {
+  const SkillsPinReturn({required this.agent, required this.created, required this.local, required this.pin, required this.ref, required this.success});
+
+  final String agent;
+  final bool created;
+  final RaviJson local;
+  final RaviJson pin;
+  final String ref;
+  final bool success;
+
+  factory SkillsPinReturn.fromJson(Map<String, Object?> json) {
+    return SkillsPinReturn(
+      agent: raviJsonAsString(json["agent"]),
+      created: raviJsonAsBool(json["created"]),
+      local: RaviJson.from(json["local"]),
+      pin: RaviJson.from(json["pin"]),
+      ref: raviJsonAsString(json["ref"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static SkillsPinReturn fromJsonValue(Object? json) {
+    return SkillsPinReturn.fromJson(raviJsonObject(json, "SkillsPinReturn"));
+  }
+}
+
+SkillsPinReturn skillsPinReturnFromJson(Object? json) => SkillsPinReturn.fromJsonValue(json);
+
+class SkillsPinsOptions {
+  const SkillsPinsOptions({this.agent});
+
+  final String? agent;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (agent != null) {
+      into["agent"] = RaviJson.from(agent);
+    }
+  }
+}
+
+typedef SkillsPinsReturn = RaviJson;
+
+SkillsPinsReturn skillsPinsReturnFromJson(Object? json) => RaviJson.from(json);
+
 class SkillsProposalReturn {
   const SkillsProposalReturn({required this.base, required this.comments, required this.contentsVisible, required this.files, required this.item, required this.number, required this.proposal, required this.ref});
 
@@ -22994,6 +23054,44 @@ class SkillsSyncReturn {
 }
 
 SkillsSyncReturn skillsSyncReturnFromJson(Object? json) => SkillsSyncReturn.fromJsonValue(json);
+
+class SkillsUnpinOptions {
+  const SkillsUnpinOptions({this.agent});
+
+  final String? agent;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (agent != null) {
+      into["agent"] = RaviJson.from(agent);
+    }
+  }
+}
+
+class SkillsUnpinReturn {
+  const SkillsUnpinReturn({required this.agent, required this.local, required this.ref, required this.removed, required this.success});
+
+  final String agent;
+  final RaviJson local;
+  final String ref;
+  final bool removed;
+  final bool success;
+
+  factory SkillsUnpinReturn.fromJson(Map<String, Object?> json) {
+    return SkillsUnpinReturn(
+      agent: raviJsonAsString(json["agent"]),
+      local: RaviJson.from(json["local"]),
+      ref: raviJsonAsString(json["ref"]),
+      removed: raviJsonAsBool(json["removed"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static SkillsUnpinReturn fromJsonValue(Object? json) {
+    return SkillsUnpinReturn.fromJson(raviJsonObject(json, "SkillsUnpinReturn"));
+  }
+}
+
+SkillsUnpinReturn skillsUnpinReturnFromJson(Object? json) => SkillsUnpinReturn.fromJsonValue(json);
 
 class SkillsWhoOptions {
   const SkillsWhoOptions({this.agent, this.fields});

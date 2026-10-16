@@ -21,4 +21,20 @@
 - `ravi skills proposal <ref> <n>` prints files with sizes and comments with `path:line`, outdated and resolved markers; `--json` includes contents only when `contentsVisible`.
 - A turn that is not the operator's own does not list or show proposals not marked `externalAllowed`.
 - `proposals` is a reserved slug.
-- Tests: `bun test src/library/ src/cli/commands/skills-library.test.ts` and the gate case in `src/runtime/skill-visibility.test.ts`.
+- The pin runner reports every local agent with its resolved Console project (`POST /pins/sync`) when the login has `console.projects.link`, else reads `GET /pins`; at most 500 agents.
+- A sync with new pins caches each version, writes a generation under `<stateDir>/library/plugins/g-*/` with `union`, `agents/<agent>/all` and `agents/<agent>/external` plugins named `ravi-library`, replaces `library_pins`, and publishes `ravi.config.changed`; the same answer again changes nothing and publishes nothing.
+- A new published version of a pinned item (same revision or not) produces a new generation.
+- Offline, a 401, or any Console error keeps the pins and the generation; only the error is recorded. A 401 is not logged above debug.
+- A pinned item the login cannot read is left out as `LIBRARY_PIN_UNAVAILABLE`; the other pins load and the next sync retries it.
+- Plugin skill names are `org-<slug>` and `<project>-<slug>`, with a hash suffix on a collision or over 64 characters, and the `SKILL.md` frontmatter `name` matches.
+- A Claude or Pi session of agent A loads only A's plugin: `all` in the operator's own turn or when every pin is `externalAllowed`, `external` otherwise; an agent without pins loads none.
+- A Codex session loads the union plugin and disables every `ravi-library-<name>` that is not its own visible pin, with or without an allowlist.
+- A pin authorizes its item for its agent only, adds `ravi-library:<name>` and `ravi-library-<name>` (not the bare name) to that agent's allowlist, and does not set `hasConfiguration`.
+- The skill gate reads a `SKILL.md` inside the generated plugins tree as `ravi-library-<name>`.
+- `ravi skills pin <ref> --agent <id>` without `--execute` exits 3 with the plan after a GET only; with `--execute` it syncs, pins and refreshes, and `local.pinned` is true.
+- `pin` and `unpin` inside an agent runtime exit 3 with `LIBRARY_AGENT_CANNOT_PIN` before any request; a missing `--agent` is `USAGE_ERROR` (exit 2); `pin` to an unknown local agent is `AGENT_NOT_FOUND`.
+- `CONFLICT` with `not_published`, `agent_out_of_scope` or `no_installation` carries `details.conflict` and a matching `suggestedAction`.
+- `ravi skills unpin` runs without `--execute`, refreshes, and removes the pin locally even when the refresh fails.
+- `ravi skills pins` answers the refreshed list, or the last one with `stale: true` and a `hint` when the Console is not reachable or there is no login; in a turn that is not the operator's own it leaves out pins not marked `externalAllowed`.
+- `ravi skills pins <ref>` lists the item's pins with installation, agent (`reported`), `pinnedBy` and `can.pin`.
+- Tests: `bun test src/library/ src/cli/commands/skills-library.test.ts`, the gate case in `src/runtime/skill-visibility.test.ts` and the Codex `skills.config` case in `src/runtime/codex-provider.test.ts`.

@@ -82759,6 +82759,544 @@ export const SkillsListReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `skills.pin`. */
+export const SkillsPinInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Local agent that loads the skill",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Confirm the pin (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "ref": {
+      "description": "Library ref (org/<slug> or <project>/<slug>)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "ref"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `skills.pin`. */
+export const SkillsPinReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "type": "string"
+    },
+    "created": {
+      "type": "boolean"
+    },
+    "local": {
+      "additionalProperties": false,
+      "properties": {
+        "pinned": {
+          "type": "boolean"
+        },
+        "refreshed": {
+          "type": "boolean"
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "skill": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "pinned",
+        "refreshed",
+        "revision",
+        "skill"
+      ],
+      "type": "object"
+    },
+    "pin": {
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "project": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "reported": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "project",
+            "reported"
+          ],
+          "type": "object"
+        },
+        "createdAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "installation": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "type": "object"
+        },
+        "pinnedBy": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "installation",
+        "agent",
+        "pinnedBy",
+        "createdAt"
+      ],
+      "type": "object"
+    },
+    "ref": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "ref",
+    "agent",
+    "created",
+    "pin",
+    "local"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `skills.pins`. */
+export const SkillsPinsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Only this agent's pins",
+      "type": "string"
+    },
+    "ref": {
+      "description": "Library ref (org/<slug> or <project>/<slug>) to list its pins",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `skills.pins`. */
+export const SkillsPinsReturnSchema = {
+  "anyOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "type": "object"
+        },
+        "hint": {
+          "type": "string"
+        },
+        "installation": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "type": "object"
+        },
+        "pins": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "agent": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "externalAllowed": {
+                "type": "boolean"
+              },
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "ref": {
+                "type": "string"
+              },
+              "skill": {
+                "type": "string"
+              },
+              "version": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "agent",
+              "ref",
+              "id",
+              "skill",
+              "name",
+              "description",
+              "version",
+              "externalAllowed"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "syncedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "total": {
+          "type": "number"
+        },
+        "unavailable": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "agentId": {
+                "type": "string"
+              },
+              "code": {
+                "type": "string"
+              },
+              "ref": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "agentId",
+              "ref",
+              "code"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "installation",
+        "revision",
+        "syncedAt",
+        "stale",
+        "agent",
+        "total",
+        "pins",
+        "unavailable"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "can": {
+          "additionalProperties": false,
+          "properties": {
+            "pin": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "pin"
+          ],
+          "type": "object"
+        },
+        "installationId": {
+          "type": "string"
+        },
+        "pins": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "agent": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "project": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reported": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "project",
+                  "reported"
+                ],
+                "type": "object"
+              },
+              "createdAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "installation": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "name"
+                ],
+                "type": "object"
+              },
+              "pinnedBy": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "name": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "installation",
+              "agent",
+              "pinnedBy",
+              "createdAt"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "ref": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "installationId",
+        "pins",
+        "can"
+      ],
+      "type": "object"
+    }
+  ]
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `skills.proposal`. */
 export const SkillsProposalInputSchema = {
   "additionalProperties": false,
@@ -84986,6 +85524,80 @@ export const SkillsSyncReturnSchema = {
     "success",
     "codexSynced",
     "total"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `skills.unpin`. */
+export const SkillsUnpinInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Local agent to unpin it from",
+      "type": "string"
+    },
+    "ref": {
+      "description": "Library ref (org/<slug> or <project>/<slug>)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "ref"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `skills.unpin`. */
+export const SkillsUnpinReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "type": "string"
+    },
+    "local": {
+      "additionalProperties": false,
+      "properties": {
+        "pinned": {
+          "type": "boolean"
+        },
+        "refreshed": {
+          "type": "boolean"
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "pinned",
+        "refreshed",
+        "revision"
+      ],
+      "type": "object"
+    },
+    "ref": {
+      "type": "string"
+    },
+    "removed": {
+      "type": "boolean"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "ref",
+    "agent",
+    "removed",
+    "local"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;

@@ -121,6 +121,10 @@ the global envelope, exit taxonomy, authorization or transport behavior.
 | publish inside an agent runtime | none: agents never publish | refused, `LIBRARY_AGENT_CANNOT_PUBLISH`, exit 3 |
 | propose to the Library (new or `--update`) | a draft or a proposal the scope's reviewers are notified of | dry-run exit 3 with the plan, then `--execute` |
 | proposals / proposal | read | immediate |
+| pin a Library skill to an agent | the agent loads and may read the skill in every new session | dry-run exit 3 with the plan, then `--execute` |
+| unpin | reduces what the agent loads | immediate |
+| pin or unpin inside an agent runtime | none: agents never pin | refused, `LIBRARY_AGENT_CANNOT_PIN`, exit 3 |
+| pins / pins `<ref>` | read; refreshes the local pins from the Console | immediate |
 
 `skills install` remains `kind: "mutate"` with
 `requiresConfirmation: true`: it always writes, but confirmation is decided
@@ -144,6 +148,9 @@ per invocation from source kind and overwrite intent.
 | Library publish or propose without `--execute` | `WRITE_REQUIRES_EXECUTE` + publish or propose plan | 3 |
 | Library publish inside an agent runtime | `LIBRARY_AGENT_CANNOT_PUBLISH` + `ravi skills propose <dir> --scope <scope> --execute` | 3 |
 | Library propose `--update` of another author's or agent's proposal | `LIBRARY_PROPOSAL_NOT_YOURS` | 3 |
+| Library pin without `--execute` | `WRITE_REQUIRES_EXECUTE` + pin plan | 3 |
+| Library pin or unpin inside an agent runtime | `LIBRARY_AGENT_CANNOT_PIN` + `ravi skills pin <ref> --agent <agent> --execute` for the operator | 3 |
+| Library pin or unpin without `--agent` | `USAGE_ERROR` | 2 |
 | malformed Library ref or `--scope`; folder fails a local check; reserved slug | `LIBRARY_REF_INVALID`, `LIBRARY_PACKAGE_INVALID`, `LIBRARY_SLUG_RESERVED` | 2 |
 | Library skill not marked `externalAllowed` in a turn that is not the operator's own; project item outside the agent's view | `LIBRARY_SKILL_EXTERNAL_DENIED`, `LIBRARY_SKILL_OUT_OF_VIEW` | 3 |
 
@@ -161,7 +168,7 @@ per invocation from source kind and overwrite intent.
 - `grant-batch` and `revoke-batch` intentionally retain the earlier preview
   contract instead of gaining another confirmation spelling.
 
-Library refs, resolution, authorization, cache and proposals are specified in
+Library refs, resolution, authorization, cache, proposals and pins are specified in
 `skills/library`; this table only classifies the CLI effects.
 
 ## Internal consumers

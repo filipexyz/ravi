@@ -26540,6 +26540,77 @@ public struct SkillsListReturn: Codable, Sendable {
   }
 }
 
+public struct SkillsPinOptions: Codable, Sendable {
+  public var agent: String?
+  public var execute: Bool?
+
+  public init(agent: String? = nil, execute: Bool? = nil) {
+    self.agent = agent
+    self.execute = execute
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agent = "agent"
+    case execute = "execute"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.agent {
+      body["agent"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct SkillsPinReturn: Codable, Sendable {
+  public var agent: String
+  public var created: Bool
+  public var local: RaviJSON
+  public var pin: RaviJSON
+  public var ref: String
+  public var success: Bool
+
+  public init(agent: String, created: Bool, local: RaviJSON, pin: RaviJSON, ref: String, success: Bool) {
+    self.agent = agent
+    self.created = created
+    self.local = local
+    self.pin = pin
+    self.ref = ref
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agent = "agent"
+    case created = "created"
+    case local = "local"
+    case pin = "pin"
+    case ref = "ref"
+    case success = "success"
+  }
+}
+
+public struct SkillsPinsOptions: Codable, Sendable {
+  public var agent: String?
+
+  public init(agent: String? = nil) {
+    self.agent = agent
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agent = "agent"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.agent {
+      body["agent"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public typealias SkillsPinsReturn = RaviJSON
+
 public struct SkillsProposalReturn: Codable, Sendable {
   public var base: RaviJSON
   public var comments: [RaviJSON]
@@ -27044,6 +27115,48 @@ public struct SkillsSyncReturn: Codable, Sendable {
     case codexSynced = "codexSynced"
     case success = "success"
     case total = "total"
+  }
+}
+
+public struct SkillsUnpinOptions: Codable, Sendable {
+  public var agent: String?
+
+  public init(agent: String? = nil) {
+    self.agent = agent
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agent = "agent"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.agent {
+      body["agent"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct SkillsUnpinReturn: Codable, Sendable {
+  public var agent: String
+  public var local: RaviJSON
+  public var ref: String
+  public var removed: Bool
+  public var success: Bool
+
+  public init(agent: String, local: RaviJSON, ref: String, removed: Bool, success: Bool) {
+    self.agent = agent
+    self.local = local
+    self.ref = ref
+    self.removed = removed
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agent = "agent"
+    case local = "local"
+    case ref = "ref"
+    case removed = "removed"
+    case success = "success"
   }
 }
 

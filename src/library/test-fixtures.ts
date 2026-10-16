@@ -138,9 +138,29 @@ export function fakeComment(
   };
 }
 
+export interface FakePin {
+  id: string;
+  installationId: string;
+  agentId: string;
+  scope: "org" | "project";
+  project: string | null;
+  slug: string;
+  pinnedBy: string;
+}
+
 export interface FakeConsole {
   skills: FakeLibrarySkill[];
   proposals: FakeProposal[];
+  /** Pins of every installation of the org. */
+  pins: FakePin[];
+  /** The caller's linked installation; null answers `no_installation`. */
+  installation: { id: string; name: string } | null;
+  /** Agents each installation reported (`POST /pins/sync`). */
+  reportedAgents: Map<string, Array<{ id: string; name?: string | null; project?: string | null }>>;
+  /** Whether the caller is an admin of every scope (may pin). */
+  pinAdmin: boolean;
+  /** Item refs (`org/x`) whose `GET` answers 404, as if this login could not read them. */
+  unreadable: Set<string>;
   requests: Array<{ method: string; path: string; body?: unknown; authorization?: string | null }>;
   offline: boolean;
   fetch: (url: string, init?: RequestInit) => Promise<Response>;
@@ -155,6 +175,11 @@ export function createFakeConsole(skills: FakeLibrarySkill[] = [], proposals: Fa
   const state: FakeConsole = {
     skills,
     proposals,
+    pins: [],
+    installation: { id: "inst-1", name: "macbook" },
+    reportedAgents: new Map(),
+    pinAdmin: true,
+    unreadable: new Set(),
     requests: [],
     offline: false,
     fetch: async (url, init) => {
@@ -169,6 +194,8 @@ export function createFakeConsole(skills: FakeLibrarySkill[] = [], proposals: Fa
         authorization: headers.get("authorization"),
       });
       if (state.offline) throw new TypeError("fetch failed: connect ECONNREFUSED");
+      const installationPins = handleInstallationPinsRoute(state, method, parsed.pathname, body);
+      if (installationPins) return installationPins;
       const root = "/api/cli/library/skills";
       if (!parsed.pathname.startsWith(root)) return json(404, { error: { code: "NOT_FOUND", message: "nope" } });
       const rest = parsed.pathname
@@ -179,6 +206,8 @@ export function createFakeConsole(skills: FakeLibrarySkill[] = [], proposals: Fa
       const project = parsed.searchParams.get("project");
       const proposalRoute = handleProposalRoute(state, method, rest, parsed.searchParams, body);
       if (proposalRoute) return proposalRoute;
+      const pinRoute = handleItemPinRoute(state, method, rest, body);
+      if (pinRoute) return pinRoute;
       const inView = (skill: FakeLibrarySkill) =>
         skill.item.scope === "org" || (project !== null && skill.item.project?.slug === project);
       if (method === "GET" && rest.length === 0) {
@@ -209,6 +238,9 @@ export function createFakeConsole(skills: FakeLibrarySkill[] = [], proposals: Fa
       }
       if (method === "GET" && rest.length === 2) {
         const [scope, slug] = rest as [string, string];
+        if (state.unreadable.has(`${scope}/${slug}`)) {
+          return json(404, { error: { code: "NOT_FOUND", message: "Library skill not found." } });
+        }
         return show(
           state.skills.find(
             (skill) =>
@@ -522,5 +554,113 @@ export function fakeSession(
     consoleUrl: FAKE_CONSOLE_URL,
     orgId,
     project: project ? { ref: project.slug, slug: project.slug, id: project.id ?? `p-${project.slug}` } : null,
+    installationId: credentials.installationId,
+    scopes: credentials.scopes,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Pins
+
+function pinItemRef(pin: Pick<FakePin, "scope" | "project" | "slug">): string {
+  return `${pin.scope === "org" ? "org" : pin.project}/${pin.slug}`;
+}
+
+function serializeItemPin(state: FakeConsole, pin: FakePin) {
+  const reported = state.reportedAgents.get(pin.installationId) ?? [];
+  const agent = reported.find((entry) => entry.id === pin.agentId);
+  return {
+    id: pin.id,
+    installation: {
+      id: pin.installationId,
+      name: pin.installationId === state.installation?.id ? state.installation.name : "other",
+    },
+    agent: {
+      id: pin.agentId,
+      name: agent?.name ?? null,
+      project: agent?.project ?? null,
+      reported: Boolean(agent),
+    },
+    pinnedBy: { name: pin.pinnedBy },
+    createdAt: "2026-10-16T00:00:00.000Z",
+  };
+}
+
+function installationPinsPayload(state: FakeConsole) {
+  const installation = state.installation!;
+  const pins = state.pins
+    .filter((pin) => pin.installationId === installation.id)
+    .flatMap((pin) => {
+      const skill = findSkill(state, pin.scope, pin.project, pin.slug);
+      return skill && !skill.item.archived ? [{ agentId: pin.agentId, ref: pinItemRef(pin), item: skill.item }] : [];
+    });
+  const revision = createHash("sha256")
+    .update(JSON.stringify(pins.map((pin) => [pin.agentId, pin.ref])))
+    .digest("hex");
+  return { installation, revision, pins };
+}
+
+/** `POST /api/cli/library/pins/sync` and `GET /api/cli/library/pins`; null for other paths. */
+function handleInstallationPinsRoute(
+  state: FakeConsole,
+  method: string,
+  pathname: string,
+  body: unknown,
+): Response | null {
+  if (pathname !== "/api/cli/library/pins" && pathname !== "/api/cli/library/pins/sync") return null;
+  if (!state.installation) return conflict("no_installation");
+  if (pathname.endsWith("/sync")) {
+    if (method !== "POST") return json(404, { error: { code: "NOT_FOUND", message: "nope" } });
+    const agents = (body as { agents?: Array<{ id: string; name?: string | null; project?: string | null }> })?.agents;
+    if (!Array.isArray(agents) || agents.length > 500) {
+      return json(400, { error: { code: "PAYLOAD_INVALID", message: "agents" } });
+    }
+    state.reportedAgents.set(state.installation.id, agents);
+    return json(200, installationPinsPayload(state));
+  }
+  if (method !== "GET") return json(404, { error: { code: "NOT_FOUND", message: "nope" } });
+  return json(200, installationPinsPayload(state));
+}
+
+/** `GET .../pins`, `POST .../pin`, `POST .../unpin` of an item; null for other routes. */
+function handleItemPinRoute(state: FakeConsole, method: string, rest: string[], body: unknown): Response | null {
+  if (rest.length !== 3 || !["pins", "pin", "unpin"].includes(rest[2] ?? "")) return null;
+  const [scopeRef, slug, action] = rest as [string, string, string];
+  const scope = scopeRef === "org" ? "org" : "project";
+  const project = scope === "org" ? null : scopeRef;
+  const skill = findSkill(state, scope, project, slug);
+  const ofItem = state.pins.filter((pin) => pin.scope === scope && pin.project === project && pin.slug === slug);
+  if (action === "pins" && method === "GET") {
+    if (!skill) return json(404, { error: { code: "NOT_FOUND", message: "Library skill not found." } });
+    return json(200, { pins: ofItem.map((pin) => serializeItemPin(state, pin)), can: { pin: state.pinAdmin } });
+  }
+  if (method !== "POST") return json(404, { error: { code: "NOT_FOUND", message: "nope" } });
+  const input = body as { agentId?: string; installationId?: string; agent?: unknown };
+  if (!state.pinAdmin || input?.agent !== undefined) {
+    return json(403, { error: { code: "ORG_ACCESS_DENIED", message: "Only a scope admin pins." } });
+  }
+  const installationId = input?.installationId ?? state.installation?.id;
+  if (!installationId) return conflict("no_installation");
+  const existing = ofItem.find((pin) => pin.installationId === installationId && pin.agentId === input.agentId);
+  if (action === "unpin") {
+    if (existing) state.pins = state.pins.filter((pin) => pin !== existing);
+    return json(200, { removed: Boolean(existing) });
+  }
+  if (!skill) return json(404, { error: { code: "NOT_FOUND", message: "Library skill not found." } });
+  if (skill.item.archived) return conflict("not_published");
+  const reported = (state.reportedAgents.get(installationId) ?? []).find((agent) => agent.id === input.agentId);
+  if (!reported) return json(404, { error: { code: "NOT_FOUND", message: "Agent not reported." } });
+  if (scope === "project" && reported.project !== project) return conflict("agent_out_of_scope");
+  if (existing) return json(200, { pin: serializeItemPin(state, existing) });
+  const pin: FakePin = {
+    id: `pin-${state.pins.length + 1}`,
+    installationId,
+    agentId: input.agentId!,
+    scope,
+    project,
+    slug,
+    pinnedBy: "Op",
+  };
+  state.pins.push(pin);
+  return json(201, { pin: serializeItemPin(state, pin) });
 }

@@ -7904,6 +7904,32 @@ class SkillsNamespace {
     );
   }
 
+  Future<SkillsPinReturn> pin(String ref, [SkillsPinOptions options = const SkillsPinOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["ref"] = RaviJson.from(ref);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["skills"],
+      command: "pin",
+      body: requestBody,
+      decode: skillsPinReturnFromJson,
+    );
+  }
+
+  Future<SkillsPinsReturn> pins([String? ref, SkillsPinsOptions options = const SkillsPinsOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    if (ref != null) {
+      requestBody["ref"] = RaviJson.from(ref);
+    }
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["skills"],
+      command: "pins",
+      body: requestBody,
+      decode: skillsPinsReturnFromJson,
+    );
+  }
+
   Future<SkillsProposalReturn> proposal(String ref, String number) async {
     final requestBody = <String, RaviJson>{};
     requestBody["ref"] = RaviJson.from(ref);
@@ -8008,6 +8034,18 @@ class SkillsNamespace {
       command: "sync",
       body: requestBody,
       decode: skillsSyncReturnFromJson,
+    );
+  }
+
+  Future<SkillsUnpinReturn> unpin(String ref, [SkillsUnpinOptions options = const SkillsUnpinOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["ref"] = RaviJson.from(ref);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["skills"],
+      command: "unpin",
+      body: requestBody,
+      decode: skillsUnpinReturnFromJson,
     );
   }
 

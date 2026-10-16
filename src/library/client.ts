@@ -11,6 +11,11 @@
 //   GET  /api/cli/library/skills/<scope>/<slug>/proposals
 //   GET  /api/cli/library/skills/<scope>/<slug>/proposals/<n>
 //   POST /api/cli/library/skills/<scope>/<slug>/proposals/<n>/update
+//   GET  /api/cli/library/skills/<scope>/<slug>/pins
+//   POST /api/cli/library/skills/<scope>/<slug>/pin
+//   POST /api/cli/library/skills/<scope>/<slug>/unpin
+//   GET  /api/cli/library/pins
+//   POST /api/cli/library/pins/sync
 
 import { ConsoleApiClient, normalizeConsoleUrl, refreshCredentialsForStore } from "../cloud-auth/client.js";
 import { CloudAuthError, classifyConsoleNetworkError, isCloudAuthError } from "../cloud-auth/errors.js";
@@ -21,7 +26,11 @@ import type { ConsoleScopeProject } from "../console-scope/types.js";
 import { inspectExecutionPlane } from "../isolation/execution-plane.js";
 import type { LibraryRef } from "./refs.js";
 import type {
+  LibraryInstallationPin,
+  LibraryInstallationPinsResponse,
   LibraryItem,
+  LibraryItemPin,
+  LibraryItemPinsResponse,
   LibraryItemProposalsResponse,
   LibraryProposal,
   LibraryProposalComment,
@@ -31,6 +40,7 @@ import type {
   LibraryProposalListResponse,
   LibraryProposalShowResponse,
   LibraryProposalStatus,
+  LibraryPinAgentReport,
   LibraryPublishBody,
   LibraryPublishResponse,
   LibrarySearchItem,
@@ -40,7 +50,10 @@ import type {
   LibraryVersionFile,
 } from "./types.js";
 
-export const LIBRARY_SKILLS_PATH = "/api/cli/library/skills";
+export const LIBRARY_PATH = "/api/cli/library";
+export const LIBRARY_SKILLS_PATH = `${LIBRARY_PATH}/skills`;
+/** At most this many agents per `POST /pins/sync` (Console limit). */
+export const LIBRARY_PIN_SYNC_MAX_AGENTS = 500;
 export const LIBRARY_SEARCH_DEFAULT_LIMIT = 10;
 export const LIBRARY_SEARCH_MAX_LIMIT = 50;
 
@@ -177,8 +190,44 @@ export class LibraryClient {
     return requireProposal(payload?.proposal, this.consoleUrl);
   }
 
-  private async request<T>(method: string, relativePath: string, body?: unknown): Promise<T> {
-    const path = `${LIBRARY_SKILLS_PATH}${relativePath}`;
+  /** `POST /pins/sync`: report this installation's agents and read its pins (write scope). */
+  async syncPins(agents: readonly LibraryPinAgentReport[]): Promise<LibraryInstallationPinsResponse> {
+    const payload = await this.requestAt<unknown>("POST", `${LIBRARY_PATH}/pins/sync`, { agents });
+    return requireInstallationPins(payload);
+  }
+
+  /** `GET /pins`: this installation's pins, without reporting agents (read scope). */
+  async listInstallationPins(): Promise<LibraryInstallationPinsResponse> {
+    return requireInstallationPins(await this.requestAt<unknown>("GET", `${LIBRARY_PATH}/pins`));
+  }
+
+  /** `GET /skills/<scope>/<slug>/pins`: where an item is pinned. */
+  async listItemPins(ref: LibraryRef): Promise<LibraryItemPinsResponse> {
+    const payload = objectValue(await this.request<unknown>("GET", `${refPath(ref)}/pins`));
+    if (!payload || !Array.isArray(payload.pins)) {
+      throw new CloudAuthError("SERVER_UNAVAILABLE", "The Console returned an unexpected pin list.");
+    }
+    const can = objectValue(payload.can);
+    return { pins: payload.pins.map(requireItemPin), can: { pin: can?.pin === true } };
+  }
+
+  /** `POST /skills/<scope>/<slug>/pin`: pin the item to an agent (this installation unless given). */
+  async pin(ref: LibraryRef, input: { agentId: string; installationId?: string }): Promise<LibraryItemPin> {
+    const payload = objectValue(await this.request<unknown>("POST", `${refPath(ref)}/pin`, pinBody(input)));
+    return requireItemPin(payload?.pin);
+  }
+
+  /** `POST /skills/<scope>/<slug>/unpin`: `removed` is false when there was no such pin. */
+  async unpin(ref: LibraryRef, input: { agentId: string; installationId?: string }): Promise<{ removed: boolean }> {
+    const payload = objectValue(await this.request<unknown>("POST", `${refPath(ref)}/unpin`, pinBody(input)));
+    return { removed: payload?.removed === true };
+  }
+
+  private request<T>(method: string, relativePath: string, body?: unknown): Promise<T> {
+    return this.requestAt<T>(method, `${LIBRARY_SKILLS_PATH}${relativePath}`, body);
+  }
+
+  private async requestAt<T>(method: string, path: string, body?: unknown): Promise<T> {
     try {
       try {
         return await this.session.client.requestJson<T>(method, path, body, this.credentials.accessToken);
@@ -221,6 +270,10 @@ export interface LibrarySession {
   orgId: string;
   /** The caller's Console project, or null (org items only). */
   project: ConsoleScopeProject | null;
+  /** The linked installation (the daemon) of the `ravi login` session. */
+  installationId: string;
+  /** CLI scopes of the session (`console.projects.link` reports agents for pins). */
+  scopes: readonly string[];
 }
 
 /**
@@ -258,6 +311,8 @@ export async function openLibrarySession(
     consoleUrl: credentials.consoleUrl,
     orgId: credentials.organization?.id?.trim() || credentials.organization?.slug?.trim() || "default",
     project,
+    installationId: credentials.installationId,
+    scopes: Array.isArray(credentials.scopes) ? credentials.scopes : [],
   };
 }
 
@@ -268,6 +323,59 @@ export function libraryLoginRequiredError(): CloudAuthError {
 function refPath(ref: LibraryRef): string {
   const scope = ref.scope === "org" ? "org" : (ref.project ?? "");
   return `/${encodeURIComponent(scope)}/${encodeURIComponent(ref.slug)}`;
+}
+
+function pinBody(input: { agentId: string; installationId?: string }): Record<string, string> {
+  return { agentId: input.agentId, ...(input.installationId ? { installationId: input.installationId } : {}) };
+}
+
+function requireInstallationPins(payload: unknown): LibraryInstallationPinsResponse {
+  const record = objectValue(payload);
+  const installation = objectValue(record?.installation);
+  if (!record || !installation || typeof installation.id !== "string" || !Array.isArray(record.pins)) {
+    throw new CloudAuthError("SERVER_UNAVAILABLE", "The Console returned unexpected installation pins.");
+  }
+  const pins: LibraryInstallationPin[] = [];
+  for (const value of record.pins) {
+    const pin = objectValue(value);
+    if (!pin || typeof pin.agentId !== "string" || !pin.agentId.trim()) {
+      throw new CloudAuthError("SERVER_UNAVAILABLE", "The Console returned a pin without an agent.");
+    }
+    const item = requireItem(pin.item);
+    pins.push({
+      agentId: pin.agentId.trim(),
+      ref: typeof pin.ref === "string" ? pin.ref.toLowerCase() : item.ref,
+      item,
+    });
+  }
+  return {
+    installation: { id: installation.id, name: stringOrNull(installation.name) },
+    revision: typeof record.revision === "string" ? record.revision : "",
+    pins,
+  };
+}
+
+function requireItemPin(value: unknown): LibraryItemPin {
+  const pin = objectValue(value);
+  const installation = objectValue(pin?.installation);
+  const agent = objectValue(pin?.agent);
+  if (!pin || !agent || typeof agent.id !== "string") {
+    throw new CloudAuthError("SERVER_UNAVAILABLE", "The Console returned a pin without an agent.");
+  }
+  const pinnedBy = objectValue(pin.pinnedBy);
+  // Only the contract's fields: the result is returned as JSON.
+  return {
+    id: stringOr(pin.id, ""),
+    installation: { id: stringOr(installation?.id, ""), name: stringOrNull(installation?.name) },
+    agent: {
+      id: agent.id,
+      name: stringOrNull(agent.name),
+      project: stringOrNull(agent.project),
+      reported: agent.reported !== false,
+    },
+    pinnedBy: pinnedBy ? { name: stringOrNull(pinnedBy.name) } : null,
+    createdAt: stringOrNull(pin.createdAt),
+  };
 }
 
 function requireShow(payload: unknown): LibraryShowResponse {
