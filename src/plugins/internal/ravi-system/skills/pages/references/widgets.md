@@ -121,9 +121,10 @@ dados do host. Tag de dados em rota `public` cai na mesma recusa do
 `ravi.bases.*` (exit 2, nada sobe).
 
 O JSON traz `kit: { status, changedFiles, warnings, theme, widgets }` e
-`presentation`. `status` é `applied`, `skipped` (nada a fazer) ou
-`unavailable` (Console antigo: o HTML vai como está, aviso `KIT_UNAVAILABLE`,
-e as tags não funcionam).
+`presentation`. `status` é `applied`; `skipped` quando não há HTML ou ele
+passa do limite (aviso `KIT_TOO_LARGE`: 2 MiB por arquivo, 8 MiB no total);
+`unavailable` num Console antigo (aviso `KIT_UNAVAILABLE`). Nos dois últimos
+o HTML vai como está, sem tema, e as tags não funcionam.
 
 Erro sai com exit 2, uma linha por problema (`arquivo:linha:coluna severidade
 código mensagem`), e nada sobe:
