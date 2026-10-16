@@ -44,6 +44,8 @@ import {
   type SkillGatePersistedListener,
 } from "./skill-gate.js";
 import { formatSkillNotAuthorizedReason, isSkillAuthorizedForAgent } from "./skill-authorization.js";
+import { isLibraryPluginSkillAllowedForTurn } from "../library/session-plugins.js";
+import { isOperatorOwnTurn } from "../library/turn.js";
 import {
   commandLineRunsSkillRemediation,
   extractRequestedSkillsFromCommandLine,
@@ -145,6 +147,33 @@ function canAdvertiseRuntimeDynamicTool(context: ContextRecord, tool: ExportedTo
     default:
       return false;
   }
+}
+
+/**
+ * The first pinned Library skill this turn may not load (spec skills/library).
+ * The session's plugin was chosen for its first turn; the turn asking now may
+ * be someone else's, so each load is checked against the current turn context
+ * (refreshed in place before every turn).
+ */
+function findLibrarySkillDeniedForTurn(
+  options: Pick<RuntimeHostServicesOptions, "context" | "agentId">,
+  skills: readonly string[],
+): string | undefined {
+  let ownTurn: boolean | undefined;
+  const isOwnTurn = () =>
+    (ownTurn ??= isOperatorOwnTurn({
+      turn: { runtimeContext: { present: true, record: options.context ?? null } },
+    }));
+  return skills.find(
+    (skill) => !isLibraryPluginSkillAllowedForTurn({ agentId: options.agentId, skill, isOperatorOwnTurn: isOwnTurn }),
+  );
+}
+
+function formatLibrarySkillDeniedForTurnReason(skill: string): string {
+  return (
+    `SKILL_NOT_AUTHORIZED: Library skill '${skill}' does not load in this turn. ` +
+    "It is pinned to another agent, or it is not marked externalAllowed and this turn is not the operator's own."
+  );
 }
 
 function emitRuntimePolicyDenied(
@@ -476,6 +505,22 @@ async function authorizeRuntimeCommandExecution(
     return { approved: false, reason };
   }
 
+  const deniedCommandLibrarySkill = findLibrarySkillDeniedForTurn(
+    options,
+    extractRequestedSkillsFromCommandLine(command),
+  );
+  if (deniedCommandLibrarySkill) {
+    const reason = formatLibrarySkillDeniedForTurnReason(deniedCommandLibrarySkill);
+    emitRuntimePolicyDenied(options, {
+      type: "tool",
+      denied: `skill:${deniedCommandLibrarySkill}`,
+      reason,
+      command,
+      blockType: "runtime_library_skill_not_for_turn",
+    });
+    return { approved: false, reason };
+  }
+
   const dangerous = checkDangerousPatterns(command);
   if (!dangerous.safe) {
     emitRuntimePolicyDenied(options, {
@@ -667,6 +712,22 @@ async function authorizeRuntimeToolUse(
       reason,
       blockType: "runtime_skill_not_authorized",
       detail: { toolName: request.toolName, skill: deniedToolSkill },
+    });
+    return { approved: false, reason };
+  }
+
+  const deniedToolLibrarySkill = findLibrarySkillDeniedForTurn(
+    options,
+    extractRequestedSkillsFromToolCall(request.toolName, request.input),
+  );
+  if (deniedToolLibrarySkill) {
+    const reason = formatLibrarySkillDeniedForTurnReason(deniedToolLibrarySkill);
+    emitRuntimePolicyDenied(options, {
+      type: "tool",
+      denied: `skill:${deniedToolLibrarySkill}`,
+      reason,
+      blockType: "runtime_library_skill_not_for_turn",
+      detail: { toolName: request.toolName, skill: deniedToolLibrarySkill },
     });
     return { approved: false, reason };
   }

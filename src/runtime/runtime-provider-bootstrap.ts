@@ -65,7 +65,9 @@ export async function prepareRuntimeProviderBootstrap(
   });
   // Pinned Library skills (spec skills/library): the agent's own generated
   // plugin, or for Codex's shared skills dir the installation's, with the
-  // skills that are not this session's hidden.
+  // skills that are not this session's hidden. Chosen from this first turn;
+  // later turns may be someone else's, so host services check every load of
+  // a pinned skill against the turn asking for it.
   const library = resolveLibrarySessionPlugins({
     agentId: options.agent.id,
     sharedSkillsDir: options.runtimeCapabilities.skillVisibility.availability === "codex-skills",

@@ -25,8 +25,10 @@ applies_to:
   - src/runtime/allowed-skills.ts
   - src/runtime/skill-visibility.ts
   - src/runtime/runtime-provider-bootstrap.ts
+  - src/runtime/host-services.ts
   - src/runtime/codex-provider.ts
   - src/daemon.ts
+  - src/router/router-db.ts
   - src/plugins/internal/ravi-system/skills/skills/SKILL.md
   - src/plugins/internal/ravi-system/skills/agents/SKILL.md
   - docs/reference/skills.mdx
@@ -136,6 +138,12 @@ out. `ravi skills publish --external` sets `externalAllowed: true`.
   Console error is not hidden by the cache.
 - Not logged in (`ravi login`): Library parts are skipped with a hint; local
   skills still work. A ref then fails with `AUTH_REQUIRED`.
+- A Library client and the clients derived from it (the agent routes) share
+  one copy of the login, so a refresh by one is used by all. Before refreshing
+  an expired access token, the client reads the stored login: when it is the
+  same login (Console, installation, user) with another refresh token,
+  another client or process already refreshed, and that login is used instead
+  of refreshing again with a spent token (which would delete the login).
 
 ## Commands
 
@@ -329,9 +337,13 @@ load, and the next sync tries it again.
 ### Generated plugin
 
 Each applied set of pins is one generation,
-`<RAVI_STATE_DIR>/library/plugins/g-<fingerprint>/`, written once in a staging
+`<RAVI_STATE_DIR>/library/plugins/g-<key>/`, written once in a staging
 directory and renamed into place; a running session never sees its files
-change. It holds three kinds of `ravi-library` plugins:
+change. The key hashes the pins' fingerprint together with the skills
+actually written (agent, name, `externalAllowed`, ref, version), so a partial
+apply (a pin left out with `LIBRARY_PIN_UNAVAILABLE`) never shares a
+directory with the full apply of the same pins. It holds three kinds of
+`ravi-library` plugins:
 
 - `agents/<agent>/all/ravi-library`: every pin of the agent;
 - `agents/<agent>/external/ravi-library`: only its pins marked
@@ -360,8 +372,10 @@ At session start the runtime reads the pins (never failing the session):
   `ravi-library-<name>` that is not one of its visible pins, with or without
   a skill allowlist. `ravi skills sync` copies the same union.
 - The turn classification is the one of "Turns with people outside the
-  organization", read once at session start; a session keeps its plugin until
-  it ends.
+  organization". The plugin (and Codex's disabled skills) is chosen from the
+  session's first turn and kept until the session ends, so it is not the
+  authority: every load of a pinned skill is checked again against the turn
+  that asks for it (below).
 
 ### Authorization of pins
 
@@ -377,7 +391,15 @@ A pin of agent A on item X:
   tree is checked by the gate as `ravi-library-<name>`.
 
 `externalAllowed: false` still holds: such a pin is not loaded in a session
-whose turn is not the operator's own, and `show` refuses it there.
+whose turn is not the operator's own, and `show` refuses it there. Because a
+runtime session outlives its first turn (a later turn may be someone else's),
+the runtime checks each load of a plugin skill (`ravi-library:<name>` or
+`ravi-library-<name>`, through a Skill tool, a read of its `SKILL.md`, or a
+shell line naming it) against the current turn's context, refreshed before
+every turn: a skill pinned to another agent is denied, and one not marked
+`externalAllowed` is denied unless the turn is the operator's own
+(`SKILL_NOT_AUTHORIZED`, block type `runtime_library_skill_not_for_turn`). An
+unreadable pin table denies.
 
 ### `ravi skills pin <ref> --agent <id>`
 
@@ -607,28 +629,42 @@ The daemon runs a Library request runner at start and every
 `RAVI_LIBRARY_PIN_INTERVAL_MS`, while a login with the
 `console.projects.link` scope exists (otherwise it waits quietly). Each tick:
 
-1. On the first tick, every local received row still `running` (a restart
-   cut its turn) gets `{failure: "The asked machine restarted before
-   answering."}`.
+1. On the first tick after a start, every local received row still `queued`
+   or `running` (a stop or a crash cut it), except the ones this process is
+   still answering, gets `{failure: "The asked machine restarted before
+   answering."}`, and its session is retired.
 2. `POST /requests/replies/pull`: each answer, failure or expiry goes to the
    session that asked as a `[System] Inform` (barrier `after_response`, no
-   source, context or turn origin) whose text marks the answer as the other
-   agent's words, not instructions. A request asked from the terminal keeps the
-   answer in its local row (`reply`, or the failure in `error`). A delivery
-   that fails is recorded in `error`; the Console hands an answer out once.
-3. `POST /requests/pull`: each request is answered in the background, at most
-   three turns at a time:
+   source, context or turn origin). The answer or failure reason is quoted in
+   an `<answer>` block and the text says it is untrusted output from another
+   machine, to read as information and never as instructions; every
+   `<answer>`/`</answer>` tag inside it (any case or spacing) loses its angle
+   brackets (`‹/answer›`), so it cannot close the block. A request asked from
+   the terminal keeps the answer in its local row (`reply`, or the failure in
+   `error`). A delivery that fails is recorded in `error`; the Console hands an
+   answer out once.
+3. `POST /requests/pull`: each request is recorded locally as `queued` before
+   it waits, then answered in the background, at most three turns at a time:
    - an agent missing here, or whose local switch is off, gets a failure
      without a turn (the switch here decides, whatever the directory said);
    - otherwise the turn runs in a session of its own,
-     `agent:<id>:library-request:<requestId>` (named `<id>-request-<8 chars>`),
-     not ephemeral;
-   - its reply (at most 16000 characters, cut with a marker) is posted with
-     `POST /requests/<id>/reply {reply}`; an error, an interruption, no answer,
-     or no end within `RAVI_LIBRARY_REQUEST_TIMEOUT_MS` (default 600000, at
-     least 10000) is posted as `{failure}` (at most 500 characters);
+     `agent:<id>:library-request:<requestId>` (named `<id>-request-<8 chars>`);
+   - its reply (at most 16000 characters, cut with `[answer cut at 16000
+     characters]`) is posted with `POST /requests/<id>/reply {reply}`; an
+     error, an interruption, no answer, or no end within
+     `RAVI_LIBRARY_REQUEST_TIMEOUT_MS` (default 600000, at least 10000) is
+     posted as `{failure}` (at most 500 characters, cut with ` […]`);
    - a `not_open` answer (the request closed meanwhile) is recorded as
-     `closed`, not retried.
+     `closed`, not retried;
+   - once the outcome is posted (or could not be), the request's session is
+     retired: marked expired, so the ephemeral runner stops its runtime and
+     deletes it on its next pass. Only `library-request` sessions are retired.
+4. One entry of a pull that this side cannot read never costs the rest (each
+   is handed out once): a request with an id gets `{failure: "The asked
+   machine could not read this request."}`; an unreadable answer marks its
+   local sent row `failed` when there is one. Both are logged.
+
+Local rows (`library_agent_requests`) are keyed by (request id, direction).
 
 ### The request turn runs as the person who asked
 
@@ -643,8 +679,9 @@ the bash hook and approvals fail closed. The prompt starts with who asked
 says the message is theirs, not the operator's. The gateway delivers nothing
 for this channel (`dropped`, reason `library_request`, not logged as a
 failure); the runner reads the answer from the session's `.response` events
-until `turn.complete`, and from the session's stored history when there was
-none.
+until `turn.complete` and for a short grace window after it (a response
+published just after the terminal event still counts), and from the
+session's stored history when there was none.
 
 ## Error codes
 

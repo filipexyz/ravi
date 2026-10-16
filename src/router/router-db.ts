@@ -1220,6 +1220,18 @@ function resolveDbPath(env: NodeJS.ProcessEnv = process.env): string {
  * Get database connection with lazy initialization.
  * Creates database and schema on first access.
  */
+/**
+ * `library_agent_requests` was first keyed by `request_id` alone, before any
+ * release. It is a local record of Console state, so that shape is dropped and
+ * created again keyed by (request_id, direction).
+ */
+function dropPreviewLibraryRequestsTable(db: Database): void {
+  const columns = db.prepare("PRAGMA table_info(library_agent_requests)").all() as Array<{ name: string; pk: number }>;
+  if (columns.length === 0) return;
+  if (columns.some((column) => column.name === "direction" && column.pk > 0)) return;
+  db.exec("DROP TABLE library_agent_requests");
+}
+
 function getDb(): Database {
   const nextDbPath = resolveDbPath();
   if (routerDbState.db !== null && routerDbState.dbPath === nextDbPath) {
@@ -1270,6 +1282,7 @@ function getDb(): Database {
 
   // Enable foreign keys before schema creation
   db.exec("PRAGMA foreign_keys = ON");
+  dropPreviewLibraryRequestsTable(db);
 
   // Initialize schema
   db.exec(`
@@ -1399,7 +1412,7 @@ function getDb(): Database {
     -- Requests between agents of different installations, as this side knows
     -- them: the asking session (sent) or the turn that answers (received).
     CREATE TABLE IF NOT EXISTS library_agent_requests (
-      request_id     TEXT PRIMARY KEY,
+      request_id     TEXT NOT NULL,
       direction      TEXT NOT NULL CHECK(direction IN ('sent','received')),
       agent_id       TEXT,
       peer           TEXT,
@@ -1409,7 +1422,8 @@ function getDb(): Database {
       error          TEXT,
       reply          TEXT,
       created_at     INTEGER NOT NULL,
-      updated_at     INTEGER NOT NULL
+      updated_at     INTEGER NOT NULL,
+      PRIMARY KEY (request_id, direction)
     );
     CREATE INDEX IF NOT EXISTS idx_library_agent_requests_status ON library_agent_requests(direction, status);
 

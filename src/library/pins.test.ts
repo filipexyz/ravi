@@ -202,9 +202,17 @@ describe("library pin sync", () => {
     // The next sync tries the missing one again, without a new notice when nothing changed.
     await syncLibraryPins(fakeSession(fake), { report: true }, deps());
     expect(emitted).toBe(1);
+    const partialDir = dbGetLibraryPinState()?.pluginDir;
     fake.unreadable.clear();
     await syncLibraryPins(fakeSession(fake), { report: true }, deps());
     expect(dbListLibraryPins()).toHaveLength(2);
+    // The full apply writes its own generation; it never reuses the partial one.
+    const fullDir = dbGetLibraryPinState()?.pluginDir;
+    expect(fullDir).toBeTruthy();
+    expect(fullDir).not.toBe(partialDir);
+    const own = libraryAgentPluginDir(fullDir!, "main", "all");
+    expect(existsSync(join(own, "skills", "org-interna", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(own, "skills", "org-tom-de-voz", "SKILL.md"))).toBe(true);
   });
 
   it("empties the pins when the Console answers none", async () => {

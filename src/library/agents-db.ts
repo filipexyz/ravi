@@ -208,7 +208,7 @@ export function dbUpsertLocalAgentRequest(
       `INSERT INTO library_agent_requests
          (request_id, direction, agent_id, peer, session_key, session_name, status, error, reply, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(request_id) DO UPDATE SET
+       ON CONFLICT(request_id, direction) DO UPDATE SET
          status = excluded.status,
          error = excluded.error,
          reply = coalesce(excluded.reply, library_agent_requests.reply),
@@ -231,6 +231,7 @@ export function dbUpsertLocalAgentRequest(
 
 export function dbSetLocalAgentRequestStatus(
   requestId: string,
+  direction: LocalRequestDirection,
   status: string,
   options: { error?: string | null; reply?: string | null; now?: number } = {},
 ): void {
@@ -238,15 +239,15 @@ export function dbSetLocalAgentRequestStatus(
     .prepare(
       `UPDATE library_agent_requests
           SET status = ?, error = ?, reply = coalesce(?, reply), updated_at = ?
-        WHERE request_id = ?`,
+        WHERE request_id = ? AND direction = ?`,
     )
-    .run(status, options.error ?? null, options.reply ?? null, options.now ?? Date.now(), requestId);
+    .run(status, options.error ?? null, options.reply ?? null, options.now ?? Date.now(), requestId, direction);
 }
 
-export function dbGetLocalAgentRequest(requestId: string): LocalAgentRequest | null {
+export function dbGetLocalAgentRequest(requestId: string, direction: LocalRequestDirection): LocalAgentRequest | null {
   const row = getDb()
-    .prepare("SELECT * FROM library_agent_requests WHERE request_id = ?")
-    .get(requestId) as RequestRow | null;
+    .prepare("SELECT * FROM library_agent_requests WHERE request_id = ? AND direction = ?")
+    .get(requestId, direction) as RequestRow | null;
   return row ? rowToRequest(row) : null;
 }
 

@@ -280,3 +280,8 @@ export interface LibraryRequestListResponse {
   installation: LibraryInstallationRef | null;
   requests: LibraryAgentRequest[];
 }
+
+/** A pull (`/requests/pull`, `/requests/replies/pull`): entries this side could not read are kept apart. */
+export interface LibraryRequestPullResponse extends LibraryRequestListResponse {
+  malformed: Array<{ id: string | null; reason: string }>;
+}

@@ -306,7 +306,7 @@ export async function cancelLibraryRequest(
   }
   const session = await requireSession(deps);
   const request = await session.client.cancelRequest(id);
-  dbSetLocalAgentRequestStatus(request.id, request.status);
+  dbSetLocalAgentRequestStatus(request.id, "sent", request.status);
   return request;
 }
 

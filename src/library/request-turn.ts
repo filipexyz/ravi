@@ -25,6 +25,7 @@ import { getAgent } from "../router/config.js";
 import {
   ensureUniqueName,
   expandHome,
+  expireEphemeralSession,
   getOrCreateSession,
   resolveSession,
   updateSessionName,
@@ -131,6 +132,8 @@ export interface LibraryRequestTurnDeps {
   subscribe?: (...topics: string[]) => RuntimeEventStream;
   readHistory?: (sessionName: string) => Array<{ role: string; content: string }>;
   timeoutMs?: number;
+  /** How long `.response` events are still collected after the terminal event (default 500 ms). */
+  graceMs?: number;
 }
 
 /** Create (or reuse) the request's own session on the asked agent. */
@@ -144,6 +147,17 @@ export function ensureLibraryRequestSession(agentId: string, requestId: string):
   const session = getOrCreateSession(sessionKey, agentId, expandHome(agent.cwd), { name });
   if (!session.name) updateSessionName(session.sessionKey, name);
   return session.name ?? name;
+}
+
+/**
+ * Retire a request's session once its outcome is posted: it is marked expired,
+ * and the ephemeral runner stops its runtime and deletes it on its next pass,
+ * as it does for any expired session. Only request sessions are touched.
+ */
+export function retireLibraryRequestSession(sessionName: string): boolean {
+  const session = resolveSession(sessionName);
+  if (!session || !session.sessionKey.includes(`:${LIBRARY_REQUEST_CHANNEL}:`)) return false;
+  return expireEphemeralSession(session.sessionKey);
 }
 
 function responseText(data: Record<string, unknown>): string {
@@ -172,22 +186,29 @@ export async function runLibraryRequestTurn(
   const stream = subscribe(`ravi.session.${sessionName}.response`, `ravi.session.${sessionName}.runtime`);
   const parts: string[] = [];
   let timer: ReturnType<typeof setTimeout> | undefined;
+  /** Set once the answer is read: later events no longer count. */
+  let collecting = true;
 
   const terminal = new Promise<{ type: string; error?: string } | null>((resolve) => {
     timer = setTimeout(() => resolve(null), timeoutMs);
     (async () => {
+      let ended = false;
       try {
+        // Reading goes on after the terminal event: a `.response` published
+        // just after it still belongs to the turn (the grace window below).
         for await (const event of stream) {
+          if (!collecting) return;
           if (event.topic.endsWith(".response")) {
             const text = responseText(event.data);
             if (text.trim()) parts.push(text);
             continue;
           }
+          if (ended) continue;
           const type = event.data.type;
           if (typeof type !== "string" || !TERMINAL_TYPES.has(type)) continue;
           const error = typeof event.data.error === "string" ? event.data.error : undefined;
+          ended = true;
           resolve({ type, ...(error ? { error } : {}) });
-          return;
         }
       } catch {
         // The subscription closed.
@@ -205,7 +226,10 @@ export async function runLibraryRequestTurn(
   }
 
   const end = await terminal;
-  if (end?.type === "turn.complete") await new Promise((resolve) => setTimeout(resolve, RESPONSE_GRACE_MS));
+  if (end?.type === "turn.complete") {
+    await new Promise((resolve) => setTimeout(resolve, deps.graceMs ?? RESPONSE_GRACE_MS));
+  }
+  collecting = false;
   if (timer) clearTimeout(timer);
   closeStream(stream);
 

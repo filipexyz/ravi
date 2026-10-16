@@ -45,6 +45,7 @@ import type {
   LibraryInstallationPin,
   LibraryInstallationPinsResponse,
   LibraryRequestListResponse,
+  LibraryRequestPullResponse,
   LibraryRequestStatus,
   LibraryItem,
   LibraryItemPin,
@@ -100,26 +101,42 @@ interface LibraryClientSession {
   credentials: CloudCredentials;
   write: typeof writeCloudCredentials;
   delete: typeof deleteCloudCredentials;
+  /** Reads the stored login, to pick up a refresh done elsewhere before refreshing again. */
+  read?: () => CloudCredentials | null;
+}
+
+/** One login shared by a client and the clients derived from it (`forAgents()`). */
+interface CredentialHolder {
+  current: CloudCredentials;
 }
 
 export class LibraryClient {
-  private credentials: CloudCredentials;
+  private readonly holder: CredentialHolder;
 
   constructor(
     private readonly session: LibraryClientSession,
     /** `/api/cli/library/skills` (default) or `/api/cli/library/agents`. */
     private readonly kindPath: string = LIBRARY_SKILLS_PATH,
+    holder?: CredentialHolder,
   ) {
-    this.credentials = session.credentials;
+    this.holder = holder ?? { current: session.credentials };
+  }
+
+  private get credentials(): CloudCredentials {
+    return this.holder.current;
   }
 
   get consoleUrl(): string {
     return this.credentials.consoleUrl;
   }
 
-  /** The same session on the agent-definition routes (`/agents/...`). */
+  /**
+   * The same session on the agent-definition routes (`/agents/...`). It shares
+   * this client's credentials, so a refresh on either is seen by both: a
+   * rotated refresh token is never used again.
+   */
   forAgents(): LibraryClient {
-    return new LibraryClient({ ...this.session, credentials: this.credentials }, LIBRARY_AGENTS_PATH);
+    return new LibraryClient(this.session, LIBRARY_AGENTS_PATH, this.holder);
   }
 
   async search(input: { query: string; project?: string | null; limit?: number }): Promise<LibrarySearchResponse> {
@@ -307,8 +324,8 @@ export class LibraryClient {
   }
 
   /** `POST /requests/pull`: the target takes its pending requests (each handed out once). */
-  async pullRequests(): Promise<LibraryRequestListResponse> {
-    return requireRequestList(await this.requestAt<unknown>("POST", `${LIBRARY_PATH}/requests/pull`, {}));
+  async pullRequests(): Promise<LibraryRequestPullResponse> {
+    return readPulledRequests(await this.requestAt<unknown>("POST", `${LIBRARY_PATH}/requests/pull`, {}));
   }
 
   /** `POST /requests/<id>/reply`: the target answers (`reply`) or gives up (`failure`). */
@@ -320,8 +337,8 @@ export class LibraryClient {
   }
 
   /** `POST /requests/replies/pull`: the sender takes answers, failures and expiries (each once). */
-  async pullReplies(): Promise<LibraryRequestListResponse> {
-    return requireRequestList(await this.requestAt<unknown>("POST", `${LIBRARY_PATH}/requests/replies/pull`, {}));
+  async pullReplies(): Promise<LibraryRequestPullResponse> {
+    return readPulledRequests(await this.requestAt<unknown>("POST", `${LIBRARY_PATH}/requests/replies/pull`, {}));
   }
 
   private request<T>(method: string, relativePath: string, body?: unknown): Promise<T> {
@@ -335,7 +352,18 @@ export class LibraryClient {
       } catch (error) {
         if (!isCloudAuthError(error) || error.code !== "AUTH_EXPIRED") throw error;
       }
-      this.credentials = await refreshCredentialsForStore({
+      // Another client or process may have refreshed (and rotated the
+      // refresh token) since this one read the login: use what is stored.
+      const stored = this.readStoredLogin();
+      if (stored && stored.refreshToken !== this.credentials.refreshToken) {
+        this.holder.current = stored;
+        try {
+          return await this.session.client.requestJson<T>(method, path, body, stored.accessToken);
+        } catch (error) {
+          if (!isCloudAuthError(error) || error.code !== "AUTH_EXPIRED") throw error;
+        }
+      }
+      this.holder.current = await refreshCredentialsForStore({
         client: this.session.client,
         credentials: this.credentials,
         write: this.session.write,
@@ -346,6 +374,26 @@ export class LibraryClient {
       if (error instanceof CloudAuthError) throw error;
       throw classifyConsoleNetworkError(error, inspectExecutionPlane());
     }
+  }
+
+  /** The stored login when it is this same login (Console, installation, user); otherwise null. */
+  private readStoredLogin(): CloudCredentials | null {
+    let stored: CloudCredentials | null;
+    try {
+      stored = this.session.read?.() ?? null;
+    } catch {
+      return null;
+    }
+    const current = this.credentials;
+    if (
+      !stored?.refreshToken ||
+      stored.consoleUrl !== current.consoleUrl ||
+      stored.installationId !== current.installationId ||
+      (stored.user?.id ?? null) !== (current.user?.id ?? null)
+    ) {
+      return null;
+    }
+    return stored;
   }
 }
 
@@ -408,6 +456,7 @@ export async function openLibrarySession(
       credentials,
       write: deps.writeCredentials ?? writeCloudCredentials,
       delete: deps.deleteCredentials ?? deleteCloudCredentials,
+      read: () => readCredentials(),
     }),
     consoleUrl: credentials.consoleUrl,
     orgId: credentials.organization?.id?.trim() || credentials.organization?.slug?.trim() || "default",
@@ -599,6 +648,31 @@ function requireRequestList(payload: unknown): LibraryRequestListResponse {
     throw new CloudAuthError("SERVER_UNAVAILABLE", "The Console returned an unexpected request list.");
   }
   return { installation: requireInstallationRef(record.installation), requests: record.requests.map(requireRequest) };
+}
+
+/**
+ * A pull hands each request out once, so one entry this side cannot read
+ * never costs the others: it is kept apart, with its id when it has one.
+ */
+function readPulledRequests(payload: unknown): LibraryRequestPullResponse {
+  const record = objectValue(payload);
+  if (!record || !Array.isArray(record.requests)) {
+    throw new CloudAuthError("SERVER_UNAVAILABLE", "The Console returned an unexpected request list.");
+  }
+  const requests: LibraryAgentRequest[] = [];
+  const malformed: LibraryRequestPullResponse["malformed"] = [];
+  for (const value of record.requests) {
+    try {
+      requests.push(requireRequest(value));
+    } catch (error) {
+      const id = objectValue(value)?.id;
+      malformed.push({
+        id: typeof id === "string" && id.trim() ? id : null,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return { installation: requireInstallationRef(record.installation), requests, malformed };
 }
 
 function requireFile(value: unknown): LibraryVersionFile {

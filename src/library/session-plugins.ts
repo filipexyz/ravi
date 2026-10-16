@@ -9,9 +9,11 @@ import { existsSync } from "node:fs";
 
 import type { RuntimePlugin } from "../runtime/types.js";
 import { logger } from "../utils/logger.js";
-import { dbGetLibraryPinState, dbListLibraryPins } from "./pins-db.js";
+import { dbGetLibraryPinState, dbListLibraryPins, dbListLibraryPinsForAgent } from "./pins-db.js";
 import {
   codexLibrarySkillName,
+  LIBRARY_PLUGIN_NAME,
+  LIBRARY_PLUGIN_SKILL_PREFIX,
   libraryAgentPluginDir,
   libraryUnionPluginDir,
   type LibraryPluginVariant,
@@ -76,7 +78,47 @@ export function resolveLibrarySessionPlugins(input: LibrarySessionPluginsInput):
   }
 }
 
-function ownTurn(input: LibrarySessionPluginsInput): boolean {
+/**
+ * The pinned skill a plugin skill name stands for: `ravi-library:<name>` (Claude,
+ * Pi) or `ravi-library-<name>` (Codex). Null for any other skill.
+ */
+export function libraryPluginSkillName(skill: string): string | null {
+  const value = skill.trim().toLowerCase();
+  for (const prefix of [`${LIBRARY_PLUGIN_NAME}:`, LIBRARY_PLUGIN_SKILL_PREFIX]) {
+    if (value.startsWith(prefix) && value.length > prefix.length) return value.slice(prefix.length);
+  }
+  return null;
+}
+
+/**
+ * Whether the current turn may load the pinned Library skill `skill` names.
+ *
+ * A runtime session outlives the turn that started it, and the plugin it
+ * loaded (and, for Codex, the skills it hid) was chosen for that first turn.
+ * So every load is checked again against the turn that asks for it: a skill
+ * pinned to another agent never loads, and one not marked `externalAllowed`
+ * loads only in the operator's own turn. Skills that are not Library plugin
+ * skills pass. Fails closed when the pins cannot be read.
+ */
+export function isLibraryPluginSkillAllowedForTurn(input: {
+  agentId: string;
+  skill: string;
+  isOperatorOwnTurn: () => boolean;
+}): boolean {
+  const name = libraryPluginSkillName(input.skill);
+  if (!name) return true;
+  let own: ReturnType<typeof dbListLibraryPinsForAgent>;
+  try {
+    own = dbListLibraryPinsForAgent(input.agentId).filter((pin) => pin.skillName.toLowerCase() === name);
+  } catch {
+    return false;
+  }
+  if (own.length === 0) return false;
+  if (own.some((pin) => pin.externalAllowed)) return true;
+  return ownTurn(input);
+}
+
+function ownTurn(input: Pick<LibrarySessionPluginsInput, "isOperatorOwnTurn">): boolean {
   try {
     return input.isOperatorOwnTurn();
   } catch {

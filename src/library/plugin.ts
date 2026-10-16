@@ -137,7 +137,7 @@ export function writeLibraryPluginGeneration(
 ): string | null {
   if (skills.length === 0) return null;
   const root = libraryPluginsRoot(options);
-  const generationDir = join(root, `g-${fingerprint.slice(0, 24)}`);
+  const generationDir = join(root, `g-${generationKey(fingerprint, skills)}`);
   if (existsSync(join(generationDir, COMPLETE_MARKER))) return generationDir;
 
   mkdirSync(root, { recursive: true });
@@ -162,6 +162,22 @@ export function writeLibraryPluginGeneration(
     rmSync(staging, { recursive: true, force: true });
   }
   return generationDir;
+}
+
+/**
+ * The generation's directory key: the pins' fingerprint and the skills
+ * actually written. An apply that left a pin out (not readable this time)
+ * writes fewer skills under the same fingerprint, so its generation must not
+ * be the one a later full apply finds complete and reuses.
+ */
+function generationKey(fingerprint: string, skills: readonly LibraryPluginSkill[]): string {
+  const written = skills
+    .map((skill) =>
+      [skill.agentId, skill.skillName, skill.externalAllowed ? 1 : 0, skill.ref, skill.version].join("\0"),
+    )
+    .sort()
+    .join("\n");
+  return createHash("sha256").update(`${fingerprint}\n${written}`, "utf8").digest("hex").slice(0, 24);
 }
 
 /** Remove generations other than `current` and the newest few before it. Best effort. */
