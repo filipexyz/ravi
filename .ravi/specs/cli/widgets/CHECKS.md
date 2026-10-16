@@ -12,7 +12,15 @@
   Ravi's default theme.
 - `widgets init --from-view` MUST reject a value that is not a uuid with
   `USAGE_ERROR` (exit 2) before any request, and MUST refuse to overwrite
-  existing files without `--force` (`LIBRARY_FILES_EXIST`, exit 3).
+  existing files without `--force` (`LIBRARY_FILES_EXIST`, exit 3). A
+  symlink at a file's path, dangling or not, MUST be refused with
+  `LIBRARY_FILES_EXIST` (exit 3) even with `--force`, writing nothing.
+- `widgets show <reserved word>` (`catalog`, `check`, `preview`,
+  `scaffold`, `proposals`, `none`) MUST exit 2 with `USAGE_ERROR` and the
+  command the word stands for, before any request.
+- `widgets publish`, `propose` and `init` with the slug `none` MUST exit 2
+  with `LIBRARY_SLUG_RESERVED` before any request; `default` is a valid
+  widget slug.
 - `widgets publish` and `widgets propose` without `--execute` MUST exit 3
   with `WRITE_REQUIRES_EXECUTE` and a plan and MUST NOT write to the Library.
 - Inside an agent runtime, `widgets publish` MUST exit 3 with

@@ -213,6 +213,17 @@ describe("theme and widget folders", () => {
     expect(() => readPresentationPackage("widget", widgetDir("catalog"))).toThrow(
       expect.objectContaining({ code: "LIBRARY_SLUG_RESERVED" }),
     );
+    // `none` is reserved for both kinds; `default` only for themes.
+    for (const kind of ["theme", "widget"] as const) {
+      const dir = kind === "theme" ? themeDir("none") : widgetDir("none");
+      expect(() => readPresentationPackage(kind, dir)).toThrow(
+        expect.objectContaining({ code: "LIBRARY_SLUG_RESERVED" }),
+      );
+    }
+    expect(() => readPresentationPackage("theme", themeDir("default"))).toThrow(
+      expect.objectContaining({ code: "LIBRARY_SLUG_RESERVED" }),
+    );
+    expect(readPresentationPackage("widget", widgetDir("default")).slug).toBe("default");
     // Words reserved for skills are fine for widgets.
     expect(readPresentationPackage("widget", widgetDir("pages")).slug).toBe("pages");
   });
@@ -381,6 +392,29 @@ describe("init, check and preview", () => {
     const forced = await initTheme({ dir, force: true }, deps(fake));
     expect(forced.files.every((file) => file.overwritten)).toBe(true);
     expect(readFileSync(join(dir, "fields.json"), "utf8")).toBe("{}\n");
+  });
+
+  it("refuses a symlink in place of a file, dangling or not, with or without force", async () => {
+    const fake = presentationConsole("theme", [], { routes: defaultTheme });
+    const dir = join(workDir, "com-link");
+    mkdirSync(dir);
+    const outside = join(workDir, "fora.json");
+    symlinkSync(outside, join(dir, "theme.json"));
+    for (const force of [false, true]) {
+      const error = await initTheme({ dir, force }, deps(fake)).catch((e) => e);
+      expect(error).toMatchObject({ code: "LIBRARY_FILES_EXIST", exitCode: 3, details: { existing: ["theme.json"] } });
+    }
+    expect(existsSync(outside)).toBe(false);
+    expect(existsSync(join(dir, "fields.json"))).toBe(false);
+
+    // A link to a file that exists is refused the same way and the target keeps its bytes.
+    const target = join(workDir, "alvo.json");
+    writeFileSync(target, "alvo");
+    rmSync(join(dir, "theme.json"));
+    symlinkSync(target, join(dir, "theme.json"));
+    const linked = await initTheme({ dir, force: true }, deps(fake)).catch((e) => e);
+    expect(linked).toMatchObject({ code: "LIBRARY_FILES_EXIST", exitCode: 3 });
+    expect(readFileSync(target, "utf8")).toBe("alvo");
   });
 
   it("never writes a file the kind does not hold", async () => {

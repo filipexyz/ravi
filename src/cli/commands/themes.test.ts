@@ -15,6 +15,7 @@ import {
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { ContractError } from "../agent-contract.js";
 import { runWithContext } from "../context.js";
+import { themeUseReturnSchema } from "../library-contract.js";
 import { ThemesCommands } from "./themes.js";
 
 const THEME_JSON = JSON.stringify({
@@ -36,6 +37,8 @@ let fetchSpy: ReturnType<typeof spyOn> | null = null;
 let checkAnswer: () => Response;
 /** What `POST themes` (publish) answers when set; otherwise the fake's own publish. */
 let publishAnswer: (() => Response) | null;
+/** The ref the fake's pointer names now (`POST themes/active` reports it as `from`). */
+let activeRef: string | null;
 
 const routes: FakeRoute = ({ method, rest, body }) => {
   if (method === "POST" && rest[0] === "check" && rest.length === 1) return checkAnswer();
@@ -59,15 +62,18 @@ const routes: FakeRoute = ({ method, rest, body }) => {
   }
   if (method === "POST" && rest[0] === "active" && rest.length === 1) {
     const input = body as { scope: string; project?: string; ref: string | null; dryRun?: boolean };
+    // Like the Console: the project as an object, and `applied: true, unchanged: true` when the pointer already names it.
+    const unchanged = input.ref === activeRef;
     return json(200, {
       plan: {
         scope: input.scope,
-        project: input.project ?? null,
-        from: null,
+        project: input.project ? { id: `p-${input.project}`, slug: input.project, name: "Clínica" } : null,
+        from: activeRef ? { ref: activeRef, itemId: "i-0", scope: "org", slug: "old", name: "Old" } : null,
         to: input.ref ? { ref: input.ref, itemId: "i-1", scope: "org", slug: "acme", name: "Acme" } : null,
         affectedHosts: [{ siteSlug: "clinica", hostname: "acme-clinica.ravi.page", routes: 2 }],
       },
       applied: input.dryRun !== true,
+      unchanged,
     });
   }
   return null;
@@ -78,6 +84,7 @@ beforeEach(async () => {
   workDir = mkdtempSync(join(tmpdir(), "themes-cli-work-"));
   checkAnswer = () => json(200, { ok: true, diagnostics: [], contrast: CONTRAST_OK, css: ":root{}" });
   publishAnswer = null;
+  activeRef = "org/old";
   fake = createFakeConsole([], [], { kind: "theme", routes });
   fetchSpy = spyOn(globalThis, "fetch").mockImplementation(((input: string | URL | Request, init?: RequestInit) =>
     fake.fetch(String(input instanceof Request ? input.url : input), init)) as typeof fetch);
@@ -230,6 +237,21 @@ describe("themes publish", () => {
     expect(libraryRequests()).not.toContain("POST /api/cli/library/themes");
   });
 
+  it("refuses the reserved slugs none and default (exit 2) before any request", async () => {
+    login();
+    const byFolder = await contractError(() =>
+      operator(() =>
+        new ThemesCommands().publish(themeDir("none"), "org", undefined, undefined, undefined, true, true),
+      ),
+    );
+    expect(byFolder.error).toMatchObject({ code: "LIBRARY_SLUG_RESERVED", exitCode: 2 });
+    const bySlug = await contractError(() =>
+      operator(() => new ThemesCommands().publish(themeDir(), "org", "default", undefined, undefined, true, true)),
+    );
+    expect(bySlug.error).toMatchObject({ code: "LIBRARY_SLUG_RESERVED", exitCode: 2 });
+    expect(fake.requests).toEqual([]);
+  });
+
   it("maps a Console PAYLOAD_INVALID with diagnostics to THEME_INVALID (exit 2)", async () => {
     login();
     publishAnswer = () =>
@@ -309,12 +331,48 @@ describe("themes use", () => {
   it("applies with --execute after the dry run", async () => {
     login();
     const { result } = await capture(() => operator(() => new ThemesCommands().use("org/acme", "clinica", true, true)));
-    expect(result).toMatchObject({ success: true, applied: true, plan: { scope: "project", project: "clinica" } });
+    expect(result).toMatchObject({
+      success: true,
+      applied: true,
+      unchanged: false,
+      plan: { scope: "project", project: { id: "p-clinica", slug: "clinica", name: "Clínica" } },
+    });
+    expect(themeUseReturnSchema.safeParse(result).success).toBe(true);
     const bodies = fake.requests.filter((request) => request.method === "POST").map((request) => request.body);
     expect(bodies).toEqual([
       { scope: "project", project: "clinica", ref: "org/acme", dryRun: true },
       { scope: "project", project: "clinica", ref: "org/acme", dryRun: false },
     ]);
+  });
+
+  it("names the project the Console sends in the plan, as text and in the dry-run JSON", async () => {
+    login();
+    const dryRun = await contractError(() => operator(() => new ThemesCommands().use("org/acme", "clinica")));
+    expect(dryRun.out[0]).toBe("Active theme for project clinica (Clínica): org/old (Old) → org/acme (Acme)");
+    expect(dryRun.error.details.plan).toMatchObject({
+      project: { id: "p-clinica", slug: "clinica", name: "Clínica" },
+      unchanged: false,
+    });
+
+    const { out } = await capture(() => operator(() => new ThemesCommands().use("org/acme", "clinica", false, true)));
+    expect(out[0]).toBe("Active theme for project clinica (Clínica): org/old (Old) → org/acme (Acme)");
+    expect(out.at(-1)).toStartWith("✓ Saved.");
+  });
+
+  it("reports nothing changed when the Console answers applied with unchanged", async () => {
+    login();
+    activeRef = "org/acme";
+    const dryRun = await contractError(() => operator(() => new ThemesCommands().use("org/acme")));
+    expect(dryRun.error.details.plan).toMatchObject({ unchanged: true });
+    expect(dryRun.out).toContain("That is already the active theme: --execute would change nothing.");
+
+    const executed = await capture(() => operator(() => new ThemesCommands().use("org/acme", undefined, true, true)));
+    expect(executed.result).toMatchObject({ success: true, applied: false, unchanged: true });
+    expect(themeUseReturnSchema.safeParse(executed.result).success).toBe(true);
+
+    const text = await capture(() => operator(() => new ThemesCommands().use("org/acme", undefined, false, true)));
+    expect(text.out.at(-1)).toBe("= Nothing changed: that is already the active theme.");
+    expect(text.out.join("\n")).not.toContain("Saved");
   });
 
   it("clears the pointer with none", async () => {
@@ -374,6 +432,25 @@ describe("themes show and search", () => {
     expect(shown.result).toMatchObject({ ref: "org/acme", kind: "theme", version: 2 });
     const found = await capture(() => operator(() => new ThemesCommands().search("acme", undefined, undefined, true)));
     expect(found.result.items.map((item) => item.ref)).toEqual(["org/acme"]);
+  });
+
+  it("refuses a reserved route word as a slug (exit 2) before any request, naming the right command", async () => {
+    login();
+    const hints: Record<string, string> = {
+      active: "Use: ravi themes active",
+      default: "Use: ravi themes init <dir>",
+      none: "Use: ravi themes active",
+      check: "Use: ravi themes check <dir>",
+      proposals: "Use: ravi themes proposals",
+    };
+    for (const [word, hint] of Object.entries(hints)) {
+      const { error } = await contractError(() =>
+        operator(() => new ThemesCommands().show(word.toUpperCase(), undefined, undefined, true)),
+      );
+      expect(error).toMatchObject({ code: "USAGE_ERROR", exitCode: 2 });
+      expect(error.details.suggestedAction).toBe(hint);
+    }
+    expect(fake.requests).toEqual([]);
   });
 
   it("fails THEME_NOT_FOUND (exit 1) for an unknown ref", async () => {

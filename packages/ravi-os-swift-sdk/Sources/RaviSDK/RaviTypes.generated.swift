@@ -33028,17 +33028,20 @@ public struct ThemesUseReturn: Codable, Sendable {
   public var applied: Bool
   public var plan: RaviJSON
   public var success: Bool
+  public var unchanged: Bool
 
-  public init(applied: Bool, plan: RaviJSON, success: Bool) {
+  public init(applied: Bool, plan: RaviJSON, success: Bool, unchanged: Bool) {
     self.applied = applied
     self.plan = plan
     self.success = success
+    self.unchanged = unchanged
   }
 
   enum CodingKeys: String, CodingKey {
     case applied = "applied"
     case plan = "plan"
     case success = "success"
+    case unchanged = "unchanged"
   }
 }
 

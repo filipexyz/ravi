@@ -122,7 +122,7 @@ dados do host. Tag de dados em rota `public` cai na mesma recusa do
 
 O JSON traz `kit: { status, changedFiles, warnings, theme, widgets }` e
 `presentation`. `status` é `applied`; `skipped` quando não há HTML ou ele
-passa do limite (aviso `KIT_TOO_LARGE`: 2 MiB por arquivo, 8 MiB no total);
+passa do limite (aviso `KIT_TOO_LARGE`: 2 MiB por arquivo, 4 MiB no total);
 `unavailable` num Console antigo (aviso `KIT_UNAVAILABLE`). Nos dois últimos
 o HTML vai como está, sem tema, e as tags não funcionam.
 
@@ -140,6 +140,7 @@ código mensagem`), e nada sobe:
 | `KIT_DATA_INVALID` | `data` precisa ser um objeto JSON |
 | `KIT_FORM_FIELD_MISSING` | `fields` do formulário com coluna que a view não projeta |
 | `KIT_THEME_*` | `--theme` com ref errado (`theme.md`) |
+| `KIT_TOO_LARGE` | o HTML montado (com tema e `ravi.js`) passou do limite do Console: divida em mais rotas |
 
 Avisos não bloqueiam: atributo desconhecido (`KIT_ATTRIBUTE_UNKNOWN`),
 variante que o widget não tem (`KIT_VARIANT_UNKNOWN`), `fields` sem widget
@@ -197,9 +198,10 @@ ravi widgets propose ./pedido-card --scope org --note "cartão de pedido" --exec
 As peças garantem, e o publish do widget recusa o que quebra:
 
 - imagem com `alt` (campo, texto curto ou `decorative`); avatar com `name`;
-- botão e link com texto; cor nunca é o único sinal (badge e texto com `tone`
-  ou `color` precisam de texto); status e select sempre mostram o nome da
-  opção;
+- botão e link com texto que todo registro tem: texto fixo, um campo
+  `required`, um campo testado por um `{#if}` em volta, ou um `{#if}` com texto
+  nos dois ramos; cor nunca é o único sinal (badge e texto com `tone` ou
+  `color` precisam de texto); status e select sempre mostram o nome da opção;
 - títulos sem pular nível; todo cartão é um `article` com título;
 - botão com nome "rótulo: título do registro" (ex.: "Concluir: Pedido 1042"),
   confirmação montada da ação, `archive` sempre confirma;
@@ -214,7 +216,8 @@ No HTML que é seu, você ainda faz:
 
 - um `<h1>` e títulos em ordem; `heading-level` da tag encaixa nessa ordem
   (seção `<h2>` com lista dentro: `heading-level="3"`);
-- `<html lang>` (o ship põe o do tema se faltar) e `<title>`;
+- `<html lang>` (o ship põe o do tema se faltar; no `--body`, sem tema e sem
+  tags, `pt-BR`) e `<title>`;
 - rótulo em todo controle seu (`<label>`, ou `aria-label` em botão só com
   ícone) e texto alternativo em imagem e gráfico (`role="img"` com
   `aria-label`, ou uma tabela ao lado);

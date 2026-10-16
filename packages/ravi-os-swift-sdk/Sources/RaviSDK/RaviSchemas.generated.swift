@@ -99091,7 +99091,31 @@ public enum RaviSchemas {
           "project": {
             "anyOf": [
               {
-                "type": "string"
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "slug": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "slug",
+                  "name"
+                ],
+                "type": "object"
               },
               {
                 "type": "null"
@@ -99179,11 +99203,15 @@ public enum RaviSchemas {
       "success": {
         "const": true,
         "type": "boolean"
+      },
+      "unchanged": {
+        "type": "boolean"
       }
     },
     "required": [
       "success",
       "applied",
+      "unchanged",
       "plan"
     ],
     "type": "object"

@@ -14,7 +14,7 @@ import { getCliOnlyMetadata, getCommandsMetadata, getOptionsMetadata, getReturns
 import { dbCreateAgent } from "../../router/router-db.js";
 import { dbListTriggers } from "../../triggers/triggers-db.js";
 import { pageCommentFilter } from "../../pages/comment-follow.js";
-import { SHIP_LIVE_DATA_OVERRIDE_WARNING, SHIP_LIVE_DATA_REFUSAL_LINES } from "../../pages/ship.js";
+import { SHIP_LIVE_DATA_OVERRIDE_WARNING, SHIP_LIVE_DATA_REFUSAL_LINES, wrapHtml5Document } from "../../pages/ship.js";
 import { PagesAssertionAudienceCommands, PagesChatCommands, PagesCommands, PagesPasswordCommands } from "./pages.js";
 
 const tempDirs: string[] = [];
@@ -2419,6 +2419,65 @@ describe("pages ship page kit", () => {
       ...lines,
     ]);
     expect(client.createPageUploadSession).not.toHaveBeenCalled();
+  });
+
+  it("exits 2 with the Console's KIT_TOO_LARGE diagnostic and its message, uploading nothing", async () => {
+    stateDir = await createIsolatedRaviState("ravi-pages-ship-kit-too-large-");
+    const diagnostics = [
+      { severity: "error", code: "KIT_TOO_LARGE", message: "The page kit output is larger than 4 MiB.", path: null },
+    ];
+    const { client } = makeKitClient(() => {
+      throw new CloudAuthError("PAYLOAD_INVALID", "Page kit found errors.", { status: 422, details: { diagnostics } });
+    });
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+    const line = "- error KIT_TOO_LARGE The page kit output is larger than 4 MiB.";
+
+    const error = await expectContractError(() => shipKit(command, {}), "KIT_INVALID", 2);
+    expect(error.envelope().error.issues).toEqual([{ path: [], code: "KIT_TOO_LARGE", message: line }]);
+    const text = await captureConsoleError(async () => {
+      await expect(runWithContext({}, () => shipKit(command, { asJson: false }))).rejects.toBeInstanceOf(ContractError);
+    });
+    expect(text.split("\n")).toEqual([
+      "Refusing to ship: the page kit found 1 error(s) in the HTML. Nothing was uploaded or published.",
+      line,
+    ]);
+    expect(client.createPageUploadSession).not.toHaveBeenCalled();
+  });
+
+  it("sends --body without lang and uploads the kit's lang, else the pt-BR fallback", async () => {
+    stateDir = await createIsolatedRaviState("ravi-pages-ship-kit-lang-");
+    const body = '<ravi-view view="v1"></ravi-view>';
+    const wrapped = wrapHtml5Document("Pedidos", body);
+    // The kit sets lang from the theme locale (here an `en` theme) when the page has none.
+    const themedEn = (html: string) => themed(html).replace("<html>", '<html lang="en">');
+    const { client, kitBodies, manifests } = makeKitClient((kitBody) => ({
+      ...kitThemed(kitBody),
+      files: kitBody.files.map((file) => ({ path: file.path, html: themedEn(file.html), changed: true })),
+    }));
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+    await captureConsole(() => shipKit(command, { body }));
+    expect(kitBodies[0]?.files[0]?.html).toBe(wrapped);
+    expect(manifests[0]?.files.find((file) => file.path === "index.html")?.sha256).toBe(sha256(themedEn(wrapped)));
+
+    // No theme and no tags: the kit leaves the file as sent, and ship adds pt-BR.
+    const plain = makeKitClient(kitUnchanged);
+    const plainCommand = new PagesCommands({ client: plain.client, readCredentials: makeReadCredentials() });
+    await captureConsole(() => shipKit(plainCommand, { body: "<p>Em construção</p>", theme: "none" }));
+    const plainWrapped = wrapHtml5Document("Pedidos", "<p>Em construção</p>");
+    expect(plain.kitBodies[0]?.files[0]?.html).toBe(plainWrapped);
+    expect(plain.manifests[0]?.files.find((file) => file.path === "index.html")?.sha256).toBe(
+      sha256(plainWrapped.replace("<html>", '<html lang="pt-BR">')),
+    );
+
+    // An older Console without the kit: the same fallback.
+    const older = makeKitClient(() => {
+      throw new CloudAuthError("PAYLOAD_INVALID", "<!DOCTYPE html><h1>404</h1>", { status: 404 });
+    });
+    const olderCommand = new PagesCommands({ client: older.client, readCredentials: makeReadCredentials() });
+    await captureConsole(() => shipKit(olderCommand, { body }));
+    expect(older.manifests[0]?.files.find((file) => file.path === "index.html")?.sha256).toBe(
+      sha256(wrapped.replace("<html>", '<html lang="pt-BR">')),
+    );
   });
 
   it("ships the HTML unchanged with KIT_UNAVAILABLE when the Console has no kit route", async () => {

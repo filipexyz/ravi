@@ -95,7 +95,14 @@ contract errors rethrow first, recognizable Console not-found failures map to
     is a legacy extra host: it MAY create or reuse that slug and MUST warn.
     Host slugs `ravi` and `ravi-*` MUST NOT be created.
     Every source (`--body`, `--html` and `--dir`) is materialized as a private
-    temp copy; ship MUST NOT write to the caller's `--dir`.
+    temp copy; ship MUST NOT write to the caller's `--dir`. A `--dir` that
+    contains the system temp dir MUST NOT copy the temp copy into itself
+    (the copy walks the real source path and skips its own root).
+    The `--body` wrapper's `<html>` has no `lang`, so the page kit sets the
+    theme's locale; when the entry file still has none after the kit
+    (skipped, unavailable, or no theme and no tags), ship sets
+    `lang="pt-BR"` on that wrapper before upload. Ship MUST NOT add or change
+    `lang` in `--html` or `--dir` files.
 12. `pages domains --execute` MUST be one idempotent setup command. When
     ownership or Pages DNS is not ready, the CLI MUST recognize
     `DOMAIN_SETUP_REQUIRED`, surface the Console-authored DNS instruction, exit
@@ -123,19 +130,24 @@ contract errors rethrow first, recognizable Console not-found failures map to
     ship MUST `POST /api/cli/pages/kit` with `{project, site, route,
     visibility, theme, files: [{path, html}]}`, where `files` are the copy's
     `.html`/`.htm` files (no symlinks, dot paths or `_ravi`). A file over
-    2 MiB or a request over 8 MiB skips the kit with warning `KIT_TOO_LARGE`;
-    no HTML file skips it silently. Ship MUST write back only files it sent
-    and the Console marks `changed`, merge the returned `uses` after `--uses`
-    (normalized, deduplicated), re-run the invariant-4 public live-data
-    refusal on the merged list before upload, and forward `presentation`
-    unchanged as `publish.presentation`. The OSS transports only: it never
+    2 MiB or a request over 4 MiB (the Console's body limit) skips the kit
+    with warning `KIT_TOO_LARGE`; no HTML file skips it silently. Ship MUST
+    write back only files it sent and the Console marks `changed`; the
+    Console omits `html` for `changed: false` files, which keep their local
+    bytes, and a `changed: true` file without `html` fails the ship
+    (`SERVER_UNAVAILABLE`, nothing uploaded). Ship MUST merge the returned
+    `uses` after `--uses` (normalized, deduplicated), re-run the invariant-4
+    public live-data refusal on the merged list before upload, and forward
+    `presentation` unchanged as `publish.presentation`. The OSS transports only: it never
     compiles themes or widgets, resolves refs or derives `uses`.
 15. Kit failures: a bare 404 or a 405 (an older Console without the route;
     a coded `NOT_FOUND` is a real error) MUST ship the HTML unchanged with
     warning `KIT_UNAVAILABLE`. A 422 MUST exit 2 with `KIT_INVALID`, upload
     nothing, and list each diagnostic as an issue line
     `path:line:column severity code message` (diagnostics read from the body
-    top level or from `error.details.diagnostics`). Any other Console or
+    top level or from `error.details.diagnostics`; the Console's
+    `KIT_TOO_LARGE` error, for a rewritten page over its limit, is one of
+    them). Any other Console or
     network failure fails like other Console calls. The kit never brakes
     ship (invariant 4).
 16. `pages ship --theme <ref|none>` is declared before `--execute`. Without

@@ -21,6 +21,12 @@
 7. `LIBRARY_FILES_EXIST` (exit 3) on `init`: the folder already has theme
    files. Use another folder or pass `--force` on purpose.
 8. `THEME_NOT_FOUND` (exit 1): list refs with `ravi themes search --json`.
+   `USAGE_ERROR` (exit 2) on `themes show active` (or `default`, `none`,
+   `check`, `proposals`): those words are routes, not themes; run the
+   command in `suggestedAction` (`ravi themes active`).
+   `themes use --execute` that prints `= Nothing changed` (JSON
+   `unchanged: true`): the pointer already named that theme; nothing was
+   written.
 9. Pages still show the old look after `use`: private routes refresh live;
    public routes keep the theme they were shipped with until the next
    `ravi pages ship`. `ravi pages outdated --json` lists them.

@@ -92,10 +92,15 @@ export const PRESENTATION_FILES: Readonly<Record<PresentationKind, PresentationF
   },
 };
 
-/** Words the Console's routes use after `themes/` or `widgets/`: no item of that kind may take them. */
+/**
+ * Words the Console's routes use after `themes/` or `widgets/`: no item of
+ * that kind may take them. `none` is also what refs mean by "no theme" (`themes
+ * use none`, `ship --theme none`) and "no widget" (`bases views bind ... none`),
+ * and a theme `default` is Ravi's built-in theme.
+ */
 export const PRESENTATION_ROUTE_WORDS: Readonly<Record<PresentationKind, ReadonlySet<string>>> = {
-  theme: new Set(["active", "default", "check", "proposals"]),
-  widget: new Set(["catalog", "check", "preview", "scaffold", "proposals"]),
+  theme: new Set(["active", "default", "none", "check", "proposals"]),
+  widget: new Set(["catalog", "check", "preview", "scaffold", "proposals", "none"]),
 };
 
 export function isReservedPresentationSlug(kind: PresentationKind, slug: string): boolean {

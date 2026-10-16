@@ -20,7 +20,12 @@ import {
   ThemeCheckFailed,
   type LibraryDiagnostic,
 } from "../library/diagnostics.js";
-import { LIBRARY_KIND_PROFILES, type LibraryKindProfile, type PresentationKind } from "../library/kinds.js";
+import {
+  isReservedPresentationSlug,
+  LIBRARY_KIND_PROFILES,
+  type LibraryKindProfile,
+  type PresentationKind,
+} from "../library/kinds.js";
 import { LibraryPackageError } from "../library/package.js";
 import { searchPresentationItems, showPresentationItem } from "../library/presentation.js";
 import { isLibrarySlug, looksLikeLibraryRef, parseLibraryRef } from "../library/refs.js";
@@ -606,10 +611,11 @@ export const themeUseReturnSchema = z
   .object({
     success: z.literal(true),
     applied: z.boolean(),
+    unchanged: z.boolean(),
     plan: z
       .object({
         scope: z.enum(["org", "project"]),
-        project: z.string().nullable(),
+        project: z.object({ id: z.string(), slug: z.string(), name: z.string().nullable() }).strict().nullable(),
         from: themePointerReturnSchema.nullable(),
         to: themePointerReturnSchema.nullable(),
         affectedHosts: z.array(z.object({ siteSlug: z.string(), hostname: z.string(), routes: z.number() }).strict()),
@@ -674,6 +680,25 @@ export async function runPresentationSearch(
   return payload;
 }
 
+/** The command a reserved route word stands for, suggested when `show` gets it as a slug. */
+const RESERVED_SHOW_HINTS: Readonly<Record<PresentationKind, Readonly<Record<string, string>>>> = {
+  theme: {
+    active: "ravi themes active",
+    default: "ravi themes init <dir>",
+    none: "ravi themes active",
+    check: "ravi themes check <dir>",
+    proposals: "ravi themes proposals",
+  },
+  widget: {
+    catalog: "ravi widgets catalog",
+    check: "ravi widgets check <dir>",
+    preview: "ravi widgets preview <dir>",
+    scaffold: "ravi widgets init <dir> --slug <slug>",
+    proposals: "ravi widgets proposals",
+    none: "ravi widgets search <words>",
+  },
+};
+
 /** Files whose text `show` prints (a logo is listed, not printed). */
 const SHOWN_TEXT_FILES = new Set([
   "theme.json",
@@ -691,6 +716,16 @@ export async function runPresentationShow(
   const op = `${profile.group} show`;
   const selector = parseItemSelector(input.ref);
   if (!selector) failLibraryRefInvalid(op, input.ref ?? "", profile, input.asJson);
+  // A bare route word would reach another Console route (`themes/active`), never an item.
+  if ("slug" in selector && isReservedPresentationSlug(profile.kind, selector.slug)) {
+    failLibraryUsage(
+      op,
+      `"${selector.slug}" is a reserved word of ravi ${profile.group}, never a ${profile.noun} slug.`,
+      `Use: ${RESERVED_SHOW_HINTS[profile.kind][selector.slug] ?? `ravi ${profile.group} search <words>`}`,
+      input.asJson,
+      ["ref"],
+    );
+  }
   const version = input.version === undefined ? undefined : Number(input.version);
   if (version !== undefined && (!Number.isInteger(version) || version < 1)) {
     failLibraryUsage(

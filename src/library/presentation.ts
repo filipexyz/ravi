@@ -12,7 +12,7 @@
  * and keeps an agent inside its own Console project's view.
  */
 
-import { existsSync, lstatSync, mkdirSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, writeFileSync, type Stats } from "node:fs";
 import { dirname, join } from "node:path";
 
 import {
@@ -48,6 +48,7 @@ import type {
   LibraryItem,
   LibraryThemeActive,
   LibraryThemeUsePlan,
+  LibraryThemeUseResult,
   LibraryVersion,
   LibraryWidgetCatalog,
   LibraryWidgetSummary,
@@ -246,7 +247,9 @@ function assertWritableFolder(dir: string): void {
 
 /**
  * Write the files the Console generated. Only the kind's own files at the
- * folder root are written; existing files are kept unless `force`.
+ * folder root are written; existing files are kept unless `force`. A path
+ * that is not a regular file (a folder, or a symlink, dangling or not) is
+ * never written through, with or without `force`.
  */
 function writeGeneratedFiles(
   kind: PresentationKind,
@@ -265,7 +268,12 @@ function writeGeneratedFiles(
       );
     }
   }
-  const existing = files.filter((file) => existsSync(join(dir, file.path))).map((file) => file.path);
+  // lstat, not existsSync: a dangling symlink "does not exist", and writing
+  // to it would create its target outside the folder.
+  const entries = files.map((file) => ({ file, stat: lstatOrNull(join(dir, file.path)) }));
+  const irregular = entries.find((entry) => entry.stat && !entry.stat.isFile());
+  if (irregular) throw notRegularFile(irregular.file.path);
+  const existing = entries.filter((entry) => entry.stat).map((entry) => entry.file.path);
   if (existing.length > 0 && !force) {
     throw new LibraryCommandError(
       LIBRARY_FILES_EXIST,
@@ -278,17 +286,32 @@ function writeGeneratedFiles(
     );
   }
   mkdirSync(dir, { recursive: true });
-  return files.map((file) => {
-    const target = join(dir, file.path);
-    const overwritten = existsSync(target);
-    if (overwritten && !lstatSync(target).isFile()) {
-      throw new LibraryCommandError(LIBRARY_FILES_EXIST, `${file.path} exists and is not a regular file.`, 3, {
-        existing: [file.path],
-        suggestedAction: "Remove it or choose another folder",
-      });
+  return entries.map(({ file, stat }) => {
+    try {
+      // `wx` for a new file: anything that appears there in the meantime,
+      // a symlink included, fails instead of being followed.
+      writeFileSync(join(dir, file.path), file.content, { encoding: "utf8", flag: stat ? "w" : "wx" });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") throw notRegularFile(file.path);
+      throw error;
     }
-    writeFileSync(target, file.content, "utf8");
-    return { file: file.path, bytes: Buffer.byteLength(file.content, "utf8"), overwritten };
+    return { file: file.path, bytes: Buffer.byteLength(file.content, "utf8"), overwritten: stat !== null };
+  });
+}
+
+function lstatOrNull(path: string): Stats | null {
+  try {
+    return lstatSync(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+function notRegularFile(path: string): LibraryCommandError {
+  return new LibraryCommandError(LIBRARY_FILES_EXIST, `${path} exists and is not a regular file.`, 3, {
+    existing: [path],
+    suggestedAction: "Remove it or choose another folder",
   });
 }
 
@@ -419,6 +442,8 @@ export interface PreparedThemeUse {
   session: LibrarySession;
   body: { scope: "org" | "project"; project?: string; ref: string | null };
   plan: LibraryThemeUsePlan;
+  /** The pointer already names the target: `--execute` would write nothing. */
+  unchanged: boolean;
 }
 
 /** Parse `<ref|none>` and `--project` into a pointer write. Throws LIBRARY_REF_INVALID (exit 2). */
@@ -466,16 +491,15 @@ export async function prepareThemeUse(input: ThemeUseInput, deps: LibraryService
   if (!session) throw libraryLoginRequiredError();
   try {
     const planned = await session.client.setThemeActive({ ...body, dryRun: true });
-    return { session, body, plan: planned.plan };
+    return { session, body, plan: planned.plan, unchanged: planned.unchanged };
   } catch (error) {
     if (isLibraryNotFoundError(error) && body.ref) throw notFound(body.ref, LIBRARY_KIND_PROFILES.theme);
     throw error;
   }
 }
 
-export async function executeThemeUse(
-  prepared: PreparedThemeUse,
-): Promise<{ plan: LibraryThemeUsePlan; applied: boolean }> {
+/** Write the pointer. `unchanged` (with `applied: true`) means it already named the target: nothing was written. */
+export async function executeThemeUse(prepared: PreparedThemeUse): Promise<LibraryThemeUseResult> {
   return prepared.session.client.setThemeActive({ ...prepared.body, dryRun: false });
 }
 

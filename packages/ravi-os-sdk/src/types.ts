@@ -19784,7 +19784,11 @@ export type ThemesUseReturn = {
       setBy: string | null;
       slug: string;
     }) | null;
-    project: string | null;
+    project: ({
+      id: string;
+      name: string | null;
+      slug: string;
+    }) | null;
     scope: "org" | "project";
     to: ({
       itemId: string;
@@ -19797,6 +19801,7 @@ export type ThemesUseReturn = {
     }) | null;
   };
   success: true;
+  unchanged: boolean;
 };
 
 /** Input shape for `threads.brief`. */

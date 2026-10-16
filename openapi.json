@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "c9adfcb1d3115730"
+    "version": "5d5b242438fada32"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -119466,7 +119466,31 @@
                         "project": {
                           "anyOf": [
                             {
-                              "type": "string"
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "slug": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "slug",
+                                "name"
+                              ],
+                              "type": "object"
                             },
                             {
                               "type": "null"
@@ -119554,11 +119578,15 @@
                     "success": {
                       "const": true,
                       "type": "boolean"
+                    },
+                    "unchanged": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
                     "success",
                     "applied",
+                    "unchanged",
                     "plan"
                   ],
                   "type": "object"

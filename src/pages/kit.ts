@@ -13,7 +13,8 @@ import { createAuthenticatedPagesContext, type PagesClientDeps } from "./client.
 export const PAGES_KIT_PATH = "/api/cli/pages/kit";
 export const PAGES_OUTDATED_PATH = "/api/cli/pages/outdated";
 export const PAGE_KIT_FILE_MAX_BYTES = 2 * 1024 * 1024;
-export const PAGE_KIT_REQUEST_MAX_BYTES = 8 * 1024 * 1024;
+/** The Console's page kit body limit; a bigger request skips the kit instead of failing the ship. */
+export const PAGE_KIT_REQUEST_MAX_BYTES = 4 * 1024 * 1024;
 export const PAGE_KIT_THEME_NONE = "none";
 
 const HTML_FILE_PATTERN = /\.html?$/i;
@@ -119,7 +120,7 @@ export async function collectPageKitFiles(root: string): Promise<PageKitCollecti
       const info = await lstat(join(root, path));
       if (info.size > PAGE_KIT_FILE_MAX_BYTES) {
         return {
-          skipped: `KIT_TOO_LARGE: ${path} is larger than 2 MiB, the page kit limit per HTML file. ${KIT_SKIPPED_EFFECT}`,
+          skipped: `KIT_TOO_LARGE: ${path} is larger than ${mebibytes(PAGE_KIT_FILE_MAX_BYTES)}, the page kit limit per HTML file. ${KIT_SKIPPED_EFFECT}`,
         };
       }
       files.push({ path, html: await readFile(join(root, path), "utf8") });
@@ -151,7 +152,7 @@ export async function applyPageKit(input: PageKitInput, deps: PagesClientDeps = 
     return {
       ok: true,
       result: unchangedKit("skipped", [
-        `KIT_TOO_LARGE: the HTML files add up to more than 8 MiB, the page kit request limit. ${KIT_SKIPPED_EFFECT}`,
+        `KIT_TOO_LARGE: the HTML files add up to more than ${mebibytes(PAGE_KIT_REQUEST_MAX_BYTES)}, the page kit request limit. ${KIT_SKIPPED_EFFECT}`,
       ]),
     };
   }
@@ -179,7 +180,11 @@ export async function applyPageKit(input: PageKitInput, deps: PagesClientDeps = 
   const sent = new Set(collected.files.map((file) => file.path));
   const changedFiles: string[] = [];
   for (const file of response.files) {
+    // An unchanged file comes back without `html`: the local copy is already right.
     if (!file.changed || !sent.has(file.path) || changedFiles.includes(file.path)) continue;
+    if (file.html === null) {
+      throw new CloudAuthError("SERVER_UNAVAILABLE", `The Console page kit changed ${file.path} but sent no HTML.`);
+    }
     await writeFile(join(input.root, file.path), file.html, "utf8");
     changedFiles.push(file.path);
   }
@@ -230,7 +235,8 @@ function kitInvalidDiagnostics(error: CloudAuthError): PageKitDiagnostic[] {
 }
 
 interface PageKitResponse {
-  files: Array<{ path: string; html: string; changed: boolean }>;
+  /** `html` is null when the Console omits it, as it does for `changed: false`. */
+  files: Array<{ path: string; html: string | null; changed: boolean }>;
   uses: string[];
   presentation: Record<string, unknown> | null;
   diagnostics: PageKitDiagnostic[];
@@ -243,8 +249,8 @@ function normalizeKitResponse(payload: unknown): PageKitResponse {
     files: arrayValue(record.files).flatMap((item) => {
       const file = objectValue(item);
       const path = stringValue(file?.path);
-      if (!file || !path || typeof file.html !== "string") return [];
-      return [{ path, html: file.html, changed: file.changed === true }];
+      if (!file || !path) return [];
+      return [{ path, html: typeof file.html === "string" ? file.html : null, changed: file.changed === true }];
     }),
     uses: arrayValue(record.uses).filter((value): value is string => typeof value === "string"),
     presentation: objectValue(record.presentation),
@@ -402,6 +408,10 @@ function shortHash(value: string | null): string | null {
 
 function jsonOrNull(value: unknown): unknown {
   return value === undefined ? null : value;
+}
+
+function mebibytes(bytes: number): string {
+  return `${bytes / (1024 * 1024)} MiB`;
 }
 
 function objectValue(value: unknown): Record<string, unknown> | null {

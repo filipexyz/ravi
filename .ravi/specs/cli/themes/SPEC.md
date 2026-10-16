@@ -58,15 +58,24 @@ is the same shape for widgets.
    Warnings never fail.
 4. `publish` and `propose` need a description (`theme.json` `$description`,
    `LIBRARY_PACKAGE_INVALID` otherwise). The slug is `--slug`, else the folder
-   name; `active`, `default`, `check` and `proposals` are
-   `LIBRARY_SLUG_RESERVED` (exit 2).
+   name; `active`, `default`, `none`, `check` and `proposals` are
+   `LIBRARY_SLUG_RESERVED` (exit 2) before any request (the Console reserves
+   the same words; `none` and `default` are what theme refs mean by them).
 5. `init` writes exactly the files the Console's default theme returns, only
    allowed paths, and never overwrites without `--force`
-   (`LIBRARY_FILES_EXIST`, exit 3, nothing written).
+   (`LIBRARY_FILES_EXIST`, exit 3, nothing written). A target path that is
+   not a regular file (a folder, or a symlink, dangling or not, checked with
+   `lstat`) is `LIBRARY_FILES_EXIST` (exit 3) even with `--force`; nothing is
+   written through it, and new files are created exclusively (`wx`).
 6. `use <ref|none>` sets the org pointer, or the project pointer with
    `--project` or a `<project>/<slug>` ref; `none` clears it. Without
-   `--execute` it returns the Console's dry-run plan (`from`, `to`,
-   `affectedHosts`) with exit 3 and writes nothing.
+   `--execute` it returns the Console's dry-run plan (`scope`, `project`,
+   `from`, `to`, `affectedHosts`, plus `unchanged`) with exit 3 and writes
+   nothing. `plan.project` is the Console's `{ id, slug, name }` (null for
+   the org pointer); text output names it `slug (name)`. When the pointer
+   already names the target the Console answers `applied: true, unchanged:
+   true` and writes nothing: the CLI reports `applied: false, unchanged:
+   true` and prints `= Nothing changed`, never a save.
 7. Inside an agent runtime, `publish` and `use` refuse before any request:
    `LIBRARY_AGENT_CANNOT_PUBLISH` (with `ravi themes propose <dir> --scope
    <scope> --execute`) and `LIBRARY_AGENT_CANNOT_SET_THEME` (with `Ask the
@@ -75,6 +84,11 @@ is the same shape for widgets.
    (exit 3).
 8. `active` returns `{ projectRef, org, project, effective, warnings }` as
    the Console sent them.
+9. `show <slug>` with a reserved word (invariant 4) as a bare slug is
+   `USAGE_ERROR` (exit 2) before any request, with the command that word
+   stands for as `suggestedAction` (`active` → `ravi themes active`,
+   `default` → `ravi themes init <dir>`): the Console routes those words to
+   other endpoints, never to an item.
 
 ## Write classification
 
@@ -97,8 +111,9 @@ is the same shape for widgets.
 | malformed ref or `--scope` | `LIBRARY_REF_INVALID` | 2 |
 | reserved slug | `LIBRARY_SLUG_RESERVED` | 2 |
 | bad flag value (`--limit`, `--version`, `--project`) | `USAGE_ERROR` | 2 |
+| `show` of a reserved word as a bare slug | `USAGE_ERROR` + the command it stands for | 2 |
 | unknown theme | `THEME_NOT_FOUND` + `ravi themes search` | 1 |
-| `init` onto existing files | `LIBRARY_FILES_EXIST` | 3 |
+| `init` onto existing files, or onto a symlink or folder at a file's path | `LIBRARY_FILES_EXIST` | 3 |
 | publish, propose or use without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
 | publish or use inside an agent | `LIBRARY_AGENT_CANNOT_PUBLISH`, `LIBRARY_AGENT_CANNOT_SET_THEME` | 3 |
 | `--update` of another author's or agent's proposal | `LIBRARY_PROPOSAL_NOT_YOURS` | 3 |

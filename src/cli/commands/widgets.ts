@@ -107,7 +107,9 @@ FONTES
 const WIDGETS_SHOW_HELP_AFTER = `
 LEITURA — mostra um widget: versão, descrição e os arquivos (widget.html,
 widget.json, example.json, README.md). Ref org/<slug> ou <projeto>/<slug>; um
-slug sem barra resolve no projeto e depois na org.
+slug sem barra resolve no projeto e depois na org. Palavras reservadas
+(catalog, check, preview, scaffold, proposals, none) não são widgets: saem
+com USAGE_ERROR (exit 2) e o comando certo (ravi widgets catalog...).
 
 EXAMPLES
   ravi widgets show org/pedido-card
@@ -196,8 +198,8 @@ com exit 2) e o plano sai com exit 3. Com --execute: publica a versão nova.
 ARQUIVOS
   widget.html e widget.json (obrigatórios; name e description no widget.json),
   example.json, README.md. Outros arquivos da pasta (preview.html) ficam fora.
-  Slug = --slug, senão o nome da pasta. catalog, check, preview, scaffold e
-  proposals são reservados.
+  Slug = --slug, senão o nome da pasta. catalog, check, preview, scaffold,
+  proposals e none são reservados.
 
 EXAMPLES
   ravi widgets publish ./pedido-card --scope org                 # plano (exit 3)

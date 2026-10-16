@@ -276,7 +276,8 @@ export interface LibraryThemeActive {
 
 export interface LibraryThemeUsePlan {
   scope: "org" | "project";
-  project: string | null;
+  /** The project whose pointer changes, as the Console sends it; null for the org pointer. */
+  project: { id: string; slug: string; name: string | null } | null;
   from: LibraryThemePointer | null;
   to: LibraryThemePointer | null;
   affectedHosts: Array<{ siteSlug: string; hostname: string; routes: number }>;
@@ -286,6 +287,8 @@ export interface LibraryThemeUsePlan {
 export interface LibraryThemeUseResult {
   plan: LibraryThemeUsePlan;
   applied: boolean;
+  /** The pointer already names the target: nothing is (or would be) written. */
+  unchanged: boolean;
 }
 
 export interface LibraryThemeUseBody {

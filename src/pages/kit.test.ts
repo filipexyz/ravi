@@ -14,6 +14,7 @@ import {
   mergePageUses,
   normalizeShipTheme,
   PAGE_KIT_FILE_MAX_BYTES,
+  PAGE_KIT_REQUEST_MAX_BYTES,
   renderOutdatedTable,
   type OutdatedPageItem,
   type PageKitInput,
@@ -151,15 +152,20 @@ describe("page kit helpers", () => {
     expect(calls).toEqual([]);
   });
 
-  it("skips the kit with a warning when the request would pass 8 MiB", async () => {
+  it("skips the kit with a warning when the request would pass 4 MiB, the Console's limit", async () => {
+    expect(PAGE_KIT_REQUEST_MAX_BYTES).toBe(4 * 1024 * 1024);
     const root = await tempRoot();
-    for (const name of ["a", "b", "c", "d", "e"]) {
-      await writeFile(join(root, `${name}.html`), "y".repeat(PAGE_KIT_FILE_MAX_BYTES - 10));
+    // Three files of 1.4 MiB: each under the per-file limit, together over 4 MiB.
+    for (const name of ["a", "b", "c"]) {
+      await writeFile(join(root, `${name}.html`), "y".repeat(Math.round(1.4 * 1024 * 1024)));
     }
     const { calls, deps } = consoleWith(() => json(500, {}));
 
     const outcome = await applyPageKit(kitInput(root), deps);
-    expect(outcome.ok && outcome.result.kit.warnings[0]).toContain("more than 8 MiB");
+    expect(outcome).toMatchObject({ ok: true, result: { kit: { status: "skipped" }, presentation: null } });
+    expect(outcome.ok && outcome.result.kit.warnings[0]).toStartWith(
+      "KIT_TOO_LARGE: the HTML files add up to more than 4 MiB",
+    );
     expect(calls).toEqual([]);
   });
 
@@ -285,6 +291,69 @@ describe("applyPageKit against the Console", () => {
     const { path: _path, ...withFile } = DIAGNOSTIC;
     const fileShape = consoleWith(() => json(422, { diagnostics: [{ ...withFile, file: "index.html" }] }));
     expect(await applyPageKit(kitInput(root), fileShape.deps)).toEqual(expected);
+  });
+
+  it("keeps the local file when the Console omits html for an unchanged file", async () => {
+    const root = await tempRoot();
+    await writeFile(join(root, "index.html"), "<ravi-view view='v1'></ravi-view>");
+    await writeFile(join(root, "about.html"), "<p>about</p>");
+    const { deps } = consoleWith(() =>
+      json(200, {
+        files: [
+          {
+            path: "index.html",
+            html: "<style id='ravi-theme'></style><ravi-view view='v1'></ravi-view>",
+            changed: true,
+          },
+          { path: "about.html", changed: false },
+        ],
+        uses: [],
+        presentation: null,
+        diagnostics: [],
+        warnings: [],
+      }),
+    );
+
+    const outcome = await applyPageKit(kitInput(root), deps);
+    expect(outcome).toMatchObject({ ok: true, result: { kit: { status: "applied", changedFiles: ["index.html"] } } });
+    expect(await readFile(join(root, "about.html"), "utf8")).toBe("<p>about</p>");
+  });
+
+  it("fails rather than ship a file the Console marked changed without its html", async () => {
+    const root = await tempRoot();
+    await writeFile(join(root, "index.html"), "<ravi-view view='v1'></ravi-view>");
+    const { deps } = consoleWith(() =>
+      json(200, { files: [{ path: "index.html", changed: true }], uses: [], presentation: null }),
+    );
+
+    await expect(applyPageKit(kitInput(root), deps)).rejects.toMatchObject({ code: "SERVER_UNAVAILABLE" });
+    expect(await readFile(join(root, "index.html"), "utf8")).toBe("<ravi-view view='v1'></ravi-view>");
+  });
+
+  it("returns the Console's KIT_TOO_LARGE diagnostic from a 422 KIT_INVALID", async () => {
+    const root = await tempRoot();
+    await writeFile(join(root, "index.html"), "<ravi-view view='v1'></ravi-view>");
+    const tooLarge = {
+      severity: "error" as const,
+      code: "KIT_TOO_LARGE",
+      message: "The page kit output for index.html is larger than 2 MiB.",
+      path: "index.html",
+    };
+    const { deps } = consoleWith(() =>
+      json(422, {
+        error: {
+          code: "KIT_INVALID",
+          message: "Page kit found errors.",
+          requestId: "r",
+          details: { diagnostics: [tooLarge] },
+        },
+      }),
+    );
+
+    expect(await applyPageKit(kitInput(root), deps)).toEqual({
+      ok: false,
+      diagnostics: [{ ...tooLarge, line: null, column: null }],
+    });
   });
 
   it("treats a bare 404 or 405 as an older Console (KIT_UNAVAILABLE) and leaves the files unchanged", async () => {

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -187,6 +187,40 @@ describe("widgets init", () => {
       ),
     );
     expect(reserved.error).toMatchObject({ code: "LIBRARY_SLUG_RESERVED", exitCode: 2 });
+    expect(libraryRequests()).toEqual([]);
+  });
+
+  it("never writes through a symlink, dangling or not, even with --force (exit 3)", async () => {
+    login();
+    const dir = join(workDir, "pedido-card");
+    mkdirSync(dir);
+    const outside = join(workDir, "fora.html");
+    symlinkSync(outside, join(dir, "widget.html"));
+    for (const force of [false, true]) {
+      const { error } = await contractError(() =>
+        operator(() => new WidgetsCommands().init(dir, undefined, undefined, undefined, force, true)),
+      );
+      expect(error).toMatchObject({ code: "LIBRARY_FILES_EXIST", exitCode: 3 });
+      expect(error.message).toBe("widget.html exists and is not a regular file.");
+    }
+    expect(existsSync(outside)).toBe(false);
+    expect(existsSync(join(dir, "widget.json"))).toBe(false);
+  });
+});
+
+describe("widgets show", () => {
+  it("refuses a reserved route word as a slug (exit 2) before any request", async () => {
+    login();
+    for (const word of ["catalog", "check", "preview", "scaffold", "proposals", "none"]) {
+      const { error } = await contractError(() =>
+        operator(() => new WidgetsCommands().show(word, undefined, undefined, true)),
+      );
+      expect(error).toMatchObject({ code: "USAGE_ERROR", exitCode: 2 });
+    }
+    const catalog = await contractError(() =>
+      operator(() => new WidgetsCommands().show("catalog", undefined, undefined, true)),
+    );
+    expect(catalog.error.details.suggestedAction).toBe("Use: ravi widgets catalog");
     expect(libraryRequests()).toEqual([]);
   });
 });

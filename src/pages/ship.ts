@@ -1,4 +1,16 @@
-import { copyFile, mkdir, mkdtemp, readdir, readlink, rm, stat, symlink, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  readlink,
+  realpath,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { resolveCallerPath } from "../cli/caller-cwd.js";
@@ -172,9 +184,14 @@ export function resolveShipContentKind(input: Pick<ShipSourceInput, "body" | "di
   return present[0];
 }
 
+/**
+ * The `--body` document. `<html>` has no `lang` on purpose: the page kit sets
+ * the theme's locale, and {@link ensureShipBodyLang} falls back to pt-BR when
+ * the kit did not.
+ */
 export function wrapHtml5Document(title: string, body: string): string {
   return `<!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -185,6 +202,37 @@ ${body.trim()}
 </body>
 </html>
 `;
+}
+
+/** Runtime text defaults to pt-BR, so a `--body` page the kit gave no language gets this one. */
+export const SHIP_BODY_FALLBACK_LANG = "pt-BR";
+
+const HTML_OPEN_TAG = /<html\b[^>]*>/i;
+const LANG_ATTRIBUTE = /\slang\s*=/i;
+
+/** The document with `lang` on its first `<html>` tag, or unchanged when that tag already has one. */
+export function withHtmlLang(html: string, lang: string): string {
+  const match = HTML_OPEN_TAG.exec(html);
+  if (!match || LANG_ATTRIBUTE.test(match[0])) return html;
+  const at = match.index + "<html".length;
+  return `${html.slice(0, at)} lang="${lang}"${html.slice(at)}`;
+}
+
+/**
+ * After the page kit, before upload: the `--body` wrapper still without
+ * `lang` (kit skipped or unavailable, or no theme and no tags) gets
+ * {@link SHIP_BODY_FALLBACK_LANG}. Only the wrapper ship wrote; `--html` and
+ * `--dir` files are the caller's and keep whatever they say. Returns whether
+ * the file changed.
+ */
+export async function ensureShipBodyLang(source: ShipSource, entrypoint: string): Promise<boolean> {
+  if (source.kind !== "body") return false;
+  const path = join(source.path, entrypoint);
+  const html = await readFile(path, "utf8");
+  const updated = withHtmlLang(html, SHIP_BODY_FALLBACK_LANG);
+  if (updated === html) return false;
+  await writeFile(path, updated, "utf8");
+  return true;
 }
 
 /**
@@ -202,7 +250,10 @@ export async function materializeShipSource(input: ShipSourceInput): Promise<Shi
   };
   try {
     if (dirPath) {
-      await copyShipDirectory(resolveCallerPath(dirPath), tempRoot);
+      // `--dir` may contain the system temp dir (`--dir /tmp`): the copy
+      // walks the real source path and skips its own temp root.
+      const source = await realpath(resolveCallerPath(dirPath));
+      await copyShipDirectory(source, tempRoot, await realpath(tempRoot));
       return { kind, path: tempRoot, cleanup };
     }
     const dest = join(tempRoot, input.entrypoint);
@@ -246,9 +297,12 @@ export async function validateShipSourceInput(
 /**
  * Copy a `--dir` tree the way the artifact package reads it: `.git` and
  * `.DS_Store` are left out, and symlinks are copied as symlinks so the package
- * step still refuses them exactly as it did for the caller's folder.
+ * step still refuses them exactly as it did for the caller's folder. `skip`
+ * (the real path of the copy's own root) is never entered, so a source that
+ * contains it does not copy into itself. Directory symlinks are not
+ * followed, so the joined paths stay real paths.
  */
-async function copyShipDirectory(source: string, dest: string): Promise<void> {
+async function copyShipDirectory(source: string, dest: string, skip: string): Promise<void> {
   for (const entry of await readdir(source, { withFileTypes: true })) {
     if (entry.name === ".git" || entry.name === ".DS_Store") continue;
     const from = join(source, entry.name);
@@ -256,8 +310,9 @@ async function copyShipDirectory(source: string, dest: string): Promise<void> {
     if (entry.isSymbolicLink()) {
       await symlink(await readlink(from), to);
     } else if (entry.isDirectory()) {
+      if (from === skip) continue;
       await mkdir(to);
-      await copyShipDirectory(from, to);
+      await copyShipDirectory(from, to, skip);
     } else if (entry.isFile()) {
       await copyFile(from, to);
     }

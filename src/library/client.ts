@@ -58,6 +58,7 @@ import type {
   LibraryThemeCheck,
   LibraryThemePointer,
   LibraryThemeUseBody,
+  LibraryThemeUsePlan,
   LibraryThemeUseResult,
   LibraryVersion,
   LibraryVersionFile,
@@ -292,7 +293,7 @@ export class LibraryClient {
     return {
       plan: {
         scope: plan.scope === "project" ? "project" : "org",
-        project: stringOrNull(plan.project),
+        project: normalizePlanProject(plan.project),
         from: normalizePointer(plan.from),
         to: normalizePointer(plan.to),
         affectedHosts: Array.isArray(plan.affectedHosts)
@@ -306,6 +307,8 @@ export class LibraryClient {
           : [],
       },
       applied: payload.applied === true,
+      // The Console answers `applied: true, unchanged: true` when the pointer already names the target.
+      unchanged: payload.unchanged === true,
     };
   }
 
@@ -478,7 +481,7 @@ function requireShow(payload: unknown, kind: LibraryKind): LibraryShowResponse {
   const record = objectValue(payload);
   const version = objectValue(record?.version);
   if (!record || !version || typeof version.number !== "number" || !Array.isArray(version.files)) {
-    throw new CloudAuthError("SERVER_UNAVAILABLE", "The Console returned an unexpected Library skill.");
+    throw new CloudAuthError("SERVER_UNAVAILABLE", `The Console returned an unexpected Library ${kind}.`);
   }
   const files = version.files.map(requireFile);
   const normalized: LibraryVersion = {
@@ -717,6 +720,14 @@ function normalizePointer(value: unknown): LibraryThemePointer | null {
     setAt: stringOrNull(pointer.setAt),
     setBy: typeof pointer.setBy === "string" ? pointer.setBy : stringOrNull(setBy?.name),
   };
+}
+
+/** `plan.project` of `POST themes/active`: the Console's `{ id, slug, name }` (a bare slug is accepted too). */
+function normalizePlanProject(value: unknown): LibraryThemeUsePlan["project"] {
+  if (typeof value === "string") return value ? { id: "", slug: value, name: null } : null;
+  const project = objectValue(value);
+  if (!project || typeof project.slug !== "string") return null;
+  return { id: stringOr(project.id, ""), slug: project.slug, name: stringOrNull(project.name) };
 }
 
 function normalizeWidgetFields(value: unknown): Record<string, LibraryWidgetField> {

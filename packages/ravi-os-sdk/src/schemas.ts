@@ -97709,7 +97709,31 @@ export const ThemesUseReturnSchema = {
         "project": {
           "anyOf": [
             {
-              "type": "string"
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "slug": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "slug",
+                "name"
+              ],
+              "type": "object"
             },
             {
               "type": "null"
@@ -97797,11 +97821,15 @@ export const ThemesUseReturnSchema = {
     "success": {
       "const": true,
       "type": "boolean"
+    },
+    "unchanged": {
+      "type": "boolean"
     }
   },
   "required": [
     "success",
     "applied",
+    "unchanged",
     "plan"
   ],
   "type": "object"

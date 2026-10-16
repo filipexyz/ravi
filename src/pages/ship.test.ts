@@ -1,21 +1,24 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, readFile, readdir, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { runWithContext } from "../cli/context.js";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 import {
   checkShipLiveData,
+  ensureShipBodyLang,
   isReservedPageHostSlug,
   materializeShipSource,
   projectOwnedHostSlug,
   requireShipTitle,
   resolveShipContentKind,
   selectProjectDefaultHost,
+  SHIP_BODY_FALLBACK_LANG,
   SHIP_LIVE_DATA_OVERRIDE_WARNING,
   SHIP_LIVE_DATA_REFUSAL_LINES,
   slugifyPageTitle,
   validateShipSourceInput,
+  withHtmlLang,
   wrapHtml5Document,
 } from "./ship.js";
 
@@ -28,10 +31,11 @@ afterEach(async () => {
 });
 
 describe("pages ship helpers", () => {
-  it("wraps --body in a simple HTML5 document", () => {
+  it("wraps --body in a simple HTML5 document without lang, so the page kit sets the theme's", () => {
     const html = wrapHtml5Document("Weekly <report>", "<h1>OK</h1>");
     expect(html.startsWith("<!DOCTYPE html>")).toBe(true);
-    expect(html).toContain('<html lang="en">');
+    expect(html).toContain("\n<html>\n");
+    expect(html).not.toContain("lang=");
     expect(html).toContain("<title>Weekly &lt;report&gt;</title>");
     expect(html).toContain("<h1>OK</h1>");
     expect(html).toContain("</html>");
@@ -81,6 +85,66 @@ describe("pages ship helpers", () => {
     expect(html).toContain("<title>Hello</title>");
     expect(html).toContain("<p>Hello</p>");
     expect(source.kind).toBe("body");
+  });
+
+  it("adds lang to the first <html> tag only when it has none", () => {
+    expect(withHtmlLang("<!DOCTYPE html>\n<html>\n<head></head></html>", "pt-BR")).toBe(
+      '<!DOCTYPE html>\n<html lang="pt-BR">\n<head></head></html>',
+    );
+    expect(withHtmlLang('<html class="x"><body><html></body></html>', "pt-BR")).toBe(
+      '<html lang="pt-BR" class="x"><body><html></body></html>',
+    );
+    for (const html of ['<html lang="en"><p>x</p>', "<HTML LANG='es'>", "<p>no html tag</p>"]) {
+      expect(withHtmlLang(html, "pt-BR")).toBe(html);
+    }
+  });
+
+  it("gives the --body wrapper the pt-BR fallback when the kit left it without lang", async () => {
+    const source = await materializeShipSource({ body: "<p>Olá</p>", entrypoint: "pages/index.html", title: "Oi" });
+    tempDirs.push(source.path);
+    const path = join(source.path, "pages", "index.html");
+    expect(await ensureShipBodyLang(source, "pages/index.html")).toBe(true);
+    expect(await readFile(path, "utf8")).toContain(`<html lang="${SHIP_BODY_FALLBACK_LANG}">`);
+    expect(SHIP_BODY_FALLBACK_LANG).toBe("pt-BR");
+
+    // The kit already set the theme's locale: kept.
+    await writeFile(path, wrapHtml5Document("Oi", "<p>Hi</p>").replace("<html>", '<html lang="en">'));
+    expect(await ensureShipBodyLang(source, "pages/index.html")).toBe(false);
+    expect(await readFile(path, "utf8")).toContain('<html lang="en">');
+  });
+
+  it("never touches lang in --html or --dir files, which are the caller's", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "ravi-pages-ship-lang-"));
+    tempDirs.push(dir);
+    await writeFile(join(dir, "index.html"), "<html><p>sem lang</p></html>");
+    for (const input of [{ dir }, { html: join(dir, "index.html") }]) {
+      const source = await materializeShipSource({ ...input, entrypoint: "index.html", title: "X" });
+      tempDirs.push(source.path);
+      expect(await ensureShipBodyLang(source, "index.html")).toBe(false);
+      expect(await readFile(join(source.path, "index.html"), "utf8")).toBe("<html><p>sem lang</p></html>");
+    }
+  });
+
+  it("does not copy the temp root into itself when --dir contains the system temp dir", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "ravi-pages-ship-tmproot-"));
+    tempDirs.push(dir);
+    await writeFile(join(dir, "report.html"), "<h1>R</h1>");
+    await mkdir(join(dir, "assets"));
+    await writeFile(join(dir, "assets", "a.css"), "a{}");
+    const previous = process.env.TMPDIR;
+    process.env.TMPDIR = dir;
+    let source: Awaited<ReturnType<typeof materializeShipSource>>;
+    try {
+      source = await materializeShipSource({ dir, entrypoint: "report.html", title: "R" });
+    } finally {
+      if (previous === undefined) delete process.env.TMPDIR;
+      else process.env.TMPDIR = previous;
+    }
+    // The temp root was created inside the source and left out of its own copy.
+    expect(dirname(source.path)).toBe(dir);
+    expect((await readdir(source.path)).sort()).toEqual(["assets", "report.html"]);
+    expect(await readFile(join(source.path, "assets", "a.css"), "utf8")).toBe("a{}");
+    await source.cleanup?.();
   });
 
   it("materializes --dir as a private copy and never writes to the caller's folder", async () => {

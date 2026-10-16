@@ -54,8 +54,13 @@ function pointerLabel(pointer: LibraryThemePointer | null): string {
   return pointer ? `${pointer.ref} (${pointer.name})` : "none";
 }
 
+function projectLabel(project: LibraryThemeUsePlan["project"]): string {
+  if (!project) return "?";
+  return project.name && project.name !== project.slug ? `${project.slug} (${project.name})` : project.slug;
+}
+
 function planLines(plan: LibraryThemeUsePlan): string[] {
-  const target = plan.scope === "org" ? "org" : `project ${plan.project ?? "?"}`;
+  const target = plan.scope === "org" ? "org" : `project ${projectLabel(plan.project)}`;
   const lines = [`Active theme for ${target}: ${pointerLabel(plan.from)} → ${pointerLabel(plan.to)}`];
   if (plan.affectedHosts.length === 0) {
     lines.push("No Pages host uses it yet.");
@@ -89,6 +94,8 @@ const THEMES_SHOW_HELP_AFTER = `
 LEITURA — mostra um tema: versão, descrição e os arquivos (theme.json,
 fields.json, README.md; logo.svg só é listado). Ref org/<slug> ou
 <projeto>/<slug>; um slug sem barra resolve no projeto e depois na org.
+Palavras reservadas (active, default, none, check, proposals) não são temas:
+saem com USAGE_ERROR (exit 2) e o comando certo (ravi themes active...).
 
 EXAMPLES
   ravi themes show org/acme
@@ -145,7 +152,7 @@ com exit 2) e o plano sai com exit 3. Com --execute: publica a versão nova.
 ARQUIVOS
   theme.json (obrigatório, com $description; nome em $extensions.ravi.name),
   fields.json, logo.svg, README.md. Outros arquivos da pasta ficam fora.
-  Slug = --slug, senão o nome da pasta. active, default, check e proposals são reservados.
+  Slug = --slug, senão o nome da pasta. active, default, none, check e proposals são reservados.
 
 EXAMPLES
   ravi themes publish ./acme --scope org                 # plano (exit 3)
@@ -242,6 +249,10 @@ EXAMPLES
   ravi themes use org/acme --execute
   ravi themes use org/acme --project clinica --execute
   ravi themes use none --project clinica --execute
+
+FORMATO
+  --json: { success, applied, unchanged, plan{ scope, project{ id, slug, name }, from, to, affectedHosts[] } }.
+  Se o tema já era o ativo: applied false, unchanged true, nada gravado.
 
 AGENTES NÃO DEFINEM O TEMA
   Dentro de um agente o comando recusa antes de qualquer request
@@ -533,11 +544,17 @@ export class ThemesCommands {
     return withLibraryContract(op, THEME, asJson, async () => {
       const prepared = await prepareThemeUse({ ref, project: project?.trim() || null });
       if (!execute) {
-        if (!asJson) for (const line of planLines(prepared.plan)) console.log(line);
-        contractDryRun(op, { ref: prepared.body.ref, ...prepared.plan }, { asJson });
+        if (!asJson) {
+          for (const line of planLines(prepared.plan)) console.log(line);
+          if (prepared.unchanged) console.log("That is already the active theme: --execute would change nothing.");
+        }
+        contractDryRun(op, { ref: prepared.body.ref, ...prepared.plan, unchanged: prepared.unchanged }, { asJson });
       }
       const result = await executeThemeUse(prepared);
-      const payload = { success: true as const, applied: result.applied, plan: result.plan };
+      // The Console answers `applied: true, unchanged: true` when the pointer
+      // already named the target: nothing was written, so nothing is reported saved.
+      const unchanged = result.unchanged || !result.applied;
+      const payload = { success: true as const, applied: !unchanged, unchanged, plan: result.plan };
       if (asJson) {
         printJson(payload);
         return payload;

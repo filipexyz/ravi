@@ -40,7 +40,9 @@ ravi themes show org/acme
   `ravi pages outdated` lista as rotas atrás.
 - O ship avisa quando o tema da rota mudou desde o último publish
   (`Theme changed since the last publish of /rota: ...`).
-- Sem `lang` no `<html>`, o ship põe o do tema.
+- Sem `lang` no `<html>`, o ship põe o do tema. O `--body` sai sem `lang` para
+  receber o do tema; quando o kit não põe nenhum (sem tema e sem tags, Console
+  antigo), fica `pt-BR`.
 
 ## Variáveis
 

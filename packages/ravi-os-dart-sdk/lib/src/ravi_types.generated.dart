@@ -27966,17 +27966,19 @@ class ThemesUseOptions {
 }
 
 class ThemesUseReturn {
-  const ThemesUseReturn({required this.applied, required this.plan, required this.success});
+  const ThemesUseReturn({required this.applied, required this.plan, required this.success, required this.unchanged});
 
   final bool applied;
   final RaviJson plan;
   final bool success;
+  final bool unchanged;
 
   factory ThemesUseReturn.fromJson(Map<String, Object?> json) {
     return ThemesUseReturn(
       applied: raviJsonAsBool(json["applied"]),
       plan: RaviJson.from(json["plan"]),
       success: raviJsonAsBool(json["success"]),
+      unchanged: raviJsonAsBool(json["unchanged"]),
     );
   }
 

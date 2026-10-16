@@ -104,6 +104,7 @@ import {
 } from "../../pages/kit.js";
 import {
   checkShipLiveData,
+  ensureShipBodyLang,
   isReservedPageHostSlug,
   materializeShipSource,
   projectOwnedHostSlug,
@@ -695,6 +696,9 @@ export class PagesCommands {
         );
         if (!kitOutcome.ok) failShipKitInvalid(kitOutcome.diagnostics, asJson);
         const kit = kitOutcome.result;
+        // The --body wrapper has no lang so the kit sets the theme's locale;
+        // when the kit did not, it gets the pt-BR fallback.
+        await ensureShipBodyLang(source, resolvedEntrypoint);
         const shipUses = mergePageUses(normalizedUses, kit.uses);
         // Tags can add ravi.bases.* ids, so the public-route refusal runs again
         // on the merged list, still before any upload.
