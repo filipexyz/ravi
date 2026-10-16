@@ -452,10 +452,10 @@ describe("init, check and preview", () => {
     });
     const dir = widgetDir();
     const out = join(dir, "preview.html");
-    const outcome = await previewWidget({ dir, out, theme: null, data: { valor: 1 } }, deps(fake));
+    const outcome = await previewWidget({ dir, out, theme: "none", data: { valor: 1 } }, deps(fake));
     expect(outcome).toMatchObject({ out, bytes: 24 });
     expect(readFileSync(out, "utf8")).toBe("<!doctype html><p>ok</p>");
-    expect(fake.requests[0]?.body).toMatchObject({ theme: null, data: { valor: 1 } });
+    expect(fake.requests[0]?.body).toMatchObject({ theme: "none", data: { valor: 1 } });
 
     rmSync(out);
     answer = { html: "", diagnostics: [ERROR] };
