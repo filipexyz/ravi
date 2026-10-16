@@ -234,6 +234,26 @@ describe("resolveAgentSkills — custom grants integration", () => {
     expect(afterRevoke.allowlist).not.toContain("gmail-pack");
   });
 
+  it("Library grants stay out of the allowlist and authorize only the Library item they name", () => {
+    dbUpsertSkillGrant({ agentId: "lib-only", skillName: "org:agenda" });
+    const libOnly = resolveAgentSkills("lib-only", { capabilitiesOverride: [] });
+    expect(libOnly.libraryGrants).toEqual(["org:agenda"]);
+    expect(libOnly.hasConfiguration).toBe(false);
+    expect(libOnly.allowlist).not.toContain("org:agenda");
+    expect(libOnly.provenance.fromGrants).not.toContain("org:agenda");
+
+    dbUpsertSkillGrant({ agentId: "lib-configured", skillName: "gmail-pack" });
+    dbUpsertSkillGrant({ agentId: "lib-configured", skillName: "org:agenda" });
+    expect(isSkillAuthorizedForAgent("lib-configured", "org/agenda", { capabilities: [] })).toBe(true);
+    expect(isSkillAuthorizedForAgent("lib-configured", "org/outra", { capabilities: [] })).toBe(false);
+    expect(isSkillAuthorizedForAgent("lib-configured", "org-agenda", { capabilities: [] })).toBe(false);
+    expect(
+      isSkillAuthorizedForAgent("lib-configured", "clinica/triagem", {
+        capabilities: [cap("use", "skill", "project:*")],
+      }),
+    ).toBe(true);
+  });
+
   it("C-U/C1 — same skill granted to two agents does not duplicate the source; each agent sees it", () => {
     dbUpsertSkillGrant({ agentId: "jarvis-financ", skillName: "gmail-pack" });
     dbUpsertSkillGrant({ agentId: "jarvis-cobranca", skillName: "gmail-pack" });
