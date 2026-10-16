@@ -82759,6 +82759,1491 @@ export const SkillsListReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `skills.proposal`. */
+export const SkillsProposalInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "number": {
+      "description": "Proposal number",
+      "type": "string"
+    },
+    "ref": {
+      "description": "Library ref (org/<slug> or <project>/<slug>)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "number",
+    "ref"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `skills.proposal`. */
+export const SkillsProposalReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "files": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "bytes": {
+                    "type": "number"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "sha256": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path",
+                  "bytes",
+                  "sha256"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "number": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "number",
+            "files"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "comments": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "author": {
+            "additionalProperties": false,
+            "properties": {
+              "agentId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "self": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "name",
+              "agentId",
+              "self"
+            ],
+            "type": "object"
+          },
+          "body": {
+            "type": "string"
+          },
+          "can": {
+            "additionalProperties": false,
+            "properties": {
+              "resolve": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "resolve"
+            ],
+            "type": "object"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "outdated": {
+            "type": "boolean"
+          },
+          "parentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolvedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolvedBy": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "round": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "parentId",
+          "path",
+          "line",
+          "round",
+          "outdated",
+          "body",
+          "author",
+          "createdAt",
+          "resolvedAt",
+          "resolvedBy",
+          "can"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "contentsVisible": {
+      "type": "boolean"
+    },
+    "files": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "type": "number"
+          },
+          "content": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "bytes",
+          "sha256"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "item": {
+      "additionalProperties": false,
+      "properties": {
+        "archived": {
+          "type": "boolean"
+        },
+        "contentHash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "externalAllowed": {
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "project": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "slug": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "slug"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "publishedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "publishedBy": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ref": {
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "org",
+            "project"
+          ],
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "ref",
+        "kind",
+        "scope",
+        "project",
+        "slug",
+        "name",
+        "description",
+        "externalAllowed",
+        "version",
+        "contentHash",
+        "publishedAt",
+        "publishedBy",
+        "archived",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "number": {
+      "type": "number"
+    },
+    "proposal": {
+      "additionalProperties": false,
+      "properties": {
+        "author": {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "self": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "name",
+            "agentId",
+            "self"
+          ],
+          "type": "object"
+        },
+        "baseVersion": {
+          "type": "number"
+        },
+        "can": {
+          "additionalProperties": false,
+          "properties": {
+            "edit": {
+              "type": "boolean"
+            },
+            "publish": {
+              "type": "boolean"
+            },
+            "reject": {
+              "type": "boolean"
+            },
+            "submit": {
+              "type": "boolean"
+            },
+            "withdraw": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "edit",
+            "submit",
+            "withdraw",
+            "publish",
+            "reject"
+          ],
+          "type": "object"
+        },
+        "contentHash": {
+          "type": "string"
+        },
+        "createdAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "currentVersion": {
+          "type": "number"
+        },
+        "decidedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decidedBy": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decisionReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "externalAllowed": {
+          "type": "boolean"
+        },
+        "fileCount": {
+          "type": "number"
+        },
+        "name": {
+          "type": "string"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "number": {
+          "type": "number"
+        },
+        "openComments": {
+          "type": "number"
+        },
+        "proposedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "publishedVersion": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ref": {
+          "type": "string"
+        },
+        "round": {
+          "type": "number"
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "status": {
+          "enum": [
+            "draft",
+            "proposed",
+            "published",
+            "superseded",
+            "rejected",
+            "withdrawn"
+          ],
+          "type": "string"
+        },
+        "totalBytes": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "ref",
+        "number",
+        "status",
+        "round",
+        "baseVersion",
+        "currentVersion",
+        "stale",
+        "publishedVersion",
+        "name",
+        "description",
+        "externalAllowed",
+        "note",
+        "contentHash",
+        "fileCount",
+        "totalBytes",
+        "author",
+        "createdAt",
+        "updatedAt",
+        "proposedAt",
+        "decidedAt",
+        "decidedBy",
+        "decisionReason",
+        "openComments",
+        "can"
+      ],
+      "type": "object"
+    },
+    "ref": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ref",
+    "number",
+    "item",
+    "proposal",
+    "files",
+    "base",
+    "comments",
+    "contentsVisible"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `skills.proposals`. */
+export const SkillsProposalsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "mine": {
+      "description": "Only your proposals (inside an agent: the ones this agent wrote)",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Only this Console project's proposals (and the org's)",
+      "type": "string"
+    },
+    "ref": {
+      "description": "Library ref (org/<slug> or <project>/<slug>) to list one item's",
+      "type": "string"
+    },
+    "state": {
+      "description": "open (drafts and proposed, default), closed or all",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `skills.proposals`. */
+export const SkillsProposalsReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "item": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "archived": {
+              "type": "boolean"
+            },
+            "contentHash": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": {
+              "type": "string"
+            },
+            "externalAllowed": {
+              "type": "boolean"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "project": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "slug": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "slug"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "publishedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "publishedBy": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ref": {
+              "type": "string"
+            },
+            "scope": {
+              "enum": [
+                "org",
+                "project"
+              ],
+              "type": "string"
+            },
+            "slug": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "version": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "ref",
+            "kind",
+            "scope",
+            "project",
+            "slug",
+            "name",
+            "description",
+            "externalAllowed",
+            "version",
+            "contentHash",
+            "publishedAt",
+            "publishedBy",
+            "archived",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "mine": {
+      "type": "boolean"
+    },
+    "project": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "proposals": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "author": {
+            "additionalProperties": false,
+            "properties": {
+              "agentId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "self": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "name",
+              "agentId",
+              "self"
+            ],
+            "type": "object"
+          },
+          "baseVersion": {
+            "type": "number"
+          },
+          "can": {
+            "additionalProperties": false,
+            "properties": {
+              "edit": {
+                "type": "boolean"
+              },
+              "publish": {
+                "type": "boolean"
+              },
+              "reject": {
+                "type": "boolean"
+              },
+              "submit": {
+                "type": "boolean"
+              },
+              "withdraw": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "edit",
+              "submit",
+              "withdraw",
+              "publish",
+              "reject"
+            ],
+            "type": "object"
+          },
+          "contentHash": {
+            "type": "string"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "currentVersion": {
+            "type": "number"
+          },
+          "decidedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decidedBy": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decisionReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "externalAllowed": {
+            "type": "boolean"
+          },
+          "fileCount": {
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "next": {
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "number": {
+            "type": "number"
+          },
+          "openComments": {
+            "type": "number"
+          },
+          "proposedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "publishedVersion": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ref": {
+            "type": "string"
+          },
+          "round": {
+            "type": "number"
+          },
+          "stale": {
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "draft",
+              "proposed",
+              "published",
+              "superseded",
+              "rejected",
+              "withdrawn"
+            ],
+            "type": "string"
+          },
+          "totalBytes": {
+            "type": "number"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "ref",
+          "number",
+          "status",
+          "round",
+          "baseVersion",
+          "currentVersion",
+          "stale",
+          "publishedVersion",
+          "name",
+          "description",
+          "externalAllowed",
+          "note",
+          "contentHash",
+          "fileCount",
+          "totalBytes",
+          "author",
+          "createdAt",
+          "updatedAt",
+          "proposedAt",
+          "decidedAt",
+          "decidedBy",
+          "decisionReason",
+          "openComments",
+          "can",
+          "next"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "ref": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "state": {
+      "enum": [
+        "open",
+        "closed",
+        "all"
+      ],
+      "type": "string"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "ref",
+    "project",
+    "state",
+    "mine",
+    "total",
+    "item",
+    "proposals"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `skills.propose`. */
+export const SkillsProposeInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "dir": {
+      "description": "Skill folder holding SKILL.md (relative to your current directory)",
+      "type": "string"
+    },
+    "draft": {
+      "description": "Save a draft only you and the scope's reviewers see; do not submit",
+      "type": "boolean"
+    },
+    "execute": {
+      "description": "Confirm the proposal (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "external": {
+      "description": "Allow loading this skill in conversations with people outside the organization",
+      "type": "boolean"
+    },
+    "name": {
+      "description": "Display name (default: SKILL.md name, else the slug)",
+      "type": "string"
+    },
+    "note": {
+      "description": "Note for the reviewers, at most 500 characters",
+      "type": "string"
+    },
+    "rebase": {
+      "description": "With --update: move the proposal onto the version published now (read it first)",
+      "type": "boolean"
+    },
+    "scope": {
+      "description": "org, or the Console project slug the skill belongs to",
+      "type": "string"
+    },
+    "slug": {
+      "description": "Library slug (default: SKILL.md name, else the folder name)",
+      "type": "string"
+    },
+    "update": {
+      "description": "Replace the content of your open proposal with this number",
+      "type": "string"
+    }
+  },
+  "required": [
+    "dir"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `skills.propose`. */
+export const SkillsProposeReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "baseVersion": {
+      "type": "number"
+    },
+    "created": {
+      "type": "boolean"
+    },
+    "currentVersion": {
+      "type": "number"
+    },
+    "next": {
+      "type": "string"
+    },
+    "number": {
+      "type": "number"
+    },
+    "proposal": {
+      "additionalProperties": false,
+      "properties": {
+        "author": {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "self": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "name",
+            "agentId",
+            "self"
+          ],
+          "type": "object"
+        },
+        "baseVersion": {
+          "type": "number"
+        },
+        "can": {
+          "additionalProperties": false,
+          "properties": {
+            "edit": {
+              "type": "boolean"
+            },
+            "publish": {
+              "type": "boolean"
+            },
+            "reject": {
+              "type": "boolean"
+            },
+            "submit": {
+              "type": "boolean"
+            },
+            "withdraw": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "edit",
+            "submit",
+            "withdraw",
+            "publish",
+            "reject"
+          ],
+          "type": "object"
+        },
+        "contentHash": {
+          "type": "string"
+        },
+        "createdAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "currentVersion": {
+          "type": "number"
+        },
+        "decidedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decidedBy": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decisionReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "externalAllowed": {
+          "type": "boolean"
+        },
+        "fileCount": {
+          "type": "number"
+        },
+        "name": {
+          "type": "string"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "number": {
+          "type": "number"
+        },
+        "openComments": {
+          "type": "number"
+        },
+        "proposedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "publishedVersion": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ref": {
+          "type": "string"
+        },
+        "round": {
+          "type": "number"
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "status": {
+          "enum": [
+            "draft",
+            "proposed",
+            "published",
+            "superseded",
+            "rejected",
+            "withdrawn"
+          ],
+          "type": "string"
+        },
+        "totalBytes": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "ref",
+        "number",
+        "status",
+        "round",
+        "baseVersion",
+        "currentVersion",
+        "stale",
+        "publishedVersion",
+        "name",
+        "description",
+        "externalAllowed",
+        "note",
+        "contentHash",
+        "fileCount",
+        "totalBytes",
+        "author",
+        "createdAt",
+        "updatedAt",
+        "proposedAt",
+        "decidedAt",
+        "decidedBy",
+        "decisionReason",
+        "openComments",
+        "can"
+      ],
+      "type": "object"
+    },
+    "ref": {
+      "type": "string"
+    },
+    "round": {
+      "type": "number"
+    },
+    "stale": {
+      "type": "boolean"
+    },
+    "status": {
+      "enum": [
+        "draft",
+        "proposed",
+        "published",
+        "superseded",
+        "rejected",
+        "withdrawn"
+      ],
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "ref",
+    "number",
+    "status",
+    "round",
+    "baseVersion",
+    "currentVersion",
+    "stale",
+    "created",
+    "next",
+    "proposal"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `skills.publish`. */
 export const SkillsPublishInputSchema = {
   "additionalProperties": false,

@@ -22567,6 +22567,170 @@ class SkillsListReturn {
 
 SkillsListReturn skillsListReturnFromJson(Object? json) => SkillsListReturn.fromJsonValue(json);
 
+class SkillsProposalReturn {
+  const SkillsProposalReturn({required this.base, required this.comments, required this.contentsVisible, required this.files, required this.item, required this.number, required this.proposal, required this.ref});
+
+  final RaviJson base;
+  final List<RaviJson> comments;
+  final bool contentsVisible;
+  final List<RaviJson> files;
+  final RaviJson item;
+  final double number;
+  final RaviJson proposal;
+  final String ref;
+
+  factory SkillsProposalReturn.fromJson(Map<String, Object?> json) {
+    return SkillsProposalReturn(
+      base: RaviJson.from(json["base"]),
+      comments: raviJsonAsList(json["comments"], RaviJson.from),
+      contentsVisible: raviJsonAsBool(json["contentsVisible"]),
+      files: raviJsonAsList(json["files"], RaviJson.from),
+      item: RaviJson.from(json["item"]),
+      number: raviJsonAsDouble(json["number"]),
+      proposal: RaviJson.from(json["proposal"]),
+      ref: raviJsonAsString(json["ref"]),
+    );
+  }
+
+  static SkillsProposalReturn fromJsonValue(Object? json) {
+    return SkillsProposalReturn.fromJson(raviJsonObject(json, "SkillsProposalReturn"));
+  }
+}
+
+SkillsProposalReturn skillsProposalReturnFromJson(Object? json) => SkillsProposalReturn.fromJsonValue(json);
+
+class SkillsProposalsOptions {
+  const SkillsProposalsOptions({this.mine, this.project, this.state});
+
+  final bool? mine;
+  final String? project;
+  final String? state;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (mine != null) {
+      into["mine"] = RaviJson.from(mine);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (state != null) {
+      into["state"] = RaviJson.from(state);
+    }
+  }
+}
+
+class SkillsProposalsReturn {
+  const SkillsProposalsReturn({required this.item, required this.mine, required this.project, required this.proposals, required this.ref, required this.state, required this.total});
+
+  final RaviJson item;
+  final bool mine;
+  final RaviJson project;
+  final List<RaviJson> proposals;
+  final RaviJson ref;
+  final String state;
+  final double total;
+
+  factory SkillsProposalsReturn.fromJson(Map<String, Object?> json) {
+    return SkillsProposalsReturn(
+      item: RaviJson.from(json["item"]),
+      mine: raviJsonAsBool(json["mine"]),
+      project: RaviJson.from(json["project"]),
+      proposals: raviJsonAsList(json["proposals"], RaviJson.from),
+      ref: RaviJson.from(json["ref"]),
+      state: raviJsonAsString(json["state"]),
+      total: raviJsonAsDouble(json["total"]),
+    );
+  }
+
+  static SkillsProposalsReturn fromJsonValue(Object? json) {
+    return SkillsProposalsReturn.fromJson(raviJsonObject(json, "SkillsProposalsReturn"));
+  }
+}
+
+SkillsProposalsReturn skillsProposalsReturnFromJson(Object? json) => SkillsProposalsReturn.fromJsonValue(json);
+
+class SkillsProposeOptions {
+  const SkillsProposeOptions({this.draft, this.execute, this.external_, this.name, this.note, this.rebase, this.scope, this.slug, this.update});
+
+  final bool? draft;
+  final bool? execute;
+  final bool? external_;
+  final String? name;
+  final String? note;
+  final bool? rebase;
+  final String? scope;
+  final String? slug;
+  final String? update;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (draft != null) {
+      into["draft"] = RaviJson.from(draft);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (external_ != null) {
+      into["external"] = RaviJson.from(external_);
+    }
+    if (name != null) {
+      into["name"] = RaviJson.from(name);
+    }
+    if (note != null) {
+      into["note"] = RaviJson.from(note);
+    }
+    if (rebase != null) {
+      into["rebase"] = RaviJson.from(rebase);
+    }
+    if (scope != null) {
+      into["scope"] = RaviJson.from(scope);
+    }
+    if (slug != null) {
+      into["slug"] = RaviJson.from(slug);
+    }
+    if (update != null) {
+      into["update"] = RaviJson.from(update);
+    }
+  }
+}
+
+class SkillsProposeReturn {
+  const SkillsProposeReturn({required this.baseVersion, required this.created, required this.currentVersion, required this.next, required this.number, required this.proposal, required this.ref, required this.round, required this.stale, required this.status, required this.success});
+
+  final double baseVersion;
+  final bool created;
+  final double currentVersion;
+  final String next;
+  final double number;
+  final RaviJson proposal;
+  final String ref;
+  final double round;
+  final bool stale;
+  final String status;
+  final bool success;
+
+  factory SkillsProposeReturn.fromJson(Map<String, Object?> json) {
+    return SkillsProposeReturn(
+      baseVersion: raviJsonAsDouble(json["baseVersion"]),
+      created: raviJsonAsBool(json["created"]),
+      currentVersion: raviJsonAsDouble(json["currentVersion"]),
+      next: raviJsonAsString(json["next"]),
+      number: raviJsonAsDouble(json["number"]),
+      proposal: RaviJson.from(json["proposal"]),
+      ref: raviJsonAsString(json["ref"]),
+      round: raviJsonAsDouble(json["round"]),
+      stale: raviJsonAsBool(json["stale"]),
+      status: raviJsonAsString(json["status"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static SkillsProposeReturn fromJsonValue(Object? json) {
+    return SkillsProposeReturn.fromJson(raviJsonObject(json, "SkillsProposeReturn"));
+  }
+}
+
+SkillsProposeReturn skillsProposeReturnFromJson(Object? json) => SkillsProposeReturn.fromJsonValue(json);
+
 class SkillsPublishOptions {
   const SkillsPublishOptions({this.execute, this.external_, this.name, this.note, this.scope, this.slug});
 

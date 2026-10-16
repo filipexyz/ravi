@@ -5582,6 +5582,29 @@ public struct SkillsNamespace: Sendable {
     return try await transport.call(groupSegments: ["skills"], command: "list", body: requestBody, as: SkillsListReturn.self)
   }
 
+  public func proposal(_ ref: String, _ number: String) async throws -> SkillsProposalReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["ref"] = try RaviJSON.fromEncodable(ref)
+    requestBody["number"] = try RaviJSON.fromEncodable(number)
+    return try await transport.call(groupSegments: ["skills"], command: "proposal", body: requestBody, as: SkillsProposalReturn.self)
+  }
+
+  public func proposals(_ ref: String? = nil, _ options: SkillsProposalsOptions = .init()) async throws -> SkillsProposalsReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    if let ref {
+      requestBody["ref"] = try RaviJSON.fromEncodable(ref)
+    }
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["skills"], command: "proposals", body: requestBody, as: SkillsProposalsReturn.self)
+  }
+
+  public func propose(_ dir: String, _ options: SkillsProposeOptions = .init()) async throws -> SkillsProposeReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["dir"] = try RaviJSON.fromEncodable(dir)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["skills"], command: "propose", body: requestBody, as: SkillsProposeReturn.self)
+  }
+
   public func publish(_ dir: String, _ options: SkillsPublishOptions = .init()) async throws -> SkillsPublishReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["dir"] = try RaviJSON.fromEncodable(dir)

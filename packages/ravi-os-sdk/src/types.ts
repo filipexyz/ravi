@@ -16796,6 +16796,259 @@ export type SkillsListReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `skills.proposal`. */
+export type SkillsProposalInput = {
+  number: string;
+  ref: string;
+};
+
+/** Return shape for `skills.proposal`. */
+export type SkillsProposalReturn = {
+  base: ({
+    files: Array<{
+      bytes: number;
+      path: string;
+      sha256: string;
+    }>;
+    number: number;
+  }) | null;
+  comments: Array<{
+    author: {
+      agentId: string | null;
+      name: string | null;
+      self: boolean;
+    };
+    body: string;
+    can: {
+      resolve: boolean;
+    };
+    createdAt: string | null;
+    id: string;
+    line: number | null;
+    outdated: boolean;
+    parentId: string | null;
+    path: string | null;
+    resolvedAt: string | null;
+    resolvedBy: ({
+      name: string | null;
+    }) | null;
+    round: number;
+  }>;
+  contentsVisible: boolean;
+  files: Array<{
+    bytes: number;
+    content?: string;
+    path: string;
+    sha256: string;
+  }>;
+  item: {
+    archived: boolean;
+    contentHash: string | null;
+    description: string;
+    externalAllowed: boolean;
+    kind: string;
+    name: string;
+    project: ({
+      id: string;
+      name?: string | null;
+      slug: string;
+    }) | null;
+    publishedAt: string | null;
+    publishedBy: ({
+      name?: string | null;
+    }) | null;
+    ref: string;
+    scope: "org" | "project";
+    slug: string;
+    updatedAt: string | null;
+    version: number | null;
+  };
+  number: number;
+  proposal: {
+    author: {
+      agentId: string | null;
+      name: string | null;
+      self: boolean;
+    };
+    baseVersion: number;
+    can: {
+      edit: boolean;
+      publish: boolean;
+      reject: boolean;
+      submit: boolean;
+      withdraw: boolean;
+    };
+    contentHash: string;
+    createdAt: string | null;
+    currentVersion: number;
+    decidedAt: string | null;
+    decidedBy: ({
+      name: string | null;
+    }) | null;
+    decisionReason: string | null;
+    description: string;
+    externalAllowed: boolean;
+    fileCount: number;
+    name: string;
+    note: string | null;
+    number: number;
+    openComments: number;
+    proposedAt: string | null;
+    publishedVersion: number | null;
+    ref: string;
+    round: number;
+    stale: boolean;
+    status: "draft" | "proposed" | "published" | "superseded" | "rejected" | "withdrawn";
+    totalBytes: number;
+    updatedAt: string | null;
+  };
+  ref: string;
+};
+
+/** Input shape for `skills.proposals`. */
+export type SkillsProposalsInput = {
+  mine?: boolean;
+  project?: string;
+  ref?: string;
+  state?: string;
+};
+
+/** Return shape for `skills.proposals`. */
+export type SkillsProposalsReturn = {
+  item: ({
+    archived: boolean;
+    contentHash: string | null;
+    description: string;
+    externalAllowed: boolean;
+    kind: string;
+    name: string;
+    project: ({
+      id: string;
+      name?: string | null;
+      slug: string;
+    }) | null;
+    publishedAt: string | null;
+    publishedBy: ({
+      name?: string | null;
+    }) | null;
+    ref: string;
+    scope: "org" | "project";
+    slug: string;
+    updatedAt: string | null;
+    version: number | null;
+  }) | null;
+  mine: boolean;
+  project: string | null;
+  proposals: Array<{
+    author: {
+      agentId: string | null;
+      name: string | null;
+      self: boolean;
+    };
+    baseVersion: number;
+    can: {
+      edit: boolean;
+      publish: boolean;
+      reject: boolean;
+      submit: boolean;
+      withdraw: boolean;
+    };
+    contentHash: string;
+    createdAt: string | null;
+    currentVersion: number;
+    decidedAt: string | null;
+    decidedBy: ({
+      name: string | null;
+    }) | null;
+    decisionReason: string | null;
+    description: string;
+    externalAllowed: boolean;
+    fileCount: number;
+    name: string;
+    next: string;
+    note: string | null;
+    number: number;
+    openComments: number;
+    proposedAt: string | null;
+    publishedVersion: number | null;
+    ref: string;
+    round: number;
+    stale: boolean;
+    status: "draft" | "proposed" | "published" | "superseded" | "rejected" | "withdrawn";
+    totalBytes: number;
+    updatedAt: string | null;
+  }>;
+  ref: string | null;
+  state: "open" | "closed" | "all";
+  total: number;
+};
+
+/** Input shape for `skills.propose`. */
+export type SkillsProposeInput = {
+  dir: string;
+  draft?: boolean;
+  execute?: boolean;
+  external?: boolean;
+  name?: string;
+  note?: string;
+  rebase?: boolean;
+  scope?: string;
+  slug?: string;
+  update?: string;
+};
+
+/** Return shape for `skills.propose`. */
+export type SkillsProposeReturn = {
+  baseVersion: number;
+  created: boolean;
+  currentVersion: number;
+  next: string;
+  number: number;
+  proposal: {
+    author: {
+      agentId: string | null;
+      name: string | null;
+      self: boolean;
+    };
+    baseVersion: number;
+    can: {
+      edit: boolean;
+      publish: boolean;
+      reject: boolean;
+      submit: boolean;
+      withdraw: boolean;
+    };
+    contentHash: string;
+    createdAt: string | null;
+    currentVersion: number;
+    decidedAt: string | null;
+    decidedBy: ({
+      name: string | null;
+    }) | null;
+    decisionReason: string | null;
+    description: string;
+    externalAllowed: boolean;
+    fileCount: number;
+    name: string;
+    note: string | null;
+    number: number;
+    openComments: number;
+    proposedAt: string | null;
+    publishedVersion: number | null;
+    ref: string;
+    round: number;
+    stale: boolean;
+    status: "draft" | "proposed" | "published" | "superseded" | "rejected" | "withdrawn";
+    totalBytes: number;
+    updatedAt: string | null;
+  };
+  ref: string;
+  round: number;
+  stale: boolean;
+  status: "draft" | "proposed" | "published" | "superseded" | "rejected" | "withdrawn";
+  success: true;
+};
+
 /** Input shape for `skills.publish`. */
 export type SkillsPublishInput = {
   dir: string;

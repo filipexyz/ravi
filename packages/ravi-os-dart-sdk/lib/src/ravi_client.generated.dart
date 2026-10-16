@@ -7904,6 +7904,44 @@ class SkillsNamespace {
     );
   }
 
+  Future<SkillsProposalReturn> proposal(String ref, String number) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["ref"] = RaviJson.from(ref);
+    requestBody["number"] = RaviJson.from(number);
+    return _transport.callJson(
+      groupSegments: const ["skills"],
+      command: "proposal",
+      body: requestBody,
+      decode: skillsProposalReturnFromJson,
+    );
+  }
+
+  Future<SkillsProposalsReturn> proposals([String? ref, SkillsProposalsOptions options = const SkillsProposalsOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    if (ref != null) {
+      requestBody["ref"] = RaviJson.from(ref);
+    }
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["skills"],
+      command: "proposals",
+      body: requestBody,
+      decode: skillsProposalsReturnFromJson,
+    );
+  }
+
+  Future<SkillsProposeReturn> propose(String dir, [SkillsProposeOptions options = const SkillsProposeOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["dir"] = RaviJson.from(dir);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["skills"],
+      command: "propose",
+      body: requestBody,
+      decode: skillsProposeReturnFromJson,
+    );
+  }
+
   Future<SkillsPublishReturn> publish(String dir, [SkillsPublishOptions options = const SkillsPublishOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["dir"] = RaviJson.from(dir);
