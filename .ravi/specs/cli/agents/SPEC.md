@@ -14,6 +14,7 @@ tags:
   - write-brake
 applies_to:
   - src/cli/commands/agents.ts
+  - src/cli/commands/agents-library.ts
   - src/cli/agent-contract.ts
   - src/cli/registry.ts
   - src/plugins/internal/ravi-system/skills/agents/SKILL.md
@@ -79,6 +80,15 @@ those three carry the brake.
 | permissions (read-only, no profile args) | read | not braked (exit 0) |
 | create / set / sync-instructions | reversible config | not braked (declared) |
 | debounce / spec-mode | reversible toggles | not braked (declared) |
+| search / show `<ref>` (Library) | read | not braked |
+| set `description` | reversible local config | not braked |
+| install / update (Library) adding no authority | reversible local config (files, provider, model) | not braked |
+| install / update (Library) raising the profile above the bootstrap floor or granting skills | adds runtime authority | dry-run + `--execute` |
+| publish (Library, with or without `--propose`) | shares content with the organization or a project | dry-run + `--execute` |
+| directory / requests `<id>` (no state) / requests list | read | not braked |
+| requests `<id>` on | exposes the agent to other machines | dry-run + `--execute` |
+| requests `<id>` off / requests cancel | only reduces exposure | not braked |
+| ask | sends a message to another machine's agent | dry-run + `--execute` |
 
 ## Official error cases
 
@@ -87,6 +97,18 @@ those three carry the brake.
 | agent not found | `AGENT_NOT_FOUND` + suggestions | 1 |
 | invalid flag/arg | `USAGE_ERROR` + acceptedFlags | 2 |
 | braked write without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
+| install / update inside an agent runtime | `LIBRARY_AGENT_CANNOT_INSTALL` | 3 |
+| publish inside an agent runtime | `LIBRARY_AGENT_CANNOT_PUBLISH` | 3 |
+| install to an existing id | `AGENT_ALREADY_EXISTS` | 1 |
+| update with a file edited here and changed in the Library, no `--keep-local`/`--take-library` | `LIBRARY_AGENT_EDITED_LOCALLY` + diff | 2 |
+| `set <id> description` longer than 300 characters | `USAGE_ERROR` | 2 |
+| requests on/off inside an agent runtime | `LIBRARY_AGENT_CANNOT_OPEN_REQUESTS` | 3 |
+| ask from an agent turn that is not the operator's own | `LIBRARY_REQUEST_EXTERNAL_DENIED` | 3 |
+| ask target matching two machines by name | `LIBRARY_TARGET_AMBIGUOUS` | 2 |
+
+The Library commands (`search`, `show <ref>`, `install`, `update`, `publish`,
+`directory`, `ask`, `requests`) follow `skills/library` ("Agents",
+"Directory and requests").
 
 ## Internal consumers
 

@@ -176,8 +176,8 @@ export function isSkillAuthorizedForAgent(
 
 /**
  * Library skills are authorized like local skills (spec `skills/library`):
- * an agent without skill configuration passes; otherwise a grant of the exact
- * id (`org:<slug>`, `project:<projectSlug>:<slug>`) or a capability covering
+ * an agent without skill configuration passes; otherwise a grant or a Console
+ * pin of the exact id (`org:<slug>`, `project:<projectSlug>:<slug>`) or a capability covering
  * it (`admin:system:*`, `use:skill:*`, `use:skill:org:*`, ...). Supplied turn
  * capabilities are the ceiling for the capability path; grants still apply.
  */
@@ -190,7 +190,7 @@ export function isLibrarySkillAuthorizedForAgent(
   const resolved = resolveConfiguredAgentSkills(agentId);
   if (!resolved.hasConfiguration) return true;
   const id = normalizeLibrarySkillId(libraryId);
-  if (resolved.libraryGrants.includes(id)) return true;
+  if (resolved.libraryGrants.includes(id) || resolved.libraryPins.includes(id)) return true;
   const capabilities = options.capabilities ?? materializeSubjectCapabilities("agent", agentId);
   return librarySkillCoveredBySkillCapability(capabilities, id);
 }

@@ -929,6 +929,323 @@ class RaviSchemas {
 }
 ''';
 
+  static const agentsAskInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "execute": {
+      "description": "Send the request (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "message": {
+      "description": "The message (at most 8000 characters)",
+      "type": "string"
+    },
+    "target": {
+      "description": "<machine>/<agent>, as 'ravi agents directory' lists it",
+      "type": "string"
+    }
+  },
+  "required": [
+    "message",
+    "target"
+  ],
+  "type": "object"
+}
+''';
+
+  static const agentsAskReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "next": {
+      "type": "string"
+    },
+    "request": {
+      "additionalProperties": false,
+      "properties": {
+        "answeredAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deliveredAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "direction": {
+          "enum": [
+            "sent",
+            "received"
+          ],
+          "type": "string"
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "failureReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "from": {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "installation": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "user": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "installation",
+            "agentId",
+            "user"
+          ],
+          "type": "object"
+        },
+        "id": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "project": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "slug": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "slug",
+                "name"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reply": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "delivered",
+            "answered",
+            "failed",
+            "expired",
+            "cancelled"
+          ],
+          "type": "string"
+        },
+        "to": {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "type": "string"
+            },
+            "installation": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "installation",
+            "agentId"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "direction",
+        "from",
+        "to",
+        "project",
+        "message",
+        "reply",
+        "failureReason",
+        "createdAt",
+        "deliveredAt",
+        "answeredAt",
+        "expiresAt"
+      ],
+      "type": "object"
+    },
+    "session": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "target": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "success",
+    "target",
+    "request",
+    "session",
+    "next"
+  ],
+  "type": "object"
+}
+''';
+
   static const agentsCreateInputSchema = r'''
 {
   "additionalProperties": false,
@@ -1183,6 +1500,350 @@ class RaviSchemas {
     "action",
     "changed",
     "agentId"
+  ],
+  "type": "object"
+}
+''';
+
+  static const agentsDirectoryInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "project": {
+      "description": "Only org-wide agents and this project's",
+      "type": "string"
+    },
+    "query": {
+      "description": "Words to search for",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const agentsDirectoryReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "agents": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "acceptsRequests": {
+            "type": "boolean"
+          },
+          "agent": {
+            "additionalProperties": false,
+            "properties": {
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "model": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "project": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "slug": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "slug",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "provider": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "description",
+              "provider",
+              "model",
+              "project"
+            ],
+            "type": "object"
+          },
+          "installation": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "online": {
+            "type": "boolean"
+          },
+          "reportedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "self": {
+            "type": "boolean"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "installation",
+          "agent",
+          "online",
+          "acceptsRequests",
+          "reportedAt",
+          "self"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "can": {
+      "additionalProperties": false,
+      "properties": {
+        "ask": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ask"
+      ],
+      "type": "object"
+    },
+    "project": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "query": {
+      "type": "string"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "query",
+    "project",
+    "total",
+    "can",
+    "agents"
+  ],
+  "type": "object"
+}
+''';
+
+  static const agentsInstallInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "cwd": {
+      "description": "Agent folder (default: ~/ravi/<id>)",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Confirm a profile above the bootstrap floor or skill grants (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Local agent id (default: the ref's slug)",
+      "type": "string"
+    },
+    "ref": {
+      "description": "Library agent ref: org/<slug> or <project>/<slug>",
+      "type": "string"
+    }
+  },
+  "required": [
+    "ref"
+  ],
+  "type": "object"
+}
+''';
+
+  static const agentsInstallReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "additionalProperties": false,
+      "properties": {
+        "cwd": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "cwd",
+        "provider",
+        "model"
+      ],
+      "type": "object"
+    },
+    "granted": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "next": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "profile": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "ref": {
+      "type": "string"
+    },
+    "skipped": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "version": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "success",
+    "ref",
+    "version",
+    "agent",
+    "profile",
+    "granted",
+    "skipped",
+    "next"
   ],
   "type": "object"
 }
@@ -3030,6 +3691,1425 @@ class RaviSchemas {
 }
 ''';
 
+  static const agentsPublishInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "description": {
+      "description": "What the agent does (default: its own description)",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Confirm the publish (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Local agent id",
+      "type": "string"
+    },
+    "note": {
+      "description": "Version note, at most 500 characters",
+      "type": "string"
+    },
+    "propose": {
+      "description": "Propose it for review instead of publishing",
+      "type": "boolean"
+    },
+    "scope": {
+      "description": "org, or the Console project slug the agent belongs to",
+      "type": "string"
+    },
+    "slug": {
+      "description": "Library slug (default: the agent id)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+}
+''';
+
+  static const agentsPublishReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "type": "string"
+    },
+    "contentHash": {
+      "type": "string"
+    },
+    "item": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "archived": {
+              "type": "boolean"
+            },
+            "contentHash": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "externalAllowed": {
+              "type": "boolean"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "project": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "slug": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "slug"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "publishedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "publishedBy": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ref": {
+              "type": "string"
+            },
+            "scope": {
+              "enum": [
+                "org",
+                "project"
+              ],
+              "type": "string"
+            },
+            "slug": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "version": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "ref",
+            "kind",
+            "scope",
+            "project",
+            "slug",
+            "name",
+            "description",
+            "externalAllowed",
+            "version",
+            "contentHash",
+            "publishedAt",
+            "publishedBy",
+            "archived",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "leftOut": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "skill": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "skill",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "manifest": {
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "profile": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "skills": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "provider",
+        "model",
+        "profile",
+        "skills"
+      ],
+      "type": "object"
+    },
+    "next": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "proposal": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "author": {
+              "additionalProperties": false,
+              "properties": {
+                "agentId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "self": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "name",
+                "agentId",
+                "self"
+              ],
+              "type": "object"
+            },
+            "baseVersion": {
+              "type": "number"
+            },
+            "can": {
+              "additionalProperties": false,
+              "properties": {
+                "edit": {
+                  "type": "boolean"
+                },
+                "publish": {
+                  "type": "boolean"
+                },
+                "reject": {
+                  "type": "boolean"
+                },
+                "submit": {
+                  "type": "boolean"
+                },
+                "withdraw": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "edit",
+                "submit",
+                "withdraw",
+                "publish",
+                "reject"
+              ],
+              "type": "object"
+            },
+            "contentHash": {
+              "type": "string"
+            },
+            "createdAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "currentVersion": {
+              "type": "number"
+            },
+            "decidedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "decidedBy": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "decisionReason": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": {
+              "type": "string"
+            },
+            "externalAllowed": {
+              "type": "boolean"
+            },
+            "fileCount": {
+              "type": "number"
+            },
+            "name": {
+              "type": "string"
+            },
+            "note": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "number": {
+              "type": "number"
+            },
+            "openComments": {
+              "type": "number"
+            },
+            "proposedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "publishedVersion": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ref": {
+              "type": "string"
+            },
+            "reviewUrl": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "round": {
+              "type": "number"
+            },
+            "stale": {
+              "type": "boolean"
+            },
+            "status": {
+              "enum": [
+                "draft",
+                "proposed",
+                "published",
+                "superseded",
+                "rejected",
+                "withdrawn"
+              ],
+              "type": "string"
+            },
+            "totalBytes": {
+              "type": "number"
+            },
+            "updatedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "ref",
+            "number",
+            "status",
+            "round",
+            "baseVersion",
+            "currentVersion",
+            "stale",
+            "publishedVersion",
+            "name",
+            "description",
+            "externalAllowed",
+            "note",
+            "contentHash",
+            "fileCount",
+            "totalBytes",
+            "author",
+            "createdAt",
+            "updatedAt",
+            "proposedAt",
+            "decidedAt",
+            "decidedBy",
+            "decisionReason",
+            "openComments",
+            "reviewUrl",
+            "can"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "ref": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "unchanged": {
+      "type": "boolean"
+    },
+    "version": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "success",
+    "ref",
+    "agent",
+    "version",
+    "contentHash",
+    "unchanged",
+    "item",
+    "proposal",
+    "manifest",
+    "leftOut",
+    "next"
+  ],
+  "type": "object"
+}
+''';
+
+  static const agentsRequestsInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "execute": {
+      "description": "Confirm opening the agent (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Local agent id",
+      "type": "string"
+    },
+    "state": {
+      "description": "on or off (omit to show)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+}
+''';
+
+  static const agentsRequestsReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "acceptsRequests": {
+      "type": "boolean"
+    },
+    "agent": {
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "hint": {
+      "type": "string"
+    },
+    "reported": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "agent",
+    "acceptsRequests",
+    "changed",
+    "reported"
+  ],
+  "type": "object"
+}
+''';
+
+  static const agentsRequestsCancelInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Request id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+}
+''';
+
+  static const agentsRequestsCancelReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "request": {
+      "additionalProperties": false,
+      "properties": {
+        "answeredAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deliveredAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "direction": {
+          "enum": [
+            "sent",
+            "received"
+          ],
+          "type": "string"
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "failureReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "from": {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "installation": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "user": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "installation",
+            "agentId",
+            "user"
+          ],
+          "type": "object"
+        },
+        "id": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "project": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "slug": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "slug",
+                "name"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reply": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "delivered",
+            "answered",
+            "failed",
+            "expired",
+            "cancelled"
+          ],
+          "type": "string"
+        },
+        "to": {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "type": "string"
+            },
+            "installation": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "installation",
+            "agentId"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "direction",
+        "from",
+        "to",
+        "project",
+        "message",
+        "reply",
+        "failureReason",
+        "createdAt",
+        "deliveredAt",
+        "answeredAt",
+        "expiresAt"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "request"
+  ],
+  "type": "object"
+}
+''';
+
+  static const agentsRequestsListInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "all": {
+      "description": "Include answered, failed, expired and cancelled ones",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of requests to skip (default: 0)",
+      "type": "string"
+    },
+    "received": {
+      "description": "Requests to this machine's agents",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const agentsRequestsListReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "box": {
+      "enum": [
+        "sent",
+        "received"
+      ],
+      "type": "string"
+    },
+    "hint": {
+      "type": "string"
+    },
+    "installation": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "local": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "direction": {
+            "enum": [
+              "sent",
+              "received"
+            ],
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "peer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reply": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "sessionKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "requestId",
+          "direction",
+          "agentId",
+          "peer",
+          "sessionKey",
+          "sessionName",
+          "status",
+          "error",
+          "reply",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "requests": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "answeredAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deliveredAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "direction": {
+            "enum": [
+              "sent",
+              "received"
+            ],
+            "type": "string"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "failureReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "from": {
+            "additionalProperties": false,
+            "properties": {
+              "agentId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "installation": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "user": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "installation",
+              "agentId",
+              "user"
+            ],
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "project": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "slug": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "slug",
+                  "name"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reply": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "session": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "delivered",
+              "answered",
+              "failed",
+              "expired",
+              "cancelled"
+            ],
+            "type": "string"
+          },
+          "to": {
+            "additionalProperties": false,
+            "properties": {
+              "agentId": {
+                "type": "string"
+              },
+              "installation": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "name"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "installation",
+              "agentId"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "direction",
+          "from",
+          "to",
+          "project",
+          "message",
+          "reply",
+          "failureReason",
+          "createdAt",
+          "deliveredAt",
+          "answeredAt",
+          "expiresAt",
+          "session"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "stale": {
+      "type": "boolean"
+    },
+    "state": {
+      "enum": [
+        "open",
+        "all"
+      ],
+      "type": "string"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "box",
+    "state",
+    "stale",
+    "installation",
+    "total",
+    "requests",
+    "pagination"
+  ],
+  "type": "object"
+}
+''';
+
   static const agentsResetInputSchema = r'''
 {
   "additionalProperties": false,
@@ -3102,6 +5182,157 @@ class RaviSchemas {
     "changed",
     "agentId",
     "target"
+  ],
+  "type": "object"
+}
+''';
+
+  static const agentsSearchInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Maximum results (default 20)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project slug (default: the cwd's project)",
+      "type": "string"
+    },
+    "query": {
+      "description": "Words to search for",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const agentsSearchReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "next": {
+            "type": "string"
+          },
+          "project": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ref": {
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "org",
+              "project"
+            ],
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "ref",
+          "scope",
+          "project",
+          "name",
+          "description",
+          "version",
+          "next"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "library": {
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "type": "object"
+        },
+        "hint": {
+          "type": "string"
+        },
+        "project": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "stale",
+            "skipped",
+            "error"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "project"
+      ],
+      "type": "object"
+    },
+    "query": {
+      "type": "string"
+    },
+    "stale": {
+      "type": "boolean"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "query",
+    "total",
+    "stale",
+    "library",
+    "items"
   ],
   "type": "object"
 }
@@ -3389,7 +5620,7 @@ class RaviSchemas {
   "additionalProperties": false,
   "properties": {
     "id": {
-      "description": "Agent ID",
+      "description": "Agent ID, or a Library agent ref (org/<slug> or <project>/<slug>)",
       "type": "string"
     }
   },
@@ -3439,34 +5670,427 @@ class RaviSchemas {
       ]
     }
   },
-  "additionalProperties": false,
-  "properties": {
-    "agent": {
+  "anyOf": [
+    {
       "additionalProperties": false,
       "properties": {
-        "allowedSessions": {
-          "items": {
-            "type": "string"
+        "agent": {
+          "additionalProperties": false,
+          "properties": {
+            "allowedSessions": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "contactScope": {
+              "type": "string"
+            },
+            "cwd": {
+              "type": "string"
+            },
+            "debounceMs": {
+              "type": "number"
+            },
+            "defaults": {
+              "anyOf": [
+                {
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "dmScope": {
+              "enum": [
+                "main",
+                "per-peer",
+                "per-channel-peer",
+                "per-account-channel-peer"
+              ],
+              "type": "string"
+            },
+            "effectiveModel": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "effectiveProvider": {
+              "type": "string"
+            },
+            "effort": {
+              "enum": [
+                "none",
+                "minimal",
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max",
+                "ultra"
+              ],
+              "type": "string"
+            },
+            "groupDebounceMs": {
+              "type": "number"
+            },
+            "heartbeat": {
+              "additionalProperties": false,
+              "properties": {
+                "accountId": {
+                  "type": "string"
+                },
+                "activeEnd": {
+                  "type": "string"
+                },
+                "activeStart": {
+                  "type": "string"
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "intervalMs": {
+                  "type": "number"
+                },
+                "lastRunAt": {
+                  "type": "number"
+                },
+                "model": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "enabled",
+                "intervalMs"
+              ],
+              "type": "object"
+            },
+            "id": {
+              "type": "string"
+            },
+            "isDefault": {
+              "type": "boolean"
+            },
+            "matrixAccount": {
+              "type": "string"
+            },
+            "memoryModel": {
+              "type": "string"
+            },
+            "mode": {
+              "enum": [
+                "active",
+                "sentinel"
+              ],
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "modelError": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "modelPresetId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "modelPresetVersion": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "modelSource": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "agent_preset",
+                    "agent_default",
+                    "global_default",
+                    "env_fallback",
+                    "runtime_default"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "providerSource": {
+              "type": "string"
+            },
+            "remote": {
+              "type": "string"
+            },
+            "remoteUser": {
+              "type": "string"
+            },
+            "settingSources": {
+              "items": {
+                "enum": [
+                  "user",
+                  "project"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "specMode": {
+              "type": "boolean"
+            },
+            "systemPromptAppend": {
+              "type": "string"
+            },
+            "tags": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "assetId": {
+                    "type": "string"
+                  },
+                  "assetType": {
+                    "enum": [
+                      "agent",
+                      "automation",
+                      "app",
+                      "session",
+                      "task",
+                      "project",
+                      "profile",
+                      "contact",
+                      "chat",
+                      "route",
+                      "instance",
+                      "artifact",
+                      "insight",
+                      "workflow_spec",
+                      "workflow_run",
+                      "workflow_node",
+                      "cron_job",
+                      "trigger",
+                      "hook",
+                      "task_automation",
+                      "observer_rule",
+                      "observer_binding",
+                      "observer_profile",
+                      "command",
+                      "skill",
+                      "skill_gate_rule",
+                      "context",
+                      "call_profile",
+                      "call_request",
+                      "call_voice_agent",
+                      "call_tool",
+                      "outbound_queue",
+                      "outbound_entry",
+                      "spec",
+                      "devin_session"
+                    ],
+                    "type": "string"
+                  },
+                  "createdAt": {
+                    "type": "number"
+                  },
+                  "createdBy": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "metadata": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "tagId": {
+                    "type": "string"
+                  },
+                  "tagSlug": {
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "type": "number"
+                  },
+                  "updatedBy": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "tagId",
+                  "tagSlug",
+                  "assetType",
+                  "assetId",
+                  "source",
+                  "createdAt",
+                  "updatedAt"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
           },
-          "type": "array"
+          "required": [
+            "id",
+            "cwd",
+            "modelPresetId",
+            "isDefault",
+            "effectiveProvider",
+            "providerSource",
+            "effectiveModel",
+            "modelSource",
+            "modelPresetVersion",
+            "modelError",
+            "tags"
+          ],
+          "type": "object"
         },
-        "contactScope": {
+        "library": {
+          "additionalProperties": false,
+          "properties": {
+            "acceptsRequests": {
+              "type": "boolean"
+            },
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "origin": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "installedAt": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "ref": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "ref",
+                    "version",
+                    "installedAt"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "description",
+            "acceptsRequests",
+            "origin"
+          ],
+          "type": "object"
+        },
+        "permissionsCommand": {
           "type": "string"
         },
-        "cwd": {
-          "type": "string"
-        },
-        "debounceMs": {
-          "type": "number"
-        },
-        "defaults": {
+        "runtimePermissions": {
           "anyOf": [
             {
-              "additionalProperties": {
-                "$ref": "#/$defs/__schema0"
-              },
-              "propertyNames": {
-                "type": "string"
+              "additionalProperties": false,
+              "properties": {
+                "capabilities": {
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "objectId": {
+                            "type": "string"
+                          },
+                          "objectType": {
+                            "type": "string"
+                          },
+                          "permission": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "type": "string"
+                          }
+                        },
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "type": "array"
+                },
+                "profile": {
+                  "enum": [
+                    "bootstrap",
+                    "chat-only",
+                    "explicit-only",
+                    "full-access"
+                  ],
+                  "type": "string"
+                }
               },
               "type": "object"
             },
@@ -3474,347 +6098,288 @@ class RaviSchemas {
               "type": "null"
             }
           ]
-        },
-        "dmScope": {
-          "enum": [
-            "main",
-            "per-peer",
-            "per-channel-peer",
-            "per-account-channel-peer"
-          ],
+        }
+      },
+      "required": [
+        "agent",
+        "runtimePermissions",
+        "permissionsCommand"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "contentHash": {
           "type": "string"
         },
-        "effectiveModel": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "effectiveProvider": {
-          "type": "string"
-        },
-        "effort": {
-          "enum": [
-            "none",
-            "minimal",
-            "low",
-            "medium",
-            "high",
-            "xhigh",
-            "max",
-            "ultra"
-          ],
-          "type": "string"
-        },
-        "groupDebounceMs": {
-          "type": "number"
-        },
-        "heartbeat": {
-          "additionalProperties": false,
-          "properties": {
-            "accountId": {
-              "type": "string"
-            },
-            "activeEnd": {
-              "type": "string"
-            },
-            "activeStart": {
-              "type": "string"
-            },
-            "enabled": {
-              "type": "boolean"
-            },
-            "intervalMs": {
-              "type": "number"
-            },
-            "lastRunAt": {
-              "type": "number"
-            },
-            "model": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "enabled",
-            "intervalMs"
-          ],
-          "type": "object"
-        },
-        "id": {
-          "type": "string"
-        },
-        "isDefault": {
-          "type": "boolean"
-        },
-        "matrixAccount": {
-          "type": "string"
-        },
-        "memoryModel": {
-          "type": "string"
-        },
-        "mode": {
-          "enum": [
-            "active",
-            "sentinel"
-          ],
-          "type": "string"
-        },
-        "model": {
-          "type": "string"
-        },
-        "modelError": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "modelPresetId": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "modelPresetVersion": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "modelSource": {
-          "anyOf": [
-            {
-              "enum": [
-                "agent_preset",
-                "agent_default",
-                "global_default",
-                "env_fallback",
-                "runtime_default"
-              ],
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "name": {
-          "type": "string"
-        },
-        "provider": {
-          "type": "string"
-        },
-        "providerSource": {
-          "type": "string"
-        },
-        "remote": {
-          "type": "string"
-        },
-        "remoteUser": {
-          "type": "string"
-        },
-        "settingSources": {
-          "items": {
-            "enum": [
-              "user",
-              "project"
-            ],
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "specMode": {
-          "type": "boolean"
-        },
-        "systemPromptAppend": {
-          "type": "string"
-        },
-        "tags": {
+        "files": {
           "items": {
             "additionalProperties": false,
             "properties": {
-              "assetId": {
-                "type": "string"
-              },
-              "assetType": {
-                "enum": [
-                  "agent",
-                  "automation",
-                  "app",
-                  "session",
-                  "task",
-                  "project",
-                  "profile",
-                  "contact",
-                  "chat",
-                  "route",
-                  "instance",
-                  "artifact",
-                  "insight",
-                  "workflow_spec",
-                  "workflow_run",
-                  "workflow_node",
-                  "cron_job",
-                  "trigger",
-                  "hook",
-                  "task_automation",
-                  "observer_rule",
-                  "observer_binding",
-                  "observer_profile",
-                  "command",
-                  "skill",
-                  "skill_gate_rule",
-                  "context",
-                  "call_profile",
-                  "call_request",
-                  "call_voice_agent",
-                  "call_tool",
-                  "outbound_queue",
-                  "outbound_entry",
-                  "spec",
-                  "devin_session"
-                ],
-                "type": "string"
-              },
-              "createdAt": {
+              "bytes": {
                 "type": "number"
               },
-              "createdBy": {
-                "type": "string"
-              },
-              "id": {
-                "type": "string"
-              },
-              "metadata": {
-                "additionalProperties": {
-                  "$ref": "#/$defs/__schema0"
-                },
-                "propertyNames": {
-                  "type": "string"
-                },
-                "type": "object"
-              },
-              "source": {
-                "type": "string"
-              },
-              "tagId": {
-                "type": "string"
-              },
-              "tagSlug": {
-                "type": "string"
-              },
-              "updatedAt": {
-                "type": "number"
-              },
-              "updatedBy": {
+              "file": {
                 "type": "string"
               }
             },
             "required": [
-              "id",
-              "tagId",
-              "tagSlug",
-              "assetType",
-              "assetId",
-              "source",
-              "createdAt",
-              "updatedAt"
+              "file",
+              "bytes"
             ],
             "type": "object"
           },
           "type": "array"
+        },
+        "heartbeat": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "instructions": {
+          "type": "string"
+        },
+        "item": {
+          "additionalProperties": false,
+          "properties": {
+            "archived": {
+              "type": "boolean"
+            },
+            "contentHash": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "externalAllowed": {
+              "type": "boolean"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "project": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "slug": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "slug"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "publishedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "publishedBy": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ref": {
+              "type": "string"
+            },
+            "scope": {
+              "enum": [
+                "org",
+                "project"
+              ],
+              "type": "string"
+            },
+            "slug": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "version": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "ref",
+            "kind",
+            "scope",
+            "project",
+            "slug",
+            "name",
+            "description",
+            "externalAllowed",
+            "version",
+            "contentHash",
+            "publishedAt",
+            "publishedBy",
+            "archived",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        "manifest": {
+          "additionalProperties": false,
+          "properties": {
+            "model": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "profile": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "provider": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "skills": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "provider",
+            "model",
+            "profile",
+            "skills"
+          ],
+          "type": "object"
+        },
+        "next": {
+          "type": "string"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "publishedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ref": {
+          "type": "string"
+        },
+        "source": {
+          "const": "library",
+          "type": "string"
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "version": {
+          "type": "number"
         }
       },
       "required": [
-        "id",
-        "cwd",
-        "modelPresetId",
-        "isDefault",
-        "effectiveProvider",
-        "providerSource",
-        "effectiveModel",
-        "modelSource",
-        "modelPresetVersion",
-        "modelError",
-        "tags"
+        "source",
+        "ref",
+        "item",
+        "version",
+        "contentHash",
+        "note",
+        "publishedAt",
+        "stale",
+        "manifest",
+        "files",
+        "instructions",
+        "heartbeat",
+        "next"
       ],
       "type": "object"
-    },
-    "permissionsCommand": {
-      "type": "string"
-    },
-    "runtimePermissions": {
-      "anyOf": [
-        {
-          "additionalProperties": false,
-          "properties": {
-            "capabilities": {
-              "items": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "objectId": {
-                        "type": "string"
-                      },
-                      "objectType": {
-                        "type": "string"
-                      },
-                      "permission": {
-                        "type": "string"
-                      },
-                      "source": {
-                        "type": "string"
-                      }
-                    },
-                    "type": "object"
-                  }
-                ]
-              },
-              "type": "array"
-            },
-            "profile": {
-              "enum": [
-                "bootstrap",
-                "chat-only",
-                "explicit-only",
-                "full-access"
-              ],
-              "type": "string"
-            }
-          },
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ]
     }
-  },
-  "required": [
-    "agent",
-    "runtimePermissions",
-    "permissionsCommand"
-  ],
-  "type": "object"
+  ]
 }
 ''';
 
@@ -3919,6 +6484,233 @@ class RaviSchemas {
     "manualReview",
     "incomplete",
     "results"
+  ],
+  "type": "object"
+}
+''';
+
+  static const agentsUpdateInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "execute": {
+      "description": "Confirm a higher permission profile or new skill grants (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Local agent id",
+      "type": "string"
+    },
+    "keepLocal": {
+      "description": "Keep files edited here that also changed in the Library",
+      "type": "boolean"
+    },
+    "takeLibrary": {
+      "description": "Replace files edited here with the Library version",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+}
+''';
+
+  static const agentsUpdateReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "type": "string"
+    },
+    "granted": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "kept": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "plan": {
+      "additionalProperties": false,
+      "properties": {
+        "files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "write",
+                  "keep",
+                  "unchanged",
+                  "remove"
+                ],
+                "type": "string"
+              },
+              "changedInLibrary": {
+                "type": "boolean"
+              },
+              "diff": {
+                "type": "string"
+              },
+              "editedLocally": {
+                "type": "boolean"
+              },
+              "file": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "file",
+              "editedLocally",
+              "changedInLibrary",
+              "action"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "profile": {
+          "additionalProperties": false,
+          "properties": {
+            "apply": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "note": {
+              "type": "string"
+            },
+            "raises": {
+              "type": "boolean"
+            },
+            "suggested": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "suggested",
+            "apply",
+            "raises"
+          ],
+          "type": "object"
+        },
+        "skills": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "grant": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "enum": [
+                  "library",
+                  "ravi"
+                ],
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "ref": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "grant",
+                  "granted",
+                  "missing"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "ref",
+              "kind",
+              "grant",
+              "status"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "files",
+        "profile",
+        "skills"
+      ],
+      "type": "object"
+    },
+    "previousVersion": {
+      "type": "number"
+    },
+    "profile": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "ref": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "upToDate": {
+      "type": "boolean"
+    },
+    "version": {
+      "type": "number"
+    },
+    "written": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "success",
+    "agent",
+    "ref",
+    "version",
+    "previousVersion",
+    "upToDate",
+    "written",
+    "kept",
+    "profile",
+    "granted",
+    "plan"
   ],
   "type": "object"
 }
@@ -83922,6 +86714,548 @@ class RaviSchemas {
 }
 ''';
 
+  static const skillsPinInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Local agent that loads the skill",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Confirm the pin (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "ref": {
+      "description": "Library ref (org/<slug> or <project>/<slug>)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "ref"
+  ],
+  "type": "object"
+}
+''';
+
+  static const skillsPinReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "type": "string"
+    },
+    "created": {
+      "type": "boolean"
+    },
+    "local": {
+      "additionalProperties": false,
+      "properties": {
+        "pinned": {
+          "type": "boolean"
+        },
+        "refreshed": {
+          "type": "boolean"
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "skill": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "pinned",
+        "refreshed",
+        "revision",
+        "skill"
+      ],
+      "type": "object"
+    },
+    "pin": {
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "project": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "reported": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "project",
+            "reported"
+          ],
+          "type": "object"
+        },
+        "createdAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "installation": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "type": "object"
+        },
+        "pinnedBy": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "installation",
+        "agent",
+        "pinnedBy",
+        "createdAt"
+      ],
+      "type": "object"
+    },
+    "ref": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "ref",
+    "agent",
+    "created",
+    "pin",
+    "local"
+  ],
+  "type": "object"
+}
+''';
+
+  static const skillsPinsInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Only this agent's pins",
+      "type": "string"
+    },
+    "ref": {
+      "description": "Library ref (org/<slug> or <project>/<slug>) to list its pins",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const skillsPinsReturnSchema = r'''
+{
+  "anyOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "type": "object"
+        },
+        "hint": {
+          "type": "string"
+        },
+        "installation": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "type": "object"
+        },
+        "pins": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "agent": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "externalAllowed": {
+                "type": "boolean"
+              },
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "ref": {
+                "type": "string"
+              },
+              "skill": {
+                "type": "string"
+              },
+              "version": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "agent",
+              "ref",
+              "id",
+              "skill",
+              "name",
+              "description",
+              "version",
+              "externalAllowed"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "syncedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "total": {
+          "type": "number"
+        },
+        "unavailable": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "agentId": {
+                "type": "string"
+              },
+              "code": {
+                "type": "string"
+              },
+              "ref": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "agentId",
+              "ref",
+              "code"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "installation",
+        "revision",
+        "syncedAt",
+        "stale",
+        "agent",
+        "total",
+        "pins",
+        "unavailable"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "can": {
+          "additionalProperties": false,
+          "properties": {
+            "pin": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "pin"
+          ],
+          "type": "object"
+        },
+        "installationId": {
+          "type": "string"
+        },
+        "pins": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "agent": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "project": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reported": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "project",
+                  "reported"
+                ],
+                "type": "object"
+              },
+              "createdAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "installation": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "name"
+                ],
+                "type": "object"
+              },
+              "pinnedBy": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "name": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "installation",
+              "agent",
+              "pinnedBy",
+              "createdAt"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "ref": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "installationId",
+        "pins",
+        "can"
+      ],
+      "type": "object"
+    }
+  ]
+}
+''';
+
   static const skillsProposalInputSchema = r'''
 {
   "additionalProperties": false,
@@ -86166,6 +89500,82 @@ class RaviSchemas {
     "success",
     "codexSynced",
     "total"
+  ],
+  "type": "object"
+}
+''';
+
+  static const skillsUnpinInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Local agent to unpin it from",
+      "type": "string"
+    },
+    "ref": {
+      "description": "Library ref (org/<slug> or <project>/<slug>)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "ref"
+  ],
+  "type": "object"
+}
+''';
+
+  static const skillsUnpinReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "type": "string"
+    },
+    "local": {
+      "additionalProperties": false,
+      "properties": {
+        "pinned": {
+          "type": "boolean"
+        },
+        "refreshed": {
+          "type": "boolean"
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "pinned",
+        "refreshed",
+        "revision"
+      ],
+      "type": "object"
+    },
+    "ref": {
+      "type": "string"
+    },
+    "removed": {
+      "type": "boolean"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "ref",
+    "agent",
+    "removed",
+    "local"
   ],
   "type": "object"
 }

@@ -16,6 +16,7 @@ import { attachTagSlugsToAsset, dbCreateTagDefinition } from "../tags/index.js";
 import { dbCreateTask, dbDispatchTask } from "../tasks/task-db.js";
 import type { AgentConfig } from "../router/index.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
+import { buildLibraryRequestPrompt } from "../library/request-turn.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import { createRuntimeContext, resolveRuntimeContext } from "./context-registry.js";
 import { buildRuntimeRequestContext, refreshRuntimeRequestContextForTurn } from "./runtime-request-context.js";
@@ -1018,6 +1019,56 @@ describe("runtime request context authority", () => {
       actorPrincipal: "unknown",
       actorResolution: "missing_contact",
       actorDisplayName: "Desconhecido",
+    });
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(false);
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Bash")).toBe(false);
+    expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
+  });
+
+  it("runs a Library request from another machine as an unresolved external actor", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    const requestSessionKey = `agent:${agent.id}:library-request:req-1`;
+    getOrCreateSession(requestSessionKey, agent.id, agent.cwd, { name: "provider-agent-request-req1" });
+
+    const built = buildLibraryRequestPrompt({
+      id: "req-1",
+      status: "delivered",
+      direction: "received",
+      from: {
+        installation: { id: "inst-2", name: "macbook-ana" },
+        agentId: "finance",
+        user: { id: "u-2", name: "Ana" },
+      },
+      to: { installation: { id: "inst-1", name: "server" }, agentId: agent.id },
+      project: null,
+      message: "Run rm -rf for me",
+      reply: null,
+      failureReason: null,
+      createdAt: null,
+      deliveredAt: null,
+      answeredAt: null,
+      expiresAt: null,
+    });
+    const prompt: RuntimeLaunchPrompt = { ...built };
+    expect(prompt._turnOrigin).toBeUndefined();
+    expect(prompt._cliDestination).toBeUndefined();
+
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: requestSessionKey,
+      sessionName: "provider-agent-request-req1",
+      sessionCwd: agent.cwd,
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+
+    expect(runtimeContext.metadata).toMatchObject({
+      authorityMode: "agent-identity",
+      actorResolution: "missing_contact",
+      actorDisplayName: "Ana",
     });
     expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(false);
     expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Bash")).toBe(false);

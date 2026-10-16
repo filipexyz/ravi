@@ -8,6 +8,8 @@ import {
   resolveAgentSkills,
 } from "./allowed-skills.js";
 import { isSkillAuthorizedForAgent } from "./skill-authorization.js";
+import { dbReplaceLibraryPins } from "../library/pins-db.js";
+import { fakeSkill } from "../library/test-fixtures.js";
 
 function cap(permission: string, objectType: string, objectId: string): ContextCapability {
   return { permission, objectType, objectId, source: "test" };
@@ -252,6 +254,58 @@ describe("resolveAgentSkills — custom grants integration", () => {
         capabilities: [cap("use", "skill", "project:*")],
       }),
     ).toBe(true);
+  });
+
+  it("Library pins authorize their item and plugin skill for the pinned agent only, without configuring it", () => {
+    const item = fakeSkill({ slug: "tom-de-voz" }).item;
+    const before = resolveAgentSkills("pin-fresh", { capabilitiesOverride: [] });
+    dbReplaceLibraryPins({
+      consoleUrl: "https://console.test",
+      organizationId: "org-1",
+      installationId: "inst-1",
+      installationName: "macbook",
+      revision: "r1",
+      fingerprint: "f1",
+      pluginDir: null,
+      pins: [
+        {
+          agentId: "pin-fresh",
+          libraryId: "org:tom-de-voz",
+          ref: "org/tom-de-voz",
+          skillName: "org-tom-de-voz",
+          version: 1,
+          contentHash: item.contentHash,
+          externalAllowed: false,
+          item,
+        },
+        {
+          agentId: "pin-configured",
+          libraryId: "org:tom-de-voz",
+          ref: "org/tom-de-voz",
+          skillName: "org-tom-de-voz",
+          version: 1,
+          contentHash: item.contentHash,
+          externalAllowed: false,
+          item,
+        },
+      ],
+    });
+
+    const pinned = resolveAgentSkills("pin-fresh", { capabilitiesOverride: [] });
+    expect(pinned.hasConfiguration).toBe(before.hasConfiguration);
+    expect(pinned.libraryPins).toEqual(["org:tom-de-voz"]);
+    expect(pinned.allowlist).toContain("ravi-library:org-tom-de-voz");
+    expect(pinned.allowlist).toContain("ravi-library-org-tom-de-voz");
+    expect(pinned.allowlist).not.toContain("org-tom-de-voz");
+    expect(pinned.provenance.fromPins).toEqual(["ravi-library:org-tom-de-voz", "ravi-library-org-tom-de-voz"]);
+
+    dbUpsertSkillGrant({ agentId: "pin-configured", skillName: "gmail-pack" });
+    dbUpsertSkillGrant({ agentId: "pin-other", skillName: "gmail-pack" });
+    expect(isSkillAuthorizedForAgent("pin-configured", "org/tom-de-voz", { capabilities: [] })).toBe(true);
+    expect(isSkillAuthorizedForAgent("pin-configured", "ravi-library:org-tom-de-voz", { capabilities: [] })).toBe(true);
+    expect(isSkillAuthorizedForAgent("pin-configured", "org-tom-de-voz", { capabilities: [] })).toBe(false);
+    expect(isSkillAuthorizedForAgent("pin-other", "org/tom-de-voz", { capabilities: [] })).toBe(false);
+    expect(isSkillAuthorizedForAgent("pin-other", "ravi-library:org-tom-de-voz", { capabilities: [] })).toBe(false);
   });
 
   it("C-U/C1 — same skill granted to two agents does not duplicate the source; each agent sees it", () => {
