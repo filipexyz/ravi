@@ -70,3 +70,99 @@ export interface LibraryPublishResponse {
   version: { number: number; contentHash: string };
   unchanged: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Drafts and proposals (phase 2)
+
+export type LibraryProposalStatus = "draft" | "proposed" | "published" | "superseded" | "rejected" | "withdrawn";
+
+/** An item as the proposal routes return it: `version` is null while nothing is published. */
+export interface LibraryProposalItem extends Omit<LibraryItem, "version" | "contentHash"> {
+  version: number | null;
+  contentHash: string | null;
+}
+
+export interface LibraryProposal {
+  ref: string;
+  number: number;
+  status: LibraryProposalStatus;
+  round: number;
+  baseVersion: number;
+  currentVersion: number;
+  stale: boolean;
+  publishedVersion: number | null;
+  name: string;
+  description: string;
+  externalAllowed: boolean;
+  note: string | null;
+  contentHash: string;
+  fileCount: number;
+  totalBytes: number;
+  author: { name: string | null; agentId: string | null; self: boolean };
+  createdAt: string | null;
+  updatedAt: string | null;
+  proposedAt: string | null;
+  decidedAt: string | null;
+  decidedBy: { name: string | null } | null;
+  decisionReason: string | null;
+  openComments: number;
+  /** The proposal's review page in the Console; null when the Console does not report one. */
+  reviewUrl: string | null;
+  can: { edit: boolean; submit: boolean; withdraw: boolean; publish: boolean; reject: boolean };
+}
+
+export interface LibraryProposalComment {
+  id: string;
+  parentId: string | null;
+  path: string | null;
+  line: number | null;
+  round: number;
+  outdated: boolean;
+  body: string;
+  author: { name: string | null; agentId: string | null; self: boolean };
+  createdAt: string | null;
+  resolvedAt: string | null;
+  resolvedBy: { name: string | null } | null;
+  can: { resolve: boolean };
+}
+
+export interface LibraryProposalListResponse {
+  proposals: LibraryProposal[];
+  state: string;
+  project: string | null;
+}
+
+export interface LibraryItemProposalsResponse {
+  item: LibraryProposalItem;
+  can: { propose: boolean; review: boolean };
+  proposals: LibraryProposal[];
+}
+
+export interface LibraryProposalShowResponse {
+  item: LibraryProposalItem;
+  proposal: LibraryProposal;
+  files: LibraryVersionFile[];
+  base: { number: number; files: LibraryVersionFile[] } | null;
+  comments: LibraryProposalComment[];
+}
+
+/** The fields of a proposal's content, shared by create and update. */
+export interface LibraryProposalContent {
+  name?: string;
+  description: string;
+  externalAllowed: boolean;
+  note?: string;
+  /** Create: the version read. Update: only to move the proposal onto the current version. */
+  baseVersion?: number;
+  files: Array<{ path: string; content: string }>;
+  /** `true` proposes (waits for review); otherwise a draft stays a draft. */
+  submit?: boolean;
+  /** Set when an agent of this Ravi wrote it. */
+  agent?: { id: string };
+}
+
+export interface LibraryProposalCreateBody extends LibraryProposalContent {
+  scope: "org" | "project";
+  project?: string;
+  slug: string;
+}

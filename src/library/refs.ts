@@ -93,14 +93,18 @@ export function normalizeLibrarySkillId(value: string): string {
   return value.trim().toLowerCase();
 }
 
+/** Words the Console's Library routes use after `skills/` (a bare-slug show would never reach such an item). */
+const LIBRARY_ROUTE_SLUGS: ReadonlySet<string> = new Set(["proposals"]);
+
 /**
  * Slugs Ravi reserves for its own skills: every catalog skill name and folder
- * name (`ravi-system`, `ravi-dev`), plus the `ravi-` prefix. Matches the
- * Console's reserved list, which is kept in sync with the catalog.
+ * name (`ravi-system`, `ravi-dev`), plus the `ravi-` prefix, and the words the
+ * Library routes use (`proposals`). Matches the Console's reserved list, which
+ * is kept in sync with the catalog.
  */
 export function isReservedLibrarySlug(slug: string): boolean {
   const normalized = slug.trim().toLowerCase();
-  if (normalized.startsWith("ravi-")) return true;
+  if (normalized.startsWith("ravi-") || LIBRARY_ROUTE_SLUGS.has(normalized)) return true;
   return reservedSlugs().has(normalized);
 }
 

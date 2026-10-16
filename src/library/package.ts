@@ -142,7 +142,7 @@ export function readLibraryPackage(dir: string, options: ReadLibraryPackageOptio
   if (isReservedLibrarySlug(slug)) {
     throw new LibraryPackageError(
       "LIBRARY_SLUG_RESERVED",
-      `"${slug}" names a skill that ships with Ravi (or uses the ravi- prefix). Pick another slug with --slug.`,
+      `"${slug}" is reserved: it names a skill that ships with Ravi, uses the ravi- prefix or is a Library route word. Pick another slug with --slug.`,
       [{ path: ["slug"], code: "LIBRARY_SLUG_RESERVED", message: "Reserved slug." }],
     );
   }

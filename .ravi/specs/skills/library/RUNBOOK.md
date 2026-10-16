@@ -16,11 +16,21 @@
    Console project; only an exact grant crosses projects.
 6. For `LIBRARY_SKILL_EXTERNAL_DENIED`, confirm the turn is not the operator's
    own and the item has `externalAllowed: false`.
-7. For `stale: true`, the Console was unreachable and the answer came from the
-   cache under `<stateDir>/library/<orgId>/`.
+7. For `stale: true` on `search` or `show`, the Console was unreachable and the
+   answer came from the cache under `<stateDir>/library/<orgId>/`.
+8. For proposals, start with `ravi skills proposals <ref> --state all --json`
+   and `ravi skills proposal <ref> <n> --json`: `author.self` and
+   `author.agentId` say who may update it, `stale` says its base is behind the
+   published version, and `can` says what this login may do.
+9. For `LIBRARY_AGENT_CANNOT_PUBLISH`, the call ran in an agent runtime: the
+   agent proposes (`ravi skills propose ... --execute`) and a person publishes
+   in the Console.
+10. For `CONFLICT`, read `error.conflict` (the envelope redacts `reason`):
+    `stale_base` means read the new version and plan again (`--rebase` with
+    `--update`), `unchanged` means nothing differs from the published version.
 
 ## Validation
 
 ```bash
-bun test src/library src/cli/commands/skills-library.test.ts src/cli/commands/skills.test.ts src/runtime/allowed-skills.test.ts
+bun test src/library src/cli/commands/skills-library.test.ts src/cli/commands/skills.test.ts src/runtime/allowed-skills.test.ts src/runtime/skill-visibility.test.ts
 ```

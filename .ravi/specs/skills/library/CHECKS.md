@@ -10,4 +10,15 @@
 - An item with `externalAllowed: false` is refused with `LIBRARY_SKILL_EXTERNAL_DENIED` (exit 3) in a turn that is not the operator's own, and is left out of `search` there.
 - `ravi skills publish <dir> --scope org` without `--execute` exits 3 with the plan and writes nothing; with `--execute` it posts `baseVersion` equal to the current version (0 for a new item).
 - `publish` refuses a folder without `SKILL.md`, without a `description`, over the limits, with unsafe paths, or with a reserved slug, before any request.
-- Tests: `bun test src/library/ src/cli/commands/skills-library.test.ts`.
+- `ravi skills publish` inside an agent runtime exits 3 with `LIBRARY_AGENT_CANNOT_PUBLISH` and `suggestedAction` `ravi skills propose <dir> --scope <scope> --execute`, before any request; the operator's terminal still publishes.
+- `ravi skills propose <dir> --scope org` without `--execute` exits 3 with the plan (`exists`, `currentVersion`, `baseVersion`, `submit`, `update`, `stale`, `openProposals`) after GET requests only.
+- `propose --execute` for a new item posts `POST /skills/proposals` with `baseVersion` equal to the published version (0 when none), `submit: true` (`false` with `--draft`), and `agent: { id }` inside an agent runtime only.
+- `propose --update <n> --execute` posts `.../proposals/<n>/update` without `baseVersion`, with `submit: true` only for a draft without `--draft`; with `--rebase` it sends `baseVersion` equal to the published version.
+- A stale proposal (base behind the published version) shows `stale: true` and a hint naming `--update <n> --rebase`.
+- `--rebase` without `--update` is `USAGE_ERROR` (exit 2) before any request; `--update` of a closed proposal is `CONFLICT` with `conflict: proposal_closed`; of another author's (or another agent's) proposal is `LIBRARY_PROPOSAL_NOT_YOURS` (exit 3).
+- A Console `CONFLICT` keeps exit 1 and carries `details.conflict` (`stale_base`, `unchanged`, `slug_taken_in_org`, `slug_taken_in_project`, `slug_reserved`, `proposal_closed`) and a matching `suggestedAction`.
+- `ravi skills proposals` lists rows with ref, number, status, `[stale]`, author (`agent X for Y`) and open comments; inside an agent it shows org items plus the agent's project, and `--mine` keeps the agent's own.
+- `ravi skills proposal <ref> <n>` prints files with sizes and comments with `path:line`, outdated and resolved markers; `--json` includes contents only when `contentsVisible`.
+- A turn that is not the operator's own does not list or show proposals not marked `externalAllowed`.
+- `proposals` is a reserved slug.
+- Tests: `bun test src/library/ src/cli/commands/skills-library.test.ts` and the gate case in `src/runtime/skill-visibility.test.ts`.
