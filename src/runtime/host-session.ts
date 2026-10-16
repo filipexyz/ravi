@@ -8,6 +8,7 @@ import type { SkillGatePersistedListener } from "./skill-gate.js";
 import type {
   ChannelBackendPromptMetadata,
   MessageActorMetadata,
+  ObservationPromptMetadata,
   RaviCommandPromptMetadata,
   RuntimeLaunchPrompt,
 } from "./message-types.js";
@@ -156,6 +157,8 @@ export interface RuntimeHostStreamingSession {
    * compaction observability is unaffected.
    */
   currentTurnProvenance?: TurnProvenance;
+  /** Observation delivery that caused the current turn, when this is an observer session. */
+  currentObservation?: ObservationPromptMetadata;
   /**
    * Tool safety classification. Prompt-lane interrupts (steer/immediate) wait
    * for "unsafe" tools to finish; an explicit abort cancels either kind.

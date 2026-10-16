@@ -342,6 +342,7 @@ export class RuntimePromptSubscription {
           taskBarrierTaskId: prompt.taskBarrierTaskId,
           commands: prompt.commands,
           observation: prompt._observation,
+          ...(prompt._taskRuntime ? { taskRuntime: prompt._taskRuntime } : {}),
           turnProvenance: classifyTurnProvenance({ prompt }),
           thread: prompt._thread,
           _agentId: prompt._agentId,

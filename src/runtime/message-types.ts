@@ -94,6 +94,19 @@ export interface ObservationPromptMetadata {
   eventIds: string[];
   /** Source trace turns used to derive durable reaction idempotency. */
   sourceTurnIds?: string[];
+  /** Task bound to the source session when the delivery was composed. */
+  taskId?: string;
+  /** Stable id of this delivery (binding + event ids); verdicts apply once per delivery. */
+  deliveryId?: string;
+  /** Why the delivery was sent: a batch at turn end, or a pulse while the source turn still runs. */
+  trigger?: "end_of_turn" | "pulse" | "realtime" | "debounce";
+}
+
+/** Marks a prompt the task runtime itself published, so the trace shows its origin. */
+export interface TaskRuntimePromptMetadata {
+  taskId: string;
+  kind: "report" | "stalled" | "nudge";
+  event?: string;
 }
 
 export interface DaemonRestartResumePromptMetadata {
@@ -197,6 +210,8 @@ export interface PromptMessage {
   _modelBrokerTurnId?: string;
   /** Observation Plane metadata for observer-session prompts. */
   _observation?: ObservationPromptMetadata;
+  /** Task runtime metadata for reports, stall notices and observer nudges. */
+  _taskRuntime?: TaskRuntimePromptMetadata;
   /** Heartbeat runner prompt marker. */
   _heartbeat?: boolean;
   /** Cron runner prompt marker. */

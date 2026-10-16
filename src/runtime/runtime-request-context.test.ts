@@ -427,6 +427,48 @@ describe("runtime request context authority", () => {
     expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "sessions_info")).toBe(false);
   });
 
+  it("turns the none observation grant into a constraint that allows no tool", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    dbUpdateAgent(agent.id, {
+      defaults: {
+        runtimePermissions: {
+          capabilities: ["execute:group:tasks_report", "use:tool:Bash"],
+        },
+      },
+    });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    const prompt = promptForContact("luis", "observe");
+    prompt._observation = {
+      sourceSessionKey: "source-session",
+      sourceSessionName: "source",
+      bindingId: "binding-1",
+      ruleId: "builtin:task-observer",
+      role: "task-observer",
+      mode: "report",
+      permissionGrants: ["none"],
+      eventIds: ["event-1"],
+    };
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+
+    expect(runtimeContext.metadata).toMatchObject({
+      turnCapabilityCount: 1,
+      turnCapabilities: [{ permission: "use", objectType: "tool", objectId: "observer:none", source: "observer-rule" }],
+    });
+    expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "tasks_report")).toBe(false);
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Bash")).toBe(false);
+  });
+
   it("does not let turn permission grants widen agent identity authority", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });

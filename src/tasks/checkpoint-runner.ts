@@ -1,6 +1,9 @@
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
-import { TASK_CHECKPOINT_SWEEP_INTERVAL_MS } from "./checkpoint.js";
+import { resolveTaskCheckpointIntervalMs, TASK_CHECKPOINT_SWEEP_INTERVAL_MS } from "./checkpoint.js";
+import { recordTaskStall } from "./observer-apply.js";
+import { TASK_OBSERVER_ACTOR } from "./observer-contract.js";
+import { resolveTaskProfileForTask, taskProfileUsesObserver } from "./profiles.js";
 import { dbGetActiveAssignment, dbListTasks, dbRegisterTaskCheckpointMiss } from "./task-db.js";
 import { buildTaskCheckpointReminderPrompt, emitTaskEvent } from "./service.js";
 
@@ -54,6 +57,7 @@ export class TaskCheckpointRunner {
 
     this.sweeping = true;
     let reminders = 0;
+    let stalls = 0;
 
     try {
       const tasks = [...dbListTasks({ status: "dispatched" }), ...dbListTasks({ status: "in_progress" })];
@@ -72,6 +76,30 @@ export class TaskCheckpointRunner {
               taskId: task.id,
               sessionName: assignment.sessionName,
             });
+            continue;
+          }
+
+          // An observed task's worker is never asked for status. Its checkpoint is a
+          // silence detector: the observer pushes it on every read, so a miss means
+          // nothing was seen for a whole interval, and the requester hears it once.
+          if (taskProfileUsesObserver(resolveTaskProfileForTask(task))) {
+            const silentForMinutes = Math.round(
+              resolveTaskCheckpointIntervalMs(assignment.checkpointIntervalMs) / 60000,
+            );
+            const previousOverdue = assignment.checkpointOverdueCount ?? 0;
+            const missed = dbRegisterTaskCheckpointMiss(task.id, assignment.id, now, {
+              message: (count) => `No worker activity seen by the task observer for ${count * silentForMinutes} min.`,
+            });
+            if (!missed) continue;
+            stalls += 1;
+            await emitTaskEvent(missed.task, missed.event);
+            if (previousOverdue === 0) {
+              await recordTaskStall(
+                missed.task,
+                `No worker activity seen for ${silentForMinutes} min; the turn may be hung or the session gone.`,
+                { actor: TASK_OBSERVER_ACTOR },
+              );
+            }
             continue;
           }
 
@@ -96,11 +124,11 @@ export class TaskCheckpointRunner {
         }
       }
 
-      if (reminders > 0) {
-        log.info("Task checkpoint reminders emitted", { reminders });
+      if (reminders > 0 || stalls > 0) {
+        log.info("Task checkpoint sweep emitted", { reminders, stalls });
       }
 
-      return reminders;
+      return reminders + stalls;
     } catch (error) {
       log.error("Task checkpoint sweep failed", { error });
       return reminders;

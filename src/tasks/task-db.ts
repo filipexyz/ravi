@@ -1604,6 +1604,7 @@ export function dbRegisterTaskCheckpointMiss(
   taskId: string,
   assignmentId: string,
   now = Date.now(),
+  options: { message?: (overdueCount: number) => string } = {},
 ): { task: TaskRecord; assignment: TaskAssignment; event: TaskEvent; missedCount: number } | null {
   ensureTaskSchema();
   const db = getDb();
@@ -1651,7 +1652,9 @@ export function dbRegisterTaskCheckpointMiss(
     actor: "task-checkpoint-runner",
     agentId: assignment.agentId,
     sessionName: assignment.sessionName,
-    message: `Checkpoint overdue ${assignment.checkpointOverdueCount ?? nextOverdueCount}x; real report still pending.`,
+    message:
+      options.message?.(assignment.checkpointOverdueCount ?? nextOverdueCount) ??
+      `Checkpoint overdue ${assignment.checkpointOverdueCount ?? nextOverdueCount}x; real report still pending.`,
     progress: getTaskOrThrow(taskId).progress,
   });
 
@@ -1661,6 +1664,30 @@ export function dbRegisterTaskCheckpointMiss(
     event,
     missedCount,
   };
+}
+
+/**
+ * Push the active assignment's checkpoint forward without recording an event.
+ * The task observer calls this on every delivery it reads: a worker that is
+ * visibly working is not stalled, even when nothing changed in the status.
+ */
+export function dbTouchTaskCheckpoint(taskId: string, now = Date.now()): TaskAssignment | null {
+  ensureTaskSchema();
+  const db = getDb();
+  const task = dbGetTask(taskId);
+  if (!task || task.status === "done" || task.status === "failed") return null;
+  const assignment = dbGetActiveAssignment(taskId);
+  if (!assignment) return null;
+  const checkpointIntervalMs = resolveTaskCheckpointIntervalMs(
+    assignment.checkpointIntervalMs ?? task.checkpointIntervalMs,
+  );
+  db.prepare(`
+    UPDATE task_assignments
+    SET checkpoint_due_at = ?,
+        checkpoint_overdue_count = 0
+    WHERE id = ? AND status IN ('assigned', 'accepted')
+  `).run(computeTaskCheckpointDueAt(now, checkpointIntervalMs), assignment.id);
+  return dbGetActiveAssignment(taskId);
 }
 
 export function dbDispatchTask(
@@ -1779,8 +1806,12 @@ export function dbReportTaskProgress(taskId: string, input: TaskProgressInput): 
     );
     const checkpointDueAt = computeTaskCheckpointDueAt(now, checkpointIntervalMs);
 
-    if (input.sessionName) {
-      db.prepare(`
+    // A report from a session other than the assignee (an observer, an operator
+    // shell) still proves the task is being tracked, so it resets the active
+    // assignment's checkpoint instead of matching nothing.
+    const sessionScoped = input.sessionName
+      ? db
+          .prepare(`
         UPDATE task_assignments
         SET status = CASE WHEN status IN ('assigned', 'blocked') THEN 'accepted' ELSE status END,
             accepted_at = COALESCE(accepted_at, ?),
@@ -1788,8 +1819,10 @@ export function dbReportTaskProgress(taskId: string, input: TaskProgressInput): 
             checkpoint_due_at = ?,
             checkpoint_overdue_count = 0
         WHERE task_id = ? AND session_name = ? AND status IN ('assigned', 'accepted', 'blocked')
-      `).run(now, now, checkpointDueAt, taskId, input.sessionName);
-    } else {
+      `)
+          .run(now, now, checkpointDueAt, taskId, input.sessionName).changes
+      : 0;
+    if (sessionScoped === 0) {
       db.prepare(`
         UPDATE task_assignments
         SET status = CASE WHEN status IN ('assigned', 'blocked') THEN 'accepted' ELSE status END,

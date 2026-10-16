@@ -25,6 +25,7 @@ const {
   previewTaskProfile,
   requireTaskProfileDefinition,
   resolveTaskProfile,
+  taskProfileUsesObserver,
   validateTaskProfiles,
 } = await import("./index.js");
 
@@ -686,8 +687,12 @@ describe("task profile catalog", () => {
       title: "Observed profile preview",
     });
 
-    expect(observedPreview.rendered.dispatch).toContain("sidecar observer is responsible");
-    expect(observedPreview.rendered.dispatch).toContain("do not call `ravi tasks report`");
+    expect(observedPreview.rendered.dispatch).toContain("a task observer follows this session");
+    expect(observedPreview.rendered.dispatch).not.toContain("ravi tasks report");
+    expect(preview.rendered.dispatch).toContain("a task observer follows this session");
+    expect(preview.rendered.dispatch).not.toContain("ravi tasks report");
+    expect(preview.profile.observer).toEqual({ enabled: true });
+    expect(taskProfileUsesObserver(observedPreview.profile)).toBeTrue();
   });
 });
 afterAll(() => mock.restore());

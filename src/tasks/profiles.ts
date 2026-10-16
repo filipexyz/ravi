@@ -149,6 +149,12 @@ const TaskProfileManifestSchema = z.object({
       })
       .optional(),
   }),
+  observer: z
+    .object({
+      enabled: z.boolean(),
+      model: z.string().trim().min(1).optional(),
+    })
+    .optional(),
   rendererHints: z.object({
     label: z.string().trim().min(1),
     showTaskDoc: z.boolean(),
@@ -316,6 +322,11 @@ export function taskProfileRequiresTaskDocument(profile: Pick<TaskProfileDefinit
   return getTaskProfileTaskDocumentMode(profile) === "required";
 }
 
+/** True when a sidecar observer owns status: the worker gets no status protocol and no checkpoint nudges. */
+export function taskProfileUsesObserver(profile: Pick<TaskProfileDefinition, "observer">): boolean {
+  return profile.observer?.enabled === true;
+}
+
 export function taskProfileUsesArtifactFirstSync(profile: Pick<TaskProfileDefinition, "sync">): boolean {
   return profile.sync.artifactFirst ?? false;
 }
@@ -451,6 +462,7 @@ function resolveManifestToProfile(manifest: TaskProfileManifest, source: Profile
     ...(manifest.runtimeDefaults ? { runtimeDefaults: normalizeTaskRuntimeOptions(manifest.runtimeDefaults) } : {}),
     workspaceBootstrap: manifest.workspaceBootstrap,
     sync: normalizeTaskProfileSyncPolicy(manifest.sync),
+    ...(manifest.observer ? { observer: { ...manifest.observer } } : {}),
     rendererHints: manifest.rendererHints,
     defaultTags: [...manifest.defaultTags],
     inputs: manifest.inputs.map((item) => ({ ...item })),
@@ -497,6 +509,7 @@ function toResolvedTaskProfile(definition: TaskProfileDefinition, requestedId: s
   return {
     ...definition,
     sync,
+    ...(definition.observer ? { observer: { ...definition.observer } } : {}),
     templates: normalizeTaskProfileTemplates(definition.templates ?? {}),
     ...(definition.runtimeDefaults ? { runtimeDefaults: normalizeTaskRuntimeOptions(definition.runtimeDefaults) } : {}),
     defaultTags: [...(definition.defaultTags ?? [])],
@@ -1967,9 +1980,10 @@ function buildScaffoldTemplateBundle(preset: TaskProfileScaffoldPreset): TaskPro
           "[System] Execute: You are now responsible for Ravi task {{task.id}}.\n\nTitle: {{task.title}}\nProfile: {{profile.id}}/{{profile.version}}\nTASK.md: {{task.taskDocPath}}\nObjective:\n{{task.instructions}}",
         resume:
           '[System] The daemon restarted. Continue task {{task.id}} ("{{task.title}}") from where you stopped.\nProgress: {{task.progress}}% | TASK.md: {{task.taskDocPath}}',
-        dispatchSummary: "The target session was instructed to edit TASK.md first, then sync through:",
+        dispatchSummary:
+          "The target session was instructed to work from TASK.md; the task observer reports status. Follow it with:",
         dispatchEventMessage:
-          "Dispatched to {{session.agentId}}/{{session.name}}. Edit {{task.taskDocPath}} first, then sync via ravi tasks report|done|block|fail {{task.id}}.",
+          "Dispatched to {{session.agentId}}/{{session.name}}. Worker reads {{task.taskDocPath}}; the task observer reports status.",
         reportDoneMessage: "{{report.text}}",
         reportBlockedMessage: "{{report.text}}",
         reportFailedMessage: "{{report.text}}",
@@ -1982,9 +1996,9 @@ function buildScaffoldTemplateBundle(preset: TaskProfileScaffoldPreset): TaskPro
         resume:
           '[System] The daemon restarted. Continue task {{task.id}} ("{{task.title}}") from where you stopped.\nProgress: {{task.progress}}% | slug: {{profileState.brainstorm.slug}} | draft: {{artifacts.primary.path}}',
         dispatchSummary:
-          "The target session was instructed to load brainstorm, use the draft artifact as primary state, then sync through:",
+          "The target session was instructed to load brainstorm and use the draft artifact as primary state; the task observer reports status. Follow it with:",
         dispatchEventMessage:
-          "Dispatched to {{session.agentId}}/{{session.name}}. Use {{artifacts.primary.path}} as primary artifact and sync via ravi tasks report|done|block|fail {{task.id}}.",
+          "Dispatched to {{session.agentId}}/{{session.name}}. Use {{artifacts.primary.path}} as primary artifact; the task observer reports status.",
         reportDoneMessage: "{{report.text}}",
         reportBlockedMessage: "{{report.text}}",
         reportFailedMessage: "{{report.text}}",
@@ -1996,9 +2010,9 @@ function buildScaffoldTemplateBundle(preset: TaskProfileScaffoldPreset): TaskPro
           "[System] Execute: You are now responsible for Ravi task {{task.id}}.\n\nTitle: {{task.title}}\nProfile: {{profile.id}}/{{profile.version}}\nObjective:\n{{task.instructions}}",
         resume:
           '[System] The daemon restarted. Continue task {{task.id}} ("{{task.title}}") from where you stopped.\nProgress: {{task.progress}}% | profile: {{profile.id}}',
-        dispatchSummary: "The target session received the task without a task-document protocol. Sync through:",
-        dispatchEventMessage:
-          "Dispatched to {{session.agentId}}/{{session.name}}. Operate directly in the runtime substrate and sync via ravi tasks report|done|block|fail {{task.id}}.",
+        dispatchSummary:
+          "The target session received the task without a task-document protocol; the task observer reports status. Follow it with:",
+        dispatchEventMessage: "Dispatched to {{session.agentId}}/{{session.name}}. The task observer reports status.",
         reportDoneMessage: "{{report.text}}",
         reportBlockedMessage: "{{report.text}}",
         reportFailedMessage: "{{report.text}}",
@@ -2007,13 +2021,13 @@ function buildScaffoldTemplateBundle(preset: TaskProfileScaffoldPreset): TaskPro
       return {
         create: DEFAULT_TASK_PROFILE_CREATE_TEMPLATE,
         dispatch:
-          "[System] Execute: You are now responsible for Ravi task {{task.id}}.\n\nTitle: {{task.title}}\nProfile: {{profile.id}}/{{profile.version}}\nTask dir: {{task.taskDir}}\nArtifact: {{artifacts.primary.path}}\nObjective:\n{{task.instructions}}\n\nExecution instructions:\n- treat {{task.taskDir}} as the canonical workspace for this item\n- this profile starts without TASK.md and without a required manifest\n- start from {{artifacts.primary.path}} and only materialize `notes.md`, `sources/`, `assets/`, and `exports/` if needed\n- keep lifecycle/comments/assignments in the substrate via ravi tasks comment|report|done|block|fail {{task.id}}",
+          "[System] Execute: You are now responsible for Ravi task {{task.id}}.\n\nTitle: {{task.title}}\nProfile: {{profile.id}}/{{profile.version}}\nTask dir: {{task.taskDir}}\nArtifact: {{artifacts.primary.path}}\nObjective:\n{{task.instructions}}\n\nExecution instructions:\n- treat {{task.taskDir}} as the canonical workspace for this item\n- this profile starts without TASK.md and without a required manifest\n- start from {{artifacts.primary.path}} and only materialize `notes.md`, `sources/`, `assets/`, and `exports/` if needed\n- the task observer reports status from your responses: say clearly what advanced, what blocks you, and when the item is done",
         resume:
           '[System] The daemon restarted. Continue task {{task.id}} ("{{task.title}}") from where you stopped.\nProgress: {{task.progress}}% | profile: {{profile.id}} | task dir: {{task.taskDir}} | artifact: {{artifacts.primary.path}}',
         dispatchSummary:
-          "The target session received a content workspace rooted at task_dir. Work from the primary artifact and sync through:",
+          "The target session received a content workspace rooted at task_dir and works from the primary artifact; the task observer reports status. Follow it with:",
         dispatchEventMessage:
-          "Dispatched to {{session.agentId}}/{{session.name}}. Content workspace rooted at {{task.taskDir}} with primary artifact {{artifacts.primary.path}}; keep lifecycle in the task substrate and sync via ravi tasks comment|report|done|block|fail {{task.id}}.",
+          "Dispatched to {{session.agentId}}/{{session.name}}. Content workspace rooted at {{task.taskDir}} with primary artifact {{artifacts.primary.path}}; the task observer reports status.",
         reportDoneMessage: "{{report.text}}",
         reportBlockedMessage: "{{report.text}}",
         reportFailedMessage: "{{report.text}}",
@@ -2066,6 +2080,7 @@ export function initTaskProfileScaffold(
       artifactFirst: preset === "doc-first",
       ...(preset === "doc-first" ? { taskDocument: { mode: "required" as const } } : {}),
     },
+    observer: { enabled: true },
     rendererHints: {
       label:
         preset === "brainstorm"

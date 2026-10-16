@@ -104,6 +104,7 @@ import {
   createObservationEvent,
   deliverObservationEvents,
   getObservationDebounceMs,
+  getObservationPulseMs,
   logObservationDeliveryFailure,
   type ObservationDeliveryPolicy,
   type ObservationEvent,
@@ -125,6 +126,7 @@ import type {
   RuntimeSkillVisibilitySnapshot,
 } from "./types.js";
 import { classifyTurnProvenance, isObserverOriginated } from "./turn-provenance.js";
+import { TASK_OBSERVER_RULE_ID } from "../tasks/observer-contract.js";
 import { buildRuntimeToolPresentation } from "./tool-presentation.js";
 import type { ResponseContentPart, ResponseMediaAttachment } from "./message-types.js";
 import {
@@ -274,6 +276,28 @@ function appendAssistantResponse(current: string, next: string): string {
 
 function isCommentaryResponse(metadata: RuntimeEventMetadata | undefined): boolean {
   return metadata?.item?.phase === "commentary";
+}
+
+/** Upper bound for the full assistant text carried to observers that read detail. */
+const OBSERVATION_DETAIL_TEXT_MAX = 12_000;
+const OBSERVATION_TOOL_INPUT_MAX = 200;
+
+/** One line about what a tool was asked to do: enough for an observer, never the whole payload. */
+function summarizeObservedToolInput(input: unknown): string {
+  if (input === undefined || input === null) return "";
+  let text: string;
+  if (typeof input === "string") {
+    text = input;
+  } else if (typeof input === "object" && !Array.isArray(input)) {
+    const record = input as Record<string, unknown>;
+    const preferred = ["command", "file_path", "path", "pattern", "url", "query", "description", "prompt"];
+    const key = preferred.find((name) => typeof record[name] === "string" && (record[name] as string).trim());
+    text = key ? `${key}: ${record[key] as string}` : JSON.stringify(record);
+  } else {
+    text = JSON.stringify(input);
+  }
+  const line = text.replace(/\s+/g, " ").trim();
+  return line.length > OBSERVATION_TOOL_INPUT_MAX ? `${line.slice(0, OBSERVATION_TOOL_INPUT_MAX - 3)}...` : line;
 }
 
 function summarizeRuntimeFailureRawEvent(rawEvent?: Record<string, unknown>): Record<string, unknown> | undefined {
@@ -1081,6 +1105,16 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   let debounceObservationTimer: ReturnType<typeof setTimeout> | undefined;
   const truncateObservationPreview = (value: string, maxLength = 500): string =>
     value.length > maxLength ? `${value.slice(0, maxLength - 15)}... [truncated]` : value;
+  // Raw text of an observer session's turn: the verdict is read from it whatever the
+  // visibility filters decide to persist or emit.
+  let observerTurnText = "";
+  let pulseObservationTimer: ReturnType<typeof setInterval> | undefined;
+  let pulseCheckedTurnId: string | undefined;
+  const clearObservationPulse = () => {
+    if (pulseObservationTimer !== undefined) clearInterval(pulseObservationTimer);
+    pulseObservationTimer = undefined;
+    pulseCheckedTurnId = undefined;
+  };
 
   const deliverObservationBatch = (
     events: ObservationEvent[],
@@ -1158,6 +1192,41 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     observationEvents.push(event);
     deliverObservationBatch([event], ["realtime"], "realtime");
     scheduleDebouncedObservationEvent(event);
+    armObservationPulse();
+  };
+  // A long turn is read while it runs: bindings with a pulse get the events gathered so
+  // far every pulse, and the end-of-turn delivery then carries only what is new.
+  const armObservationPulse = () => {
+    const turnId = streaming.currentTraceTurnId;
+    if (pulseObservationTimer !== undefined || !turnId || pulseCheckedTurnId === turnId) return;
+    pulseCheckedTurnId = turnId;
+    const pulseMs = getObservationPulseMs({
+      sourceSessionName: sessionName,
+      sourceSession: session,
+      agentId: agent.id,
+    });
+    if (pulseMs === null) return;
+    pulseObservationTimer = setInterval(() => {
+      if (observationEvents.length === 0) return;
+      deliverObservationEvents({
+        sourceSessionName: sessionName,
+        sourceSession: session,
+        agentId: agent.id,
+        events: [...observationEvents],
+        deliveryPolicies: ["end_of_turn"],
+        runId,
+        pulse: true,
+      }).catch((error) =>
+        logObservationDeliveryFailure(error, {
+          sessionName,
+          sessionKey: session.sessionKey,
+          runId,
+          eventCount: observationEvents.length,
+          reason: "pulse",
+        }),
+      );
+    }, pulseMs);
+    pulseObservationTimer.unref?.();
   };
   const currentTurnPromptText = (): string | undefined => {
     const pendingIds = new Set(streaming.currentTurnPendingIds ?? []);
@@ -1192,8 +1261,24 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       payload,
       preview: terminalType,
     });
+    clearObservationPulse();
     const batch = observationEvents.splice(0, observationEvents.length);
     deliverObservationBatch(batch, ["end_of_turn"], "end_of_turn");
+  };
+  /** Hand a built-in task observer's finished turn to the runtime that applies its verdict. */
+  const applyObserverTurnVerdict = () => {
+    const observation = streaming.currentObservation;
+    const text = observerTurnText;
+    observerTurnText = "";
+    if (!observation || observation.ruleId !== TASK_OBSERVER_RULE_ID) return;
+    void import("../tasks/observer-apply.js")
+      .then(({ applyTaskObserverTurn }) =>
+        applyTaskObserverTurn({ observation, text, observerSessionName: sessionName, observerAgentId: agent.id }),
+      )
+      .then((result) => {
+        if (!result.applied) log.debug("Task observer verdict not applied", { sessionName, ...result });
+      })
+      .catch((error) => log.warn("Failed to apply task observer verdict", { sessionName, error }));
   };
   // Seed the live view from the persisted vector merged with the provider's
   // start-up catalog. The provider snapshot alone carries an empty
@@ -2688,6 +2773,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         const error = streaming._providerAuthFailure ?? responseText.trim();
         streaming._providerAuthFailure = undefined;
         responseText = "";
+        observerTurnText = "";
         channelResponseText = "";
         deliveredVisibleThisTurn.length = 0;
         event = {
@@ -3029,6 +3115,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             toolId: event.toolUse.id,
             toolName: event.toolUse.name,
             safety: streaming.currentToolSafety,
+            detail: { input: summarizeObservedToolInput(event.toolUse.input) },
           },
         });
         recordTraceEvent({
@@ -3077,6 +3164,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       if (event.type === "assistant.message") {
         streaming.lastToolFailure = undefined;
         let messageText = event.text;
+        if (streaming.currentObservation && !streaming.interrupted && event.text) {
+          observerTurnText = appendAssistantResponse(observerTurnText, event.text);
+        }
         if (messageText) {
           // Strip @@SILENT@@ from anywhere in the text and trim
           messageText = messageText
@@ -3122,6 +3212,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                   payload: {
                     chars: text.length,
                     metadata: event.metadata ?? null,
+                    detail: { text: truncateObservationPreview(text, OBSERVATION_DETAIL_TEXT_MAX) },
                   },
                 });
               }
@@ -3592,6 +3683,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             promptTooLongReset: streaming._promptTooLong ?? false,
           },
         });
+        applyObserverTurnVerdict();
         flushObservationEvents("turn.complete", {
           provider: runtimeSession.provider,
           usage: event.usage,
@@ -3647,6 +3739,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         // Visible assistant rows are INSERTed per assistant.message. turn.complete
         // only closes the in-memory buffer so the next turn cannot mash into it.
         responseText = "";
+        observerTurnText = "";
         channelResponseText = "";
         deliveredVisibleThisTurn.length = 0;
         clearPendingGeneratedMedia();
@@ -3762,6 +3855,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           }
         }
         responseText = "";
+        observerTurnText = "";
         channelResponseText = "";
         deliveredVisibleThisTurn.length = 0;
         clearPendingGeneratedMedia();
@@ -3852,6 +3946,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         }
 
         responseText = "";
+
+        observerTurnText = "";
         channelResponseText = "";
         deliveredVisibleThisTurn.length = 0;
         clearPendingGeneratedMedia();
@@ -4210,6 +4306,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     // Never let an exceptional/ownership-loss path externalize a raw envelope
     // that did not reach its canonical write-ahead boundary.
     pendingProviderRawEvents.length = 0;
+    clearObservationPulse();
     log.info("Streaming session ended", { runId, sessionName });
 
     try {
