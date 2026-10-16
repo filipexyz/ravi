@@ -1053,7 +1053,47 @@ describe("ContextCommands", () => {
 
     expect(caught).toMatchObject({
       code: "USAGE_ERROR",
-      message: "--as-session-name main names a different session than --as-session-key",
+      message: "--as-session-name main does not name the session of --as-session-key",
+    });
+  });
+
+  it("rejects an unregistered key paired with the name of a registered session", () => {
+    listedAgents = [{ id: "main", cwd: "/tmp/ravi-main" }];
+    grantAdminParent();
+    resolvedSession = {
+      sessionKey: "workspace-pages",
+      name: "workspace-pages",
+      agentId: "main",
+      agentCwd: "/tmp/ravi-main",
+      createdAt: 1000,
+      updatedAt: 2000,
+    };
+
+    const { caught } = issueDelegated("agent:main:new-session", "workspace-pages", true);
+
+    expect(caught).toMatchObject({
+      code: "USAGE_ERROR",
+      message: "--as-session-name workspace-pages does not name the session of --as-session-key",
+    });
+  });
+
+  it("rejects a registered key paired with a name the session does not carry", () => {
+    listedAgents = [{ id: "main", cwd: "/tmp/ravi-main" }];
+    grantAdminParent();
+    resolvedSession = {
+      sessionKey: "workspace-pages",
+      name: "workspace-pages",
+      agentId: "main",
+      agentCwd: "/tmp/ravi-main",
+      createdAt: 1000,
+      updatedAt: 2000,
+    };
+
+    const { caught } = issueDelegated("workspace-pages", "unregistered-name", true);
+
+    expect(caught).toMatchObject({
+      code: "USAGE_ERROR",
+      message: "--as-session-name unregistered-name does not name the session of --as-session-key",
     });
   });
 

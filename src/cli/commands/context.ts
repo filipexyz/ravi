@@ -1431,15 +1431,17 @@ function parseDelegatedIdentity(
     );
   }
   const namedSession = sessionName ? getSessionByName(sessionName) : null;
-  if (registeredSession && namedSession && namedSession.sessionKey !== registeredSession.sessionKey) {
+  const nameMismatch = registeredSession
+    ? Boolean(registeredSession.name) && registeredSession.name !== sessionName
+    : Boolean(namedSession);
+  if (nameMismatch) {
     failContextIssueUsage(
-      `--as-session-name ${sessionName} names a different session than --as-session-key`,
+      `--as-session-name ${sessionName} does not name the session of --as-session-key`,
       "Pass the key and name of the same registered session (ravi sessions info <name> --json)",
       asJson,
     );
   }
-  const existingSession = registeredSession ?? namedSession;
-  if (existingSession && existingSession.agentId !== agentId) {
+  if (registeredSession && registeredSession.agentId !== agentId) {
     failContextIssueUsage(
       `Delegated session does not belong to agent ${agentId}`,
       "Pass --as-session-key / --as-session-name for a session owned by --as-agent",
