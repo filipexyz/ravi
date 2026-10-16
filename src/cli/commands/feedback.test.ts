@@ -78,7 +78,7 @@ describe("feedback CLI commands", () => {
         kind: "bug",
         severity: "high",
       },
-      url: "https://console.example/org/feedback",
+      url: "https://console.example/acme/feedback",
     });
   });
 });
@@ -236,7 +236,7 @@ function makeClient(
   return {
     me: mock(async () => ({
       user: { email: "alice@example.com" },
-      organization: { id: "org_1" },
+      organization: { id: "org_1", slug: "acme" },
     })),
     requestJson: mock(async (method: string, path: string, body: unknown, accessToken: string) =>
       handler(method, path, body, accessToken),
@@ -259,7 +259,7 @@ function makeCredentials(): CloudCredentials {
     refreshTokenExpiresAt: "2026-06-10T00:00:00.000Z",
     scopes: ["console.feedback"],
     user: { email: "alice@example.com" },
-    organization: { id: "org_1", name: "Acme" },
+    organization: { id: "org_1", name: "Acme", slug: "acme" },
     createdAt: "2026-05-09T00:00:00.000Z",
     updatedAt: "2026-05-09T00:00:00.000Z",
   };
