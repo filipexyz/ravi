@@ -36,3 +36,28 @@ It cannot know which Library item a bare slug names without a network call,
 and making it lenient for unknown names would also let a disk-only skill
 through Read. Agents therefore use the full ref, which `search` always
 returns in `next`.
+
+## Phase 2: proposals (2026-10-16)
+
+Luís approved that agents never publish. An agent that improves a skill
+proposes a new version; a person who reviews the scope comments on it, then
+publishes or rejects it in the Console. So `ravi skills publish` refuses in an
+agent runtime before any request, and `ravi skills propose` is the agent's
+path. The refusal is cooperative (an agent shares its installation's
+`ravi login`), which is why the Console also refuses publish, reject and
+revert calls that carry `agent`.
+
+- `propose` keeps the write brake: a proposal notifies the scope's reviewers,
+  so the plan comes first. It shows the caller's own open proposals on the
+  item, so an agent updates its proposal instead of opening another.
+- An update keeps its base unless `--rebase` is passed. Moving a proposal onto
+  a newer version without reading that version would silently drop someone
+  else's published change; the stale hint asks the author to read it first.
+- An agent updates only proposals it wrote, even though the Console sees the
+  same user for every agent of an installation and the person.
+- Proposal reads follow the same limits as loading a skill: the agent's view
+  (org plus its project), no proposal not marked `externalAllowed` in a turn
+  that is not the operator's own, and file contents only for the agent's own
+  proposals or skills it may load.
+- The contract envelope redacts `reason` keys as free text, so Console
+  conflict reasons travel as `conflict`.

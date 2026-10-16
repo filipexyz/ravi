@@ -5,7 +5,7 @@ description: |
   - Instalar skills oficiais do catálogo do Ravi
   - Instalar skills de um repositório ou path local
   - Listar ou ver o conteúdo de skills pelo CLI
-  - Buscar, carregar e publicar skills da Biblioteca (organização e projeto)
+  - Buscar, carregar, publicar e propor skills da Biblioteca (organização e projeto)
   - Criar uma nova skill
   - Entender como skills funcionam
   - Configurar frontmatter de skills
@@ -37,7 +37,7 @@ Matriz KISS de `skills install`:
 
 O plano usa um `sourceLabel` controlado: exatamente `catalog`, `local` ou `git`, nunca um rótulo derivado da entrada. Ele não repete URL, path local, nome da fonte/repositório/skill nem conteúdo. Em Git, a seleção fica adiada e erros como `SKILL_NOT_FOUND` só podem aparecer depois de `--execute`; catálogo e fonte local podem validar a seleção antes de escrever.
 
-`skills publish` (Biblioteca) sempre tem freio: sem `--execute` devolve o plano (exit 3). `skills search` e `skills show` só leem.
+`skills publish` e `skills propose` (Biblioteca) sempre têm freio: sem `--execute` devolvem o plano (exit 3). Dentro de um agente, `skills publish` é recusado (`LIBRARY_AGENT_CANNOT_PUBLISH`, exit 3): o agente propõe. `skills search`, `skills show`, `skills proposals` e `skills proposal` só leem.
 
 Sem freio (declarado): instalações aditivas do catálogo ou de path local; `skills sync` (re-materializa o que já existe no repo local; idempotente e reversível); e `skills grant`/`skills revoke` (reversíveis entre si, efeito ao vivo). Todos escrevem na hora.
 
@@ -202,7 +202,30 @@ ravi skills publish ./triagem --scope clinica --note "novos horários" --execute
 ravi skills publish ./faq --scope org --external --execute           # liberada para conversa com gente de fora
 ```
 
-Regras checadas antes de qualquer request: `SKILL.md` na raiz com `description` no frontmatter; até 100 arquivos de texto UTF-8, 256 KiB cada e 1 MiB no total; caminhos com `A-Z a-z 0-9 . _ - /` (dotfiles e `node_modules` ficam fora). O slug vem de `--slug`, senão do `name` do frontmatter, senão do nome da pasta. Os nomes das skills do Ravi e o prefixo `ravi-` são reservados (`LIBRARY_SLUG_RESERVED`). Conteúdo idêntico ao publicado não cria versão (`unchanged: true`). Se alguém publicou antes de você, o `--execute` falha com `CONFLICT` (`reason: stale_base`): rode de novo sem `--execute` para ver o plano novo.
+Regras checadas antes de qualquer request: `SKILL.md` na raiz com `description` no frontmatter; até 100 arquivos de texto UTF-8, 256 KiB cada e 1 MiB no total; caminhos com `A-Z a-z 0-9 . _ - /` (dotfiles e `node_modules` ficam fora). O slug vem de `--slug`, senão do `name` do frontmatter, senão do nome da pasta. Os nomes das skills do Ravi, o prefixo `ravi-` e `proposals` são reservados (`LIBRARY_SLUG_RESERVED`). Conteúdo idêntico ao publicado não cria versão (`unchanged: true`). Se alguém publicou antes de você, o `--execute` falha com `CONFLICT` (`conflict: stale_base`): rode de novo sem `--execute` para ver o plano novo.
+
+Agente não publica. Dentro de um agente, `skills publish` falha com `LIBRARY_AGENT_CANNOT_PUBLISH` (exit 3) antes de qualquer request: proponha a mudança e uma pessoa revisa e publica no Console.
+
+### Propor (o caminho do agente)
+
+Uma proposta é uma versão ainda não publicada. Quem revisa o escopo comenta (por arquivo e linha) e publica ou rejeita no Console. A pasta segue as mesmas regras do publish, e o comando tem freio: sem `--execute` devolve o plano (exit 3).
+
+```bash
+ravi skills propose ./agenda-semanal --scope org                               # plano (exit 3)
+ravi skills propose ./agenda-semanal --scope org --note "horários de sábado" --execute
+ravi skills propose ./triagem --scope clinica --draft --execute                # rascunho: só você e os revisores veem
+ravi skills proposals --mine                                                    # suas propostas abertas
+ravi skills proposal org/agenda-semanal 3                                       # status, arquivos e comentários da revisão
+ravi skills propose ./agenda-semanal --scope org --update 3 --execute          # responde à revisão
+ravi skills propose ./agenda-semanal --scope org --update 3 --rebase --execute # depois de ler a versão nova
+```
+
+- Proposta nova: vai com `baseVersion` = versão publicada agora (0 se é nova). O plano lista em `openProposals` as suas propostas abertas no item; se houver, atualize com `--update <n>` em vez de abrir outra.
+- `--update <n>` manda o conteúdo inteiro de novo (pasta e flags). Um rascunho passa a esperar revisão, salvo `--draft`. Uma proposta em revisão abre uma rodada nova, e os comentários antigos aparecem como outdated.
+- `stale: true`: alguém publicou uma versão depois da sua base. Leia a versão nova (`ravi skills show <ref>`), traga as mudanças para a pasta e rode com `--update <n> --rebase`.
+- Dentro de um agente, a proposta vai marcada como "agent X for Y", você só atualiza as propostas que esse agente escreveu (`LIBRARY_PROPOSAL_NOT_YOURS`, exit 3), e `--mine` mostra só as dele.
+- `ravi skills proposal <ref> <n>` mostra cada comentário como `arquivo:linha`, com `[outdated]` e `[resolved]`. Responda atualizando a proposta.
+- Erros `CONFLICT` trazem o motivo em `conflict`: `stale_base` (leia a versão nova e refaça o plano), `unchanged` (nada mudou em relação à publicada), `slug_taken_in_org`, `slug_taken_in_project`, `slug_reserved` (outro `--slug`), `proposal_closed` (a proposta já foi decidida: proponha de novo sem `--update`).
 
 ## Estrutura de uma Skill
 

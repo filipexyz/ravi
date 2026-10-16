@@ -10,6 +10,7 @@ tags:
   - library
   - console
   - search
+  - proposals
 applies_to:
   - src/library/
   - src/cli/commands/skills.ts
@@ -32,11 +33,13 @@ normative: true
 The Library keeps skills in the hosted Console, for the whole organization or
 for one project. This spec is the local half: how `ravi skills` searches the
 Library, loads a published version on demand, keeps a copy that works offline,
-publishes a folder, and authorizes a Library skill for an agent. The Console
+publishes a folder, proposes a folder for review, reads proposals and their
+review comments, and authorizes a Library skill for an agent. The Console
 contract (HTTP API under `/api/cli/library`, JSON shapes, limits, error codes,
-search ranking, who may publish) is the Console spec `console/library`; this
-side only consumes it. Phase 1 has no pinned skills and no generated plugin:
-an agent reads a Library skill only through `ravi skills show`.
+search ranking, who may publish or review) is the Console spec
+`console/library`; this side only consumes it. There are no pinned skills and
+no generated plugin yet: an agent reads a Library skill only through
+`ravi skills show`.
 
 ## References
 
@@ -50,6 +53,9 @@ an agent reads a Library skill only through `ravi skills show`.
 - A ref is never resolved against local skills, and an id is never matched
   against local skill names by slug, so `org/x` and a local skill `org-x` stay
   distinct.
+- `proposals` is a reserved slug, like the Console's route words: a bare-slug
+  show (`GET /skills/<slug>`) could never reach such an item, and a bare
+  `ravi skills show proposals` never asks the Library.
 
 ## Resolution of `ravi skills show <name>`
 
@@ -67,9 +73,9 @@ Inside an agent runtime with a skill allowlist, the runtime skill gate checks
 the name before the command runs and cannot know which Library item a bare
 slug names, so agents use the full ref that `ravi skills search` returns in
 `next`. The gate reads a ref (`ravi skills show org/x`) as that Library skill
-and checks it with the Library rules below; `ravi skills publish <dir>` names a
-folder to send, not a skill to load, so its path is not checked as a skill
-read.
+and checks it with the Library rules below; `ravi skills publish|propose <dir>`
+names a folder to send, not a skill to load, so its path is not checked as a
+skill read.
 
 ## Authorization
 
@@ -156,6 +162,108 @@ Dot entries, `node_modules` and symlinks are not packaged. The slug defaults
 to the frontmatter `name`, else the folder name. Slugs of Ravi's own skills
 (catalog names and folder names) and the `ravi-` prefix are reserved.
 
+### `ravi skills publish` inside an agent
+
+Agents never publish. When `publish` runs in an agent runtime (a runtime
+invocation with an agent id), it refuses before reading the folder or calling
+the Console: `LIBRARY_AGENT_CANNOT_PUBLISH`, exit 3, with
+`suggestedAction` `ravi skills propose <dir> --scope <scope> --execute`. The
+operator's own terminal publishes as before. The Console refuses publish,
+reject and revert calls that carry `agent`; both checks are cooperative, since
+an agent shares its installation's `ravi login`.
+
+## Drafts and proposals
+
+A proposal is a version that is not published yet; a person who reviews the
+scope publishes or rejects it in the Console. This is how an agent changes a
+Library skill.
+
+### `ravi skills propose <dir> --scope org|<project>`
+
+Flags: `--slug`, `--name`, `--note`, `--external`, `--draft`,
+`--update <number>`, `--rebase`, `--json`, `--execute` (last). The folder is
+read and checked exactly like `publish`.
+
+- Braked: without `--execute` it reads the published version (`GET
+  /skills/<scope>/<slug>`) and either the item's proposals (new proposal) or
+  the proposal to update (`--update`), then exits 3 with a plan: `ref`,
+  `scope`, `project`, `slug`, `name`, `description`, `externalAllowed`,
+  `note`, `files` with sizes, `totalBytes`, `contentHash`, `exists`,
+  `currentVersion`, `baseVersion`, `submit` (true unless `--draft`), `update`,
+  `proposal` (`number`, `status`, `round`, `baseVersion`, `stale`) for an
+  update, `rebase`, `stale`, `unchanged`, `openProposals` (the caller's open
+  proposals on the item; inside an agent, the ones that agent wrote), `agent`
+  and an optional `hint`.
+- A new proposal posts `POST /skills/proposals` with the publish body plus
+  `submit: !draft` and `baseVersion` equal to the published version read (0
+  when none).
+- `--update <n>` posts `POST /skills/<scope>/<slug>/proposals/<n>/update` with
+  the whole content again (files, `name`, `description`, `externalAllowed`,
+  `note` when given). It sends `submit: true` only when the proposal is a
+  draft and `--draft` is not passed, and sends `baseVersion` (the published
+  version read) only with `--rebase`. Without `--rebase` the proposal keeps its
+  base; when that base is behind the published version the plan says
+  `stale: true` and its `hint` tells the author to read the new version, bring
+  its changes into the folder and run again with `--rebase`.
+- Local refusals before any write: `--rebase` without `--update`, an
+  `--update` that is not a positive integer, and `--draft` on a proposal that
+  already waits for review (`USAGE_ERROR`, exit 2); a closed proposal
+  (`CONFLICT`, `conflict: proposal_closed`, exit 1); a proposal not written by
+  this login, or inside an agent not written by this agent
+  (`LIBRARY_PROPOSAL_NOT_YOURS`, exit 3); a proposal number the caller cannot
+  see (`NOT_FOUND`, exit 1).
+- Inside an agent runtime the body carries `agent: { id: <agentId> }`, and the
+  target follows the agent's view: a project item of another project than the
+  agent's Console project is refused (`LIBRARY_SKILL_OUT_OF_VIEW`, exit 3)
+  unless a grant names that exact id. Proposing needs no skill grant and
+  nothing beyond `ravi login`.
+- Output: `✓ Proposed <ref> (proposal <n>), waiting for review`,
+  `✓ Saved draft <ref> (proposal <n>)...` or `✓ Updated <ref> (proposal <n>,
+  round <r>)...`, then `ravi skills proposal <ref> <n>` as the next step.
+  `--json` returns `success`, `ref`, `number`, `status`, `round`,
+  `baseVersion`, `currentVersion`, `stale`, `created`, `next` and `proposal`.
+
+### `ravi skills proposals [ref]`
+
+Read-only. Flags: `--project <ref>`, `--state open|closed|all` (default
+`open`: `draft` and `proposed`), `--mine`, `--json`. With a ref it lists that
+item's proposals (`GET /skills/<scope>/<slug>/proposals`, filtered by state
+here); without one, every proposal the caller can see (`GET
+/skills/proposals?project=&state=&mine=1`). Inside an agent runtime the list
+is the agent's view: org items plus its Console project's (org items only when
+none is resolved; `--project` naming another project is refused with
+`LIBRARY_SKILL_OUT_OF_VIEW`), and `--mine` keeps what that agent wrote. In a
+turn that is not the operator's own, proposals not marked `externalAllowed`
+are left out. Each row shows ref, number, status, `[stale]`, the author
+(`agent X for Y` when an agent wrote it) and open comments; `--json` rows add
+`next` (`ravi skills proposal <ref> <n>`).
+
+### `ravi skills proposal <ref> <number>`
+
+Read-only (`GET /skills/<scope>/<slug>/proposals/<n>`). It shows status,
+round, base and published version, `stale`, note, decision and reason, the
+files (path and size; contents only in `--json`) and the review comments
+(`path:line`, an outdated marker with the round it was made on, a resolved
+marker, author and body, replies under their comment). `--json` returns
+`ref`, `number`, `item` (`version` null while nothing is published),
+`proposal`, `files` (`path`, `bytes`, `sha256`, `content`), `base` (`number`
+and files without contents) or null, `comments` and `contentsVisible`.
+Inside an agent runtime, file contents are included only for a proposal that
+agent wrote or a skill it is authorized to load (`contentsVisible: false`
+otherwise), and the agent's view applies as for `proposals`. In a turn that is
+not the operator's own, a proposal not marked `externalAllowed` is refused
+with `LIBRARY_SKILL_EXTERNAL_DENIED` (exit 3).
+
+### Console conflicts
+
+`CONFLICT` answers keep the Console code and exit 1. The contract envelope
+redacts a `reason` key as free text, so the reason travels as
+`details.conflict` (and `details.reason`), with a `suggestedAction` per
+reason: `stale_base` (publish: plan again; propose: read the new version and
+plan again, `--rebase` with `--update`), `unchanged` (nothing to propose),
+`slug_taken_in_org`, `slug_taken_in_project` and `slug_reserved` (another
+`--slug`), `proposal_closed` (propose again without `--update`).
+
 ## Error codes
 
 | case | code | exit |
@@ -167,5 +275,10 @@ to the frontmatter `name`, else the folder name. Slugs of Ravi's own skills
 | agent not authorized | `SKILL_NOT_AUTHORIZED` | 1 |
 | project item outside the agent's view | `LIBRARY_SKILL_OUT_OF_VIEW` | 3 |
 | `externalAllowed: false` in a turn that is not the operator's own | `LIBRARY_SKILL_EXTERNAL_DENIED` | 3 |
-| publish without `--execute` | `WRITE_REQUIRES_EXECUTE` | 3 |
-| Console errors (`AUTH_REQUIRED`, `CONFLICT` with `details.reason`, ...) | Console code | per the cloud mapping |
+| publish or propose without `--execute` | `WRITE_REQUIRES_EXECUTE` | 3 |
+| publish inside an agent runtime | `LIBRARY_AGENT_CANNOT_PUBLISH` | 3 |
+| `--rebase` without `--update`, bad `--update`, `--draft` on a proposed proposal, bad `--state` or proposal number | `USAGE_ERROR` | 2 |
+| `--update` of a proposal by another author (or, inside an agent, another agent) | `LIBRARY_PROPOSAL_NOT_YOURS` | 3 |
+| `--update` of a closed proposal | `CONFLICT` (`conflict: proposal_closed`) | 1 |
+| proposal missing or not visible | `NOT_FOUND` | 1 |
+| Console errors (`AUTH_REQUIRED`, `CONFLICT` with `details.conflict`, ...) | Console code | per the cloud mapping |

@@ -673,6 +673,19 @@ describe("skill invocation extraction", () => {
     ).toEqual(["bases", "whatsapp-manager"]);
   });
 
+  it("does not treat the folder of ravi skills publish|propose as a skill load unless the segment expands", () => {
+    expect(
+      extractRequestedSkillsFromCommandLine("ravi skills propose /tmp/p/skills/image --scope org --execute"),
+    ).toEqual([]);
+    expect(extractRequestedSkillsFromCommandLine("ravi skills propose ./skills/minha/SKILL.md --scope org")).toEqual(
+      [],
+    );
+    expect(extractRequestedSkillsFromCommandLine("ravi skills proposal org/agenda 3 --json")).toEqual([]);
+    expect(
+      extractRequestedSkillsFromCommandLine("ravi skills propose $(cat /tmp/p/skills/image/SKILL.md) --scope org"),
+    ).toEqual(["image"]);
+  });
+
   it("does not treat a ravi skills install/list --source path as a skill load unless the segment expands", () => {
     expect(
       extractRequestedSkillsFromCommandLine("ravi skills install --source ~/.agents/skills/find-skills/SKILL.md 2>&1"),

@@ -1,10 +1,10 @@
 ---
 title: Skills
-description: Read the system skills that ship with Ravi, copy their reference files, understand how agents load them, use your organization's Library skills, and install or grant your own.
+description: Read the system skills that ship with Ravi, copy their reference files, understand how agents load them, use and propose your organization's Library skills, and install or grant your own.
 icon: book-open
 ---
 
-A skill is a guide (`SKILL.md` plus optional files under `references/`) that teaches an agent how to use one part of Ravi. At the end of this page you will know how to list and read the skills that ship with Ravi, copy reference files such as the Pages skeletons, why an agent's first command in a group returns a skill instead of running, how to search, load and publish your organization's Library skills, and how to install and grant skills of your own.
+A skill is a guide (`SKILL.md` plus optional files under `references/`) that teaches an agent how to use one part of Ravi. At the end of this page you will know how to list and read the skills that ship with Ravi, copy reference files such as the Pages skeletons, why an agent's first command in a group returns a skill instead of running, how to search, load, publish and propose your organization's Library skills, and how to install and grant skills of your own.
 
 ## System skills
 
@@ -158,7 +158,30 @@ ravi skills publish ./triage --scope clinic --note "new hours" --execute
 ravi skills publish ./faq --scope org --external --execute   # may load in conversations with outsiders
 ```
 
-Before sending anything, Ravi checks that `SKILL.md` is at the root with a `description` in its frontmatter, that there are at most 100 UTF-8 text files of at most 256 KiB each and 1 MiB in total, and that file paths use only `A-Z a-z 0-9 . _ - /`. Dot files and `node_modules` are left out. The slug is `--slug`, else the `name` in `SKILL.md`, else the folder name. The names of Ravi's own skills and the `ravi-` prefix are reserved. Publishing content identical to the current version creates nothing (`unchanged: true`). If someone published in the meantime, `--execute` fails with `CONFLICT` and `reason: stale_base`; run it again without `--execute` to see the new plan.
+Before sending anything, Ravi checks that `SKILL.md` is at the root with a `description` in its frontmatter, that there are at most 100 UTF-8 text files of at most 256 KiB each and 1 MiB in total, and that file paths use only `A-Z a-z 0-9 . _ - /`. Dot files and `node_modules` are left out. The slug is `--slug`, else the `name` in `SKILL.md`, else the folder name. The names of Ravi's own skills, the `ravi-` prefix and `proposals` are reserved. Publishing content identical to the current version creates nothing (`unchanged: true`). If someone published in the meantime, `--execute` fails with `CONFLICT` and `conflict: stale_base`; run it again without `--execute` to see the new plan.
+
+Agents never publish. Inside an agent session, `ravi skills publish` stops before sending anything with `LIBRARY_AGENT_CANNOT_PUBLISH` (exit 3); the agent proposes the change instead, and a person publishes it.
+
+### Propose a change for review
+
+A proposal is a new version that is not published yet. The people who review the organization's or the project's skills comment on it, file by file and line by line, then publish or reject it in the Console. This is how an agent changes a Library skill, and it works the same from your terminal. The folder rules are the ones for publishing, and proposing is a dry run until you confirm it.
+
+```bash
+ravi skills propose ./weekly-agenda --scope org                                # plan only (exit 3)
+ravi skills propose ./weekly-agenda --scope org --note "Saturday hours" --execute
+ravi skills propose ./triage --scope clinic --draft --execute                  # a draft only you and the reviewers see
+ravi skills proposals --mine                                                    # your open proposals
+ravi skills proposal org/weekly-agenda 3                                        # status, files and review comments
+ravi skills propose ./weekly-agenda --scope org --update 3 --execute           # answer the review
+ravi skills propose ./weekly-agenda --scope org --update 3 --rebase --execute  # after reading the newer version
+```
+
+- A new proposal is written against the version published now (`baseVersion`, `0` for a new skill). The plan lists your open proposals on the same skill in `openProposals`; update one with `--update <number>` instead of opening another.
+- `--update <number>` sends the whole folder and flags again. A draft then waits for review, unless you pass `--draft` again. Updating a proposal under review starts a new round, and earlier comments show as outdated.
+- A proposal is `stale` when someone published a newer version after its base. Read that version with `ravi skills show <ref>`, bring its changes into your folder, then run `--update <number> --rebase`.
+- Inside an agent session, the proposal shows as "agent X for Y", the agent can update only proposals it wrote (`LIBRARY_PROPOSAL_NOT_YOURS`, exit 3), and `--mine` lists only its own.
+- `ravi skills proposal` prints each comment as `file:line`, marked `[outdated]` or `[resolved]` when it is. `ravi skills proposals` lists one skill's proposals when you pass its ref, and takes `--state open|closed|all` and `--project <project>`.
+- A `CONFLICT` carries its reason in `conflict`: `stale_base` (read the newer version and plan again), `unchanged` (nothing differs from the published version), `slug_taken_in_org`, `slug_taken_in_project` or `slug_reserved` (pick another `--slug`), `proposal_closed` (the proposal was decided; propose again without `--update`).
 
 ## Install your own skills
 

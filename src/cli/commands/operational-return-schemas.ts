@@ -1196,6 +1196,116 @@ export const skillsPublishReturnSchema = z
   })
   .strict();
 
+const libraryAuthorReturnSchema = z
+  .object({ name: z.string().nullable(), agentId: z.string().nullable(), self: z.boolean() })
+  .strict();
+
+/** A Library item from the proposal routes: `version` is null while nothing is published. */
+const libraryProposalItemReturnSchema = libraryItemReturnSchema.extend({
+  version: z.number().nullable(),
+  contentHash: z.string().nullable(),
+});
+
+export const libraryProposalReturnSchema = z
+  .object({
+    ref: z.string(),
+    number: z.number(),
+    status: z.enum(["draft", "proposed", "published", "superseded", "rejected", "withdrawn"]),
+    round: z.number(),
+    baseVersion: z.number(),
+    currentVersion: z.number(),
+    stale: z.boolean(),
+    publishedVersion: z.number().nullable(),
+    name: z.string(),
+    description: z.string(),
+    externalAllowed: z.boolean(),
+    note: z.string().nullable(),
+    contentHash: z.string(),
+    fileCount: z.number(),
+    totalBytes: z.number(),
+    author: libraryAuthorReturnSchema,
+    createdAt: z.string().nullable(),
+    updatedAt: z.string().nullable(),
+    proposedAt: z.string().nullable(),
+    decidedAt: z.string().nullable(),
+    decidedBy: z.object({ name: z.string().nullable() }).strict().nullable(),
+    decisionReason: z.string().nullable(),
+    openComments: z.number(),
+    can: z
+      .object({
+        edit: z.boolean(),
+        submit: z.boolean(),
+        withdraw: z.boolean(),
+        publish: z.boolean(),
+        reject: z.boolean(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export const skillsProposeReturnSchema = z
+  .object({
+    success: z.literal(true),
+    ref: z.string(),
+    number: z.number(),
+    status: libraryProposalReturnSchema.shape.status,
+    round: z.number(),
+    baseVersion: z.number(),
+    currentVersion: z.number(),
+    stale: z.boolean(),
+    created: z.boolean(),
+    next: z.string(),
+    proposal: libraryProposalReturnSchema,
+  })
+  .strict();
+
+export const skillsProposalsReturnSchema = z
+  .object({
+    ref: z.string().nullable(),
+    project: z.string().nullable(),
+    state: z.enum(["open", "closed", "all"]),
+    mine: z.boolean(),
+    total: z.number(),
+    item: libraryProposalItemReturnSchema.nullable(),
+    proposals: z.array(libraryProposalReturnSchema.extend({ next: z.string() })),
+  })
+  .strict();
+
+const libraryProposalFileReturnSchema = z.object({ path: z.string(), bytes: z.number(), sha256: z.string() }).strict();
+
+export const skillsProposalReturnSchema = z
+  .object({
+    ref: z.string(),
+    number: z.number(),
+    item: libraryProposalItemReturnSchema,
+    proposal: libraryProposalReturnSchema,
+    files: z.array(libraryProposalFileReturnSchema.extend({ content: z.string().optional() })),
+    base: z
+      .object({ number: z.number(), files: z.array(libraryProposalFileReturnSchema) })
+      .strict()
+      .nullable(),
+    comments: z.array(
+      z
+        .object({
+          id: z.string(),
+          parentId: z.string().nullable(),
+          path: z.string().nullable(),
+          line: z.number().nullable(),
+          round: z.number(),
+          outdated: z.boolean(),
+          body: z.string(),
+          author: libraryAuthorReturnSchema,
+          createdAt: z.string().nullable(),
+          resolvedAt: z.string().nullable(),
+          resolvedBy: z.object({ name: z.string().nullable() }).strict().nullable(),
+          can: z.object({ resolve: z.boolean() }).strict(),
+        })
+        .strict(),
+    ),
+    contentsVisible: z.boolean(),
+  })
+  .strict();
+
 export const skillsInstallReturnSchema = z
   .object({
     success: z.literal(true),

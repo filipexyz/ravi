@@ -52,6 +52,20 @@ const executeConsumers: readonly ExecuteConsumer[] = [
     matches: 2,
   },
   {
+    name: "Library publish refusal inside an agent",
+    path: "src/cli/commands/skills.ts",
+    marker: "const suggestedAction = `ravi skills propose",
+    expected: "--execute",
+    matches: 1,
+  },
+  {
+    name: "Library proposal review answer hint",
+    path: "src/cli/commands/skills.ts",
+    marker: "Answer the review by updating it: ravi skills propose",
+    expected: "--execute",
+    matches: 1,
+  },
+  {
     name: "sentinel WhatsApp DM reply hint",
     path: "src/omni/consumer.ts",
     marker: "use whatsapp dm send",
@@ -170,6 +184,26 @@ const executeInstructions = [
     name: "Library publish help",
     path: "src/cli/commands/skills.ts",
     instruction: "ravi skills publish ./agenda-semanal --scope org --execute",
+  },
+  {
+    name: "Library propose skill",
+    path: "src/plugins/internal/ravi-system/skills/skills/SKILL.md",
+    instruction: "ravi skills propose ./agenda-semanal --scope org --update 3 --execute",
+  },
+  {
+    name: "Library propose documentation",
+    path: "docs/reference/skills.mdx",
+    instruction: "ravi skills propose ./weekly-agenda --scope org --update 3 --execute",
+  },
+  {
+    name: "Library propose help",
+    path: "src/cli/commands/skills.ts",
+    instruction: "ravi skills propose ./agenda-semanal --scope org --update 3 --execute",
+  },
+  {
+    name: "Library proposal help",
+    path: "src/cli/commands/skills.ts",
+    instruction: "ravi skills propose <dir> --scope ... --update <n> --execute",
   },
   {
     name: "Page Chat enable documentation",

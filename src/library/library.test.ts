@@ -16,15 +16,27 @@ import { openLibrarySession } from "./client.js";
 import { LibraryPackageError, readLibraryPackage } from "./package.js";
 import { isReservedLibrarySlug, looksLikeLibraryRef, parseLibraryRef } from "./refs.js";
 import {
+  executeLibraryProposal,
   executeLibraryPublish,
   LibraryCommandError,
+  listLibraryProposals,
   normalizeSearchText,
+  prepareLibraryProposal,
   prepareLibraryPublish,
   searchSkills,
+  showLibraryProposal,
   showLibrarySkill,
   type LibraryServiceDeps,
 } from "./service.js";
-import { createFakeConsole, fakeCredentials, fakeSession, fakeSkill, type FakeConsole } from "./test-fixtures.js";
+import {
+  createFakeConsole,
+  fakeComment,
+  fakeCredentials,
+  fakeProposal,
+  fakeSession,
+  fakeSkill,
+  type FakeConsole,
+} from "./test-fixtures.js";
 
 let stateDir: string | null = null;
 let workDir: string;
@@ -90,6 +102,7 @@ describe("library refs", () => {
     expect(isReservedLibrarySlug("skill-creator")).toBe(true);
     expect(isReservedLibrarySlug("skills")).toBe(true);
     expect(isReservedLibrarySlug("ravi-anything")).toBe(true);
+    expect(isReservedLibrarySlug("proposals")).toBe(true);
     expect(isReservedLibrarySlug("agenda-semanal")).toBe(false);
   });
 
@@ -428,5 +441,187 @@ describe("library publish", () => {
     const cached = readCachedLibrarySkill("org-1", "org/agenda-semanal");
     expect(cached?.version.number).toBe(1);
     expect(readFileSync(join(cached!.dir, "references", "horarios.md"), "utf8")).toBe("# Horários\n");
+  });
+});
+
+describe("library proposals", () => {
+  function skillDir(name = "agenda-semanal", description = "Agenda da semana"): string {
+    const dir = join(workDir, name);
+    mkdirSync(join(dir, "references"), { recursive: true });
+    writeFileSync(join(dir, "SKILL.md"), `---\nname: ${name}\ndescription: ${description}\n---\n\n# Agenda\n`);
+    writeFileSync(join(dir, "references", "horarios.md"), "# Horários\n");
+    return dir;
+  }
+
+  it("plans a new proposal on the published version and lists the caller's open ones", async () => {
+    const fake = createFakeConsole(
+      [fakeSkill({ slug: "agenda-semanal", version: 2 })],
+      [fakeProposal({ slug: "agenda-semanal", number: 1, baseVersion: 2, status: "draft" })],
+    );
+    const prepared = await prepareLibraryProposal({ dir: skillDir(), scope: "org" }, deps(fake));
+    expect(prepared.plan).toMatchObject({
+      ref: "org/agenda-semanal",
+      exists: true,
+      currentVersion: 2,
+      baseVersion: 2,
+      submit: true,
+      update: null,
+      stale: false,
+      openProposals: [1],
+      agent: null,
+    });
+    expect(prepared.plan.hint).toContain("--update 1");
+    expect(fake.requests.every((request) => request.method === "GET")).toBe(true);
+  });
+
+  it("creates with baseVersion, submit and the agent; --draft keeps a draft", async () => {
+    const fake = createFakeConsole([]);
+    const caller = { agentId: "autor" };
+    const prepared = await prepareLibraryProposal({ dir: skillDir(), scope: "org", caller }, deps(fake));
+    expect(prepared.plan).toMatchObject({ exists: false, currentVersion: 0, baseVersion: 0, agent: "autor" });
+    const created = await executeLibraryProposal(prepared);
+    expect(created).toMatchObject({ created: true, proposal: { number: 1, status: "proposed" } });
+    expect(fake.requests.at(-1)).toMatchObject({
+      method: "POST",
+      path: "/api/cli/library/skills/proposals",
+      body: { scope: "org", slug: "agenda-semanal", baseVersion: 0, submit: true, agent: { id: "autor" } },
+    });
+
+    const draft = await prepareLibraryProposal(
+      { dir: skillDir("rascunho"), scope: "clinica", draft: true },
+      deps(fake),
+    );
+    expect(draft.plan.submit).toBe(false);
+    const saved = await executeLibraryProposal(draft);
+    expect(saved.proposal.status).toBe("draft");
+    expect(fake.requests.at(-1)?.body).toMatchObject({ scope: "project", project: "clinica", submit: false });
+    expect(fake.requests.at(-1)?.body).not.toHaveProperty("agent");
+  });
+
+  it("updates a stale proposal keeping its base unless --rebase", async () => {
+    const fake = createFakeConsole(
+      [fakeSkill({ slug: "agenda-semanal", version: 2 })],
+      [fakeProposal({ slug: "agenda-semanal", number: 3, baseVersion: 1, status: "draft" })],
+    );
+    const plain = await prepareLibraryProposal({ dir: skillDir(), scope: "org", update: 3 }, deps(fake));
+    expect(plain.plan).toMatchObject({
+      update: 3,
+      baseVersion: 1,
+      currentVersion: 2,
+      stale: true,
+      proposal: { number: 3, status: "draft", stale: true },
+    });
+    expect(plain.plan.hint).toContain("--update 3 --rebase");
+    await executeLibraryProposal(plain);
+    const sent = fake.requests.at(-1);
+    expect(sent?.path).toBe("/api/cli/library/skills/org/agenda-semanal/proposals/3/update");
+    expect(sent?.body).toMatchObject({ submit: true });
+    expect(sent?.body).not.toHaveProperty("baseVersion");
+
+    const rebased = await prepareLibraryProposal(
+      { dir: skillDir(), scope: "org", update: 3, rebase: true, draft: false },
+      deps(fake),
+    );
+    expect(rebased.plan).toMatchObject({ baseVersion: 2, stale: false, rebase: true });
+    const result = await executeLibraryProposal(rebased);
+    expect(fake.requests.at(-1)?.body).toMatchObject({ baseVersion: 2 });
+    expect(fake.requests.at(-1)?.body).not.toHaveProperty("submit");
+    expect(result.proposal).toMatchObject({ baseVersion: 2, stale: false, round: 2 });
+  });
+
+  it("refuses --rebase without --update, closed proposals and proposals by someone else", async () => {
+    const fake = createFakeConsole(
+      [],
+      [
+        fakeProposal({ slug: "agenda-semanal", number: 1, status: "rejected" }),
+        fakeProposal({ slug: "agenda-semanal", number: 2, author: { name: "Ana", agentId: null, self: false } }),
+        fakeProposal({ slug: "agenda-semanal", number: 3, author: { name: "Op", agentId: "outro", self: true } }),
+      ],
+    );
+    const dir = skillDir();
+    await expect(prepareLibraryProposal({ dir, scope: "org", rebase: true }, deps(fake))).rejects.toMatchObject({
+      code: "USAGE_ERROR",
+      exitCode: 2,
+    });
+    await expect(prepareLibraryProposal({ dir, scope: "org", update: 1 }, deps(fake))).rejects.toMatchObject({
+      code: "CONFLICT",
+      details: { conflict: "proposal_closed" },
+    });
+    await expect(prepareLibraryProposal({ dir, scope: "org", update: 2 }, deps(fake))).rejects.toMatchObject({
+      code: "LIBRARY_PROPOSAL_NOT_YOURS",
+      exitCode: 3,
+    });
+    await expect(
+      prepareLibraryProposal({ dir, scope: "org", update: 3, caller: { agentId: "autor" } }, deps(fake)),
+    ).rejects.toMatchObject({ code: "LIBRARY_PROPOSAL_NOT_YOURS" });
+    await expect(prepareLibraryProposal({ dir, scope: "org", update: 9 }, deps(fake))).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      exitCode: 1,
+    });
+  });
+
+  it("lists in the agent's view: org plus its project, --mine is what the agent wrote", async () => {
+    const fake = createFakeConsole(
+      [],
+      [
+        fakeProposal({ slug: "agenda", number: 1, author: { name: "Op", agentId: "autor", self: true } }),
+        fakeProposal({ slug: "triagem", project: "clinica", number: 1, externalAllowed: true }),
+        fakeProposal({ slug: "outra", project: "loja", number: 1 }),
+      ],
+    );
+    const operator = await listLibraryProposals({}, deps(fake));
+    expect(operator.proposals.map((entry) => entry.ref)).toEqual(["org/agenda", "clinica/triagem", "loja/outra"]);
+
+    const agent = await listLibraryProposals({ caller: { agentId: "autor" } }, deps(fake, { slug: "clinica" }));
+    expect(agent.project).toBe("clinica");
+    expect(agent.proposals.map((entry) => entry.ref)).toEqual(["org/agenda", "clinica/triagem"]);
+    const noProject = await listLibraryProposals({ caller: { agentId: "autor" } }, deps(fake));
+    expect(noProject.proposals.map((entry) => entry.ref)).toEqual(["org/agenda"]);
+    const mine = await listLibraryProposals({ caller: { agentId: "autor" }, mine: true }, deps(fake));
+    expect(mine.proposals.map((entry) => entry.ref)).toEqual(["org/agenda"]);
+
+    const outside = await listLibraryProposals({}, deps(fake, null, false));
+    expect(outside.proposals.map((entry) => entry.ref)).toEqual(["clinica/triagem"]);
+
+    const item = await listLibraryProposals({ ref: parseLibraryRef("org/agenda")!, state: "all" }, deps(fake));
+    expect(item).toMatchObject({ ref: "org/agenda", total: 1, item: { slug: "agenda", version: null } });
+  });
+
+  it("shows contents to their agent author and refuses a turn that is not the operator's own", async () => {
+    const fake = createFakeConsole(
+      [],
+      [
+        fakeProposal({
+          slug: "agenda",
+          number: 1,
+          author: { name: "Op", agentId: "autor", self: true },
+          comments: [fakeComment({ id: "c1", body: "Falta o sábado", path: "SKILL.md", line: 4 })],
+        }),
+      ],
+    );
+    const ref = parseLibraryRef("org/agenda")!;
+    configuredAgent("leitor");
+    const own = await showLibraryProposal({ ref, number: 1, caller: { agentId: "autor" } }, deps(fake));
+    expect(own).toMatchObject({ contentsVisible: true, comments: [{ path: "SKILL.md", line: 4 }] });
+    const other = await showLibraryProposal({ ref, number: 1, caller: { agentId: "leitor" } }, deps(fake));
+    expect(other.contentsVisible).toBe(false);
+    await expect(showLibraryProposal({ ref, number: 1 }, deps(fake, null, false))).rejects.toMatchObject({
+      code: "LIBRARY_SKILL_EXTERNAL_DENIED",
+      exitCode: 3,
+    });
+  });
+
+  it("keeps an agent away from proposals of another project", async () => {
+    const fake = createFakeConsole([], [fakeProposal({ slug: "outra", project: "loja", number: 1 })]);
+    await expect(
+      showLibraryProposal(
+        { ref: parseLibraryRef("loja/outra")!, number: 1, caller: { agentId: "autor" } },
+        deps(fake, { slug: "clinica" }),
+      ),
+    ).rejects.toMatchObject({ code: "LIBRARY_SKILL_OUT_OF_VIEW" });
+    await expect(
+      prepareLibraryProposal({ dir: skillDir(), scope: "loja", caller: { agentId: "autor" } }, deps(fake)),
+    ).rejects.toMatchObject({ code: "LIBRARY_SKILL_OUT_OF_VIEW" });
+    expect(fake.requests).toEqual([]);
   });
 });

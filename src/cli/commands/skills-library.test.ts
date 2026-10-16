@@ -4,7 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { writeCloudCredentials } from "../../cloud-auth/storage.js";
-import { createFakeConsole, fakeCredentials, fakeSkill, type FakeConsole } from "../../library/test-fixtures.js";
+import {
+  createFakeConsole,
+  fakeComment,
+  fakeCredentials,
+  fakeProposal,
+  fakeSkill,
+  type FakeConsole,
+} from "../../library/test-fixtures.js";
 import { dbCreateAgent, dbListSkillGrantsForAgent, dbUpdateAgent } from "../../router/router-db.js";
 import { dbUpsertSkillGrant } from "../../router/index.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
@@ -24,6 +31,7 @@ beforeEach(async () => {
     fakeSkill({ slug: "agenda-semanal", version: 2, description: "Monta a agenda da semana" }),
     fakeSkill({ slug: "aberta", externalAllowed: true }),
   ]);
+  fake.proposals = [];
   fetchSpy = spyOn(globalThis, "fetch").mockImplementation(((input: string | URL | Request, init?: RequestInit) =>
     fake.fetch(String(input instanceof Request ? input.url : input), init)) as typeof fetch);
 });
@@ -77,6 +85,20 @@ async function contractError(run: () => unknown): Promise<ContractError> {
   }
   expect(thrown).toBeInstanceOf(ContractError);
   return thrown as ContractError;
+}
+
+async function captureAsync<T>(run: () => Promise<T>): Promise<{ result: T; lines: string[] }> {
+  const log = console.log;
+  const error = console.error;
+  const lines: string[] = [];
+  console.log = (...args: unknown[]) => lines.push(args.map(String).join(" "));
+  console.error = () => {};
+  try {
+    return { result: await run(), lines };
+  } finally {
+    console.log = log;
+    console.error = error;
+  }
 }
 
 function libraryRequests(): string[] {
@@ -292,5 +314,237 @@ describe("skills grant/revoke with Library refs", () => {
       runWithContext({}, () => commands.grant("grantee2", "org/pages", undefined, true)),
     );
     expect(reserved).toMatchObject({ code: "LIBRARY_SLUG_RESERVED", exitCode: 2 });
+  });
+});
+
+describe("skills propose", () => {
+  const propose = (
+    dir: string,
+    options: {
+      scope?: string;
+      draft?: boolean;
+      update?: string;
+      rebase?: boolean;
+      external?: boolean;
+      asJson?: boolean;
+      execute?: boolean;
+    } = {},
+  ) =>
+    new SkillsCommands().propose(
+      dir,
+      options.scope ?? "org",
+      undefined,
+      undefined,
+      undefined,
+      options.external,
+      options.draft,
+      options.update,
+      options.rebase,
+      options.asJson ?? true,
+      options.execute,
+    );
+
+  it("dry-runs with the plan (exit 3) and only reads", async () => {
+    login();
+    const error = await contractError(() => runWithContext({}, () => propose(skillDir())));
+    expect(error).toMatchObject({ code: "WRITE_REQUIRES_EXECUTE", exitCode: 3 });
+    expect(error.details.plan).toMatchObject({
+      ref: "org/agenda-semanal",
+      exists: true,
+      currentVersion: 2,
+      baseVersion: 2,
+      submit: true,
+      update: null,
+      stale: false,
+      unchanged: false,
+      files: [
+        { file: "SKILL.md", bytes: expect.any(Number) },
+        { file: "references/horarios.md", bytes: expect.any(Number) },
+      ],
+    });
+    expect(libraryRequests()).toEqual([
+      "GET /api/cli/library/skills/org/agenda-semanal",
+      "GET /api/cli/library/skills/org/agenda-semanal/proposals",
+    ]);
+  });
+
+  it("proposes a new item from an agent runtime with submit, baseVersion and the agent", async () => {
+    login();
+    const { result, lines } = await captureAsync(() =>
+      runWithContext({ transport: "tool", agentId: "autor" }, () =>
+        propose(skillDir("nova-skill"), { asJson: false, execute: true }),
+      ),
+    );
+    expect(result).toMatchObject({
+      success: true,
+      ref: "org/nova-skill",
+      number: 1,
+      status: "proposed",
+      created: true,
+    });
+    const post = fake.requests.find((request) => request.method === "POST");
+    expect(post).toMatchObject({
+      path: "/api/cli/library/skills/proposals",
+      body: { scope: "org", slug: "nova-skill", baseVersion: 0, submit: true, agent: { id: "autor" } },
+    });
+    expect(lines[0]).toBe("✓ Proposed org/nova-skill (proposal 1), waiting for review");
+    expect(lines.at(-1)).toBe("  Follow it with: ravi skills proposal org/nova-skill 1");
+  });
+
+  it("saves a draft with --draft", async () => {
+    login();
+    const { result, lines } = await captureAsync(() =>
+      runWithContext({}, () => propose(skillDir("rascunho"), { draft: true, asJson: false, execute: true })),
+    );
+    expect(result.status).toBe("draft");
+    expect(fake.requests.find((request) => request.method === "POST")?.body).toMatchObject({ submit: false });
+    expect(lines[0]).toContain("✓ Saved draft org/rascunho (proposal 1)");
+  });
+
+  it("updates a stale draft keeping its base, and moves it with --rebase", async () => {
+    login();
+    fake.proposals.push(fakeProposal({ slug: "agenda-semanal", number: 3, baseVersion: 1, status: "draft" }));
+    const dir = skillDir();
+    const plan = await contractError(() => runWithContext({}, () => propose(dir, { update: "3" })));
+    expect(plan.details.plan).toMatchObject({ update: 3, baseVersion: 1, currentVersion: 2, stale: true });
+
+    const kept = await quietAsync(() => runWithContext({}, () => propose(dir, { update: "3", execute: true })));
+    expect(kept).toMatchObject({ created: false, status: "proposed", baseVersion: 1, stale: true });
+    const firstUpdate = fake.requests.filter((request) => request.method === "POST").at(-1);
+    expect(firstUpdate?.path).toBe("/api/cli/library/skills/org/agenda-semanal/proposals/3/update");
+    expect(firstUpdate?.body).toMatchObject({ submit: true });
+    expect(firstUpdate?.body).not.toHaveProperty("baseVersion");
+
+    const rebased = await quietAsync(() =>
+      runWithContext({}, () => propose(dir, { update: "3", rebase: true, execute: true })),
+    );
+    expect(rebased).toMatchObject({ baseVersion: 2, stale: false, round: 2 });
+    expect(fake.requests.filter((request) => request.method === "POST").at(-1)?.body).toMatchObject({
+      baseVersion: 2,
+    });
+  });
+
+  it("refuses a bad --update and --rebase without --update (exit 2)", async () => {
+    login();
+    const bad = await contractError(() => runWithContext({}, () => propose(skillDir(), { update: "x" })));
+    expect(bad).toMatchObject({ code: "USAGE_ERROR", exitCode: 2 });
+    const rebase = await contractError(() => runWithContext({}, () => propose(skillDir(), { rebase: true })));
+    expect(rebase).toMatchObject({ code: "USAGE_ERROR", exitCode: 2 });
+    expect(libraryRequests()).toEqual([]);
+  });
+
+  it("maps unchanged and stale_base conflicts to their next step", async () => {
+    login();
+    const published = fake.skills[0]!;
+    const dir = join(workDir, "agenda-semanal");
+    mkdirSync(join(dir, "references"), { recursive: true });
+    for (const file of published.files) writeFileSync(join(dir, ...file.path.split("/")), file.content);
+    const same = await contractError(() => runWithContext({}, () => propose(dir, { execute: true })));
+    expect(same).toMatchObject({ code: "CONFLICT", details: { conflict: "unchanged" } });
+    expect(String(same.details.suggestedAction)).toContain("nothing to propose");
+
+    // Someone publishes between the plan and the POST.
+    fetchSpy?.mockImplementation(((input: string | URL | Request, init?: RequestInit) => {
+      if ((init?.method ?? "GET").toUpperCase() === "POST") published.item.version = 3;
+      return fake.fetch(String(input instanceof Request ? input.url : input), init);
+    }) as typeof fetch);
+    const stale = await contractError(() => runWithContext({}, () => propose(skillDir(), { execute: true })));
+    expect(stale).toMatchObject({ code: "CONFLICT", details: { conflict: "stale_base", currentVersion: 3 } });
+    expect(String(stale.details.suggestedAction)).toContain("ravi skills show <ref>");
+  });
+});
+
+describe("skills proposals and proposal", () => {
+  beforeEach(() => {
+    fake.proposals.push(
+      fakeProposal({
+        slug: "agenda-semanal",
+        number: 2,
+        baseVersion: 1,
+        author: { name: "Op", agentId: "atendente", self: true },
+        note: "horários de sábado",
+        comments: [
+          fakeComment({ id: "c1", body: "Falta o sábado", path: "SKILL.md", line: 4, round: 1, outdated: true }),
+          fakeComment({
+            id: "c2",
+            parentId: "c1",
+            body: "Ok, vou ajustar",
+            author: { name: "Op", agentId: "atendente", self: true },
+          }),
+          fakeComment({ id: "c3", body: "Ficou bom", resolvedAt: "2026-10-16T01:00:00.000Z" }),
+        ],
+      }),
+    );
+  });
+
+  it("lists rows with ref, number, status, stale, author and open comments", async () => {
+    login();
+    const { result, lines } = await captureAsync(() =>
+      runWithContext({}, () => new SkillsCommands().proposals(undefined, undefined, undefined, undefined, false)),
+    );
+    expect(result).toMatchObject({ state: "open", total: 1 });
+    expect(result.proposals[0]).toMatchObject({ next: "ravi skills proposal org/agenda-semanal 2", openComments: 1 });
+    expect(lines).toEqual([
+      "org/agenda-semanal #2 proposed [stale] — agent atendente for Op — 1 open comment",
+      "  ravi skills proposal org/agenda-semanal 2",
+    ]);
+    const item = await quietAsync(() =>
+      runWithContext({}, () => new SkillsCommands().proposals("org/agenda-semanal", undefined, "all", undefined, true)),
+    );
+    expect(item).toMatchObject({ ref: "org/agenda-semanal", total: 1, item: { version: 2 } });
+    expect(libraryRequests().at(-1)).toBe("GET /api/cli/library/skills/org/agenda-semanal/proposals");
+  });
+
+  it("refuses a bad --state (exit 2)", async () => {
+    login();
+    const error = await contractError(() =>
+      runWithContext({}, () => new SkillsCommands().proposals(undefined, undefined, "pending", undefined, true)),
+    );
+    expect(error).toMatchObject({ code: "USAGE_ERROR", exitCode: 2 });
+  });
+
+  it("shows status, files and the review comments", async () => {
+    login();
+    const { result, lines } = await captureAsync(() =>
+      runWithContext({}, () => new SkillsCommands().proposal("org/agenda-semanal", "2", false)),
+    );
+    expect(result).toMatchObject({ ref: "org/agenda-semanal", number: 2, contentsVisible: true, base: { number: 1 } });
+    expect(result.files[0]).toMatchObject({ path: "SKILL.md", content: expect.any(String) });
+    expect(lines).toContain("Author: agent atendente for Op");
+    expect(lines).toContain("Note: horários de sábado");
+    expect(lines.some((line) => line.startsWith("Stale: version 2 was published"))).toBe(true);
+    expect(lines).toContain("Comments (1 open):");
+    expect(lines).toContain("  SKILL.md:4 [outdated, round 1] Ana: Falta o sábado");
+    expect(lines).toContain("    ↳ agent atendente for Op: Ok, vou ajustar");
+    expect(lines).toContain("  [resolved] Ana: Ficou bom");
+    expect(lines.at(-1)).toBe(
+      "Answer the review by updating it: ravi skills propose <dir> --scope org --update 2 --execute",
+    );
+  });
+
+  it("answers NOT_FOUND for an unknown proposal and LIBRARY_REF_INVALID for a bad ref", async () => {
+    login();
+    const missing = await contractError(() =>
+      runWithContext({}, () => new SkillsCommands().proposal("org/agenda-semanal", "9", true)),
+    );
+    expect(missing).toMatchObject({ code: "NOT_FOUND", exitCode: 1 });
+    const invalid = await contractError(() =>
+      runWithContext({}, () => new SkillsCommands().proposal("agenda", "1", true)),
+    );
+    expect(invalid).toMatchObject({ code: "LIBRARY_REF_INVALID", exitCode: 2 });
+  });
+});
+
+describe("skills publish inside an agent", () => {
+  it("is refused with LIBRARY_AGENT_CANNOT_PUBLISH (exit 3) before any request", async () => {
+    login();
+    const error = await contractError(() =>
+      runWithContext({ transport: "tool", agentId: "autor" }, () =>
+        new SkillsCommands().publish(skillDir(), "org", undefined, undefined, undefined, false, true, true),
+      ),
+    );
+    expect(error).toMatchObject({ code: "LIBRARY_AGENT_CANNOT_PUBLISH", exitCode: 3 });
+    expect(error.details.suggestedAction).toBe("ravi skills propose <dir> --scope org --execute");
+    expect(fake.requests).toEqual([]);
   });
 });

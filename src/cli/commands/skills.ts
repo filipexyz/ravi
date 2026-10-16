@@ -6,6 +6,7 @@ import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import {
   CONTRACT_EXIT_ERROR,
+  CONTRACT_EXIT_POLICY,
   CONTRACT_EXIT_USAGE,
   ContractError,
   contractDryRun,
@@ -21,14 +22,21 @@ import { readCloudCredentials } from "../../cloud-auth/storage.js";
 import { LibraryPackageError } from "../../library/package.js";
 import { isLibrarySlug, isReservedLibrarySlug, looksLikeLibraryRef, parseLibraryRef } from "../../library/refs.js";
 import {
+  executeLibraryProposal,
   executeLibraryPublish,
+  LIBRARY_AGENT_CANNOT_PUBLISH,
   LibraryCommandError,
+  listLibraryProposals,
+  prepareLibraryProposal,
   prepareLibraryPublish,
   searchSkills,
+  showLibraryProposal,
   showLibrarySkill,
   type LibraryCaller,
+  type LibraryProposalState,
   type LibraryShowOutcome,
 } from "../../library/service.js";
+import type { LibraryProposal, LibraryProposalComment } from "../../library/types.js";
 import { fail, getContext, hasRuntimeInvocationContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { syncCodexSkills } from "../../plugins/codex-skills.js";
@@ -78,6 +86,9 @@ import {
   skillShowReturnSchema,
   skillsInstallReturnSchema,
   skillsListReturnSchema,
+  skillsProposalReturnSchema,
+  skillsProposalsReturnSchema,
+  skillsProposeReturnSchema,
   skillsPublishReturnSchema,
   skillsSearchReturnSchema,
   skillsSyncReturnSchema,
@@ -431,24 +442,67 @@ async function withLibraryContract<T>(op: string, asJson: boolean | undefined, r
     if (isCloudAuthError(error)) {
       const base = cloudErrorToContractError(op, error);
       const reason = typeof error.details?.reason === "string" ? error.details.reason : undefined;
-      const contract =
-        error.code === "CONFLICT" && reason
-          ? new ContractError(op, base.code, base.message, base.exitCode, {
-              ...base.details,
-              reason,
-              ...(typeof error.details?.currentVersion === "number"
-                ? { currentVersion: error.details.currentVersion }
-                : {}),
-              suggestedAction:
-                reason === "stale_base"
-                  ? "Someone published a newer version: run the same publish again without --execute to see the new plan"
-                  : "Pick another slug with --slug",
-            })
-          : base;
+      const copy = error.code === "CONFLICT" && reason ? libraryConflictCopy(op, reason) : null;
+      const contract = copy
+        ? new ContractError(op, base.code, copy.message ?? base.message, base.exitCode, {
+            ...base.details,
+            // The envelope redacts `reason` as free text; `conflict` carries the code.
+            reason,
+            conflict: reason,
+            ...(typeof error.details?.currentVersion === "number"
+              ? { currentVersion: error.details.currentVersion }
+              : {}),
+            ...(typeof error.details?.baseVersion === "number" ? { baseVersion: error.details.baseVersion } : {}),
+            ...(typeof error.details?.status === "string" ? { proposalStatus: error.details.status } : {}),
+            suggestedAction: copy.suggestedAction,
+          })
+        : base;
       renderContractError(contract, asJson);
       throw contract;
     }
     throw error;
+  }
+}
+
+/** What a Library `CONFLICT` (by `details.reason`) means for the command that got it. */
+function libraryConflictCopy(op: string, reason: string): { message?: string; suggestedAction: string } {
+  switch (reason) {
+    case "stale_base":
+      return op === "skills propose"
+        ? {
+            message: "The published version changed after the plan was read.",
+            suggestedAction:
+              "Read the new version with 'ravi skills show <ref>', bring its changes into your folder, then run the same propose without --execute to see the new plan (with --update, add --rebase)",
+          }
+        : {
+            message: "Someone published a newer version after the plan was read.",
+            suggestedAction:
+              "Someone published a newer version: run the same publish again without --execute to see the new plan",
+          };
+    case "unchanged":
+      return {
+        message: "The folder and its metadata are exactly the published version.",
+        suggestedAction: "Change a file or the description first: there is nothing to propose",
+      };
+    case "slug_taken_in_org":
+      return {
+        message: "The organization already has a Library skill with this slug.",
+        suggestedAction: "Pick another slug with --slug, or use --scope org to change the organization's skill",
+      };
+    case "slug_taken_in_project":
+      return {
+        message: "A project already has a Library skill with this slug.",
+        suggestedAction: "Pick another slug with --slug",
+      };
+    case "slug_reserved":
+      return { message: "This slug is reserved.", suggestedAction: "Pick another slug with --slug" };
+    case "proposal_closed":
+      return {
+        message: "The proposal is closed (published, rejected or withdrawn).",
+        suggestedAction: "Open a new proposal: run the same command without --update",
+      };
+    default:
+      return { suggestedAction: "Run the same command without --execute to see the current plan" };
   }
 }
 
@@ -465,6 +519,80 @@ function libraryOutcomeAsSkill(outcome: LibraryShowOutcome): RaviSkill {
     source: "library",
     files: outcome.version.files.map((file) => ({ path: file.path, content: file.content })),
   };
+}
+
+/** "agent X for Y", or the member's name. */
+function proposalAuthorLabel(author: LibraryProposal["author"]): string {
+  const name = author.name ?? (author.self ? "you" : "a member");
+  return author.agentId
+    ? `agent ${author.agentId} for ${name}`
+    : `${name}${author.self && author.name ? " (you)" : ""}`;
+}
+
+function formatBytes(bytes: number): string {
+  return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KiB`;
+}
+
+const PROPOSAL_STATUS_COPY: Record<string, string> = {
+  draft: "draft, not submitted",
+  proposed: "waiting for review",
+  published: "published",
+  superseded: "published, since superseded",
+  rejected: "rejected",
+  withdrawn: "withdrawn",
+};
+
+/** The text form of `skills proposal`: what an author needs to answer the review. */
+function proposalShowLines(view: {
+  ref: string;
+  proposal: LibraryProposal;
+  files: Array<{ path: string; bytes: number }>;
+  base: { number: number } | null;
+  comments: LibraryProposalComment[];
+}): string[] {
+  const { proposal } = view;
+  const lines = [
+    `${view.ref} proposal ${proposal.number}: ${proposal.status} (${PROPOSAL_STATUS_COPY[proposal.status] ?? proposal.status}), round ${proposal.round}`,
+    `Author: ${proposalAuthorLabel(proposal.author)}`,
+    `Base version: ${proposal.baseVersion || "none (new skill)"} · published now: ${proposal.currentVersion || "none"}${proposal.publishedVersion ? ` · published as version ${proposal.publishedVersion}` : ""}`,
+  ];
+  if (proposal.stale) {
+    lines.push(
+      `Stale: version ${proposal.currentVersion} was published after this proposal was written. Read it (ravi skills show ${view.ref}), bring its changes into your folder, then update with --update ${proposal.number} --rebase.`,
+    );
+  }
+  if (proposal.note) lines.push(`Note: ${proposal.note}`);
+  if (proposal.decisionReason || proposal.decidedBy) {
+    lines.push(
+      `Decision: ${proposal.status}${proposal.decidedBy?.name ? ` by ${proposal.decidedBy.name}` : ""}${proposal.decisionReason ? `: ${proposal.decisionReason}` : ""}`,
+    );
+  }
+  lines.push(`Files (${view.files.length}, ${formatBytes(proposal.totalBytes)}):`);
+  for (const file of view.files) lines.push(`  ${file.path}  ${formatBytes(file.bytes)}`);
+  const topLevel = view.comments.filter((comment) => !comment.parentId);
+  const open = topLevel.filter((comment) => !comment.resolvedAt).length;
+  lines.push(view.comments.length === 0 ? "Comments: none" : `Comments (${open} open):`);
+  for (const comment of topLevel) {
+    lines.push(`  ${commentLine(comment)}`);
+    for (const reply of view.comments.filter((entry) => entry.parentId === comment.id)) {
+      lines.push(`    ↳ ${commentLine(reply)}`);
+    }
+  }
+  if (proposal.can.edit) {
+    lines.push(
+      `Answer the review by updating it: ravi skills propose <dir> --scope ${view.ref.split("/")[0]} --update ${proposal.number} --execute`,
+    );
+  }
+  return lines;
+}
+
+function commentLine(comment: LibraryProposalComment): string {
+  const where = comment.path ? `${comment.path}${comment.line ? `:${comment.line}` : ""} ` : "";
+  const marks = [comment.outdated ? `[outdated, round ${comment.round}]` : "", comment.resolvedAt ? "[resolved]" : ""]
+    .filter(Boolean)
+    .join(" ");
+  const body = comment.body.replace(/\s+/g, " ").trim();
+  return `${where}${marks ? `${marks} ` : ""}${proposalAuthorLabel(comment.author)}: ${body}`;
 }
 
 function failLibraryRefInvalid(op: string, value: string, asJson?: boolean): never {
@@ -489,7 +617,7 @@ function libraryGrantId(op: string, value: string, asJson?: boolean): string | n
   const ref = parseLibraryRef(value);
   if (!ref) failLibraryRefInvalid(op, value, asJson);
   if (isReservedLibrarySlug(ref.slug)) {
-    const message = `'${ref.slug}' names a skill that ships with Ravi, so no Library skill can use it. Grant the Ravi skill by its name.`;
+    const message = `'${ref.slug}' is reserved (a skill that ships with Ravi or a Library route word), so no Library skill can use it. Grant a Ravi skill by its name.`;
     contractFail(op, "LIBRARY_SLUG_RESERVED", message, {
       asJson,
       exitCode: CONTRACT_EXIT_USAGE,
@@ -678,15 +806,107 @@ EXAMPLES
   ravi skills publish ./agenda-semanal --scope org --execute
   ravi skills publish ./agenda-semanal --scope clinica --note "horários novos" --execute --json
 
+AGENTES NÃO PUBLICAM
+  Dentro de um agente o comando recusa antes de qualquer request
+  (LIBRARY_AGENT_CANNOT_PUBLISH, exit 3): o agente propõe com
+  \`ravi skills propose\` e uma pessoa revisa e publica no Console.
+
 ON ERROR (reason → fix)
   exit 3 WRITE_REQUIRES_EXECUTE   → revise o plano e repita com --execute.
+  exit 3 LIBRARY_AGENT_CANNOT_PUBLISH → dentro de um agente: use ravi skills propose.
   LIBRARY_PACKAGE_INVALID (2)     → a pasta falhou numa regra acima.
   LIBRARY_SLUG_RESERVED (2)       → escolha outro --slug.
   CONFLICT reason=stale_base      → alguém publicou antes: rode sem --execute de novo.
   AUTH_REQUIRED                   → rode \`ravi login\`.
 
 FONTES
-  src/cli/commands/skills.ts · src/library/package.ts · 2026-10-13
+  src/cli/commands/skills.ts · src/library/package.ts · 2026-10-16
+`;
+
+const SKILLS_PROPOSE_HELP_AFTER = `
+MUTA (FREIO) — propõe uma versão nova de uma skill da Biblioteca sem publicar:
+uma pessoa revisa (comenta por arquivo e linha) e publica ou rejeita no Console.
+É assim que um agente muda uma skill da Biblioteca. A pasta é lida e checada
+como no publish. Sem --execute devolve o plano (exit 3): ref, se o item existe,
+versão publicada, baseVersion, arquivos, hash, submit e, com --update, a proposta
+e se ela está stale. Com --execute cria a proposta (ou o rascunho, com --draft).
+
+PROPOSTA NOVA
+  baseVersion = versão publicada agora (0 se não há). submit = true, salvo --draft
+  (rascunho: só você e os revisores do escopo veem). O plano lista em
+  openProposals as suas propostas abertas no item: atualize uma em vez de abrir outra.
+
+ATUALIZAR (--update <n>)
+  Manda o conteúdo inteiro de novo (pasta e flags). Um rascunho passa a esperar
+  revisão, salvo --draft. Uma proposta já em revisão abre uma rodada nova; os
+  comentários antigos ficam marcados como outdated. Sem --rebase a proposta mantém
+  a base. Se alguém publicou uma versão nova, ela fica stale: leia a versão nova
+  (\`ravi skills show <ref>\`), traga as mudanças para a pasta e rode com --rebase.
+
+EXAMPLES
+  ravi skills propose ./agenda-semanal --scope org                           # plano (exit 3)
+  ravi skills propose ./agenda-semanal --scope org --note "horários novos" --execute
+  ravi skills propose ./triagem --scope clinica --draft --execute            # rascunho
+  ravi skills propose ./agenda-semanal --scope org --update 3 --execute
+  ravi skills propose ./agenda-semanal --scope org --update 3 --rebase --execute
+
+ON ERROR (reason → fix)
+  exit 3 WRITE_REQUIRES_EXECUTE     → revise o plano e repita com --execute.
+  exit 3 LIBRARY_PROPOSAL_NOT_YOURS → só o autor atualiza: comente no Console ou abra outra.
+  CONFLICT reason=stale_base        → a versão publicada mudou: leia, ajuste e repita (--rebase no --update).
+  CONFLICT reason=unchanged         → igual à versão publicada: nada a propor.
+  CONFLICT reason=proposal_closed   → a proposta já foi decidida: abra outra sem --update.
+  CONFLICT reason=slug_taken_in_org|slug_taken_in_project|slug_reserved → outro --slug.
+  LIBRARY_PACKAGE_INVALID (2)       → a pasta falhou numa regra do publish.
+  AUTH_REQUIRED                     → rode \`ravi login\`.
+
+SEE ALSO
+  ravi skills proposals · ravi skills proposal <ref> <n> · ravi skills show <ref>
+
+FONTES
+  src/cli/commands/skills.ts · src/library/service.ts · 2026-10-16
+`;
+
+const SKILLS_PROPOSALS_HELP_AFTER = `
+LEITURA — lista propostas de skills da Biblioteca. Com <ref> (org/<slug> ou
+<projeto>/<slug>): as propostas daquele item. Sem ref: todas as que você vê
+(dentro de um agente: as da organização e do projeto do agente).
+
+EXAMPLES
+  ravi skills proposals                       # abertas (rascunhos e em revisão)
+  ravi skills proposals org/agenda-semanal --state all
+  ravi skills proposals --mine --json         # as suas (dentro de um agente: as deste agente)
+  ravi skills proposals --project clinica --state closed
+
+FORMATO
+  Cada linha: ref, número, status, stale, autor ("agent X for Y") e comentários
+  abertos; next traz o comando que mostra a proposta.
+
+SEE ALSO
+  ravi skills proposal <ref> <n> · ravi skills propose
+
+FONTES
+  src/cli/commands/skills.ts · src/library/service.ts · 2026-10-16
+`;
+
+const SKILLS_PROPOSAL_HELP_AFTER = `
+LEITURA — mostra uma proposta: status, base e versão publicada, stale, nota,
+motivo da decisão, arquivos e os comentários da revisão (arquivo:linha,
+outdated, resolvido, autor). É onde o autor lê o que pediram e responde
+atualizando a proposta com \`ravi skills propose <dir> --scope ... --update <n> --execute\`.
+
+EXAMPLES
+  ravi skills proposal org/agenda-semanal 3
+  ravi skills proposal clinica/triagem 1 --json     # inclui o conteúdo dos arquivos
+
+FORMATO
+  --json: { ref, number, item, proposal, files[{path, bytes, sha256, content?}],
+  base{number, files[{path, bytes, sha256}]}|null, comments[], contentsVisible }.
+  Dentro de um agente o conteúdo dos arquivos só vem nas propostas que ele
+  escreveu ou em skills que ele pode carregar (contentsVisible).
+
+FONTES
+  src/cli/commands/skills.ts · src/library/service.ts · 2026-10-16
 `;
 
 const SKILLS_INSTALL_HELP_AFTER = `
@@ -1175,7 +1395,7 @@ export class SkillsCommands {
       const slug = name.trim().toLowerCase();
       // Local skills always win; a bare slug with no local match may name a
       // Library skill in the caller's view (org + its Console project).
-      if (!localOnly && isLibrarySlug(slug) && hasCloudLogin()) {
+      if (!localOnly && isLibrarySlug(slug) && !isReservedLibrarySlug(slug) && hasCloudLogin()) {
         return this.showLibrary({ slug, project, fileArg, raw, asJson, candidates });
       }
       failSkillNotFound("skills show", name, {
@@ -1326,6 +1546,21 @@ export class SkillsCommands {
     @Option({ flags: "--execute", description: "Confirm the publish (without it, print the plan and exit 3)" })
     execute?: boolean,
   ) {
+    // Agents never publish: a person reviews what they propose. Refused before any request.
+    if (runtimeLibraryCaller()) {
+      const scopeHint = scope?.trim() ? scope.trim().toLowerCase() : "org|<project-slug>";
+      const message =
+        "Agents do not publish Library skills: propose the change and a person reviews and publishes it in the Console.";
+      const suggestedAction = `ravi skills propose <dir> --scope ${scopeHint} --execute`;
+      contractFail("skills publish", LIBRARY_AGENT_CANNOT_PUBLISH, message, {
+        asJson,
+        exitCode: CONTRACT_EXIT_POLICY,
+        details: {
+          suggestedAction,
+          issues: skillContractIssues([], LIBRARY_AGENT_CANNOT_PUBLISH, message, suggestedAction),
+        },
+      });
+    }
     if (!scope?.trim()) {
       const message = "Pass --scope org or --scope <project-slug>.";
       contractFail("skills publish", "USAGE_ERROR", message, {
@@ -1366,6 +1601,237 @@ export class SkillsCommands {
       }
       return payload;
     });
+  }
+
+  @Command({
+    name: "propose",
+    description:
+      "Propose a new version of a Library skill for review instead of publishing it (agents use this). Requires --execute.",
+    helpAfter: SKILLS_PROPOSE_HELP_AFTER,
+  })
+  @CommandAccess({ kind: "mutate", resource: "skills", action: "propose", risk: "medium", requiresConfirmation: true })
+  @Returns(skillsProposeReturnSchema)
+  async propose(
+    @Arg("dir", { description: "Skill folder holding SKILL.md (relative to your current directory)" }) dir: string,
+    @Option({ flags: "--scope <scope>", description: "org, or the Console project slug the skill belongs to" })
+    scope?: string,
+    @Option({ flags: "--slug <slug>", description: "Library slug (default: SKILL.md name, else the folder name)" })
+    slug?: string,
+    @Option({ flags: "--name <name>", description: "Display name (default: SKILL.md name, else the slug)" })
+    name?: string,
+    @Option({ flags: "--note <text>", description: "Note for the reviewers, at most 500 characters" }) note?: string,
+    @Option({
+      flags: "--external",
+      description: "Allow loading this skill in conversations with people outside the organization",
+    })
+    external?: boolean,
+    @Option({ flags: "--draft", description: "Save a draft only you and the scope's reviewers see; do not submit" })
+    draft?: boolean,
+    @Option({ flags: "--update <number>", description: "Replace the content of your open proposal with this number" })
+    update?: string,
+    @Option({
+      flags: "--rebase",
+      description: "With --update: move the proposal onto the version published now (read it first)",
+    })
+    rebase?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--execute", description: "Confirm the proposal (without it, print the plan and exit 3)" })
+    execute?: boolean,
+  ) {
+    if (!scope?.trim()) {
+      const message = "Pass --scope org or --scope <project-slug>.";
+      contractFail("skills propose", "USAGE_ERROR", message, {
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: {
+          suggestedAction: "Name the skill's scope: --scope org or --scope <project-slug>",
+          issues: skillContractIssues(["scope"], "required", message),
+        },
+      });
+    }
+    const updateNumber = update === undefined ? undefined : Number(update);
+    if (updateNumber !== undefined && (!Number.isInteger(updateNumber) || updateNumber < 1)) {
+      const message = "--update takes a proposal number (1, 2, 3...).";
+      contractFail("skills propose", "USAGE_ERROR", message, {
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: {
+          suggestedAction: "List your proposals with: ravi skills proposals --mine",
+          issues: skillContractIssues(["update"], "USAGE_ERROR", message),
+        },
+      });
+    }
+    return withLibraryContract("skills propose", asJson, async () => {
+      const prepared = await prepareLibraryProposal({
+        dir: resolveCallerPath(dir ?? ""),
+        scope,
+        ...(slug?.trim() ? { slug: slug.trim() } : {}),
+        ...(name?.trim() ? { name: name.trim() } : {}),
+        ...(note !== undefined ? { note } : {}),
+        external: external === true,
+        draft: draft === true,
+        ...(updateNumber !== undefined ? { update: updateNumber } : {}),
+        rebase: rebase === true,
+        caller: runtimeLibraryCaller(),
+      });
+      if (!execute) contractDryRun("skills propose", { ...prepared.plan }, { asJson });
+      const result = await executeLibraryProposal(prepared);
+      const { proposal } = result;
+      const next = `ravi skills proposal ${result.ref} ${proposal.number}`;
+      const payload = {
+        success: true as const,
+        ref: result.ref,
+        number: proposal.number,
+        status: proposal.status,
+        round: proposal.round,
+        baseVersion: proposal.baseVersion,
+        currentVersion: proposal.currentVersion,
+        stale: proposal.stale,
+        created: result.created,
+        next,
+        proposal,
+      };
+      if (asJson) {
+        printJson(payload);
+        return payload;
+      }
+      const label = `${result.ref} (proposal ${proposal.number}${result.created ? "" : `, round ${proposal.round}`})`;
+      if (proposal.status === "draft") {
+        console.log(`✓ Saved draft ${label}; only you and the scope's reviewers see it`);
+      } else {
+        console.log(`✓ ${result.created ? "Proposed" : "Updated"} ${label}, waiting for review`);
+      }
+      if (proposal.stale) {
+        console.log(
+          `  Stale: written against version ${proposal.baseVersion}, version ${proposal.currentVersion} is published. Read it, then run again with --update ${proposal.number} --rebase.`,
+        );
+      }
+      console.log(`  Follow it with: ${next}`);
+      return payload;
+    });
+  }
+
+  @Command({
+    name: "proposals",
+    description: "List proposals of Library skills: one item's (<ref>) or every one you can see",
+    helpAfter: SKILLS_PROPOSALS_HELP_AFTER,
+  })
+  @CommandAccess({ kind: "read", resource: "skills", action: "proposals", risk: "low" })
+  @Returns(skillsProposalsReturnSchema)
+  async proposals(
+    @Arg("ref", { required: false, description: "Library ref (org/<slug> or <project>/<slug>) to list one item's" })
+    ref?: string,
+    @Option({ flags: "--project <ref>", description: "Only this Console project's proposals (and the org's)" })
+    project?: string,
+    @Option({ flags: "--state <state>", description: "open (drafts and proposed, default), closed or all" })
+    state?: string,
+    @Option({ flags: "--mine", description: "Only your proposals (inside an agent: the ones this agent wrote)" })
+    mine?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const parsedState = (state?.trim().toLowerCase() || "open") as LibraryProposalState;
+    if (!["open", "closed", "all"].includes(parsedState)) {
+      contractFail("skills proposals", "USAGE_ERROR", "--state is open, closed or all.", {
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: { suggestedAction: "Pass --state open, --state closed or --state all" },
+      });
+    }
+    const parsedRef = ref?.trim() ? parseLibraryRef(ref) : null;
+    if (ref?.trim() && !parsedRef) failLibraryRefInvalid("skills proposals", ref, asJson);
+    const outcome = await withLibraryContract("skills proposals", asJson, () =>
+      listLibraryProposals({
+        ...(parsedRef ? { ref: parsedRef } : {}),
+        project: project?.trim() || null,
+        state: parsedState,
+        mine: mine === true,
+        caller: runtimeLibraryCaller(),
+      }),
+    );
+    const payload = {
+      ...outcome,
+      proposals: outcome.proposals.map((entry) => ({
+        ...entry,
+        next: `ravi skills proposal ${entry.ref} ${entry.number}`,
+      })),
+    };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    if (payload.proposals.length === 0) {
+      console.log(
+        `No ${parsedState === "all" ? "" : `${parsedState} `}proposals${payload.ref ? ` for ${payload.ref}` : ""}.`,
+      );
+    }
+    for (const entry of payload.proposals) {
+      const stale = entry.stale ? " [stale]" : "";
+      const comments =
+        entry.openComments > 0 ? ` — ${entry.openComments} open comment${entry.openComments === 1 ? "" : "s"}` : "";
+      console.log(
+        `${entry.ref} #${entry.number} ${entry.status}${stale} — ${proposalAuthorLabel(entry.author)}${comments}`,
+      );
+      console.log(`  ${entry.next}`);
+    }
+    return payload;
+  }
+
+  @Command({
+    name: "proposal",
+    description: "Show one proposal of a Library skill: status, files and review comments",
+    helpAfter: SKILLS_PROPOSAL_HELP_AFTER,
+  })
+  @CommandAccess({ kind: "read", resource: "skills", action: "proposal", risk: "low" })
+  @Returns(skillsProposalReturnSchema)
+  async proposal(
+    @Arg("ref", { description: "Library ref (org/<slug> or <project>/<slug>)" }) ref: string,
+    @Arg("number", { description: "Proposal number" }) number: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const parsedRef = parseLibraryRef(ref);
+    if (!parsedRef) failLibraryRefInvalid("skills proposal", ref ?? "", asJson);
+    const parsedNumber = Number(number);
+    if (!Number.isInteger(parsedNumber) || parsedNumber < 1) {
+      const message = "The proposal number is a whole number (1, 2, 3...).";
+      contractFail("skills proposal", "USAGE_ERROR", message, {
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: {
+          suggestedAction: `List them with: ravi skills proposals ${parsedRef.ref}`,
+          issues: skillContractIssues(["number"], "USAGE_ERROR", message),
+        },
+      });
+    }
+    const outcome = await withLibraryContract("skills proposal", asJson, () =>
+      showLibraryProposal({ ref: parsedRef, number: parsedNumber, caller: runtimeLibraryCaller() }),
+    );
+    const { proposal } = outcome;
+    const payload = {
+      ref: outcome.ref.ref,
+      number: proposal.number,
+      item: outcome.item,
+      proposal,
+      files: outcome.files.map((file) => ({
+        path: file.path,
+        bytes: file.bytes,
+        sha256: file.sha256,
+        ...(outcome.contentsVisible ? { content: file.content } : {}),
+      })),
+      base: outcome.base
+        ? {
+            number: outcome.base.number,
+            files: outcome.base.files.map((file) => ({ path: file.path, bytes: file.bytes, sha256: file.sha256 })),
+          }
+        : null,
+      comments: outcome.comments,
+      contentsVisible: outcome.contentsVisible,
+    };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    for (const line of proposalShowLines(payload)) console.log(line);
+    return payload;
   }
 
   @Command({

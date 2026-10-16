@@ -1,5 +1,5 @@
 /**
- * Library operations behind `ravi skills search|show|publish`.
+ * Library operations behind `ravi skills search|show|publish|propose|proposals|proposal`.
  *
  * spec: skills/library
  *
@@ -48,11 +48,21 @@ import {
 } from "./package.js";
 import { isLibrarySlug, libraryRef, LIBRARY_ORG_SCOPE, type LibraryRef } from "./refs.js";
 import { isOperatorOwnTurn, type LibraryTurnDeps } from "./turn.js";
-import type { LibraryItem, LibraryPublishResponse, LibraryShowResponse } from "./types.js";
+import type {
+  LibraryItem,
+  LibraryItemProposalsResponse,
+  LibraryProposal,
+  LibraryProposalItem,
+  LibraryProposalShowResponse,
+  LibraryPublishResponse,
+  LibraryShowResponse,
+} from "./types.js";
 
 export const LIBRARY_SKILL_EXTERNAL_DENIED = "LIBRARY_SKILL_EXTERNAL_DENIED";
 export const LIBRARY_SKILL_OUT_OF_VIEW = "LIBRARY_SKILL_OUT_OF_VIEW";
 export const LIBRARY_REF_INVALID = "LIBRARY_REF_INVALID";
+export const LIBRARY_AGENT_CANNOT_PUBLISH = "LIBRARY_AGENT_CANNOT_PUBLISH";
+export const LIBRARY_PROPOSAL_NOT_YOURS = "LIBRARY_PROPOSAL_NOT_YOURS";
 export const LIBRARY_LOGIN_HINT = "Library skipped: no Ravi Cloud login. Run `ravi login` to search the Library.";
 
 /** A refusal decided on this side; the CLI renders it as a contract error. */
@@ -502,6 +512,395 @@ export async function executeLibraryPublish(
 }
 
 // ---------------------------------------------------------------------------
+// Drafts and proposals
+// ---------------------------------------------------------------------------
+
+export type LibraryProposalState = "open" | "closed" | "all";
+const OPEN_PROPOSAL_STATUSES: ReadonlySet<string> = new Set(["draft", "proposed"]);
+
+export function isOpenProposal(proposal: Pick<LibraryProposal, "status">): boolean {
+  return OPEN_PROPOSAL_STATUSES.has(proposal.status);
+}
+
+export interface LibraryProposeInput extends LibraryPublishInput {
+  /** Keep it a draft (only its author and the scope's reviewers see it). */
+  draft?: boolean;
+  /** Replace the content of this proposal instead of opening a new one. */
+  update?: number;
+  /** With `update`: move the proposal onto the version published now. */
+  rebase?: boolean;
+  caller?: LibraryCaller | null;
+}
+
+export interface LibraryProposePlan {
+  ref: string;
+  scope: "org" | "project";
+  project: string | null;
+  slug: string;
+  name: string;
+  description: string;
+  externalAllowed: boolean;
+  note: string | null;
+  /** `file`, not `path`: the contract envelope redacts keys ending in "path". */
+  files: Array<{ file: string; bytes: number }>;
+  totalBytes: number;
+  contentHash: string;
+  /** The item exists in the Console (published, or with proposals only). */
+  exists: boolean;
+  /** Version published now (0 when none). */
+  currentVersion: number;
+  /** The version the proposal is written against after this call. */
+  baseVersion: number;
+  /** After this call the proposal waits for review; false keeps a draft. */
+  submit: boolean;
+  /** The proposal number `--update` replaces; null for a new proposal. */
+  update: number | null;
+  /** The proposal `--update` replaces, as it is now. */
+  proposal: { number: number; status: string; round: number; baseVersion: number; stale: boolean } | null;
+  rebase: boolean;
+  /** The proposal's base is behind the published version (publishing it would be refused). */
+  stale: boolean;
+  /** Content and metadata equal the published version: the Console refuses it. */
+  unchanged: boolean;
+  /** Open proposals of the caller on this item (for a new proposal: update one instead). */
+  openProposals: number[];
+  /** The agent the proposal is written by; null in the operator's terminal. */
+  agent: string | null;
+  hint?: string;
+}
+
+export interface PreparedLibraryProposal {
+  plan: LibraryProposePlan;
+  pkg: LibraryPackage;
+  session: LibrarySession;
+  target: LibraryRef;
+  /** Send `submit: true` with an update (a draft that should now wait for review). */
+  submitDraft: boolean;
+}
+
+export interface LibraryProposeResult {
+  ref: string;
+  created: boolean;
+  proposal: LibraryProposal;
+}
+
+/** Validate the folder, read the published version (and the proposal to update) and build the plan. */
+export async function prepareLibraryProposal(
+  input: LibraryProposeInput,
+  deps: LibraryServiceDeps = {},
+): Promise<PreparedLibraryProposal> {
+  const update = input.update;
+  if (update !== undefined && (!Number.isInteger(update) || update < 1)) {
+    throw usageError("--update takes a proposal number (1, 2, 3...).", "List them with: ravi skills proposals <ref>");
+  }
+  if (input.rebase && update === undefined) {
+    throw usageError(
+      "--rebase moves an existing proposal onto the published version: pass it with --update <number>.",
+      "Drop --rebase: a new proposal is always written against the version published now",
+    );
+  }
+  const scope = parsePublishScope(input.scope);
+  const note = checkLibraryNote(input.note);
+  const pkg = readLibraryPackage(input.dir, { slug: input.slug, name: input.name });
+  const target = libraryRef(scope.scope, scope.project, pkg.slug);
+  const caller = input.caller ?? null;
+  // An agent proposes in its own view: org items and its Console project's.
+  const session = await openSession(caller ? {} : { resolveProject: false }, deps);
+  if (!session) throw libraryLoginRequiredError();
+  if (caller) assertLibraryRefInCallerView(caller, target, session, target.project, null);
+
+  let current: LibraryShowResponse | null = null;
+  try {
+    current = await session.client.showRef(target);
+  } catch (error) {
+    if (!isLibraryNotFoundError(error)) throw error;
+  }
+  const currentVersion = current?.version.number ?? 0;
+  const externalAllowed = input.external === true;
+  const unchanged =
+    current !== null &&
+    current.version.contentHash === pkg.contentHash &&
+    current.item.name === pkg.name &&
+    current.item.description === pkg.description &&
+    current.item.externalAllowed === externalAllowed;
+  const draft = input.draft === true;
+  const hints: string[] = [];
+
+  let exists = current !== null;
+  let proposal: LibraryProposePlan["proposal"] = null;
+  let openProposals: number[] = [];
+  let baseVersion = currentVersion;
+  let submitDraft = false;
+  if (update !== undefined) {
+    const shown = await fetchProposal(session, target, update);
+    const found = shown.proposal;
+    exists = true;
+    assertProposalEditable(found, target, caller);
+    if (draft && found.status !== "draft") {
+      throw usageError(
+        `Proposal ${update} of ${target.ref} is already waiting for review; --draft cannot take it back.`,
+        "Drop --draft to update it in place",
+      );
+    }
+    proposal = {
+      number: found.number,
+      status: found.status,
+      round: found.round,
+      baseVersion: found.baseVersion,
+      stale: found.baseVersion !== currentVersion,
+    };
+    baseVersion = input.rebase ? currentVersion : found.baseVersion;
+    submitDraft = found.status === "draft" && !draft;
+  } else {
+    const listed = await fetchItemProposals(session, target);
+    if (listed) {
+      exists = true;
+      openProposals = listed.proposals
+        .filter((entry) => isOpenProposal(entry) && isCallersProposal(entry, caller))
+        .map((entry) => entry.number);
+    }
+    if (openProposals.length > 0) {
+      hints.push(
+        `You already have open proposal ${openProposals.join(", ")} on ${target.ref}: pass --update ${openProposals[0]} to change it instead of opening another.`,
+      );
+    }
+  }
+  const stale = baseVersion !== currentVersion;
+  if (stale) {
+    hints.push(
+      `Proposal ${update} was written against version ${baseVersion}, and version ${currentVersion} is published now. Read it with 'ravi skills show ${target.ref}', bring its changes into your folder, then run again with --update ${update} --rebase.`,
+    );
+  }
+  if (unchanged)
+    hints.push(`The folder matches version ${currentVersion} of ${target.ref}: there is nothing to propose.`);
+
+  return {
+    pkg,
+    session,
+    target,
+    submitDraft,
+    plan: {
+      ref: target.ref,
+      scope: target.scope,
+      project: target.project,
+      slug: pkg.slug,
+      name: pkg.name,
+      description: pkg.description,
+      externalAllowed,
+      note: note ?? null,
+      files: pkg.files.map((file) => ({ file: file.path, bytes: file.bytes })),
+      totalBytes: pkg.totalBytes,
+      contentHash: pkg.contentHash,
+      exists,
+      currentVersion,
+      baseVersion,
+      submit: !draft,
+      update: update ?? null,
+      proposal,
+      rebase: input.rebase === true,
+      stale,
+      unchanged,
+      openProposals,
+      agent: caller?.agentId ?? null,
+      ...(hints.length > 0 ? { hint: hints.join(" ") } : {}),
+    },
+  };
+}
+
+export async function executeLibraryProposal(prepared: PreparedLibraryProposal): Promise<LibraryProposeResult> {
+  const { plan, pkg, session, target } = prepared;
+  const content = {
+    name: plan.name,
+    description: plan.description,
+    externalAllowed: plan.externalAllowed,
+    ...(plan.note ? { note: plan.note } : {}),
+    files: pkg.files.map((file) => ({ path: file.path, content: file.content })),
+    ...(plan.agent ? { agent: { id: plan.agent } } : {}),
+  };
+  if (plan.update !== null) {
+    const proposal = await session.client.updateProposal(target, plan.update, {
+      ...content,
+      // Without --rebase the proposal keeps its base; the Console checks it again when publishing.
+      ...(plan.rebase ? { baseVersion: plan.currentVersion } : {}),
+      ...(prepared.submitDraft ? { submit: true } : {}),
+    });
+    return { ref: target.ref, created: false, proposal };
+  }
+  const proposal = await session.client.createProposal({
+    scope: plan.scope,
+    ...(plan.project ? { project: plan.project } : {}),
+    slug: plan.slug,
+    ...content,
+    baseVersion: plan.currentVersion,
+    submit: plan.submit,
+  });
+  return { ref: target.ref, created: true, proposal };
+}
+
+export interface LibraryProposalListInput {
+  /** An item's proposals; otherwise every proposal the caller can see. */
+  ref?: LibraryRef;
+  project?: string | null;
+  state?: LibraryProposalState;
+  mine?: boolean;
+  caller?: LibraryCaller | null;
+}
+
+export interface LibraryProposalListOutcome {
+  ref: string | null;
+  project: string | null;
+  state: LibraryProposalState;
+  mine: boolean;
+  total: number;
+  item: LibraryProposalItem | null;
+  proposals: LibraryProposal[];
+}
+
+export async function listLibraryProposals(
+  input: LibraryProposalListInput,
+  deps: LibraryServiceDeps = {},
+): Promise<LibraryProposalListOutcome> {
+  const caller = input.caller ?? null;
+  const state = input.state ?? "open";
+  const mine = input.mine === true;
+  const explicitProject = input.project?.trim().toLowerCase() || null;
+  const session = input.ref
+    ? await openSession(caller ? {} : { resolveProject: false }, deps)
+    : caller
+      ? await openSessionForCaller(explicitProject, caller, deps)
+      : await openSession({ resolveProject: false }, deps);
+  if (!session) throw libraryLoginRequiredError();
+
+  let proposals: LibraryProposal[];
+  let item: LibraryProposalItem | null = null;
+  let project: string | null;
+  if (input.ref) {
+    if (caller) assertLibraryRefInCallerView(caller, input.ref, session, input.ref.project, null);
+    const listed = await fetchItemProposals(session, input.ref);
+    if (!listed) throw notFound(input.ref.ref);
+    item = listed.item;
+    proposals = listed.proposals.filter((entry) => matchesState(entry, state) && (!mine || entry.author.self));
+    project = input.ref.project;
+  } else {
+    // An agent's view is org items plus its own Console project's.
+    project = caller ? (session.project?.ref ?? null) : explicitProject;
+    const listed = await session.client.listProposals({ project, state, mine });
+    proposals = listed.proposals;
+    if (caller && !session.project)
+      proposals = proposals.filter((entry) => entry.ref.startsWith(`${LIBRARY_ORG_SCOPE}/`));
+  }
+  // Inside an agent, "mine" is what this agent wrote.
+  if (caller && mine) proposals = proposals.filter((entry) => entry.author.agentId === caller.agentId);
+  const ownTurn = lazyOwnTurn(deps.turn);
+  proposals = proposals.filter((entry) => entry.externalAllowed || ownTurn());
+  return { ref: input.ref?.ref ?? null, project, state, mine, total: proposals.length, item, proposals };
+}
+
+export interface LibraryProposalShowOutcome extends LibraryProposalShowResponse {
+  ref: LibraryRef;
+  /** False when file contents are left out: an agent sees them for its own proposals or skills it may load. */
+  contentsVisible: boolean;
+  consoleUrl: string;
+}
+
+export async function showLibraryProposal(
+  input: { ref: LibraryRef; number: number; caller?: LibraryCaller | null },
+  deps: LibraryServiceDeps = {},
+): Promise<LibraryProposalShowOutcome> {
+  if (!Number.isInteger(input.number) || input.number < 1) {
+    throw usageError(
+      "The proposal number is a whole number (1, 2, 3...).",
+      "List them with: ravi skills proposals <ref>",
+    );
+  }
+  const caller = input.caller ?? null;
+  const session = await openSession(caller ? {} : { resolveProject: false }, deps);
+  if (!session) throw libraryLoginRequiredError();
+  if (caller) assertLibraryRefInCallerView(caller, input.ref, session, input.ref.project, null);
+  const shown = await fetchProposal(session, input.ref, input.number);
+  if (!shown.proposal.externalAllowed && !lazyOwnTurn(deps.turn)()) {
+    throw new LibraryCommandError(
+      LIBRARY_SKILL_EXTERNAL_DENIED,
+      `Proposal ${input.number} of '${input.ref.ref}' is not marked for conversations with people outside the organization, and this turn is not the operator's own.`,
+      3,
+      { suggestedAction: "Read it from the operator's own terminal or chat." },
+    );
+  }
+  const contentsVisible =
+    !caller ||
+    shown.proposal.author.agentId === caller.agentId ||
+    isLibrarySkillAuthorizedForAgent(caller.agentId, input.ref.id, { capabilities: caller.capabilities });
+  return { ...shown, ref: input.ref, contentsVisible, consoleUrl: session.consoleUrl };
+}
+
+async function fetchProposal(
+  session: LibrarySession,
+  ref: LibraryRef,
+  number: number,
+): Promise<LibraryProposalShowResponse> {
+  try {
+    return await session.client.showProposal(ref, number);
+  } catch (error) {
+    if (!isLibraryNotFoundError(error)) throw error;
+    throw new LibraryCommandError("NOT_FOUND", `Proposal ${number} of ${ref.ref} not found.`, 1, {
+      suggestedAction: `List the proposals you can see with: ravi skills proposals ${ref.ref} --state all`,
+    });
+  }
+}
+
+/** The item's proposals, or null when the Console has no such item. */
+async function fetchItemProposals(
+  session: LibrarySession,
+  ref: LibraryRef,
+): Promise<LibraryItemProposalsResponse | null> {
+  try {
+    return await session.client.listItemProposals(ref);
+  } catch (error) {
+    if (isLibraryNotFoundError(error)) return null;
+    throw error;
+  }
+}
+
+function assertProposalEditable(proposal: LibraryProposal, ref: LibraryRef, caller: LibraryCaller | null): void {
+  if (!isOpenProposal(proposal)) {
+    throw new LibraryCommandError("CONFLICT", `Proposal ${proposal.number} of ${ref.ref} is ${proposal.status}.`, 1, {
+      reason: "proposal_closed",
+      conflict: "proposal_closed",
+      proposalStatus: proposal.status,
+      suggestedAction: "Open a new proposal: run the same command without --update",
+    });
+  }
+  if (!isCallersProposal(proposal, caller)) {
+    const author = proposal.author.agentId
+      ? `agent ${proposal.author.agentId}`
+      : (proposal.author.name ?? "another member");
+    throw new LibraryCommandError(
+      LIBRARY_PROPOSAL_NOT_YOURS,
+      `Proposal ${proposal.number} of ${ref.ref} was written by ${author}; only its author updates it.`,
+      3,
+      {
+        suggestedAction: `Comment on it in the Console, or open your own proposal without --update (see it with: ravi skills proposal ${ref.ref} ${proposal.number})`,
+      },
+    );
+  }
+}
+
+/** Written by this login, and inside an agent by this agent. */
+function isCallersProposal(proposal: LibraryProposal, caller: LibraryCaller | null): boolean {
+  if (!proposal.author.self) return false;
+  return !caller || proposal.author.agentId === caller.agentId;
+}
+
+function matchesState(proposal: LibraryProposal, state: LibraryProposalState): boolean {
+  if (state === "all") return true;
+  return state === "open" ? isOpenProposal(proposal) : !isOpenProposal(proposal);
+}
+
+function usageError(message: string, suggestedAction: string): LibraryCommandError {
+  return new LibraryCommandError("USAGE_ERROR", message, 2, { suggestedAction });
+}
+
+// ---------------------------------------------------------------------------
 
 function refForItem(item: LibraryItem): LibraryRef {
   return item.scope === "org"
@@ -553,6 +952,21 @@ function assertLibraryCallerAuthorized(
   projectSlug: string | null | undefined,
   projectId: string | null | undefined,
 ): void {
+  assertLibraryRefInCallerView(caller, ref, session, projectSlug, projectId);
+  if (!isLibrarySkillAuthorizedForAgent(caller.agentId, ref.id, { capabilities: caller.capabilities })) {
+    const copy = skillNotAuthorizedCopy(ref.ref, caller.agentId);
+    throw new LibraryCommandError(SKILL_NOT_AUTHORIZED, copy.message, 1, { suggestedAction: copy.suggestedAction });
+  }
+}
+
+/** A project item of another project than the agent's own is out of its view unless a grant names it. */
+function assertLibraryRefInCallerView(
+  caller: LibraryCaller,
+  ref: LibraryRef,
+  session: { project: ConsoleScopeProject | null },
+  projectSlug: string | null | undefined,
+  projectId: string | null | undefined,
+): void {
   if (
     ref.scope === "project" &&
     !projectMatches(session.project, projectSlug, projectId) &&
@@ -566,10 +980,6 @@ function assertLibraryCallerAuthorized(
         suggestedAction: `Ask an operator to grant it explicitly ('ravi skills grant ${caller.agentId} ${ref.ref}') or to bind this agent to that project.`,
       },
     );
-  }
-  if (!isLibrarySkillAuthorizedForAgent(caller.agentId, ref.id, { capabilities: caller.capabilities })) {
-    const copy = skillNotAuthorizedCopy(ref.ref, caller.agentId);
-    throw new LibraryCommandError(SKILL_NOT_AUTHORIZED, copy.message, 1, { suggestedAction: copy.suggestedAction });
   }
 }
 

@@ -832,8 +832,9 @@ const SHELL_SEGMENT_SEPARATOR = /\|\||&&|[;&|\r\n]/;
 const SHELL_EXPANSION_OR_REDIRECT = /[`$<>]/;
 const RAVI_SKILLS_SOURCE_COMMAND =
   /^\s*(?:\.\/)?(?:bin\/ravi|ravi|\/[^\s"'`]+\/bin\/ravi)\s+skills\s+(?:install|list)\s[^\n]*--source\b/;
-/** `ravi skills publish <dir>` sends a folder to the Library and never prints a skill body. */
-const RAVI_SKILLS_PUBLISH_COMMAND = /^\s*(?:\.\/)?(?:bin\/ravi|ravi|\/[^\s"'`]+\/bin\/ravi)\s+skills\s+publish\s/;
+/** `ravi skills publish|propose <dir>` sends a folder to the Library and never prints a skill body. */
+const RAVI_SKILLS_PUBLISH_COMMAND =
+  /^\s*(?:\.\/)?(?:bin\/ravi|ravi|\/[^\s"'`]+\/bin\/ravi)\s+skills\s+(?:publish|propose)\s/;
 const RAVI_SKILLS_SHOW_COMMAND = /(?:^|[\s"'`])(?:\.\/)?(?:bin\/ravi|ravi|\/[^\s"'`]+\/bin\/ravi)\s+skills\s+show\b/;
 const RAVI_SKILLS_SHOW_RAW =
   /(?:^|[\s"'`])(?:\.\/)?(?:bin\/ravi|ravi|\/[^\s"'`]+\/bin\/ravi)\s+skills\s+show\b[^;&|\n\r]*\s--raw\b/;
@@ -845,7 +846,7 @@ const SKILL_SHOW_FILE_OPTION = /\s--file(?:=|\s+)("[^"]*"|'[^']*'|\S+)/g;
  * so the gate stays line-scoped, but it names the exact skill it denies.
  *
  * `ravi skills install|list --source <path>` only names a source and
- * `ravi skills publish <dir>` only sends a folder to the Library (the CLI never
+ * `ravi skills publish|propose <dir>` only sends a folder to the Library (the CLI never
  * prints a skill body), so those paths are not skill loads — unless the segment
  * also expands or redirects, which could read the file some other way.
  */
