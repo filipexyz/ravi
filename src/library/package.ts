@@ -1,6 +1,7 @@
 /**
  * A local skill folder as a Library version: the files `ravi skills publish`
- * sends, checked against the Console's limits before any request.
+ * sends, checked against the Console's limits before any request. Theme and
+ * widget folders hold a fixed set of files (`readPresentationPackage`).
  *
  * spec: skills/library
  */
@@ -10,6 +11,7 @@ import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 
 import { parseSkillContent } from "../skills/manager.js";
+import { isReservedPresentationSlug, PRESENTATION_FILES, type PresentationKind } from "./kinds.js";
 import { isLibrarySlug, isReservedLibrarySlug } from "./refs.js";
 
 export const LIBRARY_ENTRY_FILE = "SKILL.md";
@@ -153,6 +155,132 @@ export function readLibraryPackage(dir: string, options: ReadLibraryPackageOptio
 
   files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   return { dir, slug, name, description, files, totalBytes, contentHash: libraryContentHash(files) };
+}
+
+/**
+ * The allowed files of a theme or widget folder, at its root. Other files
+ * (a `preview.html`, notes) are left out; symlinks are never read. Throws
+ * {@link LibraryPackageError} when the entry file is missing.
+ */
+export function readPresentationFiles(kind: PresentationKind, dir: string): LibraryPackageFile[] {
+  const spec = PRESENTATION_FILES[kind];
+  let stat: ReturnType<typeof lstatSync>;
+  try {
+    stat = lstatSync(dir);
+  } catch {
+    throw invalid("The folder does not exist.", ["dir"]);
+  }
+  if (!stat.isDirectory()) throw invalid(`Pass the ${kind} folder (the directory that holds ${spec.entry}).`, ["dir"]);
+
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  const files: LibraryPackageFile[] = [];
+  for (const path of spec.allowed) {
+    let entry: ReturnType<typeof lstatSync>;
+    try {
+      entry = lstatSync(join(dir, path));
+    } catch {
+      continue;
+    }
+    if (!entry.isFile()) {
+      throw invalid(`${path} must be a regular file (not a folder or a symlink).`, [path]);
+    }
+    const buffer = readFileSync(join(dir, path));
+    if (buffer.byteLength > LIBRARY_LIMITS.maxFileBytes) {
+      throw invalid(`${path} is larger than ${LIBRARY_LIMITS.maxFileBytes / 1024} KiB.`, [path]);
+    }
+    let content: string;
+    try {
+      content = decoder.decode(buffer);
+    } catch {
+      throw invalid(`${path} is not UTF-8 text.`, [path]);
+    }
+    files.push({ path, content, bytes: buffer.byteLength, sha256: sha256(content) });
+  }
+  if (!files.some((file) => file.path === spec.entry)) {
+    throw invalid(`The folder has no ${spec.entry} at its root.`, [spec.entry]);
+  }
+  files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  return files;
+}
+
+/**
+ * Read and check a theme or widget folder for publish or propose: the
+ * required files, and the name and description its manifest declares
+ * (`theme.json` `$extensions.ravi.name` and `$description`; `widget.json`
+ * `name` and `description`). The slug is `--slug`, else the folder name.
+ * Whether the files compile is the Console's check. Throws {@link LibraryPackageError}.
+ */
+export function readPresentationPackage(
+  kind: PresentationKind,
+  dir: string,
+  options: ReadLibraryPackageOptions = {},
+): LibraryPackage {
+  const spec = PRESENTATION_FILES[kind];
+  const files = readPresentationFiles(kind, dir);
+  for (const required of spec.required) {
+    if (!files.some((file) => file.path === required)) {
+      throw invalid(`The folder has no ${required} at its root.`, [required]);
+    }
+  }
+  const manifest = files.find((file) => file.path === spec.manifest)!;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(manifest.content);
+  } catch {
+    throw invalid(`${spec.manifest} is not valid JSON. Run: ravi ${kind}s check <dir>`, [spec.manifest]);
+  }
+  const record = objectRecord(parsed);
+  const meta =
+    kind === "theme"
+      ? {
+          name: stringField(objectRecord(objectRecord(record?.$extensions)?.ravi)?.name),
+          description: stringField(record?.$description),
+          descriptionKey: "$description",
+        }
+      : {
+          name: stringField(record?.name),
+          description: stringField(record?.description),
+          descriptionKey: "description",
+        };
+  if (!meta.description) {
+    throw invalid(`${spec.manifest} needs a \`${meta.descriptionKey}\`.`, [spec.manifest, meta.descriptionKey]);
+  }
+  if (meta.description.length > LIBRARY_LIMITS.maxDescriptionLength) {
+    throw invalid(`The description is longer than ${LIBRARY_LIMITS.maxDescriptionLength} characters.`, [
+      spec.manifest,
+      meta.descriptionKey,
+    ]);
+  }
+
+  const slug = (options.slug?.trim() || basename(dir)).trim().toLowerCase();
+  if (!isLibrarySlug(slug)) {
+    throw new LibraryPackageError(
+      "LIBRARY_REF_INVALID",
+      `"${slug.slice(0, 80)}" is not a valid Library slug: 1-64 characters of a-z, 0-9 and -, starting and ending with a letter or digit. Pass --slug.`,
+      [{ path: ["slug"], code: "LIBRARY_REF_INVALID", message: "Invalid slug." }],
+    );
+  }
+  if (isReservedPresentationSlug(kind, slug)) {
+    throw new LibraryPackageError(
+      "LIBRARY_SLUG_RESERVED",
+      `"${slug}" is reserved: the Library's ${kind} routes use it. Pick another slug with --slug.`,
+      [{ path: ["slug"], code: "LIBRARY_SLUG_RESERVED", message: "Reserved slug." }],
+    );
+  }
+  const name = (options.name?.trim() || meta.name || slug).trim();
+  if (name.length > LIBRARY_LIMITS.maxNameLength) {
+    throw invalid(`The name is longer than ${LIBRARY_LIMITS.maxNameLength} characters.`, ["name"]);
+  }
+  const totalBytes = files.reduce((sum, file) => sum + file.bytes, 0);
+  return { dir, slug, name, description: meta.description, files, totalBytes, contentHash: libraryContentHash(files) };
+}
+
+function objectRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function stringField(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
 }
 
 export function checkLibraryNote(note: string | undefined): string | undefined {

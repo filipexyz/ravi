@@ -1,4 +1,4 @@
-import { copyFile, mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readdir, readlink, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { resolveCallerPath } from "../cli/caller-cwd.js";
@@ -187,19 +187,24 @@ ${body.trim()}
 `;
 }
 
+/**
+ * Every source becomes a private temp copy, `--dir` included: the page kit
+ * rewrites HTML before upload and must never touch the caller's files.
+ */
 export async function materializeShipSource(input: ShipSourceInput): Promise<ShipSource> {
   const kind = resolveShipContentKind(input);
-  if (kind === "dir") {
-    const path = requireText(input.dir, "--dir");
-    await assertDirectory(path);
-    return { kind, path: resolveCallerPath(path) };
-  }
+  const dirPath = kind === "dir" ? requireText(input.dir, "--dir") : null;
+  if (dirPath) await assertDirectory(dirPath);
 
   const tempRoot = await mkdtemp(join(tmpdir(), "ravi-pages-ship-"));
   const cleanup = async () => {
     await rm(tempRoot, { recursive: true, force: true });
   };
   try {
+    if (dirPath) {
+      await copyShipDirectory(resolveCallerPath(dirPath), tempRoot);
+      return { kind, path: tempRoot, cleanup };
+    }
     const dest = join(tempRoot, input.entrypoint);
     await mkdir(dirname(dest), { recursive: true });
     if (kind === "body") {
@@ -236,6 +241,27 @@ export async function validateShipSourceInput(
   }
   await assertDirectory(requireText(input.dir, "--dir"));
   return kind;
+}
+
+/**
+ * Copy a `--dir` tree the way the artifact package reads it: `.git` and
+ * `.DS_Store` are left out, and symlinks are copied as symlinks so the package
+ * step still refuses them exactly as it did for the caller's folder.
+ */
+async function copyShipDirectory(source: string, dest: string): Promise<void> {
+  for (const entry of await readdir(source, { withFileTypes: true })) {
+    if (entry.name === ".git" || entry.name === ".DS_Store") continue;
+    const from = join(source, entry.name);
+    const to = join(dest, entry.name);
+    if (entry.isSymbolicLink()) {
+      await symlink(await readlink(from), to);
+    } else if (entry.isDirectory()) {
+      await mkdir(to);
+      await copyShipDirectory(from, to);
+    } else if (entry.isFile()) {
+      await copyFile(from, to);
+    }
+  }
 }
 
 function escapeHtml(value: string): string {

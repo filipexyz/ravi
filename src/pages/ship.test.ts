@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runWithContext } from "../cli/context.js";
@@ -81,6 +81,32 @@ describe("pages ship helpers", () => {
     expect(html).toContain("<title>Hello</title>");
     expect(html).toContain("<p>Hello</p>");
     expect(source.kind).toBe("body");
+  });
+
+  it("materializes --dir as a private copy and never writes to the caller's folder", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "ravi-pages-ship-dir-"));
+    tempDirs.push(dir);
+    await writeFile(join(dir, "index.html"), "<h1>Dir</h1>");
+    await mkdir(join(dir, "assets"));
+    await writeFile(join(dir, "assets", "app.css"), "body{}");
+    await mkdir(join(dir, ".git"));
+    await writeFile(join(dir, ".git", "HEAD"), "ref");
+    await writeFile(join(dir, ".DS_Store"), "x");
+    await symlink("index.html", join(dir, "alias.html"));
+
+    const source = await materializeShipSource({ dir, entrypoint: "index.html", title: "Dir" });
+    expect(source.kind).toBe("dir");
+    expect(source.path).not.toBe(dir);
+    expect((await readdir(source.path)).sort()).toEqual(["alias.html", "assets", "index.html"]);
+    expect(await readFile(join(source.path, "assets", "app.css"), "utf8")).toBe("body{}");
+    // Symlinks stay symlinks, so the package step refuses them as before.
+    expect(await readlink(join(source.path, "alias.html"))).toBe("index.html");
+
+    await writeFile(join(source.path, "index.html"), "<h1>Rewritten</h1>");
+    expect(await readFile(join(dir, "index.html"), "utf8")).toBe("<h1>Dir</h1>");
+    await source.cleanup?.();
+    await expect(readdir(source.path)).rejects.toThrow();
+    expect(await readFile(join(dir, "index.html"), "utf8")).toBe("<h1>Dir</h1>");
   });
 
   it("validates --html and --dir before shipping", async () => {

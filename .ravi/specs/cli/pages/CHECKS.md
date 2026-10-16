@@ -73,5 +73,18 @@
   host → route, MUST say not to create one host per page, and MUST tell the
   caller to list routes before publish. `create`/`publish` MAY appear only under
   an advanced/compat or legacy section.
+- `pages ship --dir` MUST upload a temp copy: the caller's folder keeps its
+  bytes after a ship whose kit rewrote HTML, and a second ship sends the same
+  source to the kit.
+- `pages ship` MUST post the copy's HTML files to `/api/cli/pages/kit`, write
+  back only `changed` files it sent, merge kit `uses` after `--uses`, refuse
+  a public route whose merged uses carry `ravi.bases.*` (exit 2, nothing
+  uploaded), and send `publish.presentation` unchanged. A 422 MUST exit 2
+  with `KIT_INVALID` and `path:line:column severity code message` lines; a
+  bare 404/405 MUST ship unchanged with warning `KIT_UNAVAILABLE`
+  (`bun test src/pages/kit.test.ts` and the `pages ship page kit` block of
+  `src/cli/commands/pages.test.ts`).
+- `pages outdated --json` MUST GET `/api/cli/pages/outdated?project=` and
+  text output MUST be a host / route / behind table.
 - `bun test src/cli/commands/pages.test.ts` SHOULD pass after any change to
   the pages contract surface.

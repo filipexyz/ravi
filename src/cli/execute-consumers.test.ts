@@ -66,6 +66,27 @@ const executeConsumers: readonly ExecuteConsumer[] = [
     matches: 1,
   },
   {
+    name: "Library theme/widget publish refusal inside an agent and proposal review answer hint",
+    path: "src/cli/library-contract.ts",
+    marker: "propose <dir> --scope",
+    expected: "--execute",
+    matches: 2,
+  },
+  {
+    name: "theme publish next-step hint",
+    path: "src/cli/library-contract.ts",
+    marker: "Make it the active theme with: ravi themes use",
+    expected: "--execute",
+    matches: 1,
+  },
+  {
+    name: "themes use refusal inside an agent",
+    path: "src/cli/commands/themes.ts",
+    marker: "Ask the operator to run: ravi themes use",
+    expected: "--execute",
+    matches: 1,
+  },
+  {
     name: "sentinel WhatsApp DM reply hint",
     path: "src/omni/consumer.ts",
     marker: "use whatsapp dm send",
@@ -204,6 +225,41 @@ const executeInstructions = [
     name: "Library proposal help",
     path: "src/cli/commands/skills.ts",
     instruction: "ravi skills propose <dir> --scope ... --update <n> --execute",
+  },
+  {
+    name: "themes publish help",
+    path: "src/cli/commands/themes.ts",
+    instruction: "ravi themes publish ./acme --scope org --execute",
+  },
+  {
+    name: "themes propose help",
+    path: "src/cli/commands/themes.ts",
+    instruction: "ravi themes propose ./acme --scope org --update 2 --execute",
+  },
+  {
+    name: "themes proposal help",
+    path: "src/cli/commands/themes.ts",
+    instruction: "ravi themes propose <dir> --scope ... --update <n> --execute",
+  },
+  {
+    name: "themes use help",
+    path: "src/cli/commands/themes.ts",
+    instruction: "ravi themes use org/acme --project clinica --execute",
+  },
+  {
+    name: "widgets publish help",
+    path: "src/cli/commands/widgets.ts",
+    instruction: "ravi widgets publish ./pedido-card --scope org --execute",
+  },
+  {
+    name: "widgets propose help",
+    path: "src/cli/commands/widgets.ts",
+    instruction: "ravi widgets propose ./pedido-card --scope org --update 2 --execute",
+  },
+  {
+    name: "widgets proposal help",
+    path: "src/cli/commands/widgets.ts",
+    instruction: "ravi widgets propose <dir> --scope ... --update <n> --execute",
   },
   {
     name: "Page Chat enable documentation",

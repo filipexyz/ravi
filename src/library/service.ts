@@ -7,9 +7,29 @@
  * skills into search, resolves bare slugs after local skills, authorizes the
  * calling agent, keeps Library skills not marked `externalAllowed` out of
  * turns that are not the operator's own, and keeps an offline copy.
+ *
+ * Publish, propose and the proposal reads also serve themes and widgets
+ * (`kind`): their folders are fixed files, the Console checks them before the
+ * plan, and they have no grants, no external-turn rule and no offline copy
+ * (see presentation.ts for their other operations).
  */
 
 import type { CloudAuthError } from "../cloud-auth/errors.js";
+import {
+  diagnosticIssue,
+  hasDiagnosticErrors,
+  LibraryDiagnosticsError,
+  ThemeCheckFailed,
+  type LibraryDiagnostic,
+  type LibraryDiagnosticIssue,
+} from "./diagnostics.js";
+import {
+  isPresentationKind,
+  libraryKindProfile,
+  type LibraryKind,
+  type LibraryKindProfile,
+  type PresentationKind,
+} from "./kinds.js";
 import type { ConsoleScopeProject } from "../console-scope/types.js";
 import type { ContextCapability } from "../router/router-db.js";
 import {
@@ -43,6 +63,7 @@ import {
 import {
   checkLibraryNote,
   readLibraryPackage,
+  readPresentationPackage,
   type LibraryPackage,
   type ReadLibraryPackageOptions,
 } from "./package.js";
@@ -91,8 +112,13 @@ export interface LibraryServiceDeps {
   turn?: LibraryTurnDeps;
 }
 
-function openSession(options: LibrarySessionOptions, deps: LibraryServiceDeps): Promise<LibrarySession | null> {
-  return deps.openSession ? deps.openSession(options) : openLibrarySession(options, deps.session);
+function openSession(
+  options: LibrarySessionOptions,
+  deps: LibraryServiceDeps,
+  kind: LibraryKind = "skill",
+): Promise<LibrarySession | null> {
+  const withKind = kind === "skill" ? options : { ...options, kind };
+  return deps.openSession ? deps.openSession(withKind) : openLibrarySession(withKind, deps.session);
 }
 
 // ---------------------------------------------------------------------------
@@ -394,9 +420,12 @@ export async function showLibrarySkill(
 
 export interface LibraryPublishInput extends ReadLibraryPackageOptions {
   dir: string;
-  scope: string;
+  /** `org` or a project slug. Themes and widgets default to the known Console project. */
+  scope?: string;
   note?: string;
   external?: boolean;
+  /** Default `skill`. */
+  kind?: LibraryKind;
 }
 
 export interface LibraryPublishPlan {
@@ -415,6 +444,10 @@ export interface LibraryPublishPlan {
   currentVersion: number;
   nextVersion: number;
   unchanged: boolean;
+  /** Themes and widgets. */
+  kind?: PresentationKind;
+  /** Themes and widgets: the Console check's warnings, as contract issues. */
+  warnings?: LibraryDiagnosticIssue[];
 }
 
 export interface PreparedLibraryPublish {
@@ -434,17 +467,69 @@ export function parsePublishScope(scope: string | undefined): { scope: "org" | "
   });
 }
 
+/**
+ * Themes and widgets: `--scope` may be left out; the known Console project
+ * is then the scope (contract: publish defaults to project scope).
+ */
+function explicitPublishScope(
+  kind: LibraryKind,
+  scope: string | undefined,
+): { scope: "org" | "project"; project: string | null } | null {
+  return isPresentationKind(kind) && !scope?.trim() ? null : parsePublishScope(scope);
+}
+
+function knownProjectScope(
+  session: LibrarySession,
+  profile: LibraryKindProfile,
+): { scope: "project"; project: string } {
+  const project = (session.project?.slug ?? session.project?.ref ?? "").trim().toLowerCase();
+  if (!project || !isLibrarySlug(project)) {
+    throw usageError(
+      "Pass --scope org or --scope <project-slug>: no Console project is known here.",
+      `Choose who gets the ${profile.noun}: --scope org (every project) or --scope <project-slug>`,
+    );
+  }
+  return { scope: "project", project };
+}
+
+function readPackageForKind(kind: LibraryKind, dir: string, options: ReadLibraryPackageOptions): LibraryPackage {
+  return isPresentationKind(kind) ? readPresentationPackage(kind, dir, options) : readLibraryPackage(dir, options);
+}
+
+/**
+ * Themes and widgets: the Console compiles the folder before the plan, so a
+ * folder with errors stops here (exit 2) instead of at `--execute`.
+ */
+async function checkPresentationPackage(
+  kind: LibraryKind,
+  session: LibrarySession,
+  pkg: LibraryPackage,
+): Promise<LibraryDiagnostic[] | null> {
+  if (!isPresentationKind(kind)) return null;
+  const checked =
+    kind === "theme" ? await session.client.checkTheme(pkg.files) : await session.client.checkWidget(pkg.files);
+  if (!checked.ok || hasDiagnosticErrors(checked.diagnostics)) {
+    if ("contrast" in checked) throw new ThemeCheckFailed(checked.diagnostics, checked.contrast);
+    throw new LibraryDiagnosticsError(kind, checked.diagnostics);
+  }
+  return checked.diagnostics;
+}
+
 /** Validate the folder, read the current published version and build the plan. */
 export async function prepareLibraryPublish(
   input: LibraryPublishInput,
   deps: LibraryServiceDeps = {},
 ): Promise<PreparedLibraryPublish> {
-  const scope = parsePublishScope(input.scope);
+  const kind = input.kind ?? "skill";
+  const profile = libraryKindProfile(kind);
+  const explicitScope = explicitPublishScope(kind, input.scope);
   const note = checkLibraryNote(input.note);
-  const pkg = readLibraryPackage(input.dir, { slug: input.slug, name: input.name });
-  const target = libraryRef(scope.scope, scope.project, pkg.slug);
-  const session = await openSession({ resolveProject: false }, deps);
+  const pkg = readPackageForKind(kind, input.dir, { slug: input.slug, name: input.name });
+  const session = await openSession(explicitScope ? { resolveProject: false } : {}, deps, kind);
   if (!session) throw libraryLoginRequiredError();
+  const scope = explicitScope ?? knownProjectScope(session, profile);
+  const target = libraryRef(scope.scope, scope.project, pkg.slug);
+  const warnings = await checkPresentationPackage(kind, session, pkg);
 
   let current: LibraryShowResponse | null = null;
   try {
@@ -474,6 +559,7 @@ export async function prepareLibraryPublish(
       currentVersion,
       nextVersion: unchanged ? currentVersion : currentVersion + 1,
       unchanged,
+      ...(isPresentationKind(kind) ? { kind, warnings: (warnings ?? []).map(diagnosticIssue) } : {}),
     },
   };
 }
@@ -483,6 +569,7 @@ export async function executeLibraryPublish(
   deps: LibraryServiceDeps = {},
 ): Promise<LibraryPublishResponse & { ref: string; cacheDir: string | null }> {
   const { plan, pkg, session } = prepared;
+  // The offline copy holds skills only: its index has no kind.
   const result = await session.client.publish({
     scope: plan.scope,
     ...(plan.project ? { project: plan.project } : {}),
@@ -494,6 +581,7 @@ export async function executeLibraryPublish(
     baseVersion: plan.currentVersion,
     files: pkg.files.map((file) => ({ path: file.path, content: file.content })),
   });
+  if (plan.kind) return { ...result, ref: itemRef(result.item), cacheDir: null };
   const cacheDir = writeLibrarySkill(
     session.orgId,
     {
@@ -567,6 +655,10 @@ export interface LibraryProposePlan {
   /** The agent the proposal is written by; null in the operator's terminal. */
   agent: string | null;
   hint?: string;
+  /** Themes and widgets. */
+  kind?: PresentationKind;
+  /** Themes and widgets: the Console check's warnings, as contract issues. */
+  warnings?: LibraryDiagnosticIssue[];
 }
 
 export interface PreparedLibraryProposal {
@@ -582,6 +674,8 @@ export interface LibraryProposeResult {
   ref: string;
   created: boolean;
   proposal: LibraryProposal;
+  /** Themes and widgets: the compiler's warnings on the saved content. */
+  diagnostics: LibraryDiagnostic[];
 }
 
 /** Validate the folder, read the published version (and the proposal to update) and build the plan. */
@@ -589,9 +683,14 @@ export async function prepareLibraryProposal(
   input: LibraryProposeInput,
   deps: LibraryServiceDeps = {},
 ): Promise<PreparedLibraryProposal> {
+  const kind = input.kind ?? "skill";
+  const profile = libraryKindProfile(kind);
   const update = input.update;
   if (update !== undefined && (!Number.isInteger(update) || update < 1)) {
-    throw usageError("--update takes a proposal number (1, 2, 3...).", "List them with: ravi skills proposals <ref>");
+    throw usageError(
+      "--update takes a proposal number (1, 2, 3...).",
+      `List them with: ravi ${profile.group} proposals <ref>`,
+    );
   }
   if (input.rebase && update === undefined) {
     throw usageError(
@@ -599,15 +698,17 @@ export async function prepareLibraryProposal(
       "Drop --rebase: a new proposal is always written against the version published now",
     );
   }
-  const scope = parsePublishScope(input.scope);
+  const explicitScope = explicitPublishScope(kind, input.scope);
   const note = checkLibraryNote(input.note);
-  const pkg = readLibraryPackage(input.dir, { slug: input.slug, name: input.name });
-  const target = libraryRef(scope.scope, scope.project, pkg.slug);
+  const pkg = readPackageForKind(kind, input.dir, { slug: input.slug, name: input.name });
   const caller = input.caller ?? null;
   // An agent proposes in its own view: org items and its Console project's.
-  const session = await openSession(caller ? {} : { resolveProject: false }, deps);
+  const session = await openSession(caller || !explicitScope ? {} : { resolveProject: false }, deps, kind);
   if (!session) throw libraryLoginRequiredError();
-  if (caller) assertLibraryRefInCallerView(caller, target, session, target.project, null);
+  const scope = explicitScope ?? knownProjectScope(session, profile);
+  const target = libraryRef(scope.scope, scope.project, pkg.slug);
+  if (caller) assertLibraryRefInCallerView(caller, target, session, target.project, null, profile);
+  const warnings = await checkPresentationPackage(kind, session, pkg);
 
   let current: LibraryShowResponse | null = null;
   try {
@@ -632,10 +733,10 @@ export async function prepareLibraryProposal(
   let baseVersion = currentVersion;
   let submitDraft = false;
   if (update !== undefined) {
-    const shown = await fetchProposal(session, target, update);
+    const shown = await fetchProposal(session, target, update, profile);
     const found = shown.proposal;
     exists = true;
-    assertProposalEditable(found, target, caller);
+    assertProposalEditable(found, target, caller, profile);
     if (draft && found.status !== "draft") {
       throw usageError(
         `Proposal ${update} of ${target.ref} is already waiting for review; --draft cannot take it back.`,
@@ -668,7 +769,7 @@ export async function prepareLibraryProposal(
   const stale = baseVersion !== currentVersion;
   if (stale) {
     hints.push(
-      `Proposal ${update} was written against version ${baseVersion}, and version ${currentVersion} is published now. Read it with 'ravi skills show ${target.ref}', bring its changes into your folder, then run again with --update ${update} --rebase.`,
+      `Proposal ${update} was written against version ${baseVersion}, and version ${currentVersion} is published now. Read it with 'ravi ${profile.group} show ${target.ref}', bring its changes into your folder, then run again with --update ${update} --rebase.`,
     );
   }
   if (unchanged)
@@ -703,6 +804,7 @@ export async function prepareLibraryProposal(
       openProposals,
       agent: caller?.agentId ?? null,
       ...(hints.length > 0 ? { hint: hints.join(" ") } : {}),
+      ...(isPresentationKind(kind) ? { kind, warnings: (warnings ?? []).map(diagnosticIssue) } : {}),
     },
   };
 }
@@ -718,15 +820,15 @@ export async function executeLibraryProposal(prepared: PreparedLibraryProposal):
     ...(plan.agent ? { agent: { id: plan.agent } } : {}),
   };
   if (plan.update !== null) {
-    const proposal = await session.client.updateProposal(target, plan.update, {
+    const { proposal, diagnostics } = await session.client.updateProposalWithDiagnostics(target, plan.update, {
       ...content,
       // Without --rebase the proposal keeps its base; the Console checks it again when publishing.
       ...(plan.rebase ? { baseVersion: plan.currentVersion } : {}),
       ...(prepared.submitDraft ? { submit: true } : {}),
     });
-    return { ref: target.ref, created: false, proposal };
+    return { ref: target.ref, created: false, proposal, diagnostics };
   }
-  const proposal = await session.client.createProposal({
+  const { proposal, diagnostics } = await session.client.createProposalWithDiagnostics({
     scope: plan.scope,
     ...(plan.project ? { project: plan.project } : {}),
     slug: plan.slug,
@@ -734,7 +836,7 @@ export async function executeLibraryProposal(prepared: PreparedLibraryProposal):
     baseVersion: plan.currentVersion,
     submit: plan.submit,
   });
-  return { ref: target.ref, created: true, proposal };
+  return { ref: target.ref, created: true, proposal, diagnostics };
 }
 
 export interface LibraryProposalListInput {
@@ -744,6 +846,8 @@ export interface LibraryProposalListInput {
   state?: LibraryProposalState;
   mine?: boolean;
   caller?: LibraryCaller | null;
+  /** Default `skill`. */
+  kind?: LibraryKind;
 }
 
 export interface LibraryProposalListOutcome {
@@ -760,24 +864,26 @@ export async function listLibraryProposals(
   input: LibraryProposalListInput,
   deps: LibraryServiceDeps = {},
 ): Promise<LibraryProposalListOutcome> {
+  const kind = input.kind ?? "skill";
+  const profile = libraryKindProfile(kind);
   const caller = input.caller ?? null;
   const state = input.state ?? "open";
   const mine = input.mine === true;
   const explicitProject = input.project?.trim().toLowerCase() || null;
   const session = input.ref
-    ? await openSession(caller ? {} : { resolveProject: false }, deps)
+    ? await openSession(caller ? {} : { resolveProject: false }, deps, kind)
     : caller
-      ? await openSessionForCaller(explicitProject, caller, deps)
-      : await openSession({ resolveProject: false }, deps);
+      ? await openSessionForCaller(explicitProject, caller, deps, kind)
+      : await openSession({ resolveProject: false }, deps, kind);
   if (!session) throw libraryLoginRequiredError();
 
   let proposals: LibraryProposal[];
   let item: LibraryProposalItem | null = null;
   let project: string | null;
   if (input.ref) {
-    if (caller) assertLibraryRefInCallerView(caller, input.ref, session, input.ref.project, null);
+    if (caller) assertLibraryRefInCallerView(caller, input.ref, session, input.ref.project, null, profile);
     const listed = await fetchItemProposals(session, input.ref);
-    if (!listed) throw notFound(input.ref.ref);
+    if (!listed) throw notFound(input.ref.ref, profile);
     item = listed.item;
     proposals = listed.proposals.filter((entry) => matchesState(entry, state) && (!mine || entry.author.self));
     project = input.ref.project;
@@ -791,8 +897,11 @@ export async function listLibraryProposals(
   }
   // Inside an agent, "mine" is what this agent wrote.
   if (caller && mine) proposals = proposals.filter((entry) => entry.author.agentId === caller.agentId);
-  const ownTurn = lazyOwnTurn(deps.turn);
-  proposals = proposals.filter((entry) => entry.externalAllowed || ownTurn());
+  // Themes and widgets have no external-turn rule (no --external; they hold presentation, not instructions).
+  if (kind === "skill") {
+    const ownTurn = lazyOwnTurn(deps.turn);
+    proposals = proposals.filter((entry) => entry.externalAllowed || ownTurn());
+  }
   return { ref: input.ref?.ref ?? null, project, state, mine, total: proposals.length, item, proposals };
 }
 
@@ -804,21 +913,23 @@ export interface LibraryProposalShowOutcome extends LibraryProposalShowResponse 
 }
 
 export async function showLibraryProposal(
-  input: { ref: LibraryRef; number: number; caller?: LibraryCaller | null },
+  input: { ref: LibraryRef; number: number; caller?: LibraryCaller | null; kind?: LibraryKind },
   deps: LibraryServiceDeps = {},
 ): Promise<LibraryProposalShowOutcome> {
+  const kind = input.kind ?? "skill";
+  const profile = libraryKindProfile(kind);
   if (!Number.isInteger(input.number) || input.number < 1) {
     throw usageError(
       "The proposal number is a whole number (1, 2, 3...).",
-      "List them with: ravi skills proposals <ref>",
+      `List them with: ravi ${profile.group} proposals <ref>`,
     );
   }
   const caller = input.caller ?? null;
-  const session = await openSession(caller ? {} : { resolveProject: false }, deps);
+  const session = await openSession(caller ? {} : { resolveProject: false }, deps, kind);
   if (!session) throw libraryLoginRequiredError();
-  if (caller) assertLibraryRefInCallerView(caller, input.ref, session, input.ref.project, null);
-  const shown = await fetchProposal(session, input.ref, input.number);
-  if (!shown.proposal.externalAllowed && !lazyOwnTurn(deps.turn)()) {
+  if (caller) assertLibraryRefInCallerView(caller, input.ref, session, input.ref.project, null, profile);
+  const shown = await fetchProposal(session, input.ref, input.number, profile);
+  if (kind === "skill" && !shown.proposal.externalAllowed && !lazyOwnTurn(deps.turn)()) {
     throw new LibraryCommandError(
       LIBRARY_SKILL_EXTERNAL_DENIED,
       `Proposal ${input.number} of '${input.ref.ref}' is not marked for conversations with people outside the organization, and this turn is not the operator's own.`,
@@ -826,8 +937,10 @@ export async function showLibraryProposal(
       { suggestedAction: "Read it from the operator's own terminal or chat." },
     );
   }
+  // A theme or widget in the agent's view is readable whole: there are no grants for them.
   const contentsVisible =
     !caller ||
+    kind !== "skill" ||
     shown.proposal.author.agentId === caller.agentId ||
     isLibrarySkillAuthorizedForAgent(caller.agentId, input.ref.id, { capabilities: caller.capabilities });
   return { ...shown, ref: input.ref, contentsVisible, consoleUrl: session.consoleUrl };
@@ -837,13 +950,14 @@ async function fetchProposal(
   session: LibrarySession,
   ref: LibraryRef,
   number: number,
+  profile: LibraryKindProfile,
 ): Promise<LibraryProposalShowResponse> {
   try {
     return await session.client.showProposal(ref, number);
   } catch (error) {
     if (!isLibraryNotFoundError(error)) throw error;
     throw new LibraryCommandError("NOT_FOUND", `Proposal ${number} of ${ref.ref} not found.`, 1, {
-      suggestedAction: `List the proposals you can see with: ravi skills proposals ${ref.ref} --state all`,
+      suggestedAction: `List the proposals you can see with: ravi ${profile.group} proposals ${ref.ref} --state all`,
     });
   }
 }
@@ -861,7 +975,12 @@ async function fetchItemProposals(
   }
 }
 
-function assertProposalEditable(proposal: LibraryProposal, ref: LibraryRef, caller: LibraryCaller | null): void {
+function assertProposalEditable(
+  proposal: LibraryProposal,
+  ref: LibraryRef,
+  caller: LibraryCaller | null,
+  profile: LibraryKindProfile,
+): void {
   if (!isOpenProposal(proposal)) {
     throw new LibraryCommandError("CONFLICT", `Proposal ${proposal.number} of ${ref.ref} is ${proposal.status}.`, 1, {
       reason: "proposal_closed",
@@ -879,7 +998,7 @@ function assertProposalEditable(proposal: LibraryProposal, ref: LibraryRef, call
       `Proposal ${proposal.number} of ${ref.ref} was written by ${author}; only its author updates it.`,
       3,
       {
-        suggestedAction: `Comment on it in the Console, or open your own proposal without --update (see it with: ravi skills proposal ${ref.ref} ${proposal.number})`,
+        suggestedAction: `Comment on it in the Console, or open your own proposal without --update (see it with: ravi ${profile.group} proposal ${ref.ref} ${proposal.number})`,
       },
     );
   }
@@ -896,21 +1015,21 @@ function matchesState(proposal: LibraryProposal, state: LibraryProposalState): b
   return state === "open" ? isOpenProposal(proposal) : !isOpenProposal(proposal);
 }
 
-function usageError(message: string, suggestedAction: string): LibraryCommandError {
+export function usageError(message: string, suggestedAction: string): LibraryCommandError {
   return new LibraryCommandError("USAGE_ERROR", message, 2, { suggestedAction });
 }
 
 // ---------------------------------------------------------------------------
 
-function refForItem(item: LibraryItem): LibraryRef {
+export function refForItem(item: Pick<LibraryItem, "scope" | "project" | "slug">): LibraryRef {
   return item.scope === "org"
     ? libraryRef("org", null, item.slug)
     : libraryRef("project", item.project?.slug ?? "", item.slug);
 }
 
-function notFound(ref: string): LibraryCommandError {
-  return new LibraryCommandError("SKILL_NOT_FOUND", `Library skill not found: ${ref}`, 1, {
-    suggestedAction: "Search for it with: ravi skills search <words> --json",
+export function notFound(ref: string, profile: LibraryKindProfile = libraryKindProfile("skill")): LibraryCommandError {
+  return new LibraryCommandError(profile.notFoundCode, `Library ${profile.noun} not found: ${ref}`, 1, {
+    suggestedAction: `Search for it with: ravi ${profile.group} search <words> --json`,
   });
 }
 
@@ -918,20 +1037,24 @@ function notFound(ref: string): LibraryCommandError {
  * The session for a call. In an agent runtime the view is the agent's own
  * Console project: `--project` naming another project is refused.
  */
-async function openSessionForCaller(
+export async function openSessionForCaller(
   project: string | null,
   caller: LibraryCaller | null,
   deps: LibraryServiceDeps,
+  kind: LibraryKind = "skill",
 ): Promise<LibrarySession | null> {
+  const profile = libraryKindProfile(kind);
   const explicit = project?.trim().toLowerCase() || null;
-  if (!caller || !explicit) return openSession({ project: explicit }, deps);
-  const session = await openSession({}, deps);
+  if (!caller || !explicit) return openSession({ project: explicit }, deps, kind);
+  const session = await openSession({}, deps, kind);
   if (session && !projectMatches(session.project, explicit, explicit)) {
     throw new LibraryCommandError(
-      LIBRARY_SKILL_OUT_OF_VIEW,
-      `Project '${explicit}' is not this agent's Console project, so its Library skills are outside the agent's view.`,
+      profile.outOfViewCode,
+      `Project '${explicit}' is not this agent's Console project, so its Library ${profile.noun}s are outside the agent's view.`,
       3,
-      { suggestedAction: "Drop --project: an agent sees org skills and the skills of its own Console project." },
+      {
+        suggestedAction: `Drop --project: an agent sees org ${profile.noun}s and the ${profile.noun}s of its own Console project.`,
+      },
     );
   }
   return session;
@@ -952,38 +1075,45 @@ function assertLibraryCallerAuthorized(
   projectSlug: string | null | undefined,
   projectId: string | null | undefined,
 ): void {
-  assertLibraryRefInCallerView(caller, ref, session, projectSlug, projectId);
+  assertLibraryRefInCallerView(caller, ref, session, projectSlug, projectId, libraryKindProfile("skill"));
   if (!isLibrarySkillAuthorizedForAgent(caller.agentId, ref.id, { capabilities: caller.capabilities })) {
     const copy = skillNotAuthorizedCopy(ref.ref, caller.agentId);
     throw new LibraryCommandError(SKILL_NOT_AUTHORIZED, copy.message, 1, { suggestedAction: copy.suggestedAction });
   }
 }
 
-/** A project item of another project than the agent's own is out of its view unless a grant names it. */
-function assertLibraryRefInCallerView(
+/**
+ * A project item of another project than the agent's own is out of its view
+ * unless a grant names it (skills only: themes and widgets have no grants).
+ */
+export function assertLibraryRefInCallerView(
   caller: LibraryCaller,
   ref: LibraryRef,
   session: { project: ConsoleScopeProject | null },
   projectSlug: string | null | undefined,
   projectId: string | null | undefined,
+  profile: LibraryKindProfile,
 ): void {
+  const skill = profile.kind === "skill";
   if (
     ref.scope === "project" &&
     !projectMatches(session.project, projectSlug, projectId) &&
-    !agentHasLibraryGrant(caller.agentId, ref.id)
+    !(skill && agentHasLibraryGrant(caller.agentId, ref.id))
   ) {
     throw new LibraryCommandError(
-      LIBRARY_SKILL_OUT_OF_VIEW,
-      `Library skill '${ref.ref}' belongs to project '${ref.project}', which is not this agent's Console project.`,
+      profile.outOfViewCode,
+      `Library ${profile.noun} '${ref.ref}' belongs to project '${ref.project}', which is not this agent's Console project.`,
       3,
       {
-        suggestedAction: `Ask an operator to grant it explicitly ('ravi skills grant ${caller.agentId} ${ref.ref}') or to bind this agent to that project.`,
+        suggestedAction: skill
+          ? `Ask an operator to grant it explicitly ('ravi skills grant ${caller.agentId} ${ref.ref}') or to bind this agent to that project.`
+          : "Ask an operator to bind this agent to that project.",
       },
     );
   }
 }
 
-function projectMatches(
+export function projectMatches(
   project: ConsoleScopeProject | null,
   slug: string | null | undefined,
   id: string | null | undefined,

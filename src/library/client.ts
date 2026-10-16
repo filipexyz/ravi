@@ -11,6 +11,18 @@
 //   GET  /api/cli/library/skills/<scope>/<slug>/proposals
 //   GET  /api/cli/library/skills/<scope>/<slug>/proposals/<n>
 //   POST /api/cli/library/skills/<scope>/<slug>/proposals/<n>/update
+//
+// The same routes serve every kind under its own segment (`themes`,
+// `widgets`, `agents`; see kinds.ts). Themes and widgets add:
+//
+//   GET  /api/cli/library/themes/default
+//   POST /api/cli/library/themes/check
+//   GET  /api/cli/library/themes/active?project=
+//   POST /api/cli/library/themes/active
+//   GET  /api/cli/library/widgets/catalog?project=
+//   POST /api/cli/library/widgets/check
+//   POST /api/cli/library/widgets/preview
+//   POST /api/cli/library/widgets/scaffold
 
 import { ConsoleApiClient, normalizeConsoleUrl, refreshCredentialsForStore } from "../cloud-auth/client.js";
 import { CloudAuthError, classifyConsoleNetworkError, isCloudAuthError } from "../cloud-auth/errors.js";
@@ -19,8 +31,14 @@ import type { CloudCredentials } from "../cloud-auth/types.js";
 import { resolveConsoleScope, type ConsoleScopeResolverDeps } from "../console-scope/resolver.js";
 import type { ConsoleScopeProject } from "../console-scope/types.js";
 import { inspectExecutionPlane } from "../isolation/execution-plane.js";
+import { normalizeDiagnostics, type LibraryDiagnostic } from "./diagnostics.js";
+import { libraryKindPath, type LibraryKind } from "./kinds.js";
 import type { LibraryRef } from "./refs.js";
 import type {
+  LibraryContrastReport,
+  LibraryEffectiveTheme,
+  LibraryFileText,
+  LibraryGeneratedFiles,
   LibraryItem,
   LibraryItemProposalsResponse,
   LibraryProposal,
@@ -36,8 +54,18 @@ import type {
   LibrarySearchItem,
   LibrarySearchResponse,
   LibraryShowResponse,
+  LibraryThemeActive,
+  LibraryThemeCheck,
+  LibraryThemePointer,
+  LibraryThemeUseBody,
+  LibraryThemeUseResult,
   LibraryVersion,
   LibraryVersionFile,
+  LibraryWidgetCatalog,
+  LibraryWidgetCheck,
+  LibraryWidgetField,
+  LibraryWidgetPreview,
+  LibraryWidgetSummary,
 } from "./types.js";
 
 export const LIBRARY_SKILLS_PATH = "/api/cli/library/skills";
@@ -61,6 +89,8 @@ export function isLibraryNotFoundError(error: unknown): error is CloudAuthError 
 
 export class LibraryClient {
   private credentials: CloudCredentials;
+  /** The kind every route of this client serves (`skills/...` by default). */
+  readonly kind: LibraryKind;
 
   constructor(
     private readonly session: {
@@ -68,9 +98,11 @@ export class LibraryClient {
       credentials: CloudCredentials;
       write: typeof writeCloudCredentials;
       delete: typeof deleteCloudCredentials;
+      kind?: LibraryKind;
     },
   ) {
     this.credentials = session.credentials;
+    this.kind = session.kind ?? "skill";
   }
 
   get consoleUrl(): string {
@@ -82,7 +114,7 @@ export class LibraryClient {
     if (input.project) params.set("project", input.project);
     if (input.limit !== undefined) params.set("limit", String(input.limit));
     const payload = await this.request<Partial<LibrarySearchResponse>>("GET", `?${params.toString()}`);
-    const items = Array.isArray(payload?.items) ? payload.items.map((item) => requireItem(item)) : [];
+    const items = Array.isArray(payload?.items) ? payload.items.map((item) => requireItem(item, this.kind)) : [];
     return { items: items as LibrarySearchItem[], query: input.query, project: payload?.project ?? null };
   }
 
@@ -90,14 +122,14 @@ export class LibraryClient {
   async showRef(ref: LibraryRef, options: { version?: number } = {}): Promise<LibraryShowResponse> {
     const query = options.version !== undefined ? `?version=${encodeURIComponent(String(options.version))}` : "";
     const payload = await this.request<unknown>("GET", `${refPath(ref)}${query}`);
-    return requireShow(payload);
+    return requireShow(payload, this.kind);
   }
 
   /** `GET /skills/<slug>?project=`: the item a bare slug names in the caller's view. */
   async showSlug(slug: string, options: { project?: string | null } = {}): Promise<LibraryShowResponse> {
     const query = options.project ? `?project=${encodeURIComponent(options.project)}` : "";
     const payload = await this.request<unknown>("GET", `/${encodeURIComponent(slug)}${query}`);
-    return requireShow(payload);
+    return requireShow(payload, this.kind);
   }
 
   async publish(body: LibraryPublishBody): Promise<LibraryPublishResponse> {
@@ -106,7 +138,12 @@ export class LibraryClient {
     if (!version || typeof version.number !== "number") {
       throw new CloudAuthError("SERVER_UNAVAILABLE", "The Console returned a publish result without a version.");
     }
-    return { item: requireItem(payload?.item), version, unchanged: payload?.unchanged === true };
+    return {
+      item: requireItem(payload?.item, this.kind),
+      version,
+      unchanged: payload?.unchanged === true,
+      ...(Array.isArray(payload?.diagnostics) ? { diagnostics: normalizeDiagnostics(payload.diagnostics) } : {}),
+    };
   }
 
   /** `GET /skills/proposals`: proposals the caller can see (open ones by default). */
@@ -138,7 +175,7 @@ export class LibraryClient {
     }
     const can = objectValue(payload.can);
     return {
-      item: requireProposalItem(payload.item),
+      item: requireProposalItem(payload.item, this.kind),
       can: { propose: can?.propose === true, review: can?.review === true },
       proposals: payload.proposals.map((proposal) => requireProposal(proposal, this.consoleUrl)),
     };
@@ -152,7 +189,7 @@ export class LibraryClient {
     }
     const base = objectValue(payload.base);
     return {
-      item: requireProposalItem(payload.item),
+      item: requireProposalItem(payload.item, this.kind),
       proposal: requireProposal(payload.proposal, this.consoleUrl),
       files: payload.files.map(requireFile),
       base:
@@ -165,20 +202,184 @@ export class LibraryClient {
 
   /** `POST /skills/proposals`: a new draft (`submit` false) or proposal. */
   async createProposal(body: LibraryProposalCreateBody): Promise<LibraryProposal> {
+    return (await this.createProposalWithDiagnostics(body)).proposal;
+  }
+
+  /** {@link createProposal}, with the compiler's warnings for themes and widgets. */
+  async createProposalWithDiagnostics(
+    body: LibraryProposalCreateBody,
+  ): Promise<{ proposal: LibraryProposal; diagnostics: LibraryDiagnostic[] }> {
     const payload = objectValue(await this.request<unknown>("POST", "/proposals", body));
-    return requireProposal(payload?.proposal, this.consoleUrl);
+    return {
+      proposal: requireProposal(payload?.proposal, this.consoleUrl),
+      diagnostics: normalizeDiagnostics(payload?.diagnostics),
+    };
   }
 
   /** `POST /skills/<scope>/<slug>/proposals/<n>/update`: replace a proposal's whole content (author only). */
   async updateProposal(ref: LibraryRef, number: number, body: LibraryProposalContent): Promise<LibraryProposal> {
+    return (await this.updateProposalWithDiagnostics(ref, number, body)).proposal;
+  }
+
+  /** {@link updateProposal}, with the compiler's warnings for themes and widgets. */
+  async updateProposalWithDiagnostics(
+    ref: LibraryRef,
+    number: number,
+    body: LibraryProposalContent,
+  ): Promise<{ proposal: LibraryProposal; diagnostics: LibraryDiagnostic[] }> {
     const payload = objectValue(
       await this.request<unknown>("POST", `${refPath(ref)}/proposals/${number}/update`, body),
     );
-    return requireProposal(payload?.proposal, this.consoleUrl);
+    return {
+      proposal: requireProposal(payload?.proposal, this.consoleUrl),
+      diagnostics: normalizeDiagnostics(payload?.diagnostics),
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Themes (this client's kind must be `theme`)
+
+  /** `GET themes/default`: the built-in default theme's files. */
+  async themeDefault(): Promise<LibraryGeneratedFiles> {
+    this.assertKind("theme");
+    return requireGeneratedFiles(await this.request<unknown>("GET", "/default"));
+  }
+
+  /** `POST themes/check`: compile and measure contrast; writes nothing. */
+  async checkTheme(files: readonly LibraryFileText[]): Promise<LibraryThemeCheck> {
+    this.assertKind("theme");
+    const payload = objectValue(await this.request<unknown>("POST", "/check", { files: fileTexts(files) }));
+    if (!payload) throw unexpected("theme check");
+    const diagnostics = normalizeDiagnostics(payload.diagnostics);
+    return {
+      ok: payload.ok === true,
+      diagnostics,
+      contrast: normalizeContrast(payload.contrast),
+      css: typeof payload.css === "string" ? payload.css : null,
+    };
+  }
+
+  /** `GET themes/active?project=`: the org and project pointers and the effective theme. */
+  async themeActive(project: string | null): Promise<LibraryThemeActive> {
+    this.assertKind("theme");
+    const query = project ? `?project=${encodeURIComponent(project)}` : "";
+    const payload = objectValue(await this.request<unknown>("GET", `/active${query}`));
+    if (!payload) throw unexpected("active theme");
+    const effective = normalizePointer(payload.effective);
+    const effectiveRecord = objectValue(payload.effective);
+    return {
+      org: normalizePointer(payload.org),
+      project: normalizePointer(payload.project),
+      effective:
+        effective && effectiveRecord
+          ? ({
+              ...effective,
+              version: numberOr(effectiveRecord.version, 0),
+              hash: stringOr(effectiveRecord.hash, ""),
+              source: effectiveRecord.source === "project" ? "project" : "org",
+            } satisfies LibraryEffectiveTheme)
+          : null,
+      warnings: stringArray(payload.warnings),
+    };
+  }
+
+  /** `POST themes/active`: plan (`dryRun`) or set an org or project pointer. */
+  async setThemeActive(body: LibraryThemeUseBody): Promise<LibraryThemeUseResult> {
+    this.assertKind("theme");
+    const payload = objectValue(await this.request<unknown>("POST", "/active", body));
+    const plan = objectValue(payload?.plan);
+    if (!payload || !plan) throw unexpected("theme pointer plan");
+    return {
+      plan: {
+        scope: plan.scope === "project" ? "project" : "org",
+        project: stringOrNull(plan.project),
+        from: normalizePointer(plan.from),
+        to: normalizePointer(plan.to),
+        affectedHosts: Array.isArray(plan.affectedHosts)
+          ? plan.affectedHosts.flatMap((entry) => {
+              const host = objectValue(entry);
+              if (!host || typeof host.hostname !== "string") return [];
+              return [
+                { siteSlug: stringOr(host.siteSlug, ""), hostname: host.hostname, routes: numberOr(host.routes, 0) },
+              ];
+            })
+          : [],
+      },
+      applied: payload.applied === true,
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Widgets (this client's kind must be `widget`)
+
+  /** `GET widgets/catalog?project=`: the Markdown for agents and the org's widgets. */
+  async widgetCatalog(project: string | null): Promise<LibraryWidgetCatalog> {
+    this.assertKind("widget");
+    const query = project ? `?project=${encodeURIComponent(project)}` : "";
+    const payload = objectValue(await this.request<unknown>("GET", `/catalog${query}`));
+    if (!payload || typeof payload.text !== "string") throw unexpected("widget catalog");
+    return {
+      text: payload.text,
+      widgets: Array.isArray(payload.widgets)
+        ? payload.widgets.flatMap((entry) => {
+            const widget = objectValue(entry);
+            if (!widget || typeof widget.ref !== "string") return [];
+            return [
+              {
+                ref: widget.ref,
+                name: stringOr(widget.name, widget.ref),
+                description: stringOr(widget.description, ""),
+                fields: normalizeWidgetFields(widget.fields),
+                variants: stringArray(widget.variants),
+              },
+            ];
+          })
+        : [],
+    };
+  }
+
+  /** `POST widgets/check`: compile; writes nothing. */
+  async checkWidget(files: readonly LibraryFileText[]): Promise<LibraryWidgetCheck> {
+    this.assertKind("widget");
+    const payload = objectValue(await this.request<unknown>("POST", "/check", { files: fileTexts(files) }));
+    if (!payload) throw unexpected("widget check");
+    return {
+      ok: payload.ok === true,
+      diagnostics: normalizeDiagnostics(payload.diagnostics),
+      widget: normalizeWidgetSummary(payload.compiled),
+    };
+  }
+
+  /** `POST widgets/preview`: a standalone HTML document with every variant. */
+  async previewWidget(body: {
+    files: readonly LibraryFileText[];
+    theme?: string | null;
+    data?: unknown;
+    project?: string;
+  }): Promise<LibraryWidgetPreview> {
+    this.assertKind("widget");
+    const payload = objectValue(
+      await this.request<unknown>("POST", "/preview", { ...body, files: fileTexts(body.files) }),
+    );
+    if (!payload) throw unexpected("widget preview");
+    return {
+      html: typeof payload.html === "string" ? payload.html : "",
+      diagnostics: normalizeDiagnostics(payload.diagnostics),
+    };
+  }
+
+  /** `POST widgets/scaffold`: `widget.html`, `widget.json` and `example.json` to start from. */
+  async scaffoldWidget(body: { slug: string; view?: string; project?: string }): Promise<LibraryGeneratedFiles> {
+    this.assertKind("widget");
+    return requireGeneratedFiles(await this.request<unknown>("POST", "/scaffold", body));
+  }
+
+  private assertKind(kind: LibraryKind): void {
+    if (this.kind !== kind) throw new Error(`This Library client serves ${this.kind} routes, not ${kind} routes.`);
   }
 
   private async request<T>(method: string, relativePath: string, body?: unknown): Promise<T> {
-    const path = `${LIBRARY_SKILLS_PATH}${relativePath}`;
+    const path = `${libraryKindPath(this.kind)}${relativePath}`;
     try {
       try {
         return await this.session.client.requestJson<T>(method, path, body, this.credentials.accessToken);
@@ -201,6 +402,8 @@ export class LibraryClient {
 
 export interface LibrarySessionOptions {
   console?: string;
+  /** The kind the client's routes serve (default `skill`). */
+  kind?: LibraryKind;
   /** Explicit project ref; otherwise the Console scope resolver decides. */
   project?: string | null;
   /** Skip project resolution (publish names its own scope). */
@@ -254,6 +457,7 @@ export async function openLibrarySession(
       credentials,
       write: deps.writeCredentials ?? writeCloudCredentials,
       delete: deps.deleteCredentials ?? deleteCloudCredentials,
+      ...(options.kind ? { kind: options.kind } : {}),
     }),
     consoleUrl: credentials.consoleUrl,
     orgId: credentials.organization?.id?.trim() || credentials.organization?.slug?.trim() || "default",
@@ -270,7 +474,7 @@ function refPath(ref: LibraryRef): string {
   return `/${encodeURIComponent(scope)}/${encodeURIComponent(ref.slug)}`;
 }
 
-function requireShow(payload: unknown): LibraryShowResponse {
+function requireShow(payload: unknown, kind: LibraryKind): LibraryShowResponse {
   const record = objectValue(payload);
   const version = objectValue(record?.version);
   if (!record || !version || typeof version.number !== "number" || !Array.isArray(version.files)) {
@@ -284,7 +488,7 @@ function requireShow(payload: unknown): LibraryShowResponse {
     publishedAt: typeof version.publishedAt === "string" ? version.publishedAt : null,
     files,
   };
-  return { item: requireItem(record.item), version: normalized };
+  return { item: requireItem(record.item, kind), version: normalized };
 }
 
 function requireFile(value: unknown): LibraryVersionFile {
@@ -300,8 +504,8 @@ function requireFile(value: unknown): LibraryVersionFile {
   };
 }
 
-function requireItem(value: unknown): LibraryItem {
-  const item = requireItemFields(value);
+function requireItem(value: unknown, kind: LibraryKind): LibraryItem {
+  const item = requireItemFields(value, kind);
   if (item.version === null) {
     throw new CloudAuthError("SERVER_UNAVAILABLE", "The Console returned a Library item without a published version.");
   }
@@ -309,11 +513,11 @@ function requireItem(value: unknown): LibraryItem {
 }
 
 /** An item from the proposal routes, which may have no published version yet. */
-function requireProposalItem(value: unknown): LibraryProposalItem {
-  return requireItemFields(value);
+function requireProposalItem(value: unknown, kind: LibraryKind): LibraryProposalItem {
+  return requireItemFields(value, kind);
 }
 
-function requireItemFields(value: unknown): LibraryProposalItem {
+function requireItemFields(value: unknown, fallbackKind: LibraryKind): LibraryProposalItem {
   const item = objectValue(value);
   if (
     !item ||
@@ -332,7 +536,7 @@ function requireItemFields(value: unknown): LibraryProposalItem {
   // Only the contract's fields: the result is cached and returned as JSON.
   return {
     ref: typeof item.ref === "string" ? item.ref : "",
-    kind: typeof item.kind === "string" ? item.kind : "skill",
+    kind: typeof item.kind === "string" ? item.kind : fallbackKind,
     scope: item.scope,
     slug,
     name: typeof item.name === "string" && item.name ? item.name : slug,
@@ -453,6 +657,106 @@ function requireAuthor(value: unknown): { name: string | null; agentId: string |
     agentId: stringOrNull(author?.agentId),
     self: author?.self === true,
   };
+}
+
+function requireGeneratedFiles(payload: unknown): LibraryGeneratedFiles {
+  const record = objectValue(payload);
+  if (!record || !Array.isArray(record.files)) {
+    throw new CloudAuthError("SERVER_UNAVAILABLE", "The Console returned no files.");
+  }
+  return {
+    files: record.files.map((entry) => {
+      const file = objectValue(entry);
+      if (!file || typeof file.path !== "string" || typeof file.content !== "string") {
+        throw new CloudAuthError("SERVER_UNAVAILABLE", "The Console returned a file without a path or content.");
+      }
+      return { path: file.path, content: file.content };
+    }),
+    diagnostics: normalizeDiagnostics(record.diagnostics),
+  };
+}
+
+/** Only `path` and `content` travel: a package file also carries its size and hash. */
+function fileTexts(files: readonly LibraryFileText[]): LibraryFileText[] {
+  return files.map((file) => ({ path: file.path, content: file.content }));
+}
+
+function normalizeContrast(value: unknown): LibraryContrastReport | null {
+  const report = objectValue(value);
+  if (!report) return null;
+  const checks = Array.isArray(report.checks)
+    ? report.checks.flatMap((entry) => {
+        const check = objectValue(entry);
+        if (!check || !Array.isArray(check.pair) || check.pair.length !== 2) return [];
+        const [fg, bg] = check.pair;
+        if (typeof fg !== "string" || typeof bg !== "string") return [];
+        return [
+          {
+            mode: check.mode === "dark" ? ("dark" as const) : ("light" as const),
+            pair: [fg, bg] as [string, string],
+            ratio: numberOr(check.ratio, 0),
+            min: numberOr(check.min, 0),
+            ok: check.ok === true,
+          },
+        ];
+      })
+    : [];
+  return { ok: report.ok === true, checks };
+}
+
+function normalizePointer(value: unknown): LibraryThemePointer | null {
+  const pointer = objectValue(value);
+  if (!pointer || typeof pointer.ref !== "string") return null;
+  const setBy = objectValue(pointer.setBy);
+  return {
+    ref: pointer.ref,
+    itemId: stringOr(pointer.itemId, ""),
+    scope: pointer.scope === "project" ? "project" : "org",
+    slug: stringOr(pointer.slug, pointer.ref.split("/").pop() ?? pointer.ref),
+    name: stringOr(pointer.name, pointer.ref),
+    setAt: stringOrNull(pointer.setAt),
+    setBy: typeof pointer.setBy === "string" ? pointer.setBy : stringOrNull(setBy?.name),
+  };
+}
+
+function normalizeWidgetFields(value: unknown): Record<string, LibraryWidgetField> {
+  const fields = objectValue(value);
+  if (!fields) return {};
+  const normalized: Record<string, LibraryWidgetField> = {};
+  for (const [key, entry] of Object.entries(fields)) {
+    const field = objectValue(entry);
+    if (!field || typeof field.type !== "string") continue;
+    normalized[key] = {
+      type: field.type,
+      role: stringOrNull(field.role),
+      required: field.required === true,
+      label: stringOrNull(field.label),
+      description: stringOrNull(field.description),
+    };
+  }
+  return normalized;
+}
+
+function normalizeWidgetSummary(value: unknown): LibraryWidgetSummary | null {
+  const compiled = objectValue(value);
+  if (!compiled) return null;
+  const variants = objectValue(compiled.variants);
+  return {
+    name: stringOr(compiled.name, ""),
+    description: stringOr(compiled.description, ""),
+    fields: normalizeWidgetFields(compiled.fields),
+    variants: variants ? Object.keys(variants) : stringArray(compiled.variants),
+    actions: Array.isArray(compiled.actions) ? compiled.actions.length : 0,
+    hash: stringOrNull(compiled.hash),
+  };
+}
+
+function unexpected(what: string): CloudAuthError {
+  return new CloudAuthError("SERVER_UNAVAILABLE", `The Console returned an unexpected ${what}.`);
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
 }
 
 function numberOr(value: unknown, fallback: number): number {

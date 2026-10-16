@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { ConsoleApiClient } from "../cloud-auth/client.js";
 import type { CloudCredentials } from "../cloud-auth/types.js";
 import { LibraryClient, type LibrarySession } from "./client.js";
+import { LIBRARY_KIND_SEGMENTS, type LibraryKind } from "./kinds.js";
 import { libraryContentHash } from "./package.js";
 import type {
   LibraryItem,
@@ -78,6 +79,38 @@ export function fakeSkill(input: {
   };
 }
 
+/** A published item of any kind with the given files (themes and widgets in tests). */
+export function fakeItem(input: {
+  kind: LibraryKind;
+  slug: string;
+  files: Array<{ path: string; content: string }>;
+  project?: string | null;
+  name?: string;
+  description?: string;
+  version?: number;
+}): FakeLibrarySkill {
+  const base = fakeSkill({
+    slug: input.slug,
+    project: input.project,
+    description: input.description,
+    version: input.version,
+  });
+  const files = input.files.map((file) => ({
+    ...file,
+    bytes: Buffer.byteLength(file.content),
+    sha256: sha(file.content),
+  }));
+  return {
+    item: {
+      ...base.item,
+      kind: input.kind,
+      name: input.name ?? input.slug,
+      contentHash: libraryContentHash(files),
+    },
+    files,
+  };
+}
+
 function sha(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
@@ -138,6 +171,21 @@ export function fakeComment(
   };
 }
 
+/** A route the test answers itself (checked before the Library routes); null passes it on. */
+export type FakeRoute = (request: {
+  method: string;
+  /** Path segments after `/api/cli/library/<segment>`. */
+  rest: string[];
+  params: URLSearchParams;
+  body: unknown;
+}) => Response | null;
+
+export interface FakeConsoleOptions {
+  /** The kind whose segment the fake serves (default `skill`). */
+  kind?: LibraryKind;
+  routes?: FakeRoute;
+}
+
 export interface FakeConsole {
   skills: FakeLibrarySkill[];
   proposals: FakeProposal[];
@@ -146,12 +194,17 @@ export interface FakeConsole {
   fetch: (url: string, init?: RequestInit) => Promise<Response>;
 }
 
-function json(status: number, body: unknown): Response {
+export function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
 
 /** A fake Console answering the Library routes; `offline` makes every call throw like a dead network. */
-export function createFakeConsole(skills: FakeLibrarySkill[] = [], proposals: FakeProposal[] = []): FakeConsole {
+export function createFakeConsole(
+  skills: FakeLibrarySkill[] = [],
+  proposals: FakeProposal[] = [],
+  options: FakeConsoleOptions = {},
+): FakeConsole {
+  const kind = options.kind ?? "skill";
   const state: FakeConsole = {
     skills,
     proposals,
@@ -169,7 +222,7 @@ export function createFakeConsole(skills: FakeLibrarySkill[] = [], proposals: Fa
         authorization: headers.get("authorization"),
       });
       if (state.offline) throw new TypeError("fetch failed: connect ECONNREFUSED");
-      const root = "/api/cli/library/skills";
+      const root = `/api/cli/library/${LIBRARY_KIND_SEGMENTS[kind]}`;
       if (!parsed.pathname.startsWith(root)) return json(404, { error: { code: "NOT_FOUND", message: "nope" } });
       const rest = parsed.pathname
         .slice(root.length)
@@ -177,7 +230,9 @@ export function createFakeConsole(skills: FakeLibrarySkill[] = [], proposals: Fa
         .filter(Boolean)
         .map((part) => decodeURIComponent(part));
       const project = parsed.searchParams.get("project");
-      const proposalRoute = handleProposalRoute(state, method, rest, parsed.searchParams, body);
+      const custom = options.routes?.({ method, rest, params: parsed.searchParams, body });
+      if (custom) return custom;
+      const proposalRoute = handleProposalRoute(state, method, rest, parsed.searchParams, body, kind);
       if (proposalRoute) return proposalRoute;
       const inView = (skill: FakeLibrarySkill) =>
         skill.item.scope === "org" || (project !== null && skill.item.project?.slug === project);
@@ -263,6 +318,7 @@ export function createFakeConsole(skills: FakeLibrarySkill[] = [], proposals: Fa
           externalAllowed: input.externalAllowed,
         });
         next.files = files;
+        next.item.kind = kind;
         next.item.contentHash = contentHash;
         state.skills = [...state.skills.filter((skill) => skill !== existing), next];
         return json(201, { item: next.item, version: { number: next.item.version, contentHash }, unchanged: false });
@@ -337,13 +393,20 @@ function findSkill(
   );
 }
 
-function itemView(state: FakeConsole, scope: "org" | "project", project: string | null, slug: string) {
+function itemView(
+  state: FakeConsole,
+  scope: "org" | "project",
+  project: string | null,
+  slug: string,
+  kind: LibraryKind,
+) {
   const published = findSkill(state, scope, project, slug);
   if (published) return published.item;
   const first = state.proposals.find((p) => p.scope === scope && p.project === project && p.slug === slug);
   if (!first) return null;
   return {
     ...fakeSkill({ slug, project }).item,
+    kind,
     name: first.name,
     description: first.description,
     version: null,
@@ -378,6 +441,7 @@ function handleProposalRoute(
   rest: string[],
   params: URLSearchParams,
   body: unknown,
+  kind: LibraryKind,
 ): Response | null {
   if (rest[0] === "proposals" && rest.length === 1) {
     if (method === "GET") {
@@ -441,7 +505,7 @@ function handleProposalRoute(
   const [scopeRef, slug] = rest as [string, string];
   const scope = scopeRef === "org" ? "org" : "project";
   const project = scope === "org" ? null : scopeRef;
-  const item = itemView(state, scope, project, slug);
+  const item = itemView(state, scope, project, slug, kind);
   if (!item) return json(404, { error: { code: "NOT_FOUND", message: "Library skill not found." } });
   const ofItem = state.proposals
     .filter((p) => p.scope === scope && p.project === project && p.slug === slug)
@@ -510,6 +574,7 @@ export function fakeSession(
   fake: FakeConsole,
   project: { slug: string; id?: string } | null = null,
   orgId = "org-1",
+  kind?: LibraryKind,
 ): LibrarySession {
   const credentials = fakeCredentials();
   return {
@@ -518,6 +583,7 @@ export function fakeSession(
       credentials,
       write: () => {},
       delete: () => {},
+      ...(kind ? { kind } : {}),
     }),
     consoleUrl: FAKE_CONSOLE_URL,
     orgId,
