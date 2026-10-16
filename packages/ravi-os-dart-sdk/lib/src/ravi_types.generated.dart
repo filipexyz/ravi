@@ -4091,6 +4091,58 @@ class BasesViewsArchiveReturn {
 
 BasesViewsArchiveReturn basesViewsArchiveReturnFromJson(Object? json) => BasesViewsArchiveReturn.fromJsonValue(json);
 
+class BasesViewsBindOptions {
+  const BasesViewsBindOptions({this.console, this.field, this.project, this.variant});
+
+  final String? console;
+  final List<String>? field;
+  final String? project;
+  final String? variant;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (field != null) {
+      into["field"] = RaviJson.from(field);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (variant != null) {
+      into["variant"] = RaviJson.from(variant);
+    }
+  }
+}
+
+class BasesViewsBindReturn {
+  const BasesViewsBindReturn({required this.baseRef, required this.consoleUrl, required this.projectRef, required this.success, required this.view, required this.widget});
+
+  final String baseRef;
+  final String consoleUrl;
+  final String projectRef;
+  final bool success;
+  final RaviJson view;
+  final RaviJson widget;
+
+  factory BasesViewsBindReturn.fromJson(Map<String, Object?> json) {
+    return BasesViewsBindReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      success: raviJsonAsBool(json["success"]),
+      view: RaviJson.from(json["view"]),
+      widget: RaviJson.from(json["widget"]),
+    );
+  }
+
+  static BasesViewsBindReturn fromJsonValue(Object? json) {
+    return BasesViewsBindReturn.fromJson(raviJsonObject(json, "BasesViewsBindReturn"));
+  }
+}
+
+BasesViewsBindReturn basesViewsBindReturnFromJson(Object? json) => BasesViewsBindReturn.fromJsonValue(json);
+
 class BasesViewsCreateOptions {
   const BasesViewsCreateOptions({this.console, this.name, this.project, this.spec});
 
@@ -15993,6 +16045,48 @@ class PagesListReturn {
 
 PagesListReturn pagesListReturnFromJson(Object? json) => PagesListReturn.fromJsonValue(json);
 
+class PagesOutdatedOptions {
+  const PagesOutdatedOptions({this.console, this.project});
+
+  final String? console;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class PagesOutdatedReturn {
+  const PagesOutdatedReturn({required this.consoleUrl, required this.items, required this.projectRef, required this.success, required this.total});
+
+  final String consoleUrl;
+  final List<RaviJson> items;
+  final String projectRef;
+  final bool success;
+  final double total;
+
+  factory PagesOutdatedReturn.fromJson(Map<String, Object?> json) {
+    return PagesOutdatedReturn(
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      items: raviJsonAsList(json["items"], RaviJson.from),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      success: raviJsonAsBool(json["success"]),
+      total: raviJsonAsDouble(json["total"]),
+    );
+  }
+
+  static PagesOutdatedReturn fromJsonValue(Object? json) {
+    return PagesOutdatedReturn.fromJson(raviJsonObject(json, "PagesOutdatedReturn"));
+  }
+}
+
+PagesOutdatedReturn pagesOutdatedReturnFromJson(Object? json) => PagesOutdatedReturn.fromJsonValue(json);
+
 class PagesPasswordRemoveOptions {
   const PagesPasswordRemoveOptions({this.console, this.execute, this.project, this.route, this.visibility});
 
@@ -16430,7 +16524,7 @@ class PagesShareReturn {
 PagesShareReturn pagesShareReturnFromJson(Object? json) => PagesShareReturn.fromJsonValue(json);
 
 class PagesShipOptions {
-  const PagesShipOptions({this.body, this.console, this.dir, this.entrypoint, this.execute, this.html, this.membersBestEffort, this.project, this.route, this.title, this.uses, this.visibility});
+  const PagesShipOptions({this.body, this.console, this.dir, this.entrypoint, this.execute, this.html, this.membersBestEffort, this.project, this.route, this.theme, this.title, this.uses, this.visibility});
 
   final String? body;
   final String? console;
@@ -16441,6 +16535,7 @@ class PagesShipOptions {
   final bool? membersBestEffort;
   final String? project;
   final String? route;
+  final String? theme;
   final String? title;
   final List<String>? uses;
   final String? visibility;
@@ -16473,6 +16568,9 @@ class PagesShipOptions {
     if (route != null) {
       into["route"] = RaviJson.from(route);
     }
+    if (theme != null) {
+      into["theme"] = RaviJson.from(theme);
+    }
     if (title != null) {
       into["title"] = RaviJson.from(title);
     }
@@ -16486,10 +16584,12 @@ class PagesShipOptions {
 }
 
 class PagesShipReturn {
-  const PagesShipReturn({required this.artifactId, required this.commentFollow, required this.route, required this.site, required this.slug, required this.success, required this.url, this.uses, required this.visibility, this.warnings});
+  const PagesShipReturn({required this.artifactId, required this.commentFollow, required this.kit, required this.presentation, required this.route, required this.site, required this.slug, required this.success, required this.url, this.uses, required this.visibility, this.warnings});
 
   final RaviJson artifactId;
   final RaviJson commentFollow;
+  final RaviJson kit;
+  final RaviJson presentation;
   final String route;
   final Map<String, RaviJson> site;
   final String slug;
@@ -16503,6 +16603,8 @@ class PagesShipReturn {
     return PagesShipReturn(
       artifactId: RaviJson.from(json["artifactId"]),
       commentFollow: RaviJson.from(json["commentFollow"]),
+      kit: RaviJson.from(json["kit"]),
+      presentation: RaviJson.from(json["presentation"]),
       route: raviJsonAsString(json["route"]),
       site: raviJsonAsRaviJsonMap(json["site"]),
       slug: raviJsonAsString(json["slug"]),
@@ -27431,6 +27533,460 @@ class TasksUnarchiveReturn {
 
 TasksUnarchiveReturn tasksUnarchiveReturnFromJson(Object? json) => TasksUnarchiveReturn.fromJsonValue(json);
 
+class ThemesActiveOptions {
+  const ThemesActiveOptions({this.project});
+
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class ThemesActiveReturn {
+  const ThemesActiveReturn({required this.effective, required this.org, required this.project, required this.projectRef, required this.warnings});
+
+  final RaviJson effective;
+  final RaviJson org;
+  final RaviJson project;
+  final RaviJson projectRef;
+  final List<String> warnings;
+
+  factory ThemesActiveReturn.fromJson(Map<String, Object?> json) {
+    return ThemesActiveReturn(
+      effective: RaviJson.from(json["effective"]),
+      org: RaviJson.from(json["org"]),
+      project: RaviJson.from(json["project"]),
+      projectRef: RaviJson.from(json["projectRef"]),
+      warnings: raviJsonAsList(json["warnings"], raviJsonAsString),
+    );
+  }
+
+  static ThemesActiveReturn fromJsonValue(Object? json) {
+    return ThemesActiveReturn.fromJson(raviJsonObject(json, "ThemesActiveReturn"));
+  }
+}
+
+ThemesActiveReturn themesActiveReturnFromJson(Object? json) => ThemesActiveReturn.fromJsonValue(json);
+
+class ThemesCheckReturn {
+  const ThemesCheckReturn({required this.contrast, required this.css, required this.diagnostics, required this.files, required this.kind, required this.ok});
+
+  final RaviJson contrast;
+  final RaviJson css;
+  final List<RaviJson> diagnostics;
+  final List<RaviJson> files;
+  final String kind;
+  final bool ok;
+
+  factory ThemesCheckReturn.fromJson(Map<String, Object?> json) {
+    return ThemesCheckReturn(
+      contrast: RaviJson.from(json["contrast"]),
+      css: RaviJson.from(json["css"]),
+      diagnostics: raviJsonAsList(json["diagnostics"], RaviJson.from),
+      files: raviJsonAsList(json["files"], RaviJson.from),
+      kind: raviJsonAsString(json["kind"]),
+      ok: raviJsonAsBool(json["ok"]),
+    );
+  }
+
+  static ThemesCheckReturn fromJsonValue(Object? json) {
+    return ThemesCheckReturn.fromJson(raviJsonObject(json, "ThemesCheckReturn"));
+  }
+}
+
+ThemesCheckReturn themesCheckReturnFromJson(Object? json) => ThemesCheckReturn.fromJsonValue(json);
+
+class ThemesInitOptions {
+  const ThemesInitOptions({this.force});
+
+  final bool? force;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (force != null) {
+      into["force"] = RaviJson.from(force);
+    }
+  }
+}
+
+class ThemesInitReturn {
+  const ThemesInitReturn({required this.diagnostics, required this.dir, required this.files, required this.kind, required this.next, required this.slug, required this.success});
+
+  final List<RaviJson> diagnostics;
+  final String dir;
+  final List<RaviJson> files;
+  final String kind;
+  final String next;
+  final RaviJson slug;
+  final bool success;
+
+  factory ThemesInitReturn.fromJson(Map<String, Object?> json) {
+    return ThemesInitReturn(
+      diagnostics: raviJsonAsList(json["diagnostics"], RaviJson.from),
+      dir: raviJsonAsString(json["dir"]),
+      files: raviJsonAsList(json["files"], RaviJson.from),
+      kind: raviJsonAsString(json["kind"]),
+      next: raviJsonAsString(json["next"]),
+      slug: RaviJson.from(json["slug"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static ThemesInitReturn fromJsonValue(Object? json) {
+    return ThemesInitReturn.fromJson(raviJsonObject(json, "ThemesInitReturn"));
+  }
+}
+
+ThemesInitReturn themesInitReturnFromJson(Object? json) => ThemesInitReturn.fromJsonValue(json);
+
+class ThemesProposalReturn {
+  const ThemesProposalReturn({required this.base, required this.comments, required this.contentsVisible, required this.files, required this.item, required this.number, required this.proposal, required this.ref});
+
+  final RaviJson base;
+  final List<RaviJson> comments;
+  final bool contentsVisible;
+  final List<RaviJson> files;
+  final RaviJson item;
+  final double number;
+  final RaviJson proposal;
+  final String ref;
+
+  factory ThemesProposalReturn.fromJson(Map<String, Object?> json) {
+    return ThemesProposalReturn(
+      base: RaviJson.from(json["base"]),
+      comments: raviJsonAsList(json["comments"], RaviJson.from),
+      contentsVisible: raviJsonAsBool(json["contentsVisible"]),
+      files: raviJsonAsList(json["files"], RaviJson.from),
+      item: RaviJson.from(json["item"]),
+      number: raviJsonAsDouble(json["number"]),
+      proposal: RaviJson.from(json["proposal"]),
+      ref: raviJsonAsString(json["ref"]),
+    );
+  }
+
+  static ThemesProposalReturn fromJsonValue(Object? json) {
+    return ThemesProposalReturn.fromJson(raviJsonObject(json, "ThemesProposalReturn"));
+  }
+}
+
+ThemesProposalReturn themesProposalReturnFromJson(Object? json) => ThemesProposalReturn.fromJsonValue(json);
+
+class ThemesProposalsOptions {
+  const ThemesProposalsOptions({this.mine, this.project, this.state});
+
+  final bool? mine;
+  final String? project;
+  final String? state;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (mine != null) {
+      into["mine"] = RaviJson.from(mine);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (state != null) {
+      into["state"] = RaviJson.from(state);
+    }
+  }
+}
+
+class ThemesProposalsReturn {
+  const ThemesProposalsReturn({required this.item, required this.mine, required this.project, required this.proposals, required this.ref, required this.state, required this.total});
+
+  final RaviJson item;
+  final bool mine;
+  final RaviJson project;
+  final List<RaviJson> proposals;
+  final RaviJson ref;
+  final String state;
+  final double total;
+
+  factory ThemesProposalsReturn.fromJson(Map<String, Object?> json) {
+    return ThemesProposalsReturn(
+      item: RaviJson.from(json["item"]),
+      mine: raviJsonAsBool(json["mine"]),
+      project: RaviJson.from(json["project"]),
+      proposals: raviJsonAsList(json["proposals"], RaviJson.from),
+      ref: RaviJson.from(json["ref"]),
+      state: raviJsonAsString(json["state"]),
+      total: raviJsonAsDouble(json["total"]),
+    );
+  }
+
+  static ThemesProposalsReturn fromJsonValue(Object? json) {
+    return ThemesProposalsReturn.fromJson(raviJsonObject(json, "ThemesProposalsReturn"));
+  }
+}
+
+ThemesProposalsReturn themesProposalsReturnFromJson(Object? json) => ThemesProposalsReturn.fromJsonValue(json);
+
+class ThemesProposeOptions {
+  const ThemesProposeOptions({this.draft, this.execute, this.name, this.note, this.rebase, this.scope, this.slug, this.update});
+
+  final bool? draft;
+  final bool? execute;
+  final String? name;
+  final String? note;
+  final bool? rebase;
+  final String? scope;
+  final String? slug;
+  final String? update;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (draft != null) {
+      into["draft"] = RaviJson.from(draft);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (name != null) {
+      into["name"] = RaviJson.from(name);
+    }
+    if (note != null) {
+      into["note"] = RaviJson.from(note);
+    }
+    if (rebase != null) {
+      into["rebase"] = RaviJson.from(rebase);
+    }
+    if (scope != null) {
+      into["scope"] = RaviJson.from(scope);
+    }
+    if (slug != null) {
+      into["slug"] = RaviJson.from(slug);
+    }
+    if (update != null) {
+      into["update"] = RaviJson.from(update);
+    }
+  }
+}
+
+class ThemesProposeReturn {
+  const ThemesProposeReturn({required this.baseVersion, required this.created, required this.currentVersion, required this.diagnostics, required this.next, required this.number, required this.proposal, required this.ref, required this.round, required this.stale, required this.status, required this.success});
+
+  final double baseVersion;
+  final bool created;
+  final double currentVersion;
+  final List<RaviJson> diagnostics;
+  final String next;
+  final double number;
+  final RaviJson proposal;
+  final String ref;
+  final double round;
+  final bool stale;
+  final String status;
+  final bool success;
+
+  factory ThemesProposeReturn.fromJson(Map<String, Object?> json) {
+    return ThemesProposeReturn(
+      baseVersion: raviJsonAsDouble(json["baseVersion"]),
+      created: raviJsonAsBool(json["created"]),
+      currentVersion: raviJsonAsDouble(json["currentVersion"]),
+      diagnostics: raviJsonAsList(json["diagnostics"], RaviJson.from),
+      next: raviJsonAsString(json["next"]),
+      number: raviJsonAsDouble(json["number"]),
+      proposal: RaviJson.from(json["proposal"]),
+      ref: raviJsonAsString(json["ref"]),
+      round: raviJsonAsDouble(json["round"]),
+      stale: raviJsonAsBool(json["stale"]),
+      status: raviJsonAsString(json["status"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static ThemesProposeReturn fromJsonValue(Object? json) {
+    return ThemesProposeReturn.fromJson(raviJsonObject(json, "ThemesProposeReturn"));
+  }
+}
+
+ThemesProposeReturn themesProposeReturnFromJson(Object? json) => ThemesProposeReturn.fromJsonValue(json);
+
+class ThemesPublishOptions {
+  const ThemesPublishOptions({this.execute, this.name, this.note, this.scope, this.slug});
+
+  final bool? execute;
+  final String? name;
+  final String? note;
+  final String? scope;
+  final String? slug;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (name != null) {
+      into["name"] = RaviJson.from(name);
+    }
+    if (note != null) {
+      into["note"] = RaviJson.from(note);
+    }
+    if (scope != null) {
+      into["scope"] = RaviJson.from(scope);
+    }
+    if (slug != null) {
+      into["slug"] = RaviJson.from(slug);
+    }
+  }
+}
+
+class ThemesPublishReturn {
+  const ThemesPublishReturn({required this.contentHash, required this.diagnostics, required this.item, required this.ref, required this.success, required this.unchanged, required this.version});
+
+  final String contentHash;
+  final List<RaviJson> diagnostics;
+  final RaviJson item;
+  final String ref;
+  final bool success;
+  final bool unchanged;
+  final double version;
+
+  factory ThemesPublishReturn.fromJson(Map<String, Object?> json) {
+    return ThemesPublishReturn(
+      contentHash: raviJsonAsString(json["contentHash"]),
+      diagnostics: raviJsonAsList(json["diagnostics"], RaviJson.from),
+      item: RaviJson.from(json["item"]),
+      ref: raviJsonAsString(json["ref"]),
+      success: raviJsonAsBool(json["success"]),
+      unchanged: raviJsonAsBool(json["unchanged"]),
+      version: raviJsonAsDouble(json["version"]),
+    );
+  }
+
+  static ThemesPublishReturn fromJsonValue(Object? json) {
+    return ThemesPublishReturn.fromJson(raviJsonObject(json, "ThemesPublishReturn"));
+  }
+}
+
+ThemesPublishReturn themesPublishReturnFromJson(Object? json) => ThemesPublishReturn.fromJsonValue(json);
+
+class ThemesSearchOptions {
+  const ThemesSearchOptions({this.limit, this.project});
+
+  final String? limit;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class ThemesSearchReturn {
+  const ThemesSearchReturn({required this.items, required this.project, required this.query, required this.total});
+
+  final List<RaviJson> items;
+  final RaviJson project;
+  final String query;
+  final double total;
+
+  factory ThemesSearchReturn.fromJson(Map<String, Object?> json) {
+    return ThemesSearchReturn(
+      items: raviJsonAsList(json["items"], RaviJson.from),
+      project: RaviJson.from(json["project"]),
+      query: raviJsonAsString(json["query"]),
+      total: raviJsonAsDouble(json["total"]),
+    );
+  }
+
+  static ThemesSearchReturn fromJsonValue(Object? json) {
+    return ThemesSearchReturn.fromJson(raviJsonObject(json, "ThemesSearchReturn"));
+  }
+}
+
+ThemesSearchReturn themesSearchReturnFromJson(Object? json) => ThemesSearchReturn.fromJsonValue(json);
+
+class ThemesShowOptions {
+  const ThemesShowOptions({this.project, this.version});
+
+  final String? project;
+  final String? version;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (version != null) {
+      into["version"] = RaviJson.from(version);
+    }
+  }
+}
+
+class ThemesShowReturn {
+  const ThemesShowReturn({required this.contentHash, required this.files, required this.item, required this.kind, required this.note, required this.publishedAt, required this.ref, required this.version});
+
+  final String contentHash;
+  final List<RaviJson> files;
+  final RaviJson item;
+  final String kind;
+  final RaviJson note;
+  final RaviJson publishedAt;
+  final String ref;
+  final double version;
+
+  factory ThemesShowReturn.fromJson(Map<String, Object?> json) {
+    return ThemesShowReturn(
+      contentHash: raviJsonAsString(json["contentHash"]),
+      files: raviJsonAsList(json["files"], RaviJson.from),
+      item: RaviJson.from(json["item"]),
+      kind: raviJsonAsString(json["kind"]),
+      note: RaviJson.from(json["note"]),
+      publishedAt: RaviJson.from(json["publishedAt"]),
+      ref: raviJsonAsString(json["ref"]),
+      version: raviJsonAsDouble(json["version"]),
+    );
+  }
+
+  static ThemesShowReturn fromJsonValue(Object? json) {
+    return ThemesShowReturn.fromJson(raviJsonObject(json, "ThemesShowReturn"));
+  }
+}
+
+ThemesShowReturn themesShowReturnFromJson(Object? json) => ThemesShowReturn.fromJsonValue(json);
+
+class ThemesUseOptions {
+  const ThemesUseOptions({this.execute, this.project});
+
+  final bool? execute;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class ThemesUseReturn {
+  const ThemesUseReturn({required this.applied, required this.plan, required this.success});
+
+  final bool applied;
+  final RaviJson plan;
+  final bool success;
+
+  factory ThemesUseReturn.fromJson(Map<String, Object?> json) {
+    return ThemesUseReturn(
+      applied: raviJsonAsBool(json["applied"]),
+      plan: RaviJson.from(json["plan"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static ThemesUseReturn fromJsonValue(Object? json) {
+    return ThemesUseReturn.fromJson(raviJsonObject(json, "ThemesUseReturn"));
+  }
+}
+
+ThemesUseReturn themesUseReturnFromJson(Object? json) => ThemesUseReturn.fromJsonValue(json);
+
 class ThreadsBriefOptions {
   const ThreadsBriefOptions({this.scope});
 
@@ -29114,6 +29670,472 @@ class WhatsappGroupSettingsOptions {
 typedef WhatsappGroupSettingsReturn = Map<String, RaviJson>;
 
 WhatsappGroupSettingsReturn whatsappGroupSettingsReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
+
+class WidgetsCatalogOptions {
+  const WidgetsCatalogOptions({this.project});
+
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class WidgetsCatalogReturn {
+  const WidgetsCatalogReturn({required this.project, required this.text, required this.widgets});
+
+  final RaviJson project;
+  final String text;
+  final List<RaviJson> widgets;
+
+  factory WidgetsCatalogReturn.fromJson(Map<String, Object?> json) {
+    return WidgetsCatalogReturn(
+      project: RaviJson.from(json["project"]),
+      text: raviJsonAsString(json["text"]),
+      widgets: raviJsonAsList(json["widgets"], RaviJson.from),
+    );
+  }
+
+  static WidgetsCatalogReturn fromJsonValue(Object? json) {
+    return WidgetsCatalogReturn.fromJson(raviJsonObject(json, "WidgetsCatalogReturn"));
+  }
+}
+
+WidgetsCatalogReturn widgetsCatalogReturnFromJson(Object? json) => WidgetsCatalogReturn.fromJsonValue(json);
+
+class WidgetsCheckReturn {
+  const WidgetsCheckReturn({required this.diagnostics, required this.files, required this.kind, required this.ok, required this.widget});
+
+  final List<RaviJson> diagnostics;
+  final List<RaviJson> files;
+  final String kind;
+  final bool ok;
+  final RaviJson widget;
+
+  factory WidgetsCheckReturn.fromJson(Map<String, Object?> json) {
+    return WidgetsCheckReturn(
+      diagnostics: raviJsonAsList(json["diagnostics"], RaviJson.from),
+      files: raviJsonAsList(json["files"], RaviJson.from),
+      kind: raviJsonAsString(json["kind"]),
+      ok: raviJsonAsBool(json["ok"]),
+      widget: RaviJson.from(json["widget"]),
+    );
+  }
+
+  static WidgetsCheckReturn fromJsonValue(Object? json) {
+    return WidgetsCheckReturn.fromJson(raviJsonObject(json, "WidgetsCheckReturn"));
+  }
+}
+
+WidgetsCheckReturn widgetsCheckReturnFromJson(Object? json) => WidgetsCheckReturn.fromJsonValue(json);
+
+class WidgetsInitOptions {
+  const WidgetsInitOptions({this.force, this.fromView, this.project, this.slug});
+
+  final bool? force;
+  final String? fromView;
+  final String? project;
+  final String? slug;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (force != null) {
+      into["force"] = RaviJson.from(force);
+    }
+    if (fromView != null) {
+      into["fromView"] = RaviJson.from(fromView);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (slug != null) {
+      into["slug"] = RaviJson.from(slug);
+    }
+  }
+}
+
+class WidgetsInitReturn {
+  const WidgetsInitReturn({required this.diagnostics, required this.dir, required this.files, required this.kind, required this.next, required this.slug, required this.success});
+
+  final List<RaviJson> diagnostics;
+  final String dir;
+  final List<RaviJson> files;
+  final String kind;
+  final String next;
+  final RaviJson slug;
+  final bool success;
+
+  factory WidgetsInitReturn.fromJson(Map<String, Object?> json) {
+    return WidgetsInitReturn(
+      diagnostics: raviJsonAsList(json["diagnostics"], RaviJson.from),
+      dir: raviJsonAsString(json["dir"]),
+      files: raviJsonAsList(json["files"], RaviJson.from),
+      kind: raviJsonAsString(json["kind"]),
+      next: raviJsonAsString(json["next"]),
+      slug: RaviJson.from(json["slug"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static WidgetsInitReturn fromJsonValue(Object? json) {
+    return WidgetsInitReturn.fromJson(raviJsonObject(json, "WidgetsInitReturn"));
+  }
+}
+
+WidgetsInitReturn widgetsInitReturnFromJson(Object? json) => WidgetsInitReturn.fromJsonValue(json);
+
+class WidgetsPreviewOptions {
+  const WidgetsPreviewOptions({this.data, this.out, this.theme});
+
+  final String? data;
+  final String? out;
+  final String? theme;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (data != null) {
+      into["data"] = RaviJson.from(data);
+    }
+    if (out != null) {
+      into["out"] = RaviJson.from(out);
+    }
+    if (theme != null) {
+      into["theme"] = RaviJson.from(theme);
+    }
+  }
+}
+
+class WidgetsPreviewReturn {
+  const WidgetsPreviewReturn({required this.bytes, required this.diagnostics, required this.out, required this.success});
+
+  final double bytes;
+  final List<RaviJson> diagnostics;
+  final String out;
+  final bool success;
+
+  factory WidgetsPreviewReturn.fromJson(Map<String, Object?> json) {
+    return WidgetsPreviewReturn(
+      bytes: raviJsonAsDouble(json["bytes"]),
+      diagnostics: raviJsonAsList(json["diagnostics"], RaviJson.from),
+      out: raviJsonAsString(json["out"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static WidgetsPreviewReturn fromJsonValue(Object? json) {
+    return WidgetsPreviewReturn.fromJson(raviJsonObject(json, "WidgetsPreviewReturn"));
+  }
+}
+
+WidgetsPreviewReturn widgetsPreviewReturnFromJson(Object? json) => WidgetsPreviewReturn.fromJsonValue(json);
+
+class WidgetsProposalReturn {
+  const WidgetsProposalReturn({required this.base, required this.comments, required this.contentsVisible, required this.files, required this.item, required this.number, required this.proposal, required this.ref});
+
+  final RaviJson base;
+  final List<RaviJson> comments;
+  final bool contentsVisible;
+  final List<RaviJson> files;
+  final RaviJson item;
+  final double number;
+  final RaviJson proposal;
+  final String ref;
+
+  factory WidgetsProposalReturn.fromJson(Map<String, Object?> json) {
+    return WidgetsProposalReturn(
+      base: RaviJson.from(json["base"]),
+      comments: raviJsonAsList(json["comments"], RaviJson.from),
+      contentsVisible: raviJsonAsBool(json["contentsVisible"]),
+      files: raviJsonAsList(json["files"], RaviJson.from),
+      item: RaviJson.from(json["item"]),
+      number: raviJsonAsDouble(json["number"]),
+      proposal: RaviJson.from(json["proposal"]),
+      ref: raviJsonAsString(json["ref"]),
+    );
+  }
+
+  static WidgetsProposalReturn fromJsonValue(Object? json) {
+    return WidgetsProposalReturn.fromJson(raviJsonObject(json, "WidgetsProposalReturn"));
+  }
+}
+
+WidgetsProposalReturn widgetsProposalReturnFromJson(Object? json) => WidgetsProposalReturn.fromJsonValue(json);
+
+class WidgetsProposalsOptions {
+  const WidgetsProposalsOptions({this.mine, this.project, this.state});
+
+  final bool? mine;
+  final String? project;
+  final String? state;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (mine != null) {
+      into["mine"] = RaviJson.from(mine);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (state != null) {
+      into["state"] = RaviJson.from(state);
+    }
+  }
+}
+
+class WidgetsProposalsReturn {
+  const WidgetsProposalsReturn({required this.item, required this.mine, required this.project, required this.proposals, required this.ref, required this.state, required this.total});
+
+  final RaviJson item;
+  final bool mine;
+  final RaviJson project;
+  final List<RaviJson> proposals;
+  final RaviJson ref;
+  final String state;
+  final double total;
+
+  factory WidgetsProposalsReturn.fromJson(Map<String, Object?> json) {
+    return WidgetsProposalsReturn(
+      item: RaviJson.from(json["item"]),
+      mine: raviJsonAsBool(json["mine"]),
+      project: RaviJson.from(json["project"]),
+      proposals: raviJsonAsList(json["proposals"], RaviJson.from),
+      ref: RaviJson.from(json["ref"]),
+      state: raviJsonAsString(json["state"]),
+      total: raviJsonAsDouble(json["total"]),
+    );
+  }
+
+  static WidgetsProposalsReturn fromJsonValue(Object? json) {
+    return WidgetsProposalsReturn.fromJson(raviJsonObject(json, "WidgetsProposalsReturn"));
+  }
+}
+
+WidgetsProposalsReturn widgetsProposalsReturnFromJson(Object? json) => WidgetsProposalsReturn.fromJsonValue(json);
+
+class WidgetsProposeOptions {
+  const WidgetsProposeOptions({this.draft, this.execute, this.name, this.note, this.rebase, this.scope, this.slug, this.update});
+
+  final bool? draft;
+  final bool? execute;
+  final String? name;
+  final String? note;
+  final bool? rebase;
+  final String? scope;
+  final String? slug;
+  final String? update;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (draft != null) {
+      into["draft"] = RaviJson.from(draft);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (name != null) {
+      into["name"] = RaviJson.from(name);
+    }
+    if (note != null) {
+      into["note"] = RaviJson.from(note);
+    }
+    if (rebase != null) {
+      into["rebase"] = RaviJson.from(rebase);
+    }
+    if (scope != null) {
+      into["scope"] = RaviJson.from(scope);
+    }
+    if (slug != null) {
+      into["slug"] = RaviJson.from(slug);
+    }
+    if (update != null) {
+      into["update"] = RaviJson.from(update);
+    }
+  }
+}
+
+class WidgetsProposeReturn {
+  const WidgetsProposeReturn({required this.baseVersion, required this.created, required this.currentVersion, required this.diagnostics, required this.next, required this.number, required this.proposal, required this.ref, required this.round, required this.stale, required this.status, required this.success});
+
+  final double baseVersion;
+  final bool created;
+  final double currentVersion;
+  final List<RaviJson> diagnostics;
+  final String next;
+  final double number;
+  final RaviJson proposal;
+  final String ref;
+  final double round;
+  final bool stale;
+  final String status;
+  final bool success;
+
+  factory WidgetsProposeReturn.fromJson(Map<String, Object?> json) {
+    return WidgetsProposeReturn(
+      baseVersion: raviJsonAsDouble(json["baseVersion"]),
+      created: raviJsonAsBool(json["created"]),
+      currentVersion: raviJsonAsDouble(json["currentVersion"]),
+      diagnostics: raviJsonAsList(json["diagnostics"], RaviJson.from),
+      next: raviJsonAsString(json["next"]),
+      number: raviJsonAsDouble(json["number"]),
+      proposal: RaviJson.from(json["proposal"]),
+      ref: raviJsonAsString(json["ref"]),
+      round: raviJsonAsDouble(json["round"]),
+      stale: raviJsonAsBool(json["stale"]),
+      status: raviJsonAsString(json["status"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static WidgetsProposeReturn fromJsonValue(Object? json) {
+    return WidgetsProposeReturn.fromJson(raviJsonObject(json, "WidgetsProposeReturn"));
+  }
+}
+
+WidgetsProposeReturn widgetsProposeReturnFromJson(Object? json) => WidgetsProposeReturn.fromJsonValue(json);
+
+class WidgetsPublishOptions {
+  const WidgetsPublishOptions({this.execute, this.name, this.note, this.scope, this.slug});
+
+  final bool? execute;
+  final String? name;
+  final String? note;
+  final String? scope;
+  final String? slug;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (name != null) {
+      into["name"] = RaviJson.from(name);
+    }
+    if (note != null) {
+      into["note"] = RaviJson.from(note);
+    }
+    if (scope != null) {
+      into["scope"] = RaviJson.from(scope);
+    }
+    if (slug != null) {
+      into["slug"] = RaviJson.from(slug);
+    }
+  }
+}
+
+class WidgetsPublishReturn {
+  const WidgetsPublishReturn({required this.contentHash, required this.diagnostics, required this.item, required this.ref, required this.success, required this.unchanged, required this.version});
+
+  final String contentHash;
+  final List<RaviJson> diagnostics;
+  final RaviJson item;
+  final String ref;
+  final bool success;
+  final bool unchanged;
+  final double version;
+
+  factory WidgetsPublishReturn.fromJson(Map<String, Object?> json) {
+    return WidgetsPublishReturn(
+      contentHash: raviJsonAsString(json["contentHash"]),
+      diagnostics: raviJsonAsList(json["diagnostics"], RaviJson.from),
+      item: RaviJson.from(json["item"]),
+      ref: raviJsonAsString(json["ref"]),
+      success: raviJsonAsBool(json["success"]),
+      unchanged: raviJsonAsBool(json["unchanged"]),
+      version: raviJsonAsDouble(json["version"]),
+    );
+  }
+
+  static WidgetsPublishReturn fromJsonValue(Object? json) {
+    return WidgetsPublishReturn.fromJson(raviJsonObject(json, "WidgetsPublishReturn"));
+  }
+}
+
+WidgetsPublishReturn widgetsPublishReturnFromJson(Object? json) => WidgetsPublishReturn.fromJsonValue(json);
+
+class WidgetsSearchOptions {
+  const WidgetsSearchOptions({this.limit, this.project});
+
+  final String? limit;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class WidgetsSearchReturn {
+  const WidgetsSearchReturn({required this.items, required this.project, required this.query, required this.total});
+
+  final List<RaviJson> items;
+  final RaviJson project;
+  final String query;
+  final double total;
+
+  factory WidgetsSearchReturn.fromJson(Map<String, Object?> json) {
+    return WidgetsSearchReturn(
+      items: raviJsonAsList(json["items"], RaviJson.from),
+      project: RaviJson.from(json["project"]),
+      query: raviJsonAsString(json["query"]),
+      total: raviJsonAsDouble(json["total"]),
+    );
+  }
+
+  static WidgetsSearchReturn fromJsonValue(Object? json) {
+    return WidgetsSearchReturn.fromJson(raviJsonObject(json, "WidgetsSearchReturn"));
+  }
+}
+
+WidgetsSearchReturn widgetsSearchReturnFromJson(Object? json) => WidgetsSearchReturn.fromJsonValue(json);
+
+class WidgetsShowOptions {
+  const WidgetsShowOptions({this.project, this.version});
+
+  final String? project;
+  final String? version;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (version != null) {
+      into["version"] = RaviJson.from(version);
+    }
+  }
+}
+
+class WidgetsShowReturn {
+  const WidgetsShowReturn({required this.contentHash, required this.files, required this.item, required this.kind, required this.note, required this.publishedAt, required this.ref, required this.version});
+
+  final String contentHash;
+  final List<RaviJson> files;
+  final RaviJson item;
+  final String kind;
+  final RaviJson note;
+  final RaviJson publishedAt;
+  final String ref;
+  final double version;
+
+  factory WidgetsShowReturn.fromJson(Map<String, Object?> json) {
+    return WidgetsShowReturn(
+      contentHash: raviJsonAsString(json["contentHash"]),
+      files: raviJsonAsList(json["files"], RaviJson.from),
+      item: RaviJson.from(json["item"]),
+      kind: raviJsonAsString(json["kind"]),
+      note: RaviJson.from(json["note"]),
+      publishedAt: RaviJson.from(json["publishedAt"]),
+      ref: raviJsonAsString(json["ref"]),
+      version: raviJsonAsDouble(json["version"]),
+    );
+  }
+
+  static WidgetsShowReturn fromJsonValue(Object? json) {
+    return WidgetsShowReturn.fromJson(raviJsonObject(json, "WidgetsShowReturn"));
+  }
+}
+
+WidgetsShowReturn widgetsShowReturnFromJson(Object? json) => WidgetsShowReturn.fromJsonValue(json);
 
 class WorkObjectsActionOptions {
   const WorkObjectsActionOptions({this.execute, this.value});
