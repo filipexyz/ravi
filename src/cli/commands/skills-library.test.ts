@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { writeCloudCredentials } from "../../cloud-auth/storage.js";
 import {
   createFakeConsole,
+  FAKE_CONSOLE_URL,
   fakeComment,
   fakeCredentials,
   fakeProposal,
@@ -483,7 +484,11 @@ describe("skills proposals and proposal", () => {
       runWithContext({}, () => new SkillsCommands().proposals(undefined, undefined, undefined, undefined, false)),
     );
     expect(result).toMatchObject({ state: "open", total: 1 });
-    expect(result.proposals[0]).toMatchObject({ next: "ravi skills proposal org/agenda-semanal 2", openComments: 1 });
+    expect(result.proposals[0]).toMatchObject({
+      next: "ravi skills proposal org/agenda-semanal 2",
+      openComments: 1,
+      reviewUrl: `${FAKE_CONSOLE_URL}/org/library/org/agenda-semanal/proposals/2`,
+    });
     expect(lines).toEqual([
       "org/agenda-semanal #2 proposed [stale] — agent atendente for Op — 1 open comment",
       "  ravi skills proposal org/agenda-semanal 2",

@@ -283,7 +283,10 @@ function proposalRef(proposal: Pick<FakeProposal, "scope" | "project" | "slug">)
   return `${proposal.scope === "org" ? "org" : proposal.project}/${proposal.slug}`;
 }
 
-function serializeProposal(state: FakeConsole, proposal: FakeProposal): LibraryProposal {
+function serializeProposal(
+  state: FakeConsole,
+  proposal: FakeProposal,
+): Omit<LibraryProposal, "reviewUrl"> & { reviewPath: string } {
   const published = findSkill(state, proposal.scope, proposal.project, proposal.slug);
   const currentVersion = published?.item.version ?? 0;
   const open = OPEN_STATUSES.has(proposal.status);
@@ -311,6 +314,7 @@ function serializeProposal(state: FakeConsole, proposal: FakeProposal): LibraryP
     decidedBy: null,
     decisionReason: null,
     openComments: proposal.comments.filter((comment) => !comment.parentId && !comment.resolvedAt).length,
+    reviewPath: `${proposal.scope === "org" ? "/org/library/org" : `/p/${proposal.project}-id/library/${proposal.project}`}/${proposal.slug}/proposals/${proposal.number}`,
     can: {
       edit: proposal.author.self && open,
       submit: proposal.author.self && proposal.status === "draft",

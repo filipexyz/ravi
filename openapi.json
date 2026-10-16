@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "18230b3451bddc65"
+    "version": "669b34775f5b2f9c"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -101605,6 +101605,16 @@
                         "ref": {
                           "type": "string"
                         },
+                        "reviewUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "round": {
                           "type": "number"
                         },
@@ -101660,6 +101670,7 @@
                         "decidedBy",
                         "decisionReason",
                         "openComments",
+                        "reviewUrl",
                         "can"
                       ],
                       "type": "object"
@@ -102088,6 +102099,16 @@
                           "ref": {
                             "type": "string"
                           },
+                          "reviewUrl": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "round": {
                             "type": "number"
                           },
@@ -102143,6 +102164,7 @@
                           "decidedBy",
                           "decisionReason",
                           "openComments",
+                          "reviewUrl",
                           "can",
                           "next"
                         ],
@@ -102463,6 +102485,16 @@
                         "ref": {
                           "type": "string"
                         },
+                        "reviewUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "round": {
                           "type": "number"
                         },
@@ -102518,6 +102550,7 @@
                         "decidedBy",
                         "decisionReason",
                         "openComments",
+                        "reviewUrl",
                         "can"
                       ],
                       "type": "object"

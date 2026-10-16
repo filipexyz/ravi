@@ -1231,6 +1231,7 @@ export const libraryProposalReturnSchema = z
     decidedBy: z.object({ name: z.string().nullable() }).strict().nullable(),
     decisionReason: z.string().nullable(),
     openComments: z.number(),
+    reviewUrl: z.string().nullable(),
     can: z
       .object({
         edit: z.boolean(),

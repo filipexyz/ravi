@@ -562,6 +562,7 @@ function proposalShowLines(view: {
     );
   }
   if (proposal.note) lines.push(`Note: ${proposal.note}`);
+  if (proposal.reviewUrl) lines.push(`Review: ${proposal.reviewUrl}`);
   if (proposal.decisionReason || proposal.decidedBy) {
     lines.push(
       `Decision: ${proposal.status}${proposal.decidedBy?.name ? ` by ${proposal.decidedBy.name}` : ""}${proposal.decisionReason ? `: ${proposal.decisionReason}` : ""}`,
@@ -1706,6 +1707,7 @@ export class SkillsCommands {
           `  Stale: written against version ${proposal.baseVersion}, version ${proposal.currentVersion} is published. Read it, then run again with --update ${proposal.number} --rebase.`,
         );
       }
+      if (proposal.reviewUrl) console.log(`  Review: ${proposal.reviewUrl}`);
       console.log(`  Follow it with: ${next}`);
       return payload;
     });

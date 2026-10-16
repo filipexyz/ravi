@@ -83342,6 +83342,16 @@ export const SkillsProposalReturnSchema = {
         "ref": {
           "type": "string"
         },
+        "reviewUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "round": {
           "type": "number"
         },
@@ -83397,6 +83407,7 @@ export const SkillsProposalReturnSchema = {
         "decidedBy",
         "decisionReason",
         "openComments",
+        "reviewUrl",
         "can"
       ],
       "type": "object"
@@ -83797,6 +83808,16 @@ export const SkillsProposalsReturnSchema = {
           "ref": {
             "type": "string"
           },
+          "reviewUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "round": {
             "type": "number"
           },
@@ -83852,6 +83873,7 @@ export const SkillsProposalsReturnSchema = {
           "decidedBy",
           "decisionReason",
           "openComments",
+          "reviewUrl",
           "can",
           "next"
         ],
@@ -84144,6 +84166,16 @@ export const SkillsProposeReturnSchema = {
         "ref": {
           "type": "string"
         },
+        "reviewUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "round": {
           "type": "number"
         },
@@ -84199,6 +84231,7 @@ export const SkillsProposeReturnSchema = {
         "decidedBy",
         "decisionReason",
         "openComments",
+        "reviewUrl",
         "can"
       ],
       "type": "object"

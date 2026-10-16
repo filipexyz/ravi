@@ -124,7 +124,7 @@ export class LibraryClient {
       throw new CloudAuthError("SERVER_UNAVAILABLE", "The Console returned an unexpected proposal list.");
     }
     return {
-      proposals: payload.proposals.map(requireProposal),
+      proposals: payload.proposals.map((proposal) => requireProposal(proposal, this.consoleUrl)),
       state: typeof payload.state === "string" ? payload.state : (input.state ?? "open"),
       project: typeof payload.project === "string" ? payload.project : null,
     };
@@ -140,7 +140,7 @@ export class LibraryClient {
     return {
       item: requireProposalItem(payload.item),
       can: { propose: can?.propose === true, review: can?.review === true },
-      proposals: payload.proposals.map(requireProposal),
+      proposals: payload.proposals.map((proposal) => requireProposal(proposal, this.consoleUrl)),
     };
   }
 
@@ -153,7 +153,7 @@ export class LibraryClient {
     const base = objectValue(payload.base);
     return {
       item: requireProposalItem(payload.item),
-      proposal: requireProposal(payload.proposal),
+      proposal: requireProposal(payload.proposal, this.consoleUrl),
       files: payload.files.map(requireFile),
       base:
         base && typeof base.number === "number"
@@ -166,7 +166,7 @@ export class LibraryClient {
   /** `POST /skills/proposals`: a new draft (`submit` false) or proposal. */
   async createProposal(body: LibraryProposalCreateBody): Promise<LibraryProposal> {
     const payload = objectValue(await this.request<unknown>("POST", "/proposals", body));
-    return requireProposal(payload?.proposal);
+    return requireProposal(payload?.proposal, this.consoleUrl);
   }
 
   /** `POST /skills/<scope>/<slug>/proposals/<n>/update`: replace a proposal's whole content (author only). */
@@ -174,7 +174,7 @@ export class LibraryClient {
     const payload = objectValue(
       await this.request<unknown>("POST", `${refPath(ref)}/proposals/${number}/update`, body),
     );
-    return requireProposal(payload?.proposal);
+    return requireProposal(payload?.proposal, this.consoleUrl);
   }
 
   private async request<T>(method: string, relativePath: string, body?: unknown): Promise<T> {
@@ -363,7 +363,18 @@ const PROPOSAL_STATUSES: ReadonlySet<string> = new Set([
   "withdrawn",
 ]);
 
-function requireProposal(value: unknown): LibraryProposal {
+/** The proposal's Console page; only a same-origin path is accepted. */
+function reviewUrl(consoleUrl: string, path: unknown): string | null {
+  if (typeof path !== "string" || !path.startsWith("/") || path.startsWith("//")) return null;
+  try {
+    const url = new URL(path, consoleUrl);
+    return url.origin === new URL(consoleUrl).origin ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+function requireProposal(value: unknown, consoleUrl: string): LibraryProposal {
   const proposal = objectValue(value);
   if (
     !proposal ||
@@ -401,6 +412,7 @@ function requireProposal(value: unknown): LibraryProposal {
     decidedBy: decidedBy ? { name: stringOrNull(decidedBy.name) } : null,
     decisionReason: stringOrNull(proposal.decisionReason),
     openComments: numberOr(proposal.openComments, 0),
+    reviewUrl: reviewUrl(consoleUrl, proposal.reviewPath),
     can: {
       edit: can?.edit === true,
       submit: can?.submit === true,

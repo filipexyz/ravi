@@ -219,7 +219,11 @@ read and checked exactly like `publish`.
   nothing beyond `ravi login`.
 - Output: `✓ Proposed <ref> (proposal <n>), waiting for review`,
   `✓ Saved draft <ref> (proposal <n>)...` or `✓ Updated <ref> (proposal <n>,
-  round <r>)...`, then `ravi skills proposal <ref> <n>` as the next step.
+  round <r>)...`, then the review link and `ravi skills proposal <ref> <n>` as
+  the next step.
+- Every proposal the CLI returns carries `reviewUrl`: the Console's
+  `reviewPath` joined to the logged-in Console URL, or null when the Console
+  sends none or a path that leaves its origin.
   `--json` returns `success`, `ref`, `number`, `status`, `round`,
   `baseVersion`, `currentVersion`, `stale`, `created`, `next` and `proposal`.
 

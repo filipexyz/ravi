@@ -84506,6 +84506,16 @@ public enum RaviSchemas {
           "ref": {
             "type": "string"
           },
+          "reviewUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "round": {
             "type": "number"
           },
@@ -84561,6 +84571,7 @@ public enum RaviSchemas {
           "decidedBy",
           "decisionReason",
           "openComments",
+          "reviewUrl",
           "can"
         ],
         "type": "object"
@@ -84963,6 +84974,16 @@ public enum RaviSchemas {
             "ref": {
               "type": "string"
             },
+            "reviewUrl": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "round": {
               "type": "number"
             },
@@ -85018,6 +85039,7 @@ public enum RaviSchemas {
             "decidedBy",
             "decisionReason",
             "openComments",
+            "reviewUrl",
             "can",
             "next"
           ],
@@ -85312,6 +85334,16 @@ public enum RaviSchemas {
           "ref": {
             "type": "string"
           },
+          "reviewUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "round": {
             "type": "number"
           },
@@ -85367,6 +85399,7 @@ public enum RaviSchemas {
           "decidedBy",
           "decisionReason",
           "openComments",
+          "reviewUrl",
           "can"
         ],
         "type": "object"

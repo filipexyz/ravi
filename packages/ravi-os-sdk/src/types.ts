@@ -16896,6 +16896,7 @@ export type SkillsProposalReturn = {
     proposedAt: string | null;
     publishedVersion: number | null;
     ref: string;
+    reviewUrl: string | null;
     round: number;
     stale: boolean;
     status: "draft" | "proposed" | "published" | "superseded" | "rejected" | "withdrawn";
@@ -16972,6 +16973,7 @@ export type SkillsProposalsReturn = {
     proposedAt: string | null;
     publishedVersion: number | null;
     ref: string;
+    reviewUrl: string | null;
     round: number;
     stale: boolean;
     status: "draft" | "proposed" | "published" | "superseded" | "rejected" | "withdrawn";
@@ -17036,6 +17038,7 @@ export type SkillsProposeReturn = {
     proposedAt: string | null;
     publishedVersion: number | null;
     ref: string;
+    reviewUrl: string | null;
     round: number;
     stale: boolean;
     status: "draft" | "proposed" | "published" | "superseded" | "rejected" | "withdrawn";

@@ -106,6 +106,8 @@ export interface LibraryProposal {
   decidedBy: { name: string | null } | null;
   decisionReason: string | null;
   openComments: number;
+  /** The proposal's review page in the Console; null when the Console does not report one. */
+  reviewUrl: string | null;
   can: { edit: boolean; submit: boolean; withdraw: boolean; publish: boolean; reject: boolean };
 }
 
