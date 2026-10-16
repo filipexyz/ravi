@@ -106,3 +106,26 @@ loads it natively, like Ravi's own skills.
   with the login's read access. A project item the login cannot read is
   reported as `LIBRARY_PIN_UNAVAILABLE` and retried, rather than loaded from
   somewhere the Console did not authorize.
+
+## Phase 4: agent definitions (2026-10-16)
+
+- The Console already versions agent definitions with the skill routes under
+  `agents/`. The local side reuses the client, cache and contract helpers with
+  a kind switch instead of a second stack, and keeps the agent cache apart so
+  a skill and an agent with the same slug never collide.
+- The brake is decided here, not by the Console: what adds authority on this
+  machine is a permission profile above the bootstrap floor and a skill
+  grant, the same rule as `ravi agents permissions` and `ravi skills grant`.
+  A definition that only brings instructions, a provider and a model is a
+  reversible local write and applies at once.
+- `update` records a hash of each file as installed so it can tell an
+  untouched file (follow the Library) from a local edit (ask). Kept files keep
+  their installed hash, so a later update asks again instead of silently
+  overwriting.
+- An update applies a profile only when the definition changed its
+  suggestion: the operator may have lowered it on purpose.
+- `publish` builds `agent.json` from what is configured here and sends only
+  Library skill refs the scope can see. Local skill names, routes, instances,
+  contacts and paths mean nothing on another machine and may be private.
+- Agents do not install, update or publish agents: these change or share the
+  machine's authority, the operator's call (same reasoning as pins).

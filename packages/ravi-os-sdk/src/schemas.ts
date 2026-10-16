@@ -1177,6 +1177,140 @@ export const AgentsDeleteReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `agents.install`. */
+export const AgentsInstallInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "cwd": {
+      "description": "Agent folder (default: ~/ravi/<id>)",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Confirm a profile above the bootstrap floor or skill grants (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Local agent id (default: the ref's slug)",
+      "type": "string"
+    },
+    "ref": {
+      "description": "Library agent ref: org/<slug> or <project>/<slug>",
+      "type": "string"
+    }
+  },
+  "required": [
+    "ref"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `agents.install`. */
+export const AgentsInstallReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "additionalProperties": false,
+      "properties": {
+        "cwd": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "cwd",
+        "provider",
+        "model"
+      ],
+      "type": "object"
+    },
+    "granted": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "next": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "profile": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "ref": {
+      "type": "string"
+    },
+    "skipped": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "version": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "success",
+    "ref",
+    "version",
+    "agent",
+    "profile",
+    "granted",
+    "skipped",
+    "next"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `agents.list`. */
 export const AgentsListInputSchema = {
   "additionalProperties": false,
@@ -3013,6 +3147,566 @@ export const AgentsPermissionsReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `agents.publish`. */
+export const AgentsPublishInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "description": {
+      "description": "What the agent does (default: its own description)",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Confirm the publish (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Local agent id",
+      "type": "string"
+    },
+    "note": {
+      "description": "Version note, at most 500 characters",
+      "type": "string"
+    },
+    "propose": {
+      "description": "Propose it for review instead of publishing",
+      "type": "boolean"
+    },
+    "scope": {
+      "description": "org, or the Console project slug the agent belongs to",
+      "type": "string"
+    },
+    "slug": {
+      "description": "Library slug (default: the agent id)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `agents.publish`. */
+export const AgentsPublishReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "type": "string"
+    },
+    "contentHash": {
+      "type": "string"
+    },
+    "item": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "archived": {
+              "type": "boolean"
+            },
+            "contentHash": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "externalAllowed": {
+              "type": "boolean"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "project": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "slug": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "slug"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "publishedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "publishedBy": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ref": {
+              "type": "string"
+            },
+            "scope": {
+              "enum": [
+                "org",
+                "project"
+              ],
+              "type": "string"
+            },
+            "slug": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "version": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "ref",
+            "kind",
+            "scope",
+            "project",
+            "slug",
+            "name",
+            "description",
+            "externalAllowed",
+            "version",
+            "contentHash",
+            "publishedAt",
+            "publishedBy",
+            "archived",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "leftOut": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "skill": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "skill",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "manifest": {
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "profile": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "skills": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "provider",
+        "model",
+        "profile",
+        "skills"
+      ],
+      "type": "object"
+    },
+    "next": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "proposal": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "author": {
+              "additionalProperties": false,
+              "properties": {
+                "agentId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "self": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "name",
+                "agentId",
+                "self"
+              ],
+              "type": "object"
+            },
+            "baseVersion": {
+              "type": "number"
+            },
+            "can": {
+              "additionalProperties": false,
+              "properties": {
+                "edit": {
+                  "type": "boolean"
+                },
+                "publish": {
+                  "type": "boolean"
+                },
+                "reject": {
+                  "type": "boolean"
+                },
+                "submit": {
+                  "type": "boolean"
+                },
+                "withdraw": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "edit",
+                "submit",
+                "withdraw",
+                "publish",
+                "reject"
+              ],
+              "type": "object"
+            },
+            "contentHash": {
+              "type": "string"
+            },
+            "createdAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "currentVersion": {
+              "type": "number"
+            },
+            "decidedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "decidedBy": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "decisionReason": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": {
+              "type": "string"
+            },
+            "externalAllowed": {
+              "type": "boolean"
+            },
+            "fileCount": {
+              "type": "number"
+            },
+            "name": {
+              "type": "string"
+            },
+            "note": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "number": {
+              "type": "number"
+            },
+            "openComments": {
+              "type": "number"
+            },
+            "proposedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "publishedVersion": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ref": {
+              "type": "string"
+            },
+            "reviewUrl": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "round": {
+              "type": "number"
+            },
+            "stale": {
+              "type": "boolean"
+            },
+            "status": {
+              "enum": [
+                "draft",
+                "proposed",
+                "published",
+                "superseded",
+                "rejected",
+                "withdrawn"
+              ],
+              "type": "string"
+            },
+            "totalBytes": {
+              "type": "number"
+            },
+            "updatedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "ref",
+            "number",
+            "status",
+            "round",
+            "baseVersion",
+            "currentVersion",
+            "stale",
+            "publishedVersion",
+            "name",
+            "description",
+            "externalAllowed",
+            "note",
+            "contentHash",
+            "fileCount",
+            "totalBytes",
+            "author",
+            "createdAt",
+            "updatedAt",
+            "proposedAt",
+            "decidedAt",
+            "decidedBy",
+            "decisionReason",
+            "openComments",
+            "reviewUrl",
+            "can"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "ref": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "unchanged": {
+      "type": "boolean"
+    },
+    "version": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "success",
+    "ref",
+    "agent",
+    "version",
+    "contentHash",
+    "unchanged",
+    "item",
+    "proposal",
+    "manifest",
+    "leftOut",
+    "next"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `agents.reset`. */
 export const AgentsResetInputSchema = {
   "additionalProperties": false,
@@ -3084,6 +3778,155 @@ export const AgentsResetReturnSchema = {
     "changed",
     "agentId",
     "target"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `agents.search`. */
+export const AgentsSearchInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Maximum results (default 20)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project slug (default: the cwd's project)",
+      "type": "string"
+    },
+    "query": {
+      "description": "Words to search for",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `agents.search`. */
+export const AgentsSearchReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "next": {
+            "type": "string"
+          },
+          "project": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ref": {
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "org",
+              "project"
+            ],
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "ref",
+          "scope",
+          "project",
+          "name",
+          "description",
+          "version",
+          "next"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "library": {
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "type": "object"
+        },
+        "hint": {
+          "type": "string"
+        },
+        "project": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "stale",
+            "skipped",
+            "error"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "project"
+      ],
+      "type": "object"
+    },
+    "query": {
+      "type": "string"
+    },
+    "stale": {
+      "type": "boolean"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "query",
+    "total",
+    "stale",
+    "library",
+    "items"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -3366,7 +4209,7 @@ export const AgentsShowInputSchema = {
   "additionalProperties": false,
   "properties": {
     "id": {
-      "description": "Agent ID",
+      "description": "Agent ID, or a Library agent ref (org/<slug> or <project>/<slug>)",
       "type": "string"
     }
   },
@@ -3415,34 +4258,427 @@ export const AgentsShowReturnSchema = {
       ]
     }
   },
-  "additionalProperties": false,
-  "properties": {
-    "agent": {
+  "anyOf": [
+    {
       "additionalProperties": false,
       "properties": {
-        "allowedSessions": {
-          "items": {
-            "type": "string"
+        "agent": {
+          "additionalProperties": false,
+          "properties": {
+            "allowedSessions": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "contactScope": {
+              "type": "string"
+            },
+            "cwd": {
+              "type": "string"
+            },
+            "debounceMs": {
+              "type": "number"
+            },
+            "defaults": {
+              "anyOf": [
+                {
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "dmScope": {
+              "enum": [
+                "main",
+                "per-peer",
+                "per-channel-peer",
+                "per-account-channel-peer"
+              ],
+              "type": "string"
+            },
+            "effectiveModel": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "effectiveProvider": {
+              "type": "string"
+            },
+            "effort": {
+              "enum": [
+                "none",
+                "minimal",
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max",
+                "ultra"
+              ],
+              "type": "string"
+            },
+            "groupDebounceMs": {
+              "type": "number"
+            },
+            "heartbeat": {
+              "additionalProperties": false,
+              "properties": {
+                "accountId": {
+                  "type": "string"
+                },
+                "activeEnd": {
+                  "type": "string"
+                },
+                "activeStart": {
+                  "type": "string"
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "intervalMs": {
+                  "type": "number"
+                },
+                "lastRunAt": {
+                  "type": "number"
+                },
+                "model": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "enabled",
+                "intervalMs"
+              ],
+              "type": "object"
+            },
+            "id": {
+              "type": "string"
+            },
+            "isDefault": {
+              "type": "boolean"
+            },
+            "matrixAccount": {
+              "type": "string"
+            },
+            "memoryModel": {
+              "type": "string"
+            },
+            "mode": {
+              "enum": [
+                "active",
+                "sentinel"
+              ],
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "modelError": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "modelPresetId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "modelPresetVersion": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "modelSource": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "agent_preset",
+                    "agent_default",
+                    "global_default",
+                    "env_fallback",
+                    "runtime_default"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "providerSource": {
+              "type": "string"
+            },
+            "remote": {
+              "type": "string"
+            },
+            "remoteUser": {
+              "type": "string"
+            },
+            "settingSources": {
+              "items": {
+                "enum": [
+                  "user",
+                  "project"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "specMode": {
+              "type": "boolean"
+            },
+            "systemPromptAppend": {
+              "type": "string"
+            },
+            "tags": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "assetId": {
+                    "type": "string"
+                  },
+                  "assetType": {
+                    "enum": [
+                      "agent",
+                      "automation",
+                      "app",
+                      "session",
+                      "task",
+                      "project",
+                      "profile",
+                      "contact",
+                      "chat",
+                      "route",
+                      "instance",
+                      "artifact",
+                      "insight",
+                      "workflow_spec",
+                      "workflow_run",
+                      "workflow_node",
+                      "cron_job",
+                      "trigger",
+                      "hook",
+                      "task_automation",
+                      "observer_rule",
+                      "observer_binding",
+                      "observer_profile",
+                      "command",
+                      "skill",
+                      "skill_gate_rule",
+                      "context",
+                      "call_profile",
+                      "call_request",
+                      "call_voice_agent",
+                      "call_tool",
+                      "outbound_queue",
+                      "outbound_entry",
+                      "spec",
+                      "devin_session"
+                    ],
+                    "type": "string"
+                  },
+                  "createdAt": {
+                    "type": "number"
+                  },
+                  "createdBy": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "metadata": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "tagId": {
+                    "type": "string"
+                  },
+                  "tagSlug": {
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "type": "number"
+                  },
+                  "updatedBy": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "tagId",
+                  "tagSlug",
+                  "assetType",
+                  "assetId",
+                  "source",
+                  "createdAt",
+                  "updatedAt"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
           },
-          "type": "array"
+          "required": [
+            "id",
+            "cwd",
+            "modelPresetId",
+            "isDefault",
+            "effectiveProvider",
+            "providerSource",
+            "effectiveModel",
+            "modelSource",
+            "modelPresetVersion",
+            "modelError",
+            "tags"
+          ],
+          "type": "object"
         },
-        "contactScope": {
+        "library": {
+          "additionalProperties": false,
+          "properties": {
+            "acceptsRequests": {
+              "type": "boolean"
+            },
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "origin": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "installedAt": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "ref": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "ref",
+                    "version",
+                    "installedAt"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "description",
+            "acceptsRequests",
+            "origin"
+          ],
+          "type": "object"
+        },
+        "permissionsCommand": {
           "type": "string"
         },
-        "cwd": {
-          "type": "string"
-        },
-        "debounceMs": {
-          "type": "number"
-        },
-        "defaults": {
+        "runtimePermissions": {
           "anyOf": [
             {
-              "additionalProperties": {
-                "$ref": "#/$defs/__schema0"
-              },
-              "propertyNames": {
-                "type": "string"
+              "additionalProperties": false,
+              "properties": {
+                "capabilities": {
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "objectId": {
+                            "type": "string"
+                          },
+                          "objectType": {
+                            "type": "string"
+                          },
+                          "permission": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "type": "string"
+                          }
+                        },
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "type": "array"
+                },
+                "profile": {
+                  "enum": [
+                    "bootstrap",
+                    "chat-only",
+                    "explicit-only",
+                    "full-access"
+                  ],
+                  "type": "string"
+                }
               },
               "type": "object"
             },
@@ -3450,347 +4686,288 @@ export const AgentsShowReturnSchema = {
               "type": "null"
             }
           ]
-        },
-        "dmScope": {
-          "enum": [
-            "main",
-            "per-peer",
-            "per-channel-peer",
-            "per-account-channel-peer"
-          ],
+        }
+      },
+      "required": [
+        "agent",
+        "runtimePermissions",
+        "permissionsCommand"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "contentHash": {
           "type": "string"
         },
-        "effectiveModel": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "effectiveProvider": {
-          "type": "string"
-        },
-        "effort": {
-          "enum": [
-            "none",
-            "minimal",
-            "low",
-            "medium",
-            "high",
-            "xhigh",
-            "max",
-            "ultra"
-          ],
-          "type": "string"
-        },
-        "groupDebounceMs": {
-          "type": "number"
-        },
-        "heartbeat": {
-          "additionalProperties": false,
-          "properties": {
-            "accountId": {
-              "type": "string"
-            },
-            "activeEnd": {
-              "type": "string"
-            },
-            "activeStart": {
-              "type": "string"
-            },
-            "enabled": {
-              "type": "boolean"
-            },
-            "intervalMs": {
-              "type": "number"
-            },
-            "lastRunAt": {
-              "type": "number"
-            },
-            "model": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "enabled",
-            "intervalMs"
-          ],
-          "type": "object"
-        },
-        "id": {
-          "type": "string"
-        },
-        "isDefault": {
-          "type": "boolean"
-        },
-        "matrixAccount": {
-          "type": "string"
-        },
-        "memoryModel": {
-          "type": "string"
-        },
-        "mode": {
-          "enum": [
-            "active",
-            "sentinel"
-          ],
-          "type": "string"
-        },
-        "model": {
-          "type": "string"
-        },
-        "modelError": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "modelPresetId": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "modelPresetVersion": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "modelSource": {
-          "anyOf": [
-            {
-              "enum": [
-                "agent_preset",
-                "agent_default",
-                "global_default",
-                "env_fallback",
-                "runtime_default"
-              ],
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "name": {
-          "type": "string"
-        },
-        "provider": {
-          "type": "string"
-        },
-        "providerSource": {
-          "type": "string"
-        },
-        "remote": {
-          "type": "string"
-        },
-        "remoteUser": {
-          "type": "string"
-        },
-        "settingSources": {
-          "items": {
-            "enum": [
-              "user",
-              "project"
-            ],
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "specMode": {
-          "type": "boolean"
-        },
-        "systemPromptAppend": {
-          "type": "string"
-        },
-        "tags": {
+        "files": {
           "items": {
             "additionalProperties": false,
             "properties": {
-              "assetId": {
-                "type": "string"
-              },
-              "assetType": {
-                "enum": [
-                  "agent",
-                  "automation",
-                  "app",
-                  "session",
-                  "task",
-                  "project",
-                  "profile",
-                  "contact",
-                  "chat",
-                  "route",
-                  "instance",
-                  "artifact",
-                  "insight",
-                  "workflow_spec",
-                  "workflow_run",
-                  "workflow_node",
-                  "cron_job",
-                  "trigger",
-                  "hook",
-                  "task_automation",
-                  "observer_rule",
-                  "observer_binding",
-                  "observer_profile",
-                  "command",
-                  "skill",
-                  "skill_gate_rule",
-                  "context",
-                  "call_profile",
-                  "call_request",
-                  "call_voice_agent",
-                  "call_tool",
-                  "outbound_queue",
-                  "outbound_entry",
-                  "spec",
-                  "devin_session"
-                ],
-                "type": "string"
-              },
-              "createdAt": {
+              "bytes": {
                 "type": "number"
               },
-              "createdBy": {
-                "type": "string"
-              },
-              "id": {
-                "type": "string"
-              },
-              "metadata": {
-                "additionalProperties": {
-                  "$ref": "#/$defs/__schema0"
-                },
-                "propertyNames": {
-                  "type": "string"
-                },
-                "type": "object"
-              },
-              "source": {
-                "type": "string"
-              },
-              "tagId": {
-                "type": "string"
-              },
-              "tagSlug": {
-                "type": "string"
-              },
-              "updatedAt": {
-                "type": "number"
-              },
-              "updatedBy": {
+              "file": {
                 "type": "string"
               }
             },
             "required": [
-              "id",
-              "tagId",
-              "tagSlug",
-              "assetType",
-              "assetId",
-              "source",
-              "createdAt",
-              "updatedAt"
+              "file",
+              "bytes"
             ],
             "type": "object"
           },
           "type": "array"
+        },
+        "heartbeat": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "instructions": {
+          "type": "string"
+        },
+        "item": {
+          "additionalProperties": false,
+          "properties": {
+            "archived": {
+              "type": "boolean"
+            },
+            "contentHash": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "externalAllowed": {
+              "type": "boolean"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "project": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "slug": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "slug"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "publishedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "publishedBy": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ref": {
+              "type": "string"
+            },
+            "scope": {
+              "enum": [
+                "org",
+                "project"
+              ],
+              "type": "string"
+            },
+            "slug": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "version": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "ref",
+            "kind",
+            "scope",
+            "project",
+            "slug",
+            "name",
+            "description",
+            "externalAllowed",
+            "version",
+            "contentHash",
+            "publishedAt",
+            "publishedBy",
+            "archived",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        "manifest": {
+          "additionalProperties": false,
+          "properties": {
+            "model": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "profile": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "provider": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "skills": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "provider",
+            "model",
+            "profile",
+            "skills"
+          ],
+          "type": "object"
+        },
+        "next": {
+          "type": "string"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "publishedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ref": {
+          "type": "string"
+        },
+        "source": {
+          "const": "library",
+          "type": "string"
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "version": {
+          "type": "number"
         }
       },
       "required": [
-        "id",
-        "cwd",
-        "modelPresetId",
-        "isDefault",
-        "effectiveProvider",
-        "providerSource",
-        "effectiveModel",
-        "modelSource",
-        "modelPresetVersion",
-        "modelError",
-        "tags"
+        "source",
+        "ref",
+        "item",
+        "version",
+        "contentHash",
+        "note",
+        "publishedAt",
+        "stale",
+        "manifest",
+        "files",
+        "instructions",
+        "heartbeat",
+        "next"
       ],
       "type": "object"
-    },
-    "permissionsCommand": {
-      "type": "string"
-    },
-    "runtimePermissions": {
-      "anyOf": [
-        {
-          "additionalProperties": false,
-          "properties": {
-            "capabilities": {
-              "items": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "objectId": {
-                        "type": "string"
-                      },
-                      "objectType": {
-                        "type": "string"
-                      },
-                      "permission": {
-                        "type": "string"
-                      },
-                      "source": {
-                        "type": "string"
-                      }
-                    },
-                    "type": "object"
-                  }
-                ]
-              },
-              "type": "array"
-            },
-            "profile": {
-              "enum": [
-                "bootstrap",
-                "chat-only",
-                "explicit-only",
-                "full-access"
-              ],
-              "type": "string"
-            }
-          },
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ]
     }
-  },
-  "required": [
-    "agent",
-    "runtimePermissions",
-    "permissionsCommand"
-  ],
-  "type": "object"
+  ]
 } as const satisfies SdkJsonSchema;
 
 /** JSON Schema for the input body of `agents.spec-mode`. */
@@ -3891,6 +5068,231 @@ export const AgentsSyncInstructionsReturnSchema = {
     "manualReview",
     "incomplete",
     "results"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `agents.update`. */
+export const AgentsUpdateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "execute": {
+      "description": "Confirm a higher permission profile or new skill grants (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Local agent id",
+      "type": "string"
+    },
+    "keepLocal": {
+      "description": "Keep files edited here that also changed in the Library",
+      "type": "boolean"
+    },
+    "takeLibrary": {
+      "description": "Replace files edited here with the Library version",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `agents.update`. */
+export const AgentsUpdateReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "type": "string"
+    },
+    "granted": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "kept": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "plan": {
+      "additionalProperties": false,
+      "properties": {
+        "files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "write",
+                  "keep",
+                  "unchanged",
+                  "remove"
+                ],
+                "type": "string"
+              },
+              "changedInLibrary": {
+                "type": "boolean"
+              },
+              "diff": {
+                "type": "string"
+              },
+              "editedLocally": {
+                "type": "boolean"
+              },
+              "file": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "file",
+              "editedLocally",
+              "changedInLibrary",
+              "action"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "profile": {
+          "additionalProperties": false,
+          "properties": {
+            "apply": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "note": {
+              "type": "string"
+            },
+            "raises": {
+              "type": "boolean"
+            },
+            "suggested": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "suggested",
+            "apply",
+            "raises"
+          ],
+          "type": "object"
+        },
+        "skills": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "grant": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "enum": [
+                  "library",
+                  "ravi"
+                ],
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "ref": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "grant",
+                  "granted",
+                  "missing"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "ref",
+              "kind",
+              "grant",
+              "status"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "files",
+        "profile",
+        "skills"
+      ],
+      "type": "object"
+    },
+    "previousVersion": {
+      "type": "number"
+    },
+    "profile": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "ref": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "upToDate": {
+      "type": "boolean"
+    },
+    "version": {
+      "type": "number"
+    },
+    "written": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "success",
+    "agent",
+    "ref",
+    "version",
+    "previousVersion",
+    "upToDate",
+    "written",
+    "kept",
+    "profile",
+    "granted",
+    "plan"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;

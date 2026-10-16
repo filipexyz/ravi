@@ -247,6 +247,34 @@ export type AgentsDeleteReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `agents.install`. */
+export type AgentsInstallInput = {
+  cwd?: string;
+  execute?: boolean;
+  id?: string;
+  ref: string;
+};
+
+/** Return shape for `agents.install`. */
+export type AgentsInstallReturn = {
+  agent: {
+    cwd: string;
+    id: string;
+    model: string | null;
+    provider: string | null;
+  };
+  granted: string[];
+  next: string[];
+  profile: string | null;
+  ref: string;
+  skipped: Array<{
+    reason: string;
+    ref: string;
+  }>;
+  success: true;
+  version: number;
+};
+
 /** Input shape for `agents.list`. */
 export type AgentsListInput = {
   fields?: string;
@@ -558,6 +586,99 @@ export type AgentsPermissionsReturn = {
   }) | null;
 };
 
+/** Input shape for `agents.publish`. */
+export type AgentsPublishInput = {
+  description?: string;
+  execute?: boolean;
+  id: string;
+  note?: string;
+  propose?: boolean;
+  scope?: string;
+  slug?: string;
+};
+
+/** Return shape for `agents.publish`. */
+export type AgentsPublishReturn = {
+  agent: string;
+  contentHash: string;
+  item: ({
+    archived: boolean;
+    contentHash: string;
+    description: string;
+    externalAllowed: boolean;
+    kind: string;
+    name: string;
+    project: ({
+      id: string;
+      name?: string | null;
+      slug: string;
+    }) | null;
+    publishedAt: string | null;
+    publishedBy: ({
+      name?: string | null;
+    }) | null;
+    ref: string;
+    scope: "org" | "project";
+    slug: string;
+    updatedAt: string | null;
+    version: number;
+  }) | null;
+  leftOut: Array<{
+    reason: string;
+    skill: string;
+  }>;
+  manifest: {
+    model: string | null;
+    profile: string | null;
+    provider: string | null;
+    skills: string[];
+  };
+  next: string | null;
+  proposal: ({
+    author: {
+      agentId: string | null;
+      name: string | null;
+      self: boolean;
+    };
+    baseVersion: number;
+    can: {
+      edit: boolean;
+      publish: boolean;
+      reject: boolean;
+      submit: boolean;
+      withdraw: boolean;
+    };
+    contentHash: string;
+    createdAt: string | null;
+    currentVersion: number;
+    decidedAt: string | null;
+    decidedBy: ({
+      name: string | null;
+    }) | null;
+    decisionReason: string | null;
+    description: string;
+    externalAllowed: boolean;
+    fileCount: number;
+    name: string;
+    note: string | null;
+    number: number;
+    openComments: number;
+    proposedAt: string | null;
+    publishedVersion: number | null;
+    ref: string;
+    reviewUrl: string | null;
+    round: number;
+    stale: boolean;
+    status: "draft" | "proposed" | "published" | "superseded" | "rejected" | "withdrawn";
+    totalBytes: number;
+    updatedAt: string | null;
+  }) | null;
+  ref: string;
+  success: true;
+  unchanged: boolean;
+  version: number | null;
+};
+
 /** Input shape for `agents.reset`. */
 export type AgentsResetInput = {
   execute?: boolean;
@@ -577,6 +698,38 @@ export type AgentsResetReturn = {
   session?: Record<string, unknown>;
   target: string;
   [k: string]: unknown;
+};
+
+/** Input shape for `agents.search`. */
+export type AgentsSearchInput = {
+  limit?: string;
+  project?: string;
+  query?: string;
+};
+
+/** Return shape for `agents.search`. */
+export type AgentsSearchReturn = {
+  items: Array<{
+    description: string | null;
+    name: string;
+    next: string;
+    project: string | null;
+    ref: string;
+    scope: "org" | "project";
+    version: number;
+  }>;
+  library: {
+    error?: {
+      code: string;
+      message: string;
+    };
+    hint?: string;
+    project: string | null;
+    status: "ok" | "stale" | "skipped" | "error";
+  };
+  query: string;
+  stale: boolean;
+  total: number;
 };
 
 /** Input shape for `agents.session`. */
@@ -641,7 +794,7 @@ export type AgentsShowInput = {
 };
 
 /** Return shape for `agents.show`. */
-export type AgentsShowReturn = {
+export type AgentsShowReturn = ({
   agent: {
     allowedSessions?: string[];
     contactScope?: string;
@@ -694,6 +847,15 @@ export type AgentsShowReturn = {
       updatedBy?: string;
     }>;
   };
+  library?: {
+    acceptsRequests: boolean;
+    description: string | null;
+    origin: ({
+      installedAt: number | null;
+      ref: string;
+      version: number;
+    }) | null;
+  };
   permissionsCommand: string;
   runtimePermissions: ({
     capabilities?: Array<string | ({
@@ -704,7 +866,50 @@ export type AgentsShowReturn = {
     })>;
     profile?: "bootstrap" | "chat-only" | "explicit-only" | "full-access";
   }) | null;
-};
+}) | ({
+  contentHash: string;
+  files: Array<{
+    bytes: number;
+    file: string;
+  }>;
+  heartbeat: string | null;
+  instructions: string;
+  item: {
+    archived: boolean;
+    contentHash: string;
+    description: string;
+    externalAllowed: boolean;
+    kind: string;
+    name: string;
+    project: ({
+      id: string;
+      name?: string | null;
+      slug: string;
+    }) | null;
+    publishedAt: string | null;
+    publishedBy: ({
+      name?: string | null;
+    }) | null;
+    ref: string;
+    scope: "org" | "project";
+    slug: string;
+    updatedAt: string | null;
+    version: number;
+  };
+  manifest: {
+    model: string | null;
+    profile: string | null;
+    provider: string | null;
+    skills: string[];
+  };
+  next: string;
+  note: string | null;
+  publishedAt: string | null;
+  ref: string;
+  source: "library";
+  stale: boolean;
+  version: number;
+});
 
 /** Input shape for `agents.spec-mode`. */
 export type AgentsSpecModeInput = {
@@ -737,6 +942,50 @@ export type AgentsSyncInstructionsReturn = {
   results: Array<Record<string, unknown>>;
   total: number;
   [k: string]: unknown;
+};
+
+/** Input shape for `agents.update`. */
+export type AgentsUpdateInput = {
+  execute?: boolean;
+  id: string;
+  keepLocal?: boolean;
+  takeLibrary?: boolean;
+};
+
+/** Return shape for `agents.update`. */
+export type AgentsUpdateReturn = {
+  agent: string;
+  granted: string[];
+  kept: string[];
+  plan: {
+    files: Array<{
+      action: "write" | "keep" | "unchanged" | "remove";
+      changedInLibrary: boolean;
+      diff?: string;
+      editedLocally: boolean;
+      file: string;
+    }>;
+    profile: {
+      apply: string | null;
+      note?: string;
+      raises: boolean;
+      suggested: string | null;
+    };
+    skills: Array<{
+      grant: string | null;
+      kind: "library" | "ravi";
+      reason?: string;
+      ref: string;
+      status: "grant" | "granted" | "missing";
+    }>;
+  };
+  previousVersion: number;
+  profile: string | null;
+  ref: string;
+  success: true;
+  upToDate: boolean;
+  version: number;
+  written: string[];
 };
 
 /** Input shape for `apps.check`. */

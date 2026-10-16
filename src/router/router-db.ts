@@ -1378,6 +1378,40 @@ function getDb(): Database {
       last_error_at     INTEGER
     );
 
+    -- Library agents (spec skills/library): what the directory reports for a
+    -- local agent, whether its operator opened it to requests, and the Library
+    -- definition it was installed from.
+    CREATE TABLE IF NOT EXISTS library_agents (
+      agent_id             TEXT PRIMARY KEY,
+      description          TEXT,
+      accepts_requests     INTEGER NOT NULL DEFAULT 0 CHECK(accepts_requests IN (0,1)),
+      origin_ref           TEXT,
+      origin_version       INTEGER,
+      origin_content_hash  TEXT,
+      agents_md_sha256     TEXT,
+      heartbeat_md_sha256  TEXT,
+      origin_profile       TEXT,
+      origin_skills_json   TEXT,
+      installed_at         INTEGER,
+      updated_at           INTEGER NOT NULL
+    );
+
+    -- Requests between agents of different installations, as this side knows
+    -- them: the asking session (sent) or the turn that answers (received).
+    CREATE TABLE IF NOT EXISTS library_agent_requests (
+      request_id     TEXT PRIMARY KEY,
+      direction      TEXT NOT NULL CHECK(direction IN ('sent','received')),
+      agent_id       TEXT,
+      peer           TEXT,
+      session_key    TEXT,
+      session_name   TEXT,
+      status         TEXT NOT NULL,
+      error          TEXT,
+      created_at     INTEGER NOT NULL,
+      updated_at     INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_library_agent_requests_status ON library_agent_requests(direction, status);
+
     CREATE TABLE IF NOT EXISTS sessions (
       session_key TEXT PRIMARY KEY,
       name TEXT,

@@ -16,6 +16,18 @@
 //   POST /api/cli/library/skills/<scope>/<slug>/unpin
 //   GET  /api/cli/library/pins
 //   POST /api/cli/library/pins/sync
+//
+// Agent definitions use the same routes under `/agents` (`forAgents()`),
+// except pins. The directory and requests between agents:
+//
+//   GET  /api/cli/library/directory?q=&project=
+//   POST /api/cli/library/requests
+//   GET  /api/cli/library/requests?box=sent|received&state=open|closed|all
+//   GET  /api/cli/library/requests/<id>
+//   POST /api/cli/library/requests/<id>/cancel
+//   POST /api/cli/library/requests/pull
+//   POST /api/cli/library/requests/<id>/reply
+//   POST /api/cli/library/requests/replies/pull
 
 import { ConsoleApiClient, normalizeConsoleUrl, refreshCredentialsForStore } from "../cloud-auth/client.js";
 import { CloudAuthError, classifyConsoleNetworkError, isCloudAuthError } from "../cloud-auth/errors.js";
@@ -26,8 +38,14 @@ import type { ConsoleScopeProject } from "../console-scope/types.js";
 import { inspectExecutionPlane } from "../isolation/execution-plane.js";
 import type { LibraryRef } from "./refs.js";
 import type {
+  LibraryAgentManifest,
+  LibraryAgentRequest,
+  LibraryDirectoryAgent,
+  LibraryDirectoryResponse,
   LibraryInstallationPin,
   LibraryInstallationPinsResponse,
+  LibraryRequestListResponse,
+  LibraryRequestStatus,
   LibraryItem,
   LibraryItemPin,
   LibraryItemPinsResponse,
@@ -52,6 +70,11 @@ import type {
 
 export const LIBRARY_PATH = "/api/cli/library";
 export const LIBRARY_SKILLS_PATH = `${LIBRARY_PATH}/skills`;
+export const LIBRARY_AGENTS_PATH = `${LIBRARY_PATH}/agents`;
+/** Console limits for requests between agents. */
+export const LIBRARY_REQUEST_MESSAGE_MAX = 8_000;
+export const LIBRARY_REQUEST_REPLY_MAX = 16_000;
+export const LIBRARY_REQUEST_FAILURE_MAX = 500;
 /** At most this many agents per `POST /pins/sync` (Console limit). */
 export const LIBRARY_PIN_SYNC_MAX_AGENTS = 500;
 export const LIBRARY_SEARCH_DEFAULT_LIMIT = 10;
@@ -72,22 +95,31 @@ export function isLibraryNotFoundError(error: unknown): error is CloudAuthError 
   return isCloudAuthError(error) && (error.code === "NOT_FOUND" || error.status === 404);
 }
 
+interface LibraryClientSession {
+  client: ConsoleApiClient;
+  credentials: CloudCredentials;
+  write: typeof writeCloudCredentials;
+  delete: typeof deleteCloudCredentials;
+}
+
 export class LibraryClient {
   private credentials: CloudCredentials;
 
   constructor(
-    private readonly session: {
-      client: ConsoleApiClient;
-      credentials: CloudCredentials;
-      write: typeof writeCloudCredentials;
-      delete: typeof deleteCloudCredentials;
-    },
+    private readonly session: LibraryClientSession,
+    /** `/api/cli/library/skills` (default) or `/api/cli/library/agents`. */
+    private readonly kindPath: string = LIBRARY_SKILLS_PATH,
   ) {
     this.credentials = session.credentials;
   }
 
   get consoleUrl(): string {
     return this.credentials.consoleUrl;
+  }
+
+  /** The same session on the agent-definition routes (`/agents/...`). */
+  forAgents(): LibraryClient {
+    return new LibraryClient({ ...this.session, credentials: this.credentials }, LIBRARY_AGENTS_PATH);
   }
 
   async search(input: { query: string; project?: string | null; limit?: number }): Promise<LibrarySearchResponse> {
@@ -223,8 +255,77 @@ export class LibraryClient {
     return { removed: payload?.removed === true };
   }
 
+  /** `GET /directory`: the agents the org's linked installations report. */
+  async directory(input: { query?: string | null; project?: string | null } = {}): Promise<LibraryDirectoryResponse> {
+    const params = new URLSearchParams();
+    if (input.query?.trim()) params.set("q", input.query.trim());
+    if (input.project) params.set("project", input.project);
+    const query = params.toString();
+    const payload = objectValue(
+      await this.requestAt<unknown>("GET", `${LIBRARY_PATH}/directory${query ? `?${query}` : ""}`),
+    );
+    const agents = Array.isArray(payload?.agents) ? payload.agents.map(requireDirectoryAgent) : [];
+    return { agents, can: { ask: objectValue(payload?.can)?.ask === true } };
+  }
+
+  /** `POST /requests`: ask an agent on another installation (201). */
+  async sendRequest(body: {
+    to: { installationId: string; agentId: string };
+    message: string;
+    agent?: { id: string };
+  }): Promise<LibraryAgentRequest> {
+    const payload = objectValue(await this.requestAt<unknown>("POST", `${LIBRARY_PATH}/requests`, body));
+    return requireRequest(payload?.request);
+  }
+
+  /** `GET /requests?box=&state=`: this installation's requests. */
+  async listRequests(
+    input: { box?: "sent" | "received"; state?: "open" | "closed" | "all" } = {},
+  ): Promise<LibraryRequestListResponse> {
+    const params = new URLSearchParams();
+    if (input.box) params.set("box", input.box);
+    if (input.state) params.set("state", input.state);
+    const query = params.toString();
+    return requireRequestList(
+      await this.requestAt<unknown>("GET", `${LIBRARY_PATH}/requests${query ? `?${query}` : ""}`),
+    );
+  }
+
+  async showRequest(id: string): Promise<LibraryAgentRequest> {
+    const payload = objectValue(
+      await this.requestAt<unknown>("GET", `${LIBRARY_PATH}/requests/${encodeURIComponent(id)}`),
+    );
+    return requireRequest(payload?.request);
+  }
+
+  /** `POST /requests/<id>/cancel`: the sender withdraws a pending request. */
+  async cancelRequest(id: string): Promise<LibraryAgentRequest> {
+    const payload = objectValue(
+      await this.requestAt<unknown>("POST", `${LIBRARY_PATH}/requests/${encodeURIComponent(id)}/cancel`, {}),
+    );
+    return requireRequest(payload?.request);
+  }
+
+  /** `POST /requests/pull`: the target takes its pending requests (each handed out once). */
+  async pullRequests(): Promise<LibraryRequestListResponse> {
+    return requireRequestList(await this.requestAt<unknown>("POST", `${LIBRARY_PATH}/requests/pull`, {}));
+  }
+
+  /** `POST /requests/<id>/reply`: the target answers (`reply`) or gives up (`failure`). */
+  async replyRequest(id: string, body: { reply: string } | { failure: string }): Promise<LibraryAgentRequest> {
+    const payload = objectValue(
+      await this.requestAt<unknown>("POST", `${LIBRARY_PATH}/requests/${encodeURIComponent(id)}/reply`, body),
+    );
+    return requireRequest(payload?.request);
+  }
+
+  /** `POST /requests/replies/pull`: the sender takes answers, failures and expiries (each once). */
+  async pullReplies(): Promise<LibraryRequestListResponse> {
+    return requireRequestList(await this.requestAt<unknown>("POST", `${LIBRARY_PATH}/requests/replies/pull`, {}));
+  }
+
   private request<T>(method: string, relativePath: string, body?: unknown): Promise<T> {
-    return this.requestAt<T>(method, `${LIBRARY_SKILLS_PATH}${relativePath}`, body);
+    return this.requestAt<T>(method, `${this.kindPath}${relativePath}`, body);
   }
 
   private async requestAt<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -385,14 +486,119 @@ function requireShow(payload: unknown): LibraryShowResponse {
     throw new CloudAuthError("SERVER_UNAVAILABLE", "The Console returned an unexpected Library skill.");
   }
   const files = version.files.map(requireFile);
+  const manifest = objectValue(version.agent);
   const normalized: LibraryVersion = {
     number: version.number,
     note: typeof version.note === "string" ? version.note : null,
     contentHash: typeof version.contentHash === "string" ? version.contentHash : "",
     publishedAt: typeof version.publishedAt === "string" ? version.publishedAt : null,
     files,
+    ...(manifest ? { agent: requireAgentManifest(manifest) } : {}),
   };
   return { item: requireItem(record.item), version: normalized };
+}
+
+function requireAgentManifest(manifest: Record<string, unknown>): LibraryAgentManifest {
+  return {
+    provider: stringOrNull(manifest.provider),
+    model: stringOrNull(manifest.model),
+    profile: stringOrNull(manifest.profile),
+    skills: Array.isArray(manifest.skills)
+      ? [...new Set(manifest.skills.filter((ref): ref is string => typeof ref === "string" && ref.trim() !== ""))]
+      : [],
+  };
+}
+
+function requireInstallationRef(value: unknown): { id: string; name: string | null } | null {
+  const installation = objectValue(value);
+  if (!installation || typeof installation.id !== "string") return null;
+  return { id: installation.id, name: stringOrNull(installation.name) };
+}
+
+function requireProjectRef(value: unknown): { id: string; slug: string; name: string | null } | null {
+  const project = objectValue(value);
+  if (!project || typeof project.slug !== "string") return null;
+  return { id: stringOr(project.id, ""), slug: project.slug.toLowerCase(), name: stringOrNull(project.name) };
+}
+
+function requireDirectoryAgent(value: unknown): LibraryDirectoryAgent {
+  const entry = objectValue(value);
+  const installation = requireInstallationRef(entry?.installation);
+  const agent = objectValue(entry?.agent);
+  if (!entry || !installation || !agent || typeof agent.id !== "string") {
+    throw new CloudAuthError("SERVER_UNAVAILABLE", "The Console returned a directory entry without an agent.");
+  }
+  // Only the contract's fields: the result is returned as JSON.
+  return {
+    installation,
+    agent: {
+      id: agent.id,
+      name: stringOr(agent.name, agent.id),
+      description: stringOrNull(agent.description),
+      provider: stringOrNull(agent.provider),
+      model: stringOrNull(agent.model),
+      project: requireProjectRef(agent.project),
+    },
+    online: entry.online === true,
+    acceptsRequests: entry.acceptsRequests === true,
+    reportedAt: stringOrNull(entry.reportedAt),
+    self: entry.self === true,
+  };
+}
+
+const REQUEST_STATUSES: ReadonlySet<string> = new Set([
+  "pending",
+  "delivered",
+  "answered",
+  "failed",
+  "expired",
+  "cancelled",
+]);
+
+function requireRequest(value: unknown): LibraryAgentRequest {
+  const request = objectValue(value);
+  const to = objectValue(request?.to);
+  const toInstallation = requireInstallationRef(to?.installation);
+  if (
+    !request ||
+    typeof request.id !== "string" ||
+    typeof request.status !== "string" ||
+    !REQUEST_STATUSES.has(request.status) ||
+    !to ||
+    !toInstallation ||
+    typeof to.agentId !== "string"
+  ) {
+    throw new CloudAuthError("SERVER_UNAVAILABLE", "The Console returned a request without an id, status or target.");
+  }
+  const from = objectValue(request.from);
+  const user = objectValue(from?.user);
+  return {
+    id: request.id,
+    status: request.status as LibraryRequestStatus,
+    direction: request.direction === "received" ? "received" : "sent",
+    from: {
+      installation: requireInstallationRef(from?.installation),
+      agentId: stringOrNull(from?.agentId),
+      user: user && typeof user.id === "string" ? { id: user.id, name: stringOrNull(user.name) } : null,
+    },
+    to: { installation: toInstallation, agentId: to.agentId },
+    project: requireProjectRef(request.project),
+    message: stringOr(request.message, ""),
+    reply: stringOrNull(request.reply),
+    failureReason: stringOrNull(request.failureReason),
+    createdAt: stringOrNull(request.createdAt),
+    deliveredAt: stringOrNull(request.deliveredAt),
+    answeredAt: stringOrNull(request.answeredAt),
+    expiresAt: stringOrNull(request.expiresAt),
+  };
+}
+
+function requireRequestList(payload: unknown): LibraryRequestListResponse {
+  const record = objectValue(payload);
+  if (!record || !Array.isArray(record.requests)) {
+    throw new CloudAuthError("SERVER_UNAVAILABLE", "The Console returned an unexpected request list.");
+  }
+  return { installation: requireInstallationRef(record.installation), requests: record.requests.map(requireRequest) };
 }
 
 function requireFile(value: unknown): LibraryVersionFile {

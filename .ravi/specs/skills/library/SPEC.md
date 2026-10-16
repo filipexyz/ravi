@@ -12,9 +12,13 @@ tags:
   - search
   - proposals
   - pins
+  - agents
 applies_to:
   - src/library/
   - src/cli/commands/skills.ts
+  - src/cli/commands/agents.ts
+  - src/cli/commands/agents-library.ts
+  - src/cli/library-contract.ts
   - src/runtime/skill-authorization.ts
   - src/runtime/skill-capability-implication.ts
   - src/runtime/allowed-skills.ts
@@ -23,6 +27,7 @@ applies_to:
   - src/runtime/codex-provider.ts
   - src/daemon.ts
   - src/plugins/internal/ravi-system/skills/skills/SKILL.md
+  - src/plugins/internal/ravi-system/skills/agents/SKILL.md
   - docs/reference/skills.mdx
 owners:
   - ravi-dev
@@ -414,6 +419,126 @@ where that item is pinned (`GET /skills/<scope>/<slug>/pins`): `ref`,
 `installationId`, `pins` (`id`, `installation`, `agent` with `reported`,
 `pinnedBy`, `createdAt`) and `can.pin`; `--agent` filters by agent id.
 
+## Agents
+
+The Library also holds agent definitions, under `/api/cli/library/agents/...`
+with the same routes as skills (search, show, publish, versions, proposals),
+and no pins. A version holds `AGENTS.md` (required), an optional
+`HEARTBEAT.md` and an optional `agent.json`:
+`{provider?, model?, profile?, skills?}` with at most 50 skill refs. `show`
+also returns the parsed manifest as `version.agent` (`provider`, `model`,
+`profile`, `skills`); when it is missing, the local side parses `agent.json`.
+An org agent may only require `org/` skills; a project agent may also require
+its own project's. The Console checks this; the local side only filters what
+it sends.
+
+A definition never carries routes, instances, contacts, sessions, local paths
+or credentials, in either direction.
+
+Local state lives in `ravi.db`, table `library_agents` (one row per local
+agent): `description` (at most 300 characters, the directory text),
+`accepts_requests` (0/1, default 0), and the origin of an installed agent:
+`origin_ref`, `origin_version`, `origin_content_hash`, `agents_md_sha256`,
+`heartbeat_md_sha256` (the files as installed), `origin_profile` and
+`origin_skills_json` (what the installed version asked for), `installed_at`.
+
+### `ravi agents search [query]`
+
+Read-only. `--project <slug>` (default: the cwd's Console project), `--limit`,
+`--json`. Same `library` status block as `skills search` (`ok`, `stale` from
+the agent cache when offline, `skipped` without a login, `error`). A turn
+that is not the operator's own leaves out items not marked `externalAllowed`.
+Items: `ref`, `scope`, `project`, `name`, `description`, `version`, `next`
+(`ravi agents show <ref>`). Agent definitions are cached apart from skills,
+under `<RAVI_STATE_DIR>/library/agent-definitions/<orgId>/`.
+
+### `ravi agents show <ref>`
+
+`agents show` with an argument shaped like a Library ref (`org/<slug>`,
+`<project>/<slug>`) reads the definition: `source: "library"`, `ref`, `item`,
+`version`, `contentHash`, `note`, `publishedAt`, `stale` (answered from the
+cache while offline), `manifest`, `files`, `instructions`, `heartbeat` and
+`next` (`ravi agents install <ref>`). `externalAllowed: false` in a turn that
+is not the operator's own is `LIBRARY_SKILL_EXTERNAL_DENIED` (exit 3). A
+local agent's `show` adds `library` (`description`, `acceptsRequests`,
+`origin` with `ref`, `version`, `installedAt`) when it has a row.
+
+### `ravi agents install <ref>`
+
+Flags: `--id <id>` (default: the ref's slug; `a-z0-9_-`, at most 64),
+`--cwd <dir>` (default `~/ravi/<id>`, the `agents create` convention),
+`--json`, `--execute`. Steps: refuse an existing id (`AGENT_ALREADY_EXISTS`)
+and a cwd that already has `AGENTS.md` (`AGENT_CWD_IN_USE`); read the current
+version; plan the profile and the skills; then write `AGENTS.md` (and
+`HEARTBEAT.md`), create the agent with the suggested provider and model,
+apply the profile, store the grants, record the origin with the sha256 of
+each file, set `accepts_requests` to 0 and the description from the item.
+
+The brake is local: without `--execute` it exits 3 with the plan
+(`WRITE_REQUIRES_EXECUTE`) when the suggested profile is above the bootstrap
+floor (`full-access`, or leaving `chat-only`/`explicit-only`) or when any
+skill would be granted; otherwise it applies immediately. A profile this Ravi
+does not know is not applied (`profile.note`). Required skills:
+
+- a Library ref is checked with `GET /skills/<scope>/<slug>` and granted as
+  `org:<slug>` or `project:<project>:<slug>`, the way `ravi skills grant`
+  stores it (note `required by Library agent <ref>@<version>`);
+- a bare name is looked up in the catalog and installed skills and granted by
+  name;
+- one that cannot be found is skipped and listed (`skipped`, with its code).
+
+`--json`: `ref`, `version`, `agent` (`id`, `cwd`, `provider`, `model`),
+`profile`, `granted`, `skipped`, `next`.
+
+### `ravi agents update <id>`
+
+Flags: `--keep-local`, `--take-library`, `--json`, `--execute`. Reads the
+latest version of the recorded origin (`LIBRARY_AGENT_NO_ORIGIN`, exit 1, for
+an agent not installed from the Library). Per file (`AGENTS.md`,
+`HEARTBEAT.md`), comparing the local file, the recorded hash and the new
+version:
+
+- same as the new version: `unchanged`;
+- not edited here: `write` (or `remove`, when the new version dropped it);
+- edited here and changed in the Library: without a choice the command stops
+  with `LIBRARY_AGENT_EDITED_LOCALLY` (exit 2), `details.files` and
+  `details.diff` (a line diff, `-` local and `+` Library, printed before the
+  error in text mode); `--keep-local` keeps the file (its recorded hash stays
+  the installed one, so the next update still sees the edit), `--take-library`
+  overwrites it.
+
+The profile is applied only when the definition's suggestion changed since
+the recorded version (a profile the operator set here is not reverted); only
+skills new in the definition are granted. Those two follow the install brake.
+`--json`: `agent`, `ref`, `version`, `previousVersion`, `upToDate`, `written`,
+`kept`, `profile`, `granted`, `plan` (`files`, `profile`, `skills`).
+
+### `ravi agents publish <id> --scope org|<project>`
+
+Flags: `--slug` (default: the agent id), `--description` (default: the agent's
+description; required one way or the other), `--note`, `--propose`, `--json`,
+`--execute`. Always braked (exit 3 with the plan). The package is the agent's
+`AGENTS.md` (required, non-empty), its `HEARTBEAT.md` when there is one and an
+`agent.json` built here: the agent's provider and model, its permission
+profile when it is not `bootstrap`, and its Library skill grants visible in the
+scope (`org/` ones, and for a project scope that project's), at most 50.
+Every other grant is listed in `leftOut` with a reason. `externalAllowed` is
+always false. With `--propose` it posts `POST /agents/proposals` with
+`submit: true` instead of publishing. `--json`: `ref`, `agent`, `version`,
+`contentHash`, `unchanged`, `item`, `proposal`, `manifest`, `leftOut`, `next`.
+
+### Agents do not install, update or publish agents
+
+Inside an agent runtime `install` and `update` refuse before any request with
+`LIBRARY_AGENT_CANNOT_INSTALL` (exit 3), and `publish` (with or without
+`--propose`) with `LIBRARY_AGENT_CANNOT_PUBLISH` (exit 3). They add or share
+authority of the machine, which is the operator's decision.
+
+### `ravi agents set <id> description <text>`
+
+A local reversible write (no brake): the directory description, at most 300
+characters (`USAGE_ERROR`, exit 2, above that); `clear` removes it.
+
 ## Error codes
 
 | case | code | exit |
@@ -437,4 +562,11 @@ where that item is pinned (`GET /skills/<scope>/<slug>/pins`): `ref`,
 | `--update` of a proposal by another author (or, inside an agent, another agent) | `LIBRARY_PROPOSAL_NOT_YOURS` | 3 |
 | `--update` of a closed proposal | `CONFLICT` (`conflict: proposal_closed`) | 1 |
 | proposal missing or not visible | `NOT_FOUND` | 1 |
+| install or update inside an agent runtime | `LIBRARY_AGENT_CANNOT_INSTALL` | 3 |
+| publish or propose an agent inside an agent runtime | `LIBRARY_AGENT_CANNOT_PUBLISH` | 3 |
+| install or update that raises the profile or grants skills, or agent publish, without `--execute` | `WRITE_REQUIRES_EXECUTE` | 3 |
+| install to an existing local id | `AGENT_ALREADY_EXISTS` | 1 |
+| install into a cwd that already has `AGENTS.md` | `AGENT_CWD_IN_USE` | 1 |
+| update of an agent not installed from the Library | `LIBRARY_AGENT_NO_ORIGIN` | 1 |
+| update of a file edited here and changed in the Library, without `--keep-local` or `--take-library` | `LIBRARY_AGENT_EDITED_LOCALLY` | 2 |
 | Console errors (`AUTH_REQUIRED`, `CONFLICT` with `details.conflict`, ...) | Console code | per the cloud mapping |

@@ -73,6 +73,20 @@ const executeConsumers: readonly ExecuteConsumer[] = [
     matches: 1,
   },
   {
+    name: "Library agent install/update refusal inside an agent",
+    path: "src/cli/commands/agents-library.ts",
+    marker: "`Ask the operator to run: ravi $",
+    expected: "--execute",
+    matches: 1,
+  },
+  {
+    name: "Library agent publish refusal inside an agent",
+    path: "src/cli/commands/agents-library.ts",
+    marker: "`Ask the operator to run: ravi agents publish",
+    expected: "--execute",
+    matches: 1,
+  },
+  {
     name: "sentinel WhatsApp DM reply hint",
     path: "src/omni/consumer.ts",
     marker: "use whatsapp dm send",
@@ -226,6 +240,36 @@ const executeInstructions = [
     name: "Library pin help",
     path: "src/cli/commands/skills.ts",
     instruction: "ravi skills pin org/tom-de-voz --agent main --execute",
+  },
+  {
+    name: "Library agent install skill",
+    path: "src/plugins/internal/ravi-system/skills/agents/SKILL.md",
+    instruction: "ravi agents install org/triagem --execute",
+  },
+  {
+    name: "Library agent install documentation",
+    path: "docs/reference/skills.mdx",
+    instruction: "ravi agents install org/triage --execute",
+  },
+  {
+    name: "Library agent install help",
+    path: "src/cli/commands/agents-library.ts",
+    instruction: "ravi agents install org/triage --execute",
+  },
+  {
+    name: "Library agent publish skill",
+    path: "src/plugins/internal/ravi-system/skills/agents/SKILL.md",
+    instruction: "ravi agents publish triagem --scope org --execute",
+  },
+  {
+    name: "Library agent publish documentation",
+    path: "docs/reference/skills.mdx",
+    instruction: "ravi agents publish triage --scope org --execute",
+  },
+  {
+    name: "Library agent publish help",
+    path: "src/cli/commands/agents-library.ts",
+    instruction: "ravi agents publish triage --scope org --execute",
   },
   {
     name: "Page Chat enable documentation",

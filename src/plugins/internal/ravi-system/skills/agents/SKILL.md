@@ -202,6 +202,38 @@ Keys:
   - `per-account-channel-peer` — Isolamento total
 - `systemPromptAppend` — Texto adicional no system prompt
 - `matrixAccount` — Conta Matrix associada
+- `description` — Texto do agent no diretório da Biblioteca (até 300 caracteres; `clear` apaga)
+
+## Agents da Biblioteca
+
+A Biblioteca do Console também guarda definições de agent: `AGENTS.md`,
+`HEARTBEAT.md` opcional e `agent.json` com provider, modelo, perfil de
+permissão e skills sugeridos. Uma definição nunca traz rotas, instâncias,
+contatos, caminhos locais ou credenciais: depois de instalar, roteie o agent.
+
+```bash
+ravi agents search triagem                    # definições da org e do projeto
+ravi agents show org/triagem                  # instruções e o que ela sugere
+ravi agents install org/triagem               # plano (exit 3) se sobe o perfil ou concede skills
+ravi agents install org/triagem --execute
+ravi agents update triagem                    # última versão; arquivo não editado é substituído
+ravi agents update triagem --keep-local       # mantém sua edição (ou --take-library)
+ravi agents publish triagem --scope org --execute
+ravi agents publish recepcao --scope clinica --propose --execute
+```
+
+- `install` cria o agent (cwd padrão `~/ravi/<id>`), aplica provider/modelo e
+  registra `<ref>@<versão>` e o hash dos arquivos. Aplica na hora, a menos que
+  o perfil fique acima do piso (`full-access`) ou haja skill a conceder: aí
+  exige `--execute`. Id existente é recusado (`AGENT_ALREADY_EXISTS`).
+- `update` com arquivo editado aqui e alterado na Biblioteca para com
+  `LIBRARY_AGENT_EDITED_LOCALLY` (exit 2) e o diff: escolha `--keep-local` ou
+  `--take-library`.
+- `publish` sempre exige `--execute`; o `agent.json` leva só skills da
+  Biblioteca visíveis no escopo (as outras aparecem em `leftOut`).
+- Agents não instalam, atualizam nem publicam agents: dentro de um agent os
+  comandos recusam com `LIBRARY_AGENT_CANNOT_INSTALL` /
+  `LIBRARY_AGENT_CANNOT_PUBLISH` (exit 3). Peça ao operador.
 
 ## Permissões / Provider Runtime
 

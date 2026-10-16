@@ -205,6 +205,30 @@ ravi skills pins org/tone-of-voice                                # where this s
 - Offline, the pins of the last sync keep loading and `ravi skills pins` answers with `stale: true`. A pinned skill this login cannot read shows in `unavailable` (`LIBRARY_PIN_UNAVAILABLE`) and does not load.
 - Agents never pin or unpin: inside an agent session both commands stop with `LIBRARY_AGENT_CANNOT_PIN` (exit 3).
 
+## Library agents
+
+The Library also holds agent definitions: an `AGENTS.md` with the instructions, an optional `HEARTBEAT.md`, and an optional `agent.json` that suggests a provider, a model, a permission profile and the skills the agent needs. Install one as a new agent on this machine, keep it up to date, or publish one of your agents for the organization or a project. A definition never carries routes, instances, contacts, local paths or credentials: after installing, route the agent yourself.
+
+```bash
+ravi agents search triage                          # definitions your organization and project publish
+ravi agents show org/triage                        # instructions, suggested provider, model, profile and skills
+ravi agents install org/triage                     # plan only (exit 3) when it raises the profile or grants skills
+ravi agents install org/triage --execute
+ravi agents install clinic/front-desk --id front-desk --cwd ~/agents/front-desk --execute
+ravi agents update triage                          # latest version; untouched files are replaced
+ravi agents update triage --keep-local             # keep your edits to AGENTS.md / HEARTBEAT.md
+ravi agents update triage --take-library           # replace them with the Library version
+ravi agents set triage description "Sorts incoming requests"
+ravi agents publish triage --scope org             # plan only (exit 3)
+ravi agents publish triage --scope org --execute
+ravi agents publish front-desk --scope clinic --propose --execute   # for review instead
+```
+
+- `install` writes the files into the agent's folder (default `~/ravi/<id>`), sets the suggested provider and model and records the version and a hash of each file. It runs at once unless the definition asks for a permission profile above the default (`full-access`) or for skills to be granted: then it is a dry run until you pass `--execute`. Grants are stored like `ravi skills grant`; a required skill this machine cannot find is skipped and listed. An existing agent id is refused (`AGENT_ALREADY_EXISTS`).
+- `update` replaces files you did not edit. A file you edited that also changed in the Library stops the update with `LIBRARY_AGENT_EDITED_LOCALLY` (exit 2) and the diff; choose `--keep-local` or `--take-library`. A new profile or new skills follow the same `--execute` rule as `install`. A profile you changed here is not reverted unless the Library changed its suggestion.
+- `publish` sends `AGENTS.md`, `HEARTBEAT.md` and an `agent.json` built from the agent's provider, model and profile, plus the Library skills it is granted that the scope can see (others are listed under `leftOut`). It always needs `--execute`. The description is `--description`, else the one set with `ravi agents set <id> description`.
+- Agents never install, update or publish agents: inside an agent session these stop with `LIBRARY_AGENT_CANNOT_INSTALL` or `LIBRARY_AGENT_CANNOT_PUBLISH` (exit 3).
+
 ## Install your own skills
 
 `ravi skills install` copies a skill from the catalog, a local folder or a Git source into `~/ravi/plugins/ravi-user-skills/skills/<skill>` (change the bucket with `--plugin`). Whether it runs at once depends on the risk:

@@ -8,31 +8,24 @@ import {
   CONTRACT_EXIT_ERROR,
   CONTRACT_EXIT_POLICY,
   CONTRACT_EXIT_USAGE,
-  ContractError,
   contractDryRun,
   contractFail,
   pickFields,
-  renderContractError,
   suggestSimilar,
 } from "../agent-contract.js";
 import { getCallerCwd, resolveCallerPath } from "../caller-cwd.js";
-import { cloudErrorToContractError } from "../cloud-error-contract.js";
-import { isCloudAuthError } from "../../cloud-auth/errors.js";
-import { readCloudCredentials } from "../../cloud-auth/storage.js";
-import { LibraryPackageError } from "../../library/package.js";
+import { hasCloudLogin, runtimeLibraryCaller, skillContractIssues, withLibraryContract } from "../library-contract.js";
 import { isLibrarySlug, isReservedLibrarySlug, looksLikeLibraryRef, parseLibraryRef } from "../../library/refs.js";
 import {
   executeLibraryProposal,
   executeLibraryPublish,
   LIBRARY_AGENT_CANNOT_PUBLISH,
-  LibraryCommandError,
   listLibraryProposals,
   prepareLibraryProposal,
   prepareLibraryPublish,
   searchSkills,
   showLibraryProposal,
   showLibrarySkill,
-  type LibraryCaller,
   type LibraryProposalState,
   type LibraryShowOutcome,
 } from "../../library/service.js";
@@ -151,22 +144,6 @@ interface SkillNotFoundOptions {
   asJson?: boolean;
   candidates?: string[];
   suggestedAction?: string;
-}
-
-/**
- * The remote gateway client renders issues[] but replaces suggestedAction with
- * generic copy, so the remediation also travels as a trailing issue.
- */
-function skillContractIssues(
-  path: string[],
-  code: string,
-  message: string,
-  suggestedAction?: string,
-): Array<{ path: string[]; code: string; message: string }> {
-  return [
-    { path, code, message },
-    ...(suggestedAction ? [{ path: ["suggestedAction"], code: "SUGGESTED_ACTION", message: suggestedAction }] : []),
-  ];
 }
 
 function failSkillNotFound(op: string, skillName: string, options: SkillNotFoundOptions = {}): never {
@@ -408,133 +385,6 @@ function withSkillSourceContract<T>(op: string, asJson: boolean | undefined, run
 // ============================================================
 // Library (spec skills/library): refs `org/<slug>` and `<project>/<slug>`.
 // ============================================================
-
-/** The agent of an agent runtime turn; null in the operator's terminal. */
-function runtimeLibraryCaller(): LibraryCaller | null {
-  const agentId = hasRuntimeInvocationContext() ? getContext()?.agentId?.trim() : undefined;
-  if (!agentId) return null;
-  const capabilities = getContext()?.context?.capabilities;
-  return { agentId, ...(capabilities ? { capabilities } : {}) };
-}
-
-function hasCloudLogin(): boolean {
-  try {
-    return readCloudCredentials() !== null;
-  } catch {
-    return false;
-  }
-}
-
-/** Library, package and Console failures as contract errors, rendered once. */
-async function withLibraryContract<T>(op: string, asJson: boolean | undefined, run: () => Promise<T>): Promise<T> {
-  try {
-    return await run();
-  } catch (error) {
-    if (error instanceof ContractError) throw error;
-    if (error instanceof LibraryCommandError) {
-      const suggestedAction = typeof error.details.suggestedAction === "string" ? error.details.suggestedAction : "";
-      contractFail(op, error.code, error.message, {
-        asJson,
-        exitCode: error.exitCode,
-        details: {
-          ...error.details,
-          issues: skillContractIssues([], error.code, error.message, suggestedAction || undefined),
-        },
-      });
-    }
-    if (error instanceof LibraryPackageError) {
-      const suggestedAction = "Fix the skill folder and run the same command again";
-      contractFail(op, error.code, error.message, {
-        asJson,
-        exitCode: CONTRACT_EXIT_USAGE,
-        details: {
-          suggestedAction,
-          issues: [...error.issues, { path: ["suggestedAction"], code: "SUGGESTED_ACTION", message: suggestedAction }],
-        },
-      });
-    }
-    if (isCloudAuthError(error)) {
-      const base = cloudErrorToContractError(op, error);
-      const reason = typeof error.details?.reason === "string" ? error.details.reason : undefined;
-      const copy = error.code === "CONFLICT" && reason ? libraryConflictCopy(op, reason) : null;
-      const contract = copy
-        ? new ContractError(op, base.code, copy.message ?? base.message, base.exitCode, {
-            ...base.details,
-            // The envelope redacts `reason` as free text; `conflict` carries the code.
-            reason,
-            conflict: reason,
-            ...(typeof error.details?.currentVersion === "number"
-              ? { currentVersion: error.details.currentVersion }
-              : {}),
-            ...(typeof error.details?.baseVersion === "number" ? { baseVersion: error.details.baseVersion } : {}),
-            ...(typeof error.details?.status === "string" ? { proposalStatus: error.details.status } : {}),
-            suggestedAction: copy.suggestedAction,
-          })
-        : base;
-      renderContractError(contract, asJson);
-      throw contract;
-    }
-    throw error;
-  }
-}
-
-/** What a Library `CONFLICT` (by `details.reason`) means for the command that got it. */
-function libraryConflictCopy(op: string, reason: string): { message?: string; suggestedAction: string } {
-  switch (reason) {
-    case "stale_base":
-      return op === "skills propose"
-        ? {
-            message: "The published version changed after the plan was read.",
-            suggestedAction:
-              "Read the new version with 'ravi skills show <ref>', bring its changes into your folder, then run the same propose without --execute to see the new plan (with --update, add --rebase)",
-          }
-        : {
-            message: "Someone published a newer version after the plan was read.",
-            suggestedAction:
-              "Someone published a newer version: run the same publish again without --execute to see the new plan",
-          };
-    case "unchanged":
-      return {
-        message: "The folder and its metadata are exactly the published version.",
-        suggestedAction: "Change a file or the description first: there is nothing to propose",
-      };
-    case "slug_taken_in_org":
-      return {
-        message: "The organization already has a Library skill with this slug.",
-        suggestedAction: "Pick another slug with --slug, or use --scope org to change the organization's skill",
-      };
-    case "slug_taken_in_project":
-      return {
-        message: "A project already has a Library skill with this slug.",
-        suggestedAction: "Pick another slug with --slug",
-      };
-    case "slug_reserved":
-      return { message: "This slug is reserved.", suggestedAction: "Pick another slug with --slug" };
-    case "proposal_closed":
-      return {
-        message: "The proposal is closed (published, rejected or withdrawn).",
-        suggestedAction: "Open a new proposal: run the same command without --update",
-      };
-    case "not_published":
-      return {
-        message: "Only a published, non-archived Library skill can be pinned.",
-        suggestedAction: "Publish a version first (ravi skills publish <dir> --scope <scope> --execute), then pin it",
-      };
-    case "agent_out_of_scope":
-      return {
-        message: "A project skill can only be pinned to an agent reported in that project.",
-        suggestedAction:
-          "Bind the agent to the skill's Console project (ravi cloud scope set --agent <agent> --project <project>), wait for the next pin sync, then pin again",
-      };
-    case "no_installation":
-      return {
-        message: "This login has no linked installation, so it has no pins.",
-        suggestedAction: "Run `ravi login` on this daemon so it links an installation, then run the same command again",
-      };
-    default:
-      return { suggestedAction: "Run the same command without --execute to see the current plan" };
-  }
-}
 
 /** A Library version as a RaviSkill, so `show` prints it exactly like a local skill. */
 function libraryOutcomeAsSkill(outcome: LibraryShowOutcome): RaviSkill {

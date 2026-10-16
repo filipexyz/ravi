@@ -248,6 +248,14 @@ ravi skills pins org/tom-de-voz                                     # onde esse 
 - Sem rede, os pins da última sincronização continuam carregando, e `skills pins` responde com `stale: true`. Um item que este login não consegue ler aparece em `unavailable` (`LIBRARY_PIN_UNAVAILABLE`) e não carrega.
 - Agente não fixa nem desfixa: dentro de um agente os dois comandos falham com `LIBRARY_AGENT_CANNOT_PIN` (exit 3). Peça ao operador.
 
+### Agentes da Biblioteca
+
+A Biblioteca também guarda definições de agent (`AGENTS.md`, `HEARTBEAT.md`,
+`agent.json`), com os mesmos escopos e propostas, mas sem pin. Os comandos
+ficam em `ravi agents`: `search`, `show <ref>`, `install`, `update`,
+`publish` (veja a skill `agents-manager`). As skills que uma definição exige
+viram grants como os de `ravi skills grant`.
+
 ## Estrutura de uma Skill
 
 ```

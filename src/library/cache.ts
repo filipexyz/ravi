@@ -7,6 +7,10 @@
  *   <stateDir>/library/<orgId>/<scope>/<slug>@<version>/item.json
  *   <stateDir>/library/<orgId>/<scope>/<slug>@<version>/<files...>
  *
+ * Agent definitions (`kind: "agent"`) keep the same layout under
+ * `<stateDir>/library/agent-definitions/<orgId>/`: a skill and an agent may
+ * share a slug.
+ *
  * `<scope>` is `org` or the project slug (`org` is a reserved project slug).
  * Versions never change once published, so a version directory is written
  * once, atomically (temporary directory, then rename). The index is replaced
@@ -47,10 +51,15 @@ export interface CachedLibrarySkill extends LibraryShowResponse {
 export interface LibraryCacheOptions {
   stateDir?: string;
   now?: () => Date;
+  /** `skill` (default) or `agent` definitions, kept apart. */
+  kind?: "skill" | "agent";
 }
 
 export function libraryCacheRoot(orgId: string, options: LibraryCacheOptions = {}): string {
-  return join(options.stateDir ?? getRaviStateDir(), "library", safeSegment(orgId));
+  const root = join(options.stateDir ?? getRaviStateDir(), "library");
+  return options.kind === "agent"
+    ? join(root, "agent-definitions", safeSegment(orgId))
+    : join(root, safeSegment(orgId));
 }
 
 /** `org` or the item's project slug. */

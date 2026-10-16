@@ -48,9 +48,17 @@
     (or the sync `pin --execute` runs first) reports it.
 14. For `LIBRARY_AGENT_CANNOT_PIN`, the call ran in an agent runtime: a person
     pins in the Console or from the operator's terminal.
+15. `ravi agents install <ref>` exits 3: the definition asks for
+    `full-access` or for skills. Read the plan (`profile`, `skills`), then
+    re-run with `--execute`. A skill listed as `missing` was not found here
+    (`NOT_FOUND` for a Library ref this login cannot read, `SKILL_NOT_FOUND`
+    for a bare name): install or publish it, then `ravi skills grant`.
+16. `ravi agents update` stops with `LIBRARY_AGENT_EDITED_LOCALLY`: read the
+    diff (`--json`: `details.diff`), then `--keep-local` or `--take-library`.
+    The origin and hashes are in `library_agents` of `ravi.db`.
 
 ## Validation
 
 ```bash
-bun test src/library src/cli/commands/skills-library.test.ts src/cli/commands/skills.test.ts src/runtime/allowed-skills.test.ts src/runtime/skill-visibility.test.ts src/runtime/codex-provider.test.ts
+bun test src/library src/cli/commands/skills-library.test.ts src/cli/commands/agents-library.test.ts src/cli/commands/skills.test.ts src/runtime/allowed-skills.test.ts src/runtime/skill-visibility.test.ts src/runtime/codex-provider.test.ts
 ```

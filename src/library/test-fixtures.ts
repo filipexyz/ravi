@@ -664,3 +664,59 @@ function handleItemPinRoute(state: FakeConsole, method: string, rest: string[], 
   state.pins.push(pin);
   return json(201, { pin: serializeItemPin(state, pin) });
 }
+
+// ---------------------------------------------------------------------------
+// Agent definitions
+
+/** A Library agent definition: AGENTS.md, optional HEARTBEAT.md and agent.json. */
+export function fakeAgentDefinition(input: {
+  slug: string;
+  project?: string | null;
+  description?: string;
+  version?: number;
+  externalAllowed?: boolean;
+  instructions?: string;
+  heartbeat?: string | null;
+  manifest?: Record<string, unknown> | null;
+}): FakeLibrarySkill {
+  const base = fakeSkill({
+    slug: input.slug,
+    project: input.project ?? null,
+    description: input.description ?? `About ${input.slug}`,
+    version: input.version ?? 1,
+    externalAllowed: input.externalAllowed,
+  });
+  const contents: Array<[string, string]> = [["AGENTS.md", input.instructions ?? `# ${input.slug}\n\nBe helpful.\n`]];
+  if (input.heartbeat) contents.push(["HEARTBEAT.md", input.heartbeat]);
+  if (input.manifest) contents.push(["agent.json", `${JSON.stringify(input.manifest, null, 2)}\n`]);
+  const files = contents.map(([path, content]) => ({
+    path,
+    content,
+    bytes: Buffer.byteLength(content),
+    sha256: sha(content),
+  }));
+  return { item: { ...base.item, kind: "agent", contentHash: libraryContentHash(files) }, files };
+}
+
+/**
+ * One fake Console for skills and another for agent definitions: requests to
+ * `/api/cli/library/agents/...` go to `agents` as if they were skill routes.
+ * Every original path is logged in `paths` of the returned fake.
+ */
+export function withFakeAgentLibrary(skills: FakeConsole, agents: FakeConsole): FakeConsole & { paths: string[] } {
+  const paths: string[] = [];
+  const agentsRoot = "/api/cli/library/agents";
+  return {
+    ...skills,
+    paths,
+    fetch: async (url, init) => {
+      const parsed = new URL(url);
+      paths.push(`${(init?.method ?? "GET").toUpperCase()} ${parsed.pathname}${parsed.search}`);
+      if (parsed.pathname === agentsRoot || parsed.pathname.startsWith(`${agentsRoot}/`)) {
+        parsed.pathname = `/api/cli/library/skills${parsed.pathname.slice(agentsRoot.length)}`;
+        return agents.fetch(parsed.toString(), init);
+      }
+      return skills.fetch(url, init);
+    },
+  };
+}

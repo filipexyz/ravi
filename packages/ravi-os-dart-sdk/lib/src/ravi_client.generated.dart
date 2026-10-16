@@ -201,6 +201,18 @@ class AgentsNamespace {
     );
   }
 
+  Future<AgentsInstallReturn> install(String ref, [AgentsInstallOptions options = const AgentsInstallOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["ref"] = RaviJson.from(ref);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["agents"],
+      command: "install",
+      body: requestBody,
+      decode: agentsInstallReturnFromJson,
+    );
+  }
+
   Future<AgentsListReturn> list([AgentsListOptions options = const AgentsListOptions()]) async {
     final requestBody = <String, RaviJson>{};
     options.encodeBody(requestBody);
@@ -239,6 +251,18 @@ class AgentsNamespace {
     );
   }
 
+  Future<AgentsPublishReturn> publish(String id, [AgentsPublishOptions options = const AgentsPublishOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["agents"],
+      command: "publish",
+      body: requestBody,
+      decode: agentsPublishReturnFromJson,
+    );
+  }
+
   Future<AgentsResetReturn> reset(String id, [String? nameOrKey, AgentsResetOptions options = const AgentsResetOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["id"] = RaviJson.from(id);
@@ -251,6 +275,20 @@ class AgentsNamespace {
       command: "reset",
       body: requestBody,
       decode: agentsResetReturnFromJson,
+    );
+  }
+
+  Future<AgentsSearchReturn> search([String? query, AgentsSearchOptions options = const AgentsSearchOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    if (query != null) {
+      requestBody["query"] = RaviJson.from(query);
+    }
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["agents"],
+      command: "search",
+      body: requestBody,
+      decode: agentsSearchReturnFromJson,
     );
   }
 
@@ -312,6 +350,18 @@ class AgentsNamespace {
       command: "sync-instructions",
       body: requestBody,
       decode: agentsSyncInstructionsReturnFromJson,
+    );
+  }
+
+  Future<AgentsUpdateReturn> update(String id, [AgentsUpdateOptions options = const AgentsUpdateOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["agents"],
+      command: "update",
+      body: requestBody,
+      decode: agentsUpdateReturnFromJson,
     );
   }
 }
