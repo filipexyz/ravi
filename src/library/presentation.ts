@@ -346,8 +346,8 @@ export async function checkPresentationFolder(
 export interface WidgetPreviewInput {
   dir: string;
   out: string;
-  /** Omitted: the Console picks the effective theme; `null`: no theme (`--theme none`). */
-  theme?: string | null;
+  /** Omitted: the Console picks the effective theme; `none` (or `default`): Ravi's default theme. */
+  theme?: string;
   data?: unknown;
   project?: string | null;
   caller?: LibraryCaller | null;

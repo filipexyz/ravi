@@ -60,8 +60,9 @@ proposals) are those of [`../themes/SPEC.md`](../themes/SPEC.md) with
    files are kept unless `--force` (`LIBRARY_FILES_EXIST`, exit 3).
 5. `preview <dir>` writes the Console's script-free HTML to `--out` (default
    `<dir>/preview.html`), with `--data <file>` (one JSON object or
-   `{ "records": [...] }`, `USAGE_ERROR` otherwise) and `--theme <ref>`;
-   without `--theme` the Console uses the effective theme.
+   `{ "records": [...] }`, `USAGE_ERROR` otherwise) and `--theme <ref>`
+   (`none` is sent as is and renders Ravi's default theme); without
+   `--theme` the Console uses the effective theme.
 6. Inside an agent runtime `publish` refuses before any request
    (`LIBRARY_AGENT_CANNOT_PUBLISH` with `ravi widgets propose <dir> --scope
    <scope> --execute`, exit 3); `propose`, `check`, `preview`, `init` and
@@ -117,5 +118,5 @@ pins the braked examples.
 
 ## Known Failure Modes
 
-- `preview --theme none` is sent as `theme: null`, which the Console reads
-  as "the effective theme", not as no theme.
+- A preview always has a theme: `--theme none` renders Ravi's default theme,
+  not an unstyled page, because the pieces need the theme's variables.

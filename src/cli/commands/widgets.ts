@@ -171,7 +171,7 @@ const WIDGETS_PREVIEW_HELP_AFTER = `
 ESCREVE ARQUIVO LOCAL — o Console renderiza o widget num HTML sem script: todas
 as variantes, claro e escuro lado a lado, com --data (um registro ou
 { "records": [...] }), senão example.json, senão valores inventados pelos tipos.
-O tema é --theme <ref> (none: sem tema), senão o tema efetivo do projeto.
+O tema é --theme <ref> (none: o tema padrão do Ravi), senão o tema efetivo do projeto.
 Grava em --out (padrão <dir>/preview.html, que o publish ignora).
 
 EXAMPLES
@@ -454,7 +454,10 @@ export class WidgetsCommands {
     @Arg("dir", { description: "Widget folder holding widget.html (relative to your current directory)" })
     dir: string,
     @Option({ flags: "--data <file>", description: "JSON file with one record or { records: [...] }" }) data?: string,
-    @Option({ flags: "--theme <ref>", description: "Theme ref, or none (default: the effective theme)" })
+    @Option({
+      flags: "--theme <ref>",
+      description: "Theme ref, or none for Ravi's default theme (default: the effective theme)",
+    })
     theme?: string,
     @Option({ flags: "--out <file.html>", description: "Where to write the HTML (default: <dir>/preview.html)" })
     out?: string,
@@ -478,7 +481,7 @@ export class WidgetsCommands {
       const outcome = await previewWidget({
         dir: folder,
         out: target,
-        ...(themeRef !== undefined ? { theme: themeRef === "none" ? null : themeRef } : {}),
+        ...(themeRef !== undefined ? { theme: themeRef } : {}),
         ...(record !== undefined ? { data: record } : {}),
         caller: runtimeLibraryCaller(),
       });

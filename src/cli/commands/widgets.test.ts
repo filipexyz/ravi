@@ -239,7 +239,7 @@ describe("widgets preview", () => {
     expect(result).toMatchObject({ success: true, out: join(dir, "preview.html"), diagnostics: [] });
     expect(readFileSync(join(dir, "preview.html"), "utf8")).toBe("<!doctype html><title>Preview</title>");
     const sent = fake.requests.find((request) => request.path.startsWith("/api/cli/library/widgets/preview"));
-    expect(sent?.body).toMatchObject({ theme: null, data: { titulo: "Pedido 7", valor: 70 } });
+    expect(sent?.body).toMatchObject({ theme: "none", data: { titulo: "Pedido 7", valor: 70 } });
   });
 
   it("writes nothing and exits 2 when the preview has errors", async () => {

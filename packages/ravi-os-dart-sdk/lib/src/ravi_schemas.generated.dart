@@ -103078,7 +103078,7 @@ class RaviSchemas {
       "type": "string"
     },
     "theme": {
-      "description": "Theme ref, or none (default: the effective theme)",
+      "description": "Theme ref, or none for Ravi's default theme (default: the effective theme)",
       "type": "string"
     }
   },
