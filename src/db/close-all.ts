@@ -11,6 +11,7 @@ import { closeContacts } from "../contacts.js";
 import { closeCredentialsDb } from "../credentials/store.js";
 import { closeDevinDb } from "../devin/store.js";
 import { closeInsightsDb } from "../insights/insight-db.js";
+import { closeKnowledgeDb } from "../knowledge/store/db.js";
 import { closeSessionAdapterStore } from "../adapters/adapter-db.js";
 import { closeSessionStore } from "../router/sessions.js";
 import { closeRouterDb } from "../router/router-db.js";
@@ -36,6 +37,7 @@ const CLOSE_STEPS: CloseStep[] = [
   { name: "chat", close: closeChatDb },
   { name: "devin", close: closeDevinDb },
   { name: "insights", close: closeInsightsDb },
+  { name: "knowledge", close: closeKnowledgeDb },
   { name: "router", close: closeRouterDb },
 ];
 

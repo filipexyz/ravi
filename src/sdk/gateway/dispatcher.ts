@@ -41,6 +41,7 @@ import {
 import { isCloudAuthError } from "../../cloud-auth/errors.js";
 import { cloudErrorToContractError, commandOperation } from "../../cli/cloud-error-contract.js";
 import { parseCallerCwd } from "../../cli/caller-cwd.js";
+import { enforceWriteAfterRead, writeAfterReadContractError } from "../../knowledge/safety/write-after-read.js";
 import { contractErrorResponse, json, returnShapeError, type JsonIssue } from "./errors.js";
 
 export interface DispatchOptions {
@@ -145,6 +146,18 @@ export async function dispatch(
     const error = permissionDeniedToContractError(commandOperation(group, cmd.command), accessResult.errorMessage);
     const response = contractErrorResponse(error, 403, "denied");
     const audit = buildAuditEvent(cmd, tool, auditInput, "denied", startedAt, lineage, 1, "PERMISSION_DENIED");
+    const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
+    return { response, audit: auditEmitted ? audit : null };
+  }
+
+  // Inside the tool context: outside it the turn looks like the terminal.
+  const writeGate = runWithContext(toolContext, () =>
+    enforceWriteAfterRead({ group, command: cmd.command, options: validation.inputForAudit, access: cmd.access }),
+  );
+  if (!writeGate.allowed) {
+    const error = writeAfterReadContractError(commandOperation(group, cmd.command), writeGate);
+    const response = contractErrorResponse(error);
+    const audit = buildAuditEvent(cmd, tool, auditInput, "blocked", startedAt, lineage, error.exitCode, error.code);
     const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
     return { response, audit: auditEmitted ? audit : null };
   }

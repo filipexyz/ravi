@@ -43,6 +43,11 @@ export const CLOUD_AUTH_ERROR_CODES = [
   "CONNECTOR_POLICY_ABOVE_CEILING",
   "CONNECTOR_FORBIDDEN",
   "ACTOR_NOT_LINKED",
+  // Knowledge (`/api/cli/knowledge/*`): the Console refused the turn, the
+  // organization has Knowledge off, or the Console has no Knowledge routes.
+  "KNOWLEDGE_TURN_NOT_OPERATOR",
+  "KNOWLEDGE_DISABLED",
+  "KNOWLEDGE_UNAVAILABLE",
 ] as const;
 
 export type CloudAuthErrorCode = (typeof CLOUD_AUTH_ERROR_CODES)[number];
@@ -229,6 +234,9 @@ function normalizeRetryAfterMs(value: number | undefined): number | undefined {
 function defaultExitCode(code: CloudAuthErrorCode): number {
   if (isConnectorPolicyCode(code)) return 3;
   switch (code) {
+    case "KNOWLEDGE_TURN_NOT_OPERATOR":
+    case "KNOWLEDGE_DISABLED":
+      return 3;
     case "AUTH_REQUIRED":
     case "AUTH_PENDING":
     case "AUTH_EXPIRED":

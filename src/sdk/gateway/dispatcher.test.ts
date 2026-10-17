@@ -13,6 +13,11 @@ import { buildRegistry } from "../../cli/registry-snapshot.js";
 import type { ContextCapability, ContextRecord } from "../../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { dispatch, type AuditEvent } from "./dispatcher.js";
+import { createHash } from "node:crypto";
+import { recordTurnRead } from "../../knowledge/store/turn-reads.js";
+import { setWriteAfterReadDefaultsForTests } from "../../knowledge/safety/write-after-read.js";
+import { createRuntimeContext } from "../../runtime/context-registry.js";
+import { buildSessionRelayTurnOrigin } from "../../runtime/turn-origin.js";
 
 const rejectedSensitiveInput = z.string().superRefine((value, ctx) => {
   ctx.addIssue({ code: "custom", message: `Rejected sensitive input: ${value}` });
@@ -1201,5 +1206,105 @@ describe("dispatch — @Returns.binary() escape hatch", () => {
       exitCode: 1,
       errorCode: "RESOURCE_NOT_FOUND",
     });
+  });
+});
+
+@Group({ name: "pages", description: "Write-after-read fixtures", scope: "open" })
+class GatewayPagesFixtureCommands {
+  @Command({ name: "share", description: "Share a page" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "pages",
+    action: "share",
+    risk: "medium",
+    requiresConfirmation: true,
+    input: ["url", "with", "execute"],
+  })
+  @Returns(z.object({ shared: z.boolean() }))
+  share(
+    @Arg("url", { description: "Page URL" }) _url: string,
+    @Option({ flags: "--with <email>", description: "Email" }) _with?: string,
+    @Option({ flags: "--execute", description: "Run it" }) execute?: boolean,
+  ) {
+    return { shared: execute === true };
+  }
+
+  @Command({ name: "ship", description: "Ship a page" })
+  @CommandAccess({ kind: "mutate", resource: "pages", action: "ship", risk: "medium", input: ["visibility"] })
+  @Returns(z.object({ shipped: z.literal(true) }))
+  ship(@Option({ flags: "--visibility <v>", description: "Visibility" }) _visibility?: string) {
+    return { shipped: true as const };
+  }
+}
+
+describe("dispatch — knowledge write-after-read", () => {
+  const pagesRegistry = buildRegistry([GatewayPagesFixtureCommands]);
+  const pagesCmd = (name: string) => {
+    const cmd = pagesRegistry.commands.find((candidate) => candidate.fullName === name);
+    if (!cmd) throw new Error(`fixture missing: ${name}`);
+    return cmd;
+  };
+
+  it("denies pages share --execute after a said read, inside the tool context, asking once", async () => {
+    const stateDir = await createIsolatedRaviState("gateway-write-after-read-");
+    const cards: unknown[] = [];
+    setWriteAfterReadDefaultsForTests({
+      ownerTarget: () => ({ channel: "whatsapp", accountId: "wa-main", to: "o", chatId: "o", contactId: "c_owner" }),
+      requestApproval: ((...args: unknown[]) => {
+        cards.push(args);
+        return new Promise(() => {});
+      }) as never,
+    });
+    try {
+      const turn = createRuntimeContext({
+        kind: "turn-runtime",
+        agentId: "main",
+        sessionName: "main-session",
+        capabilities: [executeGroup("pages")],
+        metadata: {
+          actorPrincipal: "automation:operator:local",
+          actorResolution: "resolved",
+          executorAgentId: "main",
+          agentIdentityCompartment: "workspace:default",
+          turnOrigin: buildSessionRelayTurnOrigin("send", undefined),
+          turnReplyTarget: { kind: "none" },
+        },
+      });
+      const turnKey = createHash("sha256").update(turn.contextId).digest("hex");
+
+      // Nothing read yet: allowed.
+      const before = await dispatch(pagesCmd("pages.share"), { url: "u", execute: true }, {}, { contextRecord: turn });
+      expect(before.response.status).toBe(200);
+
+      recordTurnRead(turnKey, "said");
+      const audits = captureAudits();
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const result = await dispatch(
+          pagesCmd("pages.share"),
+          { url: "u", with: "ana@example.com", execute: true },
+          {},
+          { contextRecord: turn, emitAudit: audits.emit },
+        );
+        expect(result.response.status).toBe(409);
+        const body = (await result.response.json()) as { exitCode: number; error: { code: string; issues: string[] } };
+        expect(body.exitCode).toBe(3);
+        expect(body.error.code).toBe("KNOWLEDGE_WRITE_AFTER_READ");
+        expect(body.error.issues[0]).toContain("Ravi asked the operator to approve");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(cards).toHaveLength(1);
+      expect((cards[0] as unknown[])[2]).toMatchObject({
+        type: "permission",
+        permission: "knowledge:write_after_read",
+      });
+      expect(audits.events[0]).toMatchObject({ outcome: "blocked", errorCode: "KNOWLEDGE_WRITE_AFTER_READ" });
+
+      // A private ship is not egress.
+      const ship = await dispatch(pagesCmd("pages.ship"), { visibility: "private" }, {}, { contextRecord: turn });
+      expect(ship.response.status).toBe(200);
+    } finally {
+      setWriteAfterReadDefaultsForTests(null);
+      await cleanupIsolatedRaviState(stateDir);
+    }
   });
 });

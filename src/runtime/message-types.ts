@@ -247,6 +247,11 @@ export interface PromptMessage {
    */
   _runtimePrompt?: string;
   /**
+   * Internal marker: the per-turn Knowledge audience line (and contact packet)
+   * was already prepended to `_runtimePrompt`, so durable replay adds it once.
+   */
+  _knowledgePreamble?: boolean;
+  /**
    * Operator CLI-only turn. Chat attach stays fail-closed; the waiting CLI is
    * the reply destination via this turn's assistant transcript.
    */

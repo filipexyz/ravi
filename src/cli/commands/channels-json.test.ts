@@ -222,6 +222,8 @@ mock.module("../../contacts.js", () => ({
 mock.module("../../router/router-db.js", () => ({
   getRaviDbPath: () => "/tmp/ravi.db",
   dbGetSetting: () => null,
+  // The Knowledge egress guard (imported by the outbound consumer) maps Omni ids to instances.
+  dbGetInstanceByInstanceId: () => null,
   getDb: () => ({
     prepare: () => ({
       all: () => [],

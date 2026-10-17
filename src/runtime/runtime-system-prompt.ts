@@ -20,6 +20,13 @@ import {
   selectGroupCaps,
 } from "./skill-capability-implication.js";
 import { skillNameMatchesAllowlist } from "./skill-visibility.js";
+import {
+  KNOWLEDGE_SECTION_ID,
+  KNOWLEDGE_SECTION_PRIORITY,
+  KNOWLEDGE_SECTION_TITLE,
+  buildKnowledgeSystemSection,
+  capabilityToString,
+} from "../knowledge/prompt-section.js";
 
 export interface RuntimeSystemPromptInput {
   agent: AgentConfig;
@@ -50,6 +57,7 @@ export async function buildRuntimeSystemPrompt(input: RuntimeSystemPromptInput):
       pagesLinks: shouldMountPagesLinks(input),
     }),
     buildRuntimeOperationalContextSection(input),
+    ...buildKnowledgePromptSections(input),
     ...buildSessionGoalPromptSections(input),
     ...buildStickerPromptSectionsForRuntime(input.agent, input.ctx, input.sessionRuntimeParams),
     ...(await buildWorkspacePromptSections(input.cwd)),
@@ -97,6 +105,29 @@ const PAGES_GROUP_RULE_IDS: ReadonlySet<string> = new Set(["pages"]);
 function shouldMountPagesLinks(input: RuntimeSystemPromptInput): boolean {
   if (input.agent.mode === "sentinel") return false;
   return canRunAnyGroup(input.runtimeContext?.capabilities ?? [], PAGES_GROUP_RULE_IDS);
+}
+
+/**
+ * "Knowledge" tells the agent how to use `ravi knowledge` on the operator's
+ * own turns: mount it only for a non-sentinel agent whose context can run
+ * that group (the CLI rechecks the turn on every call).
+ */
+function buildKnowledgePromptSections(input: RuntimeSystemPromptInput): PromptContextSection[] {
+  if (input.agent.mode === "sentinel") return [];
+  const content = buildKnowledgeSystemSection({
+    agentId: input.agent.id,
+    capabilities: (input.runtimeContext?.capabilities ?? []).map(capabilityToString),
+  });
+  if (!content) return [];
+  return [
+    {
+      id: KNOWLEDGE_SECTION_ID,
+      title: KNOWLEDGE_SECTION_TITLE,
+      priority: KNOWLEDGE_SECTION_PRIORITY,
+      source: "knowledge",
+      content,
+    },
+  ];
 }
 
 function canRunAnyGroup(capabilities: readonly ContextCapability[], ruleIds: ReadonlySet<string>): boolean {

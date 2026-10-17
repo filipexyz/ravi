@@ -151,6 +151,10 @@ public final class RaviClient {
     JobsNamespace(transport: transport)
   }
 
+  public var knowledge: KnowledgeNamespace {
+    KnowledgeNamespace(transport: transport)
+  }
+
   public var mail: MailNamespace {
     MailNamespace(transport: transport)
   }
@@ -3358,6 +3362,70 @@ public struct JobsNamespace: Sendable {
     requestBody["id"] = try RaviJSON.fromEncodable(id)
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["jobs"], command: "wait", body: requestBody, as: JobsWaitReturn.self)
+  }
+}
+
+public struct KnowledgeNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func forget(_ id: String? = nil, _ options: KnowledgeForgetOptions = .init()) async throws -> KnowledgeForgetReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    if let id {
+      requestBody["id"] = try RaviJSON.fromEncodable(id)
+    }
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["knowledge"], command: "forget", body: requestBody, as: KnowledgeForgetReturn.self)
+  }
+
+  public func marks(_ options: KnowledgeMarksOptions = .init()) async throws -> KnowledgeMarksReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["knowledge"], command: "marks", body: requestBody, as: KnowledgeMarksReturn.self)
+  }
+
+  public func propose(_ options: KnowledgeProposeOptions = .init()) async throws -> KnowledgeProposeReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["knowledge"], command: "propose", body: requestBody, as: KnowledgeProposeReturn.self)
+  }
+
+  public func read(_ ref: String, _ options: KnowledgeReadOptions = .init()) async throws -> KnowledgeReadReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["ref"] = try RaviJSON.fromEncodable(ref)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["knowledge"], command: "read", body: requestBody, as: KnowledgeReadReturn.self)
+  }
+
+  public func remember(_ text: String? = nil, _ options: KnowledgeRememberOptions = .init()) async throws -> KnowledgeRememberReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    if let text {
+      requestBody["text"] = try RaviJSON.fromEncodable(text)
+    }
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["knowledge"], command: "remember", body: requestBody, as: KnowledgeRememberReturn.self)
+  }
+
+  public func search(_ query: String, _ options: KnowledgeSearchOptions = .init()) async throws -> KnowledgeSearchReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["query"] = try RaviJSON.fromEncodable(query)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["knowledge"], command: "search", body: requestBody, as: KnowledgeSearchReturn.self)
+  }
+
+  public func sources(_ options: KnowledgeSourcesOptions = .init()) async throws -> KnowledgeSourcesReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["knowledge"], command: "sources", body: requestBody, as: KnowledgeSourcesReturn.self)
+  }
+
+  public func why(_ options: KnowledgeWhyOptions = .init()) async throws -> KnowledgeWhyReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["knowledge"], command: "why", body: requestBody, as: KnowledgeWhyReturn.self)
   }
 }
 

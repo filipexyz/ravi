@@ -3,7 +3,14 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileS
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildGeneratedAgentsBridge } from "./agent-instructions.js";
-import { buildCodexDisabledSkillConfig, createCodexRuntimeProvider } from "./codex-provider.js";
+import {
+  buildCodexDisabledSkillConfig,
+  buildCodexExecArgs,
+  buildCodexThreadSecurity,
+  createCodexRuntimeProvider,
+  isCodexRestrictedRuntimeProfile,
+  resolveCodexThreadSecurity,
+} from "./codex-provider.js";
 import type { RuntimeEvent, RuntimeHostServices, RuntimeStartRequest } from "./types.js";
 
 type TransportRequest = {
@@ -3565,5 +3572,123 @@ createInterface({input:process.stdin}).on("line", (line) => {
       cacheReadTokens: 130,
       cacheCreationTokens: 0,
     });
+  });
+});
+
+describe("Codex thread security (Knowledge parity)", () => {
+  it("restricts chat-only and no-exec explicit-only agents and nobody else", () => {
+    expect(isCodexRestrictedRuntimeProfile({ profile: "chat-only" })).toBe(true);
+    expect(isCodexRestrictedRuntimeProfile({ profile: "explicit-only" })).toBe(true);
+    expect(
+      isCodexRestrictedRuntimeProfile({
+        profile: "explicit-only",
+        capabilities: ["read:knowledge:*", "mutate:knowledge:remember"],
+      }),
+    ).toBe(true);
+    expect(isCodexRestrictedRuntimeProfile({ profile: "explicit-only", capabilities: ["use:tool:Bash"] })).toBe(false);
+    expect(
+      isCodexRestrictedRuntimeProfile({
+        profile: "explicit-only",
+        capabilities: [{ permission: "execute", objectType: "group", objectId: "knowledge" }],
+      }),
+    ).toBe(false);
+    expect(isCodexRestrictedRuntimeProfile({ profile: "full-access" })).toBe(false);
+    expect(isCodexRestrictedRuntimeProfile({ profile: "bootstrap" })).toBe(false);
+    expect(isCodexRestrictedRuntimeProfile(null)).toBe(false);
+  });
+
+  it("builds a read-only thread without web_search or view_image for restricted agents", () => {
+    expect(buildCodexThreadSecurity({ profile: "chat-only" })).toEqual({
+      sandbox: "read-only",
+      config: { "tools.web_search": false, web_search: "disabled", "tools.view_image": false },
+      restricted: true,
+    });
+    expect(buildCodexThreadSecurity({ profile: "full-access" })).toEqual({
+      sandbox: "danger-full-access",
+      config: {},
+      restricted: false,
+    });
+  });
+
+  it("reads the profile from the agent and fails closed when the read throws", () => {
+    const chatOnly = () => ({ defaults: { runtimePermissions: { profile: "chat-only" } } });
+    expect(resolveCodexThreadSecurity("reception", chatOnly).sandbox).toBe("read-only");
+    expect(resolveCodexThreadSecurity("dev", () => ({ defaults: null })).sandbox).toBe("danger-full-access");
+    expect(resolveCodexThreadSecurity("missing", () => null).sandbox).toBe("danger-full-access");
+    expect(resolveCodexThreadSecurity(undefined, chatOnly).sandbox).toBe("danger-full-access");
+    expect(
+      resolveCodexThreadSecurity("broken", () => {
+        throw new Error("db locked");
+      }).sandbox,
+    ).toBe("read-only");
+  });
+
+  it("retries a failed agent read once before failing closed", () => {
+    let calls = 0;
+    const flaky = () => {
+      calls += 1;
+      if (calls === 1) throw new Error("database is locked");
+      return { defaults: { runtimePermissions: { profile: "full-access" } } };
+    };
+    expect(resolveCodexThreadSecurity("dev", flaky).sandbox).toBe("danger-full-access");
+    expect(calls).toBe(2);
+  });
+
+  it("keeps the bypass flag on codex exec when no agent is restricted (the fixture covers restricted agents)", () => {
+    expect(buildCodexExecArgs(undefined, "gpt-5", undefined)).toContain("--dangerously-bypass-approvals-and-sandbox");
+    const resumed = buildCodexExecArgs("thread_1", "gpt-5", "high");
+    expect(resumed.slice(0, 2)).toEqual(["exec", "resume"]);
+    expect(resumed.slice(-2)).toEqual(["thread_1", "-"]);
+  });
+
+  it("sends the restricted sandbox and config at thread/start for a chat-only agent", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-security-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const requestsPath = join(cwd, "requests.jsonl");
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+const rl = createInterface({ input: process.stdin });
+const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method === "initialize") return send({ id: message.id, result: {} });
+  if (message.method === "initialized") return;
+  if (message.id && message.method === "thread/start") {
+    appendFileSync(${JSON.stringify(requestsPath)}, JSON.stringify(message.params) + "\\n");
+    return send({ id: message.id, result: { thread: { id: "thread_sec" }, model: "gpt-5", modelProvider: "openai" } });
+  }
+  if (message.id && message.method === "turn/start") {
+    send({ id: message.id, result: {} });
+    send({ jsonrpc: "2.0", method: "turn/started", params: { threadId: "thread_sec", turn: { id: "t", status: "inProgress" } } });
+    send({ jsonrpc: "2.0", method: "turn/completed", params: { threadId: "thread_sec", turn: { id: "t", status: "completed" } } });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+    const { createIsolatedRaviState, cleanupIsolatedRaviState } = await import("../test/ravi-state.js");
+    const { dbCreateAgent, dbUpdateAgent } = await import("../router/router-db.js");
+    const stateDir = await createIsolatedRaviState("ravi-codex-security-");
+    try {
+      dbCreateAgent({ id: "reception", cwd });
+      dbUpdateAgent("reception", { defaults: { runtimePermissions: { profile: "chat-only" } } });
+      const session = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" }).startSession(
+        makeStartRequest(["hi"], { cwd, agentId: "reception" }),
+      );
+      await collectEvents(session.events);
+      const params = JSON.parse(readFileSync(requestsPath, "utf8").trim().split("\n")[0] ?? "{}");
+      expect(params.sandbox).toBe("read-only");
+      expect(params.approvalPolicy).toBe("never");
+      expect(params.config).toMatchObject({
+        "tools.web_search": false,
+        web_search: "disabled",
+        "tools.view_image": false,
+      });
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
   });
 });
