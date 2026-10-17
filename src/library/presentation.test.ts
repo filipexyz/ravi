@@ -314,6 +314,27 @@ describe("theme and widget proposals", () => {
     ).catch((thrown) => thrown);
     expect(outside).toMatchObject({ code: "LIBRARY_OUT_OF_VIEW", exitCode: 3 });
 
+    // The refusal names what the session sees and the --scope that works.
+    const named = await prepareLibraryProposal(
+      { kind: "widget", dir: widgetDir(), scope: "outro", caller },
+      {
+        openSession: async (options) => ({
+          ...fakeSession(fake, { slug: "painel" }, "org-1", options.kind),
+          organization: "acme",
+          projectSource: "workspace_default",
+        }),
+        turn: { operatorOwnTurn: true },
+      },
+    ).catch((thrown) => thrown);
+    expect(named).toMatchObject({
+      code: "LIBRARY_OUT_OF_VIEW",
+      details: { view: { organization: "acme", project: "painel", source: "workspace_default" } },
+    });
+    expect(named.message).toContain(
+      "This session sees org acme and project painel (from workspace_default); use --scope painel or --scope org.",
+    );
+    expect(String(named.details.suggestedAction)).toStartWith("Use --scope painel or --scope org, or ask an operator");
+
     const listed = await listLibraryProposals(
       { kind: "widget", ref: parseLibraryRef("clinica/pedido-card")!, caller },
       { ...deps(fake, { slug: "clinica" }), turn: { operatorOwnTurn: false } },
@@ -460,6 +481,28 @@ describe("init, check and preview", () => {
     expect(outcome.files.map((file) => file.file)).toEqual(["widget.html", "widget.json", "example.json"]);
     expect(outcome.diagnostics).toHaveLength(1);
     expect(fake.requests[0]?.body).toEqual({ slug: "pedido", view, project: "clinica" });
+  });
+
+  it("names the project a --from-view scaffold used when the view is not found", async () => {
+    const fake = presentationConsole("widget", [], {
+      routes: (request) =>
+        request.rest[0] === "scaffold" ? json(404, { error: { code: "NOT_FOUND", message: "View not found" } }) : null,
+    });
+    const view = "0b7c3a52-2f0e-4c1e-9a4b-3f1d2c5e6a7b";
+    const error = await initWidget(
+      { dir: join(workDir, "pedido"), slug: "pedido", view },
+      {
+        openSession: async (options) => ({
+          ...fakeSession(fake, { slug: "page-chat-widget" }, "org-1", options.kind),
+          organization: "acme",
+          projectSource: "global_default",
+        }),
+      },
+    ).catch((e) => e);
+    expect(error).toMatchObject({ code: "NOT_FOUND", exitCode: 1 });
+    expect(error.message).toContain(`View ${view} was not found in project page-chat-widget (from global_default)`);
+    expect(String(error.details.suggestedAction)).toContain("--project <slug>");
+    expect(existsSync(join(workDir, "pedido"))).toBe(false);
   });
 
   it("keeps the contrast report on a failed theme check", async () => {

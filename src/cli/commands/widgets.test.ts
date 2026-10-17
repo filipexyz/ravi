@@ -377,7 +377,10 @@ describe("widgets publish and propose", () => {
       agent(() => new WidgetsCommands().publish(widgetDir(), "org", undefined, undefined, undefined, true, true)),
     );
     expect(error).toMatchObject({ code: "LIBRARY_AGENT_CANNOT_PUBLISH", exitCode: 3 });
-    expect(String(error.details.suggestedAction)).toBe("ravi widgets propose <dir> --scope org --execute");
+    expect(String(error.details.suggestedAction)).toContain(
+      `ravi widgets propose ${widgetDir()} --scope org --execute`,
+    );
+    expect(String(error.details.suggestedAction)).toContain("ravi cloud scope explain");
     expect(libraryRequests()).toEqual([]);
   });
 

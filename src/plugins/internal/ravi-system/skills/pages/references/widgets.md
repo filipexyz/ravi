@@ -193,9 +193,20 @@ ravi widgets propose ./pedido-card --scope org --note "cartão de pedido" --exec
   <arquivo.json>`, `--theme <ref>` e `--out <arquivo.html>`.
 - `example.json` só com dados inventados (`@example.com`); e-mail ou telefone
   com cara de real gera aviso.
+- `init --from-view` lê a view no projeto do Console desta sessão. `NOT_FOUND`
+  diz qual projeto foi usado: passe o da view com `--project <slug>`.
 - Dentro de agente, `ravi widgets publish` recusa (`LIBRARY_AGENT_CANNOT_PUBLISH`,
-  exit 3). Diga à pessoa que a proposta espera revisão no Console. Até ela
-  publicar, o ship não acha o widget: use o cartão padrão ou o widget atual.
+  exit 3) e o `suggestedAction` traz o `propose` com a mesma pasta. Diga à
+  pessoa que a proposta espera revisão no Console. Até ela publicar, o ship
+  não acha o widget: use o cartão padrão ou o widget atual.
+- Agente propõe em `--scope org` ou no próprio projeto do Console.
+  `LIBRARY_OUT_OF_VIEW` (exit 3) diz o que a sessão vê ("This session sees
+  org <org> and project <slug>"): use esse `--scope`. Projeto errado? Veja
+  com `ravi cloud scope explain` e peça ao operador `ravi cloud scope set
+  --agent <agente> --project <slug>`.
+- `CONFLICT` no `propose --execute` traz `conflict` (`slug_taken_in_org`,
+  `slug_taken_in_project`, `unchanged`...) e o próximo passo: siga-o; não
+  repita o mesmo comando.
 - Revisão: `ravi widgets proposal org/pedido-card <n>` mostra os comentários;
   responda com `ravi widgets propose ./pedido-card --scope org --update <n> --execute`.
 

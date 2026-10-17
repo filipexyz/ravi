@@ -26,6 +26,18 @@
 - Inside an agent runtime, `widgets publish` MUST exit 3 with
   `LIBRARY_AGENT_CANNOT_PUBLISH` before any Console request; `propose`,
   `check`, `preview`, `init` and `catalog` MUST work.
+- `widgets init --from-view` of a view the Console does not find MUST exit
+  1 with `NOT_FOUND` naming the Console project used and suggesting
+  `--project <slug>`, writing nothing.
+- Inside an agent, `LIBRARY_AGENT_CANNOT_PUBLISH` MUST name the propose
+  command with the same folder; `LIBRARY_OUT_OF_VIEW` MUST name the org and
+  project the session sees and carry them in `details.view`.
+- An agent's Console project MUST resolve from its configured cwd's
+  workspace default when the command runs in the daemon gateway (process
+  cwd of the daemon).
+- Through the daemon gateway, a Library refusal (`CONFLICT`,
+  `LIBRARY_OUT_OF_VIEW`, `NOT_FOUND`, ...) MUST keep its code, message,
+  `suggestedAction`, `conflict` and `view`, never "Remote command failed".
 - `widgets catalog` MUST print the Console's agent text, and `--json` MUST
   include it as `text`.
 - `widgets catalog --json` MUST carry `script` on every widget, `true` only

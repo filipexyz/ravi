@@ -52,7 +52,9 @@ import {
   contractDryRun,
   contractFail,
   renderContractError,
+  sanitizePublicContractMessage,
 } from "./agent-contract.js";
+import { quoteCommandToken } from "../utils/pagination.js";
 import { resolveCallerPath } from "./caller-cwd.js";
 import { cloudErrorToContractError } from "./cloud-error-contract.js";
 import {
@@ -275,8 +277,19 @@ export async function withLibraryContract<T>(
       const base = cloudErrorToContractError(op, error);
       const reason = typeof error.details?.reason === "string" ? error.details.reason : undefined;
       const copy = error.code === "CONFLICT" && reason ? libraryConflictCopy(op, reason, profile) : null;
+      // A Library conflict this side has no copy for keeps the Console's own words.
+      const consoleMessage = error.code === "CONFLICT" ? sanitizePublicContractMessage(error.message) : undefined;
+      const conflictMessage = copy?.message ?? consoleMessage ?? base.message;
+      if (!copy && consoleMessage) {
+        const contract = new ContractError(op, base.code, conflictMessage, base.exitCode, {
+          ...base.details,
+          suggestedAction: "Run the same command without --execute to see the current plan",
+        });
+        renderContractError(contract, asJson);
+        throw contract;
+      }
       const contract = copy
-        ? new ContractError(op, base.code, copy.message ?? base.message, base.exitCode, {
+        ? new ContractError(op, base.code, conflictMessage, base.exitCode, {
             ...base.details,
             // The envelope redacts `reason` as free text; `conflict` carries the code.
             reason,
@@ -904,7 +917,7 @@ export async function runPresentationPublish(profile: PresentationProfile, input
     op,
     LIBRARY_AGENT_CANNOT_PUBLISH,
     `Agents do not publish Library ${profile.noun}s: propose the change and a person reviews and publishes it in the Console.`,
-    `ravi ${profile.group} propose <dir> --scope ${scopeHint} --execute`,
+    `Run 'ravi ${profile.group} propose ${input.dir?.trim() ? quoteCommandToken(input.dir.trim()) : "<dir>"} --scope ${scopeHint} --execute' (an agent proposes to org or to its own Console project; see which with: ravi cloud scope explain)`,
     input.asJson,
   );
   return withPresentationContract(op, profile, input.asJson, async () => {

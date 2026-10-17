@@ -582,8 +582,14 @@ function mapConsoleError(status: number, payload: unknown, headers: Headers | un
     defaultErrorMessage(code);
   const issues = projectPublicIssues(data?.issues ?? nested?.issues);
   // A page kit 422 may carry its diagnostics at the top level of the body.
-  const details =
+  const nestedDetails =
     objectValue(nested?.details) ?? (Array.isArray(data?.diagnostics) ? { diagnostics: data.diagnostics } : undefined);
+  // A conflict reason sent next to the code instead of inside `details` still names the conflict.
+  const reason = stringValue(nested?.reason) ?? stringValue(data?.reason);
+  const details =
+    reason && /^[a-z][a-z0-9_]{0,63}$/.test(reason) && typeof nestedDetails?.reason !== "string"
+      ? { ...(nestedDetails ?? {}), reason }
+      : nestedDetails;
   const requestId = stringValue(nested?.requestId) ?? stringValue(data?.requestId) ?? undefined;
   // Keep a Console code the CLI does not know (it maps to the fallback) so callers can act on it.
   const consoleCode =

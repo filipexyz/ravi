@@ -707,7 +707,7 @@ export async function prepareLibraryProposal(
   if (!session) throw libraryLoginRequiredError();
   const scope = explicitScope ?? knownProjectScope(session, profile);
   const target = libraryRef(scope.scope, scope.project, pkg.slug);
-  if (caller) assertLibraryRefInCallerView(caller, target, session, target.project, null, profile);
+  if (caller) assertLibraryRefInCallerView(caller, target, session, target.project, null, profile, "scope");
   const warnings = await checkPresentationPackage(kind, session, pkg);
 
   let current: LibraryShowResponse | null = null;
@@ -1048,16 +1048,66 @@ export async function openSessionForCaller(
   if (!caller || !explicit) return openSession({ project: explicit }, deps, kind);
   const session = await openSession({}, deps, kind);
   if (session && !projectMatches(session.project, explicit, explicit)) {
+    const view = callerView(session);
     throw new LibraryCommandError(
       profile.outOfViewCode,
-      `Project '${explicit}' is not this agent's Console project, so its Library ${profile.noun}s are outside the agent's view.`,
+      `Project '${explicit}' is not this agent's Console project, so its Library ${profile.noun}s are outside the agent's view. ${callerViewSentence(view, "project")}`,
       3,
       {
-        suggestedAction: `Drop --project: an agent sees org ${profile.noun}s and the ${profile.noun}s of its own Console project.`,
+        view,
+        suggestedAction: view.project
+          ? `Use --project ${view.project}, or drop --project: an agent sees org ${profile.noun}s and the ${profile.noun}s of its own Console project`
+          : `Drop --project: an agent sees org ${profile.noun}s and the ${profile.noun}s of its own Console project (${AGENT_PROJECT_HINT})`,
       },
     );
   }
   return session;
+}
+
+/** How to see or change which Console project an agent's turns resolve to. */
+const AGENT_PROJECT_HINT =
+  "see it with 'ravi cloud scope explain'; an operator binds the agent with 'ravi cloud scope set --agent <agent> --project <slug>'";
+
+/** The Library view of an agent's session: the login's organization and the agent's Console project. */
+export interface LibraryCallerView {
+  organization: string | null;
+  project: string | null;
+  /** Where the project came from (`ravi cloud scope explain` sources). */
+  source: string | null;
+}
+
+export function callerView(session: {
+  project: ConsoleScopeProject | null;
+  organization?: string | null;
+  projectSource?: string | null;
+}): LibraryCallerView {
+  const project = projectKey(session.project);
+  return {
+    organization: session.organization?.trim() || null,
+    project,
+    source: project ? session.projectSource?.trim() || null : null,
+  };
+}
+
+/**
+ * "This session sees org acme and project painel (agent_default); use
+ * --scope painel or --scope org." in the words of the flag that picks the
+ * scope: `--scope` (publish, propose), `--project` (search, catalog) or a ref.
+ */
+export function callerViewSentence(view: LibraryCallerView, flag: "scope" | "project" | "ref"): string {
+  const org = view.organization ? `org ${view.organization}` : "the organization";
+  if (!view.project) {
+    const use = flag === "scope" ? "use --scope org" : flag === "project" ? "drop --project" : "use an org/<slug> ref";
+    return `This session sees ${org} only (no Console project resolves for this agent: ${AGENT_PROJECT_HINT}); ${use}.`;
+  }
+  const from = view.source ? ` (from ${view.source})` : "";
+  const use =
+    flag === "scope"
+      ? `use --scope ${view.project} or --scope org`
+      : flag === "project"
+        ? `use --project ${view.project} or drop --project`
+        : `use a ${view.project}/<slug> or org/<slug> ref`;
+  return `This session sees ${org} and project ${view.project}${from}; ${use}.`;
 }
 
 function projectKey(project: ConsoleScopeProject | null): string | null {
@@ -1089,10 +1139,11 @@ function assertLibraryCallerAuthorized(
 export function assertLibraryRefInCallerView(
   caller: LibraryCaller,
   ref: LibraryRef,
-  session: { project: ConsoleScopeProject | null },
+  session: { project: ConsoleScopeProject | null; organization?: string | null; projectSource?: string | null },
   projectSlug: string | null | undefined,
   projectId: string | null | undefined,
   profile: LibraryKindProfile,
+  flag: "scope" | "ref" = "ref",
 ): void {
   const skill = profile.kind === "skill";
   if (
@@ -1100,14 +1151,20 @@ export function assertLibraryRefInCallerView(
     !projectMatches(session.project, projectSlug, projectId) &&
     !(skill && agentHasLibraryGrant(caller.agentId, ref.id))
   ) {
+    const view = callerView(session);
+    const bind = `ask an operator to bind this agent to project ${ref.project} ('ravi cloud scope set --agent ${caller.agentId} --project ${ref.project}')`;
+    const scoped = view.project ? (flag === "scope" ? `use --scope ${view.project} or --scope org` : null) : null;
     throw new LibraryCommandError(
       profile.outOfViewCode,
-      `Library ${profile.noun} '${ref.ref}' belongs to project '${ref.project}', which is not this agent's Console project.`,
+      `Library ${profile.noun} '${ref.ref}' belongs to project '${ref.project}', which is not this agent's Console project. ${callerViewSentence(view, flag)}`,
       3,
       {
+        view,
         suggestedAction: skill
           ? `Ask an operator to grant it explicitly ('ravi skills grant ${caller.agentId} ${ref.ref}') or to bind this agent to that project.`
-          : "Ask an operator to bind this agent to that project.",
+          : flag === "scope"
+            ? `${scoped ? `${scoped.charAt(0).toUpperCase()}${scoped.slice(1)}, or ` : "Use --scope org, or "}${bind}`
+            : `${bind.charAt(0).toUpperCase()}${bind.slice(1)}`,
       },
     );
   }

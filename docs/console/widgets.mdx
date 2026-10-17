@@ -160,7 +160,7 @@ A widget folder holds `widget.json` (name, description and typed fields), `widge
 </ravi-card>
 ```
 
-Buttons can only update, create, archive or open the record, and they show only to people the view lets do that. `ravi widgets catalog` lists every building block and option. Agents propose widgets (`ravi widgets propose ./order-card --scope org --execute`); people publish them.
+Buttons can only update, create, archive or open the record, and they show only to people the view lets do that. `ravi widgets catalog` lists every building block and option. Agents propose widgets (`ravi widgets propose ./order-card --scope org --execute`); people publish them. An agent proposes to the organization or to its own Console project; when it names another project, the refusal (`LIBRARY_OUT_OF_VIEW`) says which organization and project the session sees. `init --from-view` reads the view in the session's Console project; when the view is not found, the error names that project, and `--project <slug>` picks another.
 
 ### Widgets with code
 

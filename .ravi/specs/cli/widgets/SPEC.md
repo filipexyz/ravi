@@ -73,17 +73,36 @@ proposals) are those of [`../themes/SPEC.md`](../themes/SPEC.md) with
    caller, never rows. A non-uuid view is `USAGE_ERROR` (exit 2). Existing
    files are kept unless `--force` (`LIBRARY_FILES_EXIST`, exit 3); a
    symlink or folder at a file's path is refused even with `--force`, as in
-   `themes init`.
+   `themes init`. A view the Console does not find is `NOT_FOUND` (exit 1)
+   whose message names the Console project the scaffold used and where it
+   came from (`ravi cloud scope explain` source), with `--project <slug>` in
+   `suggestedAction`.
 5. `preview <dir>` writes the Console's script-free HTML to `--out` (default
    `<dir>/preview.html`), with `--data <file>` (one JSON object or
    `{ "records": [...] }`, `USAGE_ERROR` otherwise) and `--theme <ref>`
    (`none` is sent as is and renders Ravi's default theme); without
    `--theme` the Console uses the effective theme.
 6. Inside an agent runtime `publish` refuses before any request
-   (`LIBRARY_AGENT_CANNOT_PUBLISH` with `ravi widgets propose <dir> --scope
-   <scope> --execute`, exit 3); `propose`, `check`, `preview`, `init` and
-   `catalog` work. An agent's `--project` other than its own Console project
-   is `LIBRARY_OUT_OF_VIEW` (exit 3).
+   (`LIBRARY_AGENT_CANNOT_PUBLISH`, exit 3) with `suggestedAction` naming
+   `ravi widgets propose <the same dir> --scope <scope> --execute` and that
+   an agent proposes to org or its own Console project; `propose`, `check`,
+   `preview`, `init` and `catalog` work. An agent's `--project` or
+   `--scope` other than its own Console project is `LIBRARY_OUT_OF_VIEW`
+   (exit 3); its message says what the session sees ("This session sees
+   org <org> and project <slug> (from <source>); use --scope <slug> or
+   --scope org") and `details.view` carries `{ organization, project,
+   source }`.
+   The agent's own Console project is resolved as `cli/console-scope`
+   says, with the agent's configured cwd as its workspace: the same project
+   the pin sync reports for it, also when the daemon gateway runs the
+   command.
+   For a new org proposal `propose --execute` sends `POST
+   /api/cli/library/widgets/proposals` with `scope: "org"`, `slug`, `name`,
+   `description`, `externalAllowed: false`, `files[]`, `baseVersion: 0`,
+   `submit: true` (false with `--draft`) and, inside an agent,
+   `agent: { id }`; `--update` has no default. A Console `CONFLICT` keeps
+   its `details.reason` as `conflict`; a reason without CLI copy keeps the
+   Console's message.
 7. Binding a widget to a view is `ravi bases views bind` (`cli/bases`):
    an immediate view update, not a Library write.
 8. A widget version with `widget.js` is published only by an org `owner` or
@@ -122,7 +141,8 @@ proposals) are those of [`../themes/SPEC.md`](../themes/SPEC.md) with
 | publish or propose without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
 | publish inside an agent | `LIBRARY_AGENT_CANNOT_PUBLISH` | 3 |
 | `--update` of another author's or agent's proposal | `LIBRARY_PROPOSAL_NOT_YOURS` | 3 |
-| agent `--project` outside its view | `LIBRARY_OUT_OF_VIEW` | 3 |
+| agent `--project` or `--scope` outside its view | `LIBRARY_OUT_OF_VIEW` + `details.view` | 3 |
+| `init --from-view` of a view not found in the project used | `NOT_FOUND` naming that project | 1 |
 | stale base, unchanged, slug taken, proposal closed | `CONFLICT` with `conflict` | 1 |
 
 ## Internal consumers
