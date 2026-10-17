@@ -152,7 +152,12 @@ variante que o widget não tem (`KIT_VARIANT_UNKNOWN`), `fields` sem widget
 (`KIT_LAYOUT_WIDGET_UNAVAILABLE`, sai o cartão padrão), valor de atributo
 inválido ou `page-size` acima de 200, que vira 200 (`KIT_ATTRIBUTE_INVALID`),
 nome, e-mail ou telefone em `data` numa rota pública
-(`KIT_PERSONAL_DATA_PUBLIC`), tema mudado desde o último publish da rota.
+(`KIT_PERSONAL_DATA_PUBLIC`), tema mudado desde o último publish da rota,
+página sem tema ativo que sai com o tema padrão do Ravi (`KIT_THEME_DEFAULT`),
+widget com ações fora de uma `<ravi-view>` (`KIT_ACTIONS_NEED_VIEW`). Cada
+aviso sai como `warning: arquivo:linha:coluna severidade código mensagem` no
+texto e em `warnings` no JSON, inclusive códigos que este CLI ainda não
+conhece: leia a mensagem e corrija se fizer sentido; o ship já subiu.
 
 ## 4. Depois do ship
 

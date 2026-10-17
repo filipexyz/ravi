@@ -200,10 +200,10 @@ export async function applyPageKit(input: PageKitInput, deps: PagesClientDeps = 
     await writeFile(join(input.root, file.path), file.html, "utf8");
     changedFiles.push(file.path);
   }
-  const warnings = [
-    ...response.warnings,
-    ...response.diagnostics.filter((item) => item.severity === "warning").map(formatPageKitDiagnostic),
-  ];
+  // A 200 never blocks: every diagnostic it carries (a code this CLI does not
+  // know included, such as KIT_THEME_DEFAULT or KIT_ACTIONS_NEED_VIEW) is a
+  // warning printed with its code and message.
+  const warnings = dedupe([...response.warnings, ...response.diagnostics.map(formatPageKitDiagnostic)]);
   return {
     ok: true,
     result: {
@@ -288,19 +288,35 @@ function normalizeKitResponse(payload: unknown): PageKitResponse {
       const diagnostic = normalizeDiagnostic(item);
       return diagnostic ? [diagnostic] : [];
     }),
-    warnings: arrayValue(record.warnings).filter((value): value is string => typeof value === "string"),
+    warnings: arrayValue(record.warnings).flatMap((value) => {
+      if (typeof value === "string") return value.trim() ? [value.trim()] : [];
+      // A warning sent as an object `{ code, message, path?, line?, column? }`.
+      const diagnostic = normalizeDiagnostic(value, "warning");
+      return diagnostic ? [formatPageKitDiagnostic(diagnostic)] : [];
+    }),
   };
 }
 
-function normalizeDiagnostic(value: unknown): PageKitDiagnostic | null {
+function dedupe(values: readonly string[]): string[] {
+  return [...new Set(values)];
+}
+
+function normalizeDiagnostic(
+  value: unknown,
+  fallbackSeverity: PageKitDiagnostic["severity"] = "error",
+): PageKitDiagnostic | null {
   const record = objectValue(value);
-  const code = stringValue(record?.code);
-  const message = stringValue(record?.message);
+  const warning = fallbackSeverity === "warning";
+  const rawCode = stringValue(record?.code);
+  const rawMessage = stringValue(record?.message);
+  // A warning is never dropped for a missing field: it keeps whichever it has.
+  const code = rawCode ?? (warning && rawMessage ? "KIT_WARNING" : null);
+  const message = rawMessage ?? (warning && rawCode ? "(the Console sent no message)" : null);
   if (!record || !code || !message) return null;
   const url = consoleUrl(record);
   const widget = stringValue(record.widget);
   return {
-    severity: record.severity === "warning" ? "warning" : "error",
+    severity: diagnosticSeverity(record.severity, fallbackSeverity),
     code,
     message,
     path: stringValue(record.path) ?? stringValue(record.file),
@@ -309,6 +325,13 @@ function normalizeDiagnostic(value: unknown): PageKitDiagnostic | null {
     ...(url ? { url } : {}),
     ...(widget ? { widget } : {}),
   };
+}
+
+/** `error` blocks; `warning`, `info` and `notice` do not. Anything else takes the fallback. */
+function diagnosticSeverity(value: unknown, fallback: PageKitDiagnostic["severity"]): PageKitDiagnostic["severity"] {
+  if (value === "error") return "error";
+  if (value === "warning" || value === "info" || value === "notice") return "warning";
+  return fallback;
 }
 
 /** The Console page a diagnostic points to (`url`, `auditUrl` or `consoleUrl`), only when it is http(s). */

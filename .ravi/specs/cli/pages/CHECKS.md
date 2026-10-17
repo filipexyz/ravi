@@ -91,7 +91,9 @@
   message` lines (the Console's `KIT_TOO_LARGE` included); only
   `KIT_WIDGET_UNAUDITED` errors MUST exit 2 with that code and the Console
   audit URL in `suggestedAction`; a
-  bare 404/405 MUST ship unchanged with warning `KIT_UNAVAILABLE`
+  bare 404/405 MUST ship unchanged with warning `KIT_UNAVAILABLE`; a 200
+  MUST turn every diagnostic and every `warnings[]` entry (string or
+  object, unknown codes included) into a printed warning, dropping none
   (`bun test src/pages/kit.test.ts` and the `pages ship page kit` block of
   `src/cli/commands/pages.test.ts`).
 - `pages outdated --json` MUST GET `/api/cli/pages/outdated?project=` and

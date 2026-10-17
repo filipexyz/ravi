@@ -162,7 +162,12 @@ contract errors rethrow first, recognizable Console not-found failures map to
     empty value is `PAYLOAD_INVALID` before any Console call. Success JSON
     adds `presentation` (object or null) and `kit: {status, changedFiles,
     warnings, theme, widgets}`; kit warnings also appear in `warnings` and
-    text output prints them.
+    text output prints them. A kit answer never loses a warning: every
+    diagnostic of a 200 answer (any severity, any code, also codes this CLI
+    does not know such as `KIT_THEME_DEFAULT` or `KIT_ACTIONS_NEED_VIEW`) is
+    one `path:line:column severity code message` warning, a `warnings[]`
+    entry may be a string or a `{code, message, path?, line?, column?}`
+    object, and an entry missing its code or its message keeps the other.
 17. `pages outdated [--project] [--json]` MUST `GET
     /api/cli/pages/outdated?project=<ref>` and return `{projectRef, total,
     items}`, each item `{siteSlug, hostname, route, releaseId, publishedAt,

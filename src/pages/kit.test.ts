@@ -293,6 +293,36 @@ describe("applyPageKit against the Console", () => {
     expect(await applyPageKit(kitInput(root), fileShape.deps)).toEqual(expected);
   });
 
+  it("keeps every non-blocking warning: new codes, object-shaped warnings and info diagnostics", async () => {
+    const root = await tempRoot();
+    await writeFile(join(root, "index.html"), "<ravi-widget use='org/card'></ravi-widget>");
+    const { deps } = consoleWith(() =>
+      json(200, {
+        files: [{ path: "index.html", changed: false }],
+        uses: [],
+        presentation: null,
+        diagnostics: [
+          { severity: "info", code: "KIT_ACTIONS_NEED_VIEW", message: "org/card has actions; use it in <ravi-view>." },
+        ],
+        warnings: [
+          { code: "KIT_THEME_DEFAULT", message: "No active theme: the page uses Ravi's default theme." },
+          { message: "A warning without a code." },
+          "Plain text warning.",
+          { code: "KIT_NO_MESSAGE" },
+        ],
+      }),
+    );
+
+    const outcome = await applyPageKit(kitInput(root), deps);
+    expect(outcome.ok && outcome.result.kit.warnings).toEqual([
+      "- warning KIT_THEME_DEFAULT No active theme: the page uses Ravi's default theme.",
+      "- warning KIT_WARNING A warning without a code.",
+      "Plain text warning.",
+      "- warning KIT_NO_MESSAGE (the Console sent no message)",
+      "- warning KIT_ACTIONS_NEED_VIEW org/card has actions; use it in <ravi-view>.",
+    ]);
+  });
+
   it("keeps the local file when the Console omits html for an unchanged file", async () => {
     const root = await tempRoot();
     await writeFile(join(root, "index.html"), "<ravi-view view='v1'></ravi-view>");
