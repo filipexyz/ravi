@@ -77,8 +77,9 @@ campo opcional sem coluna só avisa e sai vazio.
 
 ### `<ravi-widget>`
 
-`use` (obrigatório), `data` e `variant`. `data` é um objeto JSON por campo do
-widget, com aspas simples por fora. O ship desenha no HTML (quem lê sem JS
+`use` (obrigatório), `data`, `variant` e `heading-level` (1 a 6, padrão 2: o
+nível do título do cartão; dentro de uma seção com `<h2>`, use
+`heading-level="3"`). `data` é um objeto JSON por campo do widget, com aspas simples por fora. O ship desenha no HTML (quem lê sem JS
 também vê). Formatos: texto, url, email e phone em string; número; checkbox
 `true`/`false`; data `"YYYY-MM-DD"` ou ISO; select/status `"Pago"` ou
 `{ "name": "Pago", "color": "green" }`; multi_select uma lista disso; pessoa
@@ -86,7 +87,8 @@ também vê). Formatos: texto, url, email e phone em string; número; checkbox
 
 `data` é igual para todo visitante: números que a pessoa escolheu publicar,
 nunca linhas de uma view. Em rota pública, nome, e-mail e telefone em `data`
-ficam públicos, e nada avisa.
+ficam públicos, e o ship avisa `KIT_PERSONAL_DATA_PUBLIC`: publique numa rota
+privada ou tire esses valores de `data`.
 
 ### `<ravi-form>`
 
@@ -145,8 +147,10 @@ código mensagem`), e nada sobe:
 Avisos não bloqueiam: atributo desconhecido (`KIT_ATTRIBUTE_UNKNOWN`),
 variante que o widget não tem (`KIT_VARIANT_UNKNOWN`), `fields` sem widget
 (`KIT_FIELDS_UNUSED`), widget da view indisponível
-(`KIT_LAYOUT_WIDGET_UNAVAILABLE`, sai o cartão padrão), tema mudado desde o
-último publish da rota.
+(`KIT_LAYOUT_WIDGET_UNAVAILABLE`, sai o cartão padrão), valor de atributo
+inválido ou `page-size` acima de 200, que vira 200 (`KIT_ATTRIBUTE_INVALID`),
+nome, e-mail ou telefone em `data` numa rota pública
+(`KIT_PERSONAL_DATA_PUBLIC`), tema mudado desde o último publish da rota.
 
 ## 4. Depois do ship
 
@@ -198,10 +202,12 @@ ravi widgets propose ./pedido-card --scope org --note "cartão de pedido" --exec
 As peças garantem, e o publish do widget recusa o que quebra:
 
 - imagem com `alt` (campo, texto curto ou `decorative`); avatar com `name`;
-- botão e link com texto que todo registro tem: texto fixo, um campo
-  `required`, um campo testado por um `{#if}` em volta, ou um `{#if}` com texto
-  nos dois ramos; cor nunca é o único sinal (badge e texto com `tone` ou
-  `color` precisam de texto); status e select sempre mostram o nome da opção;
+- botão, link e badge com `tone` ou `color` com texto que todo registro tem:
+  texto fixo, um campo `required`, um campo testado por um `{#if}` em volta,
+  um item de `{#each}`, ou um `{#if}` com texto nos dois ramos (link cujo texto
+  é o próprio endereço, `<ravi-link href="{site}">{site}</ravi-link>`, também
+  vale); cor nunca é o único sinal (texto com `tone` ou `color` precisa de
+  texto); status e select sempre mostram o nome da opção;
 - títulos sem pular nível; todo cartão é um `article` com título;
 - botão com nome "rótulo: título do registro" (ex.: "Concluir: Pedido 1042"),
   confirmação montada da ação, `archive` sempre confirma;

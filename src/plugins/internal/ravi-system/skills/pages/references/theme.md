@@ -99,6 +99,10 @@ button.principal { background: var(--ravi-color-accent, #14635a); color: var(--r
 - SVG e ícones: `fill="currentColor"` ou `style="fill: var(...)"`; não
   conte com `var()` direto no atributo `fill`.
 - Os fallbacks são do modo claro: sem tema, a página fica clara.
+- O tema põe `color-scheme` só nas peças `ravi-*`, nunca na página: estilize
+  seus links com `var(--color-text-info, #1d4f8f)` e, se quiser que os
+  controles nativos (scrollbar, campos) também mudem, ponha
+  `color-scheme: light dark` no `:root` da página.
 - Tema `compact` aperta os espaços (`--ravi-space-*`); quem usa as variáveis
   acompanha.
 
