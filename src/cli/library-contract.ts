@@ -685,6 +685,7 @@ export const widgetCatalogReturnSchema = z
           description: z.string(),
           fields: z.record(z.string(), widgetFieldReturnSchema),
           variants: z.array(z.string()),
+          script: z.boolean().describe("The current version has a widget.js (text: com código)"),
         })
         .strict(),
     ),
@@ -816,7 +817,7 @@ const SHOWN_TEXT_FILES = new Set([
   "widget.json",
   "widget.html",
   "example.json",
-]);
+]); // widget.js is listed with its size, never printed: it is bundled code.
 
 export async function runPresentationShow(
   profile: PresentationProfile,

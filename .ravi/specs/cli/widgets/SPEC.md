@@ -44,8 +44,14 @@ proposals) are those of [`../themes/SPEC.md`](../themes/SPEC.md) with
 ## Invariants
 
 1. A folder holds only `widget.html` (the entry), `widget.json`,
-   `example.json` and `README.md`, read at its root; anything else
-   (`preview.html`) is left out. `publish` and `propose` require
+   `widget.js`, `example.json` and `README.md`, read at its root; anything
+   else (`preview.html`, other `.js` files) is left out. `widget.js` is
+   optional and sent as is by `check`, `preview`, `publish` and `propose`:
+   the Console parses it (one ES module up to 128 KiB, no imports, an
+   exported `mount`) and reports `WIDGET_JS_*` diagnostics at
+   `widget.js:line:column` under `WIDGET_INVALID`. `init` writes only what
+   the Console scaffold returns (no `widget.js`). `show` lists `widget.js`
+   with its size and never prints it. `publish` and `propose` require
    `widget.html` and `widget.json` with `name` and `description`
    (`LIBRARY_PACKAGE_INVALID`, exit 2). Reserved slugs
    (`LIBRARY_SLUG_RESERVED`, exit 2, before any request): `catalog`,
@@ -58,7 +64,10 @@ proposals) are those of [`../themes/SPEC.md`](../themes/SPEC.md) with
    `init` is `WIDGET_INVALID` (exit 2), one `issues[]` entry per diagnostic
    with `path = [file, line, column]`.
 3. `catalog` prints the Console's agent text (`--json`: the catalog with its
-   `text`), with the org's and the caller's project widgets.
+   `text`), with the org's and the caller's project widgets. Each `--json`
+   widget carries `script` (boolean: the current version has `widget.js`;
+   `false` when the Console omits it); the text marks those widgets "com
+   código" as the Console writes it.
 4. `init <dir>` asks the Console scaffold for `--slug` (default: the folder
    name) and, with `--from-view <view-uuid>`, the view's schema as the
    caller, never rows. A non-uuid view is `USAGE_ERROR` (exit 2). Existing
@@ -77,6 +86,13 @@ proposals) are those of [`../themes/SPEC.md`](../themes/SPEC.md) with
    is `LIBRARY_OUT_OF_VIEW` (exit 3).
 7. Binding a widget to a view is `ravi bases views bind` (`cli/bases`):
    an immediate view update, not a Library write.
+8. A widget version with `widget.js` is published only by an org `owner` or
+   `admin`; the Console refuses anyone else with
+   `LIBRARY_SCRIPT_REQUIRES_ORG_ADMIN` (403, `ORG_ACCESS_DENIED` on the CLI)
+   and `propose` stays open. Until the Console's accessibility audit of the
+   version passes, `ravi pages ship` of a page that uses it exits 2 with
+   `KIT_WIDGET_UNAUDITED` and the Console audit URL in `suggestedAction`
+   (`cli/pages`).
 
 ## Write classification
 
@@ -95,7 +111,9 @@ proposals) are those of [`../themes/SPEC.md`](../themes/SPEC.md) with
 | case | code | exit |
 |---|---|---|
 | folder missing, no `widget.html`, bad file; publish without `widget.json` or description | `LIBRARY_PACKAGE_INVALID` | 2 |
-| template, manifest, example or accessibility errors | `WIDGET_INVALID` + diagnostics | 2 |
+| template, manifest, example, `widget.js` or accessibility errors | `WIDGET_INVALID` + diagnostics | 2 |
+| publish of a version with `widget.js` by someone not org owner or admin | `ORG_ACCESS_DENIED` (Console `LIBRARY_SCRIPT_REQUIRES_ORG_ADMIN`) | 1 |
+| `pages ship` with a widget whose `widget.js` has no passing audit | `KIT_WIDGET_UNAUDITED` + audit URL in `suggestedAction` | 2 |
 | bad `--slug`, `--from-view`, `--data` or `--theme`; `show` of a reserved word | `USAGE_ERROR` | 2 |
 | reserved slug | `LIBRARY_SLUG_RESERVED` | 2 |
 | malformed ref or `--scope` | `LIBRARY_REF_INVALID` | 2 |

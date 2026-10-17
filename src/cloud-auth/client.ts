@@ -585,10 +585,14 @@ function mapConsoleError(status: number, payload: unknown, headers: Headers | un
   const details =
     objectValue(nested?.details) ?? (Array.isArray(data?.diagnostics) ? { diagnostics: data.diagnostics } : undefined);
   const requestId = stringValue(nested?.requestId) ?? stringValue(data?.requestId) ?? undefined;
+  // Keep a Console code the CLI does not know (it maps to the fallback) so callers can act on it.
+  const consoleCode =
+    typeof rawCode === "string" && /^[A-Z][A-Z0-9_]{1,63}$/.test(rawCode) && rawCode !== code ? rawCode : undefined;
   return new CloudAuthError(code, message, {
     ...cloudAuthErrorOptions(status, headers, data, issues),
     ...(details ? { details } : {}),
     ...(requestId ? { requestId } : {}),
+    ...(consoleCode ? { consoleCode } : {}),
   });
 }
 

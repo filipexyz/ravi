@@ -57,7 +57,7 @@ const routes: FakeRoute = ({ method, rest }) => {
   }
   if (method === "GET" && rest.length === 1 && rest[0] === "catalog") {
     return json(200, {
-      text: "# Widgets\n\n- org/pedido-card: Pedido com status e valor.\n",
+      text: "# Widgets\n\n- org/pedido-card: Pedido com status e valor.\n- org/grafico (com código): Vendas por mês.\n",
       widgets: [
         {
           ref: "org/pedido-card",
@@ -65,6 +65,14 @@ const routes: FakeRoute = ({ method, rest }) => {
           description: "Pedido com status e valor.",
           fields: { titulo: { type: "text", required: true } },
           variants: ["default", "compact"],
+        },
+        {
+          ref: "org/grafico",
+          name: "Gráfico",
+          description: "Vendas por mês.",
+          fields: {},
+          variants: [],
+          script: true,
         },
       ],
     });
@@ -252,12 +260,39 @@ describe("widgets check", () => {
     login();
     const dir = widgetDir();
     writeFileSync(join(dir, "script.js"), "alert(1)");
+    writeFileSync(join(dir, "widget.js"), "export function mount(card, ctx) {\n  return {};\n}\n");
     const checked = await capture(() => operator(() => new WidgetsCommands().check(dir, true)));
-    // Files outside the allow-list are not read or sent.
-    expect(checked.result.files.map((file) => file.file)).toEqual(["widget.html", "widget.json"]);
+    // Files outside the allow-list are not read or sent; widget.js is.
+    expect(checked.result.files.map((file) => file.file)).toEqual(["widget.html", "widget.js", "widget.json"]);
     const sent = fake.requests.find((request) => request.path === "/api/cli/library/widgets/check");
     const body = sent?.body as { files: Array<{ path: string }> } | undefined;
-    expect(body?.files.map((file) => file.path)).toEqual(["widget.html", "widget.json"]);
+    expect(body?.files.map((file) => file.path)).toEqual(["widget.html", "widget.js", "widget.json"]);
+  });
+
+  it("prints the Console's widget.js diagnostics like any other file (WIDGET_INVALID)", async () => {
+    login();
+    const dir = widgetDir();
+    writeFileSync(join(dir, "widget.js"), "import x from 'y';\n");
+    checkAnswer = () =>
+      json(200, {
+        ok: false,
+        diagnostics: [
+          {
+            severity: "error",
+            code: "WIDGET_JS_IMPORT",
+            message: "widget.js cannot import: bundle libraries into the module.",
+            file: "widget.js",
+            line: 1,
+            column: 1,
+          },
+        ],
+        compiled: null,
+      });
+    const { error, err } = await contractError(() => operator(() => new WidgetsCommands().check(dir)));
+    expect(error).toMatchObject({ code: "WIDGET_INVALID", exitCode: 2 });
+    expect(err[0]).toBe(
+      "widget.js:1:1 error WIDGET_JS_IMPORT widget.js cannot import: bundle libraries into the module.",
+    );
   });
 });
 
@@ -305,7 +340,10 @@ describe("widgets catalog", () => {
   it("prints the Console's text, and the widgets with --json", async () => {
     login();
     const text = await capture(() => operator(() => new WidgetsCommands().catalog()));
-    expect(text.out).toEqual(["# Widgets\n\n- org/pedido-card: Pedido com status e valor."]);
+    // The Console writes "com código" for a widget with widget.js; the CLI prints its text as is.
+    expect(text.out).toEqual([
+      "# Widgets\n\n- org/pedido-card: Pedido com status e valor.\n- org/grafico (com código): Vendas por mês.",
+    ]);
     const asJson = await capture(() => operator(() => new WidgetsCommands().catalog(undefined, true)));
     expect(asJson.result.widgets).toEqual([
       {
@@ -314,7 +352,9 @@ describe("widgets catalog", () => {
         description: "Pedido com status e valor.",
         fields: { titulo: { type: "text", role: null, required: true, label: null, description: null } },
         variants: ["default", "compact"],
+        script: false,
       },
+      { ref: "org/grafico", name: "Gráfico", description: "Vendas por mês.", fields: {}, variants: [], script: true },
     ]);
   });
 });

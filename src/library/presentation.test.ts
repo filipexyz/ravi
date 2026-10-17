@@ -202,6 +202,16 @@ describe("theme and widget folders", () => {
     rmSync(join(noJson, "widget.json"));
     expect(() => readPresentationPackage("widget", noJson)).toThrow(/no widget\.json/);
     expect(readPresentationFiles("widget", noJson).map((file) => file.path)).toEqual(["widget.html"]);
+    // widget.js is part of a widget folder; other files (preview.html, chart.js) stay out.
+    const withScript = widgetDir("com-codigo");
+    writeFileSync(join(withScript, "widget.js"), "export function mount(card, ctx) { return {}; }\n");
+    writeFileSync(join(withScript, "preview.html"), "<p>preview</p>");
+    writeFileSync(join(withScript, "chart.js"), "export {};\n");
+    expect(readPresentationPackage("widget", withScript).files.map((file) => file.path)).toEqual([
+      "widget.html",
+      "widget.js",
+      "widget.json",
+    ]);
     expect(() => readPresentationFiles("theme", join(workDir, "nada"))).toThrow(LibraryPackageError);
     const noDescription = themeDir("sem-descricao", JSON.stringify({ color: {} }));
     expect(() => readPresentationPackage("theme", noDescription)).toThrow(/\$description/);
@@ -358,6 +368,8 @@ describe("theme and widget reads", () => {
           description: "",
           fields: { valor: { type: "number", role: null, required: false, label: null, description: null } },
           variants: [],
+          // An older Console sends no `script`: no widget.js.
+          script: false,
         },
       ],
     });

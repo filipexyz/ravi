@@ -33,7 +33,18 @@ export interface PageKitDiagnostic {
   path: string | null;
   line: number | null;
   column: number | null;
+  /**
+   * Console page that fixes it, when the Console names one: for
+   * `KIT_WIDGET_UNAUDITED`, the widget version where an org owner or admin runs
+   * the accessibility audit.
+   */
+  url?: string;
+  /** The widget a widget diagnostic is about (`org/<slug>@<version>`), when the Console names it. */
+  widget?: string;
 }
+
+/** A widget with `widget.js` whose version has no passing accessibility audit yet. */
+export const KIT_WIDGET_UNAUDITED = "KIT_WIDGET_UNAUDITED";
 
 /** `applied`: the Console answered; `unavailable`: older Console; `skipped`: nothing sent. */
 export type PageKitStatus = "applied" | "unavailable" | "skipped";
@@ -94,7 +105,8 @@ export function formatPageKitDiagnostic(diagnostic: PageKitDiagnostic): string {
   const location = [diagnostic.path ?? "-", diagnostic.line, diagnostic.column]
     .filter((part) => part !== null)
     .join(":");
-  return `${location} ${diagnostic.severity} ${diagnostic.code} ${diagnostic.message}`;
+  const url = diagnostic.url && !diagnostic.message.includes(diagnostic.url) ? ` ${diagnostic.url}` : "";
+  return `${location} ${diagnostic.severity} ${diagnostic.code} ${diagnostic.message}${url}`;
 }
 
 export type PageKitCollection = { files: PageKitFile[] } | { skipped: string };
@@ -170,7 +182,7 @@ export async function applyPageKit(input: PageKitInput, deps: PagesClientDeps = 
         ]),
       };
     }
-    if (error instanceof CloudAuthError && error.status === 422) {
+    if (error instanceof CloudAuthError && (error.status === 422 || error.consoleCode === KIT_WIDGET_UNAUDITED)) {
       return { ok: false, diagnostics: kitInvalidDiagnostics(error) };
     }
     throw error;
@@ -231,6 +243,24 @@ function kitInvalidDiagnostics(error: CloudAuthError): PageKitDiagnostic[] {
     return diagnostic ? [diagnostic] : [];
   });
   if (diagnostics.length > 0) return diagnostics;
+  // The Console may answer the unaudited widget as its own error code, with
+  // the audit page in `details`.
+  if (error.consoleCode === KIT_WIDGET_UNAUDITED) {
+    const url = consoleUrl(error.details);
+    const widget = stringValue(error.details?.widget);
+    return [
+      {
+        severity: "error",
+        code: KIT_WIDGET_UNAUDITED,
+        message: error.message,
+        path: stringValue(error.details?.path),
+        line: null,
+        column: null,
+        ...(url ? { url } : {}),
+        ...(widget ? { widget } : {}),
+      },
+    ];
+  }
   return [{ severity: "error", code: "KIT_INVALID", message: error.message, path: null, line: null, column: null }];
 }
 
@@ -267,6 +297,8 @@ function normalizeDiagnostic(value: unknown): PageKitDiagnostic | null {
   const code = stringValue(record?.code);
   const message = stringValue(record?.message);
   if (!record || !code || !message) return null;
+  const url = consoleUrl(record);
+  const widget = stringValue(record.widget);
   return {
     severity: record.severity === "warning" ? "warning" : "error",
     code,
@@ -274,7 +306,18 @@ function normalizeDiagnostic(value: unknown): PageKitDiagnostic | null {
     path: stringValue(record.path) ?? stringValue(record.file),
     line: positiveInteger(record.line),
     column: positiveInteger(record.column),
+    ...(url ? { url } : {}),
+    ...(widget ? { widget } : {}),
   };
+}
+
+/** The Console page a diagnostic points to (`url`, `auditUrl` or `consoleUrl`), only when it is http(s). */
+function consoleUrl(record: Record<string, unknown> | null | undefined): string | null {
+  for (const key of ["url", "auditUrl", "consoleUrl"]) {
+    const value = stringValue(record?.[key]);
+    if (value && /^https?:\/\/\S+$/i.test(value) && value.length <= 500) return value;
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------

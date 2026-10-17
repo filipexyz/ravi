@@ -356,6 +356,82 @@ describe("applyPageKit against the Console", () => {
     });
   });
 
+  it("keeps the audit URL and widget of KIT_WIDGET_UNAUDITED, as a diagnostic or as the Console's own code", async () => {
+    const root = await tempRoot();
+    await writeFile(join(root, "index.html"), "<ravi-widget use='org/grafico'></ravi-widget>");
+    const url = "https://console.example/library/widgets/org/grafico/versions/2";
+    const expected: PageKitOutcome = {
+      ok: false,
+      diagnostics: [
+        {
+          severity: "error",
+          code: "KIT_WIDGET_UNAUDITED",
+          message: "Widget org/grafico@2 has code and no passing accessibility audit.",
+          path: "index.html",
+          line: 1,
+          column: 1,
+          url,
+          widget: "org/grafico@2",
+        },
+      ],
+    };
+
+    const asDiagnostic = consoleWith(() =>
+      json(422, {
+        error: {
+          code: "KIT_INVALID",
+          message: "Page kit found errors.",
+          details: {
+            diagnostics: [
+              {
+                severity: "error",
+                code: "KIT_WIDGET_UNAUDITED",
+                message: "Widget org/grafico@2 has code and no passing accessibility audit.",
+                path: "index.html",
+                line: 1,
+                column: 1,
+                auditUrl: url,
+                widget: "org/grafico@2",
+              },
+            ],
+          },
+        },
+      }),
+    );
+    expect(await applyPageKit(kitInput(root), asDiagnostic.deps)).toEqual(expected);
+
+    const asCode = consoleWith(() =>
+      json(409, {
+        error: {
+          code: "KIT_WIDGET_UNAUDITED",
+          message: "Widget org/grafico@2 has code and no passing accessibility audit.",
+          details: { url, widget: "org/grafico@2", path: "index.html" },
+        },
+      }),
+    );
+    const outcome = await applyPageKit(kitInput(root), asCode.deps);
+    expect(outcome).toEqual({
+      ok: false,
+      diagnostics: [{ ...expected.diagnostics[0]!, line: null, column: null }],
+    });
+    expect(formatPageKitDiagnostic(outcome.ok ? expected.diagnostics[0]! : outcome.diagnostics[0]!)).toBe(
+      `index.html error KIT_WIDGET_UNAUDITED Widget org/grafico@2 has code and no passing accessibility audit. ${url}`,
+    );
+
+    // A URL that is not http(s) is dropped, never printed.
+    const bad = consoleWith(() =>
+      json(422, {
+        diagnostics: [{ severity: "error", code: "KIT_WIDGET_UNAUDITED", message: "x", url: "javascript:alert(1)" }],
+      }),
+    );
+    expect(await applyPageKit(kitInput(root), bad.deps)).toEqual({
+      ok: false,
+      diagnostics: [
+        { severity: "error", code: "KIT_WIDGET_UNAUDITED", message: "x", path: null, line: null, column: null },
+      ],
+    });
+  });
+
   it("treats a bare 404 or 405 as an older Console (KIT_UNAVAILABLE) and leaves the files unchanged", async () => {
     const root = await tempRoot();
     await writeFile(join(root, "index.html"), "<p>x</p>");

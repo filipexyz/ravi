@@ -3,7 +3,7 @@
 ## Checks
 
 - `widgets check <dir>` MUST send only `widget.html`, `widget.json`,
-  `example.json` and `README.md` from the folder root and MUST exit 2 with
+  `widget.js`, `example.json` and `README.md` from the folder root and MUST exit 2 with
   `WIDGET_INVALID` and one `issues[]` entry per error diagnostic.
 - `widgets preview <dir>` MUST write the Console's HTML to `--out` (default
   `<dir>/preview.html`) only when there are no error diagnostics, and MUST
@@ -28,3 +28,12 @@
   `check`, `preview`, `init` and `catalog` MUST work.
 - `widgets catalog` MUST print the Console's agent text, and `--json` MUST
   include it as `text`.
+- `widgets catalog --json` MUST carry `script` on every widget, `true` only
+  when the Console says so.
+- A `widget.js` diagnostic from the Console MUST print as
+  `widget.js:line:column severity code message` and exit 2 with
+  `WIDGET_INVALID`.
+- `pages ship` whose only kit errors are `KIT_WIDGET_UNAUDITED` MUST exit 2
+  with code `KIT_WIDGET_UNAUDITED`, upload nothing, and name the Console
+  audit URL (only an `http(s)` URL) in `suggestedAction` and in each issue
+  line; mixed with other kit errors it stays `KIT_INVALID`.

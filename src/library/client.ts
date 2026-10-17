@@ -408,6 +408,8 @@ export class LibraryClient {
                 description: stringOr(widget.description, ""),
                 fields: normalizeWidgetFields(widget.fields),
                 variants: stringArray(widget.variants),
+                // `widget.js` on the current version ("com código" in the text); false on an older Console.
+                script: widget.script === true,
               },
             ];
           })
