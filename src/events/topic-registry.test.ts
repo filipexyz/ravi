@@ -83,6 +83,8 @@ describe("event topic registry", () => {
       "ravi.artifacts.completed",
       "ravi.meetings.artifact_generated",
       "ravi.session.prune.completed",
+      "ravi.agents.created",
+      "ravi.sessions.created",
       "ravi.runtime.session_pool.gauge",
       "ravi.hooks.refresh",
       "ravi.rtk.rewrite",
