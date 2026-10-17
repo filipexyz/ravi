@@ -65,6 +65,7 @@ import {
   normalizePageReadNumber,
   PAGE_READ_MAX_CHARS,
   PAGE_READ_MIN_CHARS,
+  pageReadTurnBlock,
   readPage,
   type PageReadResult,
 } from "../../pages/read.js";
@@ -500,11 +501,18 @@ export class PagesCommands {
       } catch (error) {
         const failure = describePageReadFailure(error, url);
         if (failure) {
-          contractFail("pages read", failure.code, failure.message, {
-            asJson,
-            exitCode: failure.exitCode,
-            details: failure.details,
-          });
+          // A private Page refused on a turn that is not the operator's own: say which rule decided it.
+          const block = failure.details.reason === "public_only" ? pageReadTurnBlock(this.deps) : null;
+          contractFail(
+            "pages read",
+            failure.code,
+            block ? `${failure.message} This turn is not the operator's own: ${block.why}.` : failure.message,
+            {
+              asJson,
+              exitCode: failure.exitCode,
+              details: block ? { ...failure.details, turn: block.turn } : failure.details,
+            },
+          );
         }
         throw error;
       }

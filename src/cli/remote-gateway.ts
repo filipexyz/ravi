@@ -532,7 +532,7 @@ function libraryRemoteCopy(
   const suggestedAction = boundedRemoteLine(remote.suggestedAction, LIBRARY_REMOTE_ACTION_MAX, "suggestedAction");
   if (suggestedAction) details.suggestedAction = suggestedAction;
   // `reason` never arrives: the envelope redacts it as free text, so `conflict` carries the code.
-  for (const key of ["conflict", "proposalStatus"] as const) {
+  for (const key of ["conflict", "proposalStatus", "turn"] as const) {
     const value = remote[key];
     if (typeof value === "string" && LIBRARY_REMOTE_TOKEN_PATTERN.test(value)) details[key] = value;
   }
