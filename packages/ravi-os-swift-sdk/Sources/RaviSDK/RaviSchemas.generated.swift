@@ -106092,6 +106092,10 @@ public enum RaviSchemas {
             "ref": {
               "type": "string"
             },
+            "script": {
+              "description": "The current version has a widget.js (text: com código)",
+              "type": "boolean"
+            },
             "variants": {
               "items": {
                 "type": "string"
@@ -106104,7 +106108,8 @@ public enum RaviSchemas {
             "name",
             "description",
             "fields",
-            "variants"
+            "variants",
+            "script"
           ],
           "type": "object"
         },

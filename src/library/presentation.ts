@@ -33,6 +33,7 @@ import { isSafeLibraryPath, LibraryPackageError, readPresentationFiles, type Lib
 import { isLibrarySlug, parseLibraryRef, type LibraryRef } from "./refs.js";
 import {
   assertLibraryRefInCallerView,
+  callerView,
   clampSearchLimit,
   LibraryCommandError,
   notFound,
@@ -222,14 +223,54 @@ export async function initWidget(
   assertWritableFolder(input.dir);
   const session = await requireSession("widget", input.project ?? null, input.caller ?? null, deps);
   const project = session.project?.ref ?? null;
-  const generated = await session.client.scaffoldWidget({
-    slug: input.slug,
-    ...(input.view ? { view: input.view } : {}),
-    ...(project ? { project } : {}),
-  });
+  let generated: Awaited<ReturnType<typeof session.client.scaffoldWidget>>;
+  try {
+    generated = await session.client.scaffoldWidget({
+      slug: input.slug,
+      ...(input.view ? { view: input.view } : {}),
+      ...(project ? { project } : {}),
+    });
+  } catch (error) {
+    if (input.view && isLibraryNotFoundError(error)) throw viewNotFound(input.view, session, error.details);
+    throw error;
+  }
   if (hasDiagnosticErrors(generated.diagnostics)) throw new LibraryDiagnosticsError("widget", generated.diagnostics);
   const files = writeGeneratedFiles("widget", input.dir, generated.files, input.force === true);
   return { kind: "widget", dir: input.dir, slug: input.slug, files, diagnostics: generated.diagnostics };
+}
+
+/** `--from-view` names a view the Console does not find in the project the scaffold used: say which one. */
+function viewNotFound(
+  view: string,
+  session: LibrarySession,
+  consoleDetails: Record<string, unknown> | undefined,
+): LibraryCommandError {
+  const used = callerView(session);
+  // The Console names the project it looked in and, when it knows, the view's own project.
+  const consoleProject = slugOrNull(consoleDetails?.project);
+  const viewProject = slugOrNull(consoleDetails?.viewProject);
+  const project = consoleProject ?? used.project;
+  const where = project
+    ? `in project ${project}${!consoleProject && used.source ? ` (from ${used.source})` : ""}`
+    : "with no Console project (org only)";
+  const belongs = viewProject && viewProject !== project ? ` It belongs to project ${viewProject}.` : "";
+  return new LibraryCommandError(
+    "NOT_FOUND",
+    `View ${view} was not found ${where}: the scaffold reads the view's columns in that project.${belongs}`,
+    1,
+    {
+      view: used,
+      ...(viewProject ? { viewProject } : {}),
+      suggestedAction:
+        viewProject && viewProject !== project
+          ? `Run the same init with --project ${viewProject}`
+          : "Pass the view's project with --project <slug> (find the view with: ravi bases views list <base> --project <slug>; see which project is used here with: ravi cloud scope explain)",
+    },
+  );
+}
+
+function slugOrNull(value: unknown): string | null {
+  return typeof value === "string" && isLibrarySlug(value.trim().toLowerCase()) ? value.trim().toLowerCase() : null;
 }
 
 function assertWritableFolder(dir: string): void {

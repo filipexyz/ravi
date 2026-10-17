@@ -4,8 +4,9 @@ Parte da skill pages. Cores, fontes e claro/escuro: `theme.md`. Site, view,
 `--uses` e quem passa numa página de dados: `data-pages.md`.
 
 Um widget é um cartão da Biblioteca da org: um template das peças `ravi-*`
-com campos tipados (os tipos do Bases). Não é código. Você não escreve o
-cartão: escolhe um widget numa tag e o `ravi pages ship` faz o resto.
+com campos tipados (os tipos do Bases). Não é código (salvo o widget com
+código, no fim). Você não escreve o cartão: escolhe um widget numa tag e o
+`ravi pages ship` faz o resto.
 
 ## Tag primeiro, cliente à mão só no que falta
 
@@ -143,6 +144,7 @@ código mensagem`), e nada sobe:
 | `KIT_FORM_FIELD_MISSING` | `fields` do formulário com coluna que a view não projeta |
 | `KIT_THEME_*` | `--theme` com ref errado (`theme.md`) |
 | `KIT_TOO_LARGE` | o HTML montado (com tema e `ravi.js`) passou do limite do Console: divida em mais rotas |
+| `KIT_WIDGET_UNAUDITED` | widget com código sem auditoria aprovada: um owner ou admin da org abre a URL do `suggestedAction` no Console e roda a auditoria; depois, o mesmo ship |
 
 Avisos não bloqueiam: atributo desconhecido (`KIT_ATTRIBUTE_UNKNOWN`),
 variante que o widget não tem (`KIT_VARIANT_UNKNOWN`), `fields` sem widget
@@ -150,7 +152,12 @@ variante que o widget não tem (`KIT_VARIANT_UNKNOWN`), `fields` sem widget
 (`KIT_LAYOUT_WIDGET_UNAVAILABLE`, sai o cartão padrão), valor de atributo
 inválido ou `page-size` acima de 200, que vira 200 (`KIT_ATTRIBUTE_INVALID`),
 nome, e-mail ou telefone em `data` numa rota pública
-(`KIT_PERSONAL_DATA_PUBLIC`), tema mudado desde o último publish da rota.
+(`KIT_PERSONAL_DATA_PUBLIC`), tema mudado desde o último publish da rota,
+página sem tema ativo que sai com o tema padrão do Ravi (`KIT_THEME_DEFAULT`),
+widget com ações fora de uma `<ravi-view>` (`KIT_ACTIONS_NEED_VIEW`). Cada
+aviso sai como `warning: arquivo:linha:coluna severidade código mensagem` no
+texto e em `warnings` no JSON, inclusive códigos que este CLI ainda não
+conhece: leia a mensagem e corrija se fizer sentido; o ship já subiu.
 
 ## 4. Depois do ship
 
@@ -191,11 +198,54 @@ ravi widgets propose ./pedido-card --scope org --note "cartão de pedido" --exec
   <arquivo.json>`, `--theme <ref>` e `--out <arquivo.html>`.
 - `example.json` só com dados inventados (`@example.com`); e-mail ou telefone
   com cara de real gera aviso.
+- `init --from-view` lê a view no projeto do Console desta sessão. `NOT_FOUND`
+  diz qual projeto foi usado: passe o da view com `--project <slug>`.
 - Dentro de agente, `ravi widgets publish` recusa (`LIBRARY_AGENT_CANNOT_PUBLISH`,
-  exit 3). Diga à pessoa que a proposta espera revisão no Console. Até ela
-  publicar, o ship não acha o widget: use o cartão padrão ou o widget atual.
+  exit 3) e o `suggestedAction` traz o `propose` com a mesma pasta. Diga à
+  pessoa que a proposta espera revisão no Console. Até ela publicar, o ship
+  não acha o widget: use o cartão padrão ou o widget atual.
+- Agente propõe em `--scope org` ou no próprio projeto do Console.
+  `LIBRARY_OUT_OF_VIEW` (exit 3) diz o que a sessão vê ("This session sees
+  org <org> and project <slug>"): use esse `--scope`. Projeto errado? Veja
+  com `ravi cloud scope explain` e peça ao operador `ravi cloud scope set
+  --agent <agente> --project <slug>`.
+- `CONFLICT` no `propose --execute` traz `conflict` (`slug_taken_in_org`,
+  `slug_taken_in_project`, `unchanged`...) e o próximo passo: siga-o; não
+  repita o mesmo comando.
 - Revisão: `ravi widgets proposal org/pedido-card <n>` mostra os comentários;
   responda com `ravi widgets propose ./pedido-card --scope org --update <n> --execute`.
+
+## Widget com código
+
+Só para o desenho que o template não faz: gráfico, mapa. O `widget.html`
+continua obrigatório: é o que o ship desenha no HTML e o que agentes e quem
+lê sem JS recebem. O `widget.js` só melhora o cartão por cima.
+
+- `widget.js` na pasta do widget: um módulo ES, até 128 KiB, com as
+  bibliotecas empacotadas dentro. Nada de `import` (nem `import()`), `export
+  ... from`, `<script src>`, `importScripts` ou `new Worker`.
+- Exporte `mount(card, ctx)`; ele devolve `{ update, destroy }` (os dois
+  opcionais). `update(ctx)` roda quando o registro do cartão muda; `destroy()`
+  quando o cartão sai da tela. Erro no `mount` deixa o cartão estático.
+- `ctx`: `record` (`{ id, values }` pelos campos do widget), `fields`,
+  `canvas(i = 0)` (o `<ravi-canvas>` de índice `i` do cartão, ou `null`),
+  `locale`, `timeZone`, `mode` (`light`/`dark`), `theme(nome)` (variável CSS
+  do tema), `announce(texto)` (região `aria-live`), `el` (o mesmo de
+  `ravi.el`), `onModeChange(fn)` (devolve o cancelamento).
+- Desenhe só dentro de `<ravi-canvas label="Vendas por mês" height="16rem">`:
+  a única área livre, com `label` obrigatório (texto ou `{campo}`) e só em
+  widget com `widget.js`. Sem JS ela fica vazia: o resumo do gráfico vai no
+  template (números, uma tabela).
+- Só leitura por enquanto: não há `ctx.run`; `scriptActions` no
+  `widget.json` é recusado (`WIDGET_JS_ACTIONS_UNSUPPORTED`). Botões do
+  template (`ravi-button`) seguem funcionando.
+- `ravi widgets check` e `preview` mandam o `widget.js`; os erros saem como
+  `widget.js:linha:coluna` (`WIDGET_JS_*`).
+- Só owner ou admin da org publica um widget com código; agente propõe como
+  sempre. O Console roda a auditoria de acessibilidade (axe, sobre o
+  `example.json`) antes de liberar a versão: sem ela aprovada, o ship que usa o
+  widget sai com `KIT_WIDGET_UNAUDITED` (exit 2) e a URL da auditoria no
+  `suggestedAction`.
 
 ## Acessibilidade
 

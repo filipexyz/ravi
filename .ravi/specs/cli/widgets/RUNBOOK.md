@@ -13,11 +13,21 @@
 5. `LIBRARY_PACKAGE_INVALID` (exit 2): `widget.html` is missing, or publish
    or propose has no `widget.json` with `name` and `description`.
 6. `USAGE_ERROR` on `init --from-view`: pass the view's uuid (from
-   `ravi bases views list <base> --json`), not its name.
-7. Exit `3` with `WRITE_REQUIRES_EXECUTE`: read `error.plan`, then re-run
+   `ravi bases views list <base> --json`), not its name. `NOT_FOUND`: the
+   message names the project the scaffold used; pass the view's project
+   with `--project <slug>`.
+7. `LIBRARY_OUT_OF_VIEW` (exit 3): the message and `details.view` name the
+   org and project this session sees and where the project came from. A
+   wrong project (for example the install default instead of the agent's)
+   is fixed with `ravi cloud scope explain` and `ravi cloud scope set
+   --agent <agent> --project <slug>`.
+8. `CONFLICT` on `propose --execute`: branch on `error.conflict`
+   (`slug_taken_in_org`, `slug_taken_in_project`, `unchanged`,
+   `stale_base`, ...); an unknown one keeps the Console's message.
+9. Exit `3` with `WRITE_REQUIRES_EXECUTE`: read `error.plan`, then re-run
    with `--execute`. Inside an agent, `publish` refuses with
    `LIBRARY_AGENT_CANNOT_PUBLISH`; use `ravi widgets propose <dir> --scope
    org --execute`.
-8. A page still shows the old widget: pages pin the version they were
+10. A page still shows the old widget: pages pin the version they were
    shipped with. Ship the page again; `ravi pages outdated --json` lists the
    routes behind.

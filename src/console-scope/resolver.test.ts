@@ -258,6 +258,47 @@ describe("install-level Console project default", () => {
   });
 });
 
+describe("agent workspace scope", () => {
+  it("resolves an agent's workspace default from its configured cwd, not the process cwd", async () => {
+    stateDir = await createIsolatedRaviState("ravi-console-scope-agent-cwd-");
+    const credentials = makeCredentials();
+    const listProjects = async () =>
+      makeProjectList([
+        { id: "proj_1", slug: "page-chat-widget", name: "Chat" },
+        { id: "proj_2", slug: "painel", name: "Painel" },
+      ]);
+    await saveConsoleScopeDefault(
+      { scopeKind: "global", scopeKey: "default", project: { ref: "page-chat-widget" } },
+      { readCredentials: () => credentials, listProjects },
+    );
+    await saveConsoleScopeDefault(
+      { scopeKind: "workspace", scopeKey: "/agents/painel", project: { ref: "painel" } },
+      { readCredentials: () => credentials, listProjects },
+    );
+
+    // The daemon gateway runs the agent's command with its own process cwd.
+    const gateway = {
+      readCredentials: () => credentials,
+      listProjects,
+      cwd: "/srv/ravi-daemon",
+      getContext: () => ({ agentId: "painel-agent", sessionKey: "agent:painel-agent:main" }),
+    };
+    const scope = await resolveConsoleScope({}, { ...gateway, lookupAgentCwd: () => "/agents/painel" });
+    expect(scope).toMatchObject({ source: "workspace_default", project: { ref: "painel" } });
+
+    // Without the agent's cwd the install default would win: the bug this guards.
+    const unknownAgent = await resolveConsoleScope({}, { ...gateway, lookupAgentCwd: () => null });
+    expect(unknownAgent).toMatchObject({ source: "global_default", project: { ref: "page-chat-widget" } });
+
+    // Outside an agent nothing changes: the process cwd is the workspace.
+    const terminal = await resolveConsoleScope(
+      {},
+      { readCredentials: () => credentials, listProjects, cwd: "/srv/ravi-daemon", getContext: () => undefined },
+    );
+    expect(terminal).toMatchObject({ source: "global_default", project: { ref: "page-chat-widget" } });
+  });
+});
+
 function makeProjectList(projects: Array<Record<string, unknown>>) {
   return {
     success: true as const,

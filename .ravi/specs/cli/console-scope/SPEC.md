@@ -279,8 +279,12 @@ The resolver MUST use this order:
    selected organization.
 7. Agent default for the current `agentId`, scoped to the selected
    organization.
-8. Workspace default for the current cwd or configured workspace root, scoped to
-   the selected organization.
+8. Workspace default, scoped to the selected organization: inside an agent
+   runtime first the agent's configured cwd (the workspace the pin sync
+   reports for the agent), then the process cwd. A command the daemon
+   gateway runs for an agent has the daemon's process cwd, so the agent's
+   cwd MUST be tried before it; otherwise the install default wins over the
+   agent's own workspace project.
 9. Global default for the local installation, scoped to the selected
    organization.
 10. Compatibility `RAVI_PROJECT` fallback.

@@ -65,6 +65,7 @@ import {
   normalizePageReadNumber,
   PAGE_READ_MAX_CHARS,
   PAGE_READ_MIN_CHARS,
+  pageReadTurnBlock,
   readPage,
   type PageReadResult,
 } from "../../pages/read.js";
@@ -94,6 +95,7 @@ import {
 import {
   applyPageKit,
   formatPageKitDiagnostic,
+  KIT_WIDGET_UNAUDITED,
   listOutdatedPages,
   mergePageUses,
   normalizeShipTheme,
@@ -499,11 +501,18 @@ export class PagesCommands {
       } catch (error) {
         const failure = describePageReadFailure(error, url);
         if (failure) {
-          contractFail("pages read", failure.code, failure.message, {
-            asJson,
-            exitCode: failure.exitCode,
-            details: failure.details,
-          });
+          // A private Page refused on a turn that is not the operator's own: say which rule decided it.
+          const block = failure.details.reason === "public_only" ? pageReadTurnBlock(this.deps) : null;
+          contractFail(
+            "pages read",
+            failure.code,
+            block ? `${failure.message} This turn is not the operator's own: ${block.why}.` : failure.message,
+            {
+              asJson,
+              exitCode: failure.exitCode,
+              details: block ? { ...failure.details, turn: block.turn } : failure.details,
+            },
+          );
         }
         throw error;
       }
@@ -2521,7 +2530,11 @@ function failShipLiveDataOnPublicRoute(basesUses: string[], asJson: boolean | un
  * code message`, each under the 200-character issue cap. Nothing was uploaded.
  */
 function failShipKitInvalid(diagnostics: PageKitDiagnostic[], asJson: boolean | undefined): never {
-  const errors = diagnostics.filter((diagnostic) => diagnostic.severity === "error").length;
+  const errorDiagnostics = diagnostics.filter((diagnostic) => diagnostic.severity === "error");
+  if (errorDiagnostics.length > 0 && errorDiagnostics.every((diagnostic) => diagnostic.code === KIT_WIDGET_UNAUDITED)) {
+    failShipKitWidgetUnaudited(errorDiagnostics, asJson);
+  }
+  const errors = errorDiagnostics.length;
   contractFail(
     "pages ship",
     "KIT_INVALID",
@@ -2533,6 +2546,44 @@ function failShipKitInvalid(diagnostics: PageKitDiagnostic[], asJson: boolean | 
         retryable: false,
         suggestedAction:
           "Fix each listed path:line:column in the HTML (tags, widget refs, field mappings, theme ref), then ship again",
+        issues: diagnostics.slice(0, 50).map((diagnostic) => ({
+          path: [],
+          code: diagnostic.code,
+          message: truncateIssueLine(formatPageKitDiagnostic(diagnostic)),
+        })),
+      },
+    },
+  );
+}
+
+/**
+ * Exit 2 when the only kit errors are widgets with `widget.js` whose version
+ * has no passing accessibility audit: an org owner or admin opens each Console
+ * URL, the audit runs there, and the same ship then goes through.
+ */
+function failShipKitWidgetUnaudited(diagnostics: PageKitDiagnostic[], asJson: boolean | undefined): never {
+  const widgets = diagnostics.map((diagnostic) => ({
+    widget: diagnostic.widget ?? null,
+    url: diagnostic.url ?? null,
+  }));
+  const urls = [...new Set(widgets.flatMap((item) => (item.url ? [item.url] : [])))];
+  const names = [...new Set(widgets.flatMap((item) => (item.widget ? [item.widget] : [])))];
+  const where =
+    urls.length > 0
+      ? `open ${urls.join(" and ")} in the Console`
+      : "open the widget in the Console (Library > Widgets)";
+  contractFail(
+    "pages ship",
+    KIT_WIDGET_UNAUDITED,
+    `Refusing to ship: ${names.length > 0 ? names.join(", ") : "a widget with code"} has no passing accessibility audit yet. Nothing was uploaded or published.`,
+    {
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: {
+        retryable: false,
+        suggestedAction: `An org owner or admin must ${where} and run the accessibility audit until it passes, then ship again`,
+        // The URLs stay in suggestedAction and the issue lines: detail values are sanitized to their origin.
+        widgets: names,
         issues: diagnostics.slice(0, 50).map((diagnostic) => ({
           path: [],
           code: diagnostic.code,

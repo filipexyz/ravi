@@ -47,7 +47,12 @@ nudges that send agents to the command.
    any other host is a usage error. With `--custom-domain`, the given URL is
    sent to Console, so Console sees only the URLs an agent explicitly reads.
 4. A `public_only` refusal MUST exit 3 (`PAGE_ACCESS_DENIED`, policy block);
-   other access refusals exit 1. Not found is `PAGE_NOT_FOUND`; non-text
+   other access refusals exit 1. The refusal MUST say which classifier rule
+   kept the turn from being the operator's own (`details.turn`:
+   `shared_session`, `relay_answer_chat`, `owner_outside_dm`, `group`,
+   `not_owner` or `unknown`, and the same sentence in the message). That
+   explanation never changes the classification. Through the daemon gateway
+   the message, `turn` and `suggestedAction` reach the agent (`cli`). Not found is `PAGE_NOT_FOUND`; non-text
    routes are `PAGE_CONTENT_UNSUPPORTED`.
 5. Human output MUST fence the page text between matching nonce markers that
    say it is untrusted data. `--json` returns Console's `contentTrust:

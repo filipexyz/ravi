@@ -44,6 +44,9 @@ owners:
   - session wins over agent;
   - agent wins over workspace;
   - workspace wins over global;
+  - inside an agent, the workspace default of the agent's configured cwd wins
+    over the process cwd's, so a gateway-run command resolves the agent's
+    project, not the install default;
   - credentials supply organization only when no richer scope exists.
 - Missing project for project-required commands returns `PAYLOAD_INVALID` with a
   next command and names "Project: not selected" rather than org visibility.

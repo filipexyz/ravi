@@ -146,7 +146,7 @@ ravi widgets publish ./order-card --scope org           # plan only (exit 3)
 ravi widgets publish ./order-card --scope org --execute
 ```
 
-A widget folder holds `widget.json` (name, description and typed fields), `widget.html` (the template), and optionally `example.json` (made-up records for previews) and `README.md`. The template uses only Ravi's building blocks, such as cards, rows, titles, fields, badges, images, links, metrics, progress bars and buttons:
+A widget folder holds `widget.json` (name, description and typed fields), `widget.html` (the template), and optionally `widget.js` (see [Widgets with code](#widgets-with-code)), `example.json` (made-up records for previews) and `README.md`. The template uses only Ravi's building blocks, such as cards, rows, titles, fields, badges, images, links, metrics, progress bars and buttons:
 
 ```html
 <ravi-card>
@@ -160,7 +160,19 @@ A widget folder holds `widget.json` (name, description and typed fields), `widge
 </ravi-card>
 ```
 
-Buttons can only update, create, archive or open the record, and they show only to people the view lets do that. `ravi widgets catalog` lists every building block and option. Agents propose widgets (`ravi widgets propose ./order-card --scope org --execute`); people publish them.
+Buttons can only update, create, archive or open the record, and they show only to people the view lets do that. `ravi widgets catalog` lists every building block and option. Agents propose widgets (`ravi widgets propose ./order-card --scope org --execute`); people publish them. An agent proposes to the organization or to its own Console project; when it names another project, the refusal (`LIBRARY_OUT_OF_VIEW`) says which organization and project the session sees. `init --from-view` reads the view in the session's Console project; when the view is not found, the error names that project, and `--project <slug>` picks another.
+
+### Widgets with code
+
+When a template cannot draw what you need, such as a chart or a map, a widget can add a `widget.js` file. The template stays required: it is what the ship draws into the HTML, and what agents and readers without JavaScript get. The script only enhances the card on top of it.
+
+- `widget.js` is one ES module of at most 128 KiB with its libraries bundled in. It cannot import anything, load remote scripts or start workers.
+- It exports `mount(card, ctx)` and returns `{ update, destroy }`. `ctx` carries the card's record and fields, `canvas(i)`, the locale, time zone and light or dark mode, `theme(name)` for theme variables, `announce(text)` for screen readers, and `onModeChange(fn)`.
+- The script draws only inside `<ravi-canvas label="Sales by month">`, the one free-drawing area, which needs a `label` and exists only in widgets with a `widget.js`.
+- Widgets with code are read-only for now: buttons in the template keep working, but the script cannot change records.
+- Only an organization owner or admin can publish a widget with code; agents and developers propose it. The Console runs an accessibility audit of the card with its script over `example.json`, and a page that uses a version whose audit has not passed does not ship: `ravi pages ship` exits 2 with `KIT_WIDGET_UNAUDITED` and the Console link where an admin runs the audit.
+
+`ravi widgets catalog` marks these widgets "com código" (`script: true` in `--json`).
 
 ## Accessibility
 
@@ -188,10 +200,11 @@ Publishing a widget fails when an image has no `alt` text, an avatar has no name
 |---|---|
 | Fields per widget | 40 |
 | Records in `example.json` | 20 |
+| `widget.js` | 128 KiB, one ES module, no imports |
 | Tags per ship | 500 |
 | Logo | 64 KiB SVG, shown as an image |
 | Fonts | names of fonts on the reader's device; no web fonts |
 | Layouts drawn by `<ravi-view>` | list, board, table, gallery (others draw as a list) |
 | Records per `<ravi-view>` query | 50 by default, `page-size` up to 200 |
 
-An older Console without widget support ships the HTML unchanged with the warning `KIT_UNAVAILABLE`, and the tags do not render.
+An older Console without widget support ships the HTML unchanged with the warning `KIT_UNAVAILABLE`, and the tags do not render. Every other warning the Console sends on a ship (for example `KIT_THEME_DEFAULT` or `KIT_ACTIONS_NEED_VIEW`) is printed with its code and message and listed in `warnings`; warnings never stop the ship.
