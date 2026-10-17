@@ -41,6 +41,7 @@ import {
   dispatchRemote,
   resolveRemoteGatewayConfig,
   remoteGatewayErrorToContractError,
+  remoteNextStepLine,
   remoteGatewayExitCode,
   remoteDispatchOutput,
   resolveContextKeyForRemote,
@@ -465,6 +466,8 @@ async function dispatchRemoteCommand(input: DispatchRemoteCommandInput): Promise
   const remoteError = remoteGatewayErrorToContractError(op, result);
   if (remoteError) {
     renderContractError(remoteError, input.input.json === true);
+    const next = input.input.json === true ? null : remoteNextStepLine(remoteError);
+    if (next) console.error(next);
     process.exit(remoteError.exitCode);
   }
   printRemoteResponse(result);

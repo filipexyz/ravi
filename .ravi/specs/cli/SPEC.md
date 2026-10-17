@@ -142,7 +142,16 @@ details and policy outcome:
   is replaced by a safe local action. For `media send`, catalog codes
   `MEDIA_SEND_FAILED`, `OMNI_AUTH_FAILED` and `FILE_NOT_FOUND` MUST keep the
   remote code and use the local catalog message and action; other codes stay
-  on the generic remote failure copy. HTTP `status` and structured `issues`
+  on the generic remote failure copy. Library and Console-backed refusals
+  (`skills`, `themes`, `widgets`, the Library `agents` commands and `pages
+  read`), when the outcome is `failed` or `blocked` (not the write brake),
+  MUST keep the remote message and `suggestedAction` (bounded, without
+  control characters, sanitized again) plus the typed details `conflict`,
+  `proposalStatus`, `currentVersion`, `baseVersion`, `errors`, `warnings`,
+  `existing` (file names) and `view` (`organization`, `project`, `source`
+  as short names): the daemon already built that envelope as public copy.
+  Text mode then prints `Next: <suggestedAction>` when no issue carries it.
+  HTTP `status` and structured `issues`
   (`path`, `code`, sanitized `message`) from 400/422 validation failures MUST
   be projected so CLI text and `--json` stay actionable. This privacy
   projection is the permitted exception to byte-for-byte detail parity;

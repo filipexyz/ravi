@@ -10,6 +10,9 @@ import {
   connectorNotLinkedError,
 } from "../link/connectors.js";
 import { cloudErrorToContractError } from "./cloud-error-contract.js";
+import { ContractError } from "./agent-contract.js";
+import { presentationProfile, withPresentationContract } from "./library-contract.js";
+import { LibraryCommandError } from "../library/service.js";
 import {
   FILE_NOT_FOUND_CODE,
   FILE_NOT_FOUND_MESSAGE,
@@ -25,6 +28,7 @@ import {
   CALLER_CWD_HEADER,
   dispatchRemote,
   gatewayRequiredError,
+  remoteNextStepLine,
   getRemoteGatewayConfig,
   requiresRemoteGateway,
   resolveHostCliGatewayStateDirs,
@@ -863,7 +867,7 @@ describe("personal connector blocks over the gateway", () => {
       "connectors list",
       new CloudAuthError(
         "CONNECTOR_GROUP_BLOCKED",
-        'This message came from someone other than Luis, and personal connections serve only Luis\'s own requests. Reply in this chat: "I can\'t use Luis\'s Gmail for your request."',
+        "This message came from someone other than Luis, and personal connections serve only Luis's own requests. Reply in this chat: \"I can't use Luis's Gmail for your request.\"",
         {
           exitCode: 3,
           details: {
@@ -1242,5 +1246,89 @@ describe("gateway requirement for runtime context keys", () => {
     expect(resolveHostCliGatewayStateDirs({ RAVI_STATE_DIR: "/srv/ravi-state", HOME: "/tmp/x" })).toEqual([
       "/srv/ravi-state",
     ]);
+  });
+});
+
+describe("Library refusals over the gateway", () => {
+  async function relay(op: string, thrown: unknown) {
+    const local = await withPresentationContract(op, presentationProfile("widget"), true, async () => {
+      throw thrown;
+    }).catch((error: unknown) => error as ContractError);
+    expect(local).toBeInstanceOf(ContractError);
+    const response = contractErrorResponse(local);
+    const remote = remoteGatewayErrorToContractError(
+      op,
+      result({ status: response.status, body: await response.text() }),
+    );
+    return { local, remote };
+  }
+
+  it("keeps the code, message, conflict and next step of a Console conflict", async () => {
+    const { local, remote } = await relay(
+      "widgets propose",
+      new CloudAuthError("CONFLICT", "Slug taken.", { status: 409, details: { reason: "slug_taken_in_project" } }),
+    );
+    expect(remote).toMatchObject({
+      code: "CONFLICT",
+      exitCode: 1,
+      message: "A project already has a Library widget with this slug.",
+      details: { conflict: "slug_taken_in_project", suggestedAction: "Pick another slug with --slug" },
+    });
+    expect(remote?.message).toBe(local.message);
+    expect(remote?.details.suggestedAction).not.toContain("Inspect redacted remote logs");
+    expect(remoteNextStepLine(remote!)).toBe("Next: Pick another slug with --slug");
+  });
+
+  it("keeps the Console's own words for a conflict reason this side has no copy for", async () => {
+    const { remote } = await relay(
+      "widgets propose",
+      new CloudAuthError("CONFLICT", "Org proposals from agents need a reviewer group.", {
+        status: 422,
+        details: { reason: "no_reviewers" },
+      }),
+    );
+    expect(remote).toMatchObject({
+      code: "CONFLICT",
+      message: "Org proposals from agents need a reviewer group.",
+      details: { conflict: "no_reviewers" },
+    });
+  });
+
+  it("keeps an out-of-view refusal (exit 3) with the session's view instead of a generic policy line", async () => {
+    const message =
+      "Library widget 'outro/card' belongs to project 'outro', which is not this agent's Console project. This session sees org acme and project painel (from agent_default); use --scope painel or --scope org.";
+    const { remote } = await relay(
+      "widgets propose",
+      new LibraryCommandError("LIBRARY_OUT_OF_VIEW", message, 3, {
+        view: { organization: "acme", project: "painel", source: "agent_default" },
+        suggestedAction: "Use --scope painel or --scope org",
+      }),
+    );
+    expect(remote).toMatchObject({
+      code: "LIBRARY_OUT_OF_VIEW",
+      exitCode: 3,
+      message,
+      details: {
+        view: { organization: "acme", project: "painel", source: "agent_default" },
+        suggestedAction: "Use --scope painel or --scope org",
+      },
+    });
+    expect(remote?.message).not.toBe("Remote command was blocked by policy.");
+    // The next step already travels as an issue, so text mode does not print it twice.
+    expect(remoteNextStepLine(remote!)).toBeNull();
+  });
+
+  it("leaves other commands with the generic relay copy", async () => {
+    const local = new ContractError("transcribe file", "CONFLICT", "PRIVATE_MESSAGE_8K2R", 1, {
+      suggestedAction: "PRIVATE_ACTION",
+    });
+    const response = contractErrorResponse(local);
+    const remote = remoteGatewayErrorToContractError(
+      "transcribe file",
+      result({ status: response.status, body: await response.text() }),
+    );
+    expect(remote?.message).toBe("Remote command failed.");
+    expect(JSON.stringify(remote?.envelope())).not.toContain("PRIVATE");
+    expect(remoteNextStepLine(remote!)).toBeNull();
   });
 });
