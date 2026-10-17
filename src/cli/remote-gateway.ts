@@ -364,18 +364,19 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
       if (isCompleteContractErrorBody(body, op)) {
         const connectorTurn = connectorTurnRemoteCopy(op, body.error);
         const library = connectorTurn ? null : libraryRemoteCopy(op, body);
+        const projected = remoteContractFailureMessage(
+          op,
+          body.outcome,
+          projectPublicIssues(body.error.issues),
+          body.error.message,
+          body.error.code,
+        );
+        // An issue-first projection already names the field; the Library copy only replaces the generic line.
+        const generic = projected === REMOTE_GENERIC_FAILURE || projected === REMOTE_GENERIC_BLOCKED;
         return new ContractError(
           op,
           body.error.code,
-          connectorTurn?.message ??
-            library?.message ??
-            remoteContractFailureMessage(
-              op,
-              body.outcome,
-              projectPublicIssues(body.error.issues),
-              body.error.message,
-              body.error.code,
-            ),
+          connectorTurn?.message ?? (generic ? library?.message : undefined) ?? projected,
           body.exitCode,
           {
             ...projectRemoteContractDetails(op, body, result.status),
@@ -493,6 +494,8 @@ const LIBRARY_REMOTE_OPS = new Set([
   "agents ask",
   "pages read",
 ]);
+const REMOTE_GENERIC_FAILURE = "Remote command failed.";
+const REMOTE_GENERIC_BLOCKED = "Remote command was blocked by policy.";
 const LIBRARY_REMOTE_MESSAGE_MAX = 1_200;
 const LIBRARY_REMOTE_ACTION_MAX = 600;
 const LIBRARY_REMOTE_TOKEN_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
@@ -686,7 +689,7 @@ function remoteContractFailureMessage(
   }
   // The write brake is a dry-run, not a policy denial: say how to proceed with local copy.
   if (outcome === "blocked" && code === "WRITE_REQUIRES_EXECUTE") return REMOTE_DRY_RUN_MESSAGE;
-  if (outcome === "blocked") return "Remote command was blocked by policy.";
+  if (outcome === "blocked") return REMOTE_GENERIC_BLOCKED;
   if (issues?.[0]) return remoteValidationFailureMessage(issues, sourceMessage);
   if (code === "PAYLOAD_INVALID") return remoteValidationFailureMessage(issues, sourceMessage);
   if (op === "media send" && code) {
@@ -697,7 +700,7 @@ function remoteContractFailureMessage(
     const catalog = cloudContractCatalogCopy(code);
     if (catalog) return catalog.message;
   }
-  return "Remote command failed.";
+  return REMOTE_GENERIC_FAILURE;
 }
 
 function remoteValidationFailureMessage(
