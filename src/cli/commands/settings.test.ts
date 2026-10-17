@@ -138,7 +138,7 @@ describe("SettingsCommands", () => {
       new SettingsCommands().list(true);
     });
 
-    expect(output).toContain("Settings (22 returned of 22, limit 50, offset 0):");
+    expect(output).toContain("Settings (23 returned of 23, limit 50, offset 0):");
     expect(output).toContain("account.main.dmPolicy: pairing");
     expect(output).toContain("section: legacy");
   });
