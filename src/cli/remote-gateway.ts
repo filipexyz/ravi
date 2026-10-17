@@ -498,6 +498,7 @@ const LIBRARY_REMOTE_ACTION_MAX = 600;
 const LIBRARY_REMOTE_TOKEN_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
 const LIBRARY_REMOTE_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._ -]{0,63}$/;
 const LIBRARY_REMOTE_FILE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const LIBRARY_REMOTE_REF_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}\/[a-z0-9][a-z0-9-]{0,63}$/;
 
 export function isLibraryRemoteOp(op: string): boolean {
   return LIBRARY_REMOTE_OPS.has(op) || LIBRARY_REMOTE_GROUPS.some((prefix) => op.startsWith(prefix));
@@ -540,6 +541,15 @@ function libraryRemoteCopy(
     const value = remote[key];
     if (typeof value === "number" && Number.isInteger(value) && value >= 0) details[key] = value;
   }
+  if (typeof remote.ref === "string" && LIBRARY_REMOTE_REF_PATTERN.test(remote.ref)) details.ref = remote.ref;
+  if (remote.scope === "org" || remote.scope === "project") details.scope = remote.scope;
+  if (typeof remote.project === "string" && LIBRARY_REMOTE_FILE_PATTERN.test(remote.project)) {
+    details.project = remote.project;
+  }
+  if (typeof remote.viewProject === "string" && LIBRARY_REMOTE_FILE_PATTERN.test(remote.viewProject)) {
+    details.viewProject = remote.viewProject;
+  }
+  if (typeof remote.archived === "boolean") details.archived = remote.archived;
   const view = libraryRemoteView(remote.view);
   if (view) details.view = view;
   const existing = boundedStringList(remote.existing, LIBRARY_REMOTE_FILE_PATTERN);

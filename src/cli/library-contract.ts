@@ -279,10 +279,20 @@ export async function withLibraryContract<T>(
       const copy = error.code === "CONFLICT" && reason ? libraryConflictCopy(op, reason, profile) : null;
       // A Library conflict this side has no copy for keeps the Console's own words.
       const consoleMessage = error.code === "CONFLICT" ? sanitizePublicContractMessage(error.message) : undefined;
-      const conflictMessage = copy?.message ?? consoleMessage ?? base.message;
+      const target = conflictTarget(error.details);
+      const taken =
+        reason?.startsWith("slug_taken") && target.ref
+          ? ` (${target.ref}${target.archived ? ", archived: its slug stays taken" : ""})`
+          : "";
+      const conflictMessage = copy?.message
+        ? taken
+          ? `${copy.message.replace(/\.$/, "")}${taken}.`
+          : copy.message
+        : (consoleMessage ?? base.message);
       if (!copy && consoleMessage) {
         const contract = new ContractError(op, base.code, conflictMessage, base.exitCode, {
           ...base.details,
+          ...target,
           suggestedAction: "Run the same command without --execute to see the current plan",
         });
         renderContractError(contract, asJson);
@@ -299,6 +309,7 @@ export async function withLibraryContract<T>(
               : {}),
             ...(typeof error.details?.baseVersion === "number" ? { baseVersion: error.details.baseVersion } : {}),
             ...(typeof error.details?.status === "string" ? { proposalStatus: error.details.status } : {}),
+            ...conflictTarget(error.details),
             suggestedAction: copy.suggestedAction,
           })
         : base;
@@ -307,6 +318,30 @@ export async function withLibraryContract<T>(
     }
     throw error;
   }
+}
+
+/**
+ * Which item a Console slug conflict is about: `ref`, `scope`, `project`
+ * and `archived`, kept only in their typed shapes.
+ */
+function conflictTarget(details: Record<string, unknown> | undefined): {
+  ref?: string;
+  scope?: "org" | "project";
+  project?: string;
+  archived?: boolean;
+} {
+  const ref =
+    typeof details?.ref === "string" && details.ref.length <= 160 && parseLibraryRef(details.ref)
+      ? details.ref.toLowerCase()
+      : undefined;
+  const scope = details?.scope === "org" || details?.scope === "project" ? details.scope : undefined;
+  const project = typeof details?.project === "string" && isLibrarySlug(details.project) ? details.project : undefined;
+  return {
+    ...(ref ? { ref } : {}),
+    ...(scope ? { scope } : {}),
+    ...(project ? { project } : {}),
+    ...(typeof details?.archived === "boolean" ? { archived: details.archived } : {}),
+  };
 }
 
 /** `withLibraryContract` for `ravi themes` and `ravi widgets`: diagnostics and copy in the kind's words. */

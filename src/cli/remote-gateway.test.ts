@@ -1279,6 +1279,50 @@ describe("Library refusals over the gateway", () => {
     expect(remoteNextStepLine(remote!)).toBe("Next: Pick another slug with --slug");
   });
 
+  it("keeps which item a slug conflict is about (ref, scope, project, archived)", async () => {
+    const { remote } = await relay(
+      "widgets propose",
+      new CloudAuthError("CONFLICT", "Slug taken.", {
+        status: 409,
+        details: {
+          reason: "slug_taken_in_project",
+          conflict: "slug_taken_in_project",
+          ref: "painel/pedido-card",
+          scope: "project",
+          project: "painel",
+          archived: true,
+        },
+      }),
+    );
+    expect(remote).toMatchObject({
+      code: "CONFLICT",
+      message:
+        "A project already has a Library widget with this slug (painel/pedido-card, archived: its slug stays taken).",
+      details: {
+        conflict: "slug_taken_in_project",
+        ref: "painel/pedido-card",
+        scope: "project",
+        project: "painel",
+        archived: true,
+      },
+    });
+  });
+
+  it("keeps the versions of a stale_base conflict", async () => {
+    const { remote } = await relay(
+      "widgets propose",
+      new CloudAuthError("CONFLICT", "Stale.", {
+        status: 409,
+        details: { reason: "stale_base", conflict: "stale_base", currentVersion: 3, baseVersion: 2 },
+      }),
+    );
+    expect(remote).toMatchObject({
+      code: "CONFLICT",
+      details: { conflict: "stale_base", currentVersion: 3, baseVersion: 2 },
+    });
+    expect(remote?.message).toBe("The published version changed after the plan was read.");
+  });
+
   it("keeps the Console's own words for a conflict reason this side has no copy for", async () => {
     const { remote } = await relay(
       "widgets propose",

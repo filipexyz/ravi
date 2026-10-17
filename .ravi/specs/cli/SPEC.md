@@ -147,9 +147,10 @@ details and policy outcome:
   read`), when the outcome is `failed` or `blocked` (not the write brake),
   MUST keep the remote message and `suggestedAction` (bounded, without
   control characters, sanitized again) plus the typed details `conflict`,
-  `proposalStatus`, `currentVersion`, `baseVersion`, `errors`, `warnings`,
-  `existing` (file names) and `view` (`organization`, `project`, `source`
-  as short names): the daemon already built that envelope as public copy.
+  `proposalStatus`, `turn`, `currentVersion`, `baseVersion`, `errors`,
+  `warnings`, `existing` (file names), `ref` (`<scope>/<slug>`), `scope`
+  (`org`/`project`), `project`, `viewProject`, `archived` and `view`
+  (`organization`, `project`, `source` as short names): the daemon already built that envelope as public copy.
   Text mode then prints `Next: <suggestedAction>` when no issue carries it.
   HTTP `status` and structured `issues`
   (`path`, `code`, sanitized `message`) from 400/422 validation failures MUST

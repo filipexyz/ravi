@@ -503,6 +503,29 @@ describe("init, check and preview", () => {
     expect(error.message).toContain(`View ${view} was not found in project page-chat-widget (from global_default)`);
     expect(String(error.details.suggestedAction)).toContain("--project <slug>");
     expect(existsSync(join(workDir, "pedido"))).toBe(false);
+
+    // The Console may name the project it looked in and the view's own project.
+    const named = presentationConsole("widget", [], {
+      routes: (request) =>
+        request.rest[0] === "scaffold"
+          ? json(404, {
+              error: {
+                code: "NOT_FOUND",
+                message: "View not found",
+                details: { project: "page-chat-widget", viewProject: "painel" },
+              },
+            })
+          : null,
+    });
+    const located = await initWidget(
+      { dir: join(workDir, "pedido"), slug: "pedido", view },
+      { openSession: async (options) => fakeSession(named, { slug: "page-chat-widget" }, "org-1", options.kind) },
+    ).catch((e) => e);
+    expect(located.message).toContain("It belongs to project painel.");
+    expect(located.details).toMatchObject({
+      viewProject: "painel",
+      suggestedAction: "Run the same init with --project painel",
+    });
   });
 
   it("keeps the contrast report on a failed theme check", async () => {

@@ -101,8 +101,12 @@ proposals) are those of [`../themes/SPEC.md`](../themes/SPEC.md) with
    `description`, `externalAllowed: false`, `files[]`, `baseVersion: 0`,
    `submit: true` (false with `--draft`) and, inside an agent,
    `agent: { id }`; `--update` has no default. A Console `CONFLICT` keeps
-   its `details.reason` as `conflict`; a reason without CLI copy keeps the
-   Console's message.
+   its `details.reason` as `conflict`, and `ref`, `scope`, `project` and
+   `archived` of a slug conflict (the message names the ref, and says an
+   archived item keeps its slug) or `currentVersion`/`baseVersion` of
+   `stale_base`; a reason without CLI copy keeps the Console's message.
+   A scaffold `NOT_FOUND` with `details.viewProject` suggests `--project
+   <viewProject>`.
 7. Binding a widget to a view is `ravi bases views bind` (`cli/bases`):
    an immediate view update, not a Library write.
 8. A widget version with `widget.js` is published only by an org `owner` or
