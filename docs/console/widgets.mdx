@@ -1,0 +1,197 @@
+---
+title: Themes and widgets
+description: Give every page of your organization the same look with a theme, and let agents draw Bases records with your organization's widgets.
+icon: palette
+---
+
+At the end of this page your organization will have a theme that every page uses, in light and dark mode, and you will know how agents put Bases records on a page with your organization's widgets, how to make a widget, and what both do for accessibility.
+
+<Note>
+Themes and widgets need `ravi.bot@next` and a Console login (`ravi login`). `@latest` has no `ravi themes` or `ravi widgets` command. Install `@next` with `bun add -g ravi.bot@next`, or switch an existing install with `ravi update --next`.
+</Note>
+
+## Concepts
+
+| Term | What it is |
+|---|---|
+| Theme | Your organization's colors, fonts, spacing and corner radius for light and dark mode, kept in the Console Library. |
+| Active theme | The theme pages use. A project can have its own; otherwise it uses the organization's. |
+| Widget | A card that draws one record, kept in the Library: a template made of Ravi's building blocks with typed fields (the Bases types). It contains no code. |
+| Default card | What a page draws when no widget is chosen: a title and the record's fields, each shown by its type, in your theme. |
+| Page tags | `<ravi-view>`, `<ravi-widget>` and `<ravi-form>`: what an agent writes in a page instead of hand-written HTML for records. |
+| Pinned version | `ravi pages ship` records the widget and theme versions a page was shipped with. A newer version reaches the page when it is shipped again. |
+
+Themes and widgets are Library items, like [Library skills](/reference/skills#library-skills-organization-and-project): they belong to the organization or to one project, have versions, and go through proposals and review.
+
+## Publish a theme
+
+<Steps>
+  <Step title="Start from the default theme">
+    ```bash
+    ravi themes init ./acme
+    ```
+
+    This writes `theme.json` and `fields.json` with Ravi's default theme. The folder name becomes the theme's slug unless you pass `--slug` when you publish.
+  </Step>
+  <Step title="Edit the tokens">
+    `theme.json` uses the W3C Design Tokens format. Change what you need; anything you leave out keeps the default.
+
+    ```json
+    {
+      "$description": "Acme: navy ink, orange accent, compact spacing.",
+      "$extensions": { "ravi": { "name": "Acme", "locale": "en-US", "density": "compact" } },
+      "color": {
+        "light": {
+          "accent": { "base": { "$type": "color", "$value": "#b34700" }, "text": { "$type": "color", "$value": "#ffffff" } },
+          "text": { "primary": { "$type": "color", "$value": "#14213d" } }
+        },
+        "dark": {
+          "accent": { "base": { "$type": "color", "$value": "#ff9a4d" }, "text": { "$type": "color", "$value": "#1a0d00" } }
+        }
+      },
+      "font": { "sans": { "$type": "fontFamily", "$value": ["Inter", "system-ui", "sans-serif"] } }
+    }
+    ```
+
+    The theme covers background, text, border, focus ring, accent and the nine option colors (for each mode), fonts and sizes, radius, shadows, spacing and the board column width. Fonts are names of fonts already on the reader's device: themes do not load web fonts. You can add `fields.json` (how each field type shows by default, such as status as a pill or as steps), `logo.svg` (at most 64 KiB) and a `README.md`.
+  </Step>
+  <Step title="Check it">
+    ```bash
+    ravi themes check ./acme
+    ```
+
+    The Console compiles the theme and measures contrast in light and dark mode. Each problem prints as `file:line:column severity code message`, and any error exits 2. A theme whose text and background colors fall below the minimum contrast cannot be published (see [Accessibility](#accessibility)).
+  </Step>
+  <Step title="Publish it">
+    ```bash
+    ravi themes publish ./acme --scope org             # plan only (exit 3)
+    ravi themes publish ./acme --scope org --execute
+    ```
+
+    `--scope org` makes it available to every project; `--scope <project>` to one project. Without `--scope`, it goes to your default Console project.
+  </Step>
+  <Step title="Make it the active theme">
+    ```bash
+    ravi themes use org/acme                     # plan: from which theme to which, and the Pages hosts it reaches (exit 3)
+    ravi themes use org/acme --execute
+    ravi themes use org/acme --project clinic --execute
+    ravi themes use none --project clinic --execute
+    ravi themes active --json                    # the organization's, the project's and the one pages use
+    ```
+
+    Without `--project`, `use` sets the organization's theme. With `--project`, it sets that project's, which wins over the organization's. `none` removes it.
+  </Step>
+</Steps>
+
+Who can do what follows the Library's rules: organization owners and admins publish organization themes and set the organization's active theme, and project admins do the same for their project. Developers propose a change for review instead, and agents always do:
+
+```bash
+ravi themes propose ./acme --scope org --note "brand colors" --execute
+ravi themes proposals --mine
+```
+
+Agents can never publish a theme or set the active one (`LIBRARY_AGENT_CANNOT_PUBLISH`, `LIBRARY_AGENT_CANNOT_SET_THEME`, exit 3). Reviewers comment on and publish proposals in the Console Library.
+
+### When pages change
+
+`ravi pages ship` puts the active theme into every HTML file of the page.
+
+- A `private` route shipped without `--theme` follows the active theme: the next time someone opens it, it picks up the current version.
+- Every other route (`public`, `protected_link`, password-protected, or shipped with `--theme`) keeps the theme it was shipped with until you ship it again. `ship` warns when a route's theme changed since its last publish.
+- `ravi pages ship --theme org/other` uses another theme for that ship, and `--theme none` ships without a Library theme.
+- `ravi pages outdated` lists the routes shipped with an older theme, widget or page runtime. Ship them again to update them.
+
+Hand-written pages follow the theme when their CSS uses its variables, such as `color: var(--color-text-primary, #17202a)` and `background: var(--color-background-primary, #fbfcfd)`. The variables use the MCP Apps names (`--color-*`, `--font-*`, `--border-radius-*`, `--shadow-*`) plus Ravi's own (`--ravi-color-accent`, `--ravi-option-<color>-bg`, `--ravi-space-1` to `--ravi-space-6`). Dark mode follows the reader's system setting; `data-theme="dark"` or `"light"` on `<html>` forces one. Agents learn this from the Pages skill.
+
+## How agents use widgets
+
+An agent building a page over a [Bases view](/console/bases) looks for a widget, writes a tag, and ships:
+
+```bash
+ravi widgets search "order status amount" --json
+ravi widgets catalog            # building blocks, rules and the organization's widgets, written for agents
+```
+
+```html
+<ravi-view view="<view id>" layout="board" widget="org/order-card"></ravi-view>
+<ravi-view view="<view id>" layout="table" columns="title,status,amount" sort="-amount"></ravi-view>
+<ravi-form view="<view id>" submit-label="Send request"></ravi-form>
+<ravi-widget use="org/kpi" data='{"title": "October sales", "amount": 1200}'></ravi-widget>
+```
+
+- `<ravi-view>` lists a view's records as a list, board, table or gallery. Without `widget`, it uses the view's default widget, or the default card.
+- `<ravi-form>` is a form that creates a record through the view.
+- `<ravi-widget>` draws one card from fixed values in `data`: the same numbers for everyone, never live rows.
+
+When the agent ships, the Console applies the theme, checks each widget's fields against the view's columns, pins the widget versions and the page runtime, and adds the `ravi.bases.*` actions the tags need to the page's `--uses`. A required field that matches no column, or a tag that is not closed, stops the ship (exit 2) with the file, line and column, and nothing is published. The tags follow the same rules as any data page: signed-in members only, on `private` or `protected_link` routes.
+
+To make a widget the default for every page over a view (board, list, gallery or calendar layouts):
+
+```bash
+ravi bases views bind requests <view id> org/order-card --variant compact --field amount=total
+ravi bases views bind requests <view id> none
+```
+
+`bind` applies at once and needs permission to manage the base. `--field` maps a widget field to a column when their names differ.
+
+## Make a widget
+
+Make one when the same card keeps showing up across pages, or when you want a record to look a particular way everywhere.
+
+```bash
+ravi widgets init ./order-card --from-view <view id>   # fields from the view's columns (its schema, never its rows)
+ravi widgets check ./order-card                         # compile and run the accessibility checks; errors exit 2
+ravi widgets preview ./order-card                       # preview.html: every variant, light and dark
+ravi widgets publish ./order-card --scope org           # plan only (exit 3)
+ravi widgets publish ./order-card --scope org --execute
+```
+
+A widget folder holds `widget.json` (name, description and typed fields), `widget.html` (the template), and optionally `example.json` (made-up records for previews) and `README.md`. The template uses only Ravi's building blocks, such as cards, rows, titles, fields, badges, images, links, metrics, progress bars and buttons:
+
+```html
+<ravi-card>
+  <ravi-row justify="between" align="center">
+    <ravi-title>{title}</ravi-title>
+    <ravi-field name="status"></ravi-field>
+  </ravi-row>
+  <ravi-text tone="secondary">{customer} · {due | relative}</ravi-text>
+  <ravi-field name="amount" label="visible"></ravi-field>
+  <ravi-button action="update" set="status=@done" variant="primary">Mark as done</ravi-button>
+</ravi-card>
+```
+
+Buttons can only update, create, archive or open the record, and they show only to people the view lets do that. `ravi widgets catalog` lists every building block and option. Agents propose widgets (`ravi widgets propose ./order-card --scope org --execute`); people publish them.
+
+## Accessibility
+
+Accessibility is built into the building blocks and checked when a theme or widget is published, so a page does not depend on each author remembering it.
+
+### For people
+
+- A theme is refused when a text and background pair falls below 4.5:1, or a control border, focus ring or accent below 3:1, in light or dark mode, including each option color.
+- Every record is a titled card; status always shows its name, not just a color; buttons are real buttons named after the action and the record ("Mark as done: Order 1042").
+- Everything works from the keyboard, with a visible focus ring in the theme's color. On a board, cards move with a "Move to…" menu as well as by dragging, and Esc closes menus and dialogs.
+- Loading, saving, conflicts and errors are announced to screen readers.
+- Reduced motion, high-contrast (forced colors) mode, 200% zoom and 24 px touch targets are respected.
+
+### For agents
+
+- Page Chat, browser agents and `ravi pages read` read the same accessibility tree people's screen readers do.
+- Every record carries `data-ravi-row`, and every field `data-ravi-field` and `data-ravi-value` with the raw value, so agents do not have to parse formatted text.
+- Cards with fixed values are drawn into the HTML when the page ships, so readers that do not run JavaScript still see them.
+
+Publishing a widget fails when an image has no `alt` text, an avatar has no name, a button or link has no text, a color or tone is the only signal, a heading level is skipped, or a card has no title.
+
+## Limits worth knowing
+
+| Limit | Value |
+|---|---|
+| Fields per widget | 40 |
+| Records in `example.json` | 20 |
+| Tags per ship | 500 |
+| Logo | 64 KiB SVG, shown as an image |
+| Fonts | names of fonts on the reader's device; no web fonts |
+| Layouts drawn by `<ravi-view>` | list, board, table, gallery (others draw as a list) |
+| Records per `<ravi-view>` query | 50 by default, `page-size` up to 200 |
+
+An older Console without widget support ships the HTML unchanged with the warning `KIT_UNAVAILABLE`, and the tags do not render.

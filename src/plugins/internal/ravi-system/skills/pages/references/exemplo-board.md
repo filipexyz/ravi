@@ -3,6 +3,7 @@
 > Este exemplo traz o cliente inline (`exec`, `showError` dentro do HTML). Em página nova, use `client.js`, cópia de `esqueletos/_client.js.txt`, e não duplique o cliente.
 > Apesar do nome do arquivo, é uma tabela com formulário e edição em linha; o board pronto está em `esqueletos/board.html.txt`.
 > A "tabela acima" citada no código é a de "Valores", em `data-pages.md`. Antes do ship, confira o `--uses` com a união do host (`data-pages.md`, "Ship").
+> Tabela simples? `<ravi-view view="<uuid>" layout="table"></ravi-view>` já faz (`widgets.md`). Cores e fontes vêm do tema (`theme.md`).
 
 ## Exemplo completo
 
@@ -18,13 +19,15 @@ formulário de criação e edição em linha. Troque `VIEW_ID`. `--uses`:
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Base</title>
 <style>
-  body { font: 14px/1.45 system-ui, sans-serif; margin: 24px; color: #1f2328; background: #fff; }
-  table { border-collapse: collapse; width: 100%; margin-top: 16px; }
-  th, td { border-bottom: 1px solid #e5e7eb; padding: 6px 8px; text-align: left; vertical-align: top; }
+  body { font: var(--font-text-sm-size, 0.875rem)/1.45 var(--font-sans, system-ui, sans-serif); margin: var(--ravi-space-5, 1.5rem);
+    color: var(--color-text-primary, #17202a); background: var(--color-background-primary, #fbfcfd); }
+  table { border-collapse: collapse; width: 100%; margin-top: var(--ravi-space-4, 1rem); }
+  th, td { border-bottom: var(--border-width-regular, 1px) solid var(--color-border-secondary, #dfe4ea); padding: 6px 8px; text-align: left; vertical-align: top; }
   th[data-sort] { cursor: pointer; }
-  .chip { display: inline-block; padding: 0 6px; border-radius: 4px; margin: 0 4px 2px 0; }
-  .err { color: #b42318; }
-  .ok { color: #067647; }
+  .chip { display: inline-block; padding: 0 6px; border-radius: var(--border-radius-sm, 4px); margin: 0 4px 2px 0; }
+  .err { color: var(--color-text-danger, #a1262b); }
+  .ok { color: var(--color-text-success, #1d6537); }
+  :focus-visible { outline: var(--ravi-focus-width, 2px) solid var(--color-ring-primary, #14635a); outline-offset: 2px; }
   form label { display: block; margin: 8px 0; }
   form small { display: block; }
   [hidden] { display: none !important; }
@@ -99,7 +102,8 @@ function showError(err) {
 }
 
 // --- valores ------------------------------------------------------------------
-const COLORS = { gray: "#eceff3", brown: "#efe3d7", orange: "#fde7d3", yellow: "#fdf3c7", green: "#dcf3e3", blue: "#dde9fb", purple: "#ebe2fb", pink: "#fbe2ef", red: "#fbdcdc" };
+// Cores de opção do tema (fundo, texto), com o fallback do tema padrão.
+const COLORS = { gray: ["#eceff3", "#3f4955"], brown: ["#efe3d7", "#6b4428"], orange: ["#fde7d3", "#8a4210"], yellow: ["#fdf3c7", "#72520a"], green: ["#dcf3e3", "#1d6537"], blue: ["#dde9fb", "#1d4f8f"], purple: ["#ebe2fb", "#5b3497"], pink: ["#fbe2ef", "#8c2557"], red: ["#fbdcdc", "#a1262b"] };
 const SORTABLE = new Set(["text", "url", "email", "phone", "number", "checkbox", "date", "select", "status", "created_time", "updated_time"]);
 // Este exemplo só edita estes tipos. `person` e `ref` aparecem só para leitura; se a view
 // permitir escrevê-los, adicione um editor que mande user ids ou `{ type, id }` (tabela acima).
@@ -113,7 +117,9 @@ const users = {};
 function chip(col, id) {
   const option = (col.config.options || []).find((candidate) => candidate.id === id);
   const node = el("span", { className: "chip", textContent: option ? option.name : id });
-  node.style.background = COLORS[option && option.color] || COLORS.gray;
+  const color = COLORS[option && option.color] ? option.color : "gray";
+  node.style.background = `var(--ravi-option-${color}-bg, ${COLORS[color][0]})`;
+  node.style.color = `var(--ravi-option-${color}-text, ${COLORS[color][1]})`;
   return node;
 }
 function dateText(value) {

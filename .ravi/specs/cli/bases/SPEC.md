@@ -131,6 +131,16 @@ writes only through a view, via the `ravi.bases.*` Pages connector actions
     tool. Any identity that can run a `bases` command (`admin:system:*`,
     `execute:group:bases`, `read|mutate:bases[.<sub>]:<action>`) MUST also be
     able to read the skill.
+19. `bases views bind <base> <view> <widget-ref|none> [--field k=col ...]
+    [--variant <v>]` MUST read the view, then PATCH the full current layout
+    (the Console replaces it wholesale) with only `layout.widget` changed, at
+    the version it read. The widget is `{ref}` (or `{itemId}` for a UUID)
+    plus `fields` and `variant` when given; `none` sends `null`. A layout
+    other than board, list, gallery or calendar MUST fail `PAYLOAD_INVALID`
+    (exit 2) without a write; malformed or duplicate `--field`, and
+    `--field`/`--variant` with `none`, fail before any Console call. The
+    Console checks the widget, the mapped columns and the variant. Access is
+    `mutate:bases.views:update`, like `views update`.
 
 ## Write classification
 
@@ -143,14 +153,14 @@ writes only through a view, via the `ravi.bases.*` Pages connector actions
 | `bases props update` (type or includeTime change) | data migration | Console dry-run report; `--execute` sends `confirm: true` |
 | `bases props delete` | soft delete with dependents | Console dry-run report; `--execute` sends `confirm: true` |
 | `bases rows import` | bulk create | local plan after schema read; `--execute` |
-| `bases create/update`, `props add/restore`, `rows add/update/archive/restore`, `views create/update`, `charts create/update`, `subscribe/unsubscribe` | reversible or versioned writes | none |
+| `bases create/update`, `props add/restore`, `rows add/update/archive/restore`, `views create/update/bind`, `charts create/update`, `subscribe/unsubscribe` | reversible or versioned writes | none |
 
 ## Commands
 
 - `ravi bases list|show|create|update|archive|restore|aggregate|subscribe|unsubscribe|subscriptions`
 - `ravi bases props list|add|update|delete|restore`
 - `ravi bases rows query|get|add|update|archive|restore|purge|history|import|export`
-- `ravi bases views list|show|create|update|archive|query`
+- `ravi bases views list|show|create|update|bind|archive|query`
 - `ravi bases charts list|show|create|update|archive|data`
 
 `list` commands use offset pagination (`--limit`, `--offset`, `--fields`);

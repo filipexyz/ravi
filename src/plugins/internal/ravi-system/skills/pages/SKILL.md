@@ -9,7 +9,7 @@ description: |
   - mostrar uma página privada a uma pessoa (`ravi pages share`), trazer alguém para a org (`ravi invites create`) ou pedir acesso a uma página negada (`ravi access request`)
   - dar à página a asserção do viewer para chamar a sua própria API
   - ligar ou ajustar o Page Chat (agente de voz da página) e registrar ações que ele pode executar
-  page, pages, HTML, rota, URL, publicar, hospedar, landing, snapshot, site
+  page, pages, HTML, rota, URL, publicar, hospedar, landing, snapshot, site, tema, widget
   Página de dados só funciona para membros logados da org, em rota private ou protected_link; gente de fora recebe snapshot ou mensagem (skill solucoes).
   Não use para o ledger de artifacts (skill artifacts). Não crie um host *.ravi.page por página.
 ---
@@ -71,6 +71,14 @@ Regras:
 - O ship arma um trigger `page-comment:<site id>` (`ravi.watch.console.page.comment.created`) para o agent do ship, mas hoje o Console não emite esse evento: comentário de página não acorda ninguém. Feedback que precisa acordar vai numa base `feedback` com formulário e trigger.
 
 Prefixos reservados de host: `ravi` e `ravi-*`. O CLI não cria esses slugs.
+
+## Tema e widgets
+
+O ship aplica o tema ativo (do projeto, senão da org) a todo HTML e transforma as tags `<ravi-view>`, `<ravi-widget>` e `<ravi-form>` em telas prontas, com os widgets da Biblioteca e o `--uses` que elas pedem. `--theme <ref>` troca o tema desse ship; `--theme none` tira. Erro de tag sai com exit 2, uma linha `arquivo:linha:coluna` por problema, e nada sobe.
+
+- HTML escrito à mão: cor, fonte e espaço por variável do tema com fallback (`var(--color-text-primary, #17202a)`), nunca literais. `references/theme.md`.
+- Tela sobre uma view: tag antes de cliente à mão; `ravi widgets search` antes de criar widget. `references/widgets.md`.
+- `ravi pages outdated` lista rotas publicadas com tema, widget ou runtime antigo; ship de novo para atualizar.
 
 ## Ler uma página (link de Page)
 
@@ -167,7 +175,7 @@ ravi pages ship --project <p> --title "Pautas" --route /pautas --dir ./pautas \
 
 `CONFLICT` (409, "Read unread Ravi Pages comments before publishing."): comentário não lido de outra pessoa trava o ship da rota, e o CLI ainda não lê comentários. Peça à pessoa logada neste Ravi (o CLI publica em nome dela) que leia na barra do operador da página, ou publique noutra rota.
 
-Comece por `references/esqueletos/` (board ou formulário, mais `_client.js.txt` como `client.js`). Fluxo, erros e checklist: `references/data-pages.md`.
+Lista, board, tabela, galeria ou formulário: use `<ravi-view>` ou `<ravi-form>` (`references/widgets.md`). O que a tag não cobre: comece por `references/esqueletos/` (board ou formulário, mais `_client.js.txt` como `client.js`). Fluxo, erros e checklist: `references/data-pages.md`.
 
 ## Senha, visibilidade e domínio
 
@@ -246,6 +254,8 @@ window.ravi.pageChat.actions.push({
 
 Abra só o que precisar com `ravi skills show pages --file references/<arquivo>`.
 
+- `widgets.md`: tags `<ravi-view>`, `<ravi-widget>` e `<ravi-form>`, busca de widget, o que o ship faz, criar e propor widget, acessibilidade.
+- `theme.md`: tema ativo, `--theme`, variáveis CSS, claro e escuro, contraste.
 - `data-pages.md`: site → view → ship, `--uses`, quem passa, connectors, erros, valores, segurança.
 - `layouts.md`: tabela, board, lista, calendário, formulário, gráficos e dashboards.
 - `exemplo-board.md`: página completa (tabela com formulário), cliente inline.

@@ -3958,6 +3958,57 @@ export type BasesViewsArchiveReturn = {
   };
 };
 
+/** Input shape for `bases.views.bind`. */
+export type BasesViewsBindInput = {
+  base: string;
+  console?: string;
+  field?: string[];
+  project?: string;
+  variant?: string;
+  view: string;
+  widget: string;
+};
+
+/** Return shape for `bases.views.bind`. */
+export type BasesViewsBindReturn = {
+  baseRef: string;
+  consoleUrl: string;
+  projectRef: string;
+  success: true;
+  view: {
+    access: Record<string, unknown>;
+    baseId: string;
+    capabilities: {
+      aggregateOnly: boolean;
+      archive: boolean;
+      create: boolean;
+      manage: boolean;
+      read: boolean;
+      writeColumns: string[];
+    };
+    columns: string[];
+    createdAt: string;
+    description: string | null;
+    id: string;
+    invalidReason: string | null;
+    layout: Record<string, unknown>;
+    name: string;
+    position: number;
+    query: {
+      filter: unknown | null;
+      sort: Array<{
+        dir: string;
+        prop: string;
+      }>;
+    };
+    status: string;
+    updatedAt: string;
+    valid: boolean;
+    version: number;
+  };
+  widget: (Record<string, unknown>) | null;
+};
+
 /** Input shape for `bases.views.create`. */
 export type BasesViewsCreateInput = {
   base: string;
@@ -13215,6 +13266,40 @@ export type PagesListReturn = {
   total: number;
 };
 
+/** Input shape for `pages.outdated`. */
+export type PagesOutdatedInput = {
+  console?: string;
+  project?: string;
+};
+
+/** Return shape for `pages.outdated`. */
+export type PagesOutdatedReturn = {
+  consoleUrl: string;
+  items: Array<{
+    hostname: string | null;
+    publishedAt: string | null;
+    releaseId: string | null;
+    route: string;
+    runtime: ({
+      current: unknown;
+      pinned: unknown;
+    }) | null;
+    siteSlug: string | null;
+    theme: ({
+      current: unknown;
+      pinned: unknown;
+    }) | null;
+    widgets: Array<{
+      current: unknown;
+      pinned: unknown;
+      ref: string | null;
+    }>;
+  }>;
+  projectRef: string;
+  success: true;
+  total: number;
+};
+
 /** Input shape for `pages.password.remove`. */
 export type PagesPasswordRemoveInput = {
   args: string[];
@@ -13489,6 +13574,7 @@ export type PagesShipInput = {
   membersBestEffort?: boolean;
   project?: string;
   route?: string;
+  theme?: string;
   title?: string;
   uses?: string[];
   visibility?: string;
@@ -13511,6 +13597,14 @@ export type PagesShipReturn = {
     triggerId?: string;
     warning?: string;
   };
+  kit: {
+    changedFiles: string[];
+    status: "applied" | "unavailable" | "skipped";
+    theme: (Record<string, unknown>) | null;
+    warnings: string[];
+    widgets: Array<Record<string, unknown>>;
+  };
+  presentation: (Record<string, unknown>) | null;
   route: string;
   site: Record<string, unknown>;
   slug: string;
@@ -20023,6 +20117,534 @@ export type TasksUnarchiveReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `themes.active`. */
+export type ThemesActiveInput = {
+  project?: string;
+};
+
+/** Return shape for `themes.active`. */
+export type ThemesActiveReturn = {
+  effective: ({
+    hash: string;
+    itemId: string;
+    name: string;
+    ref: string;
+    scope: "org" | "project";
+    setAt: string | null;
+    setBy: string | null;
+    slug: string;
+    source: "project" | "org";
+    version: number;
+  }) | null;
+  org: ({
+    itemId: string;
+    name: string;
+    ref: string;
+    scope: "org" | "project";
+    setAt: string | null;
+    setBy: string | null;
+    slug: string;
+  }) | null;
+  project: ({
+    itemId: string;
+    name: string;
+    ref: string;
+    scope: "org" | "project";
+    setAt: string | null;
+    setBy: string | null;
+    slug: string;
+  }) | null;
+  projectRef: string | null;
+  warnings: string[];
+};
+
+/** Input shape for `themes.check`. */
+export type ThemesCheckInput = {
+  dir: string;
+};
+
+/** Return shape for `themes.check`. */
+export type ThemesCheckReturn = {
+  contrast: ({
+    checks: Array<{
+      min: number;
+      mode: "light" | "dark";
+      ok: boolean;
+      pair: string[];
+      ratio: number;
+    }>;
+    ok: boolean;
+  }) | null;
+  css: string | null;
+  diagnostics: Array<{
+    code: string;
+    column: number | null;
+    file: string | null;
+    line: number | null;
+    message: string;
+    severity: "error" | "warning";
+  }>;
+  files: Array<{
+    bytes: number;
+    file: string;
+  }>;
+  kind: "theme";
+  ok: boolean;
+};
+
+/** Input shape for `themes.init`. */
+export type ThemesInitInput = {
+  dir: string;
+  force?: boolean;
+};
+
+/** Return shape for `themes.init`. */
+export type ThemesInitReturn = {
+  diagnostics: Array<{
+    code: string;
+    column: number | null;
+    file: string | null;
+    line: number | null;
+    message: string;
+    severity: "error" | "warning";
+  }>;
+  dir: string;
+  files: Array<{
+    bytes: number;
+    file: string;
+    overwritten: boolean;
+  }>;
+  kind: "theme" | "widget";
+  next: string;
+  slug: string | null;
+  success: true;
+};
+
+/** Input shape for `themes.proposal`. */
+export type ThemesProposalInput = {
+  number: string;
+  ref: string;
+};
+
+/** Return shape for `themes.proposal`. */
+export type ThemesProposalReturn = {
+  base: ({
+    files: Array<{
+      bytes: number;
+      path: string;
+      sha256: string;
+    }>;
+    number: number;
+  }) | null;
+  comments: Array<{
+    author: {
+      agentId: string | null;
+      name: string | null;
+      self: boolean;
+    };
+    body: string;
+    can: {
+      resolve: boolean;
+    };
+    createdAt: string | null;
+    id: string;
+    line: number | null;
+    outdated: boolean;
+    parentId: string | null;
+    path: string | null;
+    resolvedAt: string | null;
+    resolvedBy: ({
+      name: string | null;
+    }) | null;
+    round: number;
+  }>;
+  contentsVisible: boolean;
+  files: Array<{
+    bytes: number;
+    content?: string;
+    path: string;
+    sha256: string;
+  }>;
+  item: {
+    archived: boolean;
+    contentHash: string | null;
+    description: string;
+    externalAllowed: boolean;
+    kind: string;
+    name: string;
+    project: ({
+      id: string;
+      name?: string | null;
+      slug: string;
+    }) | null;
+    publishedAt: string | null;
+    publishedBy: ({
+      name?: string | null;
+    }) | null;
+    ref: string;
+    scope: "org" | "project";
+    slug: string;
+    updatedAt: string | null;
+    version: number | null;
+  };
+  number: number;
+  proposal: {
+    author: {
+      agentId: string | null;
+      name: string | null;
+      self: boolean;
+    };
+    baseVersion: number;
+    can: {
+      edit: boolean;
+      publish: boolean;
+      reject: boolean;
+      submit: boolean;
+      withdraw: boolean;
+    };
+    contentHash: string;
+    createdAt: string | null;
+    currentVersion: number;
+    decidedAt: string | null;
+    decidedBy: ({
+      name: string | null;
+    }) | null;
+    decisionReason: string | null;
+    description: string;
+    externalAllowed: boolean;
+    fileCount: number;
+    name: string;
+    note: string | null;
+    number: number;
+    openComments: number;
+    proposedAt: string | null;
+    publishedVersion: number | null;
+    ref: string;
+    reviewUrl: string | null;
+    round: number;
+    stale: boolean;
+    status: "draft" | "proposed" | "published" | "superseded" | "rejected" | "withdrawn";
+    totalBytes: number;
+    updatedAt: string | null;
+  };
+  ref: string;
+};
+
+/** Input shape for `themes.proposals`. */
+export type ThemesProposalsInput = {
+  mine?: boolean;
+  project?: string;
+  ref?: string;
+  state?: string;
+};
+
+/** Return shape for `themes.proposals`. */
+export type ThemesProposalsReturn = {
+  item: ({
+    archived: boolean;
+    contentHash: string | null;
+    description: string;
+    externalAllowed: boolean;
+    kind: string;
+    name: string;
+    project: ({
+      id: string;
+      name?: string | null;
+      slug: string;
+    }) | null;
+    publishedAt: string | null;
+    publishedBy: ({
+      name?: string | null;
+    }) | null;
+    ref: string;
+    scope: "org" | "project";
+    slug: string;
+    updatedAt: string | null;
+    version: number | null;
+  }) | null;
+  mine: boolean;
+  project: string | null;
+  proposals: Array<{
+    author: {
+      agentId: string | null;
+      name: string | null;
+      self: boolean;
+    };
+    baseVersion: number;
+    can: {
+      edit: boolean;
+      publish: boolean;
+      reject: boolean;
+      submit: boolean;
+      withdraw: boolean;
+    };
+    contentHash: string;
+    createdAt: string | null;
+    currentVersion: number;
+    decidedAt: string | null;
+    decidedBy: ({
+      name: string | null;
+    }) | null;
+    decisionReason: string | null;
+    description: string;
+    externalAllowed: boolean;
+    fileCount: number;
+    name: string;
+    next: string;
+    note: string | null;
+    number: number;
+    openComments: number;
+    proposedAt: string | null;
+    publishedVersion: number | null;
+    ref: string;
+    reviewUrl: string | null;
+    round: number;
+    stale: boolean;
+    status: "draft" | "proposed" | "published" | "superseded" | "rejected" | "withdrawn";
+    totalBytes: number;
+    updatedAt: string | null;
+  }>;
+  ref: string | null;
+  state: "open" | "closed" | "all";
+  total: number;
+};
+
+/** Input shape for `themes.propose`. */
+export type ThemesProposeInput = {
+  dir: string;
+  draft?: boolean;
+  execute?: boolean;
+  name?: string;
+  note?: string;
+  rebase?: boolean;
+  scope?: string;
+  slug?: string;
+  update?: string;
+};
+
+/** Return shape for `themes.propose`. */
+export type ThemesProposeReturn = {
+  baseVersion: number;
+  created: boolean;
+  currentVersion: number;
+  diagnostics: Array<{
+    code: string;
+    column: number | null;
+    file: string | null;
+    line: number | null;
+    message: string;
+    severity: "error" | "warning";
+  }>;
+  next: string;
+  number: number;
+  proposal: {
+    author: {
+      agentId: string | null;
+      name: string | null;
+      self: boolean;
+    };
+    baseVersion: number;
+    can: {
+      edit: boolean;
+      publish: boolean;
+      reject: boolean;
+      submit: boolean;
+      withdraw: boolean;
+    };
+    contentHash: string;
+    createdAt: string | null;
+    currentVersion: number;
+    decidedAt: string | null;
+    decidedBy: ({
+      name: string | null;
+    }) | null;
+    decisionReason: string | null;
+    description: string;
+    externalAllowed: boolean;
+    fileCount: number;
+    name: string;
+    note: string | null;
+    number: number;
+    openComments: number;
+    proposedAt: string | null;
+    publishedVersion: number | null;
+    ref: string;
+    reviewUrl: string | null;
+    round: number;
+    stale: boolean;
+    status: "draft" | "proposed" | "published" | "superseded" | "rejected" | "withdrawn";
+    totalBytes: number;
+    updatedAt: string | null;
+  };
+  ref: string;
+  round: number;
+  stale: boolean;
+  status: "draft" | "proposed" | "published" | "superseded" | "rejected" | "withdrawn";
+  success: true;
+};
+
+/** Input shape for `themes.publish`. */
+export type ThemesPublishInput = {
+  dir: string;
+  execute?: boolean;
+  name?: string;
+  note?: string;
+  scope?: string;
+  slug?: string;
+};
+
+/** Return shape for `themes.publish`. */
+export type ThemesPublishReturn = {
+  contentHash: string;
+  diagnostics: Array<{
+    code: string;
+    column: number | null;
+    file: string | null;
+    line: number | null;
+    message: string;
+    severity: "error" | "warning";
+  }>;
+  item: {
+    archived: boolean;
+    contentHash: string;
+    description: string;
+    externalAllowed: boolean;
+    kind: string;
+    name: string;
+    project: ({
+      id: string;
+      name?: string | null;
+      slug: string;
+    }) | null;
+    publishedAt: string | null;
+    publishedBy: ({
+      name?: string | null;
+    }) | null;
+    ref: string;
+    scope: "org" | "project";
+    slug: string;
+    updatedAt: string | null;
+    version: number;
+  };
+  ref: string;
+  success: true;
+  unchanged: boolean;
+  version: number;
+};
+
+/** Input shape for `themes.search`. */
+export type ThemesSearchInput = {
+  limit?: string;
+  project?: string;
+  query?: string;
+};
+
+/** Return shape for `themes.search`. */
+export type ThemesSearchReturn = {
+  items: Array<{
+    description: string;
+    name: string;
+    next: string;
+    project: string | null;
+    ref: string;
+    scope: "org" | "project";
+    version: number;
+  }>;
+  project: string | null;
+  query: string;
+  total: number;
+};
+
+/** Input shape for `themes.show`. */
+export type ThemesShowInput = {
+  project?: string;
+  ref: string;
+  version?: string;
+};
+
+/** Return shape for `themes.show`. */
+export type ThemesShowReturn = {
+  contentHash: string;
+  files: Array<{
+    bytes: number;
+    content: string;
+    path: string;
+    sha256: string;
+  }>;
+  item: {
+    archived: boolean;
+    contentHash: string;
+    description: string;
+    externalAllowed: boolean;
+    kind: string;
+    name: string;
+    project: ({
+      id: string;
+      name?: string | null;
+      slug: string;
+    }) | null;
+    publishedAt: string | null;
+    publishedBy: ({
+      name?: string | null;
+    }) | null;
+    ref: string;
+    scope: "org" | "project";
+    slug: string;
+    updatedAt: string | null;
+    version: number;
+  };
+  kind: "theme" | "widget";
+  note: string | null;
+  publishedAt: string | null;
+  ref: string;
+  version: number;
+};
+
+/** Input shape for `themes.use`. */
+export type ThemesUseInput = {
+  execute?: boolean;
+  project?: string;
+  ref: string;
+};
+
+/** Return shape for `themes.use`. */
+export type ThemesUseReturn = {
+  applied: boolean;
+  plan: {
+    affectedHosts: Array<{
+      hostname: string;
+      routes: number;
+      siteSlug: string;
+    }>;
+    from: ({
+      itemId: string;
+      name: string;
+      ref: string;
+      scope: "org" | "project";
+      setAt: string | null;
+      setBy: string | null;
+      slug: string;
+    }) | null;
+    project: ({
+      id: string;
+      name: string | null;
+      slug: string;
+    }) | null;
+    scope: "org" | "project";
+    to: ({
+      itemId: string;
+      name: string;
+      ref: string;
+      scope: "org" | "project";
+      setAt: string | null;
+      setBy: string | null;
+      slug: string;
+    }) | null;
+  };
+  success: true;
+  unchanged: boolean;
+};
+
 /** Input shape for `threads.brief`. */
 export type ThreadsBriefInput = {
   scope?: string;
@@ -20913,6 +21535,501 @@ export type WhatsappGroupSettingsInput = {
 
 /** Return shape for `whatsapp.group.settings`. */
 export type WhatsappGroupSettingsReturn = Record<string, unknown>;
+
+/** Input shape for `widgets.catalog`. */
+export type WidgetsCatalogInput = {
+  project?: string;
+};
+
+/** Return shape for `widgets.catalog`. */
+export type WidgetsCatalogReturn = {
+  project: string | null;
+  text: string;
+  widgets: Array<{
+    description: string;
+    fields: Record<string, {
+      description: string | null;
+      label: string | null;
+      required: boolean;
+      role: string | null;
+      type: string;
+    }>;
+    name: string;
+    ref: string;
+    variants: string[];
+  }>;
+};
+
+/** Input shape for `widgets.check`. */
+export type WidgetsCheckInput = {
+  dir: string;
+};
+
+/** Return shape for `widgets.check`. */
+export type WidgetsCheckReturn = {
+  diagnostics: Array<{
+    code: string;
+    column: number | null;
+    file: string | null;
+    line: number | null;
+    message: string;
+    severity: "error" | "warning";
+  }>;
+  files: Array<{
+    bytes: number;
+    file: string;
+  }>;
+  kind: "widget";
+  ok: boolean;
+  widget: ({
+    actions: number;
+    description: string;
+    fields: Record<string, {
+      description: string | null;
+      label: string | null;
+      required: boolean;
+      role: string | null;
+      type: string;
+    }>;
+    hash: string | null;
+    name: string;
+    variants: string[];
+  }) | null;
+};
+
+/** Input shape for `widgets.init`. */
+export type WidgetsInitInput = {
+  dir: string;
+  force?: boolean;
+  fromView?: string;
+  project?: string;
+  slug?: string;
+};
+
+/** Return shape for `widgets.init`. */
+export type WidgetsInitReturn = {
+  diagnostics: Array<{
+    code: string;
+    column: number | null;
+    file: string | null;
+    line: number | null;
+    message: string;
+    severity: "error" | "warning";
+  }>;
+  dir: string;
+  files: Array<{
+    bytes: number;
+    file: string;
+    overwritten: boolean;
+  }>;
+  kind: "theme" | "widget";
+  next: string;
+  slug: string | null;
+  success: true;
+};
+
+/** Input shape for `widgets.preview`. */
+export type WidgetsPreviewInput = {
+  data?: string;
+  dir: string;
+  out?: string;
+  theme?: string;
+};
+
+/** Return shape for `widgets.preview`. */
+export type WidgetsPreviewReturn = {
+  bytes: number;
+  diagnostics: Array<{
+    code: string;
+    column: number | null;
+    file: string | null;
+    line: number | null;
+    message: string;
+    severity: "error" | "warning";
+  }>;
+  out: string;
+  success: true;
+};
+
+/** Input shape for `widgets.proposal`. */
+export type WidgetsProposalInput = {
+  number: string;
+  ref: string;
+};
+
+/** Return shape for `widgets.proposal`. */
+export type WidgetsProposalReturn = {
+  base: ({
+    files: Array<{
+      bytes: number;
+      path: string;
+      sha256: string;
+    }>;
+    number: number;
+  }) | null;
+  comments: Array<{
+    author: {
+      agentId: string | null;
+      name: string | null;
+      self: boolean;
+    };
+    body: string;
+    can: {
+      resolve: boolean;
+    };
+    createdAt: string | null;
+    id: string;
+    line: number | null;
+    outdated: boolean;
+    parentId: string | null;
+    path: string | null;
+    resolvedAt: string | null;
+    resolvedBy: ({
+      name: string | null;
+    }) | null;
+    round: number;
+  }>;
+  contentsVisible: boolean;
+  files: Array<{
+    bytes: number;
+    content?: string;
+    path: string;
+    sha256: string;
+  }>;
+  item: {
+    archived: boolean;
+    contentHash: string | null;
+    description: string;
+    externalAllowed: boolean;
+    kind: string;
+    name: string;
+    project: ({
+      id: string;
+      name?: string | null;
+      slug: string;
+    }) | null;
+    publishedAt: string | null;
+    publishedBy: ({
+      name?: string | null;
+    }) | null;
+    ref: string;
+    scope: "org" | "project";
+    slug: string;
+    updatedAt: string | null;
+    version: number | null;
+  };
+  number: number;
+  proposal: {
+    author: {
+      agentId: string | null;
+      name: string | null;
+      self: boolean;
+    };
+    baseVersion: number;
+    can: {
+      edit: boolean;
+      publish: boolean;
+      reject: boolean;
+      submit: boolean;
+      withdraw: boolean;
+    };
+    contentHash: string;
+    createdAt: string | null;
+    currentVersion: number;
+    decidedAt: string | null;
+    decidedBy: ({
+      name: string | null;
+    }) | null;
+    decisionReason: string | null;
+    description: string;
+    externalAllowed: boolean;
+    fileCount: number;
+    name: string;
+    note: string | null;
+    number: number;
+    openComments: number;
+    proposedAt: string | null;
+    publishedVersion: number | null;
+    ref: string;
+    reviewUrl: string | null;
+    round: number;
+    stale: boolean;
+    status: "draft" | "proposed" | "published" | "superseded" | "rejected" | "withdrawn";
+    totalBytes: number;
+    updatedAt: string | null;
+  };
+  ref: string;
+};
+
+/** Input shape for `widgets.proposals`. */
+export type WidgetsProposalsInput = {
+  mine?: boolean;
+  project?: string;
+  ref?: string;
+  state?: string;
+};
+
+/** Return shape for `widgets.proposals`. */
+export type WidgetsProposalsReturn = {
+  item: ({
+    archived: boolean;
+    contentHash: string | null;
+    description: string;
+    externalAllowed: boolean;
+    kind: string;
+    name: string;
+    project: ({
+      id: string;
+      name?: string | null;
+      slug: string;
+    }) | null;
+    publishedAt: string | null;
+    publishedBy: ({
+      name?: string | null;
+    }) | null;
+    ref: string;
+    scope: "org" | "project";
+    slug: string;
+    updatedAt: string | null;
+    version: number | null;
+  }) | null;
+  mine: boolean;
+  project: string | null;
+  proposals: Array<{
+    author: {
+      agentId: string | null;
+      name: string | null;
+      self: boolean;
+    };
+    baseVersion: number;
+    can: {
+      edit: boolean;
+      publish: boolean;
+      reject: boolean;
+      submit: boolean;
+      withdraw: boolean;
+    };
+    contentHash: string;
+    createdAt: string | null;
+    currentVersion: number;
+    decidedAt: string | null;
+    decidedBy: ({
+      name: string | null;
+    }) | null;
+    decisionReason: string | null;
+    description: string;
+    externalAllowed: boolean;
+    fileCount: number;
+    name: string;
+    next: string;
+    note: string | null;
+    number: number;
+    openComments: number;
+    proposedAt: string | null;
+    publishedVersion: number | null;
+    ref: string;
+    reviewUrl: string | null;
+    round: number;
+    stale: boolean;
+    status: "draft" | "proposed" | "published" | "superseded" | "rejected" | "withdrawn";
+    totalBytes: number;
+    updatedAt: string | null;
+  }>;
+  ref: string | null;
+  state: "open" | "closed" | "all";
+  total: number;
+};
+
+/** Input shape for `widgets.propose`. */
+export type WidgetsProposeInput = {
+  dir: string;
+  draft?: boolean;
+  execute?: boolean;
+  name?: string;
+  note?: string;
+  rebase?: boolean;
+  scope?: string;
+  slug?: string;
+  update?: string;
+};
+
+/** Return shape for `widgets.propose`. */
+export type WidgetsProposeReturn = {
+  baseVersion: number;
+  created: boolean;
+  currentVersion: number;
+  diagnostics: Array<{
+    code: string;
+    column: number | null;
+    file: string | null;
+    line: number | null;
+    message: string;
+    severity: "error" | "warning";
+  }>;
+  next: string;
+  number: number;
+  proposal: {
+    author: {
+      agentId: string | null;
+      name: string | null;
+      self: boolean;
+    };
+    baseVersion: number;
+    can: {
+      edit: boolean;
+      publish: boolean;
+      reject: boolean;
+      submit: boolean;
+      withdraw: boolean;
+    };
+    contentHash: string;
+    createdAt: string | null;
+    currentVersion: number;
+    decidedAt: string | null;
+    decidedBy: ({
+      name: string | null;
+    }) | null;
+    decisionReason: string | null;
+    description: string;
+    externalAllowed: boolean;
+    fileCount: number;
+    name: string;
+    note: string | null;
+    number: number;
+    openComments: number;
+    proposedAt: string | null;
+    publishedVersion: number | null;
+    ref: string;
+    reviewUrl: string | null;
+    round: number;
+    stale: boolean;
+    status: "draft" | "proposed" | "published" | "superseded" | "rejected" | "withdrawn";
+    totalBytes: number;
+    updatedAt: string | null;
+  };
+  ref: string;
+  round: number;
+  stale: boolean;
+  status: "draft" | "proposed" | "published" | "superseded" | "rejected" | "withdrawn";
+  success: true;
+};
+
+/** Input shape for `widgets.publish`. */
+export type WidgetsPublishInput = {
+  dir: string;
+  execute?: boolean;
+  name?: string;
+  note?: string;
+  scope?: string;
+  slug?: string;
+};
+
+/** Return shape for `widgets.publish`. */
+export type WidgetsPublishReturn = {
+  contentHash: string;
+  diagnostics: Array<{
+    code: string;
+    column: number | null;
+    file: string | null;
+    line: number | null;
+    message: string;
+    severity: "error" | "warning";
+  }>;
+  item: {
+    archived: boolean;
+    contentHash: string;
+    description: string;
+    externalAllowed: boolean;
+    kind: string;
+    name: string;
+    project: ({
+      id: string;
+      name?: string | null;
+      slug: string;
+    }) | null;
+    publishedAt: string | null;
+    publishedBy: ({
+      name?: string | null;
+    }) | null;
+    ref: string;
+    scope: "org" | "project";
+    slug: string;
+    updatedAt: string | null;
+    version: number;
+  };
+  ref: string;
+  success: true;
+  unchanged: boolean;
+  version: number;
+};
+
+/** Input shape for `widgets.search`. */
+export type WidgetsSearchInput = {
+  limit?: string;
+  project?: string;
+  query?: string;
+};
+
+/** Return shape for `widgets.search`. */
+export type WidgetsSearchReturn = {
+  items: Array<{
+    description: string;
+    name: string;
+    next: string;
+    project: string | null;
+    ref: string;
+    scope: "org" | "project";
+    version: number;
+  }>;
+  project: string | null;
+  query: string;
+  total: number;
+};
+
+/** Input shape for `widgets.show`. */
+export type WidgetsShowInput = {
+  project?: string;
+  ref: string;
+  version?: string;
+};
+
+/** Return shape for `widgets.show`. */
+export type WidgetsShowReturn = {
+  contentHash: string;
+  files: Array<{
+    bytes: number;
+    content: string;
+    path: string;
+    sha256: string;
+  }>;
+  item: {
+    archived: boolean;
+    contentHash: string;
+    description: string;
+    externalAllowed: boolean;
+    kind: string;
+    name: string;
+    project: ({
+      id: string;
+      name?: string | null;
+      slug: string;
+    }) | null;
+    publishedAt: string | null;
+    publishedBy: ({
+      name?: string | null;
+    }) | null;
+    ref: string;
+    scope: "org" | "project";
+    slug: string;
+    updatedAt: string | null;
+    version: number;
+  };
+  kind: "theme" | "widget";
+  note: string | null;
+  publishedAt: string | null;
+  ref: string;
+  version: number;
+};
 
 /** Input shape for `work-objects.action`. */
 export type WorkObjectsActionInput = {

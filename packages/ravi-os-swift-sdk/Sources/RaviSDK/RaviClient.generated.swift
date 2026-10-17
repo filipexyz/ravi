@@ -259,6 +259,10 @@ public final class RaviClient {
     TasksNamespace(transport: transport)
   }
 
+  public var themes: ThemesNamespace {
+    ThemesNamespace(transport: transport)
+  }
+
   public var threads: ThreadsNamespace {
     ThreadsNamespace(transport: transport)
   }
@@ -285,6 +289,10 @@ public final class RaviClient {
 
   public var whatsapp: WhatsappNamespace {
     WhatsappNamespace(transport: transport)
+  }
+
+  public var widgets: WidgetsNamespace {
+    WidgetsNamespace(transport: transport)
   }
 
   public var workObjects: WorkObjectsNamespace {
@@ -1069,6 +1077,15 @@ public struct BasesViewsNamespace: Sendable {
     requestBody["view"] = try RaviJSON.fromEncodable(view)
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["bases","views"], command: "archive", body: requestBody, as: BasesViewsArchiveReturn.self)
+  }
+
+  public func bind(_ base: String, _ view: String, _ widget: String, _ options: BasesViewsBindOptions = .init()) async throws -> BasesViewsBindReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["base"] = try RaviJSON.fromEncodable(base)
+    requestBody["view"] = try RaviJSON.fromEncodable(view)
+    requestBody["widget"] = try RaviJSON.fromEncodable(widget)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["bases","views"], command: "bind", body: requestBody, as: BasesViewsBindReturn.self)
   }
 
   public func create(_ base: String, _ options: BasesViewsCreateOptions = .init()) async throws -> BasesViewsCreateReturn {
@@ -4040,6 +4057,12 @@ public struct PagesNamespace: Sendable {
     return try await transport.call(groupSegments: ["pages"], command: "list", body: requestBody, as: PagesListReturn.self)
   }
 
+  public func outdated(_ options: PagesOutdatedOptions = .init()) async throws -> PagesOutdatedReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["pages"], command: "outdated", body: requestBody, as: PagesOutdatedReturn.self)
+  }
+
   public func publish(_ args: [String], _ options: PagesPublishOptions = .init()) async throws -> PagesPublishReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["args"] = try RaviJSON.fromEncodable(args)
@@ -6521,6 +6544,86 @@ public struct TasksProfilesNamespace: Sendable {
   }
 }
 
+public struct ThemesNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func active(_ options: ThemesActiveOptions = .init()) async throws -> ThemesActiveReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["themes"], command: "active", body: requestBody, as: ThemesActiveReturn.self)
+  }
+
+  public func check(_ dir: String) async throws -> ThemesCheckReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["dir"] = try RaviJSON.fromEncodable(dir)
+    return try await transport.call(groupSegments: ["themes"], command: "check", body: requestBody, as: ThemesCheckReturn.self)
+  }
+
+  public func init_(_ dir: String, _ options: ThemesInitOptions = .init()) async throws -> ThemesInitReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["dir"] = try RaviJSON.fromEncodable(dir)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["themes"], command: "init", body: requestBody, as: ThemesInitReturn.self)
+  }
+
+  public func proposal(_ ref: String, _ number: String) async throws -> ThemesProposalReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["ref"] = try RaviJSON.fromEncodable(ref)
+    requestBody["number"] = try RaviJSON.fromEncodable(number)
+    return try await transport.call(groupSegments: ["themes"], command: "proposal", body: requestBody, as: ThemesProposalReturn.self)
+  }
+
+  public func proposals(_ ref: String? = nil, _ options: ThemesProposalsOptions = .init()) async throws -> ThemesProposalsReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    if let ref {
+      requestBody["ref"] = try RaviJSON.fromEncodable(ref)
+    }
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["themes"], command: "proposals", body: requestBody, as: ThemesProposalsReturn.self)
+  }
+
+  public func propose(_ dir: String, _ options: ThemesProposeOptions = .init()) async throws -> ThemesProposeReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["dir"] = try RaviJSON.fromEncodable(dir)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["themes"], command: "propose", body: requestBody, as: ThemesProposeReturn.self)
+  }
+
+  public func publish(_ dir: String, _ options: ThemesPublishOptions = .init()) async throws -> ThemesPublishReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["dir"] = try RaviJSON.fromEncodable(dir)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["themes"], command: "publish", body: requestBody, as: ThemesPublishReturn.self)
+  }
+
+  public func search(_ query: String? = nil, _ options: ThemesSearchOptions = .init()) async throws -> ThemesSearchReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    if let query {
+      requestBody["query"] = try RaviJSON.fromEncodable(query)
+    }
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["themes"], command: "search", body: requestBody, as: ThemesSearchReturn.self)
+  }
+
+  public func show(_ ref: String, _ options: ThemesShowOptions = .init()) async throws -> ThemesShowReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["ref"] = try RaviJSON.fromEncodable(ref)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["themes"], command: "show", body: requestBody, as: ThemesShowReturn.self)
+  }
+
+  public func use(_ ref: String, _ options: ThemesUseOptions = .init()) async throws -> ThemesUseReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["ref"] = try RaviJSON.fromEncodable(ref)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["themes"], command: "use", body: requestBody, as: ThemesUseReturn.self)
+  }
+}
+
 public struct ThreadsNamespace: Sendable {
   private let transport: any RaviTransport
 
@@ -6978,6 +7081,86 @@ public struct WhatsappGroupNamespace: Sendable {
     requestBody["setting"] = try RaviJSON.fromEncodable(setting)
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["whatsapp","group"], command: "settings", body: requestBody, as: WhatsappGroupSettingsReturn.self)
+  }
+}
+
+public struct WidgetsNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func catalog(_ options: WidgetsCatalogOptions = .init()) async throws -> WidgetsCatalogReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["widgets"], command: "catalog", body: requestBody, as: WidgetsCatalogReturn.self)
+  }
+
+  public func check(_ dir: String) async throws -> WidgetsCheckReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["dir"] = try RaviJSON.fromEncodable(dir)
+    return try await transport.call(groupSegments: ["widgets"], command: "check", body: requestBody, as: WidgetsCheckReturn.self)
+  }
+
+  public func init_(_ dir: String, _ options: WidgetsInitOptions = .init()) async throws -> WidgetsInitReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["dir"] = try RaviJSON.fromEncodable(dir)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["widgets"], command: "init", body: requestBody, as: WidgetsInitReturn.self)
+  }
+
+  public func preview(_ dir: String, _ options: WidgetsPreviewOptions = .init()) async throws -> WidgetsPreviewReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["dir"] = try RaviJSON.fromEncodable(dir)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["widgets"], command: "preview", body: requestBody, as: WidgetsPreviewReturn.self)
+  }
+
+  public func proposal(_ ref: String, _ number: String) async throws -> WidgetsProposalReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["ref"] = try RaviJSON.fromEncodable(ref)
+    requestBody["number"] = try RaviJSON.fromEncodable(number)
+    return try await transport.call(groupSegments: ["widgets"], command: "proposal", body: requestBody, as: WidgetsProposalReturn.self)
+  }
+
+  public func proposals(_ ref: String? = nil, _ options: WidgetsProposalsOptions = .init()) async throws -> WidgetsProposalsReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    if let ref {
+      requestBody["ref"] = try RaviJSON.fromEncodable(ref)
+    }
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["widgets"], command: "proposals", body: requestBody, as: WidgetsProposalsReturn.self)
+  }
+
+  public func propose(_ dir: String, _ options: WidgetsProposeOptions = .init()) async throws -> WidgetsProposeReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["dir"] = try RaviJSON.fromEncodable(dir)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["widgets"], command: "propose", body: requestBody, as: WidgetsProposeReturn.self)
+  }
+
+  public func publish(_ dir: String, _ options: WidgetsPublishOptions = .init()) async throws -> WidgetsPublishReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["dir"] = try RaviJSON.fromEncodable(dir)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["widgets"], command: "publish", body: requestBody, as: WidgetsPublishReturn.self)
+  }
+
+  public func search(_ query: String? = nil, _ options: WidgetsSearchOptions = .init()) async throws -> WidgetsSearchReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    if let query {
+      requestBody["query"] = try RaviJSON.fromEncodable(query)
+    }
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["widgets"], command: "search", body: requestBody, as: WidgetsSearchReturn.self)
+  }
+
+  public func show(_ ref: String, _ options: WidgetsShowOptions = .init()) async throws -> WidgetsShowReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["ref"] = try RaviJSON.fromEncodable(ref)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["widgets"], command: "show", body: requestBody, as: WidgetsShowReturn.self)
   }
 }
 

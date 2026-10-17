@@ -20314,6 +20314,303 @@ class RaviSchemas {
 }
 ''';
 
+  static const basesViewsBindInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "field": {
+      "description": "Map a widget field to a view column (\"valor=total\"). Repeatable; unmapped fields match by key",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "variant": {
+      "description": "Widget variant for the cards: compact, default or detail",
+      "type": "string"
+    },
+    "view": {
+      "description": "View id",
+      "type": "string"
+    },
+    "widget": {
+      "description": "Widget ref (slug, org/<slug>, <project>/<slug>) or item id; none removes it",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base",
+    "view",
+    "widget"
+  ],
+  "type": "object"
+}
+''';
+
+  static const basesViewsBindReturnSchema = r'''
+{
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "view": {
+      "additionalProperties": false,
+      "properties": {
+        "access": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "baseId": {
+          "type": "string"
+        },
+        "capabilities": {
+          "additionalProperties": false,
+          "properties": {
+            "aggregateOnly": {
+              "type": "boolean"
+            },
+            "archive": {
+              "type": "boolean"
+            },
+            "create": {
+              "type": "boolean"
+            },
+            "manage": {
+              "type": "boolean"
+            },
+            "read": {
+              "type": "boolean"
+            },
+            "writeColumns": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "read",
+            "aggregateOnly",
+            "writeColumns",
+            "create",
+            "archive",
+            "manage"
+          ],
+          "type": "object"
+        },
+        "columns": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "invalidReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "layout": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "position": {
+          "type": "number"
+        },
+        "query": {
+          "additionalProperties": false,
+          "properties": {
+            "filter": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/__schema0"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sort": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "dir": {
+                    "type": "string"
+                  },
+                  "prop": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "prop",
+                  "dir"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "filter",
+            "sort"
+          ],
+          "type": "object"
+        },
+        "status": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "valid": {
+          "type": "boolean"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "baseId",
+        "name",
+        "description",
+        "columns",
+        "query",
+        "layout",
+        "access",
+        "position",
+        "version",
+        "status",
+        "valid",
+        "invalidReason",
+        "createdAt",
+        "updatedAt",
+        "capabilities"
+      ],
+      "type": "object"
+    },
+    "widget": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "view",
+    "widget"
+  ],
+  "type": "object"
+}
+''';
+
   static const basesViewsCreateInputSchema = r'''
 {
   "additionalProperties": false,
@@ -68677,6 +68974,227 @@ class RaviSchemas {
 }
 ''';
 
+  static const pagesOutdatedInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides saved Console scope",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const pagesOutdatedReturnSchema = r'''
+{
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "consoleUrl": {
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "hostname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "publishedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "releaseId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "route": {
+            "type": "string"
+          },
+          "runtime": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "current": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "pinned": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                },
+                "required": [
+                  "pinned",
+                  "current"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "siteSlug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "theme": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "current": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "pinned": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                },
+                "required": [
+                  "pinned",
+                  "current"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "widgets": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "current": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "pinned": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "ref": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "pinned",
+                "current",
+                "ref"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "siteSlug",
+          "hostname",
+          "route",
+          "releaseId",
+          "publishedAt",
+          "theme",
+          "widgets",
+          "runtime"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "total",
+    "items"
+  ],
+  "type": "object"
+}
+''';
+
   static const pagesPasswordRemoveInputSchema = r'''
 {
   "additionalProperties": false,
@@ -70149,6 +70667,10 @@ class RaviSchemas {
       "description": "Pages route path to mount content at (default: /)",
       "type": "string"
     },
+    "theme": {
+      "description": "Theme for this ship: a theme ref, or none. Default: the project theme, else the org theme",
+      "type": "string"
+    },
     "title": {
       "description": "Page title. Does not create a host slug",
       "type": "string"
@@ -70288,6 +70810,83 @@ class RaviSchemas {
       ],
       "type": "object"
     },
+    "kit": {
+      "additionalProperties": false,
+      "properties": {
+        "changedFiles": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "status": {
+          "enum": [
+            "applied",
+            "unavailable",
+            "skipped"
+          ],
+          "type": "string"
+        },
+        "theme": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "widgets": {
+          "items": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "status",
+        "changedFiles",
+        "warnings",
+        "theme",
+        "widgets"
+      ],
+      "type": "object"
+    },
+    "presentation": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "route": {
       "type": "string"
     },
@@ -70336,6 +70935,8 @@ class RaviSchemas {
   "required": [
     "artifactId",
     "commentFollow",
+    "kit",
+    "presentation",
     "route",
     "site",
     "slug",
@@ -100284,6 +100885,3016 @@ class RaviSchemas {
 }
 ''';
 
+  static const themesActiveInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "project": {
+      "description": "Console project (default: the known project)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const themesActiveReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "effective": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "hash": {
+              "type": "string"
+            },
+            "itemId": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "ref": {
+              "type": "string"
+            },
+            "scope": {
+              "enum": [
+                "org",
+                "project"
+              ],
+              "type": "string"
+            },
+            "setAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "setBy": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "slug": {
+              "type": "string"
+            },
+            "source": {
+              "enum": [
+                "project",
+                "org"
+              ],
+              "type": "string"
+            },
+            "version": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "ref",
+            "itemId",
+            "scope",
+            "slug",
+            "name",
+            "setAt",
+            "setBy",
+            "version",
+            "hash",
+            "source"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "org": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "itemId": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "ref": {
+              "type": "string"
+            },
+            "scope": {
+              "enum": [
+                "org",
+                "project"
+              ],
+              "type": "string"
+            },
+            "setAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "setBy": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "slug": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "ref",
+            "itemId",
+            "scope",
+            "slug",
+            "name",
+            "setAt",
+            "setBy"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "project": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "itemId": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "ref": {
+              "type": "string"
+            },
+            "scope": {
+              "enum": [
+                "org",
+                "project"
+              ],
+              "type": "string"
+            },
+            "setAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "setBy": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "slug": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "ref",
+            "itemId",
+            "scope",
+            "slug",
+            "name",
+            "setAt",
+            "setBy"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "projectRef": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "projectRef",
+    "org",
+    "project",
+    "effective",
+    "warnings"
+  ],
+  "type": "object"
+}
+''';
+
+  static const themesCheckInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "dir": {
+      "description": "Theme folder holding theme.json (relative to your current directory)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "dir"
+  ],
+  "type": "object"
+}
+''';
+
+  static const themesCheckReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "contrast": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "checks": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "min": {
+                    "type": "number"
+                  },
+                  "mode": {
+                    "enum": [
+                      "light",
+                      "dark"
+                    ],
+                    "type": "string"
+                  },
+                  "ok": {
+                    "type": "boolean"
+                  },
+                  "pair": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "ratio": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "mode",
+                  "pair",
+                  "ratio",
+                  "min",
+                  "ok"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "ok": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "ok",
+            "checks"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "css": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "diagnostics": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "column": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "file": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "error",
+              "warning"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "severity",
+          "code",
+          "message",
+          "file",
+          "line",
+          "column"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "files": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "type": "number"
+          },
+          "file": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "bytes"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "kind": {
+      "const": "theme",
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "kind",
+    "ok",
+    "files",
+    "diagnostics",
+    "contrast",
+    "css"
+  ],
+  "type": "object"
+}
+''';
+
+  static const themesInitInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "dir": {
+      "description": "Folder to write theme.json and fields.json into (created when missing)",
+      "type": "string"
+    },
+    "force": {
+      "description": "Overwrite files the folder already has",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "dir"
+  ],
+  "type": "object"
+}
+''';
+
+  static const themesInitReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "diagnostics": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "column": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "file": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "error",
+              "warning"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "severity",
+          "code",
+          "message",
+          "file",
+          "line",
+          "column"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "dir": {
+      "type": "string"
+    },
+    "files": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "type": "number"
+          },
+          "file": {
+            "type": "string"
+          },
+          "overwritten": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "file",
+          "bytes",
+          "overwritten"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "kind": {
+      "enum": [
+        "theme",
+        "widget"
+      ],
+      "type": "string"
+    },
+    "next": {
+      "type": "string"
+    },
+    "slug": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "kind",
+    "dir",
+    "slug",
+    "files",
+    "diagnostics",
+    "next"
+  ],
+  "type": "object"
+}
+''';
+
+  static const themesProposalInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "number": {
+      "description": "Proposal number",
+      "type": "string"
+    },
+    "ref": {
+      "description": "Library ref (org/<slug> or <project>/<slug>)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "number",
+    "ref"
+  ],
+  "type": "object"
+}
+''';
+
+  static const themesProposalReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "files": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "bytes": {
+                    "type": "number"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "sha256": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path",
+                  "bytes",
+                  "sha256"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "number": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "number",
+            "files"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "comments": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "author": {
+            "additionalProperties": false,
+            "properties": {
+              "agentId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "self": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "name",
+              "agentId",
+              "self"
+            ],
+            "type": "object"
+          },
+          "body": {
+            "type": "string"
+          },
+          "can": {
+            "additionalProperties": false,
+            "properties": {
+              "resolve": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "resolve"
+            ],
+            "type": "object"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "outdated": {
+            "type": "boolean"
+          },
+          "parentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolvedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolvedBy": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "round": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "parentId",
+          "path",
+          "line",
+          "round",
+          "outdated",
+          "body",
+          "author",
+          "createdAt",
+          "resolvedAt",
+          "resolvedBy",
+          "can"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "contentsVisible": {
+      "type": "boolean"
+    },
+    "files": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "type": "number"
+          },
+          "content": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "bytes",
+          "sha256"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "item": {
+      "additionalProperties": false,
+      "properties": {
+        "archived": {
+          "type": "boolean"
+        },
+        "contentHash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "externalAllowed": {
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "project": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "slug": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "slug"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "publishedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "publishedBy": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ref": {
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "org",
+            "project"
+          ],
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "ref",
+        "kind",
+        "scope",
+        "project",
+        "slug",
+        "name",
+        "description",
+        "externalAllowed",
+        "version",
+        "contentHash",
+        "publishedAt",
+        "publishedBy",
+        "archived",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "number": {
+      "type": "number"
+    },
+    "proposal": {
+      "additionalProperties": false,
+      "properties": {
+        "author": {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "self": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "name",
+            "agentId",
+            "self"
+          ],
+          "type": "object"
+        },
+        "baseVersion": {
+          "type": "number"
+        },
+        "can": {
+          "additionalProperties": false,
+          "properties": {
+            "edit": {
+              "type": "boolean"
+            },
+            "publish": {
+              "type": "boolean"
+            },
+            "reject": {
+              "type": "boolean"
+            },
+            "submit": {
+              "type": "boolean"
+            },
+            "withdraw": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "edit",
+            "submit",
+            "withdraw",
+            "publish",
+            "reject"
+          ],
+          "type": "object"
+        },
+        "contentHash": {
+          "type": "string"
+        },
+        "createdAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "currentVersion": {
+          "type": "number"
+        },
+        "decidedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decidedBy": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decisionReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "externalAllowed": {
+          "type": "boolean"
+        },
+        "fileCount": {
+          "type": "number"
+        },
+        "name": {
+          "type": "string"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "number": {
+          "type": "number"
+        },
+        "openComments": {
+          "type": "number"
+        },
+        "proposedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "publishedVersion": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ref": {
+          "type": "string"
+        },
+        "reviewUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "round": {
+          "type": "number"
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "status": {
+          "enum": [
+            "draft",
+            "proposed",
+            "published",
+            "superseded",
+            "rejected",
+            "withdrawn"
+          ],
+          "type": "string"
+        },
+        "totalBytes": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "ref",
+        "number",
+        "status",
+        "round",
+        "baseVersion",
+        "currentVersion",
+        "stale",
+        "publishedVersion",
+        "name",
+        "description",
+        "externalAllowed",
+        "note",
+        "contentHash",
+        "fileCount",
+        "totalBytes",
+        "author",
+        "createdAt",
+        "updatedAt",
+        "proposedAt",
+        "decidedAt",
+        "decidedBy",
+        "decisionReason",
+        "openComments",
+        "reviewUrl",
+        "can"
+      ],
+      "type": "object"
+    },
+    "ref": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ref",
+    "number",
+    "item",
+    "proposal",
+    "files",
+    "base",
+    "comments",
+    "contentsVisible"
+  ],
+  "type": "object"
+}
+''';
+
+  static const themesProposalsInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "mine": {
+      "description": "Only your proposals (inside an agent: the ones this agent wrote)",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Only this Console project's proposals (and the org's)",
+      "type": "string"
+    },
+    "ref": {
+      "description": "Library ref (org/<slug> or <project>/<slug>) to list one item's",
+      "type": "string"
+    },
+    "state": {
+      "description": "open (drafts and proposed, default), closed or all",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const themesProposalsReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "item": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "archived": {
+              "type": "boolean"
+            },
+            "contentHash": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": {
+              "type": "string"
+            },
+            "externalAllowed": {
+              "type": "boolean"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "project": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "slug": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "slug"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "publishedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "publishedBy": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ref": {
+              "type": "string"
+            },
+            "scope": {
+              "enum": [
+                "org",
+                "project"
+              ],
+              "type": "string"
+            },
+            "slug": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "version": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "ref",
+            "kind",
+            "scope",
+            "project",
+            "slug",
+            "name",
+            "description",
+            "externalAllowed",
+            "version",
+            "contentHash",
+            "publishedAt",
+            "publishedBy",
+            "archived",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "mine": {
+      "type": "boolean"
+    },
+    "project": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "proposals": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "author": {
+            "additionalProperties": false,
+            "properties": {
+              "agentId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "self": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "name",
+              "agentId",
+              "self"
+            ],
+            "type": "object"
+          },
+          "baseVersion": {
+            "type": "number"
+          },
+          "can": {
+            "additionalProperties": false,
+            "properties": {
+              "edit": {
+                "type": "boolean"
+              },
+              "publish": {
+                "type": "boolean"
+              },
+              "reject": {
+                "type": "boolean"
+              },
+              "submit": {
+                "type": "boolean"
+              },
+              "withdraw": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "edit",
+              "submit",
+              "withdraw",
+              "publish",
+              "reject"
+            ],
+            "type": "object"
+          },
+          "contentHash": {
+            "type": "string"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "currentVersion": {
+            "type": "number"
+          },
+          "decidedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decidedBy": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decisionReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "externalAllowed": {
+            "type": "boolean"
+          },
+          "fileCount": {
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "next": {
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "number": {
+            "type": "number"
+          },
+          "openComments": {
+            "type": "number"
+          },
+          "proposedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "publishedVersion": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ref": {
+            "type": "string"
+          },
+          "reviewUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "round": {
+            "type": "number"
+          },
+          "stale": {
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "draft",
+              "proposed",
+              "published",
+              "superseded",
+              "rejected",
+              "withdrawn"
+            ],
+            "type": "string"
+          },
+          "totalBytes": {
+            "type": "number"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "ref",
+          "number",
+          "status",
+          "round",
+          "baseVersion",
+          "currentVersion",
+          "stale",
+          "publishedVersion",
+          "name",
+          "description",
+          "externalAllowed",
+          "note",
+          "contentHash",
+          "fileCount",
+          "totalBytes",
+          "author",
+          "createdAt",
+          "updatedAt",
+          "proposedAt",
+          "decidedAt",
+          "decidedBy",
+          "decisionReason",
+          "openComments",
+          "reviewUrl",
+          "can",
+          "next"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "ref": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "state": {
+      "enum": [
+        "open",
+        "closed",
+        "all"
+      ],
+      "type": "string"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "ref",
+    "project",
+    "state",
+    "mine",
+    "total",
+    "item",
+    "proposals"
+  ],
+  "type": "object"
+}
+''';
+
+  static const themesProposeInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "dir": {
+      "description": "Theme folder holding theme.json (relative to your current directory)",
+      "type": "string"
+    },
+    "draft": {
+      "description": "Save a draft only you and the scope's reviewers see; do not submit",
+      "type": "boolean"
+    },
+    "execute": {
+      "description": "Confirm the proposal (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "name": {
+      "description": "Display name (default: $extensions.ravi.name, else the slug)",
+      "type": "string"
+    },
+    "note": {
+      "description": "Note for the reviewers, at most 500 characters",
+      "type": "string"
+    },
+    "rebase": {
+      "description": "With --update: move the proposal onto the version published now (read it first)",
+      "type": "boolean"
+    },
+    "scope": {
+      "description": "org, or a Console project slug (default: the known project)",
+      "type": "string"
+    },
+    "slug": {
+      "description": "Library slug (default: the folder name)",
+      "type": "string"
+    },
+    "update": {
+      "description": "Replace the content of your open proposal with this number",
+      "type": "string"
+    }
+  },
+  "required": [
+    "dir"
+  ],
+  "type": "object"
+}
+''';
+
+  static const themesProposeReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "baseVersion": {
+      "type": "number"
+    },
+    "created": {
+      "type": "boolean"
+    },
+    "currentVersion": {
+      "type": "number"
+    },
+    "diagnostics": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "column": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "file": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "error",
+              "warning"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "severity",
+          "code",
+          "message",
+          "file",
+          "line",
+          "column"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "next": {
+      "type": "string"
+    },
+    "number": {
+      "type": "number"
+    },
+    "proposal": {
+      "additionalProperties": false,
+      "properties": {
+        "author": {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "self": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "name",
+            "agentId",
+            "self"
+          ],
+          "type": "object"
+        },
+        "baseVersion": {
+          "type": "number"
+        },
+        "can": {
+          "additionalProperties": false,
+          "properties": {
+            "edit": {
+              "type": "boolean"
+            },
+            "publish": {
+              "type": "boolean"
+            },
+            "reject": {
+              "type": "boolean"
+            },
+            "submit": {
+              "type": "boolean"
+            },
+            "withdraw": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "edit",
+            "submit",
+            "withdraw",
+            "publish",
+            "reject"
+          ],
+          "type": "object"
+        },
+        "contentHash": {
+          "type": "string"
+        },
+        "createdAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "currentVersion": {
+          "type": "number"
+        },
+        "decidedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decidedBy": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decisionReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "externalAllowed": {
+          "type": "boolean"
+        },
+        "fileCount": {
+          "type": "number"
+        },
+        "name": {
+          "type": "string"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "number": {
+          "type": "number"
+        },
+        "openComments": {
+          "type": "number"
+        },
+        "proposedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "publishedVersion": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ref": {
+          "type": "string"
+        },
+        "reviewUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "round": {
+          "type": "number"
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "status": {
+          "enum": [
+            "draft",
+            "proposed",
+            "published",
+            "superseded",
+            "rejected",
+            "withdrawn"
+          ],
+          "type": "string"
+        },
+        "totalBytes": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "ref",
+        "number",
+        "status",
+        "round",
+        "baseVersion",
+        "currentVersion",
+        "stale",
+        "publishedVersion",
+        "name",
+        "description",
+        "externalAllowed",
+        "note",
+        "contentHash",
+        "fileCount",
+        "totalBytes",
+        "author",
+        "createdAt",
+        "updatedAt",
+        "proposedAt",
+        "decidedAt",
+        "decidedBy",
+        "decisionReason",
+        "openComments",
+        "reviewUrl",
+        "can"
+      ],
+      "type": "object"
+    },
+    "ref": {
+      "type": "string"
+    },
+    "round": {
+      "type": "number"
+    },
+    "stale": {
+      "type": "boolean"
+    },
+    "status": {
+      "enum": [
+        "draft",
+        "proposed",
+        "published",
+        "superseded",
+        "rejected",
+        "withdrawn"
+      ],
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "ref",
+    "number",
+    "status",
+    "round",
+    "baseVersion",
+    "currentVersion",
+    "stale",
+    "created",
+    "next",
+    "proposal",
+    "diagnostics"
+  ],
+  "type": "object"
+}
+''';
+
+  static const themesPublishInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "dir": {
+      "description": "Theme folder holding theme.json (relative to your current directory)",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Confirm the publish (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "name": {
+      "description": "Display name (default: $extensions.ravi.name, else the slug)",
+      "type": "string"
+    },
+    "note": {
+      "description": "Version note, at most 500 characters",
+      "type": "string"
+    },
+    "scope": {
+      "description": "org, or a Console project slug (default: the known project)",
+      "type": "string"
+    },
+    "slug": {
+      "description": "Library slug (default: the folder name)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "dir"
+  ],
+  "type": "object"
+}
+''';
+
+  static const themesPublishReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "contentHash": {
+      "type": "string"
+    },
+    "diagnostics": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "column": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "file": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "error",
+              "warning"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "severity",
+          "code",
+          "message",
+          "file",
+          "line",
+          "column"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "item": {
+      "additionalProperties": false,
+      "properties": {
+        "archived": {
+          "type": "boolean"
+        },
+        "contentHash": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "externalAllowed": {
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "project": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "slug": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "slug"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "publishedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "publishedBy": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ref": {
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "org",
+            "project"
+          ],
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "ref",
+        "kind",
+        "scope",
+        "project",
+        "slug",
+        "name",
+        "description",
+        "externalAllowed",
+        "version",
+        "contentHash",
+        "publishedAt",
+        "publishedBy",
+        "archived",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "ref": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "unchanged": {
+      "type": "boolean"
+    },
+    "version": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "success",
+    "ref",
+    "version",
+    "contentHash",
+    "unchanged",
+    "item",
+    "diagnostics"
+  ],
+  "type": "object"
+}
+''';
+
+  static const themesSearchInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Maximum results (default: 10, max: 50)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project whose themes to include",
+      "type": "string"
+    },
+    "query": {
+      "description": "Words to look for (empty lists every theme you can see)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const themesSearchReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "next": {
+            "type": "string"
+          },
+          "project": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ref": {
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "org",
+              "project"
+            ],
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "ref",
+          "scope",
+          "project",
+          "name",
+          "description",
+          "version",
+          "next"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "project": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "query": {
+      "type": "string"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "query",
+    "project",
+    "total",
+    "items"
+  ],
+  "type": "object"
+}
+''';
+
+  static const themesShowInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "project": {
+      "description": "Console project a bare slug resolves in",
+      "type": "string"
+    },
+    "ref": {
+      "description": "Library ref (org/<slug>, <project>/<slug>) or slug",
+      "type": "string"
+    },
+    "version": {
+      "description": "A published version (default: the current one)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "ref"
+  ],
+  "type": "object"
+}
+''';
+
+  static const themesShowReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "contentHash": {
+      "type": "string"
+    },
+    "files": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "type": "number"
+          },
+          "content": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "bytes",
+          "sha256",
+          "content"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "item": {
+      "additionalProperties": false,
+      "properties": {
+        "archived": {
+          "type": "boolean"
+        },
+        "contentHash": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "externalAllowed": {
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "project": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "slug": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "slug"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "publishedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "publishedBy": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ref": {
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "org",
+            "project"
+          ],
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "ref",
+        "kind",
+        "scope",
+        "project",
+        "slug",
+        "name",
+        "description",
+        "externalAllowed",
+        "version",
+        "contentHash",
+        "publishedAt",
+        "publishedBy",
+        "archived",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "kind": {
+      "enum": [
+        "theme",
+        "widget"
+      ],
+      "type": "string"
+    },
+    "note": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "publishedAt": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "ref": {
+      "type": "string"
+    },
+    "version": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "ref",
+    "kind",
+    "version",
+    "note",
+    "contentHash",
+    "publishedAt",
+    "item",
+    "files"
+  ],
+  "type": "object"
+}
+''';
+
+  static const themesUseInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "execute": {
+      "description": "Confirm the change (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Set this project's theme instead of the organization's",
+      "type": "string"
+    },
+    "ref": {
+      "description": "Theme ref (org/<slug>, <project>/<slug>), a slug, or none",
+      "type": "string"
+    }
+  },
+  "required": [
+    "ref"
+  ],
+  "type": "object"
+}
+''';
+
+  static const themesUseReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "applied": {
+      "type": "boolean"
+    },
+    "plan": {
+      "additionalProperties": false,
+      "properties": {
+        "affectedHosts": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "hostname": {
+                "type": "string"
+              },
+              "routes": {
+                "type": "number"
+              },
+              "siteSlug": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "siteSlug",
+              "hostname",
+              "routes"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "from": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "itemId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "ref": {
+                  "type": "string"
+                },
+                "scope": {
+                  "enum": [
+                    "org",
+                    "project"
+                  ],
+                  "type": "string"
+                },
+                "setAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "setBy": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "slug": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ref",
+                "itemId",
+                "scope",
+                "slug",
+                "name",
+                "setAt",
+                "setBy"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "project": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "slug": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "slug",
+                "name"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "scope": {
+          "enum": [
+            "org",
+            "project"
+          ],
+          "type": "string"
+        },
+        "to": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "itemId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "ref": {
+                  "type": "string"
+                },
+                "scope": {
+                  "enum": [
+                    "org",
+                    "project"
+                  ],
+                  "type": "string"
+                },
+                "setAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "setBy": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "slug": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ref",
+                "itemId",
+                "scope",
+                "slug",
+                "name",
+                "setAt",
+                "setBy"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "scope",
+        "project",
+        "from",
+        "to",
+        "affectedHosts"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "unchanged": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "applied",
+    "unchanged",
+    "plan"
+  ],
+  "type": "object"
+}
+''';
+
   static const threadsBriefInputSchema = r'''
 {
   "additionalProperties": false,
@@ -103646,6 +107257,2807 @@ class RaviSchemas {
 {
   "additionalProperties": {},
   "properties": {},
+  "type": "object"
+}
+''';
+
+  static const widgetsCatalogInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "project": {
+      "description": "Console project whose widgets to include",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const widgetsCatalogReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "project": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "text": {
+      "type": "string"
+    },
+    "widgets": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "fields": {
+            "additionalProperties": {
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "label": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "role": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "role",
+                "required",
+                "label",
+                "description"
+              ],
+              "type": "object"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          },
+          "variants": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "ref",
+          "name",
+          "description",
+          "fields",
+          "variants"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "project",
+    "text",
+    "widgets"
+  ],
+  "type": "object"
+}
+''';
+
+  static const widgetsCheckInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "dir": {
+      "description": "Widget folder holding widget.html (relative to your current directory)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "dir"
+  ],
+  "type": "object"
+}
+''';
+
+  static const widgetsCheckReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "diagnostics": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "column": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "file": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "error",
+              "warning"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "severity",
+          "code",
+          "message",
+          "file",
+          "line",
+          "column"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "files": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "type": "number"
+          },
+          "file": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "bytes"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "kind": {
+      "const": "widget",
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "widget": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "actions": {
+              "type": "number"
+            },
+            "description": {
+              "type": "string"
+            },
+            "fields": {
+              "additionalProperties": {
+                "additionalProperties": false,
+                "properties": {
+                  "description": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "label": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "required": {
+                    "type": "boolean"
+                  },
+                  "role": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "type": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "role",
+                  "required",
+                  "label",
+                  "description"
+                ],
+                "type": "object"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "hash": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "variants": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "name",
+            "description",
+            "fields",
+            "variants",
+            "actions",
+            "hash"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "kind",
+    "ok",
+    "files",
+    "diagnostics",
+    "widget"
+  ],
+  "type": "object"
+}
+''';
+
+  static const widgetsInitInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "dir": {
+      "description": "Folder to write widget.html, widget.json and example.json into",
+      "type": "string"
+    },
+    "force": {
+      "description": "Overwrite files the folder already has",
+      "type": "boolean"
+    },
+    "fromView": {
+      "description": "Take the fields from this Bases view's columns",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project (default: the known project)",
+      "type": "string"
+    },
+    "slug": {
+      "description": "Widget slug (default: the folder name)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "dir"
+  ],
+  "type": "object"
+}
+''';
+
+  static const widgetsInitReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "diagnostics": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "column": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "file": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "error",
+              "warning"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "severity",
+          "code",
+          "message",
+          "file",
+          "line",
+          "column"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "dir": {
+      "type": "string"
+    },
+    "files": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "type": "number"
+          },
+          "file": {
+            "type": "string"
+          },
+          "overwritten": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "file",
+          "bytes",
+          "overwritten"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "kind": {
+      "enum": [
+        "theme",
+        "widget"
+      ],
+      "type": "string"
+    },
+    "next": {
+      "type": "string"
+    },
+    "slug": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "kind",
+    "dir",
+    "slug",
+    "files",
+    "diagnostics",
+    "next"
+  ],
+  "type": "object"
+}
+''';
+
+  static const widgetsPreviewInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "data": {
+      "description": "JSON file with one record or { records: [...] }",
+      "type": "string"
+    },
+    "dir": {
+      "description": "Widget folder holding widget.html (relative to your current directory)",
+      "type": "string"
+    },
+    "out": {
+      "description": "Where to write the HTML (default: <dir>/preview.html)",
+      "type": "string"
+    },
+    "theme": {
+      "description": "Theme ref, or none for Ravi's default theme (default: the effective theme)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "dir"
+  ],
+  "type": "object"
+}
+''';
+
+  static const widgetsPreviewReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "bytes": {
+      "type": "number"
+    },
+    "diagnostics": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "column": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "file": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "error",
+              "warning"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "severity",
+          "code",
+          "message",
+          "file",
+          "line",
+          "column"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "out": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "out",
+    "bytes",
+    "diagnostics"
+  ],
+  "type": "object"
+}
+''';
+
+  static const widgetsProposalInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "number": {
+      "description": "Proposal number",
+      "type": "string"
+    },
+    "ref": {
+      "description": "Library ref (org/<slug> or <project>/<slug>)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "number",
+    "ref"
+  ],
+  "type": "object"
+}
+''';
+
+  static const widgetsProposalReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "files": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "bytes": {
+                    "type": "number"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "sha256": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path",
+                  "bytes",
+                  "sha256"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "number": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "number",
+            "files"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "comments": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "author": {
+            "additionalProperties": false,
+            "properties": {
+              "agentId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "self": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "name",
+              "agentId",
+              "self"
+            ],
+            "type": "object"
+          },
+          "body": {
+            "type": "string"
+          },
+          "can": {
+            "additionalProperties": false,
+            "properties": {
+              "resolve": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "resolve"
+            ],
+            "type": "object"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "outdated": {
+            "type": "boolean"
+          },
+          "parentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolvedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolvedBy": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "round": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "parentId",
+          "path",
+          "line",
+          "round",
+          "outdated",
+          "body",
+          "author",
+          "createdAt",
+          "resolvedAt",
+          "resolvedBy",
+          "can"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "contentsVisible": {
+      "type": "boolean"
+    },
+    "files": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "type": "number"
+          },
+          "content": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "bytes",
+          "sha256"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "item": {
+      "additionalProperties": false,
+      "properties": {
+        "archived": {
+          "type": "boolean"
+        },
+        "contentHash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "externalAllowed": {
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "project": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "slug": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "slug"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "publishedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "publishedBy": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ref": {
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "org",
+            "project"
+          ],
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "ref",
+        "kind",
+        "scope",
+        "project",
+        "slug",
+        "name",
+        "description",
+        "externalAllowed",
+        "version",
+        "contentHash",
+        "publishedAt",
+        "publishedBy",
+        "archived",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "number": {
+      "type": "number"
+    },
+    "proposal": {
+      "additionalProperties": false,
+      "properties": {
+        "author": {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "self": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "name",
+            "agentId",
+            "self"
+          ],
+          "type": "object"
+        },
+        "baseVersion": {
+          "type": "number"
+        },
+        "can": {
+          "additionalProperties": false,
+          "properties": {
+            "edit": {
+              "type": "boolean"
+            },
+            "publish": {
+              "type": "boolean"
+            },
+            "reject": {
+              "type": "boolean"
+            },
+            "submit": {
+              "type": "boolean"
+            },
+            "withdraw": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "edit",
+            "submit",
+            "withdraw",
+            "publish",
+            "reject"
+          ],
+          "type": "object"
+        },
+        "contentHash": {
+          "type": "string"
+        },
+        "createdAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "currentVersion": {
+          "type": "number"
+        },
+        "decidedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decidedBy": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decisionReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "externalAllowed": {
+          "type": "boolean"
+        },
+        "fileCount": {
+          "type": "number"
+        },
+        "name": {
+          "type": "string"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "number": {
+          "type": "number"
+        },
+        "openComments": {
+          "type": "number"
+        },
+        "proposedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "publishedVersion": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ref": {
+          "type": "string"
+        },
+        "reviewUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "round": {
+          "type": "number"
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "status": {
+          "enum": [
+            "draft",
+            "proposed",
+            "published",
+            "superseded",
+            "rejected",
+            "withdrawn"
+          ],
+          "type": "string"
+        },
+        "totalBytes": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "ref",
+        "number",
+        "status",
+        "round",
+        "baseVersion",
+        "currentVersion",
+        "stale",
+        "publishedVersion",
+        "name",
+        "description",
+        "externalAllowed",
+        "note",
+        "contentHash",
+        "fileCount",
+        "totalBytes",
+        "author",
+        "createdAt",
+        "updatedAt",
+        "proposedAt",
+        "decidedAt",
+        "decidedBy",
+        "decisionReason",
+        "openComments",
+        "reviewUrl",
+        "can"
+      ],
+      "type": "object"
+    },
+    "ref": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ref",
+    "number",
+    "item",
+    "proposal",
+    "files",
+    "base",
+    "comments",
+    "contentsVisible"
+  ],
+  "type": "object"
+}
+''';
+
+  static const widgetsProposalsInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "mine": {
+      "description": "Only your proposals (inside an agent: the ones this agent wrote)",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Only this Console project's proposals (and the org's)",
+      "type": "string"
+    },
+    "ref": {
+      "description": "Library ref (org/<slug> or <project>/<slug>) to list one item's",
+      "type": "string"
+    },
+    "state": {
+      "description": "open (drafts and proposed, default), closed or all",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const widgetsProposalsReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "item": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "archived": {
+              "type": "boolean"
+            },
+            "contentHash": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": {
+              "type": "string"
+            },
+            "externalAllowed": {
+              "type": "boolean"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "project": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "slug": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "slug"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "publishedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "publishedBy": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ref": {
+              "type": "string"
+            },
+            "scope": {
+              "enum": [
+                "org",
+                "project"
+              ],
+              "type": "string"
+            },
+            "slug": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "version": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "ref",
+            "kind",
+            "scope",
+            "project",
+            "slug",
+            "name",
+            "description",
+            "externalAllowed",
+            "version",
+            "contentHash",
+            "publishedAt",
+            "publishedBy",
+            "archived",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "mine": {
+      "type": "boolean"
+    },
+    "project": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "proposals": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "author": {
+            "additionalProperties": false,
+            "properties": {
+              "agentId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "self": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "name",
+              "agentId",
+              "self"
+            ],
+            "type": "object"
+          },
+          "baseVersion": {
+            "type": "number"
+          },
+          "can": {
+            "additionalProperties": false,
+            "properties": {
+              "edit": {
+                "type": "boolean"
+              },
+              "publish": {
+                "type": "boolean"
+              },
+              "reject": {
+                "type": "boolean"
+              },
+              "submit": {
+                "type": "boolean"
+              },
+              "withdraw": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "edit",
+              "submit",
+              "withdraw",
+              "publish",
+              "reject"
+            ],
+            "type": "object"
+          },
+          "contentHash": {
+            "type": "string"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "currentVersion": {
+            "type": "number"
+          },
+          "decidedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decidedBy": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decisionReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "externalAllowed": {
+            "type": "boolean"
+          },
+          "fileCount": {
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "next": {
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "number": {
+            "type": "number"
+          },
+          "openComments": {
+            "type": "number"
+          },
+          "proposedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "publishedVersion": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ref": {
+            "type": "string"
+          },
+          "reviewUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "round": {
+            "type": "number"
+          },
+          "stale": {
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "draft",
+              "proposed",
+              "published",
+              "superseded",
+              "rejected",
+              "withdrawn"
+            ],
+            "type": "string"
+          },
+          "totalBytes": {
+            "type": "number"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "ref",
+          "number",
+          "status",
+          "round",
+          "baseVersion",
+          "currentVersion",
+          "stale",
+          "publishedVersion",
+          "name",
+          "description",
+          "externalAllowed",
+          "note",
+          "contentHash",
+          "fileCount",
+          "totalBytes",
+          "author",
+          "createdAt",
+          "updatedAt",
+          "proposedAt",
+          "decidedAt",
+          "decidedBy",
+          "decisionReason",
+          "openComments",
+          "reviewUrl",
+          "can",
+          "next"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "ref": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "state": {
+      "enum": [
+        "open",
+        "closed",
+        "all"
+      ],
+      "type": "string"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "ref",
+    "project",
+    "state",
+    "mine",
+    "total",
+    "item",
+    "proposals"
+  ],
+  "type": "object"
+}
+''';
+
+  static const widgetsProposeInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "dir": {
+      "description": "Widget folder holding widget.html (relative to your current directory)",
+      "type": "string"
+    },
+    "draft": {
+      "description": "Save a draft only you and the scope's reviewers see; do not submit",
+      "type": "boolean"
+    },
+    "execute": {
+      "description": "Confirm the proposal (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "name": {
+      "description": "Display name (default: widget.json name, else the slug)",
+      "type": "string"
+    },
+    "note": {
+      "description": "Note for the reviewers, at most 500 characters",
+      "type": "string"
+    },
+    "rebase": {
+      "description": "With --update: move the proposal onto the version published now (read it first)",
+      "type": "boolean"
+    },
+    "scope": {
+      "description": "org, or a Console project slug (default: the known project)",
+      "type": "string"
+    },
+    "slug": {
+      "description": "Library slug (default: the folder name)",
+      "type": "string"
+    },
+    "update": {
+      "description": "Replace the content of your open proposal with this number",
+      "type": "string"
+    }
+  },
+  "required": [
+    "dir"
+  ],
+  "type": "object"
+}
+''';
+
+  static const widgetsProposeReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "baseVersion": {
+      "type": "number"
+    },
+    "created": {
+      "type": "boolean"
+    },
+    "currentVersion": {
+      "type": "number"
+    },
+    "diagnostics": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "column": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "file": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "error",
+              "warning"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "severity",
+          "code",
+          "message",
+          "file",
+          "line",
+          "column"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "next": {
+      "type": "string"
+    },
+    "number": {
+      "type": "number"
+    },
+    "proposal": {
+      "additionalProperties": false,
+      "properties": {
+        "author": {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "self": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "name",
+            "agentId",
+            "self"
+          ],
+          "type": "object"
+        },
+        "baseVersion": {
+          "type": "number"
+        },
+        "can": {
+          "additionalProperties": false,
+          "properties": {
+            "edit": {
+              "type": "boolean"
+            },
+            "publish": {
+              "type": "boolean"
+            },
+            "reject": {
+              "type": "boolean"
+            },
+            "submit": {
+              "type": "boolean"
+            },
+            "withdraw": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "edit",
+            "submit",
+            "withdraw",
+            "publish",
+            "reject"
+          ],
+          "type": "object"
+        },
+        "contentHash": {
+          "type": "string"
+        },
+        "createdAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "currentVersion": {
+          "type": "number"
+        },
+        "decidedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decidedBy": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decisionReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "externalAllowed": {
+          "type": "boolean"
+        },
+        "fileCount": {
+          "type": "number"
+        },
+        "name": {
+          "type": "string"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "number": {
+          "type": "number"
+        },
+        "openComments": {
+          "type": "number"
+        },
+        "proposedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "publishedVersion": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ref": {
+          "type": "string"
+        },
+        "reviewUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "round": {
+          "type": "number"
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "status": {
+          "enum": [
+            "draft",
+            "proposed",
+            "published",
+            "superseded",
+            "rejected",
+            "withdrawn"
+          ],
+          "type": "string"
+        },
+        "totalBytes": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "ref",
+        "number",
+        "status",
+        "round",
+        "baseVersion",
+        "currentVersion",
+        "stale",
+        "publishedVersion",
+        "name",
+        "description",
+        "externalAllowed",
+        "note",
+        "contentHash",
+        "fileCount",
+        "totalBytes",
+        "author",
+        "createdAt",
+        "updatedAt",
+        "proposedAt",
+        "decidedAt",
+        "decidedBy",
+        "decisionReason",
+        "openComments",
+        "reviewUrl",
+        "can"
+      ],
+      "type": "object"
+    },
+    "ref": {
+      "type": "string"
+    },
+    "round": {
+      "type": "number"
+    },
+    "stale": {
+      "type": "boolean"
+    },
+    "status": {
+      "enum": [
+        "draft",
+        "proposed",
+        "published",
+        "superseded",
+        "rejected",
+        "withdrawn"
+      ],
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "ref",
+    "number",
+    "status",
+    "round",
+    "baseVersion",
+    "currentVersion",
+    "stale",
+    "created",
+    "next",
+    "proposal",
+    "diagnostics"
+  ],
+  "type": "object"
+}
+''';
+
+  static const widgetsPublishInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "dir": {
+      "description": "Widget folder holding widget.html (relative to your current directory)",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Confirm the publish (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "name": {
+      "description": "Display name (default: widget.json name, else the slug)",
+      "type": "string"
+    },
+    "note": {
+      "description": "Version note, at most 500 characters",
+      "type": "string"
+    },
+    "scope": {
+      "description": "org, or a Console project slug (default: the known project)",
+      "type": "string"
+    },
+    "slug": {
+      "description": "Library slug (default: the folder name)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "dir"
+  ],
+  "type": "object"
+}
+''';
+
+  static const widgetsPublishReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "contentHash": {
+      "type": "string"
+    },
+    "diagnostics": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "column": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "file": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "error",
+              "warning"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "severity",
+          "code",
+          "message",
+          "file",
+          "line",
+          "column"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "item": {
+      "additionalProperties": false,
+      "properties": {
+        "archived": {
+          "type": "boolean"
+        },
+        "contentHash": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "externalAllowed": {
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "project": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "slug": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "slug"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "publishedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "publishedBy": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ref": {
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "org",
+            "project"
+          ],
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "ref",
+        "kind",
+        "scope",
+        "project",
+        "slug",
+        "name",
+        "description",
+        "externalAllowed",
+        "version",
+        "contentHash",
+        "publishedAt",
+        "publishedBy",
+        "archived",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "ref": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "unchanged": {
+      "type": "boolean"
+    },
+    "version": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "success",
+    "ref",
+    "version",
+    "contentHash",
+    "unchanged",
+    "item",
+    "diagnostics"
+  ],
+  "type": "object"
+}
+''';
+
+  static const widgetsSearchInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Maximum results (default: 10, max: 50)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project whose widgets to include",
+      "type": "string"
+    },
+    "query": {
+      "description": "Words to look for (empty lists every widget you can see)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const widgetsSearchReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "next": {
+            "type": "string"
+          },
+          "project": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ref": {
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "org",
+              "project"
+            ],
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "ref",
+          "scope",
+          "project",
+          "name",
+          "description",
+          "version",
+          "next"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "project": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "query": {
+      "type": "string"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "query",
+    "project",
+    "total",
+    "items"
+  ],
+  "type": "object"
+}
+''';
+
+  static const widgetsShowInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "project": {
+      "description": "Console project a bare slug resolves in",
+      "type": "string"
+    },
+    "ref": {
+      "description": "Library ref (org/<slug>, <project>/<slug>) or slug",
+      "type": "string"
+    },
+    "version": {
+      "description": "A published version (default: the current one)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "ref"
+  ],
+  "type": "object"
+}
+''';
+
+  static const widgetsShowReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "contentHash": {
+      "type": "string"
+    },
+    "files": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "type": "number"
+          },
+          "content": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "bytes",
+          "sha256",
+          "content"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "item": {
+      "additionalProperties": false,
+      "properties": {
+        "archived": {
+          "type": "boolean"
+        },
+        "contentHash": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "externalAllowed": {
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "project": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "slug": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "slug"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "publishedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "publishedBy": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ref": {
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "org",
+            "project"
+          ],
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "ref",
+        "kind",
+        "scope",
+        "project",
+        "slug",
+        "name",
+        "description",
+        "externalAllowed",
+        "version",
+        "contentHash",
+        "publishedAt",
+        "publishedBy",
+        "archived",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "kind": {
+      "enum": [
+        "theme",
+        "widget"
+      ],
+      "type": "string"
+    },
+    "note": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "publishedAt": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "ref": {
+      "type": "string"
+    },
+    "version": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "ref",
+    "kind",
+    "version",
+    "note",
+    "contentHash",
+    "publishedAt",
+    "item",
+    "files"
+  ],
   "type": "object"
 }
 ''';

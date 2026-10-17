@@ -87,7 +87,7 @@ import { getContext } from "../context.js";
 import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { projectPublicIssues, type PublicValidationIssue } from "../redaction.js";
-import { strictCliOffsetPaginationSchema } from "../return-schemas.js";
+import { jsonObjectSchema, strictCliOffsetPaginationSchema } from "../return-schemas.js";
 import { declareCommandReturns } from "./operational-return-schemas.js";
 
 export interface BasesCommandDeps extends BasesClientDeps {}
@@ -1380,6 +1380,57 @@ export class BasesViewsCommands {
     });
   }
 
+  @Command({
+    name: "bind",
+    description: "Bind a Library widget to a board, list, gallery or calendar view (layout.widget), or none to unbind",
+  })
+  @CommandAccess({ kind: "mutate", resource: "bases.views", action: "update", risk: "medium" })
+  async bind(
+    @Arg("base", { description: "Base id or slug" }) base: string,
+    @Arg("view", { description: "View id" }) view: string,
+    @Arg("widget", { description: "Widget ref (slug, org/<slug>, <project>/<slug>) or item id; none removes it" })
+    widget: string,
+    @Option({
+      flags: "--field <widgetKey=columnKey...>",
+      description: 'Map a widget field to a view column ("valor=total"). Repeatable; unmapped fields match by key',
+    })
+    field?: string[],
+    @Option({ flags: "--variant <variant>", description: "Widget variant for the cards: compact, default or detail" })
+    variant?: string,
+    @Option(PROJECT_OPTION) project?: string,
+    @Option(CONSOLE_OPTION) consoleUrl?: string,
+    @Option(JSON_OPTION) asJson?: boolean,
+  ) {
+    return runBasesCommand("bases views bind", asJson, this.deps, async () => {
+      const binding = parseWidgetBinding(widget, field, variant);
+      const client = await openBasesClient({ project, console: consoleUrl }, this.deps);
+      const described = await client.getView(base, view);
+      // The Console replaces the layout wholesale: send the full current
+      // layout with only `widget` changed, at the version just read.
+      const layout = described.view?.layout ?? described.layout;
+      const layoutType = typeof layout.type === "string" ? layout.type : "table";
+      if (!WIDGET_LAYOUT_TYPES.has(layoutType)) {
+        throw invalidInput(
+          `View layout "${layoutType}" takes no widget. Bind widgets to board, list, gallery or calendar views.`,
+        );
+      }
+      const updated = await client.updateView(base, view, {
+        layout: { ...layout, widget: binding },
+        expectedVersion: described.view?.version ?? described.version,
+      });
+      const bound = isPlainObject(updated.layout.widget) ? updated.layout.widget : null;
+      const payload = { ...scope(client), baseRef: base, view: updated, widget: bound };
+      emit(payload, asJson, () =>
+        console.log(
+          bound
+            ? `✓ Widget ${String(bound.ref ?? bound.itemId ?? widget)} bound to ${updated.name} (v${updated.version})`
+            : `✓ Widget removed from ${updated.name} (v${updated.version})`,
+        ),
+      );
+      return payload;
+    });
+  }
+
   @Command({ name: "archive", description: "Archive a view (Pages and charts using it stop working)" })
   @CommandAccess({
     kind: "mutate",
@@ -1864,6 +1915,53 @@ async function loadDescriptors(
     if (isCloudAuthError(error)) return descriptorsFromProperties([]);
     throw error;
   }
+}
+
+/** Layouts whose cards a widget can draw (`layout.widget`). */
+const WIDGET_LAYOUT_TYPES = new Set(["board", "list", "gallery", "calendar"]);
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const BINDING_TOKEN_PATTERN = /^[^\s=,]{1,128}$/;
+
+/**
+ * `layout.widget` for `views bind`: `{ref|itemId, fields?, variant?}`, or null
+ * for `none`. Structural checks only; the Console checks the widget, the
+ * mapped columns and the variant on save.
+ */
+function parseWidgetBinding(
+  widget: string,
+  fields: readonly string[] | undefined,
+  variant: string | undefined,
+): BasesJsonObject | null {
+  const ref = requireText(widget, "widget ref");
+  const variantName = optionalText(variant);
+  if (ref.toLowerCase() === "none") {
+    if ((fields?.length ?? 0) > 0 || variantName) {
+      throw invalidInput("--field and --variant need a widget ref, not none.");
+    }
+    return null;
+  }
+  if (!BINDING_TOKEN_PATTERN.test(ref)) {
+    throw invalidInput(`Invalid widget ref "${ref}". Use slug, org/<slug> or <project>/<slug>.`);
+  }
+  const mapping: Record<string, string> = {};
+  for (const raw of fields ?? []) {
+    const separator = raw.indexOf("=");
+    const key = separator > 0 ? raw.slice(0, separator).trim() : "";
+    const column = separator > 0 ? raw.slice(separator + 1).trim() : "";
+    if (!BINDING_TOKEN_PATTERN.test(key) || !BINDING_TOKEN_PATTERN.test(column)) {
+      throw invalidInput(`--field expects "widgetKey=columnKey", got "${raw}".`);
+    }
+    if (key in mapping) throw invalidInput(`--field maps widget field "${key}" twice.`);
+    mapping[key] = column;
+  }
+  if (variantName && !/^[a-z][a-z0-9_-]{0,31}$/.test(variantName)) {
+    throw invalidInput(`Invalid --variant "${variantName}". Use compact, default or detail.`);
+  }
+  return compact({
+    ...(UUID_PATTERN.test(ref) ? { itemId: ref } : { ref }),
+    fields: Object.keys(mapping).length > 0 ? mapping : undefined,
+    variant: variantName,
+  });
 }
 
 async function currentViewVersion(client: RaviBasesClient, base: string, view: string): Promise<number> {
@@ -2465,6 +2563,7 @@ declareCommandReturns(BasesViewsCommands, {
   show: z.object({ ...scopeShape, baseRef: z.string(), view: baseViewDescribeSchema }),
   create: viewReturnSchema,
   update: viewReturnSchema,
+  bind: viewReturnSchema.extend({ widget: jsonObjectSchema.nullable() }),
   archive: viewReturnSchema,
   query: queryReturnSchema,
 });

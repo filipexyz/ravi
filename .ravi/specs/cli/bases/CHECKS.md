@@ -38,6 +38,10 @@
 - `bases rows import` MUST fail with `PAYLOAD_INVALID` on type mismatches
   before the brake, MUST exit 3 with a plan without `--execute`, and MUST use
   the same batch keys when the same command runs again.
+- `bases views bind` MUST GET the view, then PATCH the full layout with only
+  `widget` changed and `expectedVersion` set to the version read; `none` MUST
+  send `widget: null`; a table layout MUST exit 2 with no PATCH (`ravi bases
+  views bind` block of `src/cli/commands/bases.test.ts`).
 - Every `bases` command MUST pass the confirmation, JSON, pagination, and
   return-schema coverage tests.
 - `publishInboxNatsEvents` MUST publish a `category: "bases"` item only on

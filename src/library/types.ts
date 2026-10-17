@@ -1,5 +1,7 @@
 /** Console Library shapes (spec `console/library`, CLI contract). */
 
+import type { LibraryDiagnostic } from "./diagnostics.js";
+
 export interface LibraryProject {
   id: string;
   slug: string;
@@ -80,6 +82,8 @@ export interface LibraryPublishResponse {
   item: LibraryItem;
   version: { number: number; contentHash: string };
   unchanged: boolean;
+  /** Themes and widgets: the compiler's warnings (only when the Console sends them). */
+  diagnostics?: LibraryDiagnostic[];
 }
 
 // ---------------------------------------------------------------------------
@@ -176,6 +180,133 @@ export interface LibraryProposalCreateBody extends LibraryProposalContent {
   scope: "org" | "project";
   project?: string;
   slug: string;
+}
+
+// ---------------------------------------------------------------------------
+// Themes and widgets (contract `widgets and org theme`, section 1)
+
+export interface LibraryFileText {
+  path: string;
+  content: string;
+}
+
+export interface LibraryContrastCheck {
+  mode: "light" | "dark";
+  /** Token paths: foreground, background. */
+  pair: [string, string];
+  ratio: number;
+  min: number;
+  ok: boolean;
+}
+
+export interface LibraryContrastReport {
+  ok: boolean;
+  checks: LibraryContrastCheck[];
+}
+
+/** `POST themes/check`. */
+export interface LibraryThemeCheck {
+  ok: boolean;
+  diagnostics: LibraryDiagnostic[];
+  contrast: LibraryContrastReport | null;
+  css: string | null;
+}
+
+export interface LibraryWidgetField {
+  type: string;
+  role: string | null;
+  required: boolean;
+  label: string | null;
+  description: string | null;
+}
+
+/** What `widgets check` shows of the compiled widget. */
+export interface LibraryWidgetSummary {
+  name: string;
+  description: string;
+  fields: Record<string, LibraryWidgetField>;
+  variants: string[];
+  actions: number;
+  hash: string | null;
+}
+
+/** `POST widgets/check`. */
+export interface LibraryWidgetCheck {
+  ok: boolean;
+  diagnostics: LibraryDiagnostic[];
+  widget: LibraryWidgetSummary | null;
+}
+
+/** `GET widgets/catalog`: the Markdown for agents and the org's widgets. */
+export interface LibraryWidgetCatalog {
+  text: string;
+  widgets: Array<{
+    ref: string;
+    name: string;
+    description: string;
+    fields: Record<string, LibraryWidgetField>;
+    variants: string[];
+  }>;
+}
+
+/** `POST widgets/preview`. */
+export interface LibraryWidgetPreview {
+  html: string;
+  diagnostics: LibraryDiagnostic[];
+}
+
+/** `GET themes/default` and `POST widgets/scaffold`. */
+export interface LibraryGeneratedFiles {
+  files: LibraryFileText[];
+  diagnostics: LibraryDiagnostic[];
+}
+
+export interface LibraryThemePointer {
+  ref: string;
+  itemId: string;
+  scope: "org" | "project";
+  slug: string;
+  name: string;
+  setAt: string | null;
+  setBy: string | null;
+}
+
+export interface LibraryEffectiveTheme extends LibraryThemePointer {
+  version: number;
+  hash: string;
+  source: "project" | "org";
+}
+
+/** `GET themes/active`. */
+export interface LibraryThemeActive {
+  org: LibraryThemePointer | null;
+  project: LibraryThemePointer | null;
+  effective: LibraryEffectiveTheme | null;
+  warnings: string[];
+}
+
+export interface LibraryThemeUsePlan {
+  scope: "org" | "project";
+  /** The project whose pointer changes, as the Console sends it; null for the org pointer. */
+  project: { id: string; slug: string; name: string | null } | null;
+  from: LibraryThemePointer | null;
+  to: LibraryThemePointer | null;
+  affectedHosts: Array<{ siteSlug: string; hostname: string; routes: number }>;
+}
+
+/** `POST themes/active`. */
+export interface LibraryThemeUseResult {
+  plan: LibraryThemeUsePlan;
+  applied: boolean;
+  /** The pointer already names the target: nothing is (or would be) written. */
+  unchanged: boolean;
+}
+
+export interface LibraryThemeUseBody {
+  scope: "org" | "project";
+  project?: string;
+  ref: string | null;
+  dryRun?: boolean;
 }
 
 // ---------------------------------------------------------------------------
