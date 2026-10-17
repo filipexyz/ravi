@@ -6,6 +6,7 @@ afterAll(() => mock.restore());
 const actualRouterIndexModule = await import("../../router/index.js");
 const actualRouterSessionsModule = await import("../../router/sessions.js");
 const actualRouterDbModule = await import("../../router/router-db.js");
+const actualSessionKeyModule = await import("../../router/session-key.js");
 const actualRuntimeContextRegistryModule = await import("../../runtime/context-registry.js");
 const actualStickerCatalogModule = await import("../../stickers/catalog.js");
 
@@ -331,6 +332,7 @@ mock.module("../../router/sessions.js", () => ({
 }));
 
 mock.module("../../router/session-key.js", () => ({
+  deriveChatTypeFromSessionKey: actualSessionKeyModule.deriveChatTypeFromSessionKey,
   deriveSourceFromSessionKey: () => sessionDerivedSource,
 }));
 
@@ -1303,6 +1305,51 @@ describe("SessionCommands list --json", () => {
       tokenTotal: 42,
     });
     expect(payload.sessions[0]).not.toHaveProperty("live");
+  });
+
+  it("derives chatType for legacy routed sessions and keeps persisted values", () => {
+    listedSessions = [
+      { sessionKey: "agent:main:main", name: "main", agentId: "main", agentCwd: "/tmp/main" },
+      { sessionKey: "agent:main:dm:5511999999999", name: "main-dm", agentId: "main", agentCwd: "/tmp/main" },
+      {
+        sessionKey: "agent:main:whatsapp:group:120363424772797713",
+        name: "main-group",
+        agentId: "main",
+        agentCwd: "/tmp/main",
+      },
+      {
+        sessionKey: "agent:main:slack:T1:channel:C123",
+        name: "main-slack",
+        agentId: "main",
+        agentCwd: "/tmp/main",
+      },
+      { sessionKey: "agent:main:cron:abc123", name: "main-cron", agentId: "main", agentCwd: "/tmp/main" },
+      {
+        sessionKey: "agent:main:whatsapp:group:999",
+        name: "main-persisted",
+        agentId: "main",
+        agentCwd: "/tmp/main",
+        chatType: "dm",
+      },
+    ];
+
+    const payload = JSON.parse(
+      captureLogs(() => {
+        new SessionCommands().list(undefined, false, true);
+      }),
+    );
+
+    const byName = Object.fromEntries(
+      payload.sessions.map((session: { name: string; chatType: unknown }) => [session.name, session.chatType]),
+    );
+    expect(byName).toEqual({
+      main: null,
+      "main-dm": "dm",
+      "main-group": "group",
+      "main-slack": "channel",
+      "main-cron": null,
+      "main-persisted": "dm",
+    });
   });
 
   it("includes live runtime state when requested", () => {

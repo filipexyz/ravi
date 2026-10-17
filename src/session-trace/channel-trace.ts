@@ -115,6 +115,14 @@ function normalizeSourceChannel(value: unknown): string | null {
   return cleanText(value)?.replace(/-baileys$/, "") ?? null;
 }
 
+/**
+ * Safety cap for the full prompt text stored on `prompt.published`. The
+ * human-side prompt is kept whole like `assistant.message` (which stores the
+ * full reply text); the cap only guards the trace DB against pathological
+ * payloads. Truncation is flagged in `payloadJson.previewTruncated`.
+ */
+export const PROMPT_TRACE_TEXT_MAX_CHARS = 64_000;
+
 function previewText(value: unknown, maxLength = 500): string | null {
   const text = cleanText(value);
   if (!text) return null;
@@ -456,6 +464,7 @@ export function recordPromptPublishedTrace(input: RecordPromptPublishedTraceInpu
   });
   const sourceFields = eventSourceFields(session.sessionKey, source);
   const prompt = cleanText(payload.prompt);
+  const promptChars = prompt?.length ?? 0;
 
   return recordSessionEvent({
     sessionKey: session.sessionKey,
@@ -473,9 +482,10 @@ export function recordPromptPublishedTrace(input: RecordPromptPublishedTraceInpu
       source: payload.source,
       context: payload.context,
       thread: payload._thread,
-      promptChars: prompt?.length ?? 0,
+      promptChars,
+      previewTruncated: promptChars > PROMPT_TRACE_TEXT_MAX_CHARS,
     },
-    preview: previewText(prompt),
+    preview: previewText(prompt, PROMPT_TRACE_TEXT_MAX_CHARS),
   });
 }
 

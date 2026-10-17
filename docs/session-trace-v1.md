@@ -48,6 +48,12 @@ Important columns:
 Useful indexes are present for session/time, run/seq, turn/seq, event type, and
 source chat lookup.
 
+`preview` is redacted before storage. For `prompt.published` and
+`assistant.message` it holds the full message text (the published prompt is
+capped at 64,000 characters, with `payload_json.previewTruncated` set when the
+cap applies and `payload_json.promptChars` holding the real length). Other
+events keep a short preview.
+
 ### `session_turns`
 
 Per-turn read model. It is updated when a turn starts at the adapter boundary

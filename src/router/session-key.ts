@@ -191,6 +191,19 @@ export function deriveSourceFromSessionKey(
 }
 
 /**
+ * Infer a session's chat type from its routed key shape, for legacy rows that
+ * were created before routing persisted `chat_type`. Only keys built by
+ * `buildSessionKey` for a concrete peer qualify; the shared `agent:X:main`
+ * session and non-routed keys (cron, trigger, task, ...) return null.
+ */
+export function deriveChatTypeFromSessionKey(key: string): "dm" | "group" | "channel" | null {
+  const parsed = parseSessionKey(key);
+  const peerKind = parsed?.peerKind;
+  if (!parsed?.peerId) return null;
+  return peerKind === "dm" || peerKind === "group" || peerKind === "channel" ? peerKind : null;
+}
+
+/**
  * Reconstruct the chatId (normalized phone / room ID) from session key components.
  *
  * WhatsApp uses normalizePhone format: "group:123" for groups, "5511999" for DMs.

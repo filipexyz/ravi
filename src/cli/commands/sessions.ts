@@ -59,7 +59,7 @@ import {
   listSessionSubscriptions,
   SessionAttachConflictError,
 } from "../../router/sessions.js";
-import { deriveSourceFromSessionKey } from "../../router/session-key.js";
+import { deriveChatTypeFromSessionKey, deriveSourceFromSessionKey } from "../../router/session-key.js";
 import { loadRouterConfig, expandHome, getAgent, updateAgent } from "../../router/index.js";
 import {
   describeSessionAgentDefaultDiff,
@@ -1182,6 +1182,8 @@ function buildSessionJson(session: SessionEntry, options: { live?: boolean } = {
   const runtimeOptions = resolveSessionRuntimeOptions(session);
   return {
     ...session,
+    // Legacy sessions were created without chat_type; infer it from the routed key shape.
+    chatType: session.chatType ?? deriveChatTypeFromSessionKey(session.sessionKey),
     label: session.name ?? session.sessionKey,
     runtimeId,
     effectiveProvider: effective.effectiveProvider,
