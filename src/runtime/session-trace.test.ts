@@ -1140,10 +1140,11 @@ describe("runtime session trace instrumentation", () => {
     expect(userRows[1]).not.toContain("no inbound chat");
     expect(streaming.pendingMessages.map((message) => message.message.content)).toEqual([
       "active inbound turn",
+      // The operator's own turns, but this agent holds no `ravi knowledge` grant.
       "[session surface] This turn came from the CLI. A normal reply returns to the waiting CLI.\n" +
-        "[knowledge] audience=operator: ravi knowledge search/read may be used for this turn.\nresponde só: pong",
+        "[knowledge] audience=none: ravi knowledge will refuse on this turn (exit 3).\nresponde só: pong",
       "[session surface] This turn has no inbound chat. A normal reply stays on this session.\n" +
-        "[knowledge] audience=operator: ravi knowledge search/read may be used for this turn.\nhello from gateway",
+        "[knowledge] audience=none: ravi knowledge will refuse on this turn (exit 3).\nhello from gateway",
       "[session surface] This turn came from a Slack chat. A normal reply returns there.\n" +
         "[knowledge] audience=none: ravi knowledge will refuse on this turn (exit 3).\nhello from slack",
     ]);

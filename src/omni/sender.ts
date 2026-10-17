@@ -50,13 +50,21 @@ export class OmniSender {
    * conversation passes the guard even when an upstream path skipped it.
    */
   private guardKnowledgeEgress(instanceId: string, to: string, text: string): string {
+    return this.guardKnowledgeEgressDetailed(instanceId, to, text).text;
+  }
+
+  private guardKnowledgeEgressDetailed(
+    instanceId: string,
+    to: string,
+    text: string,
+  ): { text: string; guarded: boolean } {
     let guarded: GuardedSession | null = null;
     try {
       guarded = this.knowledgeGuard(instanceId, to);
     } catch (err) {
       log.warn("Knowledge guard lookup failed", { instanceId, error: err });
     }
-    return guarded ? guardTextForGuardedSession(text, guarded).text : text;
+    return guarded ? { text: guardTextForGuardedSession(text, guarded).text, guarded: true } : { text, guarded: false };
   }
 
   /**
@@ -90,8 +98,11 @@ export class OmniSender {
     text: string,
     optionsOrThreadId?: string | { threadId?: string; mentions?: OmniUserMention[] },
   ): Promise<{ messageId?: string }> {
-    text = this.guardKnowledgeEgress(instanceId, to, text);
-    if (!text.trim()) {
+    const original = text;
+    const guard = this.guardKnowledgeEgressDetailed(instanceId, to, text);
+    text = guard.text;
+    // Only a text the guard emptied is dropped; anything else goes as before.
+    if (guard.guarded && original.trim() && !text.trim()) {
       log.warn("Message dropped by the Knowledge egress guard", { instanceId });
       return {};
     }

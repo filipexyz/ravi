@@ -2,7 +2,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, st
 import { join } from "node:path";
 import { CloudAuthError } from "./errors.js";
 import { writeUserOnlyFile } from "./secret-backends.js";
-import { getCloudAuthDir, sanitizeUserId } from "./storage.js";
+import { getCloudAuthDir, readCloudCredentials, sanitizeUserId } from "./storage.js";
 import type { ActorBinding, ActorBindingCacheRecord, ActorPlatformIdentity } from "./types.js";
 
 const STORE_DIR_MODE = 0o700;
@@ -64,6 +64,27 @@ export function readCachedActorBinding(
   } catch {
     return null;
   }
+}
+
+/**
+ * The cached binding, held to the active login's installation when one is
+ * stored locally (no network call). Without a readable login it reads as
+ * `readCachedActorBinding` always did.
+ */
+export function readActorBindingForActiveLogin(
+  contactId: string,
+  env: NodeJS.ProcessEnv = process.env,
+  now = Date.now(),
+  deps: { readCredentials?: (env: NodeJS.ProcessEnv) => { installationId?: string | null } | null } = {},
+): ActorBinding | null {
+  let installationId: string | undefined;
+  try {
+    const value = (deps.readCredentials ?? readCloudCredentials)(env)?.installationId;
+    installationId = typeof value === "string" && value.trim() ? value.trim() : undefined;
+  } catch {
+    installationId = undefined;
+  }
+  return readCachedActorBinding(contactId, env, now, installationId ? { requireInstallationId: installationId } : {});
 }
 
 export function writeCachedActorBinding(

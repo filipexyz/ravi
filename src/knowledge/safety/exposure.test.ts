@@ -2,7 +2,13 @@ import { describe, expect, it } from "bun:test";
 
 import type { InstanceConfig } from "../../router/router-db.js";
 import type { AgentConfig, RouteConfig } from "../../router/types.js";
-import { agentConfigHasNoExec, agentHasNoExec, inspectKnowledgeExposure } from "./exposure.js";
+import {
+  agentConfigHasNoExec,
+  agentHasNoExec,
+  inspectKnowledgeExposure,
+  type KnowledgeExposureTrigger,
+  triggerTopicCarriesOutsideContent,
+} from "./exposure.js";
 
 function agent(id: string, runtimePermissions?: unknown): AgentConfig {
   return { id, cwd: `/agents/${id}`, ...(runtimePermissions ? { defaults: { runtimePermissions } } : {}) };
@@ -28,8 +34,11 @@ function inspect(input: {
   routes?: RouteConfig[];
   contacts?: Record<string, { id: string; tags: string[] }>;
   linked?: string[];
+  triggers?: KnowledgeExposureTrigger[];
 }) {
   return inspectKnowledgeExposure({
+    listTriggers: () => input.triggers ?? [],
+    defaultAgentId: () => "main",
     listAgents: () => input.agents,
     listInstances: () => input.instances ?? [],
     listRoutes: () => input.routes ?? [],
@@ -41,6 +50,54 @@ function inspect(input: {
 const OPEN_DM = instance({ agent: "main", dmPolicy: "open" });
 
 describe("inspectKnowledgeExposure", () => {
+  it("counts an enabled trigger on an outside-content topic as reach", () => {
+    const report = inspect({
+      agents: [agent("main"), agent("ops")],
+      triggers: [
+        { id: "t-mail", topic: "ravi.inbox.mail.received", enabled: true },
+        { id: "t-off", agentId: "ops", topic: "ravi.console.inbox.item", enabled: false },
+      ],
+    });
+
+    expect(report.offenders).toEqual([
+      {
+        agentId: "main",
+        profile: "bootstrap",
+        reasons: [
+          "trigger t-mail on ravi.inbox.mail.received can carry outside content",
+          "profile bootstrap can read files (bun, cat)",
+        ],
+      },
+    ]);
+  });
+
+  it("ignores triggers on internal-only topics", () => {
+    const report = inspect({
+      agents: [agent("main")],
+      triggers: [
+        { id: "a", agentId: "main", topic: "ravi.approval.request", enabled: true },
+        { id: "b", agentId: "main", topic: "ravi.task.*.event", enabled: true },
+        { id: "c", agentId: "main", topic: "ravi.inbox.system.runtime_recovery_exhausted", enabled: true },
+      ],
+    });
+    expect(report.ok).toBe(true);
+  });
+
+  it("fails closed on mail, interactions, Console inbox, watches, webhooks, wildcards and custom topics", () => {
+    for (const topic of [
+      "ravi.inbox.mail.received",
+      "ravi.inbound.interaction",
+      "ravi.inbound.interaction.slack",
+      "ravi.console.inbox.item",
+      "ravi.watch.github.push",
+      "ravi.webhook.stripe",
+      "ravi.>",
+      "my.custom.topic",
+    ]) {
+      expect(triggerTopicCarriesOutsideContent(topic)).toBe(true);
+    }
+  });
+
   it("flags an open-DM instance served by a bootstrap agent", () => {
     const report = inspect({ agents: [agent("main")], instances: [OPEN_DM] });
 

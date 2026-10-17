@@ -5,7 +5,8 @@
 //   knowledge.gap.answered   mark the proposal's gaps answered, sync the
 //                            mirror, then send each contact the PT-BR answer
 //                            (only where the mirror now holds the /faq URL)
-//   knowledge.marks.changed  sync the mirror, at most once a minute
+//   knowledge.marks.changed  sync the mirror, at most once a minute; an event
+//                            inside the minute arms one trailing sync
 
 import { logger } from "../../utils/logger.js";
 import type { InboxNatsPayload } from "../../inbox/types.js";
@@ -30,13 +31,18 @@ export interface KnowledgeInboxDeps {
   sync?: () => Promise<KnowledgeMirrorSyncResult>;
   deliver?: OutboundDeliver;
   now?: () => number;
+  /** Arms the trailing marks sync; defaults to an unref'd setTimeout. */
+  schedule?: (run: () => void, delayMs: number) => { cancel: () => void };
 }
 
 let lastMarksSyncAt: number | null = null;
+let trailingMarksSync: { cancel: () => void } | null = null;
 
-/** Test hook: forget the marks.changed debounce. */
+/** Test hook: forget the marks.changed debounce and any trailing sync. */
 export function resetKnowledgeInboxDebounce(): void {
   lastMarksSyncAt = null;
+  trailingMarksSync?.cancel();
+  trailingMarksSync = null;
 }
 
 export function isKnowledgeInboxEvent(eventType: string): boolean {
@@ -96,7 +102,29 @@ async function handleGapAnswered(payload: InboxNatsPayload, deps: KnowledgeInbox
 
 async function handleMarksChanged(deps: KnowledgeInboxDeps): Promise<void> {
   const now = (deps.now ?? Date.now)();
-  if (lastMarksSyncAt !== null && now - lastMarksSyncAt < KNOWLEDGE_MARKS_SYNC_DEBOUNCE_MS) return;
+  if (lastMarksSyncAt !== null && now - lastMarksSyncAt < KNOWLEDGE_MARKS_SYNC_DEBOUNCE_MS) {
+    // A change inside the window still reaches the mirror: one trailing sync.
+    if (!trailingMarksSync) {
+      const delay = lastMarksSyncAt + KNOWLEDGE_MARKS_SYNC_DEBOUNCE_MS - now;
+      trailingMarksSync = (deps.schedule ?? scheduleUnref)(() => {
+        trailingMarksSync = null;
+        void handleMarksChanged(deps).catch((error) => {
+          log.warn("knowledge trailing marks sync failed", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+      }, delay);
+    }
+    return;
+  }
+  trailingMarksSync?.cancel();
+  trailingMarksSync = null;
   lastMarksSyncAt = now;
   await (deps.sync ?? (() => syncKnowledgeMirror({ ...(deps.client !== undefined ? { client: deps.client } : {}) })))();
+}
+
+function scheduleUnref(run: () => void, delayMs: number): { cancel: () => void } {
+  const timer = setTimeout(run, Math.max(0, delayMs));
+  timer.unref?.();
+  return { cancel: () => clearTimeout(timer) };
 }

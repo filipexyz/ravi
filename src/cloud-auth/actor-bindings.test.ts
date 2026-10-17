@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   ACTOR_BINDING_CACHE_TTL_MS,
   getActorBindingCachePath,
+  readActorBindingForActiveLogin,
   readCachedActorBinding,
   writeCachedActorBinding,
 } from "./actor-bindings.js";
@@ -55,6 +56,15 @@ describe("readCachedActorBinding", () => {
     expect(readCachedActorBinding("c_luis", env, NOW, { requireInstallationId: "inst_1" })).toBeNull();
     expect(existsSync(getActorBindingCachePath("c_luis", env))).toBe(true);
     expect(readCachedActorBinding("c_luis", env, NOW)).not.toBeNull();
+  });
+
+  it("holds the binding to the active login's installation when one is stored", () => {
+    writeCachedActorBinding(binding({ installationId: "inst_other" }), env, NOW);
+
+    const login = (installationId: string | null) => ({ readCredentials: () => ({ installationId }) });
+    expect(readActorBindingForActiveLogin("c_luis", env, NOW, login("inst_1"))).toBeNull();
+    expect(readActorBindingForActiveLogin("c_luis", env, NOW, login("inst_other"))).not.toBeNull();
+    expect(readActorBindingForActiveLogin("c_luis", env, NOW, { readCredentials: () => null })).not.toBeNull();
   });
 
   it("returns the binding of the required installation", () => {

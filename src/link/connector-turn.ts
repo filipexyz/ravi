@@ -25,7 +25,7 @@
 import { createHash } from "node:crypto";
 
 import { getContext } from "../cli/context.js";
-import { consoleIdentityFromBinding, readCachedActorBinding } from "../cloud-auth/actor-bindings.js";
+import { consoleIdentityFromBinding, readActorBindingForActiveLogin } from "../cloud-auth/actor-bindings.js";
 import { CloudAuthError, type CloudAuthErrorCode } from "../cloud-auth/errors.js";
 import { readActiveCloudAuthUserId, readCloudCredentials } from "../cloud-auth/storage.js";
 import { dbGetCronJob } from "../cron/cron-db.js";
@@ -691,6 +691,18 @@ function cronOwnerIsOperator(ownerPrincipal: string | null, owner: OwnerIdentity
   return isOwnerUser(owner, cleanString(identity?.consoleUserId), cleanString(identity?.consoleOrgId));
 }
 
+/**
+ * Whether a chat is the owner's own direct chat (the active `ravi login`
+ * user's linked contact). Anything unknown is not.
+ */
+export function isOwnersDirectChat(chatId: string, channel: string | null, deps: ConnectorTurnDeps = {}): boolean {
+  try {
+    return surfaceIsOwnersDirectChat(chatId, channel, resolveOwner(deps, deps.env ?? process.env), deps);
+  } catch {
+    return false;
+  }
+}
+
 function surfaceIsOwnersDirectChat(
   chatId: string,
   channel: string | null,
@@ -964,7 +976,7 @@ function readDmChatContact(input: { chatId: string; channel: string | null }): s
 
 function readContactBinding(contactId: string): ContactConsoleIdentity | null {
   try {
-    return consoleIdentityFromBinding(readCachedActorBinding(contactId));
+    return consoleIdentityFromBinding(readActorBindingForActiveLogin(contactId));
   } catch {
     return null;
   }

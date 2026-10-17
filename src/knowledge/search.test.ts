@@ -138,6 +138,39 @@ describe("runKnowledgeSearch", () => {
     expect(payload.issues).toEqual(["console_unavailable: KNOWLEDGE_UNAVAILABLE"]);
   });
 
+  it("a login without the Knowledge scope gives console_needs_login and local results", async () => {
+    seedLocal();
+    const payload = await runKnowledgeSearch(
+      { query: "prazo", turn: TURN },
+      {
+        ...base,
+        openClient: fakeClient(async () => {
+          throw new CloudAuthError("ORG_ACCESS_DENIED", "scope", {
+            status: 403,
+            details: { reason: "missing_scope", scope: "console.knowledge.read" },
+          });
+        }),
+      },
+    );
+    expect(payload.issues).toEqual(["console_needs_login"]);
+    expect(payload.results).toHaveLength(1);
+  });
+
+  it("caps who at 80 characters before sending", async () => {
+    let sent: string | undefined;
+    await runKnowledgeSearch(
+      { query: "prazo", who: `  ${"x".repeat(100)}  `, turn: TURN },
+      {
+        ...base,
+        openClient: fakeClient(async (request) => {
+          sent = request.who;
+          return response([]);
+        }),
+      },
+    );
+    expect(sent).toBe("x".repeat(80));
+  });
+
   it("no login gives console_not_logged_in and still searches locally", async () => {
     seedLocal();
     const payload = await runKnowledgeSearch({ query: "prazo", turn: TURN }, { ...base, openClient: async () => null });

@@ -6,10 +6,11 @@
 import { getRecentHistory } from "../db.js";
 import type { MessageTarget } from "../runtime/message-types.js";
 import { logger } from "../utils/logger.js";
-import { deleteGuardedSession, type GuardedSession, isGuardedSession } from "./egress/guard.js";
+import { type GuardedSession, isGuardedSession, KNOWLEDGE_GUARD_TTL_MS, upsertGuardedSession } from "./egress/guard.js";
 import { parseInboundContent } from "./envelope.js";
-import { dropGapsForContact, insertKnowledgeGap } from "./gaps/store.js";
+import { capUtf16, dropGapsForContact, insertKnowledgeGap } from "./gaps/store.js";
 import { forgetKnowledge } from "./items/remember.js";
+import { isSubjectForgotten } from "./store/forgotten.js";
 
 const log = logger.child("knowledge:markers");
 
@@ -40,7 +41,10 @@ export interface KnowledgeMarkerDeps {
   insertGap?: typeof insertKnowledgeGap;
   forget?: typeof forgetKnowledge;
   dropGaps?: (contactId: string) => number;
-  deleteGuard?: (sessionName: string) => void;
+  /** Keeps the guard row (no packet is built for a forgotten contact). */
+  keepGuard?: (row: GuardedSession) => void;
+  isForgotten?: (subjectId: string) => boolean;
+  now?: number;
 }
 
 /** Runs the effect of the markers a reply carried. Never throws. */
@@ -58,9 +62,11 @@ export async function handleKnowledgeMarkers(
   }
   if (!guarded) return;
 
-  if (input.gap) {
+  if (input.gap && !input.forget) {
     try {
-      const question = (deps.lastContactText ?? defaultLastContactText)(input.sessionName)?.trim();
+      // A forgotten contact's questions are never kept.
+      const forgotten = (deps.isForgotten ?? isSubjectForgotten)(guarded.contactId);
+      const question = forgotten ? null : (deps.lastContactText ?? defaultLastContactText)(input.sessionName)?.trim();
       if (question) {
         const result = (deps.insertGap ?? insertKnowledgeGap)({
           agentId: guarded.agentId,
@@ -70,7 +76,7 @@ export async function handleKnowledgeMarkers(
           chatId: guarded.chatId,
           contactId: guarded.contactId,
           sessionName: input.sessionName,
-          question: Array.from(question).slice(0, MAX_QUESTION_CHARS).join(""),
+          question: capUtf16(question, MAX_QUESTION_CHARS),
         });
         log.info("Knowledge gap marker", {
           sessionName: input.sessionName,
@@ -102,9 +108,14 @@ export async function handleKnowledgeMarkers(
       log.warn("gap drop after forget failed", { sessionName: input.sessionName, error: errorText(error) });
     }
     try {
-      (deps.deleteGuard ?? deleteGuardedSession)(input.sessionName);
+      // No packet is built for a forgotten contact, but the reply guard
+      // (links, marker stripping) still applies to this DM: a guard-only row.
+      (deps.keepGuard ?? upsertGuardedSession)({
+        ...guarded,
+        guardedUntil: (deps.now ?? Date.now()) + KNOWLEDGE_GUARD_TTL_MS,
+      });
     } catch (error) {
-      log.warn("guard row delete failed", { sessionName: input.sessionName, error: errorText(error) });
+      log.warn("guard row refresh failed", { sessionName: input.sessionName, error: errorText(error) });
     }
   }
 }

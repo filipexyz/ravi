@@ -605,41 +605,75 @@ export function describeLocalRefs(refs: readonly string[]): Map<string, LocalSea
 // ---------------------------------------------------------------------------
 
 export const KNOWLEDGE_INDEX_INTERVAL_MS = 60_000;
-const RUNNER_BUDGET_MS = 5_000;
+/** One synchronous slice: short, so the daemon's event loop is never held long. */
+export const RUNNER_BUDGET_MS = 250;
+/** Slices per tick; the next tick continues from the watermark. */
+const RUNNER_MAX_SLICES = 20;
 const PURGE_EVERY_MS = 24 * 60 * 60_000;
 
 let indexTimer: ReturnType<typeof setInterval> | null = null;
+let firstIndexTimer: ReturnType<typeof setTimeout> | null = null;
+let indexTickRunning = false;
 
-/** Runs one index pass and, once a day, the local purge. Never throws. */
-export function runKnowledgeIndexTick(now: number = Date.now()): void {
+/**
+ * Runs one index pass in slices of `RUNNER_BUDGET_MS`, yielding to the event
+ * loop (setImmediate) between slices, and, once a day, the local purge.
+ * Never throws.
+ */
+export async function runKnowledgeIndexTick(
+  now: number = Date.now(),
+  deps: { index?: typeof indexLocalSources; yieldTurn?: () => Promise<void> } = {},
+): Promise<void> {
+  if (indexTickRunning) return;
+  indexTickRunning = true;
   try {
-    indexLocalSources({ budgetMs: RUNNER_BUDGET_MS, now });
-  } catch (error) {
-    log.warn("knowledge index pass failed", { error: errorText(error) });
-  }
-  try {
-    const last = Number(readKnowledgeMeta(PURGE_LAST_AT) ?? "0") || 0;
-    if (now - last >= PURGE_EVERY_MS) {
-      const purged = purgeKnowledgeLocal(now);
-      writeKnowledgeMeta(PURGE_LAST_AT, String(now));
-      log.info("knowledge local purge", purged);
+    const index = deps.index ?? indexLocalSources;
+    const yieldTurn = deps.yieldTurn ?? (() => new Promise<void>((resolve) => setImmediate(resolve)));
+    for (let slice = 0; slice < RUNNER_MAX_SLICES; slice++) {
+      try {
+        if (index({ budgetMs: RUNNER_BUDGET_MS, now }).done) break;
+      } catch (error) {
+        log.warn("knowledge index pass failed", { error: errorText(error) });
+        break;
+      }
+      await yieldTurn();
     }
-  } catch (error) {
-    log.warn("knowledge local purge failed", { error: errorText(error) });
+    try {
+      const last = Number(readKnowledgeMeta(PURGE_LAST_AT) ?? "0") || 0;
+      if (now - last >= PURGE_EVERY_MS) {
+        const purged = purgeKnowledgeLocal(now);
+        writeKnowledgeMeta(PURGE_LAST_AT, String(now));
+        log.info("knowledge local purge", purged);
+      }
+    } catch (error) {
+      log.warn("knowledge local purge failed", { error: errorText(error) });
+    }
+  } finally {
+    indexTickRunning = false;
   }
 }
 
 export function startKnowledgeIndexRunner(): void {
   if (indexTimer) return;
-  indexTimer = setInterval(() => runKnowledgeIndexTick(), KNOWLEDGE_INDEX_INTERVAL_MS);
+  indexTimer = setInterval(() => void runKnowledgeIndexTick(), KNOWLEDGE_INDEX_INTERVAL_MS);
   indexTimer.unref?.();
-  const first = setTimeout(() => runKnowledgeIndexTick(), 1_000);
-  first.unref?.();
+  firstIndexTimer = setTimeout(() => {
+    firstIndexTimer = null;
+    void runKnowledgeIndexTick();
+  }, 1_000);
+  firstIndexTimer.unref?.();
 }
 
 export function stopKnowledgeIndexRunner(): void {
   if (indexTimer) clearInterval(indexTimer);
   indexTimer = null;
+  if (firstIndexTimer) clearTimeout(firstIndexTimer);
+  firstIndexTimer = null;
+}
+
+/** Tests only: whether the first-run timer is still armed. */
+export function hasPendingKnowledgeIndexFirstRun(): boolean {
+  return firstIndexTimer !== null;
 }
 
 export function isKnowledgeIndexRunnerRunning(): boolean {

@@ -216,6 +216,7 @@ describe("knowledge.marks.changed", () => {
         return { pages: 0, gapsUploaded: 0, issues: [], ok: true };
       },
       now: () => now,
+      schedule: () => ({ cancel: () => {} }),
     };
     await handleKnowledgeInboxItem(marksChangedItem(), deps);
     now += 30_000;
@@ -223,6 +224,36 @@ describe("knowledge.marks.changed", () => {
     expect(syncs).toBe(1);
     now += 31_000;
     await handleKnowledgeInboxItem(marksChangedItem(), deps);
+    expect(syncs).toBe(2);
+  });
+
+  it("arms one trailing sync for events inside the window", async () => {
+    let syncs = 0;
+    let now = NOW;
+    const armed: Array<{ run: () => void; delayMs: number }> = [];
+    const deps = {
+      sync: async (): Promise<KnowledgeMirrorSyncResult> => {
+        syncs += 1;
+        return { pages: 0, gapsUploaded: 0, issues: [], ok: true };
+      },
+      now: () => now,
+      schedule: (run: () => void, delayMs: number) => {
+        armed.push({ run, delayMs });
+        return { cancel: () => {} };
+      },
+    };
+    await handleKnowledgeInboxItem(marksChangedItem(), deps);
+    now += 20_000;
+    await handleKnowledgeInboxItem(marksChangedItem(), deps);
+    now += 10_000;
+    await handleKnowledgeInboxItem(marksChangedItem(), deps);
+    expect(syncs).toBe(1);
+    expect(armed).toHaveLength(1);
+    expect(armed[0]?.delayMs).toBe(40_000);
+
+    now += 30_000;
+    armed[0]?.run();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(syncs).toBe(2);
   });
 });

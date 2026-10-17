@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { getRecentHistory } from "../db.js";
+import { configStore } from "../config-store.js";
 import { nats } from "../nats.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import {
@@ -28,6 +29,8 @@ import {
   updateSessionRuntimeProviderOverride,
 } from "../router/sessions.js";
 import {
+  dbCreateAgent,
+  dbUpdateAgent,
   dbGetDaemonRestartPendingMessages,
   dbGetDaemonRestartResumeDelivery,
   dbGetDaemonRestartSessionSnapshot,
@@ -3740,11 +3743,15 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
   it("adds the Knowledge audience line to the model-facing prompt once, never to the stored text", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-knowledge-");
     try {
-      getOrCreateSession("agent:dev:test:knowledge-cli", "dev", stateDir, { name: "knowledge-cli" });
+      // The operator line needs an agent that can run `ravi knowledge`.
+      dbCreateAgent({ id: "dev", cwd: stateDir });
+      dbUpdateAgent("dev", { defaults: { runtimePermissions: { profile: "full-access" } } });
+      configStore.refresh();
+      // A session made from the terminal: the operator's alone.
+      getOrCreateSession("knowledge-cli", "dev", stateDir, { name: "knowledge-cli" });
       getOrCreateSession("agent:dev:test:knowledge-heartbeat", "dev", stateDir, { name: "knowledge-heartbeat" });
       const dispatcher = createDispatcher(1);
       dispatcher.streamingSessions.set("busy", createActiveSession());
-
       const cli = dispatcher.handlePromptImmediate("knowledge-cli", {
         prompt: "what did the client say?",
         _cliDestination: true,

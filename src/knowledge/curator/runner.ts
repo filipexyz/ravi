@@ -282,6 +282,7 @@ export function listCuratorSubjects(
 // ---------------------------------------------------------------------------
 
 let curatorTimer: ReturnType<typeof setInterval> | null = null;
+let firstCuratorTimer: ReturnType<typeof setTimeout> | null = null;
 let curatorRunning = false;
 
 /** Runs the pass once per local day, at or after 03:00. */
@@ -310,13 +311,23 @@ export function startKnowledgeCuratorRunner(): void {
   if (curatorTimer) return;
   curatorTimer = setInterval(() => void runKnowledgeCuratorTick(), CHECK_EVERY_MS);
   curatorTimer.unref?.();
-  const first = setTimeout(() => void runKnowledgeCuratorTick(), 60_000);
-  first.unref?.();
+  firstCuratorTimer = setTimeout(() => {
+    firstCuratorTimer = null;
+    void runKnowledgeCuratorTick();
+  }, 60_000);
+  firstCuratorTimer.unref?.();
 }
 
 export function stopKnowledgeCuratorRunner(): void {
   if (curatorTimer) clearInterval(curatorTimer);
   curatorTimer = null;
+  if (firstCuratorTimer) clearTimeout(firstCuratorTimer);
+  firstCuratorTimer = null;
+}
+
+/** Tests only: whether the first-run timer is still armed. */
+export function hasPendingKnowledgeCuratorFirstRun(): boolean {
+  return firstCuratorTimer !== null;
 }
 
 export function isKnowledgeCuratorRunnerRunning(): boolean {

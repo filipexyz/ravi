@@ -2,9 +2,11 @@
 // reads returned, and the operator's answers to "this turn read unapproved
 // content and now wants to write". Ids, tiers and fingerprints only.
 
+import { existsSync } from "node:fs";
+
 import { executeWrite } from "../../db/write-retry.js";
 import { isKnowledgeTrustTier, lowestTier, type KnowledgeTrustTier } from "../types.js";
-import { getKnowledgeDb } from "./db.js";
+import { getKnowledgeDb, getKnowledgeDbPath } from "./db.js";
 
 /** A read older than this no longer gates writes (`TURN_READ_TTL` precedent). */
 export const TURN_READ_TTL_MS = 6 * 60 * 60_000;
@@ -30,6 +32,36 @@ interface WriteApprovalDbRow {
   status: WriteApprovalStatus;
   requested_at: number;
   decided_at: number | null;
+}
+
+/**
+ * The read-key a session's reads are kept under: what one turn read stays in
+ * the session's context, so later turns of that session are gated too.
+ */
+export function sessionReadKey(sessionKey: string): string {
+  return `session:${sessionKey}`;
+}
+
+/** Records a Knowledge read against the turn and against its session. */
+export function recordKnowledgeRead(
+  turn: { turnKey: string | null; sessionKey?: string | null },
+  tier: KnowledgeTrustTier,
+  record: typeof recordTurnRead = recordTurnRead,
+): void {
+  if (turn.turnKey) record(turn.turnKey, tier);
+  if (turn.sessionKey) record(sessionReadKey(turn.sessionKey), tier);
+}
+
+/** A reset session starts with an empty context: its reads no longer gate writes. */
+export function clearSessionReads(sessionKey: string): void {
+  if (!sessionKey || !existsSync(getKnowledgeDbPath())) return;
+  executeWrite(
+    getKnowledgeDb(),
+    (db) => {
+      db.prepare("DELETE FROM knowledge_turn_reads WHERE turn_key = ?").run(sessionReadKey(sessionKey));
+    },
+    { label: "knowledge_session_reads_clear" },
+  );
 }
 
 /** Records that the turn read content of `tier`; keeps the lowest tier seen. */
@@ -58,14 +90,25 @@ export function recordTurnRead(turnKey: string, tier: KnowledgeTrustTier, now: n
   );
 }
 
-/** The lowest tier this turn read, or null when it read nothing in the last 6 h. */
-export function lowestTierReadInTurn(turnKey: string | null, now: number = Date.now()): KnowledgeTrustTier | null {
-  if (!turnKey) return null;
-  const row = getKnowledgeDb()
-    .prepare("SELECT lowest_tier, last_read_at FROM knowledge_turn_reads WHERE turn_key = ?")
-    .get(turnKey) as { lowest_tier: KnowledgeTrustTier; last_read_at: number } | null;
-  if (!row || row.last_read_at < now - TURN_READ_TTL_MS) return null;
-  return isKnowledgeTrustTier(row.lowest_tier) ? row.lowest_tier : null;
+/**
+ * The lowest tier this turn read, or its session read, or null when neither
+ * read anything in the last 6 h.
+ */
+export function lowestTierReadInTurn(
+  turnKey: string | null,
+  now: number = Date.now(),
+  sessionKey: string | null = null,
+): KnowledgeTrustTier | null {
+  const keys = [turnKey, sessionKey ? sessionReadKey(sessionKey) : null].filter((key): key is string => Boolean(key));
+  const tiers: KnowledgeTrustTier[] = [];
+  for (const key of keys) {
+    const row = getKnowledgeDb()
+      .prepare("SELECT lowest_tier, last_read_at FROM knowledge_turn_reads WHERE turn_key = ?")
+      .get(key) as { lowest_tier: KnowledgeTrustTier; last_read_at: number } | null;
+    if (!row || row.last_read_at < now - TURN_READ_TTL_MS) continue;
+    if (isKnowledgeTrustTier(row.lowest_tier)) tiers.push(row.lowest_tier);
+  }
+  return lowestTier(tiers) ?? null;
 }
 
 export function findWriteApproval(turnKey: string, fingerprint: string): WriteApprovalRow | null {

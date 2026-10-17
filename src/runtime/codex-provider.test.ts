@@ -3623,6 +3623,17 @@ describe("Codex thread security (Knowledge parity)", () => {
     ).toBe("read-only");
   });
 
+  it("retries a failed agent read once before failing closed", () => {
+    let calls = 0;
+    const flaky = () => {
+      calls += 1;
+      if (calls === 1) throw new Error("database is locked");
+      return { defaults: { runtimePermissions: { profile: "full-access" } } };
+    };
+    expect(resolveCodexThreadSecurity("dev", flaky).sandbox).toBe("danger-full-access");
+    expect(calls).toBe(2);
+  });
+
   it("keeps the bypass flag on codex exec when no agent is restricted (the fixture covers restricted agents)", () => {
     expect(buildCodexExecArgs(undefined, "gpt-5", undefined)).toContain("--dangerously-bypass-approvals-and-sandbox");
     const resumed = buildCodexExecArgs("thread_1", "gpt-5", "high");

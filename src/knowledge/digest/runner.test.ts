@@ -130,6 +130,22 @@ describe("runMorningDigestTick", () => {
     expect(sent).toHaveLength(2);
   });
 
+  it("marks nothing sent when the Console digest fails, so the next tick retries", async () => {
+    const sent: Array<{ to: string; text: string }> = [];
+    const failing = {
+      ...deps(sent, MORNING),
+      client: {
+        digest: async () => {
+          throw Object.assign(new Error("down"), { code: "CONSOLE_UNAVAILABLE" });
+        },
+      } as unknown as KnowledgeClient,
+    };
+    expect(await runMorningDigestTick(failing)).toBe("failed");
+    expect(sent).toEqual([]);
+    expect(await runMorningDigestTick(deps(sent, MORNING + 60_000))).toBe("sent");
+    expect(sent).toHaveLength(1);
+  });
+
   it("sends nothing when everything is zero or there is no owner", async () => {
     const sent: Array<{ to: string; text: string }> = [];
     expect(await runMorningDigestTick({ ...deps(sent, MORNING), owner: () => null })).toBe("no_owner");

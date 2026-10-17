@@ -9,17 +9,23 @@ import { readCloudCredentials } from "../../cloud-auth/storage.js";
 import { getContact } from "../../contacts.js";
 import { getAgentRuntimePermissionsConfigFromDefaults } from "../../permissions/agent-default-capabilities-provider.js";
 import type { InstanceConfig } from "../../router/router-db.js";
-import { dbGetAgent, dbListAgents, dbListInstances, dbListRoutes } from "../../router/router-db.js";
+import { dbGetAgent, dbListAgents, dbListInstances, dbListRoutes, getDefaultAgentId } from "../../router/router-db.js";
 import type { AgentConfig, RouteConfig } from "../../router/types.js";
+import { dbListTriggers } from "../../triggers/triggers-db.js";
 import { OWNER_CONTACT_TAG } from "../owner.js";
 
 export type KnowledgeExposureOffender = { agentId: string; profile: string; reasons: string[] };
 export type KnowledgeExposureReport = { ok: boolean; offenders: KnowledgeExposureOffender[]; checkedAgents: number };
 
+export type KnowledgeExposureTrigger = { id: string; agentId?: string; topic: string; enabled: boolean };
+
 export interface KnowledgeExposureDeps {
   listAgents?: () => AgentConfig[];
   listInstances?: () => InstanceConfig[];
   listRoutes?: () => RouteConfig[];
+  /** Triggers as `{agentId, topic, enabled}`; a missing agentId means the default agent. */
+  listTriggers?: () => KnowledgeExposureTrigger[];
+  defaultAgentId?: () => string;
   isLinkedContact?: (contactId: string) => boolean;
   /** The contact a DM route pattern names, with its tags; null when unknown. */
   contactForPattern?: (pattern: string) => { id: string; tags: string[] } | null;
@@ -51,6 +57,31 @@ const EXEC_CAPABILITY_PREFIXES = [
   "admin:system:",
 ];
 
+/**
+ * Trigger topics whose events only Ravi itself or the operator produce. Any
+ * other topic (mail, inbound interactions, Console inbox, watches, webhooks,
+ * contacts and chats pending, page comments, custom topics) can carry what an
+ * outsider wrote, so a trigger on it makes its agent reachable by outsiders.
+ * A wildcard topic counts as internal only inside one of these trees.
+ */
+const INTERNAL_TRIGGER_TOPICS: RegExp[] = [
+  /^ravi\.session\./,
+  /^ravi\.[^.]+\.cli\./,
+  /^ravi\._cli\./,
+  /^ravi\.approval\./,
+  /^ravi\.audit\./,
+  /^ravi\.task\./,
+  /^ravi\.tts(?:\.|$)/,
+  /^ravi\.artifacts\./,
+  /^ravi\.tags\./,
+  /^ravi\.inbox\.system\./,
+];
+
+export function triggerTopicCarriesOutsideContent(topic: string): boolean {
+  const trimmed = topic.trim();
+  return !INTERNAL_TRIGGER_TOPICS.some((pattern) => pattern.test(trimmed));
+}
+
 type Profile = "bootstrap" | "chat-only" | "explicit-only" | "full-access";
 
 export function inspectKnowledgeExposure(deps: KnowledgeExposureDeps = {}): KnowledgeExposureReport {
@@ -62,10 +93,15 @@ export function inspectKnowledgeExposure(deps: KnowledgeExposureDeps = {}): Know
   const routes = (deps.listRoutes ?? dbListRoutes)();
   const isLinked = deps.isLinkedContact ?? defaultIsLinkedContact();
   const contactForPattern = deps.contactForPattern ?? defaultContactForPattern;
+  const triggers = (deps.listTriggers ?? dbListTriggers)().filter((trigger) => trigger.enabled);
+  const defaultAgent = (deps.defaultAgentId ?? getDefaultAgentId)();
 
   const offenders: KnowledgeExposureOffender[] = [];
   for (const agent of agents) {
-    const reach = reachabilityReasons(agent.id, instances, routes, disabledAccounts, isLinked, contactForPattern);
+    const reach = [
+      ...reachabilityReasons(agent.id, instances, routes, disabledAccounts, isLinked, contactForPattern),
+      ...triggerReachabilityReasons(agent.id, triggers, defaultAgent),
+    ];
     if (reach.length === 0) continue;
     const safety = profileSafety(agent);
     if (safety.safe) continue;
@@ -128,6 +164,20 @@ function reachabilityReasons(
     if (!dmPatternIsOperatorSide(pattern, isLinked, contactForPattern)) {
       reasons.push(`route ${pattern} on ${route.accountId} reaches a contact who is not the owner or linked`);
     }
+  }
+  return reasons;
+}
+
+function triggerReachabilityReasons(
+  agentId: string,
+  triggers: KnowledgeExposureTrigger[],
+  defaultAgent: string,
+): string[] {
+  const reasons: string[] = [];
+  for (const trigger of triggers) {
+    if ((trigger.agentId || defaultAgent) !== agentId) continue;
+    if (!triggerTopicCarriesOutsideContent(trigger.topic)) continue;
+    reasons.push(`trigger ${trigger.id} on ${trigger.topic} can carry outside content`);
   }
   return reasons;
 }

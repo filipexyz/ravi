@@ -122,6 +122,12 @@ async function uploadPendingGaps(
   const labels = new Map(instances.map((instance) => [instance.id, instance.label]));
   let uploaded = 0;
   for (const gap of pending) {
+    // The Console refuses another instance id shape: never upload it.
+    if (!INSTANCE_ID_PATTERN.test(gap.instanceId)) {
+      updateGap(gap.id, { status: "dropped" });
+      issues.push("gap_dropped: instance_id_invalid");
+      continue;
+    }
     try {
       const { proposal } = await client.createProposal(
         {
@@ -146,6 +152,12 @@ async function uploadPendingGaps(
     } catch (error) {
       const code = errorCode(error);
       issues.push(`gap_upload_failed: ${code}`);
+      if (code === "PAYLOAD_INVALID") {
+        // Retrying the same payload fails the same way: drop it.
+        updateGap(gap.id, { status: "dropped" });
+        log.warn("knowledge gap refused by the Console; dropped", { gapId: gap.id, code });
+        continue;
+      }
       log.warn("knowledge gap upload failed; it stays pending", { gapId: gap.id, code });
       if (isConsoleUnavailable(error)) break;
     }

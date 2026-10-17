@@ -44,6 +44,8 @@ export const KNOWLEDGE_CURATOR_CHANNEL = "knowledge-curator";
 export interface KnowledgeTurn {
   audience: "operator";
   turnKey: string | null;
+  /** The session the turn runs in: reads are also recorded against it (§11.4). Never sent. */
+  sessionKey?: string | null;
   sessionName: string | null;
   agentId: string | null;
   /** Sent as `X-Ravi-Exec-Context`, never with `speaker.consoleUserId`. */

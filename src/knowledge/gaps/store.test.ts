@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import {
+  capUtf16,
   claimGapsForNotification,
   dropGapsForContact,
   insertKnowledgeGap,
@@ -107,5 +108,16 @@ describe("knowledge gaps store", () => {
     expect(claimGapsForNotification("p1", ["wa-main"])).toEqual([]);
     expect(claimGapsForNotification("p1").map((gap) => gap.id)).toEqual([b.id]);
     expect(claimGapsForNotification("p1")).toEqual([]);
+  });
+});
+
+describe("capUtf16", () => {
+  it("caps by UTF-16 length without splitting a surrogate pair", () => {
+    expect(capUtf16("abc", 1000)).toBe("abc");
+    const emoji = "😀"; // two UTF-16 units
+    const text = `${"a".repeat(999)}${emoji}`;
+    expect(text.length).toBe(1001);
+    expect(capUtf16(text, 1000)).toBe("a".repeat(999));
+    expect(capUtf16(emoji.repeat(600), 1000).length).toBe(1000);
   });
 });

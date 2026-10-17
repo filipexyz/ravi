@@ -4,8 +4,12 @@
 // operator approves the action on a PT-BR card in their own chat. The terminal
 // is never gated: the operator is typing there.
 //
-// Rows hold the turn key, a fingerprint of the command and a summary made of
-// flag names only; never option values, bodies or secrets.
+// Reads are kept per turn and per session (what a turn read stays in the
+// session's context), so a later turn of the same session is gated too.
+//
+// Rows hold the turn key, a fingerprint of every option value except secrets,
+// and a summary of flag names plus the recipient (target, contact, to, email,
+// url, group); never bodies or secrets.
 
 import { createHash, randomUUID } from "node:crypto";
 
@@ -18,11 +22,12 @@ import { resolveOwnerDirectTarget } from "../owner.js";
 import {
   findWriteApproval,
   lowestTierReadInTurn,
+  sessionReadKey,
   upsertWriteApproval,
   setWriteApprovalStatus,
   type WriteApprovalRow,
 } from "../store/turn-reads.js";
-import { resolveKnowledgeConnectorTurn } from "./turn.js";
+import { currentKnowledgeSessionKey, resolveKnowledgeConnectorTurn } from "./turn.js";
 
 const log = logger.child("knowledge:write-after-read");
 
@@ -32,6 +37,8 @@ export type WriteAfterReadInput = {
   options: Record<string, unknown>;
   access: CommandAccessOptions | undefined;
   turnKey: string | null;
+  /** The session the turn runs in: its earlier turns' reads gate this one too. */
+  sessionKey?: string | null;
 };
 export type WriteAfterReadDecision =
   | { allowed: true }
@@ -62,6 +69,8 @@ const ALWAYS_GATED = new Set([
   "sessions.ask",
   "sessions.inform",
   "sessions.execute",
+  "sessions.answer",
+  "sessions.runtime.steer",
   // Delayed egress: these would send what the turn read later.
   "cron.add",
   "cron.set",
@@ -82,9 +91,14 @@ export function setWriteAfterReadDefaultsForTests(deps: WriteAfterReadDeps | nul
   defaultsForTests = deps;
 }
 
-export function isWriteAfterReadGated(input: Omit<WriteAfterReadInput, "turnKey">): boolean {
+export function isWriteAfterReadGated(input: Omit<WriteAfterReadInput, "turnKey" | "sessionKey">): boolean {
   const name = commandName(input.group, input.command);
   if (ALWAYS_GATED.has(name)) return true;
+  // A note about a contact reaches that contact's packet (contract §11.4).
+  if (name === "knowledge.remember") {
+    const about = input.options.about;
+    return typeof about === "string" && about.trim().toLowerCase().startsWith("contact:");
+  }
   if (name === "pages.ship") {
     const visibility = input.options.visibility;
     return visibility !== undefined && visibility !== null && visibility !== "" && visibility !== "private";
@@ -95,11 +109,13 @@ export function isWriteAfterReadGated(input: Omit<WriteAfterReadInput, "turnKey"
 export function checkWriteAfterRead(input: WriteAfterReadInput, deps: WriteAfterReadDeps = {}): WriteAfterReadDecision {
   const resolved = { ...(defaultsForTests ?? {}), ...deps };
   const now = resolved.now ?? Date.now();
-  if (!input.turnKey || !isWriteAfterReadGated(input)) return { allowed: true };
+  const sessionKey = input.sessionKey ?? null;
+  const approvalKey = input.turnKey ?? (sessionKey ? sessionReadKey(sessionKey) : null);
+  if (!approvalKey || !isWriteAfterReadGated(input)) return { allowed: true };
 
   let tier: ReturnType<typeof lowestTierReadInTurn>;
   try {
-    tier = lowestTierReadInTurn(input.turnKey, now);
+    tier = lowestTierReadInTurn(input.turnKey, now, sessionKey);
   } catch (error) {
     // No readable record of what this turn read: the reads were recorded
     // in the same store, so there is nothing to hold the write against.
@@ -108,7 +124,7 @@ export function checkWriteAfterRead(input: WriteAfterReadInput, deps: WriteAfter
   }
   if (tier === null || tier === "approved") return { allowed: true };
   try {
-    return askOperator(input, input.turnKey, now, resolved);
+    return askOperator(input, approvalKey, now, resolved);
   } catch (error) {
     // The turn read unapproved content: without a recorded answer, deny.
     log.warn("write-after-read approval unavailable", { error: errorMessage(error) });
@@ -123,7 +139,7 @@ function askOperator(
   resolved: WriteAfterReadDeps,
 ): WriteAfterReadDecision {
   const name = commandName(input.group, input.command);
-  const fingerprint = writeFingerprint(name, input.options, input.access);
+  const fingerprint = writeFingerprint(name, input.options);
   const existing = findWriteApproval(turnKey, fingerprint);
   if (existing) {
     const decidedAge = now - (existing.decidedAt ?? existing.requestedAt);
@@ -187,11 +203,14 @@ function askOperator(
  * current context (AsyncLocalStorage or env), then the check.
  */
 export function enforceWriteAfterRead(
-  input: Omit<WriteAfterReadInput, "turnKey">,
+  input: Omit<WriteAfterReadInput, "turnKey" | "sessionKey">,
   deps: WriteAfterReadDeps = {},
 ): WriteAfterReadDecision {
   if (!isWriteAfterReadGated(input)) return { allowed: true };
-  return checkWriteAfterRead({ ...input, turnKey: currentWriteGateTurnKey() }, deps);
+  return checkWriteAfterRead(
+    { ...input, turnKey: currentWriteGateTurnKey(), sessionKey: currentKnowledgeSessionKey() },
+    deps,
+  );
 }
 
 /** The current turn's key, whether or not the turn may use Knowledge; null on the terminal. */
@@ -222,37 +241,60 @@ export function writeAfterReadContractError(
   );
 }
 
-/** sha256 of `group.command` plus the canonical JSON of the options without secrets. */
+/**
+ * sha256 of `group.command` plus the canonical JSON of every option value
+ * except secrets: an approval for one body or recipient never covers another.
+ */
 export function writeFingerprint(
   name: string,
   options: Record<string, unknown>,
-  access: CommandAccessOptions | undefined,
+  _access?: CommandAccessOptions | undefined,
 ): string {
   return createHash("sha256")
     .update(name)
     .update("\n")
-    .update(canonicalJson(publicOptions(options, access)))
+    .update(canonicalJson(nonSecretOptions(options)))
     .digest("hex");
 }
 
-/** `pages share --url <url> --with <with> --execute`: flag names, never values. */
-function summarizeCommand(name: string, options: Record<string, unknown>, access: CommandAccessOptions | undefined) {
+/** Options whose value names who receives the action: shown on the card. */
+const RECIPIENT_OPTION = /^(target|contact|to|email|url|group[-_]?id|with)$/i;
+
+/**
+ * `pages share --url https://x --with ana@x.com --execute`: flag names, plus
+ * the value of recipient flags so the operator sees where it goes; never
+ * bodies or secrets.
+ */
+export function summarizeCommand(
+  name: string,
+  options: Record<string, unknown>,
+  access: CommandAccessOptions | undefined,
+): string {
+  const redacted = new Set(access?.redactions ?? []);
   const parts = [name.replace(/\./g, " ")];
-  for (const [key, value] of Object.entries(publicOptions(options, access)).sort(([a], [b]) => a.localeCompare(b))) {
+  for (const [key, value] of Object.entries(nonSecretOptions(options)).sort(([a], [b]) => a.localeCompare(b))) {
     if (value === undefined || value === null || value === false) continue;
-    parts.push(value === true ? `--${key}` : `--${key} <${key}>`);
+    if (value === true) {
+      parts.push(`--${key}`);
+      continue;
+    }
+    const shown = RECIPIENT_OPTION.test(key) && !redacted.has(key) ? recipientValue(value) : null;
+    parts.push(shown ? `--${key} ${shown}` : `--${key} <${key}>`);
   }
   return parts.join(" ").slice(0, 300);
 }
 
-function publicOptions(
-  options: Record<string, unknown>,
-  access: CommandAccessOptions | undefined,
-): Record<string, unknown> {
-  const redacted = new Set(access?.redactions ?? []);
+function recipientValue(value: unknown): string | null {
+  const text = Array.isArray(value) ? value.map(String).join(",") : typeof value === "object" ? null : String(value);
+  if (!text) return null;
+  const clean = text.replace(/[\s\u0000-\u001f]+/g, " ").trim();
+  return clean ? clean.slice(0, 120) : null;
+}
+
+function nonSecretOptions(options: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(options)) {
-    if (value === undefined || redacted.has(key) || SECRET_OPTION.test(key)) continue;
+    if (value === undefined || SECRET_OPTION.test(key)) continue;
     out[key] = value;
   }
   return out;

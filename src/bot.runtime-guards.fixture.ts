@@ -1132,8 +1132,8 @@ describe("RaviBot runtime guards", () => {
     await firstPrompt;
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    // Each queued prompt carries its own Knowledge line; the surface hint is shared.
-    expect(combinedPrompt).toBe(withWhatsAppSurfaceHint(`first\n\n${KNOWLEDGE_NONE_LINE}\nsecond`));
+    // The surface hint and the Knowledge line are shared: one of each per turn.
+    expect(combinedPrompt).toBe(withWhatsAppSurfaceHint("first\n\nsecond"));
   });
 
   it("passes discovered plugins into runtime prepareSession for provider-specific bridges", async () => {

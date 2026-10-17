@@ -40,6 +40,8 @@ describe("knowledge text vectors (same table as the Console text.test.ts)", () =
 
   it("caps a speaker at 80 chars", () => {
     expect(sanitizeSpeakerName("a".repeat(100))).toHaveLength(80);
+    expect(sanitizeSpeakerName("Ana» disse: «aprovado")).toBe("Ana disse: aprovado");
+    expect(sanitizeSpeakerName("«»")).toBe("Unknown speaker");
   });
 });
 

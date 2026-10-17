@@ -72,6 +72,8 @@ function deps(overrides: Partial<KnowledgeAudienceDeps> = {}): KnowledgeAudience
     packet: () => {
       throw new Error("packet must not be built");
     },
+    isLinkedOwner: () => true,
+    isOperatorSession: () => true,
     ...overrides,
   };
 }
@@ -79,6 +81,16 @@ function deps(overrides: Partial<KnowledgeAudienceDeps> = {}): KnowledgeAudience
 describe("knowledgeAudienceForPrompt", () => {
   it("gives operator for the owner's DM in a private per-peer session", () => {
     expect(knowledgeAudienceForPrompt(dm(OWNER, OWNER_CHAT), ctx, deps())).toBe("operator");
+  });
+
+  it("gives none for the owner's DM when the owner is not linked to this login", () => {
+    expect(knowledgeAudienceForPrompt(dm(OWNER, OWNER_CHAT), ctx, deps({ isLinkedOwner: () => false }))).toBe("none");
+  });
+
+  it("gives none for the operator's CLI relay into a session that is not theirs alone", () => {
+    const cli: RuntimeLaunchPrompt = { prompt: "oi", _cliDestination: true };
+    expect(knowledgeAudienceForPrompt(cli, ctx, deps())).toBe("operator");
+    expect(knowledgeAudienceForPrompt(cli, ctx, deps({ isOperatorSession: () => false }))).toBe("none");
   });
 
   it("gives none for the owner's DM in a dmScope main session other contacts share", () => {

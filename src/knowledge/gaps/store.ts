@@ -84,6 +84,17 @@ function localDayStart(now: number): number {
   return day.getTime();
 }
 
+/**
+ * At most `max` UTF-16 code units (the Console counts `.length`), never
+ * cutting a surrogate pair in half.
+ */
+export function capUtf16(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max);
+  const last = cut.charCodeAt(cut.length - 1);
+  return last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut;
+}
+
 export function insertKnowledgeGap(
   input: {
     agentId: string;
@@ -98,7 +109,7 @@ export function insertKnowledgeGap(
   options: { now?: number } = {},
 ): { gap: KnowledgeGap; created: boolean; capped: boolean } {
   const now = options.now ?? Date.now();
-  const question = Array.from(input.question.trim()).slice(0, MAX_QUESTION_CHARS).join("");
+  const question = capUtf16(input.question.trim(), MAX_QUESTION_CHARS);
   const questionHash = knowledgeGapQuestionHash(input.instanceId, question);
   return executeWrite(
     getKnowledgeDb(),

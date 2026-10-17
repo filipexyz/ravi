@@ -59,6 +59,7 @@ describe("classifyKnowledgeTurn", () => {
       turn: {
         audience: "operator",
         turnKey: null,
+        sessionKey: null,
         sessionName: null,
         agentId: null,
         execContext: { v: 1, speaker: { kind: "terminal" }, conversation: "terminal" },
@@ -83,38 +84,54 @@ describe("classifyKnowledgeTurn", () => {
     if (!verdict.ok) return;
     expect(verdict.turn.turnKey).toBe(sha256(context.contextId));
     expect(verdict.turn.sessionName).toBe("luis-dm");
+    expect(verdict.turn.sessionKey).toBe(OWNER_DM_SESSION.sessionKey);
     expect(verdict.turn.agentId).toBe("main");
     expect(verdict.turn.execContext.speaker).toEqual({ kind: "owner", contactId: "c_luis" });
     expect(verdict.turn.execContext.conversation).toBe("dm");
   });
 
-  it("lets the operator's relay in", () => {
-    const context = turnContext({
-      actorPrincipal: "automation:operator:local",
-      agentIdentityCompartment: "workspace:default",
-      turnOrigin: buildSessionRelayTurnOrigin("send", undefined),
-      turnReplyTarget: { kind: "none" },
-    });
+  const RELAY = {
+    actorPrincipal: "automation:operator:local",
+    agentIdentityCompartment: "workspace:default",
+    turnOrigin: buildSessionRelayTurnOrigin("send", undefined),
+    turnReplyTarget: { kind: "none" },
+  };
 
-    expect(classify(context).ok).toBe(true);
+  it("lets the operator's relay in, in a session made from the terminal", () => {
+    const context = turnContext(RELAY, { sessionKey: "relay-notes", sessionName: "relay-notes" });
+
+    const verdict = classify(context);
+    expect(verdict.ok).toBe(true);
+    if (verdict.ok) expect(verdict.turn.sessionKey).toBe("relay-notes");
   });
 
-  it("lets an operator-owned cron in", () => {
+  it("refuses the operator's relay into a shared session with reason shared_session", () => {
+    for (const sessionKey of ["agent:main:main", "agent:main:whatsapp:wa-main:group:120363012345678901"]) {
+      const context = turnContext(RELAY, { sessionKey, sessionName: `s-${sessionKey.length}` });
+      expect(classify(context)).toMatchObject({ ok: false, reason: "shared_session" });
+    }
+    // A session with no known key is not private either.
+    expect(classify(turnContext(RELAY))).toMatchObject({ ok: false, reason: "shared_session" });
+  });
+
+  it("lets an operator-owned cron in, in its isolated session", () => {
     const job = dbCreateCronJob({
       name: "knowledge-turn-cron",
       schedule: { type: "every", every: 60_000 },
       message: "summarize",
       ownerPrincipal: "operator",
     });
-    const context = turnContext({
-      actorPrincipal: `automation:cron:${job.id}`,
-      agentIdentityCompartment: `automation:cron:${job.id}`,
-    });
+    const cron = { actorPrincipal: `automation:cron:${job.id}`, agentIdentityCompartment: `automation:cron:${job.id}` };
+    const context = turnContext(cron, { sessionKey: `agent:main:cron:${job.id}`, sessionName: "main-cron" });
 
     const verdict = classify(context);
 
     expect(verdict.ok).toBe(true);
     if (verdict.ok) expect(verdict.turn.execContext.routine).toEqual({ kind: "cron", id: job.id });
+
+    // The same cron publishing into the agent's main session is refused.
+    const shared = turnContext(cron, { sessionKey: "agent:main:main", sessionName: "main-main" });
+    expect(classify(shared)).toMatchObject({ ok: false, reason: "shared_session" });
   });
 
   it("refuses the owner in a group with reason group", () => {

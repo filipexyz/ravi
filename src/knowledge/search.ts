@@ -45,7 +45,7 @@ import {
   type LocalSearchHit,
 } from "./store/local-index.js";
 import { getLocalRun, insertLocalRun, listLocalRuns, type LocalRun } from "./store/local-runs.js";
-import { recordTurnRead } from "./store/turn-reads.js";
+import { recordKnowledgeRead, type recordTurnRead } from "./store/turn-reads.js";
 
 export const KNOWLEDGE_SEARCH_DEFAULT_LIMIT = 8;
 export const KNOWLEDGE_SEARCH_MAX_LIMIT = 20;
@@ -74,6 +74,9 @@ type ResultWithHash = KnowledgeResultView & { textHash: string };
 // ---------------------------------------------------------------------------
 // search
 // ---------------------------------------------------------------------------
+
+/** The Console refuses a longer `who`. */
+const KNOWLEDGE_WHO_MAX_CHARS = 80;
 
 export async function runKnowledgeSearch(
   input: KnowledgeSearchInput,
@@ -115,7 +118,7 @@ export async function runKnowledgeSearch(
         limit,
         ...(consoleKinds ? { kinds: consoleKinds } : {}),
         ...(input.since ? { since: input.since.toISOString() } : {}),
-        ...(input.who?.trim() ? { who: input.who.trim() } : {}),
+        ...(input.who?.trim() ? { who: input.who.trim().slice(0, KNOWLEDGE_WHO_MAX_CHARS) } : {}),
         ...(input.project?.trim() ? { project: input.project.trim() } : {}),
       };
       consolePromise = client.search(request, input.turn).then(
@@ -127,6 +130,15 @@ export async function runKnowledgeSearch(
           }
           if (isCloudAuthError(error) && (error.code === "AUTH_REQUIRED" || error.code === "CREDENTIALS_INVALID")) {
             issues.push("console_not_logged_in");
+            return { response: null };
+          }
+          // A login minted before the Knowledge scopes: `ravi login` again.
+          if (
+            isCloudAuthError(error) &&
+            error.code === "ORG_ACCESS_DENIED" &&
+            error.details?.reason === "missing_scope"
+          ) {
+            issues.push("console_needs_login");
             return { response: null };
           }
           throw error;
@@ -190,7 +202,7 @@ export async function runKnowledgeSearch(
     lowestTier: tier,
     issues: issues.map(issueCode),
   });
-  if (input.turn.turnKey && tier) (deps.recordTurnRead ?? recordTurnRead)(input.turn.turnKey, tier);
+  if (tier) recordKnowledgeRead(input.turn, tier, deps.recordTurnRead);
 
   return {
     query,
@@ -321,7 +333,7 @@ async function readConsoleRef(
   const location = focus?.location;
   const clock = location?.kind === "meeting" ? (location.clock ?? formatClock(location.startSeconds ?? null)) : null;
   const speakers = [...new Set(response.chunks.flatMap((chunk) => chunk.speakers ?? []))];
-  if (turn.turnKey) (deps.recordTurnRead ?? recordTurnRead)(turn.turnKey, response.trust);
+  recordKnowledgeRead(turn, response.trust, deps.recordTurnRead);
   insertLocalRun({
     turnKey: turn.turnKey,
     sessionName: turn.sessionName,
@@ -373,7 +385,7 @@ function readLocalRef(
       return `${row.focus ? "▶ " : ""}${clock ? `[${clock}] ` : ""}${who}${row.text}`;
     })
     .join("\n");
-  if (turn.turnKey) (deps.recordTurnRead ?? recordTurnRead)(turn.turnKey, trust);
+  recordKnowledgeRead(turn, trust, deps.recordTurnRead);
   const run = insertLocalRun({
     turnKey: turn.turnKey,
     sessionName: turn.sessionName,

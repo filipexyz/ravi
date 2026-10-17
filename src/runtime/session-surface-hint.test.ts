@@ -120,4 +120,16 @@ describe("session surface hint", () => {
       ]),
     ).toBe("[session surface] This turn came from a Slack chat. A normal reply returns there.\nfirst\n\nsecond");
   });
+
+  it("keeps one Knowledge preamble after the surface line", () => {
+    const hint = "[session surface] This turn came from a Slack chat. A normal reply returns there.";
+    const none = "[knowledge] audience=none: ravi knowledge will refuse on this turn (exit 3).";
+    const operator = "[knowledge] audience=operator: ravi knowledge search/read may be used for this turn.";
+    expect(combineSessionSurfacePromptContents([`${hint}\n${none}\nfirst`, `${hint}\n${none}\nsecond`])).toBe(
+      `${hint}\n${none}\nfirst\n\nsecond`,
+    );
+    expect(combineSessionSurfacePromptContents([`${hint}\n${operator}\nfirst`, `${hint}\n${none}\nsecond`])).toBe(
+      `${hint}\n${none}\nfirst\n\nsecond`,
+    );
+  });
 });

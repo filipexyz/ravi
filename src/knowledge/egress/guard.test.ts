@@ -77,6 +77,23 @@ describe("guardEgressText", () => {
     expect(guardEgressText("[aqui](https://acme.ravi.page/politica)", ctx()).removed).toEqual([]);
   });
 
+  it("catches a bare domain whatever precedes it, with a port, a path or a query", () => {
+    const allow = ctx({ allowHosts: ["acme.com"] });
+    for (const text of [
+      "x/evil.example/a",
+      "ftp://evil.example",
+      "_evil.example",
+      "evil.example:8080/a",
+      "evil.example?q=1",
+      "(evil.example)",
+    ]) {
+      expect(guardEgressText(text, allow).removed).toHaveLength(1);
+    }
+    expect(guardEgressText("acme.ravi.page:8443/politica", ctx()).text).toBe(REMOVED_LINK_TEXT);
+    expect(guardEgressText("acme.ravi.page/politica", ctx()).removed).toEqual([]);
+    expect(guardEgressText("joao.silva@evil.example", allow).removed).toEqual([]);
+  });
+
   it("removes images", () => {
     const result = guardEgressText("foto: ![logo](https://example.com/a.png) ok", ctx());
     expect(result.text).toBe("foto: ok");
@@ -293,8 +310,8 @@ describe("gateway egress", () => {
     await gateway.handleResponseEvent("kagent-dm-1", { _emitId: "emit-3", response: "⟦forget⟧", target });
     expect(send).not.toHaveBeenCalled();
     expect(emitted.some(([, payload]) => payload.status === "dropped")).toBe(true);
-    // ⟦forget⟧ removes the guard row.
-    expect(isGuardedSession("kagent-dm-1")).toBeNull();
+    // ⟦forget⟧ keeps a guard-only row: links and markers stay guarded in this DM.
+    expect(isGuardedSession("kagent-dm-1")?.contactId).toBe("contact-1");
   });
 
   it("drops the curator channel", async () => {

@@ -33,7 +33,7 @@ ravi knowledge why --last
 | `--limit <n>` | Default 8, at most 20 |
 | `--local-only` | Skip the Console |
 
-When the Console is unreachable or you are not logged in, the search still returns local results and lists `console_unavailable: <code>` or `console_not_logged_in` under `issues`.
+When the Console is unreachable or you are not logged in, the search still returns local results and lists `console_unavailable: <code>` or `console_not_logged_in` under `issues`. `console_needs_login` means your login predates Knowledge: run `ravi login` again. `--who` is cut to 80 characters.
 
 ## Who may use it
 
@@ -41,11 +41,11 @@ Knowledge answers only the operator's own turns:
 
 - the terminal;
 - the operator's own direct chat with an agent, in a session no one else shares;
-- the operator's own cron routines.
+- the operator's own `ravi sessions send|ask` and cron routines, when the session is theirs alone (a session made from the terminal, an `--isolated` cron, or their private direct chat). In a shared session the reason is `shared_session`.
 
 Every other turn (a group, a contact's DM, a heartbeat, a trigger, another agent) exits 3 with `KNOWLEDGE_TURN_NOT_OPERATOR`, and the agent tells the person to ask in private.
 
-Knowledge also refuses (exit 3, `KNOWLEDGE_EXPOSURE_UNSAFE`) while `ravi doctor` reports a failing `permissions.knowledge_exposure` check: an agent that people outside the organization can reach must be `chat-only`, or `explicit-only` with only Knowledge and a few harmless capabilities. Fix it with `ravi agents permissions <id> chat-only` or by closing that agent's outside routes.
+Knowledge also refuses (exit 3, `KNOWLEDGE_EXPOSURE_UNSAFE`) while `ravi doctor` reports a failing `permissions.knowledge_exposure` check: an agent that people outside the organization can reach (through an open instance, a route, or an enabled trigger on mail, inbound interactions, the Console inbox, watches, webhooks or a custom topic) must be `chat-only`, or `explicit-only` with only Knowledge and a few harmless capabilities. Fix it with `ravi agents permissions <id> chat-only` or by closing that agent's outside routes.
 
 ### The agent grant
 
@@ -94,6 +94,7 @@ ravi knowledge forget --about contact:<contact-id> --redact --execute
 ```
 
 - `remember` from a chat is active only when the text is in the operator's own last message; otherwise it is saved as a draft that you confirm from the terminal with `--confirm`.
+- Your own notes about a contact guide the agent in that contact's chat but are never quoted: the packet lists them apart, and the agent is told never to repeat them to the contact.
 - `forget <id>` archives at once. `forget --about` archives every item of the subject, removes its chat rows from the local index and stops Ravi from learning it again.
 - `--redact` overwrites the text and keeps a tombstone. It is a write brake: without `--execute` it prints the plan and exits 3.
 
@@ -134,4 +135,4 @@ Without `--execute`, `propose` prints the plan (kind, size in bytes, project and
 | 3 | `KNOWLEDGE_TURN_NOT_OPERATOR` | Not the operator's own turn |
 | 3 | `KNOWLEDGE_DISABLED` | Knowledge is not enabled for the organization |
 | 3 | `WRITE_REQUIRES_EXECUTE` | `propose` or `forget --redact` without `--execute` |
-| 3 | `KNOWLEDGE_WRITE_AFTER_READ` | Another command after reading unapproved content; the operator was asked to approve |
+| 3 | `KNOWLEDGE_WRITE_AFTER_READ` | A command that sends out of the org (or `remember --about contact:`) in a session that read unapproved content in the last 6 h, in this turn or an earlier one; the operator was asked to approve that exact command, and the card shows where it goes |

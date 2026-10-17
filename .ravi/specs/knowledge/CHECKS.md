@@ -22,7 +22,9 @@ normative: false
 ## Gate and audiences
 
 - Owner in a group, heartbeats, triggers, agents and contacts get `KNOWLEDGE_TURN_NOT_OPERATOR` (exit 3).
-- With an outsider-reachable agent on `bootstrap`, every command exits 3 `KNOWLEDGE_EXPOSURE_UNSAFE`, and `ravi doctor` fails `permissions.knowledge_exposure`.
+- With an outsider-reachable agent on `bootstrap`, every command exits 3 `KNOWLEDGE_EXPOSURE_UNSAFE`, and `ravi doctor` fails `permissions.knowledge_exposure`. An enabled trigger on `ravi.inbox.mail.*`, `ravi.inbound.*`, `ravi.console.inbox.*`, a watch, a webhook or a custom topic makes its agent outsider-reachable.
+- The operator relay or an owner cron in a shared session (`agent:<id>:main`, a group, a session with a route or a trigger) gets reason `shared_session`.
+- A write in a later turn of the same session after an unapproved read is gated; after `sessions reset` it is not.
 
 ## Transport
 
@@ -41,4 +43,7 @@ normative: false
 - With FTS5 off, local search still finds rows through `LIKE`.
 - After `forget --about`, a contact with a WhatsApp JID has zero index rows.
 - A `remember` from a channel turn whose text is only in a quote becomes a draft.
-- Guarded sessions rewrite unmarked Ravi links to `[link removido]` on every outbound path.
+- Guarded sessions rewrite unmarked Ravi links to `[link removido]` on every outbound path; a bare domain is caught whatever precedes it (not an email), with its port and path.
+- After `⟦forget⟧` the session keeps a guard-only row.
+- Operator notes appear in the packet under the private-notes line, never under `[memory]`.
+- A batched turn has exactly one `[knowledge]` line.

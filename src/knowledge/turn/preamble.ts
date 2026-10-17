@@ -3,23 +3,34 @@
 // `_runtimePrompt` only. `prompt.prompt` (what chat.db stores) never changes,
 // and `_knowledgePreamble` keeps durable replay from adding it twice.
 
+import { dbGetAgent } from "../../router/router-db.js";
+import { snapshotAgentCapabilities } from "../../runtime/context-registry.js";
 import type { RuntimeLaunchPrompt } from "../../runtime/message-types.js";
 import { resolveRuntimePromptText } from "../../runtime/session-surface-hint.js";
 import { buildContactPacket, type ContactPacket } from "../packet/packet.js";
+import { canRunKnowledgeSearch } from "../prompt-section.js";
 import { knowledgeAudienceForPrompt, type KnowledgePromptAudience, resolveKnowledgeAudience } from "./audience.js";
+import { contactAudienceLine, KNOWLEDGE_AUDIENCE_LINES, stripFenceTokens } from "./preamble-text.js";
 
-export const KNOWLEDGE_AUDIENCE_LINES: Readonly<Record<KnowledgePromptAudience, string>> = {
-  operator: "[knowledge] audience=operator: ravi knowledge search/read may be used for this turn.",
-  none: "[knowledge] audience=none: ravi knowledge will refuse on this turn (exit 3).",
-  contact: "[knowledge] audience=contact: answer from the memory below and the marked pages only.",
-};
+export {
+  combineKnowledgePreambles,
+  contactAudienceLine,
+  KNOWLEDGE_AUDIENCE_LINES,
+  type StrippedKnowledgePreamble,
+  stripKnowledgePreamble,
+} from "./preamble-text.js";
 
 const SESSION_SURFACE_LINE = /^\[session surfaces?\][^\n]*\n/i;
 
 export function withKnowledgePreamble(
   prompt: RuntimeLaunchPrompt,
   ctx: { agentId: string; sessionName: string },
-  deps: { audience?: typeof knowledgeAudienceForPrompt; packet?: typeof buildContactPacket } = {},
+  deps: {
+    audience?: typeof knowledgeAudienceForPrompt;
+    packet?: typeof buildContactPacket;
+    /** The system prompt section's check: may this agent run `ravi knowledge`? */
+    canUseKnowledge?: (agentId: string) => boolean;
+  } = {},
 ): RuntimeLaunchPrompt {
   if (prompt._knowledgePreamble || prompt._resumeStashedMessages) return prompt;
 
@@ -45,13 +56,27 @@ export function withKnowledgePreamble(
   }
   // The contact line only stands on a packet.
   if (audience === "contact" && !packet) audience = "none";
+  // Same gate as the `knowledge.tools` section: no invitation the agent cannot use.
+  if (audience === "operator" && !agentCanUseKnowledge(ctx.agentId, deps.canUseKnowledge)) audience = "none";
 
-  const preamble = packet ? `${KNOWLEDGE_AUDIENCE_LINES.contact}\n${packet.text}` : KNOWLEDGE_AUDIENCE_LINES[audience];
+  const preamble = packet ? `${contactAudienceLine(packet.nonce)}\n${packet.text}` : KNOWLEDGE_AUDIENCE_LINES[audience];
+  // On a packet turn the contact's text cannot open or close a fence.
+  const text = packet ? stripFenceTokens(resolveRuntimePromptText(prompt)) : resolveRuntimePromptText(prompt);
   return {
     ...prompt,
-    _runtimePrompt: prependAfterSurfaceLine(resolveRuntimePromptText(prompt), preamble),
+    _runtimePrompt: prependAfterSurfaceLine(text, preamble),
     _knowledgePreamble: true,
   };
+}
+
+function agentCanUseKnowledge(agentId: string, check?: (agentId: string) => boolean): boolean {
+  try {
+    if (check) return check(agentId);
+    if (dbGetAgent(agentId)?.mode === "sentinel") return false;
+    return canRunKnowledgeSearch(snapshotAgentCapabilities(agentId));
+  } catch {
+    return false;
+  }
 }
 
 /**

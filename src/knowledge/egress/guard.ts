@@ -211,7 +211,7 @@ export function upsertGuardedSession(row: GuardedSession): void {
   );
 }
 
-/** Removes a session's guard row (after ⟦forget⟧). */
+/** Removes a session's guard row. */
 export function deleteGuardedSession(sessionName: string): number {
   return executeWrite(
     getKnowledgeDb(),
@@ -233,8 +233,9 @@ const LINK_PATTERN = new RegExp(
     String.raw`<([a-z][a-z0-9+.-]*:[^>|\s]+)(?:\|[^>\n]*)?>`,
     // 4. http(s) URL.
     String.raw`\bhttps?:\/\/[^\s<>"'\x60]+`,
-    // 5. Bare domain, not the tail of an email, a path or another URL.
-    String.raw`(?<![\w@.\/:-])(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}(?![\w-])(?:\/[^\s<>"'\x60]*)?`,
+    // 5. Bare domain with optional port and path, whatever precedes it,
+    //    except an email address (its local part or its domain).
+    String.raw`(?<![\w.+-]@[a-z0-9.-]*)(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}(?![\w@-])(?::\d+)?(?:[\/?#][^\s<>"'\x60]*)?`,
   ].join("|"),
   "gi",
 );
@@ -307,8 +308,12 @@ function isRaviHosted(host: string, ctx: EgressGuardContext): boolean {
   return ctx.markedUrls.some((marked) => normalizeHost(marked.host) === host);
 }
 
-/** Host plus path of a page marked for this instance; the fragment is ignored, a query never matches. */
+/**
+ * Host, default port and path of a page marked for this instance; the
+ * fragment is ignored, a query or another port never matches.
+ */
 function isMarked(host: string, url: URL, ctx: EgressGuardContext): boolean {
+  if (url.port) return false;
   if (url.search && url.search !== "?") return false;
   const path = normalizePath(url.pathname);
   return ctx.markedUrls.some((marked) => normalizeHost(marked.host) === host && normalizePath(marked.path) === path);

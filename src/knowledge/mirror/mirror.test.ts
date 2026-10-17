@@ -248,6 +248,21 @@ describe("syncKnowledgeMirror", () => {
     expect(getKnowledgeGap(pending.id)).toMatchObject({ status: "uploaded", proposalId: "prop-1", uploadedAt: NOW });
   });
 
+  it("drops a gap with an invalid instance id and one the Console refuses as PAYLOAD_INVALID", async () => {
+    const badInstance = gap("Pergunta um?", "wa main/x");
+    const refused = gap("Pergunta dois?");
+    const { client, state } = fakeClient({ mirror: mirror([]) });
+    (client as unknown as { createProposal: () => Promise<never> }).createProposal = async () => {
+      state.proposals.push({} as ConsoleProposalCreate);
+      throw Object.assign(new Error("bad"), { code: "PAYLOAD_INVALID" });
+    };
+    const result = await syncKnowledgeMirror({ client, now: NOW, listInstances: () => [], project: () => "acme" });
+    expect(state.proposals).toHaveLength(1);
+    expect(getKnowledgeGap(badInstance.id)?.status).toBe("dropped");
+    expect(getKnowledgeGap(refused.id)?.status).toBe("dropped");
+    expect(result.issues).toContain("gap_dropped: instance_id_invalid");
+  });
+
   it("leaves gaps pending without knowledge.project", async () => {
     const pending = gap();
     const { client, state } = fakeClient({ mirror: mirror([]) });

@@ -59,7 +59,8 @@ local), `--type` (csv de `meeting,transcript,page,note,manual,chat`), `--who
   pelo participante e não prova identidade. Fala não é decisão.
 - Sempre que citar, coloque o `url` do resultado.
 - `issues` com `console_unavailable: …` ou `console_not_logged_in` significa que
-  só vieram resultados locais. Diga isso ao operador.
+  só vieram resultados locais. Diga isso ao operador. `console_needs_login`:
+  o login é anterior ao Knowledge; o operador roda `ravi login` de novo.
 - `next` traz os próximos comandos sugeridos. Siga-os em vez de inventar.
 
 ## Receita de nova busca
@@ -90,7 +91,7 @@ Mais exemplos em `references/recipes.md`.
 | `KNOWLEDGE_EXPOSURE_UNSAFE` | Algum agent alcançável por gente de fora pode ler arquivos. O operador corrige com `ravi doctor` (veja `issues`). Não repita. |
 | `KNOWLEDGE_DISABLED` | Knowledge não está ligado na org. Avise o operador. Não repita. |
 | `WRITE_REQUIRES_EXECUTE` | Freio de escrita. Mostre o plano e repita com `--execute` só se o operador quiser. |
-| `KNOWLEDGE_WRITE_AFTER_READ` | O turno leu conteúdo não aprovado e pediu aprovação ao operador. Rode de novo depois que ele aprovar. |
+| `KNOWLEDGE_WRITE_AFTER_READ` | Esta sessão leu conteúdo não aprovado (neste turno ou num turno anterior) e Ravi pediu aprovação ao operador. Rode de novo o mesmo comando depois que ele aprovar. |
 
 Exit 1 `KNOWLEDGE_NOT_FOUND`: o ref sumiu; busque de novo. Exit 1
 `KNOWLEDGE_CONSOLE_UNAVAILABLE`: use `--local-only` ou tente mais tarde.
@@ -112,6 +113,8 @@ ravi knowledge propose --transcript <meeting-key> --project vendas --execute
 - `remember` num chat só ativa se o texto estiver nas palavras do próprio
   operador na última mensagem; senão vira rascunho. Rascunho se confirma no
   terminal com `--confirm`.
+- Nota do operador sobre um contato (`remember --about contact:`) orienta o
+  agent na conversa com esse contato, mas nunca é citada nem repetida para ele.
 - `forget` sem `--redact` arquiva na hora. `--about` também apaga o histórico
   local do contato no índice e impede que ele seja aprendido de novo.
   `--redact` sobrescreve o texto e precisa de `--execute`.

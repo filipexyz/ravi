@@ -146,8 +146,13 @@ export async function runMorningDigestTick(deps: MorningDigestDeps = {}): Promis
       try {
         digest = await client.digest({ since: new Date(lastAt).toISOString() }, DAEMON_KNOWLEDGE_TURN);
       } catch (error) {
+        // Nothing is marked sent: the next minute's tick retries, until the
+        // local date (and so the date key) changes.
         const code = (error as { code?: unknown })?.code;
-        issues.push(`console_unavailable: ${typeof code === "string" ? code : "UNKNOWN"}`);
+        log.warn("knowledge morning digest: Console unavailable, retrying", {
+          code: typeof code === "string" ? code : "UNKNOWN",
+        });
+        return "failed";
       }
     } else {
       issues.push("console_not_logged_in");

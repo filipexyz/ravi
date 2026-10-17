@@ -10,10 +10,17 @@ import type { LibraryTurnDeps } from "../../library/turn.js";
 import {
   buildExecContext,
   type ConnectorTurn,
+  type ConnectorTurnDeps,
   type ConnectorTurnResult,
+  currentConnectorRuntimeContext,
   type ExecContextV1,
+  isOwnersDirectChat,
   resolveConnectorTurn,
 } from "../../link/connector-turn.js";
+import { dbListRoutesBySessionName, dbListSessionChatSubscriptions } from "../../router/router-db.js";
+import { parseSessionKey } from "../../router/session-key.js";
+import { resolveSession } from "../../router/sessions.js";
+import { dbListTriggers } from "../../triggers/triggers-db.js";
 import type { KnowledgeTurn } from "../types.js";
 
 export type KnowledgeTurnVerdict =
@@ -30,6 +37,7 @@ type RefusalReason = Extract<KnowledgeTurnVerdict, { ok: false }>["reason"];
 const TERMINAL_TURN: KnowledgeTurn = {
   audience: "operator",
   turnKey: null,
+  sessionKey: null,
   sessionName: null,
   agentId: null,
   execContext: { v: 1, speaker: { kind: "terminal" }, conversation: "terminal" },
@@ -39,7 +47,7 @@ export function classifyKnowledgeTurn(deps: LibraryTurnDeps = {}): KnowledgeTurn
   if (deps.operatorOwnTurn === true) return { ok: true, turn: { ...TERMINAL_TURN } };
   if (deps.operatorOwnTurn === false) return refuse("unknown", "unknown");
   try {
-    return verdictFor(resolveKnowledgeConnectorTurn(deps));
+    return verdictFor(resolveKnowledgeConnectorTurn(deps), deps);
   } catch {
     return refuse("unknown", "unknown");
   }
@@ -70,18 +78,84 @@ export function resolveKnowledgeConnectorTurn(deps: LibraryTurnDeps = {}): Conne
   });
 }
 
-function verdictFor(result: ConnectorTurnResult): KnowledgeTurnVerdict {
+function verdictFor(result: ConnectorTurnResult, deps: LibraryTurnDeps): KnowledgeTurnVerdict {
   if (!result.ok) return refuse(blockedReason(result), result.actorPrincipal);
   const turn = result.turn;
   // A heartbeat has no owner check (connector-turn.ts:617-628): never the operator here.
   if (turn.routine?.kind === "heartbeat") return refuse("routine", turn.actorPrincipal);
-  if (turn.speaker.kind === "terminal") return allow(turn);
+  if (turn.speaker.kind === "terminal") return allow(turn, null);
+  const sessionKey = currentKnowledgeSessionKey(deps);
   if (turn.speaker.kind === "owner") {
-    if (turn.conversation === "dm" || turn.conversation === "terminal") return allow(turn);
-    return refuse(turn.conversation === "group" ? "group" : "unknown", turn.actorPrincipal);
+    if (turn.conversation !== "dm" && turn.conversation !== "terminal") {
+      return refuse(turn.conversation === "group" ? "group" : "unknown", turn.actorPrincipal);
+    }
+    // The owner's own direct chat was checked for a private session upstream;
+    // the relay (no contact) answers in whatever session it was sent to.
+    if (turn.speaker.contactId) return allow(turn, sessionKey);
+    return privateSessionOrRefuse(turn, sessionKey, deps);
   }
-  if (turn.routine?.kind === "cron") return allow(turn);
+  if (turn.routine?.kind === "cron") return privateSessionOrRefuse(turn, sessionKey, deps);
   return refuse(reasonForSpeaker(turn), turn.actorPrincipal);
+}
+
+/**
+ * The relay and owner crons read Knowledge into a session transcript, so the
+ * session must be the operator's alone: a session made from the terminal, an
+ * `--isolated` cron session, or the owner's private direct session.
+ */
+function privateSessionOrRefuse(turn: ConnectorTurn, sessionKey: string | null, deps: LibraryTurnDeps) {
+  if (!isOperatorPrivateSession(sessionKey, turn.sessionName ?? null, deps.turn ?? {})) {
+    return refuse("shared_session", turn.actorPrincipal);
+  }
+  return allow(turn, sessionKey);
+}
+
+/**
+ * Whether a session is the operator's alone. Its key is a plain name (made by
+ * \`ravi sessions send\`), an isolated cron key, or a per-peer direct-chat
+ * key; no route sends chats into it by name, no enabled trigger targets it,
+ * and every chat attached to it is the owner's own direct chat. Anything
+ * unknown is not private.
+ */
+export function isOperatorPrivateSession(
+  sessionKey: string | null,
+  sessionName: string | null,
+  deps: ConnectorTurnDeps = {},
+): boolean {
+  if (!sessionKey) return false;
+  try {
+    const parts = sessionKey.split(":");
+    if (parts[0] === "agent") {
+      if (parts.length < 4) return false;
+      if (parts[2] !== "cron") {
+        const parsed = parseSessionKey(sessionKey);
+        if (!parsed || parsed.peerKind !== "dm" || parsed.dmScope === "main" || parsed.threadId) return false;
+      }
+    }
+    const name = sessionName ?? resolveSession(sessionKey)?.name ?? null;
+    if (name && dbListRoutesBySessionName(name).length > 0) return false;
+    for (const subscription of dbListSessionChatSubscriptions(sessionKey)) {
+      if (!isOwnersDirectChat(subscription.chatId, null, deps)) return false;
+    }
+    const targets = new Set([sessionKey, name].filter((value): value is string => Boolean(value)));
+    return !dbListTriggers({ enabledOnly: true }).some((trigger) => targets.has(trigger.session));
+  } catch {
+    return false;
+  }
+}
+
+/** The session the current turn runs in; null on the terminal or when unknown. */
+export function currentKnowledgeSessionKey(deps: LibraryTurnDeps = {}): string | null {
+  const env = deps.turn?.env ?? process.env;
+  try {
+    const record = (deps.turn?.runtimeContext ?? currentConnectorRuntimeContext(env)).record;
+    const key = record?.sessionKey?.trim() || env.RAVI_SESSION_KEY?.trim();
+    if (key) return key;
+    const name = record?.sessionName?.trim() || env.RAVI_SESSION_NAME?.trim();
+    return name ? (resolveSession(name)?.sessionKey ?? null) : null;
+  } catch {
+    return null;
+  }
 }
 
 function blockedReason(result: Extract<ConnectorTurnResult, { ok: false }>): RefusalReason {
@@ -109,12 +183,13 @@ function reasonForSpeaker(turn: ConnectorTurn): RefusalReason {
   }
 }
 
-function allow(turn: ConnectorTurn): KnowledgeTurnVerdict {
+function allow(turn: ConnectorTurn, sessionKey: string | null): KnowledgeTurnVerdict {
   return {
     ok: true,
     turn: {
       audience: "operator",
       turnKey: turn.turnKey ?? null,
+      sessionKey,
       sessionName: turn.sessionName ?? null,
       agentId: turn.agentId ?? null,
       execContext: knowledgeExecContext(turn),

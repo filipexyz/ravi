@@ -55,15 +55,16 @@ ravi knowledge propose [--note <text>] [--gap <question>] [--correction <text>] 
 
 | Audience | Who | Reaches |
 |---|---|---|
-| `operator` | terminal; the owner's own DM in a private session; operator relay; operator-owned cron | readable Console projects at all tiers, plus local history |
+| `operator` | terminal; the owner's own DM in a private session; operator relay and operator-owned cron in a private session | readable Console projects at all tiers, plus local history |
 | `page_viewer` | Page Chat on a site (Console side) | text of routes marked for page viewers |
 | `contacts` | the daemon's mirror, per installation and instance | text of routes marked for that instance |
 | none | groups, other contacts, shared sessions, heartbeats, triggers, other agents | nothing: exit 3, no packet |
 
 ## Gate
 
-1. **Exposure.** While any agent reachable by outsiders (open or pairing DMs, open or allowlist groups, group or wildcard routes, DM routes for contacts that are neither the owner nor linked) is neither `chat-only` nor `explicit-only` with only the allowed capabilities, every command exits 3 `KNOWLEDGE_EXPOSURE_UNSAFE`. `ravi doctor` reports the same as `permissions.knowledge_exposure`.
-2. **Turn.** Only operator turns pass: terminal, the owner in a DM or terminal conversation, an operator cron routine. Heartbeats, groups, triggers, agents and contacts exit 3 `KNOWLEDGE_TURN_NOT_OPERATOR`.
+1. **Exposure.** While any agent reachable by outsiders (open or pairing DMs, open or allowlist groups, group or wildcard routes, DM routes for contacts that are neither the owner nor linked, enabled triggers on a topic that can carry outside content) is neither `chat-only` nor `explicit-only` with only the allowed capabilities, every command exits 3 `KNOWLEDGE_EXPOSURE_UNSAFE`. `ravi doctor` reports the same as `permissions.knowledge_exposure`.
+   A trigger topic counts as outside content unless it is internal-only (`ravi.session.*`, CLI events, `ravi.approval.*`, `ravi.audit.*`, `ravi.task.*`, `ravi.tts*`, `ravi.artifacts.*`, `ravi.tags.*`, `ravi.inbox.system.*`): mail, inbound interactions, the Console inbox, watches, webhooks and any custom topic fail closed.
+2. **Turn.** Only operator turns pass: terminal, the owner in a DM or terminal conversation, an operator cron routine. Heartbeats, groups, triggers, agents and contacts exit 3 `KNOWLEDGE_TURN_NOT_OPERATOR`. The operator relay and owner crons also need a private session (one made from the terminal, an `--isolated` cron session, or the owner's private direct session: no route into it by name, no enabled trigger targeting it, every attached chat the owner's own direct chat); otherwise reason `shared_session`.
 
 The Console re-checks the turn from the `X-Ravi-Exec-Context` header (never with `consoleUserId`).
 
@@ -71,7 +72,7 @@ The Console re-checks the turn from the `X-Ravi-Exec-Context` header (never with
 
 - Requests go to `/api/cli/knowledge/*` with the stored `ravi login` credentials, refreshing once on `AUTH_EXPIRED`.
 - `SERVER_UNAVAILABLE`, `HOST_UNREACHABLE`, `RATE_LIMITED` and `KNOWLEDGE_UNAVAILABLE` mean "Console unavailable". A 404 on a knowledge path whose body has no CLI error code means an older Console without the route (`KNOWLEDGE_UNAVAILABLE`). A 404 with an error code is a real not-found.
-- Search with the Console unavailable returns local results with `issues: ["console_unavailable: <code>"]` and exit 0; without login, `issues: ["console_not_logged_in"]`.
+- Search with the Console unavailable returns local results with `issues: ["console_unavailable: <code>"]` and exit 0; without login, `issues: ["console_not_logged_in"]`; with a login minted before the Knowledge scopes (`ORG_ACCESS_DENIED`, `reason: missing_scope`), `issues: ["console_needs_login"]`. `--who` is cut to 80 characters before it is sent.
 
 ## Output
 
@@ -106,8 +107,12 @@ Each exit-3 envelope carries one English line in `issues[]` telling the agent wh
 
 - Opt-in per agent (`knowledge.contactMemory.agents`). Items are local only; only gap questions go up to the Console.
 - An opted-in, no-exec agent in a contact's private DM gets a fenced reference packet (up to 8 items and 3 marked page sections). Building it makes no Console call. The session is marked guarded for 30 minutes.
+- The contact audience line names the packet's genuine nonce, and on a packet turn the tokens `RAVI_CONTACT_MEMORY` and `RAVI_KNOWLEDGE` are stripped from the contact's text, so the contact cannot forge a fence.
+- The operator's own notes (`remember --about contact:`) appear in the packet as private guidance, outside the quotable memory: the agent is told never to quote, repeat or reveal them to the contact.
+- Prompts batched into one turn carry one Knowledge preamble: the shared audience line, the `none` line when the audiences differ, and for contacts only the last packet.
 - `remember` from a channel turn is active only when the text appears in the operator's own last message (`authoredText`, excluding quotes and transcripts); otherwise it is a draft confirmed from the terminal. **Accepted residual risk:** forwarded messages carry no marker in the envelope, so a forwarded text looks authored.
-- `forget --about` archives every item of the subject, deletes its local index rows and records the subject as forgotten, so the indexer, curator and packet never learn it again. The `⟦forget⟧` marker redacts at once.
+- `forget --about` archives every item of the subject, deletes its local index rows and records the subject as forgotten, so the indexer, curator and packet never learn it again. The `⟦forget⟧` marker redacts at once and keeps a guard-only row (no packet) for 30 minutes, so the link guard and marker stripping still apply to that DM; a forgotten contact's `⟦gap⟧` keeps no gap.
+- Gap questions are cut to 1000 UTF-16 code units without splitting a surrogate pair. A gap whose instance name is not a valid instance id, or that the Console refuses with `PAYLOAD_INVALID`, is `dropped`, not retried.
 - The curator (off unless `knowledge.curator.agent` is a no-exec agent) runs nightly in a throwaway session whose chat rows are deleted afterwards, and keeps only items whose spans appear verbatim in the contact's own words.
 
 ## Egress guard
@@ -116,7 +121,10 @@ In guarded sessions, every outbound text path (gateway response parts, direct se
 
 ## Write after read
 
-After a turn reads anything below `approved`, commands that can carry it out (confirmation-braked commands run with `--execute`, `sessions send|ask|inform|execute`, non-private `pages ship`, `cron add|set`, `triggers add|set|test`, `tasks create|dispatch`, `agents set`) exit 3 `KNOWLEDGE_WRITE_AFTER_READ` and ask the operator to approve.
+After a turn reads anything below `approved`, commands that can carry it out (confirmation-braked commands run with `--execute`, `sessions send|ask|inform|execute|answer`, `sessions runtime steer`, non-private `pages ship`, `cron add|set`, `triggers add|set|test`, `tasks create|dispatch`, `agents set`, `knowledge remember --about contact:`) exit 3 `KNOWLEDGE_WRITE_AFTER_READ` and ask the operator to approve.
+
+- Reads are recorded against the turn and against its session (the read stays in the session's context), each for 6 h, so a later turn of the same session is gated too. Resetting the session clears its session reads.
+- The approval is for one exact command: its fingerprint hashes every option value except secrets. The card shows the flag names and the recipient (`target`, `contact`, `to`, `email`, `url`, `groupId`, `with`), never bodies or secrets.
 
 ## Retention (local)
 

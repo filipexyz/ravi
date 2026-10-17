@@ -49,7 +49,9 @@ const MAX_SPEAKER_CHARS = 80;
 
 /** A display name chosen by the participant, safe to show: at most 80 chars. */
 export function sanitizeSpeakerName(s: string): string {
+  // « and » would let a name close the «display name» quote around it.
   const collapsed = neutralizeKnowledgeText(s ?? "")
+    .replace(/[«»]/g, "")
     .replace(/\s+/g, " ")
     .trim();
   const capped = Array.from(collapsed).slice(0, MAX_SPEAKER_CHARS).join("").trim();

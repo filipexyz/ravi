@@ -7,7 +7,7 @@ import { extractKnowledgeMarkers, FORGET_MARKER, GAP_MARKER, handleKnowledgeMark
 
 const CHAT = "5511999990000@s.whatsapp.net";
 
-function guardRow(): GuardedSession {
+function guardRow(overrides: Partial<GuardedSession> = {}): GuardedSession {
   return {
     sessionName: "kagent-dm-1",
     agentId: "kagent",
@@ -17,6 +17,7 @@ function guardRow(): GuardedSession {
     normalizedChatId: CHAT,
     contactId: "contact-1",
     guardedUntil: Date.now() + 30 * 60_000,
+    ...overrides,
   };
 }
 
@@ -71,8 +72,8 @@ describe("handleKnowledgeMarkers", () => {
     });
   });
 
-  it("forgets with redact, drops the contact's open gaps and deletes the guard row", async () => {
-    upsertGuardedSession(guardRow());
+  it("forgets with redact, drops the contact's open gaps and keeps a guard-only row", async () => {
+    upsertGuardedSession(guardRow({ guardedUntil: Date.now() + 1000 }));
     const forget = mock(() => ({ archived: 0, redacted: 2, ftsRowsDeleted: 3 }));
     const dropGaps = mock(() => 1);
     await handleKnowledgeMarkers(
@@ -81,7 +82,22 @@ describe("handleKnowledgeMarkers", () => {
     );
     expect(forget).toHaveBeenCalledWith({ about: { kind: "contact", id: "contact-1" }, redact: true });
     expect(dropGaps).toHaveBeenCalledWith("contact-1");
-    expect(isGuardedSession("kagent-dm-1")).toBeNull();
+    // The link guard and marker stripping still apply to this DM.
+    const kept = isGuardedSession("kagent-dm-1");
+    expect(kept?.contactId).toBe("contact-1");
+    expect(kept?.guardedUntil ?? 0).toBeGreaterThan(Date.now() + 25 * 60_000);
+  });
+
+  it("keeps no gap for a forgotten contact", async () => {
+    upsertGuardedSession(guardRow());
+    const insertGap = mock(() => {
+      throw new Error("must not run");
+    });
+    await handleKnowledgeMarkers(
+      { sessionName: "kagent-dm-1", target, gap: true, forget: false },
+      { insertGap, lastContactText: () => "pergunta", isForgotten: () => true },
+    );
+    expect(insertGap).not.toHaveBeenCalled();
   });
 
   it("does nothing for unguarded sessions and never throws", async () => {

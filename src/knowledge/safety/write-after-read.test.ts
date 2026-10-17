@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
 import type { CommandAccessOptions } from "../../cli/decorators.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
-import { findWriteApproval, recordTurnRead, setWriteApprovalStatus } from "../store/turn-reads.js";
+import {
+  clearSessionReads,
+  findWriteApproval,
+  recordKnowledgeRead,
+  recordTurnRead,
+  setWriteApprovalStatus,
+} from "../store/turn-reads.js";
 import {
   checkWriteAfterRead,
   isWriteAfterReadGated,
@@ -75,6 +81,8 @@ describe("isWriteAfterReadGated", () => {
     for (const [group, command] of [
       ["sessions", "send"],
       ["sessions", "execute"],
+      ["sessions", "answer"],
+      ["sessions.runtime", "steer"],
       ["cron", "add"],
       ["cron", "set"],
       ["triggers", "test"],
@@ -93,6 +101,14 @@ describe("isWriteAfterReadGated", () => {
         access: SHARE_ACCESS,
       }),
     ).toBe(true);
+  });
+
+  it("gates knowledge remember only about a contact", () => {
+    const remember = (options: Record<string, unknown>) =>
+      isWriteAfterReadGated({ group: "knowledge", command: "remember", options, access: undefined });
+    expect(remember({ about: "contact:c_ana" })).toBe(true);
+    expect(remember({ about: "chat:120363@g.us" })).toBe(false);
+    expect(remember({})).toBe(false);
   });
 
   it("gates pages ship only off private", () => {
@@ -145,8 +161,7 @@ describe("checkWriteAfterRead", () => {
       timeoutMs: 5 * MIN,
     });
     expect(calls[0]?.text).toContain("leu conteúdo não aprovado neste turno");
-    expect(calls[0]?.text).toContain("pages share --execute --url <url> --with <with>");
-    expect(calls[0]?.text).not.toContain("ana@example.com");
+    expect(calls[0]?.text).toContain("pages share --execute --url https://acme.ravi.page/x --with ana@example.com");
     expect(calls[0]?.text).not.toContain("s3cret");
   });
 
@@ -219,7 +234,10 @@ describe("checkWriteAfterRead", () => {
     expect(decision.allowed).toBe(false);
     const row = findWriteApproval(TURN, writeFingerprint("pages.share", share().options, SHARE_ACCESS));
     expect(row?.status).toBe("approved");
-    expect(row?.summary).not.toContain("example.com");
+    // The operator sees where it goes, never secrets.
+    expect(row?.summary).toContain("--with ana@example.com");
+    expect(row?.summary).toContain("--url https://acme.ravi.page/x");
+    expect(row?.summary).not.toContain("s3cret");
   });
 
   it("denies without a row when there is no owner chat to ask", () => {
@@ -236,5 +254,34 @@ describe("checkWriteAfterRead", () => {
     const b = writeFingerprint("pages.share", { token: "two", url: "x" }, SHARE_ACCESS);
     expect(a).toBe(b);
     expect(a).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("fingerprints every non-secret value, redacted bodies included", () => {
+    const access: CommandAccessOptions = { ...SHARE_ACCESS, redactions: ["message"] };
+    const a = writeFingerprint("sessions.send", { session: "x", message: "one" }, access);
+    const b = writeFingerprint("sessions.send", { session: "x", message: "two" }, access);
+    expect(a).not.toBe(b);
+  });
+
+  it("gates a later turn of the same session after a read, within the TTL", () => {
+    const SESSION = "agent:main:whatsapp:wa-main:dm:5511999999999";
+    recordKnowledgeRead({ turnKey: TURN, sessionKey: SESSION }, "said", (key, tier) => recordTurnRead(key, tier, NOW));
+    const laterTurn = "b".repeat(64);
+
+    expect(checkWriteAfterRead(share({ turnKey: laterTurn, sessionKey: SESSION }), deps(NOW + MIN))).toMatchObject({
+      allowed: false,
+      issues: [WRITE_AFTER_READ_ISSUE],
+    });
+    expect(checkWriteAfterRead(share({ turnKey: laterTurn, sessionKey: "other" }), deps(NOW + MIN))).toEqual({
+      allowed: true,
+    });
+    expect(
+      checkWriteAfterRead(share({ turnKey: "c".repeat(64), sessionKey: SESSION }), deps(NOW + 6 * 60 * MIN + 1)),
+    ).toEqual({ allowed: true });
+
+    clearSessionReads(SESSION);
+    expect(checkWriteAfterRead(share({ turnKey: "d".repeat(64), sessionKey: SESSION }), deps(NOW + MIN))).toEqual({
+      allowed: true,
+    });
   });
 });

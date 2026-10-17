@@ -1,5 +1,17 @@
-import { afterEach, describe, expect, it } from "bun:test";
-import { startKnowledgeCuratorRunner, stopKnowledgeCuratorRunner } from "./curator/runner.js";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import {
+  hasPendingKnowledgeCuratorFirstRun,
+  startKnowledgeCuratorRunner,
+  stopKnowledgeCuratorRunner,
+} from "./curator/runner.js";
+import {
+  hasPendingKnowledgeIndexFirstRun,
+  runKnowledgeIndexTick,
+  RUNNER_BUDGET_MS,
+  startKnowledgeIndexRunner,
+  stopKnowledgeIndexRunner,
+} from "./store/local-index.js";
 import {
   DEFAULT_KNOWLEDGE_LEADER_RUNNERS,
   knowledgeLeaderRunnersStarted,
@@ -24,6 +36,45 @@ function fakeRunners(log: string[], failing?: string): KnowledgeLeaderRunner[] {
     },
   }));
 }
+
+describe("knowledge runner timers", () => {
+  let stateDir: string | null = null;
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-knowledge-runners-");
+  });
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  it("stop clears the first-run timers of the index and the curator", () => {
+    startKnowledgeIndexRunner();
+    startKnowledgeCuratorRunner();
+    expect(hasPendingKnowledgeIndexFirstRun()).toBe(true);
+    expect(hasPendingKnowledgeCuratorFirstRun()).toBe(true);
+    stopKnowledgeIndexRunner();
+    stopKnowledgeCuratorRunner();
+    expect(hasPendingKnowledgeIndexFirstRun()).toBe(false);
+    expect(hasPendingKnowledgeCuratorFirstRun()).toBe(false);
+  });
+
+  it("indexes in short slices and yields between them until done", async () => {
+    const budgets: number[] = [];
+    let yields = 0;
+    await runKnowledgeIndexTick(Date.now(), {
+      index: (input) => {
+        budgets.push(input?.budgetMs ?? 0);
+        return { messages: 1, transcripts: 0, done: budgets.length === 3 };
+      },
+      yieldTurn: async () => {
+        yields += 1;
+      },
+    });
+    expect(RUNNER_BUDGET_MS).toBeLessThanOrEqual(250);
+    expect(budgets).toEqual([RUNNER_BUDGET_MS, RUNNER_BUDGET_MS, RUNNER_BUDGET_MS]);
+    expect(yields).toBe(2);
+  });
+});
 
 describe("knowledge leader runners", () => {
   it("groups the index, curator, mirror and digest runners", () => {

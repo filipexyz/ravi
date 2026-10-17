@@ -234,7 +234,7 @@ export function buildCodexThreadSecurity(
 
 /**
  * The thread security for an agent, read from `agents.defaults.runtimePermissions`.
- * No agent id keeps today's behaviour; a failed read fails closed.
+ * No agent id keeps today's behaviour; a read that fails twice fails closed.
  */
 export function resolveCodexThreadSecurity(
   agentId: string | null | undefined,
@@ -242,8 +242,15 @@ export function resolveCodexThreadSecurity(
 ): CodexThreadSecurity {
   const id = agentId?.trim();
   if (!id) return UNRESTRICTED_CODEX_THREAD_SECURITY;
+  const read = () =>
+    buildCodexThreadSecurity(getAgentRuntimePermissionsConfigFromDefaults(getAgent(id)?.defaults ?? null));
   try {
-    return buildCodexThreadSecurity(getAgentRuntimePermissionsConfigFromDefaults(getAgent(id)?.defaults ?? null));
+    try {
+      return read();
+    } catch {
+      // A busy database fails one read now and then: try once more.
+      return read();
+    }
   } catch (error) {
     log.warn("codex runtime profile unreadable; using the read-only sandbox", {
       agentId: id,
