@@ -72,6 +72,7 @@ class RaviClient {
   TagRulesNamespace get tagRules => TagRulesNamespace(_transport);
   TagsNamespace get tags => TagsNamespace(_transport);
   TasksNamespace get tasks => TasksNamespace(_transport);
+  ThemesNamespace get themes => ThemesNamespace(_transport);
   ThreadsNamespace get threads => ThreadsNamespace(_transport);
   ToolsNamespace get tools => ToolsNamespace(_transport);
   TranscribeNamespace get transcribe => TranscribeNamespace(_transport);
@@ -79,6 +80,7 @@ class RaviClient {
   VideoNamespace get video => VideoNamespace(_transport);
   WatchNamespace get watch => WatchNamespace(_transport);
   WhatsappNamespace get whatsapp => WhatsappNamespace(_transport);
+  WidgetsNamespace get widgets => WidgetsNamespace(_transport);
   WorkObjectsNamespace get workObjects => WorkObjectsNamespace(_transport);
   WorkflowsNamespace get workflows => WorkflowsNamespace(_transport);
   YtNamespace get yt => YtNamespace(_transport);
@@ -1246,6 +1248,20 @@ class BasesViewsNamespace {
       command: "archive",
       body: requestBody,
       decode: basesViewsArchiveReturnFromJson,
+    );
+  }
+
+  Future<BasesViewsBindReturn> bind(String base, String view, String widget, [BasesViewsBindOptions options = const BasesViewsBindOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["view"] = RaviJson.from(view);
+    requestBody["widget"] = RaviJson.from(widget);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "views"],
+      command: "bind",
+      body: requestBody,
+      decode: basesViewsBindReturnFromJson,
     );
   }
 
@@ -5558,6 +5574,17 @@ class PagesNamespace {
     );
   }
 
+  Future<PagesOutdatedReturn> outdated([PagesOutdatedOptions options = const PagesOutdatedOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["pages"],
+      command: "outdated",
+      body: requestBody,
+      decode: pagesOutdatedReturnFromJson,
+    );
+  }
+
   Future<PagesPublishReturn> publish(List<String> args, [PagesPublishOptions options = const PagesPublishOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["args"] = RaviJson.from(args);
@@ -9295,6 +9322,134 @@ class TasksProfilesNamespace {
   }
 }
 
+class ThemesNamespace {
+  const ThemesNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<ThemesActiveReturn> active([ThemesActiveOptions options = const ThemesActiveOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["themes"],
+      command: "active",
+      body: requestBody,
+      decode: themesActiveReturnFromJson,
+    );
+  }
+
+  Future<ThemesCheckReturn> check(String dir) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["dir"] = RaviJson.from(dir);
+    return _transport.callJson(
+      groupSegments: const ["themes"],
+      command: "check",
+      body: requestBody,
+      decode: themesCheckReturnFromJson,
+    );
+  }
+
+  Future<ThemesInitReturn> init(String dir, [ThemesInitOptions options = const ThemesInitOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["dir"] = RaviJson.from(dir);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["themes"],
+      command: "init",
+      body: requestBody,
+      decode: themesInitReturnFromJson,
+    );
+  }
+
+  Future<ThemesProposalReturn> proposal(String ref, String number) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["ref"] = RaviJson.from(ref);
+    requestBody["number"] = RaviJson.from(number);
+    return _transport.callJson(
+      groupSegments: const ["themes"],
+      command: "proposal",
+      body: requestBody,
+      decode: themesProposalReturnFromJson,
+    );
+  }
+
+  Future<ThemesProposalsReturn> proposals([String? ref, ThemesProposalsOptions options = const ThemesProposalsOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    if (ref != null) {
+      requestBody["ref"] = RaviJson.from(ref);
+    }
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["themes"],
+      command: "proposals",
+      body: requestBody,
+      decode: themesProposalsReturnFromJson,
+    );
+  }
+
+  Future<ThemesProposeReturn> propose(String dir, [ThemesProposeOptions options = const ThemesProposeOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["dir"] = RaviJson.from(dir);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["themes"],
+      command: "propose",
+      body: requestBody,
+      decode: themesProposeReturnFromJson,
+    );
+  }
+
+  Future<ThemesPublishReturn> publish(String dir, [ThemesPublishOptions options = const ThemesPublishOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["dir"] = RaviJson.from(dir);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["themes"],
+      command: "publish",
+      body: requestBody,
+      decode: themesPublishReturnFromJson,
+    );
+  }
+
+  Future<ThemesSearchReturn> search([String? query, ThemesSearchOptions options = const ThemesSearchOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    if (query != null) {
+      requestBody["query"] = RaviJson.from(query);
+    }
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["themes"],
+      command: "search",
+      body: requestBody,
+      decode: themesSearchReturnFromJson,
+    );
+  }
+
+  Future<ThemesShowReturn> show(String ref, [ThemesShowOptions options = const ThemesShowOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["ref"] = RaviJson.from(ref);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["themes"],
+      command: "show",
+      body: requestBody,
+      decode: themesShowReturnFromJson,
+    );
+  }
+
+  Future<ThemesUseReturn> use(String ref, [ThemesUseOptions options = const ThemesUseOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["ref"] = RaviJson.from(ref);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["themes"],
+      command: "use",
+      body: requestBody,
+      decode: themesUseReturnFromJson,
+    );
+  }
+}
+
 class ThreadsNamespace {
   const ThreadsNamespace(this._transport);
 
@@ -9999,6 +10154,134 @@ class WhatsappGroupNamespace {
       command: "settings",
       body: requestBody,
       decode: whatsappGroupSettingsReturnFromJson,
+    );
+  }
+}
+
+class WidgetsNamespace {
+  const WidgetsNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<WidgetsCatalogReturn> catalog([WidgetsCatalogOptions options = const WidgetsCatalogOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["widgets"],
+      command: "catalog",
+      body: requestBody,
+      decode: widgetsCatalogReturnFromJson,
+    );
+  }
+
+  Future<WidgetsCheckReturn> check(String dir) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["dir"] = RaviJson.from(dir);
+    return _transport.callJson(
+      groupSegments: const ["widgets"],
+      command: "check",
+      body: requestBody,
+      decode: widgetsCheckReturnFromJson,
+    );
+  }
+
+  Future<WidgetsInitReturn> init(String dir, [WidgetsInitOptions options = const WidgetsInitOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["dir"] = RaviJson.from(dir);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["widgets"],
+      command: "init",
+      body: requestBody,
+      decode: widgetsInitReturnFromJson,
+    );
+  }
+
+  Future<WidgetsPreviewReturn> preview(String dir, [WidgetsPreviewOptions options = const WidgetsPreviewOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["dir"] = RaviJson.from(dir);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["widgets"],
+      command: "preview",
+      body: requestBody,
+      decode: widgetsPreviewReturnFromJson,
+    );
+  }
+
+  Future<WidgetsProposalReturn> proposal(String ref, String number) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["ref"] = RaviJson.from(ref);
+    requestBody["number"] = RaviJson.from(number);
+    return _transport.callJson(
+      groupSegments: const ["widgets"],
+      command: "proposal",
+      body: requestBody,
+      decode: widgetsProposalReturnFromJson,
+    );
+  }
+
+  Future<WidgetsProposalsReturn> proposals([String? ref, WidgetsProposalsOptions options = const WidgetsProposalsOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    if (ref != null) {
+      requestBody["ref"] = RaviJson.from(ref);
+    }
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["widgets"],
+      command: "proposals",
+      body: requestBody,
+      decode: widgetsProposalsReturnFromJson,
+    );
+  }
+
+  Future<WidgetsProposeReturn> propose(String dir, [WidgetsProposeOptions options = const WidgetsProposeOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["dir"] = RaviJson.from(dir);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["widgets"],
+      command: "propose",
+      body: requestBody,
+      decode: widgetsProposeReturnFromJson,
+    );
+  }
+
+  Future<WidgetsPublishReturn> publish(String dir, [WidgetsPublishOptions options = const WidgetsPublishOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["dir"] = RaviJson.from(dir);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["widgets"],
+      command: "publish",
+      body: requestBody,
+      decode: widgetsPublishReturnFromJson,
+    );
+  }
+
+  Future<WidgetsSearchReturn> search([String? query, WidgetsSearchOptions options = const WidgetsSearchOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    if (query != null) {
+      requestBody["query"] = RaviJson.from(query);
+    }
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["widgets"],
+      command: "search",
+      body: requestBody,
+      decode: widgetsSearchReturnFromJson,
+    );
+  }
+
+  Future<WidgetsShowReturn> show(String ref, [WidgetsShowOptions options = const WidgetsShowOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["ref"] = RaviJson.from(ref);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["widgets"],
+      command: "show",
+      body: requestBody,
+      decode: widgetsShowReturnFromJson,
     );
   }
 }

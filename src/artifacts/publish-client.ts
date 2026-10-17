@@ -55,6 +55,8 @@ export interface ArtifactPublishOptions {
   json?: boolean;
   /** Capability ids forwarded on the Pages publish body. Omitted when empty. */
   uses?: string[];
+  /** Page kit presentation metadata (`ravi pages ship`), forwarded unchanged as `publish.presentation`. */
+  presentation?: Record<string, unknown>;
 }
 
 export interface ArtifactReleaseActivateOptions {
@@ -231,6 +233,7 @@ export async function publishArtifactToConsole(
                 visibility: publishOptions.visibility,
               },
               ...(publishOptions.uses && publishOptions.uses.length > 0 ? { uses: publishOptions.uses } : {}),
+              ...(publishOptions.presentation ? { presentation: publishOptions.presentation } : {}),
             },
           }
         : {}),

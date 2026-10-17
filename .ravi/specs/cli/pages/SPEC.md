@@ -17,6 +17,7 @@ applies_to:
   - src/cli/agent-contract.ts
   - src/pages/client.ts
   - src/pages/ship.ts
+  - src/pages/kit.ts
   - src/pages/chat.ts
   - src/artifacts/publish-client.ts
   - src/plugins/internal/ravi-system/skills/pages/SKILL.md
@@ -93,6 +94,15 @@ contract errors rethrow first, recognizable Console not-found failures map to
     MUST NOT become a host slug. `--route` defaults to `/`. A positional slug
     is a legacy extra host: it MAY create or reuse that slug and MUST warn.
     Host slugs `ravi` and `ravi-*` MUST NOT be created.
+    Every source (`--body`, `--html` and `--dir`) is materialized as a private
+    temp copy; ship MUST NOT write to the caller's `--dir`. A `--dir` that
+    contains the system temp dir MUST NOT copy the temp copy into itself
+    (the copy walks the real source path and skips its own root).
+    The `--body` wrapper's `<html>` has no `lang`, so the page kit sets the
+    theme's locale; when the entry file still has none after the kit
+    (skipped, unavailable, or no theme and no tags), ship sets
+    `lang="pt-BR"` on that wrapper before upload. Ship MUST NOT add or change
+    `lang` in `--html` or `--dir` files.
 12. `pages domains --execute` MUST be one idempotent setup command. When
     ownership or Pages DNS is not ready, the CLI MUST recognize
     `DOMAIN_SETUP_REQUIRED`, surface the Console-authored DNS instruction, exit
@@ -116,11 +126,50 @@ contract errors rethrow first, recognizable Console not-found failures map to
     `projectRef`, `siteRef`, `siteId`, `host`, `featureEnabled`, `settings`
     and `voices` (plus `changed` on `set`).
 
+14. Page kit step of `pages ship`: after the source copy and before upload,
+    ship MUST `POST /api/cli/pages/kit` with `{project, site, route,
+    visibility, theme, files: [{path, html}]}`, where `files` are the copy's
+    `.html`/`.htm` files (no symlinks, dot paths or `_ravi`). A file over
+    2 MiB or a request over 4 MiB (the Console's body limit) skips the kit
+    with warning `KIT_TOO_LARGE`; no HTML file skips it silently. Ship MUST
+    write back only files it sent and the Console marks `changed`; the
+    Console omits `html` for `changed: false` files, which keep their local
+    bytes, and a `changed: true` file without `html` fails the ship
+    (`SERVER_UNAVAILABLE`, nothing uploaded). Ship MUST merge the returned
+    `uses` after `--uses` (normalized, deduplicated), re-run the invariant-4
+    public live-data refusal on the merged list before upload, and forward
+    `presentation` unchanged as `publish.presentation`. The OSS transports only: it never
+    compiles themes or widgets, resolves refs or derives `uses`.
+15. Kit failures: a bare 404 or a 405 (an older Console without the route;
+    a coded `NOT_FOUND` is a real error) MUST ship the HTML unchanged with
+    warning `KIT_UNAVAILABLE`. A 422 MUST exit 2 with `KIT_INVALID`, upload
+    nothing, and list each diagnostic as an issue line
+    `path:line:column severity code message` (diagnostics read from the body
+    top level or from `error.details.diagnostics`; the Console's
+    `KIT_TOO_LARGE` error, for a rewritten page over its limit, is one of
+    them). Any other Console or
+    network failure fails like other Console calls. The kit never brakes
+    ship (invariant 4).
+16. `pages ship --theme <ref|none>` is declared before `--execute`. Without
+    it the request sends `theme: null` (the effective project, else org,
+    theme pointer); `none` sends `"none"`; any other value is the ref. An
+    empty value is `PAYLOAD_INVALID` before any Console call. Success JSON
+    adds `presentation` (object or null) and `kit: {status, changedFiles,
+    warnings, theme, widgets}`; kit warnings also appear in `warnings` and
+    text output prints them.
+17. `pages outdated [--project] [--json]` MUST `GET
+    /api/cli/pages/outdated?project=<ref>` and return `{projectRef, total,
+    items}`, each item `{siteSlug, hostname, route, releaseId, publishedAt,
+    theme, widgets, runtime}` as the Console sent them. Text output is a
+    host / route / behind table (`theme org/acme v2→v3`, `widget <ref>
+    v1→v2`, `runtime 1.0.0→1.1.0`). Read-only, never braked.
+
 ## Write classification (brake decision per op)
 
 | op | class | brake |
 |---|---|---|
-| ship | publishes a route on the project default host (creates that one host when missing). A positional slug is a legacy extra host | not braked / executes immediately (`--execute` unused no-op) |
+| ship | publishes a route on the project default host (creates that one host when missing). A positional slug is a legacy extra host. The page kit call writes nothing in Console | not braked / executes immediately (`--execute` unused no-op) |
+| outdated | reads which active routes are behind on theme, widgets or runtime | not braked |
 | publish | uploads bytes and (default) activates a hosted route | dry-run + `--execute` |
 | password set | flips the route access policy on a live site (high) | dry-run + `--execute`, braked before the secret prompt |
 | password remove | widens who can reach the route, up to fully public (high) | dry-run + `--execute`, visibility validated first |
@@ -148,6 +197,9 @@ route.
 | Console site not found | `SITE_NOT_FOUND` + listing suggestedAction | 1 |
 | Console route not found | `ROUTE_NOT_FOUND` + listing suggestedAction | 1 |
 | braked write without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
+| ship with `ravi.bases.*` (declared or kit-derived) on a public route | `LIVE_DATA_PUBLIC_ROUTE` | 2 |
+| page kit rejects the HTML (422) | `KIT_INVALID` + one issue per diagnostic | 2 |
+| Console without the page kit route | success + warning `KIT_UNAVAILABLE` | 0 |
 | domain setup saved but waiting for DNS/provider readiness | `DOMAIN_SETUP_REQUIRED` + exact safe DNS action | 1 |
 | Console HTTPS failed from a provider sandbox | `HOST_UNREACHABLE` + host CLI suggestedAction | 1 |
 | other Console failures (auth, payload, rate limit) | stable CloudAuthError code | `2` for `PAYLOAD_INVALID`; otherwise `1` |

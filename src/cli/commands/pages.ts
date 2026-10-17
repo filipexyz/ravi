@@ -92,7 +92,19 @@ import {
   type PageCommentFollowResult,
 } from "../../pages/comment-follow.js";
 import {
+  applyPageKit,
+  formatPageKitDiagnostic,
+  listOutdatedPages,
+  mergePageUses,
+  normalizeShipTheme,
+  renderOutdatedTable,
+  type OutdatedPagesResult,
+  type PageKitDiagnostic,
+  type PageKitSummary,
+} from "../../pages/kit.js";
+import {
   checkShipLiveData,
+  ensureShipBodyLang,
   isReservedPageHostSlug,
   materializeShipSource,
   projectOwnedHostSlug,
@@ -140,6 +152,17 @@ Happy path:
   --uses ravi.identity.assertion opts the page into the Console viewer assertion.
   It does not embed a JWT. Register audiences with pages assertion audiences.
 
+Theme and widgets (page kit):
+  Before upload, ship sends the HTML files of a private copy (never your own
+  folder) to the Console page kit. It applies the project theme (else the org
+  theme), renders <ravi-view>, <ravi-widget> and <ravi-form> tags, inlines the
+  page runtime, and adds the ravi.bases.* ids those tags need to --uses.
+  --theme <ref> uses that theme instead; --theme none ships without a theme.
+  Kit errors exit 2 with one line per problem (path:line:column severity code
+  message) and nothing is uploaded. An older Console without the kit ships the
+  HTML unchanged with warning KIT_UNAVAILABLE.
+  ravi pages outdated lists routes shipped with an older theme or widget.
+
 Live data (ravi.bases.* in --uses):
   Works only for signed-in org members on private or protected_link routes.
   With --visibility public, ship refuses (exit 2) and publishes nothing.
@@ -154,7 +177,23 @@ Executes immediately:
   it before retrying, and do not probe by re-shipping.
 
 JSON:
-  { url, site, slug, route, visibility, artifactId, uses?, warnings? }
+  { url, site, slug, route, visibility, artifactId, uses?, warnings?,
+    presentation, kit: { status, changedFiles, warnings, theme, widgets } }
+`;
+
+const PAGES_OUTDATED_HELP = `
+Examples:
+  ravi pages outdated
+  ravi pages outdated --project demo --json
+
+Lists active routes shipped with an older theme, widget or page runtime than
+the current one. Ship the route again (ravi pages ship) to pick up the current
+versions.
+
+JSON:
+  { projectRef, total, items: [{ siteSlug, hostname, route, releaseId,
+    publishedAt, theme: { pinned, current } | null, widgets: [{ ref, pinned,
+    current }], runtime: { pinned, current } }] }
 `;
 
 const PAGES_READ_HELP = `
@@ -394,6 +433,26 @@ export class PagesCommands {
     });
   }
 
+  @Command({
+    name: "outdated",
+    description: "List published routes shipped with an older theme, widget or page runtime",
+    helpAfter: PAGES_OUTDATED_HELP,
+  })
+  @CommandAccess({ kind: "read", resource: "pages", action: "list", risk: "low" })
+  async outdated(
+    @Option({ flags: "--project <ref>", description: "Console project id or slug; overrides saved Console scope" })
+    projectOption?: string,
+    @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    return runPagesCommand("pages outdated", asJson, async () => {
+      const resolved = await resolvePagesProject(undefined, projectOption, consoleUrl, this.deps);
+      const result = await listOutdatedPages({ project: resolved.projectRef, console: consoleUrl }, this.deps);
+      printPayload(result, asJson, () => printOutdatedPages(result));
+      return result;
+    });
+  }
+
   @Command({ name: "read", description: "Read a published Ravi Page's content by URL", helpAfter: PAGES_READ_HELP })
   @CommandAccess({ kind: "read", resource: "pages", action: "read", risk: "low" })
   async read(
@@ -561,6 +620,11 @@ export class PagesCommands {
     })
     membersBestEffort?: boolean,
     @Option({
+      flags: "--theme <ref|none>",
+      description: "Theme for this ship: a theme ref, or none. Default: the project theme, else the org theme",
+    })
+    theme?: string,
+    @Option({
       flags: "--execute",
       description: "Accepted and ignored for compatibility. pages ship always publishes",
     })
@@ -573,6 +637,7 @@ export class PagesCommands {
       const resolvedEntrypoint = stringValue(entrypoint) ?? "index.html";
       const normalizedVisibility = normalizePageVisibility(visibility) ?? "private";
       const normalizedUses = normalizePageUses(uses);
+      const shipTheme = normalizeShipTheme(theme);
       const legacySlug = parsed.slug;
       if (legacySlug && isReservedPageHostSlug(legacySlug)) {
         throw new CloudAuthError(
@@ -615,6 +680,38 @@ export class PagesCommands {
         title,
       });
       try {
+        // Page kit: the Console rewrites the private copy's HTML (theme,
+        // widgets, runtime) and derives the ids its tags call.
+        const kitOutcome = await applyPageKit(
+          {
+            root: source.path,
+            project: resolved.projectRef,
+            site: slug,
+            route: normalizePageRoutePath(resolvedRoute),
+            visibility: normalizedVisibility,
+            theme: shipTheme,
+            console: consoleUrl,
+          },
+          this.deps,
+        );
+        if (!kitOutcome.ok) failShipKitInvalid(kitOutcome.diagnostics, asJson);
+        const kit = kitOutcome.result;
+        // The --body wrapper has no lang so the kit sets the theme's locale;
+        // when the kit did not, it gets the pt-BR fallback.
+        await ensureShipBodyLang(source, resolvedEntrypoint);
+        const shipUses = mergePageUses(normalizedUses, kit.uses);
+        // Tags can add ravi.bases.* ids, so the public-route refusal runs again
+        // on the merged list, still before any upload.
+        const kitLiveData = checkShipLiveData({
+          membersBestEffort,
+          uses: shipUses,
+          visibility: normalizedVisibility,
+        });
+        if (kitLiveData.status === "refused") failShipLiveDataOnPublicRoute(kitLiveData.basesUses, asJson);
+        if (kitLiveData.status === "overridden" && !warnings.includes(kitLiveData.warning)) {
+          warnings.push(kitLiveData.warning);
+        }
+        warnings.push(...kit.kit.warnings);
         const result = await publishArtifactToConsole(
           source.path,
           {
@@ -623,12 +720,13 @@ export class PagesCommands {
             entrypoint: resolvedEntrypoint,
             json: asJson,
             name: title,
+            ...(kit.presentation ? { presentation: kit.presentation } : {}),
             project: resolved.projectRef,
             publishToPages: true,
             route: resolvedRoute,
             site: slug,
             tool: "ravi pages ship",
-            uses: normalizedUses,
+            uses: shipUses,
             visibility: normalizedVisibility,
           },
           this.deps,
@@ -647,12 +745,14 @@ export class PagesCommands {
         const payload = {
           artifactId: extractPublishedArtifactId(result),
           commentFollow,
+          kit: kit.kit,
+          presentation: kit.presentation,
           route: resolvedRoute,
           site: shippedSite,
           slug,
           success: true as const,
           url: result.url,
-          ...(normalizedUses ? { uses: normalizedUses } : {}),
+          ...(shipUses ? { uses: shipUses } : {}),
           visibility: normalizedVisibility,
           ...(warnings.length > 0 ? { warnings } : {}),
         };
@@ -1958,9 +2058,19 @@ const pageCommentFollowReturnSchema = z.object({
   skipped: z.enum(["missing_page", "missing_creator", "invalid_filter", "unbound_agent"]).optional(),
 });
 
+const pageKitSummarySchema = z.object({
+  status: z.enum(["applied", "unavailable", "skipped"]),
+  changedFiles: z.array(z.string()),
+  warnings: z.array(z.string()),
+  theme: jsonObjectSchema.nullable(),
+  widgets: z.array(jsonObjectSchema),
+});
+
 const pageShipReturnSchema = z.object({
   artifactId: z.string().nullable(),
   commentFollow: pageCommentFollowReturnSchema,
+  kit: pageKitSummarySchema,
+  presentation: jsonObjectSchema.nullable(),
   route: z.string(),
   site: pageSiteSchema,
   slug: z.string(),
@@ -1969,6 +2079,27 @@ const pageShipReturnSchema = z.object({
   uses: z.array(z.string()).optional(),
   visibility: z.string(),
   warnings: z.array(z.string()).optional(),
+});
+
+const outdatedVersionPairSchema = z.object({ pinned: jsonValueSchema, current: jsonValueSchema });
+
+const pagesOutdatedReturnSchema = z.object({
+  success: z.literal(true),
+  consoleUrl: z.string(),
+  projectRef: z.string(),
+  total: z.number(),
+  items: z.array(
+    z.object({
+      siteSlug: z.string().nullable(),
+      hostname: z.string().nullable(),
+      route: z.string(),
+      releaseId: z.string().nullable(),
+      publishedAt: z.string().nullable(),
+      theme: outdatedVersionPairSchema.nullable(),
+      widgets: z.array(outdatedVersionPairSchema.extend({ ref: z.string().nullable() })),
+      runtime: outdatedVersionPairSchema.nullable(),
+    }),
+  ),
 });
 
 const pageAssertionAudienceSchema = z.object({
@@ -2105,6 +2236,7 @@ const pageAccessReturnSchema = z.object({
 declareCommandReturns(PagesCommands, {
   list: pagesListReturnSchema,
   published: publishedPagesListReturnSchema,
+  outdated: pagesOutdatedReturnSchema,
   read: pageReadReturnSchema,
   create: pageSiteCreateReturnSchema,
   ship: pageShipReturnSchema,
@@ -2384,6 +2516,37 @@ function failShipLiveDataOnPublicRoute(basesUses: string[], asJson: boolean | un
   });
 }
 
+/**
+ * Exit 2 with one issue per kit diagnostic, written `path:line:column severity
+ * code message`, each under the 200-character issue cap. Nothing was uploaded.
+ */
+function failShipKitInvalid(diagnostics: PageKitDiagnostic[], asJson: boolean | undefined): never {
+  const errors = diagnostics.filter((diagnostic) => diagnostic.severity === "error").length;
+  contractFail(
+    "pages ship",
+    "KIT_INVALID",
+    `Refusing to ship: the page kit found ${errors} error(s) in the HTML. Nothing was uploaded or published.`,
+    {
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: {
+        retryable: false,
+        suggestedAction:
+          "Fix each listed path:line:column in the HTML (tags, widget refs, field mappings, theme ref), then ship again",
+        issues: diagnostics.slice(0, 50).map((diagnostic) => ({
+          path: [],
+          code: diagnostic.code,
+          message: truncateIssueLine(formatPageKitDiagnostic(diagnostic)),
+        })),
+      },
+    },
+  );
+}
+
+function truncateIssueLine(line: string): string {
+  return line.length > 200 ? `${line.slice(0, 197)}...` : line;
+}
+
 function warnLegacyPageHost(slug: string): void {
   console.error(
     `Legacy Pages host "${slug}": publishing to an extra *.ravi.page host. The happy path publishes a route on the project default host. Do not create one host per page.`,
@@ -2439,6 +2602,7 @@ async function armPageCommentFollow(
 function printShipResult(result: {
   artifactId: string | null;
   commentFollow?: PageCommentFollowResult;
+  kit?: PageKitSummary;
   route: string;
   site: PageSitePayload;
   slug: string;
@@ -2453,10 +2617,34 @@ function printShipResult(result: {
   console.log(`  Route      ${result.route}`);
   console.log(`  Visibility ${result.visibility}`);
   if (result.uses?.length) console.log(`  Uses       ${result.uses.join(", ")}`);
+  if (result.kit?.status === "applied") {
+    console.log(`  Theme      ${presentationRefLabel(result.kit.theme) ?? "none"}`);
+    const widgets = result.kit.widgets.map(presentationRefLabel).filter((label): label is string => Boolean(label));
+    if (widgets.length > 0) console.log(`  Widgets    ${widgets.join(", ")}`);
+    if (result.kit.changedFiles.length > 0) console.log(`  Kit        ${result.kit.changedFiles.join(", ")}`);
+  }
   if (result.artifactId) console.log(`  Artifact   ${result.artifactId}`);
   console.log(`  URL        ${result.url ?? "not returned by Console"}`);
   printCommentFollow(result.commentFollow);
   for (const warning of result.warnings ?? []) console.log(`warning: ${warning}`);
+}
+
+/** `org/acme v3` from a presentation theme or widget entry. */
+function presentationRefLabel(entry: Record<string, unknown> | null): string | null {
+  if (!entry) return null;
+  const ref = stringValue(entry.ref) ?? stringValue(entry.itemId);
+  if (!ref) return null;
+  return typeof entry.version === "number" ? `${ref} v${entry.version}` : ref;
+}
+
+function printOutdatedPages(result: OutdatedPagesResult): void {
+  if (result.items.length === 0) {
+    console.log(`Nothing is outdated in project ${result.projectRef}.`);
+    return;
+  }
+  console.log(`Outdated Pages routes in ${result.projectRef} (${result.total})`);
+  for (const line of renderOutdatedTable(result.items)) console.log(`  ${line}`);
+  console.log("\nShip a route again with ravi pages ship to pick up the current theme, widgets and runtime.");
 }
 
 function printAssertionAudienceList(result: PageAssertionAudienceListResult): void {

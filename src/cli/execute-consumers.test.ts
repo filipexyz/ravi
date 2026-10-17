@@ -66,9 +66,30 @@ const executeConsumers: readonly ExecuteConsumer[] = [
     matches: 1,
   },
   {
+    name: "Library theme/widget publish refusal inside an agent and proposal review answer hint",
+    path: "src/cli/library-contract.ts",
+    marker: "propose <dir> --scope",
+    expected: "--execute",
+    matches: 2,
+  },
+  {
+    name: "theme publish next-step hint",
+    path: "src/cli/library-contract.ts",
+    marker: "Make it the active theme with: ravi themes use",
+    expected: "--execute",
+    matches: 1,
+  },
+  {
     name: "Library pin refusal inside an agent",
     path: "src/cli/commands/skills.ts",
     marker: "Ask the operator to run: ravi skills pin",
+    expected: "--execute",
+    matches: 1,
+  },
+  {
+    name: "themes use refusal inside an agent",
+    path: "src/cli/commands/themes.ts",
+    marker: "Ask the operator to run: ravi themes use",
     expected: "--execute",
     matches: 1,
   },
@@ -232,6 +253,81 @@ const executeInstructions = [
     name: "Library proposal help",
     path: "src/cli/commands/skills.ts",
     instruction: "ravi skills propose <dir> --scope ... --update <n> --execute",
+  },
+  {
+    name: "themes publish help",
+    path: "src/cli/commands/themes.ts",
+    instruction: "ravi themes publish ./acme --scope org --execute",
+  },
+  {
+    name: "themes propose help",
+    path: "src/cli/commands/themes.ts",
+    instruction: "ravi themes propose ./acme --scope org --update 2 --execute",
+  },
+  {
+    name: "themes proposal help",
+    path: "src/cli/commands/themes.ts",
+    instruction: "ravi themes propose <dir> --scope ... --update <n> --execute",
+  },
+  {
+    name: "themes use help",
+    path: "src/cli/commands/themes.ts",
+    instruction: "ravi themes use org/acme --project clinica --execute",
+  },
+  {
+    name: "widgets publish help",
+    path: "src/cli/commands/widgets.ts",
+    instruction: "ravi widgets publish ./pedido-card --scope org --execute",
+  },
+  {
+    name: "widgets propose help",
+    path: "src/cli/commands/widgets.ts",
+    instruction: "ravi widgets propose ./pedido-card --scope org --update 2 --execute",
+  },
+  {
+    name: "widgets proposal help",
+    path: "src/cli/commands/widgets.ts",
+    instruction: "ravi widgets propose <dir> --scope ... --update <n> --execute",
+  },
+  {
+    name: "widgets propose in the pages skill",
+    path: "src/plugins/internal/ravi-system/skills/pages/references/widgets.md",
+    instruction: 'ravi widgets propose ./pedido-card --scope org --note "cartão de pedido" --execute',
+  },
+  {
+    name: "widgets proposal answer in the pages skill",
+    path: "src/plugins/internal/ravi-system/skills/pages/references/widgets.md",
+    instruction: "ravi widgets propose ./pedido-card --scope org --update <n> --execute",
+  },
+  {
+    name: "themes use in the pages skill",
+    path: "src/plugins/internal/ravi-system/skills/pages/references/theme.md",
+    instruction: "ravi themes use org/acme --execute",
+  },
+  {
+    name: "themes propose in the pages skill",
+    path: "src/plugins/internal/ravi-system/skills/pages/references/theme.md",
+    instruction: 'ravi themes propose ./tema-acme --scope org --note "cores da marca" --execute',
+  },
+  {
+    name: "themes publish documentation",
+    path: "docs/console/widgets.mdx",
+    instruction: "ravi themes publish ./acme --scope org --execute",
+  },
+  {
+    name: "themes use documentation",
+    path: "docs/console/widgets.mdx",
+    instruction: "ravi themes use org/acme --project clinic --execute",
+  },
+  {
+    name: "widgets publish documentation",
+    path: "docs/console/widgets.mdx",
+    instruction: "ravi widgets publish ./order-card --scope org --execute",
+  },
+  {
+    name: "widgets propose root instructions",
+    path: "AGENTS.md",
+    instruction: "ravi widgets propose <dir> --scope org --execute",
   },
   {
     name: "Library pin skill",
@@ -572,6 +668,30 @@ const obsoleteExecuteConsumers = [
     path: "src/plugins/internal/ravi-system/skills/pages/SKILL.md",
     obsolete: "ravi invites revoke <invite-id> --execute",
     current: "ravi invites revoke <invite-id>",
+  },
+  {
+    name: "views bind in the pages skill: a view update applies at once",
+    path: "src/plugins/internal/ravi-system/skills/pages/references/widgets.md",
+    obsolete: "ravi bases views bind <base> <view-id> org/pedido-card --variant compact --field valor=total --execute",
+    current: "ravi bases views bind <base> <view-id> org/pedido-card --variant compact --field valor=total",
+  },
+  {
+    name: "views bind documentation: a view update applies at once",
+    path: "docs/console/widgets.mdx",
+    obsolete: "ravi bases views bind requests <view id> none --execute",
+    current: "ravi bases views bind requests <view id> none",
+  },
+  {
+    name: "widgets check in the pages skill: a read",
+    path: "src/plugins/internal/ravi-system/skills/pages/references/widgets.md",
+    obsolete: "ravi widgets check ./pedido-card --execute",
+    current: "ravi widgets check ./pedido-card",
+  },
+  {
+    name: "themes check in the pages skill: a read",
+    path: "src/plugins/internal/ravi-system/skills/pages/references/theme.md",
+    obsolete: "ravi themes check ./tema-acme --execute",
+    current: "ravi themes check ./tema-acme",
   },
 ] as const;
 

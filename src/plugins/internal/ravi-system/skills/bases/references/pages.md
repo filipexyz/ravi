@@ -14,3 +14,8 @@ ravi skills show pages --file references/esqueletos/formulario.html.txt  # esque
 O essencial: página de dados é só para membro logado da org, em rota `private`
 ou `protected_link`; todo ship no host lista a união dos ids `ravi.bases.*` de
 todas as páginas de dados; a view é o contrato de acesso (`views-access-forms.md`).
+
+Para mostrar a view sem escrever o cliente à mão, use as tags `<ravi-view>`,
+`<ravi-widget>` e `<ravi-form>`: o ship troca cada uma pela tela pronta, com o
+tema da org, e soma ao `--uses` os ids que ela chama. Tags, refs, mapeamento de
+campos e acessibilidade: `ravi skills show pages --file references/widgets.md`.

@@ -73,5 +73,26 @@
   host → route, MUST say not to create one host per page, and MUST tell the
   caller to list routes before publish. `create`/`publish` MAY appear only under
   an advanced/compat or legacy section.
+- `pages ship --dir` MUST upload a temp copy: the caller's folder keeps its
+  bytes after a ship whose kit rewrote HTML, and a second ship sends the same
+  source to the kit. A source folder that contains the temp root MUST NOT
+  copy it into itself.
+- `pages ship --body` MUST send the kit a wrapper whose `<html>` has no
+  `lang`, upload the `lang` the kit set, and otherwise upload
+  `lang="pt-BR"`; `--html` and `--dir` files MUST keep their `lang` as
+  written (`bun test src/pages/ship.test.ts`).
+- `pages ship` MUST post the copy's HTML files to `/api/cli/pages/kit`, write
+  back only `changed` files it sent, merge kit `uses` after `--uses`, refuse
+  a public route whose merged uses carry `ravi.bases.*` (exit 2, nothing
+  uploaded), and send `publish.presentation` unchanged. A request over
+  4 MiB MUST skip the kit with warning `KIT_TOO_LARGE`, and a file the
+  Console returns with `changed: false` and no `html` MUST keep its bytes.
+  A 422 MUST exit 2 with `KIT_INVALID` and `path:line:column severity code
+  message` lines (the Console's `KIT_TOO_LARGE` included); a
+  bare 404/405 MUST ship unchanged with warning `KIT_UNAVAILABLE`
+  (`bun test src/pages/kit.test.ts` and the `pages ship page kit` block of
+  `src/cli/commands/pages.test.ts`).
+- `pages outdated --json` MUST GET `/api/cli/pages/outdated?project=` and
+  text output MUST be a host / route / behind table.
 - `bun test src/cli/commands/pages.test.ts` SHOULD pass after any change to
   the pages contract surface.

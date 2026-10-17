@@ -612,6 +612,174 @@ describe("ravi bases subscriptions and listings", () => {
   });
 });
 
+describe("ravi bases views bind", () => {
+  const VIEW_PATH = `${ROOT}/crm/views/view_1`;
+
+  function fullView(layout: Record<string, unknown>, version = 4) {
+    return {
+      id: "view_1",
+      baseId: "base_1",
+      name: "Pedidos",
+      description: null,
+      columns: ["titulo", "status", "total"],
+      query: { filter: null, sort: [] },
+      layout,
+      access: { principals: [] },
+      position: 0,
+      version,
+      status: "active",
+      valid: true,
+      invalidReason: null,
+      createdAt: "2026-10-01T00:00:00.000Z",
+      updatedAt: "2026-10-01T00:00:00.000Z",
+      capabilities: { read: true, aggregateOnly: false, writeColumns: [], create: true, archive: true, manage: true },
+    };
+  }
+
+  function describeView(layout: Record<string, unknown>) {
+    const view = fullView(layout);
+    return {
+      id: view.id,
+      baseId: view.baseId,
+      name: view.name,
+      description: null,
+      layout: { type: layout.type },
+      version: view.version,
+      columns: [],
+      capabilities: view.capabilities,
+      valid: true,
+      view,
+    };
+  }
+
+  /** GET answers the described view; PATCH echoes the sent layout at the next version. */
+  function bindDeps(calls: Call[], layout: Record<string, unknown>) {
+    return makeDeps(calls, (call) => {
+      if (call.method === "GET") return describeView(layout);
+      const body = call.body as { layout: Record<string, unknown> };
+      const widget = body.layout.widget as Record<string, unknown> | null;
+      return fullView(
+        { ...body.layout, widget: widget ? { itemId: "item_1", ref: "org/pedido-card", ...widget } : null },
+        5,
+      );
+    });
+  }
+
+  it("merges layout.widget into the full current layout at the version it read", async () => {
+    const calls: Call[] = [];
+    const layout = { type: "board", groupBy: "status", cardFields: ["total"], widget: null };
+    const deps = bindDeps(calls, layout);
+
+    const { result } = await captureConsole(() =>
+      new BasesViewsCommands(deps).bind(
+        "crm",
+        "view_1",
+        "org/pedido-card",
+        ["valor=total", "titulo=titulo"],
+        "compact",
+        "sales",
+        undefined,
+        true,
+      ),
+    );
+
+    expect(calls).toEqual([
+      { method: "GET", path: VIEW_PATH, body: undefined, headers: {} },
+      {
+        method: "PATCH",
+        path: VIEW_PATH,
+        body: {
+          layout: {
+            type: "board",
+            groupBy: "status",
+            cardFields: ["total"],
+            widget: { ref: "org/pedido-card", fields: { valor: "total", titulo: "titulo" }, variant: "compact" },
+          },
+          expectedVersion: 4,
+        },
+        headers: {},
+      },
+    ]);
+    expect(result).toMatchObject({ baseRef: "crm", widget: { itemId: "item_1", ref: "org/pedido-card" } });
+    expectReturnsMatch(BasesViewsCommands, "bind", result);
+  });
+
+  it("unbinds with none, sends an item id as itemId, and keeps the rest of the layout", async () => {
+    const calls: Call[] = [];
+    const deps = bindDeps(calls, {
+      type: "gallery",
+      coverProp: "capa",
+      widget: { itemId: "item_1", ref: "org/pedido-card", fields: { valor: "total" } },
+    });
+
+    const { result } = await captureConsole(() =>
+      new BasesViewsCommands(deps).bind("crm", "view_1", "none", undefined, undefined, "sales", undefined, true),
+    );
+    expect(calls[1]?.body).toEqual({
+      layout: { type: "gallery", coverProp: "capa", widget: null },
+      expectedVersion: 4,
+    });
+    expect(result).toMatchObject({ widget: null });
+    expectReturnsMatch(BasesViewsCommands, "bind", result);
+
+    const itemId = "6f1c2e8a-3b4d-4c5e-8f90-1a2b3c4d5e6f";
+    await captureConsole(() =>
+      new BasesViewsCommands(deps).bind("crm", "view_1", itemId, undefined, undefined, "sales", undefined, true),
+    );
+    expect(calls[3]?.body).toMatchObject({ layout: { widget: { itemId } } });
+    expect((calls[3]?.body as { layout: { widget: Record<string, unknown> } } | undefined)?.layout.widget).toEqual({
+      itemId,
+    });
+  });
+
+  it("refuses a table layout with exit 2 and never writes", async () => {
+    const calls: Call[] = [];
+    const deps = bindDeps(calls, { type: "table" });
+
+    const { error, output } = await captureFailure(() =>
+      new BasesViewsCommands(deps).bind(
+        "crm",
+        "view_1",
+        "org/pedido-card",
+        undefined,
+        undefined,
+        "sales",
+        undefined,
+        true,
+      ),
+    );
+    expect(error).toMatchObject({ code: "PAYLOAD_INVALID", exitCode: 2 });
+    expect(JSON.parse(output).error.message).toContain("board, list, gallery or calendar");
+    expect(calls.map((call) => call.method)).toEqual(["GET"]);
+  });
+
+  it("rejects malformed --field and --field with none before any Console call", async () => {
+    const calls: Call[] = [];
+    const deps = bindDeps(calls, { type: "list" });
+    const attempts = [
+      () =>
+        new BasesViewsCommands(deps).bind(
+          "crm",
+          "view_1",
+          "none",
+          ["valor=total"],
+          undefined,
+          "sales",
+          undefined,
+          true,
+        ),
+      () => new BasesViewsCommands(deps).bind("crm", "view_1", "card", ["valor"], undefined, "sales", undefined, true),
+      () =>
+        new BasesViewsCommands(deps).bind("crm", "view_1", "card", ["a=b", "a=c"], undefined, "sales", undefined, true),
+    ];
+    for (const attempt of attempts) {
+      const { error } = await captureFailure(attempt);
+      expect(error).toMatchObject({ code: "PAYLOAD_INVALID", exitCode: 2 });
+    }
+    expect(calls).toEqual([]);
+  });
+});
+
 describe("ravi bases through the daemon gateway", () => {
   it("declares --sort and --group-by as one comma-separated string, the value commander forwards", () => {
     const registry = buildRegistry([BasesCommands, BasesRowsCommands, BasesViewsCommands]);

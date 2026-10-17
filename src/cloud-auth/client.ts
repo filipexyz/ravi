@@ -328,6 +328,8 @@ export interface ArtifactPublishFinalizeInput {
     visibility?: string;
     /** Capability ids such as `ravi.identity.assertion`. Omitted when empty. */
     uses?: string[];
+    /** Page kit presentation metadata from `/api/cli/pages/kit`, passed through unchanged. */
+    presentation?: Record<string, unknown>;
   };
   source?: Record<string, unknown>;
 }
@@ -579,7 +581,9 @@ function mapConsoleError(status: number, payload: unknown, headers: Headers | un
     stringValue(data?.error_description) ??
     defaultErrorMessage(code);
   const issues = projectPublicIssues(data?.issues ?? nested?.issues);
-  const details = objectValue(nested?.details) ?? undefined;
+  // A page kit 422 may carry its diagnostics at the top level of the body.
+  const details =
+    objectValue(nested?.details) ?? (Array.isArray(data?.diagnostics) ? { diagnostics: data.diagnostics } : undefined);
   const requestId = stringValue(nested?.requestId) ?? stringValue(data?.requestId) ?? undefined;
   return new CloudAuthError(code, message, {
     ...cloudAuthErrorOptions(status, headers, data, issues),
