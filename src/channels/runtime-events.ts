@@ -15,7 +15,9 @@ import {
   type ChannelBackendRuntimeState,
   type ChannelBackendRuntimeStateRecord,
 } from "../router/router-db.js";
+import { classifyRuntimeCredentialFailure } from "../runtime/credential-classifier.js";
 import type { ChannelBackendPromptMetadata } from "../runtime/message-types.js";
+import { isRuntimeCredentialResolutionFailure } from "../runtime/public-failure.js";
 import type { RuntimeEvent } from "../runtime/types.js";
 import type { ChannelBackendEgressRequester } from "./backend-egress.js";
 import {
@@ -564,7 +566,7 @@ export async function projectChannelRuntimeEvent(input: {
       sinks,
     });
   } else if (event.type === "turn.failed") {
-    const error = safeRuntimeError(metadata.correlationId, event.recoverable ?? false);
+    const error = safeRuntimeError(metadata.correlationId, event.recoverable ?? false, event.error);
     await append({
       metadata,
       kind: "turn.terminal_output",
@@ -841,13 +843,66 @@ function rejectedInterrupt(
   });
 }
 
-function safeRuntimeError(correlationId: string, retryable: boolean): ChannelSafeError {
+// The provider's own failure text never leaves the host: it can name
+// credentials, accounts or internal diagnostics. Only its class reaches the
+// channel, so a billing or rate-limit failure is not reported as INTERNAL.
+function safeRuntimeError(correlationId: string, retryable: boolean, errorText?: string): ChannelSafeError {
   return ChannelSafeErrorSchema.parse({
-    code: "INTERNAL",
-    category: "internal",
-    retryable,
+    ...(errorText === undefined
+      ? { code: "INTERNAL", category: "internal", retryable }
+      : classifyChannelRuntimeFailure(errorText, retryable)),
     correlationId,
   });
+}
+
+type ChannelRuntimeFailureClass = Pick<ChannelSafeError, "code" | "category" | "retryable">;
+
+export function classifyChannelRuntimeFailure(errorText: string, recoverable: boolean): ChannelRuntimeFailureClass {
+  const text = errorText.trim();
+  if (isRuntimeCredentialResolutionFailure(text)) {
+    return { code: "UNAVAILABLE", category: "availability", retryable: false };
+  }
+  const httpStatus = providerFailureStatus(text);
+  const providerCode = /provider error \(([a-z0-9_]+)\)/i.exec(text)?.[1];
+  if (httpStatus === undefined && providerCode === undefined && !PROVIDER_FAILURE_TEXT.test(text)) {
+    return { code: "INTERNAL", category: "internal", retryable: recoverable };
+  }
+  // Only the failure class is used; the projection does not know the provider.
+  const { kind } = classifyRuntimeCredentialFailure({
+    runtimeProvider: "claude",
+    message: text,
+    ...(httpStatus !== undefined ? { httpStatus } : {}),
+    ...(providerCode ? { providerCode } : {}),
+  });
+  switch (kind) {
+    case "rate_limited":
+      return { code: "RATE_LIMITED", category: "capacity", retryable: true };
+    case "provider_overloaded":
+      return { code: "OVERLOADED", category: "capacity", retryable: true };
+    case "network_transient":
+      return { code: "UNAVAILABLE", category: "availability", retryable: true };
+    case "billing_blocked":
+    case "quota_exhausted":
+    case "auth_invalid":
+    case "permission_denied":
+      // The operator's provider account has to change; retrying will not help.
+      return { code: "UNAVAILABLE", category: "availability", retryable: false };
+    default:
+      return { code: "INTERNAL", category: "internal", retryable: recoverable };
+  }
+}
+
+// Provider failures the classifier recognizes from text alone, with no status.
+const PROVIDER_FAILURE_TEXT = /\b(?:insufficient (?:balance|credits)|out of extra usage|overloaded)\b/i;
+
+// Provider SDKs put the HTTP status in the message: OpenAI-compatible clients
+// (pi) as "402 Insufficient Balance", claude-provider as "(http_402)".
+function providerFailureStatus(text: string): number | undefined {
+  const match =
+    /^(?:Error:\s*)?([45]\d\d)\s/.exec(text) ??
+    /\bhttp_([45]\d\d)\b/i.exec(text) ??
+    /\b(?:HTTP|status(?: code)?)[\s:=]+([45]\d\d)\b/i.exec(text);
+  return match ? Number(match[1]) : undefined;
 }
 
 function channelAssistantPhase(metadata: RuntimeEvent["metadata"]): "commentary" | "final_answer" | "unknown" {
