@@ -10,6 +10,8 @@ const BINDINGS_DIR = "bindings";
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
 
 export const ACTOR_BINDING_CACHE_TTL_MS = DEFAULT_TTL_MS;
+/** Clock skew tolerated past the TTL before a cached expiry counts as planted. */
+const FUTURE_EXPIRY_SLACK_MS = 60_000;
 
 export function getActorBindingsDir(env: NodeJS.ProcessEnv = process.env): string {
   return join(getCloudAuthDir(env), BINDINGS_DIR);
@@ -19,10 +21,20 @@ export function getActorBindingCachePath(contactId: string, env: NodeJS.ProcessE
   return join(getActorBindingsDir(env), `${sanitizeBindingKey(contactId)}.json`);
 }
 
+export interface ReadCachedActorBindingOptions {
+  /**
+   * The active login's installation. A binding cached for another
+   * installation is then not this one's: null, and the file stays (another
+   * login on this machine may still use it).
+   */
+  requireInstallationId?: string;
+}
+
 export function readCachedActorBinding(
   contactId: string,
   env: NodeJS.ProcessEnv = process.env,
   now = Date.now(),
+  options: ReadCachedActorBindingOptions = {},
 ): ActorBinding | null {
   const path = getActorBindingCachePath(contactId, env);
   if (!existsSync(path)) return null;
@@ -35,11 +47,19 @@ export function readCachedActorBinding(
   try {
     const parsed = JSON.parse(readFileSync(path, "utf8")) as ActorBindingCacheRecord;
     if (!parsed?.binding?.contactId || !parsed.binding.consoleUserId || !parsed.expiresAt) return null;
-    if (Date.parse(parsed.expiresAt) <= now) {
+    const expiresAt = Date.parse(parsed.expiresAt);
+    // Every writer uses the default TTL, so an expiry beyond it was planted.
+    if (!(expiresAt > now) || expiresAt > now + ACTOR_BINDING_CACHE_TTL_MS + FUTURE_EXPIRY_SLACK_MS) {
       rmSync(path, { force: true });
       return null;
     }
     if (parsed.binding.contactId !== contactId) return null;
+    if (
+      options.requireInstallationId !== undefined &&
+      parsed.binding.installationId !== options.requireInstallationId
+    ) {
+      return null;
+    }
     return parsed.binding;
   } catch {
     return null;

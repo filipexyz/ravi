@@ -364,9 +364,51 @@ const executeInstructions = [
     path: "docs/console/pages.mdx",
     instruction: 'ravi access request https://other-org.ravi.page/report --message "For the Q3 review" --execute',
   },
+  {
+    name: "Knowledge propose skill",
+    path: "src/plugins/internal/ravi-system/skills/knowledge/SKILL.md",
+    instruction: 'ravi knowledge propose --note "Entregas para o Sul levam 12 dias" --project vendas --execute',
+  },
+  {
+    name: "Knowledge propose documentation",
+    path: "docs/guides/knowledge.mdx",
+    instruction: 'ravi knowledge propose --note "Deliveries to the South take 12 days" --project sales --execute',
+  },
+  {
+    name: "Knowledge propose help",
+    path: "src/cli/commands/knowledge.ts",
+    instruction: 'ravi knowledge propose --note "Entregas para o Sul levam 12 dias" --project vendas --execute',
+  },
+  {
+    name: "Knowledge forget redact skill",
+    path: "src/plugins/internal/ravi-system/skills/knowledge/SKILL.md",
+    instruction: "ravi knowledge forget --about contact:<contact-id> --redact --execute",
+  },
+  {
+    name: "Knowledge forget redact documentation",
+    path: "docs/guides/knowledge.mdx",
+    instruction: "ravi knowledge forget --about contact:<contact-id> --redact --execute",
+  },
+  {
+    name: "Knowledge forget redact help",
+    path: "src/cli/commands/knowledge.ts",
+    instruction: "ravi knowledge forget --about contact:<contact-id> --redact --execute",
+  },
 ] as const;
 
 const obsoleteExecuteConsumers = [
+  {
+    name: "Knowledge forget skill: archiving applies at once",
+    path: "src/plugins/internal/ravi-system/skills/knowledge/SKILL.md",
+    obsolete: "ravi knowledge forget <item-id> --execute",
+    current: "ravi knowledge forget <item-id>",
+  },
+  {
+    name: "Knowledge forget documentation: archiving applies at once",
+    path: "docs/guides/knowledge.mdx",
+    obsolete: "ravi knowledge forget <item-id> --execute",
+    current: "ravi knowledge forget <item-id>",
+  },
   {
     name: "Library agent requests off skill: closing an agent applies at once",
     path: "src/plugins/internal/ravi-system/skills/agents/SKILL.md",

@@ -14,6 +14,7 @@ import {
   stashPromptForStartingSession,
 } from "./session-dispatcher.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
+import { KNOWLEDGE_AUDIENCE_LINES } from "../knowledge/turn/preamble.js";
 import { RuntimeHostSubscriptions } from "./host-subscriptions.js";
 import type { RuntimeUserMessage } from "./host-session.js";
 import type { RuntimeHostStreamingSession } from "./host-session.js";
@@ -2736,6 +2737,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       expect(activeSession.pendingMessages[1]?.launchPrompt?.source).toEqual(slackSource);
       expect(activeSession.pendingMessages[1]?.message.content).toBe(
         "[session surface] This turn came from a Slack chat. A normal reply returns there.\n" +
+          `${KNOWLEDGE_AUDIENCE_LINES.none}\n` +
           "[Slack C123 mid:123.456] <@U123>: hello",
       );
       expect(activeSession.pendingMessages[1]?.launchPrompt?._sessionSurfaceHint).toBe(true);
@@ -3735,6 +3737,48 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 
+  it("adds the Knowledge audience line to the model-facing prompt once, never to the stored text", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-knowledge-");
+    try {
+      getOrCreateSession("agent:dev:test:knowledge-cli", "dev", stateDir, { name: "knowledge-cli" });
+      getOrCreateSession("agent:dev:test:knowledge-heartbeat", "dev", stateDir, { name: "knowledge-heartbeat" });
+      const dispatcher = createDispatcher(1);
+      dispatcher.streamingSessions.set("busy", createActiveSession());
+
+      const cli = dispatcher.handlePromptImmediate("knowledge-cli", {
+        prompt: "what did the client say?",
+        _cliDestination: true,
+      });
+      const heartbeat = dispatcher.handlePromptImmediate("knowledge-heartbeat", {
+        prompt: "check HEARTBEAT.md",
+        _heartbeat: true,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(dispatcher.pendingStarts).toHaveLength(2);
+      const byName = new Map(dispatcher.pendingStarts.map((start) => [start.sessionName, start.prompt]));
+      const cliPrompt = byName.get("knowledge-cli")!;
+      expect(cliPrompt.prompt).toBe("what did the client say?");
+      expect(cliPrompt._knowledgePreamble).toBe(true);
+      expect(cliPrompt._runtimePrompt?.split("\n").slice(0, 3)).toEqual([
+        cliPrompt._sessionSurfaceHintText ?? "",
+        KNOWLEDGE_AUDIENCE_LINES.operator,
+        "what did the client say?",
+      ]);
+
+      const heartbeatPrompt = byName.get("knowledge-heartbeat")!;
+      expect(heartbeatPrompt.prompt).toBe("check HEARTBEAT.md");
+      expect(heartbeatPrompt._runtimePrompt).toContain(`${KNOWLEDGE_AUDIENCE_LINES.none}\ncheck HEARTBEAT.md`);
+      expect(heartbeatPrompt._runtimePrompt).not.toContain("audience=operator");
+      expect(heartbeatPrompt._runtimePrompt?.split("[knowledge]")).toHaveLength(2);
+
+      dispatcher.shutdownAll();
+      await Promise.all([cli, heartbeat]);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
   it("does not start a session for a skip-turn message and feeds it to the next cold start", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-skip-turn-cold-");
     try {
@@ -3782,8 +3826,12 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       expect(started.prompt).toContain("[System] Inform: group created");
       expect(started.prompt).toEndWith("\nLuis: qual o orçamento?");
       expect(started.prompt).not.toContain("10k");
+      // The Knowledge line goes under the surface hint, above the held text.
       expect(started._runtimePrompt).toBe(
-        started.prompt.replace(/\nLuis: qual o orçamento\?$/, "\nLuis: o orçamento é 10k\n\nLuis: qual o orçamento?"),
+        started.prompt.replace(
+          /\nLuis: qual o orçamento\?$/,
+          `\n${KNOWLEDGE_AUDIENCE_LINES.none}\nLuis: o orçamento é 10k\n\nLuis: qual o orçamento?`,
+        ),
       );
       expect(
         getRecentHistory("skip-turn-group")

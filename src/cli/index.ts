@@ -105,6 +105,7 @@ const AGENT_CONTRACT_DOMAINS = [
   "insights",
   "instances",
   "invites",
+  "knowledge",
   "mail",
   "media",
   "meetings",

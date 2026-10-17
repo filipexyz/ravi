@@ -260,6 +260,7 @@ Operating Ravi is documented in the system skills (`ravi skills show <skill>`) a
 | Instances, policies, routes, pending, DM scopes | `instances`, `routes` | `guides/routing` |
 | Agent keys, settings, `~/.ravi/.env`, files, PM2 | `agents`, `settings`, `daemon` | `reference/configuration` |
 | Contacts and sessions (send, ask, inform, reset, trace) | `contacts`, `sessions` | `guides/contacts`, `guides/sessions` |
+| Knowledge: search with sources, contact memory, proposals | `knowledge` | `guides/knowledge` |
 | Cron, triggers, heartbeat | `cron`, `triggers`, `heartbeat` | `guides/cron-jobs`, `guides/triggers`, `guides/heartbeat` |
 | Logs, doctor, events, JetStream | `daemon`, `events` | `guides/troubleshooting`, `reference/nats-events` |
 | Console login, Pages | `pages` | `console/login`, `console/pages` |

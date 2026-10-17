@@ -7,11 +7,12 @@ import {
   resolveCommandSkillGate,
 } from "./skill-gates.js";
 
-describe("default skill gate rules for slack, observers and meetings", () => {
+describe("default skill gate rules for slack, observers, meetings and knowledge", () => {
   const cases = [
     { group: "slack", skill: "ravi-system-slack", command: "ravi slack canvas-access-delete F123 --users U123 --json" },
     { group: "observers", skill: "ravi-system-observers", command: "ravi observers rules list --json" },
     { group: "meetings", skill: "ravi-system-meetings", command: "ravi meetings profiles list --json" },
+    { group: "knowledge", skill: "ravi-system-knowledge", command: 'ravi knowledge search "prazo" --json' },
   ] as const;
 
   it("names a system skill that ships in the catalog", () => {

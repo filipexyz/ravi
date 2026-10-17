@@ -256,6 +256,53 @@ describe("inbox runner pending lease recovery", () => {
     expect(handedOff).toEqual(["meetings.recording.ready:6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f"]);
   });
 
+  it("hands knowledge items to the knowledge handoff once, after delivery, and still acks when it throws", async () => {
+    writeCloudCredentials(makeCredentials());
+    let acks = 0;
+    globalThis.fetch = mock(async (input: string | URL | Request) => {
+      const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
+      if (url.pathname === "/api/cli/inbox/subscriptions/global") {
+        return jsonResponse({ subscription: makeSubscription() });
+      }
+      if (url.pathname === "/api/cli/inbox/pulse") {
+        return jsonResponse(makePendingPulse({ latestSequence: 1, subscription: makeSubscription() }));
+      }
+      if (url.pathname === "/api/cli/inbox/poll") {
+        return jsonResponse(
+          makePoll({
+            items: [
+              makeInboxItem(1, {
+                eventType: "knowledge.gap.answered",
+                category: "knowledge",
+                payload: { proposalId: "prop_1", projectId: "proj_1" },
+              }),
+            ],
+          }),
+        );
+      }
+      if (url.pathname === "/api/cli/inbox/ack") {
+        acks += 1;
+        return jsonResponse({ acked: 1 });
+      }
+      throw new Error(`Unexpected inbox request: ${url.pathname}`);
+    }) as unknown as typeof fetch;
+
+    const handedOff: string[] = [];
+    const runner = new InboxRunner({
+      nats: { publish: async () => {}, flush: async () => {} },
+      meetingHandoff: () => {},
+      knowledgeHandoff: (payload) => {
+        expect(getItemByItemId("https://console.ravi.bot", "org_1", payload.eventId)?.deliveredAt).not.toBeNull();
+        handedOff.push(`${payload.eventType}:${(payload.payload as { proposalId?: string } | null)?.proposalId}`);
+        throw new Error("knowledge failed");
+      },
+    });
+    await runner.tickOnce();
+
+    expect(handedOff).toEqual(["knowledge.gap.answered:prop_1"]);
+    expect(acks).toBe(1);
+  });
+
   it("still acks a delivered item when the meetings handoff throws", async () => {
     writeCloudCredentials(makeCredentials());
     let acks = 0;

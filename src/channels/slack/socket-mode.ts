@@ -1,3 +1,4 @@
+import { guardedSessionForChat } from "../../knowledge/egress/guard.js";
 import { createHash, randomUUID } from "node:crypto";
 import { WebSocket as NodeWebSocket } from "ws";
 import { configStore } from "../../config-store.js";
@@ -273,14 +274,27 @@ function normalizeSlackTargetIds(values: Array<string | undefined>): string[] {
   );
 }
 
+export interface SlackTextDeliveryOptions {
+  /** Whether a chat is a guarded Knowledge packet conversation; defaults to the read-only knowledge.db lookup. */
+  isKnowledgeGuardedChat?: (target: MessageTarget) => boolean;
+}
+
+function defaultIsKnowledgeGuardedChat(target: MessageTarget): boolean {
+  return guardedSessionForChat(target.channel, target.chatId) !== null;
+}
+
 export class SlackTextDelivery implements NativeTextDelivery {
   readonly channelId = "slack";
+  private readonly isKnowledgeGuardedChat: (target: MessageTarget) => boolean;
 
   constructor(
     private readonly webClient: SlackWebApiClient,
     private readonly routingPolicy: SlackRoutingPolicy,
     private readonly scope?: SlackTargetScope,
-  ) {}
+    options: SlackTextDeliveryOptions = {},
+  ) {
+    this.isKnowledgeGuardedChat = options.isKnowledgeGuardedChat ?? defaultIsKnowledgeGuardedChat;
+  }
 
   supports(target: MessageTarget): boolean {
     return supportsSlackTarget(target, this.scope);
@@ -288,11 +302,19 @@ export class SlackTextDelivery implements NativeTextDelivery {
 
   async deliverText(request: NativeTextDeliveryRequest): Promise<NativeTextDeliveryResult> {
     const threadTs = this.routingPolicy.threadReplyMode === "channel_root" ? undefined : request.target.threadId;
+    // Packet conversations post with unfurls off, so no link preview leaks page content.
+    let guarded = false;
+    try {
+      guarded = this.isKnowledgeGuardedChat(request.target);
+    } catch {
+      guarded = false;
+    }
     const result = await this.webClient.postMessage({
       channel: request.target.chatId,
       text: request.text,
       clientMsgId: slackClientMessageId(request.idempotencyKey),
       ...(threadTs ? { threadTs } : {}),
+      ...(guarded ? { unfurlLinks: false, unfurlMedia: false } : {}),
     });
     return {
       provider: "slack",

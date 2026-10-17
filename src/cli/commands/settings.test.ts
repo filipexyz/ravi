@@ -49,6 +49,7 @@ mock.module("../../router/router-db.js", () => ({
   dbListSettings: () => ({ ...settingsStore }),
   dbGetAgent: (id: string) => (id === "main" || id === "sales" ? { id } : null),
   dbListAgents: () => [{ id: "main" }, { id: "sales" }],
+  dbGetInstance: (name: string) => (name === "wa-main" ? { name: "wa-main", channel: "whatsapp" } : null),
   DmScopeSchema: {
     options: ["main", "per-peer", "per-channel-peer", "per-account-channel-peer"],
     safeParse: (value: string) =>
@@ -67,6 +68,7 @@ mock.module("../../permissions/scope.js", () => ({
 }));
 
 const { SettingsCommands } = await import("./settings.js");
+const { knowledgeSettings } = await import("../../knowledge/settings.js");
 const { ContractError } = await import("../agent-contract.js");
 const { getCommandAccessMetadata } = await import("../decorators.js");
 
@@ -138,7 +140,7 @@ describe("SettingsCommands", () => {
       new SettingsCommands().list(true);
     });
 
-    expect(output).toContain("Settings (22 returned of 22, limit 50, offset 0):");
+    expect(output).toContain("Settings (29 returned of 29, limit 50, offset 0):");
     expect(output).toContain("account.main.dmPolicy: pairing");
     expect(output).toContain("section: legacy");
   });
@@ -228,6 +230,32 @@ describe("SettingsCommands", () => {
       );
     }
     expect(settingsStore["connectors.mode.main.google"]).toBe("person_asking");
+  });
+
+  it("registers the knowledge.* keys with validators", () => {
+    const commands = new SettingsCommands();
+    expect(() => commands.set("knowledge.digest.time", "8h")).toThrow(/knowledge.digest.time/);
+    expect(() => commands.set("knowledge.owner.target", "whatsapp:wa-main")).toThrow(/knowledge.owner.target/);
+    expect(() => commands.set("knowledge.owner.target", "whatsapp:ghost:5511999")).toThrow(/ghost/);
+    expect(() => commands.set("knowledge.contactMemory.agents", "main,ghost")).toThrow(/ghost/);
+    expect(() => commands.set("knowledge.curator.agent", "ghost")).toThrow(/ghost/);
+    expect(() => commands.set("knowledge.digest.timezone", "Mars/Olympus")).toThrow(/timezone/);
+    for (const bad of ['["a.com"]', '{"wa-main":"a.com"}', '{"wa-main":["not a host"]}', '{"ghost":["a.com"]}']) {
+      expect(() => commands.set("knowledge.egress.allow", bad)).toThrow(/knowledge.egress.allow/);
+    }
+    expect(Object.keys(settingsStore)).toEqual([]);
+
+    captureLogs(() => {
+      commands.set("knowledge.digest.time", "07:30");
+      commands.set("knowledge.owner.target", "whatsapp:wa-main:5511999999999");
+      commands.set("knowledge.contactMemory.agents", "main,sales");
+      commands.set("knowledge.egress.allow", '{"wa-main":["example.com"]}');
+    });
+    expect(knowledgeSettings().egressAllow("wa-main")).toEqual(["example.com"]);
+    expect(knowledgeSettings().contactMemoryAgents).toEqual(["main", "sales"]);
+    expect(knowledgeSettings().digestTime).toBe("07:30");
+    const listed = captureLogs(() => commands.list(false, true));
+    expect(listed).toContain("knowledge.egress.allow");
   });
 });
 

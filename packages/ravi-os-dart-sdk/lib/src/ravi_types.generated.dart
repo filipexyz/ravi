@@ -13773,6 +13773,404 @@ class JobsWaitReturn {
 
 JobsWaitReturn jobsWaitReturnFromJson(Object? json) => JobsWaitReturn.fromJsonValue(json);
 
+class KnowledgeForgetOptions {
+  const KnowledgeForgetOptions({this.about, this.execute, this.redact});
+
+  final String? about;
+  final bool? execute;
+  final bool? redact;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (about != null) {
+      into["about"] = RaviJson.from(about);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (redact != null) {
+      into["redact"] = RaviJson.from(redact);
+    }
+  }
+}
+
+class KnowledgeForgetReturn {
+  const KnowledgeForgetReturn({required this.archived, required this.ftsRowsDeleted, required this.redacted});
+
+  final double archived;
+  final double ftsRowsDeleted;
+  final double redacted;
+
+  factory KnowledgeForgetReturn.fromJson(Map<String, Object?> json) {
+    return KnowledgeForgetReturn(
+      archived: raviJsonAsDouble(json["archived"]),
+      ftsRowsDeleted: raviJsonAsDouble(json["ftsRowsDeleted"]),
+      redacted: raviJsonAsDouble(json["redacted"]),
+    );
+  }
+
+  static KnowledgeForgetReturn fromJsonValue(Object? json) {
+    return KnowledgeForgetReturn.fromJson(raviJsonObject(json, "KnowledgeForgetReturn"));
+  }
+}
+
+KnowledgeForgetReturn knowledgeForgetReturnFromJson(Object? json) => KnowledgeForgetReturn.fromJsonValue(json);
+
+class KnowledgeMarksOptions {
+  const KnowledgeMarksOptions({this.url});
+
+  final String? url;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (url != null) {
+      into["url"] = RaviJson.from(url);
+    }
+  }
+}
+
+class KnowledgeMarksReturn {
+  const KnowledgeMarksReturn({required this.card, required this.issues, required this.marks, required this.next});
+
+  final RaviJson card;
+  final List<String> issues;
+  final List<RaviJson> marks;
+  final List<String> next;
+
+  factory KnowledgeMarksReturn.fromJson(Map<String, Object?> json) {
+    return KnowledgeMarksReturn(
+      card: RaviJson.from(json["card"]),
+      issues: raviJsonAsList(json["issues"], raviJsonAsString),
+      marks: raviJsonAsList(json["marks"], RaviJson.from),
+      next: raviJsonAsList(json["next"], raviJsonAsString),
+    );
+  }
+
+  static KnowledgeMarksReturn fromJsonValue(Object? json) {
+    return KnowledgeMarksReturn.fromJson(raviJsonObject(json, "KnowledgeMarksReturn"));
+  }
+}
+
+KnowledgeMarksReturn knowledgeMarksReturnFromJson(Object? json) => KnowledgeMarksReturn.fromJsonValue(json);
+
+class KnowledgeProposeOptions {
+  const KnowledgeProposeOptions({this.audience, this.correction, this.execute, this.from, this.gap, this.note, this.project, this.supersedes, this.transcript});
+
+  final String? audience;
+  final String? correction;
+  final bool? execute;
+  final List<String>? from;
+  final String? gap;
+  final String? note;
+  final String? project;
+  final String? supersedes;
+  final String? transcript;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (audience != null) {
+      into["audience"] = RaviJson.from(audience);
+    }
+    if (correction != null) {
+      into["correction"] = RaviJson.from(correction);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (from != null) {
+      into["from"] = RaviJson.from(from);
+    }
+    if (gap != null) {
+      into["gap"] = RaviJson.from(gap);
+    }
+    if (note != null) {
+      into["note"] = RaviJson.from(note);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (supersedes != null) {
+      into["supersedes"] = RaviJson.from(supersedes);
+    }
+    if (transcript != null) {
+      into["transcript"] = RaviJson.from(transcript);
+    }
+  }
+}
+
+class KnowledgeProposeReturn {
+  const KnowledgeProposeReturn({required this.deduped, required this.next, required this.proposal});
+
+  final bool deduped;
+  final List<String> next;
+  final RaviJson proposal;
+
+  factory KnowledgeProposeReturn.fromJson(Map<String, Object?> json) {
+    return KnowledgeProposeReturn(
+      deduped: raviJsonAsBool(json["deduped"]),
+      next: raviJsonAsList(json["next"], raviJsonAsString),
+      proposal: RaviJson.from(json["proposal"]),
+    );
+  }
+
+  static KnowledgeProposeReturn fromJsonValue(Object? json) {
+    return KnowledgeProposeReturn.fromJson(raviJsonObject(json, "KnowledgeProposeReturn"));
+  }
+}
+
+KnowledgeProposeReturn knowledgeProposeReturnFromJson(Object? json) => KnowledgeProposeReturn.fromJsonValue(json);
+
+class KnowledgeReadOptions {
+  const KnowledgeReadOptions({this.around});
+
+  final String? around;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (around != null) {
+      into["around"] = RaviJson.from(around);
+    }
+  }
+}
+
+class KnowledgeReadReturn {
+  const KnowledgeReadReturn({required this.excerpt, required this.header, required this.issues, required this.next, required this.nonce, required this.ref, required this.rule, required this.runId, required this.trust, required this.url});
+
+  final String excerpt;
+  final String header;
+  final List<String> issues;
+  final List<String> next;
+  final String nonce;
+  final String ref;
+  final String rule;
+  final RaviJson runId;
+  final String trust;
+  final RaviJson url;
+
+  factory KnowledgeReadReturn.fromJson(Map<String, Object?> json) {
+    return KnowledgeReadReturn(
+      excerpt: raviJsonAsString(json["excerpt"]),
+      header: raviJsonAsString(json["header"]),
+      issues: raviJsonAsList(json["issues"], raviJsonAsString),
+      next: raviJsonAsList(json["next"], raviJsonAsString),
+      nonce: raviJsonAsString(json["nonce"]),
+      ref: raviJsonAsString(json["ref"]),
+      rule: raviJsonAsString(json["rule"]),
+      runId: RaviJson.from(json["runId"]),
+      trust: raviJsonAsString(json["trust"]),
+      url: RaviJson.from(json["url"]),
+    );
+  }
+
+  static KnowledgeReadReturn fromJsonValue(Object? json) {
+    return KnowledgeReadReturn.fromJson(raviJsonObject(json, "KnowledgeReadReturn"));
+  }
+}
+
+KnowledgeReadReturn knowledgeReadReturnFromJson(Object? json) => KnowledgeReadReturn.fromJsonValue(json);
+
+class KnowledgeRememberOptions {
+  const KnowledgeRememberOptions({this.about, this.agent, this.confirm, this.key, this.kind});
+
+  final String? about;
+  final String? agent;
+  final String? confirm;
+  final String? key;
+  final String? kind;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (about != null) {
+      into["about"] = RaviJson.from(about);
+    }
+    if (agent != null) {
+      into["agent"] = RaviJson.from(agent);
+    }
+    if (confirm != null) {
+      into["confirm"] = RaviJson.from(confirm);
+    }
+    if (key != null) {
+      into["key"] = RaviJson.from(key);
+    }
+    if (kind != null) {
+      into["kind"] = RaviJson.from(kind);
+    }
+  }
+}
+
+class KnowledgeRememberReturn {
+  const KnowledgeRememberReturn({required this.activated, required this.item, required this.next, required this.reason});
+
+  final bool activated;
+  final RaviJson item;
+  final List<String> next;
+  final RaviJson reason;
+
+  factory KnowledgeRememberReturn.fromJson(Map<String, Object?> json) {
+    return KnowledgeRememberReturn(
+      activated: raviJsonAsBool(json["activated"]),
+      item: RaviJson.from(json["item"]),
+      next: raviJsonAsList(json["next"], raviJsonAsString),
+      reason: RaviJson.from(json["reason"]),
+    );
+  }
+
+  static KnowledgeRememberReturn fromJsonValue(Object? json) {
+    return KnowledgeRememberReturn.fromJson(raviJsonObject(json, "KnowledgeRememberReturn"));
+  }
+}
+
+KnowledgeRememberReturn knowledgeRememberReturnFromJson(Object? json) => KnowledgeRememberReturn.fromJsonValue(json);
+
+class KnowledgeSearchOptions {
+  const KnowledgeSearchOptions({this.about, this.limit, this.localOnly, this.project, this.since, this.type, this.who});
+
+  final String? about;
+  final String? limit;
+  final bool? localOnly;
+  final String? project;
+  final String? since;
+  final String? type;
+  final String? who;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (about != null) {
+      into["about"] = RaviJson.from(about);
+    }
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (localOnly != null) {
+      into["localOnly"] = RaviJson.from(localOnly);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (since != null) {
+      into["since"] = RaviJson.from(since);
+    }
+    if (type != null) {
+      into["type"] = RaviJson.from(type);
+    }
+    if (who != null) {
+      into["who"] = RaviJson.from(who);
+    }
+  }
+}
+
+class KnowledgeSearchReturn {
+  const KnowledgeSearchReturn({required this.audience, required this.issues, required this.localRunId, required this.next, required this.nonce, required this.query, required this.results, required this.rule, required this.runId, required this.withheld});
+
+  final String audience;
+  final List<String> issues;
+  final String localRunId;
+  final List<String> next;
+  final String nonce;
+  final String query;
+  final List<RaviJson> results;
+  final String rule;
+  final RaviJson runId;
+  final RaviJson withheld;
+
+  factory KnowledgeSearchReturn.fromJson(Map<String, Object?> json) {
+    return KnowledgeSearchReturn(
+      audience: raviJsonAsString(json["audience"]),
+      issues: raviJsonAsList(json["issues"], raviJsonAsString),
+      localRunId: raviJsonAsString(json["localRunId"]),
+      next: raviJsonAsList(json["next"], raviJsonAsString),
+      nonce: raviJsonAsString(json["nonce"]),
+      query: raviJsonAsString(json["query"]),
+      results: raviJsonAsList(json["results"], RaviJson.from),
+      rule: raviJsonAsString(json["rule"]),
+      runId: RaviJson.from(json["runId"]),
+      withheld: RaviJson.from(json["withheld"]),
+    );
+  }
+
+  static KnowledgeSearchReturn fromJsonValue(Object? json) {
+    return KnowledgeSearchReturn.fromJson(raviJsonObject(json, "KnowledgeSearchReturn"));
+  }
+}
+
+KnowledgeSearchReturn knowledgeSearchReturnFromJson(Object? json) => KnowledgeSearchReturn.fromJsonValue(json);
+
+class KnowledgeSourcesOptions {
+  const KnowledgeSourcesOptions({this.failing});
+
+  final bool? failing;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (failing != null) {
+      into["failing"] = RaviJson.from(failing);
+    }
+  }
+}
+
+class KnowledgeSourcesReturn {
+  const KnowledgeSourcesReturn({required this.console, required this.issues, required this.local, required this.next});
+
+  final RaviJson console;
+  final List<String> issues;
+  final RaviJson local;
+  final List<String> next;
+
+  factory KnowledgeSourcesReturn.fromJson(Map<String, Object?> json) {
+    return KnowledgeSourcesReturn(
+      console: RaviJson.from(json["console"]),
+      issues: raviJsonAsList(json["issues"], raviJsonAsString),
+      local: RaviJson.from(json["local"]),
+      next: raviJsonAsList(json["next"], raviJsonAsString),
+    );
+  }
+
+  static KnowledgeSourcesReturn fromJsonValue(Object? json) {
+    return KnowledgeSourcesReturn.fromJson(raviJsonObject(json, "KnowledgeSourcesReturn"));
+  }
+}
+
+KnowledgeSourcesReturn knowledgeSourcesReturnFromJson(Object? json) => KnowledgeSourcesReturn.fromJsonValue(json);
+
+class KnowledgeWhyOptions {
+  const KnowledgeWhyOptions({this.last, this.limit, this.run, this.session});
+
+  final bool? last;
+  final String? limit;
+  final String? run;
+  final String? session;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (last != null) {
+      into["last"] = RaviJson.from(last);
+    }
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (run != null) {
+      into["run"] = RaviJson.from(run);
+    }
+    if (session != null) {
+      into["session"] = RaviJson.from(session);
+    }
+  }
+}
+
+class KnowledgeWhyReturn {
+  const KnowledgeWhyReturn({required this.issues, required this.next, required this.runs});
+
+  final List<String> issues;
+  final List<String> next;
+  final List<RaviJson> runs;
+
+  factory KnowledgeWhyReturn.fromJson(Map<String, Object?> json) {
+    return KnowledgeWhyReturn(
+      issues: raviJsonAsList(json["issues"], raviJsonAsString),
+      next: raviJsonAsList(json["next"], raviJsonAsString),
+      runs: raviJsonAsList(json["runs"], RaviJson.from),
+    );
+  }
+
+  static KnowledgeWhyReturn fromJsonValue(Object? json) {
+    return KnowledgeWhyReturn.fromJson(raviJsonObject(json, "KnowledgeWhyReturn"));
+  }
+}
+
+KnowledgeWhyReturn knowledgeWhyReturnFromJson(Object? json) => KnowledgeWhyReturn.fromJsonValue(json);
+
 class MailAccountsCreateOptions {
   const MailAccountsCreateOptions({this.credentialsRef, this.id, this.name, this.provider});
 

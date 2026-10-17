@@ -48,6 +48,7 @@ export * from "./insights.js";
 export * from "./instances.js";
 export * from "./invites.js";
 export * from "./jobs.js";
+export * from "./knowledge.js";
 export * from "./mail.js";
 export * from "./media.js";
 export * from "./meetings.js";

@@ -755,8 +755,11 @@ type TestPromptSource = {
 
 const WHATSAPP_SURFACE_HINT = "[session surface] This turn came from a WhatsApp chat. A normal reply returns there.";
 
+// A contact's WhatsApp turn is not the operator's: the Knowledge line says so.
+const KNOWLEDGE_NONE_LINE = "[knowledge] audience=none: ravi knowledge will refuse on this turn (exit 3).";
+
 function withWhatsAppSurfaceHint(text: string): string {
-  return `${WHATSAPP_SURFACE_HINT}\n${text}`;
+  return `${WHATSAPP_SURFACE_HINT}\n${KNOWLEDGE_NONE_LINE}\n${text}`;
 }
 
 function makePrompt(
@@ -1129,7 +1132,8 @@ describe("RaviBot runtime guards", () => {
     await firstPrompt;
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(combinedPrompt).toBe(withWhatsAppSurfaceHint("first\n\nsecond"));
+    // Each queued prompt carries its own Knowledge line; the surface hint is shared.
+    expect(combinedPrompt).toBe(withWhatsAppSurfaceHint(`first\n\n${KNOWLEDGE_NONE_LINE}\nsecond`));
   });
 
   it("passes discovered plugins into runtime prepareSession for provider-specific bridges", async () => {

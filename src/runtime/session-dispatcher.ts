@@ -10,6 +10,7 @@ import {
 } from "../delivery-barriers.js";
 import { nats } from "../nats.js";
 import { getSession, getSessionByName, type SessionEntry } from "../router/index.js";
+import { withKnowledgePreamble } from "../knowledge/turn/preamble.js";
 import {
   dbGetDaemonRestartPendingMessages,
   dbGetSetting,
@@ -958,6 +959,9 @@ export class RuntimeSessionDispatcher {
       return;
     }
     prompt = this.consumeHeldSkipTurnMessages(sessionName, prompt);
+    // After held `!!` text joins the turn, so the Knowledge line sits right
+    // under the surface hint, above everything the model reads this turn.
+    prompt = withKnowledgePreamble(prompt, { agentId: agent.id, sessionName });
     const sessionRuntimeProviderOverride =
       prompt._observation && prompt._runtimeProviderId ? undefined : sessionEntry?.runtimeProviderOverride;
     // Resolve next-turn provider before the live-queue shortcut so a persisted
