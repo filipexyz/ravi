@@ -72,6 +72,41 @@ describe("local mailbox db", () => {
     expect(readMailMessage(first.id).bodyText).toBe("Updated local body");
   });
 
+  it("dedupes a second provider message with the same RFC Message-ID in the mailbox", () => {
+    const account = createMailAccount({ provider: "ravi-mail" });
+    const mailbox = createMailMailbox({ accountId: account.id, address: "luis@ravi.bot", isDefault: true });
+    const base = {
+      mailbox: mailbox.address,
+      provider: "ravi-mail",
+      rfcMessageId: "<same@example.com>",
+      addresses: [
+        { kind: "from" as const, address: "alice@example.com" },
+        { kind: "to" as const, address: mailbox.address },
+      ],
+    };
+
+    const first = importMailMessage({ ...base, providerMessageId: "remote_msg_a", subject: "Hello", bodyText: "A" });
+    const second = importMailMessage({ ...base, providerMessageId: "remote_msg_b", subject: "Copy", bodyText: "B" });
+    const again = importMailMessage({ ...base, providerMessageId: "remote_msg_b", subject: "Copy", bodyText: "B" });
+
+    expect(second.id).toBe(first.id);
+    expect(again.id).toBe(first.id);
+    expect(second.threadId).toBe(first.threadId);
+    expect(second.providerMessageId).toBe("remote_msg_a");
+    expect(second.bodyText).toBe("A");
+    expect(second.addresses).toHaveLength(2);
+    expect(second.providerProvenance.duplicateProviderMessageIds).toEqual(["remote_msg_b"]);
+    expect(listMailMessages()).toHaveLength(1);
+
+    // A resend of the first message keeps its row and the known duplicate.
+    const resent = importMailMessage({ ...base, providerMessageId: "remote_msg_a", subject: "Hello", bodyText: "A2" });
+    expect(resent.id).toBe(first.id);
+    expect(resent.providerMessageId).toBe("remote_msg_a");
+    expect(resent.bodyText).toBe("A2");
+    expect(resent.providerProvenance.duplicateProviderMessageIds).toEqual(["remote_msg_b"]);
+    expect(listMailMessages()).toHaveLength(1);
+  });
+
   it("queues outbound mail locally before provider delivery", () => {
     const account = createMailAccount({ provider: "ravi-mail" });
     const mailbox = createMailMailbox({ accountId: account.id, address: "luis@ravi.bot", isDefault: true });

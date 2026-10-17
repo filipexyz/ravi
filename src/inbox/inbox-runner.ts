@@ -105,6 +105,13 @@ class IncompleteInboxAckError extends Error {
   }
 }
 
+class LocalMailIngestError extends Error {
+  constructor(cause: unknown) {
+    super(`Local mail ingest failed: ${errMessage(cause)}`, { cause });
+    this.name = "LocalMailIngestError";
+  }
+}
+
 interface OrgState {
   localId: string;
   consoleUrl: string;
@@ -614,7 +621,19 @@ export class InboxRunner {
       createdAt: input.item.createdAt,
     };
 
-    const enrichedNatsPayload = await this.enrichLocalPayload(input, natsPayload);
+    let enrichedNatsPayload: InboxNatsPayload;
+    try {
+      enrichedNatsPayload = await this.enrichLocalPayload(input, natsPayload);
+    } catch (error) {
+      if (!(error instanceof LocalMailIngestError)) throw error;
+      // One mail that cannot be stored locally must not stall the rest of the
+      // batch: leave it unacked for retry and keep delivering the others.
+      log.error("Failed to ingest inbox mail into local mailbox", {
+        itemId: input.item.itemId,
+        error: errMessage(error.cause),
+      });
+      return { delivered: false };
+    }
     input.assertPollLock();
 
     // 1. Persist locally before publish so a crash leaves a durable replay row.
@@ -747,7 +766,12 @@ export class InboxRunner {
   }
 
   private ingestLocalMailPayload(natsPayload: InboxNatsPayload): InboxNatsPayload {
-    const ingest = ingestConsoleMailReceivedEvent(natsPayload);
+    let ingest: ReturnType<typeof ingestConsoleMailReceivedEvent>;
+    try {
+      ingest = ingestConsoleMailReceivedEvent(natsPayload);
+    } catch (error) {
+      throw new LocalMailIngestError(error);
+    }
     if (ingest.status === "skipped") {
       log.warn("Mail inbox payload was not ingested into local mailbox", {
         itemId: natsPayload.eventId,
