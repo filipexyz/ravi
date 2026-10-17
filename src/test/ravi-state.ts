@@ -5,6 +5,7 @@ import { close as closeChatDb } from "../db.js";
 import { closeContacts } from "../contacts.js";
 import { closeSessionAdapterStore } from "../adapters/adapter-db.js";
 import { closeDevinDb } from "../devin/store.js";
+import { closeKnowledgeDb } from "../knowledge/store/db.js";
 import { closeRouterDb } from "../router/router-db.js";
 import { closeSessionStore } from "../router/sessions.js";
 import { closeSessionGoalStore } from "../runtime/session-goals.js";
@@ -103,6 +104,7 @@ export async function createIsolatedRaviState(prefix = "ravi-test-"): Promise<st
   closeChatDb();
   closeContacts();
   closeDevinDb();
+  closeKnowledgeDb();
   closeSessionAdapterStore();
   closeSessionStore();
   closeSessionGoalStore();
@@ -159,6 +161,7 @@ export async function cleanupIsolatedRaviState(stateDir?: string | null): Promis
   closeChatDb();
   closeContacts();
   closeDevinDb();
+  closeKnowledgeDb();
   closeSessionAdapterStore();
   closeSessionStore();
   closeSessionGoalStore();

@@ -568,10 +568,15 @@ function mapConsoleError(status: number, payload: unknown, headers: Headers | un
   const rawCode = data?.code ?? nested?.code ?? data?.error;
   // A bare 409 means "still pending" only on the login/refresh flow.
   // A Console from before link approval requests answers the route with a bare 404.
+  // The same holds for a Console from before Knowledge: a 404 on
+  // `/api/cli/knowledge/*` without a CLI error code means "unavailable", while
+  // its own 404s (missing ref, unknown segment) always carry `error.code`.
   const fallback =
     status === 404 && rawCode === undefined && isConsoleLinkRequestsPath(path)
       ? "LINK_REQUESTS_UNAVAILABLE"
-      : statusToErrorCode(status, { authFlow: isConsoleAuthPath(path) });
+      : status === 404 && !hasConsoleErrorCode(data, nested) && isConsoleKnowledgePath(path)
+        ? "KNOWLEDGE_UNAVAILABLE"
+        : statusToErrorCode(status, { authFlow: isConsoleAuthPath(path) });
   const code = normalizeCloudAuthErrorCode(rawCode, fallback, { linkAliases: isConsoleLinkPath(path) });
   const message =
     stringValue(data?.message) ??
@@ -594,6 +599,17 @@ function isConsoleAuthPath(path: string): boolean {
 
 function isConsoleLinkRequestsPath(path: string): boolean {
   return path === LINK_REQUESTS_PATH || path.startsWith(`${LINK_REQUESTS_PATH}/`);
+}
+
+const KNOWLEDGE_PATH = "/api/cli/knowledge";
+
+function isConsoleKnowledgePath(path: string): boolean {
+  return path === KNOWLEDGE_PATH || path.startsWith(`${KNOWLEDGE_PATH}/`) || path.startsWith(`${KNOWLEDGE_PATH}?`);
+}
+
+/** A string `code` in the body or in the CLI envelope's `error`. */
+function hasConsoleErrorCode(data: Record<string, unknown> | null, nested: Record<string, unknown> | null): boolean {
+  return stringValue(data?.code) !== null || stringValue(nested?.code) !== null || stringValue(data?.error) !== null;
 }
 
 function isConsoleLinkPath(path: string): boolean {
@@ -701,6 +717,12 @@ function defaultErrorMessage(code: string): string {
       return "Console rate limit reached. Try again later.";
     case "SERVER_UNAVAILABLE":
       return "Console is unavailable. Try again later.";
+    case "KNOWLEDGE_TURN_NOT_OPERATOR":
+      return "Knowledge answers only the operator's own turns: the terminal, the operator's direct chat and the operator's routines.";
+    case "KNOWLEDGE_DISABLED":
+      return "Knowledge is not enabled for this organization.";
+    case "KNOWLEDGE_UNAVAILABLE":
+      return "This Console does not serve Knowledge yet.";
     default:
       return "Console request failed.";
   }
