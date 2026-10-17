@@ -479,6 +479,12 @@ export interface RuntimeStartRequest {
    */
   allowedSkills?: string[];
   /**
+   * Skills a provider with one shared skills directory (Codex) must disable
+   * for this session even without an allowlist: pinned Library skills that
+   * are not this agent's, or not for this turn (spec skills/library).
+   */
+  hiddenSkills?: string[];
+  /**
    * CLI-only bootstrap: skip the advertised skill-name catalog. The Ravi system
    * prompt remains large; this does not claim a 23k-token reduction.
    */

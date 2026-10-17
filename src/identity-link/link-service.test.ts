@@ -173,6 +173,42 @@ describe("requestIdentityLink", () => {
     });
   });
 
+  it("keeps the turn's session name and source when it binds or clears the link mid-turn", async () => {
+    const fake = createFakeConsole();
+    fake.on((call) => {
+      if (call.method === "POST" && call.path === "/api/cli/link/requests") {
+        return { body: { version: 1, status: "already_linked", binding: bindingPayload() } };
+      }
+      if (call.method === "POST" && call.path === "/api/cli/link/unlink") {
+        return { body: { binding: bindingPayload() } };
+      }
+      return undefined;
+    });
+    const { messenger } = createFakeMessenger();
+    const deps = linkDeps(fake, createMemoryCredentials(), messenger);
+    const source = { channel: "slack", accountId: "acme", chatId: "D0LUIS" };
+    const base = slackTurnContext();
+    const context = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: "main",
+      sessionName: "main-dm-luis",
+      source,
+      metadata: base.metadata,
+    });
+
+    await requestIdentityLink(context, deps);
+    const linked = dbGetContext(context.contextId);
+    expect(linked?.sessionName).toBe("main-dm-luis");
+    expect(linked?.source).toEqual(source);
+    expect(linked?.metadata).toMatchObject({ consoleUserId: "user_luis", consoleOrgId: "org_acme" });
+
+    await unlinkIdentity(context, deps);
+    const unlinked = dbGetContext(context.contextId);
+    expect(unlinked?.sessionName).toBe("main-dm-luis");
+    expect(unlinked?.source).toEqual(source);
+    expect(unlinked?.metadata?.consoleUserId).toBeUndefined();
+  });
+
   it("cancels the Console request and fails clearly when the private message cannot be sent", async () => {
     const fake = createFakeConsole();
     fake.on((call) => {

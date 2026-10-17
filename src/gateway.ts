@@ -21,6 +21,7 @@
  *   ravi.config.changed        -> reload router config
  */
 
+import { LIBRARY_REQUEST_CHANNEL } from "./library/request-channel.js";
 import { unlink } from "node:fs/promises";
 import { nats } from "./nats.js";
 import type { ResponseContentPart, ResponseMediaAttachment, ResponseMessage } from "./runtime/message-types.js";
@@ -88,7 +89,13 @@ export function resolveTargetInstanceId(target: { accountId?: string; instanceId
 }
 
 // Outcomes that are intended, or already logged where they happen.
-const QUIET_DELIVERY_REASONS = new Set(["silent", "silent_response", "duplicate_media", "send_error"]);
+const QUIET_DELIVERY_REASONS = new Set([
+  "silent",
+  "silent_response",
+  "duplicate_media",
+  "send_error",
+  "library_request",
+]);
 
 export function logUndeliveredResponse(delivery: Record<string, unknown>): void {
   const target = delivery.target as { channel?: string } | undefined;
@@ -1084,6 +1091,12 @@ export class Gateway {
       this.emitDeliveryEvent(sessionName, deliveryResponse, data);
     if (!target) {
       await emitDelivery({ status: "dropped", reason: "missing_target" });
+      return;
+    }
+    if (target.channel === LIBRARY_REQUEST_CHANNEL) {
+      // The Library request runner reads this reply from the session's events
+      // and returns it through the Console; there is no chat to deliver to.
+      await emitDelivery({ status: "dropped", reason: "library_request", target });
       return;
     }
 

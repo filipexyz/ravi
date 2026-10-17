@@ -76,6 +76,8 @@ export type TaskEventType =
   | "task.dependency.satisfied"
   | "task.progress"
   | "task.checkpoint.missed"
+  | "task.stalled"
+  | "task.nudged"
   | "task.comment"
   | "task.updated"
   | "task.archived"
@@ -212,6 +214,16 @@ export interface TaskProfileProgressPolicy {
   notes?: string;
 }
 
+/**
+ * Sidecar observer for task status. When enabled, the worker session gets no
+ * status protocol and the built-in task observer derives status from its turns.
+ */
+export interface TaskProfileObserverPolicy {
+  enabled: boolean;
+  /** Observer model override; defaults to the lightweight model of the worker agent's provider. */
+  model?: string;
+}
+
 export interface TaskProfileTemplates {
   create: string;
   dispatch: string;
@@ -262,6 +274,8 @@ export interface TaskProfileDefinition {
   runtimeDefaults?: TaskRuntimeOptions;
   workspaceBootstrap: TaskProfileWorkspaceBootstrap;
   sync: TaskProfileSyncPolicy;
+  /** Absent on profiles and snapshots that predate the observer: they keep worker-side reporting. */
+  observer?: TaskProfileObserverPolicy;
   rendererHints: TaskProfileRendererHints;
   defaultTags: string[];
   inputs: TaskProfileInputDefinition[];

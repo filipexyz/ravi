@@ -9,7 +9,15 @@ import { getSession, getSessionByName, type AgentConfig, type SessionEntry } fro
 import { dbGetAgent, dbListSessionParticipants, getDb, getRaviDbPath } from "../router/router-db.js";
 import { canonicalTagSlugsForAsset, dbGetTagDefinition } from "../tags/index.js";
 import type { TagAssetType } from "../tags/types.js";
-import { dbResolveActiveTaskBindingForSession } from "../tasks/task-db.js";
+import {
+  buildTaskObserverPromptInput,
+  buildTaskObserverRule,
+  isTaskObserverRuleId,
+  resolveTaskObserverPolicy,
+  TASK_OBSERVER_RULE_ID,
+} from "../tasks/observer-contract.js";
+import { dbGetTask, dbResolveActiveTaskBindingForSession } from "../tasks/task-db.js";
+import type { TaskRecord } from "../tasks/types.js";
 import { logger } from "../utils/logger.js";
 import { dbGetTaskWorkflowSurface } from "../workflows/index.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
@@ -1340,7 +1348,56 @@ export function ensureObserverBindingsForSession(input: {
     if (result.created) created.push(result.binding);
   }
 
+  const builtin = resolveBuiltinTaskObserverRule({ source, agent: input.agent, bindings, usedRoles });
+  if (builtin.rule) {
+    const result = upsertObserverBinding({
+      source,
+      rule: builtin.rule,
+      match: { matched: true, reason: "builtin_task_observer" },
+    });
+    bindings.push(result.binding);
+    if (result.created) created.push(result.binding);
+  } else {
+    // A session without a task has nothing to explain; one with a task says why it has no observer.
+    if (builtin.reason !== "no_active_task") skipped.push({ ruleId: TASK_OBSERVER_RULE_ID, reason: builtin.reason });
+    disableStaleBuiltinTaskObserverBinding(source.sessionKey);
+  }
+
   return { source, bindings, created, skipped };
+}
+
+/**
+ * Every task whose profile turns the observer on gets one, without a stored
+ * rule. A user rule in report mode already owns status for the session, so the
+ * built-in observer stays out of its way instead of reporting twice.
+ */
+function resolveBuiltinTaskObserverRule(input: {
+  source: ObservationSourceDescriptor;
+  agent?: AgentConfig;
+  bindings: ObserverBinding[];
+  usedRoles: Set<string>;
+}): { rule: ObserverRule; reason?: undefined } | { rule?: undefined; reason: string } {
+  if (!input.source.taskId) return { reason: "no_active_task" };
+  const task = dbGetTask(input.source.taskId);
+  if (!task) return { reason: "task_not_found" };
+  const agent = input.agent ?? dbGetAgent(input.source.agentId) ?? undefined;
+  const policy = resolveTaskObserverPolicy(task, agent);
+  if (!policy.enabled) return { reason: "task_profile_without_observer" };
+  if (input.bindings.some((binding) => binding.observerMode === "report")) {
+    return { reason: "user_report_observer" };
+  }
+  const rule = buildTaskObserverRule({ agentId: input.source.agentId, model: policy.model });
+  if (input.usedRoles.has(rule.observerRole)) return { reason: "duplicate_role" };
+  return { rule };
+}
+
+function disableStaleBuiltinTaskObserverBinding(sourceSessionKey: string): void {
+  for (const binding of dbListObserverBindings({ sourceSessionKey, enabled: true })) {
+    if (!isTaskObserverRuleId(binding.ruleId)) continue;
+    getDb()
+      .prepare("UPDATE observer_bindings SET enabled = 0, updated_at = ? WHERE id = ?")
+      .run(Date.now(), binding.id);
+  }
 }
 
 /** Reconcile durable bindings against the current rule/profile desired state. */
@@ -1451,6 +1508,7 @@ function composeObservationPrompt(input: {
   source: ObservationSourceDescriptor;
   events: ObservationEvent[];
   runId?: string;
+  input?: Record<string, unknown>;
 }): string {
   const profile = input.binding.observerProfileSnapshotMarkdown
     ? resolveObserverProfileFromSnapshotMarkdown(input.binding.observerProfileSnapshotMarkdown)
@@ -1462,7 +1520,41 @@ function composeObservationPrompt(input: {
     events: input.events,
     deliveryPolicy: input.binding.deliveryPolicy,
     runId: input.runId,
+    ...(input.input ? { input: input.input } : {}),
   });
+}
+
+/** Full text and tool input ride on events as `payload.detail`; only bindings that ask for them read them. */
+function bindingReadsDetail(binding: ObserverBinding): boolean {
+  return binding.metadata?.observationDetail === true;
+}
+
+function stripObservationDetail(events: ObservationEvent[]): ObservationEvent[] {
+  return events.map((event) => {
+    if (!event.payload || !("detail" in event.payload)) return event;
+    const { detail: _detail, ...payload } = event.payload;
+    return { ...event, payload };
+  });
+}
+
+function bindingPulseMs(binding: ObserverBinding): number | null {
+  const value = binding.metadata?.pulseMs;
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+export type ObservationDeliveryTrigger = "end_of_turn" | "pulse" | "realtime" | "debounce";
+
+function resolveDeliveryTrigger(
+  binding: ObserverBinding,
+  deliveryPolicies: Set<ObservationDeliveryPolicy> | undefined,
+  pulse: boolean,
+): ObservationDeliveryTrigger {
+  if (pulse) return "pulse";
+  if (deliveryPolicies?.size === 1) {
+    const [policy] = [...deliveryPolicies];
+    if (policy && policy !== "manual") return policy;
+  }
+  return binding.deliveryPolicy === "manual" ? "end_of_turn" : binding.deliveryPolicy;
 }
 
 function claimObservationEvents(bindingId: string, events: ObservationEvent[]): ObservationEvent[] {
@@ -1485,6 +1577,8 @@ export async function deliverObservationEvents(input: {
   events: ObservationEvent[];
   deliveryPolicies?: ObservationDeliveryPolicy[];
   runId?: string;
+  /** Mid-turn read: only bindings with `metadata.pulseMs` receive the events gathered so far. */
+  pulse?: boolean;
 }): Promise<{
   delivered: Array<{
     bindingId: string;
@@ -1512,12 +1606,35 @@ export async function deliverObservationEvents(input: {
   }> = [];
   const skipped: Array<{ bindingId: string; reason: string }> = [];
   const deliveryPolicies = input.deliveryPolicies ? new Set(input.deliveryPolicies) : undefined;
+  const pulse = input.pulse === true;
+  let sourceTask: TaskRecord | null | undefined;
+  const loadSourceTask = (): TaskRecord | null => {
+    if (sourceTask === undefined) sourceTask = source.taskId ? dbGetTask(source.taskId) : null;
+    return sourceTask;
+  };
 
   for (const binding of bindings) {
+    if (pulse && bindingPulseMs(binding) === null) {
+      skipped.push({ bindingId: binding.id, reason: "no_pulse" });
+      continue;
+    }
     const exclusionReason = sourceExclusionReason(binding.metadata, source);
     if (exclusionReason) {
       skipped.push({ bindingId: binding.id, reason: exclusionReason });
       continue;
+    }
+    const builtinTaskObserver = isTaskObserverRuleId(binding.ruleId);
+    if (builtinTaskObserver) {
+      // The binding outlives the task on its session; it reads only while an observed task is active.
+      const task = loadSourceTask();
+      if (!task) {
+        skipped.push({ bindingId: binding.id, reason: "no_active_task" });
+        continue;
+      }
+      if (!resolveTaskObserverPolicy(task).enabled) {
+        skipped.push({ bindingId: binding.id, reason: "task_profile_without_observer" });
+        continue;
+      }
     }
     const selected = input.events.filter((event) => bindingAllowsEvent(binding, source, event, deliveryPolicies));
     if (selected.length === 0) {
@@ -1534,12 +1651,16 @@ export async function deliverObservationEvents(input: {
       continue;
     }
 
+    const trigger = resolveDeliveryTrigger(binding, deliveryPolicies, pulse);
+    const task = loadSourceTask();
     const prompt = composeObservationPrompt({
       binding,
       source,
-      events: claimed,
+      events: bindingReadsDetail(binding) ? claimed : stripObservationDetail(claimed),
       runId: input.runId,
+      ...(task ? { input: buildTaskObserverPromptInput(task, trigger) } : {}),
     });
+    const deliveryId = `od_${hashParts([binding.id, trigger, input.runId, ...claimed.map((event) => event.id)], 24)}`;
     const sourceTurnIds = [
       ...new Set(claimed.map((event) => event.turnId).filter((id): id is string => Boolean(id))),
     ].sort();
@@ -1561,6 +1682,9 @@ export async function deliverObservationEvents(input: {
           ...(binding.permissionGrants.length > 0 ? { permissionGrants: binding.permissionGrants } : {}),
           eventIds: claimed.map((event) => event.id),
           ...(sourceTurnIds.length > 0 ? { sourceTurnIds } : {}),
+          ...(source.taskId ? { taskId: source.taskId } : {}),
+          deliveryId,
+          trigger,
         },
         deliveryBarrier: "after_response",
       });
@@ -1617,6 +1741,18 @@ export function getObservationDebounceMs(input: {
     )
     .map((binding) => binding.debounceMs ?? DEFAULT_DEBOUNCE_MS);
   return delays.length > 0 ? Math.min(...delays) : null;
+}
+
+/** Shortest pulse among the session's bindings, or null when none reads mid-turn. */
+export function getObservationPulseMs(input: {
+  sourceSessionName: string;
+  sourceSession: SessionEntry;
+  agentId: string;
+}): number | null {
+  if (isObserverSessionName(input.sourceSessionName)) return null;
+  const bindings = dbListObserverBindings({ sourceSessionKey: input.sourceSession.sessionKey, enabled: true });
+  const pulses = bindings.map(bindingPulseMs).filter((value): value is number => value !== null);
+  return pulses.length > 0 ? Math.min(...pulses) : null;
 }
 
 export function validateObserverRules(): {

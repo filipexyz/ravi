@@ -1751,6 +1751,69 @@ process.on("SIGTERM", () => {
     expect(session.skillVisibility?.skills.map((skill) => skill.id)).toEqual(["ravi-system-events"]);
   });
 
+  it("hides pinned Library skills of other agents without an allowlist", async () => {
+    const { calls, transport } = createMockTransport([
+      () => ({
+        events: (async function* () {
+          yield { type: "thread.started", thread_id: "thread_hidden_library" };
+          yield { type: "turn.started" };
+          yield { type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } };
+        })(),
+      }),
+    ]);
+    const provider = createCodexRuntimeProvider({
+      transport: transport as any,
+      defaultModel: "gpt-5",
+      syncSkills: () => ["ravi-system-events", "ravi-library-org-mine", "ravi-library-org-theirs"],
+    });
+
+    provider.prepareSession?.({ agentId: "agent-a", cwd: "/tmp/ravi-codex-hidden", plugins: [] });
+    const session = provider.startSession(
+      makeStartRequest(["hello"], {
+        cwd: "/tmp/ravi-codex-hidden",
+        hiddenSkills: ["ravi-library-org-theirs"],
+      }),
+    );
+    await collectEvents(session.events);
+
+    expect(calls[0]?.systemPromptAppend).toContain("- ravi-library-org-mine");
+    expect(calls[0]?.systemPromptAppend).not.toContain("ravi-library-org-theirs");
+    expect((calls[0] as { hiddenSkills?: string[] } | undefined)?.hiddenSkills).toEqual(["ravi-library-org-theirs"]);
+    expect(session.skillVisibility?.skills.map((skill) => skill.id)).toEqual([
+      "ravi-library-org-mine",
+      "ravi-system-events",
+    ]);
+  });
+
+  it("disables hidden Library skills with or without an allowlist", () => {
+    const cwd = join(tmpdir(), "ravi-codex-hidden-filter");
+    const mine = join(cwd, "skills", "ravi-library-org-mine", "SKILL.md");
+    const theirs = join(cwd, "skills", "ravi-library-org-theirs", "SKILL.md");
+    const tiny = join(cwd, "skills", "ravi-user-skills-tiny", "SKILL.md");
+    const inventory = {
+      data: [
+        {
+          cwd,
+          skills: [
+            { name: "org-mine", path: mine },
+            { name: "org-theirs", path: theirs },
+            { name: "tiny", path: tiny },
+          ],
+        },
+      ],
+    };
+
+    expect(buildCodexDisabledSkillConfig(inventory, cwd, undefined, ["ravi-library-org-theirs"])).toEqual([
+      { path: theirs, enabled: false },
+    ]);
+    expect(
+      buildCodexDisabledSkillConfig(inventory, cwd, ["ravi-library-org-mine"], ["ravi-library-org-theirs"]),
+    ).toEqual([
+      { path: theirs, enabled: false },
+      { path: tiny, enabled: false },
+    ]);
+  });
+
   it("builds native Codex disable entries for every skill outside the allowlist", () => {
     const cwd = join(tmpdir(), "ravi-codex-native-filter");
     const config = buildCodexDisabledSkillConfig(

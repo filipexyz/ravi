@@ -1307,6 +1307,87 @@ export const skillsProposalReturnSchema = z
   })
   .strict();
 
+const libraryItemPinReturnSchema = z
+  .object({
+    id: z.string(),
+    installation: z.object({ id: z.string(), name: z.string().nullable() }).strict(),
+    agent: z
+      .object({ id: z.string(), name: z.string().nullable(), project: z.string().nullable(), reported: z.boolean() })
+      .strict(),
+    pinnedBy: z.object({ name: z.string().nullable() }).strict().nullable(),
+    createdAt: z.string().nullable(),
+  })
+  .strict();
+
+export const skillsPinReturnSchema = z
+  .object({
+    success: z.literal(true),
+    ref: z.string(),
+    agent: z.string(),
+    created: z.boolean(),
+    pin: libraryItemPinReturnSchema,
+    local: z
+      .object({
+        pinned: z.boolean(),
+        refreshed: z.boolean(),
+        revision: z.string().nullable(),
+        skill: z.string().nullable(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export const skillsUnpinReturnSchema = z
+  .object({
+    success: z.literal(true),
+    ref: z.string(),
+    agent: z.string(),
+    removed: z.boolean(),
+    local: z.object({ pinned: z.boolean(), refreshed: z.boolean(), revision: z.string().nullable() }).strict(),
+  })
+  .strict();
+
+const libraryPinUnavailableReturnSchema = z.object({ agentId: z.string(), ref: z.string(), code: z.string() }).strict();
+
+/** `ravi skills pins` (this installation's pins) or `ravi skills pins <ref>` (where an item is pinned). */
+export const skillsPinsReturnSchema = z.union([
+  z
+    .object({
+      installation: z.object({ id: z.string().nullable(), name: z.string().nullable() }).strict(),
+      revision: z.string().nullable(),
+      syncedAt: z.string().nullable(),
+      stale: z.boolean(),
+      hint: z.string().optional(),
+      error: z.object({ code: z.string(), message: z.string() }).strict().optional(),
+      agent: z.string().nullable(),
+      total: z.number(),
+      pins: z.array(
+        z
+          .object({
+            agent: z.string(),
+            ref: z.string(),
+            id: z.string(),
+            skill: z.string(),
+            name: z.string(),
+            description: z.string(),
+            version: z.number(),
+            externalAllowed: z.boolean(),
+          })
+          .strict(),
+      ),
+      unavailable: z.array(libraryPinUnavailableReturnSchema),
+    })
+    .strict(),
+  z
+    .object({
+      ref: z.string(),
+      installationId: z.string(),
+      pins: z.array(libraryItemPinReturnSchema),
+      can: z.object({ pin: z.boolean() }).strict(),
+    })
+    .strict(),
+]);
+
 export const skillsInstallReturnSchema = z
   .object({
     success: z.literal(true),
@@ -2232,11 +2313,21 @@ export const agentsListReturnSchema = z
   })
   .strict();
 
-export const agentShowReturnSchema = z
+/** What the Library side knows of a local agent: its directory description, requests, and origin. */
+const agentLibraryStateReturnSchema = z
+  .object({
+    description: z.string().nullable(),
+    acceptsRequests: z.boolean(),
+    origin: z.object({ ref: z.string(), version: z.number(), installedAt: z.number().nullable() }).strict().nullable(),
+  })
+  .strict();
+
+const agentLocalShowReturnSchema = z
   .object({
     agent: agentJsonSummaryReturnSchema,
     runtimePermissions: agentRuntimePermissionsConfigReturnSchema,
     permissionsCommand: z.string(),
+    library: agentLibraryStateReturnSchema.optional(),
   })
   .strict();
 
@@ -3320,3 +3411,260 @@ export const meetingsCloudFetchReturnSchema = z.union([
     notified: z.boolean(),
   }),
 ]);
+
+// ---------------------------------------------------------------------------
+// Library agent definitions (spec skills/library, "Agents")
+
+const libraryAgentManifestReturnSchema = z
+  .object({
+    provider: z.string().nullable(),
+    model: z.string().nullable(),
+    profile: z.string().nullable(),
+    skills: z.array(z.string()),
+  })
+  .strict();
+
+export const agentsSearchReturnSchema = z
+  .object({
+    query: z.string(),
+    total: z.number(),
+    stale: z.boolean(),
+    library: skillsSearchReturnSchema.shape.library,
+    items: z.array(
+      z
+        .object({
+          ref: z.string(),
+          scope: z.enum(["org", "project"]),
+          project: z.string().nullable(),
+          name: z.string(),
+          description: z.string().nullable(),
+          version: z.number(),
+          next: z.string(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+/** `ravi agents show <ref>`: a Library agent definition. */
+export const agentLibraryShowReturnSchema = z
+  .object({
+    source: z.literal("library"),
+    ref: z.string(),
+    item: libraryItemReturnSchema,
+    version: z.number(),
+    contentHash: z.string(),
+    note: z.string().nullable(),
+    publishedAt: z.string().nullable(),
+    stale: z.boolean(),
+    manifest: libraryAgentManifestReturnSchema,
+    files: z.array(z.object({ file: z.string(), bytes: z.number() }).strict()),
+    instructions: z.string(),
+    heartbeat: z.string().nullable(),
+    next: z.string(),
+  })
+  .strict();
+
+/** `ravi agents show <id>` (a local agent) or `ravi agents show <ref>` (a Library agent definition). */
+export const agentShowReturnSchema = z.union([agentLocalShowReturnSchema, agentLibraryShowReturnSchema]);
+
+const libraryAgentPlannedProfileReturnSchema = z
+  .object({
+    suggested: z.string().nullable(),
+    apply: z.string().nullable(),
+    raises: z.boolean(),
+    note: z.string().optional(),
+  })
+  .strict();
+
+const libraryAgentPlannedSkillReturnSchema = z
+  .object({
+    ref: z.string(),
+    kind: z.enum(["library", "ravi"]),
+    grant: z.string().nullable(),
+    status: z.enum(["grant", "granted", "missing"]),
+    reason: z.string().optional(),
+  })
+  .strict();
+
+const libraryAgentLocalReturnSchema = z
+  .object({ id: z.string(), cwd: z.string(), provider: z.string().nullable(), model: z.string().nullable() })
+  .strict();
+
+export const agentsInstallReturnSchema = z
+  .object({
+    success: z.literal(true),
+    ref: z.string(),
+    version: z.number(),
+    agent: libraryAgentLocalReturnSchema,
+    profile: z.string().nullable(),
+    granted: z.array(z.string()),
+    skipped: z.array(z.object({ ref: z.string(), reason: z.string() }).strict()),
+    next: z.array(z.string()),
+  })
+  .strict();
+
+export const agentsUpdateReturnSchema = z
+  .object({
+    success: z.literal(true),
+    agent: z.string(),
+    ref: z.string(),
+    version: z.number(),
+    previousVersion: z.number(),
+    upToDate: z.boolean(),
+    written: z.array(z.string()),
+    kept: z.array(z.string()),
+    profile: z.string().nullable(),
+    granted: z.array(z.string()),
+    plan: z
+      .object({
+        files: z.array(
+          z
+            .object({
+              file: z.string(),
+              editedLocally: z.boolean(),
+              changedInLibrary: z.boolean(),
+              action: z.enum(["write", "keep", "unchanged", "remove"]),
+              diff: z.string().optional(),
+            })
+            .strict(),
+        ),
+        profile: libraryAgentPlannedProfileReturnSchema,
+        skills: z.array(libraryAgentPlannedSkillReturnSchema),
+      })
+      .strict(),
+  })
+  .strict();
+
+export const agentsPublishReturnSchema = z
+  .object({
+    success: z.literal(true),
+    ref: z.string(),
+    agent: z.string(),
+    version: z.number().nullable(),
+    contentHash: z.string(),
+    unchanged: z.boolean(),
+    item: libraryItemReturnSchema.nullable(),
+    proposal: libraryProposalReturnSchema.nullable(),
+    manifest: libraryAgentManifestReturnSchema,
+    leftOut: z.array(z.object({ skill: z.string(), reason: z.string() }).strict()),
+    next: z.string().nullable(),
+  })
+  .strict();
+
+// ---------------------------------------------------------------------------
+// Library directory and requests between agents
+
+const libraryInstallationRefReturnSchema = z.object({ id: z.string(), name: z.string().nullable() }).strict();
+const libraryRequestProjectReturnSchema = z
+  .object({ id: z.string(), slug: z.string(), name: z.string().nullable() })
+  .strict();
+
+export const libraryAgentRequestReturnSchema = z
+  .object({
+    id: z.string(),
+    status: z.enum(["pending", "delivered", "answered", "failed", "expired", "cancelled"]),
+    direction: z.enum(["sent", "received"]),
+    from: z
+      .object({
+        installation: libraryInstallationRefReturnSchema.nullable(),
+        agentId: z.string().nullable(),
+        user: z.object({ id: z.string(), name: z.string().nullable() }).strict().nullable(),
+      })
+      .strict(),
+    to: z.object({ installation: libraryInstallationRefReturnSchema, agentId: z.string() }).strict(),
+    project: libraryRequestProjectReturnSchema.nullable(),
+    message: z.string(),
+    reply: z.string().nullable(),
+    failureReason: z.string().nullable(),
+    createdAt: z.string().nullable(),
+    deliveredAt: z.string().nullable(),
+    answeredAt: z.string().nullable(),
+    expiresAt: z.string().nullable(),
+  })
+  .strict();
+
+export const agentsDirectoryReturnSchema = z
+  .object({
+    query: z.string(),
+    project: z.string().nullable(),
+    total: z.number(),
+    can: z.object({ ask: z.boolean() }).strict(),
+    agents: z.array(
+      z
+        .object({
+          target: z.string(),
+          installation: libraryInstallationRefReturnSchema,
+          agent: z
+            .object({
+              id: z.string(),
+              name: z.string(),
+              description: z.string().nullable(),
+              provider: z.string().nullable(),
+              model: z.string().nullable(),
+              project: libraryRequestProjectReturnSchema.nullable(),
+            })
+            .strict(),
+          online: z.boolean(),
+          acceptsRequests: z.boolean(),
+          reportedAt: z.string().nullable(),
+          self: z.boolean(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+export const agentsAskReturnSchema = z
+  .object({
+    success: z.literal(true),
+    target: z.string(),
+    request: libraryAgentRequestReturnSchema,
+    session: z.string().nullable(),
+    next: z.string(),
+  })
+  .strict();
+
+export const agentsRequestsToggleReturnSchema = z
+  .object({
+    agent: z.string(),
+    acceptsRequests: z.boolean(),
+    changed: z.boolean(),
+    reported: z.boolean(),
+    hint: z.string().optional(),
+  })
+  .strict();
+
+const localAgentRequestReturnSchema = z
+  .object({
+    requestId: z.string(),
+    direction: z.enum(["sent", "received"]),
+    agentId: z.string().nullable(),
+    peer: z.string().nullable(),
+    sessionKey: z.string().nullable(),
+    sessionName: z.string().nullable(),
+    status: z.string(),
+    error: z.string().nullable(),
+    reply: z.string().nullable(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+  })
+  .strict();
+
+export const agentsRequestsListReturnSchema = z
+  .object({
+    box: z.enum(["sent", "received"]),
+    state: z.enum(["open", "all"]),
+    stale: z.boolean(),
+    hint: z.string().optional(),
+    installation: libraryInstallationRefReturnSchema.nullable(),
+    total: z.number(),
+    requests: z.array(libraryAgentRequestReturnSchema.extend({ session: z.string().nullable() })),
+    local: z.array(localAgentRequestReturnSchema).optional(),
+    pagination: strictCliOffsetPaginationSchema,
+  })
+  .strict();
+
+export const agentsRequestsCancelReturnSchema = z
+  .object({ success: z.literal(true), request: libraryAgentRequestReturnSchema })
+  .strict();

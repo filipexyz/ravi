@@ -176,6 +176,56 @@ export type AdaptersShowReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `agents.ask`. */
+export type AgentsAskInput = {
+  execute?: boolean;
+  message: string;
+  target: string;
+};
+
+/** Return shape for `agents.ask`. */
+export type AgentsAskReturn = {
+  next: string;
+  request: {
+    answeredAt: string | null;
+    createdAt: string | null;
+    deliveredAt: string | null;
+    direction: "sent" | "received";
+    expiresAt: string | null;
+    failureReason: string | null;
+    from: {
+      agentId: string | null;
+      installation: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      user: ({
+        id: string;
+        name: string | null;
+      }) | null;
+    };
+    id: string;
+    message: string;
+    project: ({
+      id: string;
+      name: string | null;
+      slug: string;
+    }) | null;
+    reply: string | null;
+    status: "pending" | "delivered" | "answered" | "failed" | "expired" | "cancelled";
+    to: {
+      agentId: string;
+      installation: {
+        id: string;
+        name: string | null;
+      };
+    };
+  };
+  session: string | null;
+  success: true;
+  target: string;
+};
+
 /** Input shape for `agents.create`. */
 export type AgentsCreateInput = {
   allowRuntimeMismatch?: boolean;
@@ -245,6 +295,73 @@ export type AgentsDeleteReturn = {
   before?: Record<string, unknown>;
   changed: boolean;
   [k: string]: unknown;
+};
+
+/** Input shape for `agents.directory`. */
+export type AgentsDirectoryInput = {
+  project?: string;
+  query?: string;
+};
+
+/** Return shape for `agents.directory`. */
+export type AgentsDirectoryReturn = {
+  agents: Array<{
+    acceptsRequests: boolean;
+    agent: {
+      description: string | null;
+      id: string;
+      model: string | null;
+      name: string;
+      project: ({
+        id: string;
+        name: string | null;
+        slug: string;
+      }) | null;
+      provider: string | null;
+    };
+    installation: {
+      id: string;
+      name: string | null;
+    };
+    online: boolean;
+    reportedAt: string | null;
+    self: boolean;
+    target: string;
+  }>;
+  can: {
+    ask: boolean;
+  };
+  project: string | null;
+  query: string;
+  total: number;
+};
+
+/** Input shape for `agents.install`. */
+export type AgentsInstallInput = {
+  cwd?: string;
+  execute?: boolean;
+  id?: string;
+  ref: string;
+};
+
+/** Return shape for `agents.install`. */
+export type AgentsInstallReturn = {
+  agent: {
+    cwd: string;
+    id: string;
+    model: string | null;
+    provider: string | null;
+  };
+  granted: string[];
+  next: string[];
+  profile: string | null;
+  ref: string;
+  skipped: Array<{
+    reason: string;
+    ref: string;
+  }>;
+  success: true;
+  version: number;
 };
 
 /** Input shape for `agents.list`. */
@@ -558,6 +675,239 @@ export type AgentsPermissionsReturn = {
   }) | null;
 };
 
+/** Input shape for `agents.publish`. */
+export type AgentsPublishInput = {
+  description?: string;
+  execute?: boolean;
+  id: string;
+  note?: string;
+  propose?: boolean;
+  scope?: string;
+  slug?: string;
+};
+
+/** Return shape for `agents.publish`. */
+export type AgentsPublishReturn = {
+  agent: string;
+  contentHash: string;
+  item: ({
+    archived: boolean;
+    contentHash: string;
+    description: string;
+    externalAllowed: boolean;
+    kind: string;
+    name: string;
+    project: ({
+      id: string;
+      name?: string | null;
+      slug: string;
+    }) | null;
+    publishedAt: string | null;
+    publishedBy: ({
+      name?: string | null;
+    }) | null;
+    ref: string;
+    scope: "org" | "project";
+    slug: string;
+    updatedAt: string | null;
+    version: number;
+  }) | null;
+  leftOut: Array<{
+    reason: string;
+    skill: string;
+  }>;
+  manifest: {
+    model: string | null;
+    profile: string | null;
+    provider: string | null;
+    skills: string[];
+  };
+  next: string | null;
+  proposal: ({
+    author: {
+      agentId: string | null;
+      name: string | null;
+      self: boolean;
+    };
+    baseVersion: number;
+    can: {
+      edit: boolean;
+      publish: boolean;
+      reject: boolean;
+      submit: boolean;
+      withdraw: boolean;
+    };
+    contentHash: string;
+    createdAt: string | null;
+    currentVersion: number;
+    decidedAt: string | null;
+    decidedBy: ({
+      name: string | null;
+    }) | null;
+    decisionReason: string | null;
+    description: string;
+    externalAllowed: boolean;
+    fileCount: number;
+    name: string;
+    note: string | null;
+    number: number;
+    openComments: number;
+    proposedAt: string | null;
+    publishedVersion: number | null;
+    ref: string;
+    reviewUrl: string | null;
+    round: number;
+    stale: boolean;
+    status: "draft" | "proposed" | "published" | "superseded" | "rejected" | "withdrawn";
+    totalBytes: number;
+    updatedAt: string | null;
+  }) | null;
+  ref: string;
+  success: true;
+  unchanged: boolean;
+  version: number | null;
+};
+
+/** Input shape for `agents.requests`. */
+export type AgentsRequestsInput = {
+  execute?: boolean;
+  id: string;
+  state?: string;
+};
+
+/** Return shape for `agents.requests`. */
+export type AgentsRequestsReturn = {
+  acceptsRequests: boolean;
+  agent: string;
+  changed: boolean;
+  hint?: string;
+  reported: boolean;
+};
+
+/** Input shape for `agents.requests.cancel`. */
+export type AgentsRequestsCancelInput = {
+  id: string;
+};
+
+/** Return shape for `agents.requests.cancel`. */
+export type AgentsRequestsCancelReturn = {
+  request: {
+    answeredAt: string | null;
+    createdAt: string | null;
+    deliveredAt: string | null;
+    direction: "sent" | "received";
+    expiresAt: string | null;
+    failureReason: string | null;
+    from: {
+      agentId: string | null;
+      installation: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      user: ({
+        id: string;
+        name: string | null;
+      }) | null;
+    };
+    id: string;
+    message: string;
+    project: ({
+      id: string;
+      name: string | null;
+      slug: string;
+    }) | null;
+    reply: string | null;
+    status: "pending" | "delivered" | "answered" | "failed" | "expired" | "cancelled";
+    to: {
+      agentId: string;
+      installation: {
+        id: string;
+        name: string | null;
+      };
+    };
+  };
+  success: true;
+};
+
+/** Input shape for `agents.requests.list`. */
+export type AgentsRequestsListInput = {
+  all?: boolean;
+  limit?: string;
+  offset?: string;
+  received?: boolean;
+};
+
+/** Return shape for `agents.requests.list`. */
+export type AgentsRequestsListReturn = {
+  box: "sent" | "received";
+  hint?: string;
+  installation: ({
+    id: string;
+    name: string | null;
+  }) | null;
+  local?: Array<{
+    agentId: string | null;
+    createdAt: number;
+    direction: "sent" | "received";
+    error: string | null;
+    peer: string | null;
+    reply: string | null;
+    requestId: string;
+    sessionKey: string | null;
+    sessionName: string | null;
+    status: string;
+    updatedAt: number;
+  }>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  requests: Array<{
+    answeredAt: string | null;
+    createdAt: string | null;
+    deliveredAt: string | null;
+    direction: "sent" | "received";
+    expiresAt: string | null;
+    failureReason: string | null;
+    from: {
+      agentId: string | null;
+      installation: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      user: ({
+        id: string;
+        name: string | null;
+      }) | null;
+    };
+    id: string;
+    message: string;
+    project: ({
+      id: string;
+      name: string | null;
+      slug: string;
+    }) | null;
+    reply: string | null;
+    session: string | null;
+    status: "pending" | "delivered" | "answered" | "failed" | "expired" | "cancelled";
+    to: {
+      agentId: string;
+      installation: {
+        id: string;
+        name: string | null;
+      };
+    };
+  }>;
+  stale: boolean;
+  state: "open" | "all";
+  total: number;
+};
+
 /** Input shape for `agents.reset`. */
 export type AgentsResetInput = {
   execute?: boolean;
@@ -577,6 +927,38 @@ export type AgentsResetReturn = {
   session?: Record<string, unknown>;
   target: string;
   [k: string]: unknown;
+};
+
+/** Input shape for `agents.search`. */
+export type AgentsSearchInput = {
+  limit?: string;
+  project?: string;
+  query?: string;
+};
+
+/** Return shape for `agents.search`. */
+export type AgentsSearchReturn = {
+  items: Array<{
+    description: string | null;
+    name: string;
+    next: string;
+    project: string | null;
+    ref: string;
+    scope: "org" | "project";
+    version: number;
+  }>;
+  library: {
+    error?: {
+      code: string;
+      message: string;
+    };
+    hint?: string;
+    project: string | null;
+    status: "ok" | "stale" | "skipped" | "error";
+  };
+  query: string;
+  stale: boolean;
+  total: number;
 };
 
 /** Input shape for `agents.session`. */
@@ -641,7 +1023,7 @@ export type AgentsShowInput = {
 };
 
 /** Return shape for `agents.show`. */
-export type AgentsShowReturn = {
+export type AgentsShowReturn = ({
   agent: {
     allowedSessions?: string[];
     contactScope?: string;
@@ -694,6 +1076,15 @@ export type AgentsShowReturn = {
       updatedBy?: string;
     }>;
   };
+  library?: {
+    acceptsRequests: boolean;
+    description: string | null;
+    origin: ({
+      installedAt: number | null;
+      ref: string;
+      version: number;
+    }) | null;
+  };
   permissionsCommand: string;
   runtimePermissions: ({
     capabilities?: Array<string | ({
@@ -704,7 +1095,50 @@ export type AgentsShowReturn = {
     })>;
     profile?: "bootstrap" | "chat-only" | "explicit-only" | "full-access";
   }) | null;
-};
+}) | ({
+  contentHash: string;
+  files: Array<{
+    bytes: number;
+    file: string;
+  }>;
+  heartbeat: string | null;
+  instructions: string;
+  item: {
+    archived: boolean;
+    contentHash: string;
+    description: string;
+    externalAllowed: boolean;
+    kind: string;
+    name: string;
+    project: ({
+      id: string;
+      name?: string | null;
+      slug: string;
+    }) | null;
+    publishedAt: string | null;
+    publishedBy: ({
+      name?: string | null;
+    }) | null;
+    ref: string;
+    scope: "org" | "project";
+    slug: string;
+    updatedAt: string | null;
+    version: number;
+  };
+  manifest: {
+    model: string | null;
+    profile: string | null;
+    provider: string | null;
+    skills: string[];
+  };
+  next: string;
+  note: string | null;
+  publishedAt: string | null;
+  ref: string;
+  source: "library";
+  stale: boolean;
+  version: number;
+});
 
 /** Input shape for `agents.spec-mode`. */
 export type AgentsSpecModeInput = {
@@ -737,6 +1171,50 @@ export type AgentsSyncInstructionsReturn = {
   results: Array<Record<string, unknown>>;
   total: number;
   [k: string]: unknown;
+};
+
+/** Input shape for `agents.update`. */
+export type AgentsUpdateInput = {
+  execute?: boolean;
+  id: string;
+  keepLocal?: boolean;
+  takeLibrary?: boolean;
+};
+
+/** Return shape for `agents.update`. */
+export type AgentsUpdateReturn = {
+  agent: string;
+  granted: string[];
+  kept: string[];
+  plan: {
+    files: Array<{
+      action: "write" | "keep" | "unchanged" | "remove";
+      changedInLibrary: boolean;
+      diff?: string;
+      editedLocally: boolean;
+      file: string;
+    }>;
+    profile: {
+      apply: string | null;
+      note?: string;
+      raises: boolean;
+      suggested: string | null;
+    };
+    skills: Array<{
+      grant: string | null;
+      kind: "library" | "ravi";
+      reason?: string;
+      ref: string;
+      status: "grant" | "granted" | "missing";
+    }>;
+  };
+  previousVersion: number;
+  profile: string | null;
+  ref: string;
+  success: true;
+  upToDate: boolean;
+  version: number;
+  written: string[];
 };
 
 /** Input shape for `apps.check`. */
@@ -16890,6 +17368,106 @@ export type SkillsListReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `skills.pin`. */
+export type SkillsPinInput = {
+  agent?: string;
+  execute?: boolean;
+  ref: string;
+};
+
+/** Return shape for `skills.pin`. */
+export type SkillsPinReturn = {
+  agent: string;
+  created: boolean;
+  local: {
+    pinned: boolean;
+    refreshed: boolean;
+    revision: string | null;
+    skill: string | null;
+  };
+  pin: {
+    agent: {
+      id: string;
+      name: string | null;
+      project: string | null;
+      reported: boolean;
+    };
+    createdAt: string | null;
+    id: string;
+    installation: {
+      id: string;
+      name: string | null;
+    };
+    pinnedBy: ({
+      name: string | null;
+    }) | null;
+  };
+  ref: string;
+  success: true;
+};
+
+/** Input shape for `skills.pins`. */
+export type SkillsPinsInput = {
+  agent?: string;
+  ref?: string;
+};
+
+/** Return shape for `skills.pins`. */
+export type SkillsPinsReturn = ({
+  agent: string | null;
+  error?: {
+    code: string;
+    message: string;
+  };
+  hint?: string;
+  installation: {
+    id: string | null;
+    name: string | null;
+  };
+  pins: Array<{
+    agent: string;
+    description: string;
+    externalAllowed: boolean;
+    id: string;
+    name: string;
+    ref: string;
+    skill: string;
+    version: number;
+  }>;
+  revision: string | null;
+  stale: boolean;
+  syncedAt: string | null;
+  total: number;
+  unavailable: Array<{
+    agentId: string;
+    code: string;
+    ref: string;
+  }>;
+}) | ({
+  can: {
+    pin: boolean;
+  };
+  installationId: string;
+  pins: Array<{
+    agent: {
+      id: string;
+      name: string | null;
+      project: string | null;
+      reported: boolean;
+    };
+    createdAt: string | null;
+    id: string;
+    installation: {
+      id: string;
+      name: string | null;
+    };
+    pinnedBy: ({
+      name: string | null;
+    }) | null;
+  }>;
+  ref: string;
+});
+
 /** Input shape for `skills.proposal`. */
 export type SkillsProposalInput = {
   number: string;
@@ -17309,6 +17887,25 @@ export type SkillsSyncReturn = {
   success: true;
   total: number;
   [k: string]: unknown;
+};
+
+/** Input shape for `skills.unpin`. */
+export type SkillsUnpinInput = {
+  agent?: string;
+  ref: string;
+};
+
+/** Return shape for `skills.unpin`. */
+export type SkillsUnpinReturn = {
+  agent: string;
+  local: {
+    pinned: boolean;
+    refreshed: boolean;
+    revision: string | null;
+  };
+  ref: string;
+  removed: boolean;
+  success: true;
 };
 
 /** Input shape for `skills.who`. */

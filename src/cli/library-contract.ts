@@ -1,9 +1,11 @@
 /**
- * CLI contract helpers for the Console Library groups (`ravi themes`,
- * `ravi widgets`): agent caller, error mapping, diagnostics output, proposal
- * text, return schemas and the command bodies the groups share. Kept out of
- * `src/cli/commands/` because every file there is re-exported by the
- * generated barrel.
+ * Contract helpers shared by the Library commands (`ravi skills`, `ravi
+ * agents`, `ravi themes`, `ravi widgets`): the runtime caller, the error
+ * envelope for Library, package, diagnostics and Console failures, what each
+ * Console `CONFLICT` reason means for the command that got it, and, for themes
+ * and widgets, diagnostics output, proposal text, return schemas and the
+ * command bodies the two groups share. Kept out of `src/cli/commands/`
+ * because every file there is re-exported by the generated barrel.
  *
  * spec: skills/library, cli
  */
@@ -11,6 +13,7 @@
 import { z } from "zod";
 
 import { isCloudAuthError } from "../cloud-auth/errors.js";
+import { readCloudCredentials } from "../cloud-auth/storage.js";
 import {
   countErrors,
   diagnosticIssue,
@@ -84,6 +87,23 @@ export function runtimeLibraryCaller(): LibraryCaller | null {
   return { agentId, ...(capabilities ? { capabilities } : {}) };
 }
 
+/** The session of an agent runtime turn (key and name); null in the operator's terminal. */
+export function runtimeLibrarySession(): { key: string | null; name: string | null } | null {
+  if (!hasRuntimeInvocationContext()) return null;
+  const context = getContext();
+  const key = context?.sessionKey?.trim() || null;
+  const name = context?.sessionName?.trim() || null;
+  return key || name ? { key, name } : null;
+}
+
+export function hasCloudLogin(): boolean {
+  try {
+    return readCloudCredentials() !== null;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * The remote gateway client renders issues[] but replaces suggestedAction with
  * generic copy, so the remediation also travels as a trailing issue.
@@ -98,6 +118,24 @@ export function libraryContractIssues(
     { path, code, message },
     ...(suggestedAction ? [{ path: ["suggestedAction"], code: "SUGGESTED_ACTION", message: suggestedAction }] : []),
   ];
+}
+
+/** The name `ravi skills` and `ravi agents` use for `libraryContractIssues`. */
+export const skillContractIssues = libraryContractIssues;
+
+/** A policy refusal (exit 3) with the remediation also carried as an issue. */
+export function failLibraryPolicy(
+  op: string,
+  code: string,
+  message: string,
+  suggestedAction: string,
+  asJson?: boolean,
+): never {
+  contractFail(op, code, message, {
+    asJson,
+    exitCode: CONTRACT_EXIT_POLICY,
+    details: { suggestedAction, issues: libraryContractIssues([], code, message, suggestedAction) },
+  });
 }
 
 /** A usage error (exit 2) with its remediation as a trailing issue. */
@@ -127,11 +165,7 @@ export function refuseAgentWrite(
   asJson: boolean | undefined,
 ): void {
   if (!runtimeLibraryCaller()) return;
-  contractFail(op, code, message, {
-    asJson,
-    exitCode: CONTRACT_EXIT_POLICY,
-    details: { suggestedAction, issues: libraryContractIssues([], code, message, suggestedAction) },
-  });
+  failLibraryPolicy(op, code, message, suggestedAction, asJson);
 }
 
 // ---------------------------------------------------------------------------
@@ -192,18 +226,22 @@ export function printDiagnostics(diagnostics: readonly LibraryDiagnostic[]): voi
 // ---------------------------------------------------------------------------
 // Error mapping
 
-/** Library, package, diagnostics and Console failures as contract errors, rendered once. */
+/**
+ * Library, package, diagnostics and Console failures as contract errors,
+ * rendered once. `profile` is the theme or widget kind of `ravi themes` and
+ * `ravi widgets`; skills and agents leave it out.
+ */
 export async function withLibraryContract<T>(
   op: string,
-  profile: PresentationProfile,
   asJson: boolean | undefined,
   run: () => Promise<T>,
+  profile?: PresentationProfile,
 ): Promise<T> {
   try {
     return await run();
   } catch (error) {
     if (error instanceof ContractError) throw error;
-    if (error instanceof LibraryDiagnosticsError) {
+    if (error instanceof LibraryDiagnosticsError && profile) {
       failDiagnostics(op, invalidCode(profile), profile, error.diagnostics, asJson, {
         contrast: error instanceof ThemeCheckFailed ? error.contrast : null,
       });
@@ -220,7 +258,7 @@ export async function withLibraryContract<T>(
       });
     }
     if (error instanceof LibraryPackageError) {
-      const suggestedAction = `Fix the ${profile.noun} folder and run the same command again`;
+      const suggestedAction = `Fix the ${profile?.noun ?? "skill"} folder and run the same command again`;
       contractFail(op, error.code, error.message, {
         asJson,
         exitCode: CONTRACT_EXIT_USAGE,
@@ -233,7 +271,7 @@ export async function withLibraryContract<T>(
     if (isCloudAuthError(error)) {
       // A publish or proposal the Console's compiler rejected: its diagnostics, exit 2.
       const rejected = error.code === "PAYLOAD_INVALID" ? normalizeDiagnostics(error.details?.diagnostics) : [];
-      if (rejected.length > 0) failDiagnostics(op, invalidCode(profile), profile, rejected, asJson);
+      if (profile && rejected.length > 0) failDiagnostics(op, invalidCode(profile), profile, rejected, asJson);
       const base = cloudErrorToContractError(op, error);
       const reason = typeof error.details?.reason === "string" ? error.details.reason : undefined;
       const copy = error.code === "CONFLICT" && reason ? libraryConflictCopy(op, reason, profile) : null;
@@ -258,15 +296,34 @@ export async function withLibraryContract<T>(
   }
 }
 
+/** `withLibraryContract` for `ravi themes` and `ravi widgets`: diagnostics and copy in the kind's words. */
+export function withPresentationContract<T>(
+  op: string,
+  profile: PresentationProfile,
+  asJson: boolean | undefined,
+  run: () => Promise<T>,
+): Promise<T> {
+  return withLibraryContract(op, asJson, run, profile);
+}
+
 /** What a Library `CONFLICT` (by `details.reason`) means for the command that got it. */
 export function libraryConflictCopy(
   op: string,
   reason: string,
-  profile: PresentationProfile,
+  profile?: PresentationProfile,
 ): { message?: string; suggestedAction: string } {
-  const { noun, group } = profile;
+  const agents = !profile && op.startsWith("agents ");
+  const noun = profile?.noun ?? (agents ? "agent" : "skill");
+  const group = profile?.group ?? "skills";
   switch (reason) {
     case "stale_base":
+      if (agents) {
+        return {
+          message: "Someone published a newer version of this Library agent after the plan was read.",
+          suggestedAction:
+            "Read it (ravi agents show <ref>), bring its changes into the agent's AGENTS.md, then run the same publish without --execute to see the new plan",
+        };
+      }
       return op.endsWith(" propose")
         ? {
             message: "The published version changed after the plan was read.",
@@ -278,14 +335,21 @@ export function libraryConflictCopy(
               "Someone published a newer version: run the same publish again without --execute to see the new plan",
           };
     case "unchanged":
-      return {
-        message: "The folder and its metadata are exactly the published version.",
-        suggestedAction: "Change a file or the description first: there is nothing to propose",
-      };
+      return agents
+        ? {
+            message: "The agent's files and description are exactly the published version.",
+            suggestedAction: "Change AGENTS.md, HEARTBEAT.md or the description first: there is nothing to publish",
+          }
+        : {
+            message: "The folder and its metadata are exactly the published version.",
+            suggestedAction: "Change a file or the description first: there is nothing to propose",
+          };
     case "slug_taken_in_org":
       return {
         message: `The organization already has a Library ${noun} with this slug.`,
-        suggestedAction: `Pick another slug with --slug, or use --scope org to change the organization's ${noun}`,
+        suggestedAction: profile
+          ? `Pick another slug with --slug, or use --scope org to change the organization's ${noun}`
+          : "Pick another slug with --slug, or use --scope org to change the organization's one",
       };
     case "slug_taken_in_project":
       return {
@@ -298,6 +362,51 @@ export function libraryConflictCopy(
       return {
         message: "The proposal is closed (published, rejected or withdrawn).",
         suggestedAction: "Open a new proposal: run the same command without --update",
+      };
+    case "not_published":
+      return {
+        message: "Only a published, non-archived Library skill can be pinned.",
+        suggestedAction: "Publish a version first (ravi skills publish <dir> --scope <scope> --execute), then pin it",
+      };
+    case "agent_out_of_scope":
+      return {
+        message: "A project skill can only be pinned to an agent reported in that project.",
+        suggestedAction:
+          "Bind the agent to the skill's Console project (ravi cloud scope set --agent <agent> --project <project>), wait for the next pin sync, then pin again",
+      };
+    case "no_installation":
+      return {
+        message: agents
+          ? "This login has no linked installation, so it cannot send or answer requests."
+          : "This login has no linked installation, so it has no pins.",
+        suggestedAction: "Run `ravi login` on this daemon so it links an installation, then run the same command again",
+      };
+    case "same_installation":
+      return {
+        message: "That agent runs on this same machine: ask it locally instead of through a request.",
+        suggestedAction: 'Send it a message here: ravi sessions send <session> "<message>" -a <agent>',
+      };
+    case "not_accepting":
+      return {
+        message: "That agent is not taking requests from other machines.",
+        suggestedAction:
+          "Ask its operator to open it (ravi agents requests <agent> on --execute), or pick another agent",
+      };
+    case "too_many_open":
+      return {
+        message: "This machine already has the most open requests allowed.",
+        suggestedAction:
+          "Wait for answers, or cancel one: ravi agents requests list, then ravi agents requests cancel <id>",
+      };
+    case "not_pending":
+      return {
+        message: "The request is no longer waiting: it was answered, failed, expired or was cancelled.",
+        suggestedAction: "See its state with: ravi agents requests list --all",
+      };
+    case "not_open":
+      return {
+        message: "The request is already closed.",
+        suggestedAction: "See its state with: ravi agents requests list --received --all",
       };
     default:
       return { suggestedAction: "Run the same command without --execute to see the current plan" };
@@ -656,7 +765,7 @@ export async function runPresentationSearch(
 ) {
   const op = `${profile.group} search`;
   const limit = parseSearchLimit(op, input.limit, input.asJson);
-  const payload = await withLibraryContract(op, profile, input.asJson, () =>
+  const payload = await withPresentationContract(op, profile, input.asJson, () =>
     searchPresentationItems({
       kind: profile.kind,
       query: input.query?.trim() ?? "",
@@ -736,7 +845,7 @@ export async function runPresentationShow(
       ["version"],
     );
   }
-  const outcome = await withLibraryContract(op, profile, input.asJson, () =>
+  const outcome = await withPresentationContract(op, profile, input.asJson, () =>
     showPresentationItem({
       kind: profile.kind,
       ...selector,
@@ -797,7 +906,7 @@ export async function runPresentationPublish(profile: PresentationProfile, input
     `ravi ${profile.group} propose <dir> --scope ${scopeHint} --execute`,
     input.asJson,
   );
-  return withLibraryContract(op, profile, input.asJson, async () => {
+  return withPresentationContract(op, profile, input.asJson, async () => {
     const prepared = await prepareLibraryPublish({
       kind: profile.kind,
       dir: resolveCallerPath(input.dir ?? ""),
@@ -854,7 +963,7 @@ export async function runPresentationPropose(profile: PresentationProfile, input
       ["update"],
     );
   }
-  return withLibraryContract(op, profile, input.asJson, async () => {
+  return withPresentationContract(op, profile, input.asJson, async () => {
     const prepared = await prepareLibraryProposal({
       kind: profile.kind,
       dir: resolveCallerPath(input.dir ?? ""),
@@ -924,7 +1033,7 @@ export async function runPresentationProposals(
   }
   const parsedRef = input.ref?.trim() ? parseLibraryRef(input.ref) : null;
   if (input.ref?.trim() && !parsedRef) failLibraryRefInvalid(op, input.ref, profile, input.asJson);
-  const outcome = await withLibraryContract(op, profile, input.asJson, () =>
+  const outcome = await withPresentationContract(op, profile, input.asJson, () =>
     listLibraryProposals({
       kind: profile.kind,
       ...(parsedRef ? { ref: parsedRef } : {}),
@@ -977,7 +1086,7 @@ export async function runPresentationProposal(
       ["number"],
     );
   }
-  const outcome = await withLibraryContract(op, profile, input.asJson, () =>
+  const outcome = await withPresentationContract(op, profile, input.asJson, () =>
     showLibraryProposal({ kind: profile.kind, ref: parsedRef, number: parsedNumber, caller: runtimeLibraryCaller() }),
   );
   const { proposal } = outcome;

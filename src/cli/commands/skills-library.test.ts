@@ -13,6 +13,8 @@ import {
   fakeSkill,
   type FakeConsole,
 } from "../../library/test-fixtures.js";
+import { setLibraryConfigChangedEmitterForTests } from "../../library/pins.js";
+import { dbListLibraryPins } from "../../library/pins-db.js";
 import { dbCreateAgent, dbListSkillGrantsForAgent, dbUpdateAgent } from "../../router/router-db.js";
 import { dbUpsertSkillGrant } from "../../router/index.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
@@ -551,5 +553,115 @@ describe("skills publish inside an agent", () => {
     expect(error).toMatchObject({ code: "LIBRARY_AGENT_CANNOT_PUBLISH", exitCode: 3 });
     expect(error.details.suggestedAction).toBe("ravi skills propose <dir> --scope org --execute");
     expect(fake.requests).toEqual([]);
+  });
+});
+
+describe("skills pin, unpin and pins", () => {
+  beforeEach(() => {
+    setLibraryConfigChangedEmitterForTests(() => {});
+  });
+  afterEach(() => {
+    setLibraryConfigChangedEmitterForTests(null);
+  });
+
+  it("is refused inside an agent with LIBRARY_AGENT_CANNOT_PIN (exit 3) before any request", async () => {
+    login();
+    const runs: Array<() => Promise<unknown>> = [
+      () => new SkillsCommands().pin("org/aberta", "main", true, true),
+      () => new SkillsCommands().unpin("org/aberta", "main", true),
+    ];
+    for (const run of runs) {
+      const error = await contractError(() => runWithContext({ transport: "tool", agentId: "main" }, run));
+      expect(error).toMatchObject({ code: "LIBRARY_AGENT_CANNOT_PIN", exitCode: 3 });
+      expect(error.details.suggestedAction).toBe(
+        "Ask the operator to run: ravi skills pin <ref> --agent <agent> --execute",
+      );
+    }
+    expect(fake.requests).toEqual([]);
+  });
+
+  it("checks the ref and the agent before any request", async () => {
+    login();
+    const noAgent = await contractError(() =>
+      runWithContext({}, () => new SkillsCommands().pin("org/aberta", undefined, true)),
+    );
+    expect(noAgent).toMatchObject({ code: "USAGE_ERROR", exitCode: 2 });
+    const unknown = await contractError(() =>
+      runWithContext({}, () => new SkillsCommands().pin("org/aberta", "ninguem", true)),
+    );
+    expect(unknown).toMatchObject({ code: "AGENT_NOT_FOUND", exitCode: 1 });
+    const bare = await contractError(() => runWithContext({}, () => new SkillsCommands().pin("aberta", "main", true)));
+    expect(bare).toMatchObject({ code: "LIBRARY_REF_INVALID", exitCode: 2 });
+    expect(fake.requests).toEqual([]);
+  });
+
+  it("plans a pin (exit 3), then pins with --execute and loads it locally", async () => {
+    login();
+    const plan = await contractError(() =>
+      runWithContext({}, () => new SkillsCommands().pin("org/agenda-semanal", "main", true)),
+    );
+    expect(plan).toMatchObject({ code: "WRITE_REQUIRES_EXECUTE", exitCode: 3 });
+    expect(libraryRequests()).toEqual(["GET /api/cli/library/skills/org/agenda-semanal"]);
+    expect(fake.pins).toEqual([]);
+
+    const result = await quietAsync(async () =>
+      runWithContext({}, () => new SkillsCommands().pin("org/agenda-semanal", "main", true, true)),
+    );
+    expect(result).toMatchObject({
+      success: true,
+      ref: "org/agenda-semanal",
+      agent: "main",
+      created: true,
+      local: { pinned: true, refreshed: true, skill: "org-agenda-semanal" },
+    });
+    expect(libraryRequests()).toContain("POST /api/cli/library/pins/sync");
+    expect(libraryRequests()).toContain("POST /api/cli/library/skills/org/agenda-semanal/pin");
+    expect(dbListLibraryPins().map((row) => [row.agentId, row.ref])).toEqual([["main", "org/agenda-semanal"]]);
+  });
+
+  it("maps pin conflicts to details.conflict with a next step", async () => {
+    login();
+    fake.skills.push(fakeSkill({ slug: "triagem", project: "clinica" }));
+    const error = await contractError(() =>
+      runWithContext({}, () => new SkillsCommands().pin("clinica/triagem", "main", true, true)),
+    );
+    expect(error).toMatchObject({ code: "CONFLICT", exitCode: 1, details: { conflict: "agent_out_of_scope" } });
+    expect(String(error.details.suggestedAction)).toContain("ravi cloud scope set --agent");
+  });
+
+  it("unpins at once (no --execute) and lists pins, locally and per item", async () => {
+    login();
+    await quietAsync(async () =>
+      runWithContext({}, () => new SkillsCommands().pin("org/agenda-semanal", "main", true, true)),
+    );
+    const listed = await quietAsync(async () =>
+      runWithContext({}, () => new SkillsCommands().pins(undefined, undefined, true)),
+    );
+    expect(listed).toMatchObject({
+      stale: false,
+      total: 1,
+      pins: [{ agent: "main", ref: "org/agenda-semanal", skill: "org-agenda-semanal", version: 2 }],
+    });
+    const itemPins = await quietAsync(async () =>
+      runWithContext({}, () => new SkillsCommands().pins("org/agenda-semanal", undefined, true)),
+    );
+    expect(itemPins).toMatchObject({
+      ref: "org/agenda-semanal",
+      installationId: "inst-1",
+      can: { pin: true },
+      pins: [{ agent: { id: "main" }, installation: { id: "inst-1" } }],
+    });
+    const { lines } = await captureAsync(async () =>
+      runWithContext({}, () => new SkillsCommands().pins(undefined, undefined, false)),
+    );
+    expect(lines).toContain(
+      "main: org/agenda-semanal v2 as ravi-library:org-agenda-semanal (operator's own turns only)",
+    );
+
+    const unpinned = await quietAsync(async () =>
+      runWithContext({}, () => new SkillsCommands().unpin("org/agenda-semanal", "main", true)),
+    );
+    expect(unpinned).toMatchObject({ success: true, removed: true, local: { pinned: false, refreshed: true } });
+    expect(dbListLibraryPins()).toEqual([]);
   });
 });

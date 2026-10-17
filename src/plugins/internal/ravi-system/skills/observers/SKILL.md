@@ -5,7 +5,7 @@ description: |
   - Listar, explicar ou atualizar observer bindings
   - Criar regras de observer por global/agent/session/task/profile/tag
   - Criar, validar ou pré-visualizar observer profiles Markdown
-  - Configurar task observers como `observed-task` + profile `tasks`
+  - Entender o observer embutido das tasks (`task-observer`) ou trocá-lo por uma rule própria
 ---
 
 # Observers
@@ -136,12 +136,33 @@ Não use manifest JSON/YAML separado. O frontmatter fica no `PROFILE.md`.
 System profiles atuais:
 
 - `default`: renderer genérico.
-- `tasks`: renderer para observers que atualizam status de tasks.
+- `tasks`: renderer para observers que atualizam status de tasks via comandos.
+- `task-observer`: renderer do observer embutido das tasks; precisa de uma sessão fonte com task ativa (usa `{{input.task.*}}`).
 
-## Observed Task
+Profiles leem `{{event.detailText}}` (texto inteiro da resposta, ou o preview) e
+`{{event.toolInput}}` (uma linha do input da tool). O texto inteiro só chega para
+bindings com `metadata.observationDetail: true`; os demais veem o preview.
 
-Use `observed-task` quando o worker deve executar sem carregar o protocolo de
-status da task no prompt principal.
+## Observer Embutido Das Tasks
+
+Toda task cujo profile tem `observer.enabled: true` (os built-ins `default` e
+`observed-task`) ganha um observer sem regra cadastrada: role `task-observer`,
+rule id `builtin:task-observer`, profile `task-observer`, o agent do worker num
+modelo leve, eventos de tool, pulso de 5 min e grant `none` (nenhuma tool). Ele
+responde um bloco `<task-verdict>` e o runtime aplica o status. Ele aparece em
+`ravi observers bindings` como qualquer binding.
+
+Não crie rule para tasks desses profiles: já existe observer. Uma rule própria
+em modo `report` na mesma sessão substitui o embutido (ele fica desligado), para
+quem quer outro agent, outro prompt ou permissões de task.
+
+Grant `none` em `--permissions` deixa o observer sem tools: o turno fica
+restrito a uma capability que nada satisfaz. Lista vazia mantém o teto do agent.
+
+## Rule Própria De Status
+
+Use quando quiser um observer de status diferente do embutido (outro agent,
+outro prompt, grants de task).
 
 Setup típico:
 
@@ -171,7 +192,8 @@ ravi tasks dispatch <task-id> --agent <worker-agent> --execute
 ```
 
 O worker faz o trabalho e deixa sinais claros. O observer recebe Markdown do
-profile `tasks` e decide se chama `ravi tasks report|block|done|fail`.
+profile `tasks` e decide se chama `ravi tasks report|block|done|fail`. Um report
+vindo do observer zera o checkpoint do worker.
 
 ## Tag-Driven Observers em Contatos
 

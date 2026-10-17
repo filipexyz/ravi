@@ -52,6 +52,8 @@ import { startLinkRequestWatcher, stopLinkRequestWatcher } from "./identity-link
 import { startHookRunner, stopHookRunner } from "./hooks-runtime/index.js";
 import { startTaskCheckpointRunner, stopTaskCheckpointRunner } from "./tasks/index.js";
 import { startSyncRunner, stopSyncRunner } from "./sync/index.js";
+import { startLibraryPinRunner, stopLibraryPinRunner } from "./library/pin-runner.js";
+import { startLibraryRequestRunner, stopLibraryRequestRunner } from "./library/request-runner.js";
 import { createSessionAdapterBus } from "./adapters/index.js";
 import { resolveOmniConnection } from "./omni-config.js";
 import { ensureSessionPromptsStream, publishSessionPrompt } from "./omni/session-stream.js";
@@ -253,6 +255,8 @@ async function shutdown(signal: string, exitCode = 0) {
     await stopInboxRunner();
     await stopLinkRequestWatcher();
     await stopSyncRunner();
+    await stopLibraryPinRunner();
+    await stopLibraryRequestRunner();
     await stopEphemeralRunner();
     await stopHookRunner();
     await stopTriggerRunner();
@@ -465,6 +469,12 @@ export async function startDaemon() {
 
   await startSyncRunner();
   log.info("Sync runner started");
+
+  await startLibraryPinRunner();
+  log.info("Library pin runner started");
+
+  await startLibraryRequestRunner();
+  log.info("Library request runner started");
 
   sessionAdapterBus = createSessionAdapterBus();
   await sessionAdapterBus.start();

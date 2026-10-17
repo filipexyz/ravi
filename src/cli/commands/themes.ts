@@ -32,7 +32,7 @@ import {
   themeActiveReturnSchema,
   themeCheckReturnSchema,
   themeUseReturnSchema,
-  withLibraryContract,
+  withPresentationContract,
 } from "../library-contract.js";
 import {
   checkPresentationFolder,
@@ -320,7 +320,7 @@ export class ThemesCommands {
     @Option({ flags: "--force", description: "Overwrite files the folder already has" }) force?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    return withLibraryContract("themes init", THEME, asJson, async () => {
+    return withPresentationContract("themes init", THEME, asJson, async () => {
       const outcome = await initTheme({ dir: resolveCallerPath(dir ?? ""), force: force === true });
       const payload = {
         success: true as const,
@@ -353,7 +353,7 @@ export class ThemesCommands {
     @Arg("dir", { description: "Theme folder holding theme.json (relative to your current directory)" }) dir: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    return withLibraryContract("themes check", THEME, asJson, async () => {
+    return withPresentationContract("themes check", THEME, asJson, async () => {
       const outcome = await checkPresentationFolder({ kind: "theme", dir: resolveCallerPath(dir ?? "") });
       const payload = {
         kind: outcome.kind,
@@ -491,7 +491,7 @@ export class ThemesCommands {
     project?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    return withLibraryContract("themes active", THEME, asJson, async () => {
+    return withPresentationContract("themes active", THEME, asJson, async () => {
       const outcome = await themeActive({ project: project?.trim() || null, caller: runtimeLibraryCaller() });
       const payload = {
         projectRef: outcome.projectRef,
@@ -541,7 +541,7 @@ export class ThemesCommands {
       asJson,
     );
     if (!ref?.trim()) failLibraryUsage(op, "Pass a theme ref or none.", "ravi themes search <words>", asJson, ["ref"]);
-    return withLibraryContract(op, THEME, asJson, async () => {
+    return withPresentationContract(op, THEME, asJson, async () => {
       const prepared = await prepareThemeUse({ ref, project: project?.trim() || null });
       if (!execute) {
         if (!asJson) {

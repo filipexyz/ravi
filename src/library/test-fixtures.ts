@@ -186,9 +186,29 @@ export interface FakeConsoleOptions {
   routes?: FakeRoute;
 }
 
+export interface FakePin {
+  id: string;
+  installationId: string;
+  agentId: string;
+  scope: "org" | "project";
+  project: string | null;
+  slug: string;
+  pinnedBy: string;
+}
+
 export interface FakeConsole {
   skills: FakeLibrarySkill[];
   proposals: FakeProposal[];
+  /** Pins of every installation of the org. */
+  pins: FakePin[];
+  /** The caller's linked installation; null answers `no_installation`. */
+  installation: { id: string; name: string } | null;
+  /** Agents each installation reported (`POST /pins/sync`). */
+  reportedAgents: Map<string, Array<{ id: string; name?: string | null; project?: string | null }>>;
+  /** Whether the caller is an admin of every scope (may pin). */
+  pinAdmin: boolean;
+  /** Item refs (`org/x`) whose `GET` answers 404, as if this login could not read them. */
+  unreadable: Set<string>;
   requests: Array<{ method: string; path: string; body?: unknown; authorization?: string | null }>;
   offline: boolean;
   fetch: (url: string, init?: RequestInit) => Promise<Response>;
@@ -208,6 +228,11 @@ export function createFakeConsole(
   const state: FakeConsole = {
     skills,
     proposals,
+    pins: [],
+    installation: { id: "inst-1", name: "macbook" },
+    reportedAgents: new Map(),
+    pinAdmin: true,
+    unreadable: new Set(),
     requests: [],
     offline: false,
     fetch: async (url, init) => {
@@ -222,6 +247,8 @@ export function createFakeConsole(
         authorization: headers.get("authorization"),
       });
       if (state.offline) throw new TypeError("fetch failed: connect ECONNREFUSED");
+      const installationPins = handleInstallationPinsRoute(state, method, parsed.pathname, body);
+      if (installationPins) return installationPins;
       const root = `/api/cli/library/${LIBRARY_KIND_SEGMENTS[kind]}`;
       if (!parsed.pathname.startsWith(root)) return json(404, { error: { code: "NOT_FOUND", message: "nope" } });
       const rest = parsed.pathname
@@ -234,6 +261,8 @@ export function createFakeConsole(
       if (custom) return custom;
       const proposalRoute = handleProposalRoute(state, method, rest, parsed.searchParams, body, kind);
       if (proposalRoute) return proposalRoute;
+      const pinRoute = handleItemPinRoute(state, method, rest, body);
+      if (pinRoute) return pinRoute;
       const inView = (skill: FakeLibrarySkill) =>
         skill.item.scope === "org" || (project !== null && skill.item.project?.slug === project);
       if (method === "GET" && rest.length === 0) {
@@ -264,6 +293,9 @@ export function createFakeConsole(
       }
       if (method === "GET" && rest.length === 2) {
         const [scope, slug] = rest as [string, string];
+        if (state.unreadable.has(`${scope}/${slug}`)) {
+          return json(404, { error: { code: "NOT_FOUND", message: "Library skill not found." } });
+        }
         return show(
           state.skills.find(
             (skill) =>
@@ -578,15 +610,327 @@ export function fakeSession(
 ): LibrarySession {
   const credentials = fakeCredentials();
   return {
-    client: new LibraryClient({
-      client: new ConsoleApiClient({ consoleUrl: FAKE_CONSOLE_URL, fetch: fake.fetch }),
-      credentials,
-      write: () => {},
-      delete: () => {},
-      ...(kind ? { kind } : {}),
-    }),
+    client: new LibraryClient(
+      {
+        client: new ConsoleApiClient({ consoleUrl: FAKE_CONSOLE_URL, fetch: fake.fetch }),
+        credentials,
+        write: () => {},
+        delete: () => {},
+      },
+      kind,
+    ),
     consoleUrl: FAKE_CONSOLE_URL,
     orgId,
     project: project ? { ref: project.slug, slug: project.slug, id: project.id ?? `p-${project.slug}` } : null,
+    installationId: credentials.installationId,
+    scopes: credentials.scopes,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Pins
+
+function pinItemRef(pin: Pick<FakePin, "scope" | "project" | "slug">): string {
+  return `${pin.scope === "org" ? "org" : pin.project}/${pin.slug}`;
+}
+
+function serializeItemPin(state: FakeConsole, pin: FakePin) {
+  const reported = state.reportedAgents.get(pin.installationId) ?? [];
+  const agent = reported.find((entry) => entry.id === pin.agentId);
+  return {
+    id: pin.id,
+    installation: {
+      id: pin.installationId,
+      name: pin.installationId === state.installation?.id ? state.installation.name : "other",
+    },
+    agent: {
+      id: pin.agentId,
+      name: agent?.name ?? null,
+      project: agent?.project ?? null,
+      reported: Boolean(agent),
+    },
+    pinnedBy: { name: pin.pinnedBy },
+    createdAt: "2026-10-16T00:00:00.000Z",
+  };
+}
+
+function installationPinsPayload(state: FakeConsole) {
+  const installation = state.installation!;
+  const pins = state.pins
+    .filter((pin) => pin.installationId === installation.id)
+    .flatMap((pin) => {
+      const skill = findSkill(state, pin.scope, pin.project, pin.slug);
+      return skill && !skill.item.archived ? [{ agentId: pin.agentId, ref: pinItemRef(pin), item: skill.item }] : [];
+    });
+  const revision = createHash("sha256")
+    .update(JSON.stringify(pins.map((pin) => [pin.agentId, pin.ref])))
+    .digest("hex");
+  return { installation, revision, pins };
+}
+
+/** `POST /api/cli/library/pins/sync` and `GET /api/cli/library/pins`; null for other paths. */
+function handleInstallationPinsRoute(
+  state: FakeConsole,
+  method: string,
+  pathname: string,
+  body: unknown,
+): Response | null {
+  if (pathname !== "/api/cli/library/pins" && pathname !== "/api/cli/library/pins/sync") return null;
+  if (!state.installation) return conflict("no_installation");
+  if (pathname.endsWith("/sync")) {
+    if (method !== "POST") return json(404, { error: { code: "NOT_FOUND", message: "nope" } });
+    const agents = (body as { agents?: Array<{ id: string; name?: string | null; project?: string | null }> })?.agents;
+    if (!Array.isArray(agents) || agents.length > 500) {
+      return json(400, { error: { code: "PAYLOAD_INVALID", message: "agents" } });
+    }
+    state.reportedAgents.set(state.installation.id, agents);
+    return json(200, installationPinsPayload(state));
+  }
+  if (method !== "GET") return json(404, { error: { code: "NOT_FOUND", message: "nope" } });
+  return json(200, installationPinsPayload(state));
+}
+
+/** `GET .../pins`, `POST .../pin`, `POST .../unpin` of an item; null for other routes. */
+function handleItemPinRoute(state: FakeConsole, method: string, rest: string[], body: unknown): Response | null {
+  if (rest.length !== 3 || !["pins", "pin", "unpin"].includes(rest[2] ?? "")) return null;
+  const [scopeRef, slug, action] = rest as [string, string, string];
+  const scope = scopeRef === "org" ? "org" : "project";
+  const project = scope === "org" ? null : scopeRef;
+  const skill = findSkill(state, scope, project, slug);
+  const ofItem = state.pins.filter((pin) => pin.scope === scope && pin.project === project && pin.slug === slug);
+  if (action === "pins" && method === "GET") {
+    if (!skill) return json(404, { error: { code: "NOT_FOUND", message: "Library skill not found." } });
+    return json(200, { pins: ofItem.map((pin) => serializeItemPin(state, pin)), can: { pin: state.pinAdmin } });
+  }
+  if (method !== "POST") return json(404, { error: { code: "NOT_FOUND", message: "nope" } });
+  const input = body as { agentId?: string; installationId?: string; agent?: unknown };
+  if (!state.pinAdmin || input?.agent !== undefined) {
+    return json(403, { error: { code: "ORG_ACCESS_DENIED", message: "Only a scope admin pins." } });
+  }
+  const installationId = input?.installationId ?? state.installation?.id;
+  if (!installationId) return conflict("no_installation");
+  const existing = ofItem.find((pin) => pin.installationId === installationId && pin.agentId === input.agentId);
+  if (action === "unpin") {
+    if (existing) state.pins = state.pins.filter((pin) => pin !== existing);
+    return json(200, { removed: Boolean(existing) });
+  }
+  if (!skill) return json(404, { error: { code: "NOT_FOUND", message: "Library skill not found." } });
+  if (skill.item.archived) return conflict("not_published");
+  const reported = (state.reportedAgents.get(installationId) ?? []).find((agent) => agent.id === input.agentId);
+  if (!reported) return json(404, { error: { code: "NOT_FOUND", message: "Agent not reported." } });
+  if (scope === "project" && reported.project !== project) return conflict("agent_out_of_scope");
+  if (existing) return json(200, { pin: serializeItemPin(state, existing) });
+  const pin: FakePin = {
+    id: `pin-${state.pins.length + 1}`,
+    installationId,
+    agentId: input.agentId!,
+    scope,
+    project,
+    slug,
+    pinnedBy: "Op",
+  };
+  state.pins.push(pin);
+  return json(201, { pin: serializeItemPin(state, pin) });
+}
+
+// ---------------------------------------------------------------------------
+// Agent definitions
+
+/** A Library agent definition: AGENTS.md, optional HEARTBEAT.md and agent.json. */
+export function fakeAgentDefinition(input: {
+  slug: string;
+  project?: string | null;
+  description?: string;
+  version?: number;
+  externalAllowed?: boolean;
+  instructions?: string;
+  heartbeat?: string | null;
+  manifest?: Record<string, unknown> | null;
+}): FakeLibrarySkill {
+  const base = fakeSkill({
+    slug: input.slug,
+    project: input.project ?? null,
+    description: input.description ?? `About ${input.slug}`,
+    version: input.version ?? 1,
+    externalAllowed: input.externalAllowed,
+  });
+  const contents: Array<[string, string]> = [["AGENTS.md", input.instructions ?? `# ${input.slug}\n\nBe helpful.\n`]];
+  if (input.heartbeat) contents.push(["HEARTBEAT.md", input.heartbeat]);
+  if (input.manifest) contents.push(["agent.json", `${JSON.stringify(input.manifest, null, 2)}\n`]);
+  const files = contents.map(([path, content]) => ({
+    path,
+    content,
+    bytes: Buffer.byteLength(content),
+    sha256: sha(content),
+  }));
+  return { item: { ...base.item, kind: "agent", contentHash: libraryContentHash(files) }, files };
+}
+
+/**
+ * One fake Console for skills and another for agent definitions: requests to
+ * `/api/cli/library/agents/...` go to `agents` as if they were skill routes.
+ * Every original path is logged in `paths` of the returned fake.
+ */
+export function withFakeAgentLibrary(skills: FakeConsole, agents: FakeConsole): FakeConsole & { paths: string[] } {
+  const paths: string[] = [];
+  const agentsRoot = "/api/cli/library/agents";
+  return {
+    ...skills,
+    paths,
+    fetch: async (url, init) => {
+      const parsed = new URL(url);
+      paths.push(`${(init?.method ?? "GET").toUpperCase()} ${parsed.pathname}${parsed.search}`);
+      if (parsed.pathname === agentsRoot || parsed.pathname.startsWith(`${agentsRoot}/`)) {
+        parsed.pathname = `/api/cli/library/skills${parsed.pathname.slice(agentsRoot.length)}`;
+        return agents.fetch(parsed.toString(), init);
+      }
+      return skills.fetch(url, init);
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Directory and requests
+
+export interface FakeRequestConsole {
+  directory: Array<{
+    installation: { id: string; name: string | null };
+    agent: { id: string; name?: string; description?: string | null; project?: null };
+    online?: boolean;
+    acceptsRequests?: boolean;
+    self?: boolean;
+  }>;
+  /** Requests as the Console would serialize them for the caller. */
+  requests: LibraryAgentRequestFixture[];
+  /** Requests waiting for this installation's agents (`/requests/pull` hands them out once). */
+  incoming: LibraryAgentRequestFixture[];
+  /** Answers waiting for this installation (`/requests/replies/pull` hands them out once). */
+  replies: LibraryAgentRequestFixture[];
+  posted: Array<{ id: string; body: unknown }>;
+  /** Conflict reason `POST /requests` answers with, if any. */
+  sendConflict: string | null;
+}
+
+export type LibraryAgentRequestFixture = import("./types.js").LibraryAgentRequest;
+
+export function fakeAgentRequest(
+  input: Partial<LibraryAgentRequestFixture> & { id: string; toAgentId?: string },
+): LibraryAgentRequestFixture {
+  const { toAgentId, ...rest } = input;
+  return {
+    status: "pending",
+    direction: "received",
+    from: {
+      installation: { id: "inst-2", name: "macbook-ana" },
+      agentId: "finance",
+      user: { id: "user-2", name: "Ana" },
+    },
+    to: { installation: { id: "inst-1", name: "macbook" }, agentId: toAgentId ?? "main" },
+    project: null,
+    message: "What is the close date?",
+    reply: null,
+    failureReason: null,
+    createdAt: "2026-10-16T00:00:00.000Z",
+    deliveredAt: null,
+    answeredAt: null,
+    expiresAt: "2026-10-17T00:00:00.000Z",
+    ...rest,
+  };
+}
+
+/** Wraps a fake Console with the directory and request routes. */
+export function withFakeRequests(base: FakeConsole, state: FakeRequestConsole): FakeConsole {
+  return {
+    ...base,
+    fetch: async (url, init) => {
+      const parsed = new URL(url);
+      const method = (init?.method ?? "GET").toUpperCase();
+      const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
+      const root = "/api/cli/library/";
+      const path = parsed.pathname.startsWith(root) ? parsed.pathname.slice(root.length) : "";
+      if (path === "directory" && method === "GET") {
+        base.requests.push({ method, path: `${parsed.pathname}${parsed.search}` });
+        const q = (parsed.searchParams.get("q") ?? "").toLowerCase();
+        const agents = state.directory
+          .filter((entry) => !q || entry.agent.id.includes(q) || (entry.installation.name ?? "").includes(q))
+          .map((entry) => ({
+            installation: entry.installation,
+            agent: {
+              id: entry.agent.id,
+              name: entry.agent.name ?? entry.agent.id,
+              description: entry.agent.description ?? null,
+              provider: null,
+              model: null,
+              project: null,
+            },
+            online: entry.online ?? true,
+            acceptsRequests: entry.acceptsRequests ?? true,
+            reportedAt: "2026-10-16T00:00:00.000Z",
+            self: entry.self ?? false,
+          }));
+        return json(200, { agents, can: { ask: true } });
+      }
+      if (!path.startsWith("requests")) return base.fetch(url, init);
+      base.requests.push({ method, path: `${parsed.pathname}${parsed.search}`, body });
+      const installation = { id: "inst-1", name: "macbook" };
+      const rest = path.split("/").slice(1);
+      if (rest.length === 0 && method === "POST") {
+        if (state.sendConflict) return conflict(state.sendConflict);
+        const input = body as {
+          to: { installationId: string; agentId: string };
+          message: string;
+          agent?: { id: string };
+        };
+        const request = fakeAgentRequest({
+          id: `req-${state.requests.length + 1}`,
+          direction: "sent",
+          from: { installation, agentId: input.agent?.id ?? null, user: { id: "user-1", name: "Op" } },
+          to: { installation: { id: input.to.installationId, name: "macbook-ana" }, agentId: input.to.agentId },
+          message: input.message,
+        });
+        state.requests.push(request);
+        return json(201, { request });
+      }
+      if (rest.length === 0 && method === "GET") {
+        const box = parsed.searchParams.get("box") ?? "sent";
+        const wanted = parsed.searchParams.get("state") ?? "open";
+        const open = new Set(["pending", "delivered"]);
+        const requests = state.requests
+          .filter((request) => request.direction === box)
+          .filter((request) => wanted === "all" || open.has(request.status));
+        return json(200, { installation, requests });
+      }
+      if (rest.length === 1 && rest[0] === "pull" && method === "POST") {
+        const requests = state.incoming.splice(0).map((request) => ({ ...request, status: "delivered" as const }));
+        return json(200, { installation, requests });
+      }
+      if (rest.length === 2 && rest[0] === "replies" && rest[1] === "pull" && method === "POST") {
+        return json(200, { installation, requests: state.replies.splice(0) });
+      }
+      if (rest.length === 2 && rest[1] === "reply" && method === "POST") {
+        state.posted.push({ id: rest[0]!, body });
+        const answer = body as { reply?: string; failure?: string };
+        return json(200, {
+          request: fakeAgentRequest({
+            id: rest[0]!,
+            status: answer.reply ? "answered" : "failed",
+            reply: answer.reply ?? null,
+            failureReason: answer.failure ?? null,
+          }),
+        });
+      }
+      if (rest.length === 2 && rest[1] === "cancel" && method === "POST") {
+        const request = state.requests.find((entry) => entry.id === rest[0]);
+        if (!request) return json(404, { error: { code: "NOT_FOUND", message: "Request not found." } });
+        if (request.status !== "pending") return conflict("not_pending", { status: request.status });
+        request.status = "cancelled";
+        return json(200, { request });
+      }
+      return json(404, { error: { code: "NOT_FOUND", message: "nope" } });
+    },
+  };
+}
+
+export function createFakeRequestConsole(input: Partial<FakeRequestConsole> = {}): FakeRequestConsole {
+  return { directory: [], requests: [], incoming: [], replies: [], posted: [], sendConflict: null, ...input };
 }

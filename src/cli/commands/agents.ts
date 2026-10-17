@@ -92,6 +92,14 @@ import {
   resolveRequiredRuntimeModelBrokerSelection,
 } from "../../runtime/model-broker.js";
 import { revokeLiveRuntimeContextsForAgent } from "../../runtime/context-registry.js";
+import { looksLikeLibraryRef, parseLibraryRef } from "../../library/refs.js";
+import { showLibraryAgent } from "../../library/agent-definitions.js";
+import {
+  dbSetLibraryAgentDescription,
+  LIBRARY_AGENT_DESCRIPTION_MAX,
+  readLibraryAgentState,
+} from "../../library/agents-db.js";
+import { withLibraryContract } from "../library-contract.js";
 
 /** Notify gateway that config changed */
 function emitConfigChanged() {
@@ -590,6 +598,89 @@ function failAgentNotFound(op: string, agentId: string, asJson?: boolean): never
   });
 }
 
+/** `ravi agents show <ref>`: a Library agent definition, read-only. */
+async function showLibraryAgentCommand(value: string, asJson?: boolean) {
+  const ref = parseLibraryRef(value);
+  if (!ref) {
+    const message = `Not a valid Library ref: ${value.slice(0, 120)}. Use org/<slug> or <project>/<slug> (a-z, 0-9 and -).`;
+    contractFail("agents show", "LIBRARY_REF_INVALID", message, {
+      asJson,
+      exitCode: 2,
+      details: { suggestedAction: "Copy the ref from: ravi agents search <words> --json" },
+    });
+  }
+  return withLibraryContract("agents show", asJson, async () => {
+    const definition = await showLibraryAgent(ref);
+    const payload = {
+      source: "library" as const,
+      ref: definition.ref,
+      item: { ...definition.item, ref: definition.ref },
+      version: definition.version,
+      contentHash: definition.contentHash,
+      note: definition.note,
+      publishedAt: definition.publishedAt,
+      stale: definition.stale,
+      manifest: definition.agent,
+      files: definition.files,
+      instructions: definition.instructions,
+      heartbeat: definition.heartbeat,
+      next: `ravi agents install ${definition.ref}`,
+    };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      const manifest = definition.agent;
+      console.log(
+        `\nLibrary agent: ${definition.ref} v${definition.version}${definition.stale ? " (cached, offline)" : ""}`,
+      );
+      console.log(`  Name:          ${definition.item.name}`);
+      console.log(`  Description:   ${definition.item.description || "-"}`);
+      console.log(`  Provider:      ${manifest.provider ?? "-"}`);
+      console.log(`  Model:         ${manifest.model ?? "-"}`);
+      console.log(`  Profile:       ${manifest.profile ?? "bootstrap (default)"}`);
+      console.log(`  Skills:        ${manifest.skills.length > 0 ? manifest.skills.join(", ") : "-"}`);
+      console.log(`  Files:         ${definition.files.map((file) => file.file).join(", ")}`);
+      if (definition.note) console.log(`  Note:          ${definition.note}`);
+      console.log(`\n${definition.instructions}`);
+      console.log(`\nInstall it with: ravi agents install ${definition.ref}`);
+    }
+    return payload;
+  });
+}
+
+/** `ravi agents set <id> description <text|clear>`: the Library directory description (a local reversible write). */
+function setAgentLibraryDescription(agentId: string, value: string, asJson?: boolean) {
+  const cleared = value === "clear" || value === "null" || value.trim() === "";
+  const description = cleared ? null : value.trim();
+  if (description && description.length > LIBRARY_AGENT_DESCRIPTION_MAX) {
+    contractFail(
+      "agents set",
+      "USAGE_ERROR",
+      `The description is longer than ${LIBRARY_AGENT_DESCRIPTION_MAX} characters.`,
+      {
+        asJson,
+        exitCode: 2,
+        details: { suggestedAction: `Shorten it to at most ${LIBRARY_AGENT_DESCRIPTION_MAX} characters` },
+      },
+    );
+  }
+  const before = readLibraryAgentState(agentId)?.description ?? null;
+  dbSetLibraryAgentDescription(agentId, description);
+  const payload = {
+    action: "set" as const,
+    changed: before !== description,
+    agentId,
+    key: "description",
+    value: description,
+    sessionOverrides: [],
+    rematerializedSessions: [],
+    forcedClearedOverrides: [],
+  };
+  if (asJson) printJson(payload);
+  else console.log(description ? `✓ ${agentId} description set` : `✓ ${agentId} description cleared`);
+  return payload;
+}
+
 @Group({
   name: "agents",
   description: "Agent management",
@@ -692,10 +783,12 @@ export class AgentsCommands {
     risk: "low",
   })
   show(
-    @Arg("id", { description: "Agent ID" }) id: string,
+    @Arg("id", { description: "Agent ID, or a Library agent ref (org/<slug> or <project>/<slug>)" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
   ) {
+    // A Library ref answers asynchronously; a local agent stays synchronous.
+    if (looksLikeLibraryRef(id)) return showLibraryAgentCommand(id, asJson);
     const ctx = getScopeContext();
     if (!canViewAgent(ctx, id)) {
       failAgentNotFound("agents show", id, asJson);
@@ -709,10 +802,26 @@ export class AgentsCommands {
 
     const isDefault = agent.id === config.defaultAgent;
     const runtimePermissions = getAgentRuntimePermissionsConfigFromDefaults(agent.defaults);
+    const libraryState = readLibraryAgentState(agent.id);
     const payload = {
       agent: buildAgentJson(agent, config.defaultAgent),
       runtimePermissions,
       permissionsCommand: `ravi agents permissions ${agent.id}`,
+      ...(libraryState
+        ? {
+            library: {
+              description: libraryState.description,
+              acceptsRequests: libraryState.acceptsRequests,
+              origin: libraryState.origin
+                ? {
+                    ref: libraryState.origin.ref,
+                    version: libraryState.origin.version,
+                    installedAt: libraryState.origin.installedAt,
+                  }
+                : null,
+            },
+          }
+        : {}),
     };
 
     if (asJson) {
@@ -736,6 +845,11 @@ export class AgentsCommands {
       console.log(`  Group Debounce:${agent.groupDebounceMs ? ` ${agent.groupDebounceMs}ms` : " -"}`);
       console.log(`  Matrix:        ${agent.matrixAccount || "-"}`);
 
+      if (libraryState?.description) console.log(`  Description:   ${libraryState.description}`);
+      if (libraryState?.origin) {
+        console.log(`  Library:       ${libraryState.origin.ref} v${libraryState.origin.version}`);
+      }
+      console.log(`  Requests:      ${libraryState?.acceptsRequests ? "open to other machines" : "closed"}`);
       console.log(`  Spec Mode:     ${agent.specMode ? "enabled" : "disabled"}`);
       console.log(`  Tags:          ${formatTagSlugs(payload.agent.tags)}`);
       console.log(`  Permissions:   ravi agents permissions ${agent.id}`);
@@ -1064,7 +1178,11 @@ RULES
   listed with reasons. --force clears those overrides and rematerializes them.
   Last-used runtime_provider without an override is drift and is rematerialized.
 
+  description is what the Library directory shows for this agent (at most 300
+  characters; "clear" removes it). It is reported with the next pin sync.
+
 EXAMPLES
+  ravi agents set ravi-console description "Answers questions about the Console" --json
   ravi agents set ravi-console provider pi --json
   ravi agents set ravi-console model deepseek/deepseek-flash
   ravi agents set ravi-console provider pi --force --json
@@ -1103,7 +1221,10 @@ SOURCES
       failAgentNotFound("agents set", id, asJson);
     }
 
+    if (key === "description") return setAgentLibraryDescription(agent.id, value, asJson);
+
     const validKeys = [
+      "description",
       "name",
       "cwd",
       "model",

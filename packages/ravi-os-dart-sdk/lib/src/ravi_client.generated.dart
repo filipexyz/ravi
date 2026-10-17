@@ -149,6 +149,21 @@ class AgentsNamespace {
 
   final RaviTransport _transport;
 
+  AgentsRequestsNamespace get requests => AgentsRequestsNamespace(_transport);
+
+  Future<AgentsAskReturn> ask(String target, String message, [AgentsAskOptions options = const AgentsAskOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["target"] = RaviJson.from(target);
+    requestBody["message"] = RaviJson.from(message);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["agents"],
+      command: "ask",
+      body: requestBody,
+      decode: agentsAskReturnFromJson,
+    );
+  }
+
   Future<AgentsCreateReturn> create(String id, String cwd, [AgentsCreateOptions options = const AgentsCreateOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["id"] = RaviJson.from(id);
@@ -203,6 +218,32 @@ class AgentsNamespace {
     );
   }
 
+  Future<AgentsDirectoryReturn> directory([String? query, AgentsDirectoryOptions options = const AgentsDirectoryOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    if (query != null) {
+      requestBody["query"] = RaviJson.from(query);
+    }
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["agents"],
+      command: "directory",
+      body: requestBody,
+      decode: agentsDirectoryReturnFromJson,
+    );
+  }
+
+  Future<AgentsInstallReturn> install(String ref, [AgentsInstallOptions options = const AgentsInstallOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["ref"] = RaviJson.from(ref);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["agents"],
+      command: "install",
+      body: requestBody,
+      decode: agentsInstallReturnFromJson,
+    );
+  }
+
   Future<AgentsListReturn> list([AgentsListOptions options = const AgentsListOptions()]) async {
     final requestBody = <String, RaviJson>{};
     options.encodeBody(requestBody);
@@ -241,6 +282,33 @@ class AgentsNamespace {
     );
   }
 
+  Future<AgentsPublishReturn> publish(String id, [AgentsPublishOptions options = const AgentsPublishOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["agents"],
+      command: "publish",
+      body: requestBody,
+      decode: agentsPublishReturnFromJson,
+    );
+  }
+
+  Future<AgentsRequestsReturn> requestsCommand(String id, [String? state, AgentsRequestsOptions options = const AgentsRequestsOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    if (state != null) {
+      requestBody["state"] = RaviJson.from(state);
+    }
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["agents"],
+      command: "requests",
+      body: requestBody,
+      decode: agentsRequestsReturnFromJson,
+    );
+  }
+
   Future<AgentsResetReturn> reset(String id, [String? nameOrKey, AgentsResetOptions options = const AgentsResetOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["id"] = RaviJson.from(id);
@@ -253,6 +321,20 @@ class AgentsNamespace {
       command: "reset",
       body: requestBody,
       decode: agentsResetReturnFromJson,
+    );
+  }
+
+  Future<AgentsSearchReturn> search([String? query, AgentsSearchOptions options = const AgentsSearchOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    if (query != null) {
+      requestBody["query"] = RaviJson.from(query);
+    }
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["agents"],
+      command: "search",
+      body: requestBody,
+      decode: agentsSearchReturnFromJson,
     );
   }
 
@@ -314,6 +396,46 @@ class AgentsNamespace {
       command: "sync-instructions",
       body: requestBody,
       decode: agentsSyncInstructionsReturnFromJson,
+    );
+  }
+
+  Future<AgentsUpdateReturn> update(String id, [AgentsUpdateOptions options = const AgentsUpdateOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["agents"],
+      command: "update",
+      body: requestBody,
+      decode: agentsUpdateReturnFromJson,
+    );
+  }
+}
+
+class AgentsRequestsNamespace {
+  const AgentsRequestsNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<AgentsRequestsCancelReturn> cancel(String id) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    return _transport.callJson(
+      groupSegments: const ["agents", "requests"],
+      command: "cancel",
+      body: requestBody,
+      decode: agentsRequestsCancelReturnFromJson,
+    );
+  }
+
+  Future<AgentsRequestsListReturn> list([AgentsRequestsListOptions options = const AgentsRequestsListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["agents", "requests"],
+      command: "list",
+      body: requestBody,
+      decode: agentsRequestsListReturnFromJson,
     );
   }
 }
@@ -7931,6 +8053,32 @@ class SkillsNamespace {
     );
   }
 
+  Future<SkillsPinReturn> pin(String ref, [SkillsPinOptions options = const SkillsPinOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["ref"] = RaviJson.from(ref);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["skills"],
+      command: "pin",
+      body: requestBody,
+      decode: skillsPinReturnFromJson,
+    );
+  }
+
+  Future<SkillsPinsReturn> pins([String? ref, SkillsPinsOptions options = const SkillsPinsOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    if (ref != null) {
+      requestBody["ref"] = RaviJson.from(ref);
+    }
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["skills"],
+      command: "pins",
+      body: requestBody,
+      decode: skillsPinsReturnFromJson,
+    );
+  }
+
   Future<SkillsProposalReturn> proposal(String ref, String number) async {
     final requestBody = <String, RaviJson>{};
     requestBody["ref"] = RaviJson.from(ref);
@@ -8035,6 +8183,18 @@ class SkillsNamespace {
       command: "sync",
       body: requestBody,
       decode: skillsSyncReturnFromJson,
+    );
+  }
+
+  Future<SkillsUnpinReturn> unpin(String ref, [SkillsUnpinOptions options = const SkillsUnpinOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["ref"] = RaviJson.from(ref);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["skills"],
+      command: "unpin",
+      body: requestBody,
+      decode: skillsUnpinReturnFromJson,
     );
   }
 

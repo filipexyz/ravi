@@ -5,7 +5,7 @@ description: |
   - Instalar skills oficiais do catálogo do Ravi
   - Instalar skills de um repositório ou path local
   - Listar ou ver o conteúdo de skills pelo CLI
-  - Buscar, carregar, publicar e propor skills da Biblioteca (organização e projeto)
+  - Buscar, carregar, publicar, propor e fixar (pin) skills da Biblioteca (organização e projeto)
   - Criar uma nova skill
   - Entender como skills funcionam
   - Configurar frontmatter de skills
@@ -37,7 +37,7 @@ Matriz KISS de `skills install`:
 
 O plano usa um `sourceLabel` controlado: exatamente `catalog`, `local` ou `git`, nunca um rótulo derivado da entrada. Ele não repete URL, path local, nome da fonte/repositório/skill nem conteúdo. Em Git, a seleção fica adiada e erros como `SKILL_NOT_FOUND` só podem aparecer depois de `--execute`; catálogo e fonte local podem validar a seleção antes de escrever.
 
-`skills publish` e `skills propose` (Biblioteca) sempre têm freio: sem `--execute` devolvem o plano (exit 3). Dentro de um agente, `skills publish` é recusado (`LIBRARY_AGENT_CANNOT_PUBLISH`, exit 3): o agente propõe. `skills search`, `skills show`, `skills proposals` e `skills proposal` só leem.
+`skills publish`, `skills propose` e `skills pin` (Biblioteca) sempre têm freio: sem `--execute` devolvem o plano (exit 3). `skills unpin` reduz autoridade e roda direto. Dentro de um agente, `skills publish` é recusado (`LIBRARY_AGENT_CANNOT_PUBLISH`, exit 3): o agente propõe; `skills pin` e `skills unpin` também (`LIBRARY_AGENT_CANNOT_PIN`, exit 3). `skills search`, `skills show`, `skills proposals`, `skills proposal` e `skills pins` só leem.
 
 Sem freio (declarado): instalações aditivas do catálogo ou de path local; `skills sync` (re-materializa o que já existe no repo local; idempotente e reversível); e `skills grant`/`skills revoke` (reversíveis entre si, efeito ao vivo). Todos escrevem na hora.
 
@@ -226,6 +226,35 @@ ravi skills propose ./agenda-semanal --scope org --update 3 --rebase --execute #
 - Dentro de um agente, a proposta vai marcada como "agent X for Y", você só atualiza as propostas que esse agente escreveu (`LIBRARY_PROPOSAL_NOT_YOURS`, exit 3), e `--mine` mostra só as dele.
 - `ravi skills proposal <ref> <n>` mostra cada comentário como `arquivo:linha`, com `[outdated]` e `[resolved]`. Responda atualizando a proposta.
 - Erros `CONFLICT` trazem o motivo em `conflict`: `stale_base` (leia a versão nova e refaça o plano), `unchanged` (nada mudou em relação à publicada), `slug_taken_in_org`, `slug_taken_in_project`, `slug_reserved` (outro `--slug`), `proposal_closed` (a proposta já foi decidida: proponha de novo sem `--update`).
+
+### Fixar (pin): a skill que o agente sempre carrega
+
+Uma pessoa fixa uma skill da Biblioteca num agente de uma instalação (no Console ou pelo terminal do operador). O agente passa a carregar a skill nativamente em toda sessão nova, como as skills do Ravi, sempre na última versão publicada, e ela fica autorizada para ele sem grant. Quem pode fixar é decidido pelo Console (admin do escopo da skill). O daemon sincroniza os pins a cada 5 minutos (`RAVI_LIBRARY_PIN_INTERVAL_MS`); `pin` e `unpin` já atualizam na hora.
+
+```bash
+ravi skills pin org/tom-de-voz --agent main                         # plano (exit 3)
+ravi skills pin org/tom-de-voz --agent main --execute
+ravi skills pin clinica/triagem --agent atendente --execute --json
+ravi skills unpin org/tom-de-voz --agent main                       # roda direto
+ravi skills pins                                                    # o que está fixado nesta instalação
+ravi skills pins --agent atendente --json
+ravi skills pins org/tom-de-voz                                     # onde esse item está fixado e se você pode fixar
+```
+
+- A skill fixada aparece como `ravi-library:<nome>` (no Codex, `ravi-library-<nome>`). O nome é `org-<slug>` ou `<projeto>-<slug>`; `skills pins --json` mostra em `skill`.
+- Só o agente do pin vê a skill. Skill sem `--external` só carrega nas sessões de turnos do próprio operador; nas outras ela fica de fora.
+- A sessão escolhe as skills fixadas quando começa: depois de um pin, abra uma sessão nova.
+- Skill de projeto só fixa em agente daquele projeto (`CONFLICT`, `conflict: agent_out_of_scope`): defina o projeto do agente com `ravi cloud scope set --agent <agente> --project <projeto>` e fixe de novo. `not_published`: publique uma versão antes. `no_installation`: rode `ravi login` neste daemon.
+- Sem rede, os pins da última sincronização continuam carregando, e `skills pins` responde com `stale: true`. Um item que este login não consegue ler aparece em `unavailable` (`LIBRARY_PIN_UNAVAILABLE`) e não carrega.
+- Agente não fixa nem desfixa: dentro de um agente os dois comandos falham com `LIBRARY_AGENT_CANNOT_PIN` (exit 3). Peça ao operador.
+
+### Agentes da Biblioteca
+
+A Biblioteca também guarda definições de agent (`AGENTS.md`, `HEARTBEAT.md`,
+`agent.json`), com os mesmos escopos e propostas, mas sem pin. Os comandos
+ficam em `ravi agents`: `search`, `show <ref>`, `install`, `update`,
+`publish` (veja a skill `agents-manager`). As skills que uma definição exige
+viram grants como os de `ravi skills grant`.
 
 ## Estrutura de uma Skill
 

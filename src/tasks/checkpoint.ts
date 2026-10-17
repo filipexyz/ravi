@@ -1,5 +1,10 @@
 export const DEFAULT_TASK_CHECKPOINT_INTERVAL_MS = 5 * 60 * 1000;
 export const TASK_CHECKPOINT_SWEEP_INTERVAL_MS = 30 * 1000;
+/**
+ * Default silence window for tasks whose status the observer keeps. The
+ * checkpoint no longer nudges the worker there: it only flags a stalled task.
+ */
+export const DEFAULT_TASK_OBSERVER_STALL_INTERVAL_MS = 30 * 60 * 1000;
 
 export function resolveTaskCheckpointIntervalMs(intervalMs?: number | null): number {
   if (typeof intervalMs === "number" && Number.isFinite(intervalMs) && intervalMs > 0) {

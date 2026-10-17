@@ -1,0 +1,1 @@
+- Tool finished: {{event.preview}} · {{event.payloadSummary}} ({{event.id}})

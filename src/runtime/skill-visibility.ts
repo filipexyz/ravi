@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { basename, join } from "node:path";
+import { isInsideLibraryPluginsRoot, LIBRARY_PLUGIN_NAME } from "../library/plugin.js";
 import {
   codexSkillsDir,
   findInstalledSkill,
@@ -902,6 +903,11 @@ export function extractSkillNameFromFilesystemPath(value: string): string | null
   if (!/(?:^|\/)skills\/[^/]+/i.test(normalized) && !/SKILL\.md$/i.test(normalized)) {
     return null;
   }
+  // A pinned Library skill in the generated plugin is known by its plugin
+  // name (`ravi-library-<name>`), never by the bare directory name, which a
+  // local skill could share.
+  const library = librarySkillNameFromPluginPath(value);
+  if (library) return library;
   const known = resolveSkillNameFromKnownSkillPaths(normalized);
   if (known) {
     return known;
@@ -1262,4 +1268,12 @@ const EVIDENCE_KINDS: readonly RuntimeSkillVisibilityEvidenceKind[] = [
 
 function isEvidenceKind(value: string): value is RuntimeSkillVisibilityEvidenceKind {
   return (EVIDENCE_KINDS as readonly string[]).includes(value);
+}
+
+/** `ravi-library-<name>` for a SKILL.md inside a generated Library plugin; null otherwise. */
+function librarySkillNameFromPluginPath(value: string): string | null {
+  const path = value.trim();
+  if (!path.startsWith("/") || !isInsideLibraryPluginsRoot(path)) return null;
+  const match = new RegExp(`/${LIBRARY_PLUGIN_NAME}/skills/([^/]+)/SKILL\\.md$`, "i").exec(normalizePathForMatch(path));
+  return match?.[1] ? `${LIBRARY_PLUGIN_NAME}-${match[1]}` : null;
 }

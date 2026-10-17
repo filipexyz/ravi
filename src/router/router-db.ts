@@ -1220,6 +1220,18 @@ function resolveDbPath(env: NodeJS.ProcessEnv = process.env): string {
  * Get database connection with lazy initialization.
  * Creates database and schema on first access.
  */
+/**
+ * `library_agent_requests` was first keyed by `request_id` alone, before any
+ * release. It is a local record of Console state, so that shape is dropped and
+ * created again keyed by (request_id, direction).
+ */
+function dropPreviewLibraryRequestsTable(db: Database): void {
+  const columns = db.prepare("PRAGMA table_info(library_agent_requests)").all() as Array<{ name: string; pk: number }>;
+  if (columns.length === 0) return;
+  if (columns.some((column) => column.name === "direction" && column.pk > 0)) return;
+  db.exec("DROP TABLE library_agent_requests");
+}
+
 function getDb(): Database {
   const nextDbPath = resolveDbPath();
   if (routerDbState.db !== null && routerDbState.dbPath === nextDbPath) {
@@ -1270,6 +1282,7 @@ function getDb(): Database {
 
   // Enable foreign keys before schema creation
   db.exec("PRAGMA foreign_keys = ON");
+  dropPreviewLibraryRequestsTable(db);
 
   // Initialize schema
   db.exec(`
@@ -1345,6 +1358,74 @@ function getDb(): Database {
       PRIMARY KEY (agent_id, skill_name)
     );
     CREATE INDEX IF NOT EXISTS idx_skill_grants_skill ON skill_grants(skill_name);
+
+    -- Library pins (spec skills/library): the Console's pins for this
+    -- installation, as the last successful sync returned them. Replaced as a
+    -- whole on each sync; never cleared by a failed one.
+    CREATE TABLE IF NOT EXISTS library_pins (
+      agent_id         TEXT NOT NULL,
+      library_id       TEXT NOT NULL,
+      ref              TEXT NOT NULL,
+      skill_name       TEXT NOT NULL,
+      version          INTEGER NOT NULL,
+      content_hash     TEXT,
+      external_allowed INTEGER NOT NULL DEFAULT 0 CHECK(external_allowed IN (0,1)),
+      item_json        TEXT NOT NULL,
+      synced_at        INTEGER NOT NULL,
+      PRIMARY KEY (agent_id, library_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_library_pins_library ON library_pins(library_id);
+
+    CREATE TABLE IF NOT EXISTS library_pin_state (
+      id                INTEGER PRIMARY KEY CHECK(id = 1),
+      console_url       TEXT,
+      organization_id   TEXT,
+      installation_id   TEXT,
+      installation_name TEXT,
+      revision          TEXT,
+      fingerprint       TEXT,
+      plugin_dir        TEXT,
+      synced_at         INTEGER,
+      checked_at        INTEGER,
+      last_error_code   TEXT,
+      last_error_at     INTEGER
+    );
+
+    -- Library agents (spec skills/library): what the directory reports for a
+    -- local agent, whether its operator opened it to requests, and the Library
+    -- definition it was installed from.
+    CREATE TABLE IF NOT EXISTS library_agents (
+      agent_id             TEXT PRIMARY KEY,
+      description          TEXT,
+      accepts_requests     INTEGER NOT NULL DEFAULT 0 CHECK(accepts_requests IN (0,1)),
+      origin_ref           TEXT,
+      origin_version       INTEGER,
+      origin_content_hash  TEXT,
+      agents_md_sha256     TEXT,
+      heartbeat_md_sha256  TEXT,
+      origin_profile       TEXT,
+      origin_skills_json   TEXT,
+      installed_at         INTEGER,
+      updated_at           INTEGER NOT NULL
+    );
+
+    -- Requests between agents of different installations, as this side knows
+    -- them: the asking session (sent) or the turn that answers (received).
+    CREATE TABLE IF NOT EXISTS library_agent_requests (
+      request_id     TEXT NOT NULL,
+      direction      TEXT NOT NULL CHECK(direction IN ('sent','received')),
+      agent_id       TEXT,
+      peer           TEXT,
+      session_key    TEXT,
+      session_name   TEXT,
+      status         TEXT NOT NULL,
+      error          TEXT,
+      reply          TEXT,
+      created_at     INTEGER NOT NULL,
+      updated_at     INTEGER NOT NULL,
+      PRIMARY KEY (request_id, direction)
+    );
+    CREATE INDEX IF NOT EXISTS idx_library_agent_requests_status ON library_agent_requests(direction, status);
 
     CREATE TABLE IF NOT EXISTS sessions (
       session_key TEXT PRIMARY KEY,

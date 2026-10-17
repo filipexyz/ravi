@@ -487,6 +487,7 @@ async function buildRuntimeStartRequestInternal(
     onSkillGatePersisted: (skillVisibility, info) => streamingSession.onSkillGatePersisted?.(skillVisibility, info),
   });
   const { hostServices, providerBootstrap, runtimePlugins } = preparedBootstrap;
+  const hiddenSkills = preparedBootstrap.hiddenSkills ?? [];
   installCrashRecoveryApprovalFences({ hostServices, streamingSession, crashRecovery });
   const providerEnv = mergeProviderCredentialEnv(
     providerBootstrap?.env,
@@ -867,6 +868,7 @@ async function buildRuntimeStartRequestInternal(
         streamingSession.lastBoundReplyTarget = { ...replyResolution.target };
       }
       streamingSession.currentChannelBackend = turnPrompt._channelBackend;
+      streamingSession.currentObservation = turnPrompt._observation;
       streamingSession.currentTurnProvenance = classifyTurnProvenance({
         prompt: turnPrompt,
         source: turnSource,
@@ -931,6 +933,7 @@ async function buildRuntimeStartRequestInternal(
       ...(runtimePlugins.length > 0 ? { plugins: runtimePlugins } : {}),
       agentId: agent.id,
       ...(allowedSkills ? { allowedSkills } : {}),
+      ...(hiddenSkills.length > 0 ? { hiddenSkills } : {}),
       ...(prompt._cliDestination ? { omitAdvertisedSkillCatalog: true } : {}),
       ...(remoteSpawn ? { remoteSpawn } : {}),
       ...(modelBroker ? { modelBroker } : {}),

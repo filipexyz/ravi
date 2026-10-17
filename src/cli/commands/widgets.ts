@@ -34,7 +34,7 @@ import {
   widgetCatalogReturnSchema,
   widgetCheckReturnSchema,
   widgetPreviewReturnSchema,
-  withLibraryContract,
+  withPresentationContract,
 } from "../library-contract.js";
 import { isReservedPresentationSlug } from "../../library/kinds.js";
 import { LIBRARY_LIMITS } from "../../library/package.js";
@@ -319,7 +319,7 @@ export class WidgetsCommands {
     @Option({ flags: "--project <ref>", description: "Console project whose widgets to include" }) project?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    return withLibraryContract("widgets catalog", WIDGET, asJson, async () => {
+    return withPresentationContract("widgets catalog", WIDGET, asJson, async () => {
       const payload = await widgetCatalog({ project: project?.trim() || null, caller: runtimeLibraryCaller() });
       if (asJson) {
         printJson(payload);
@@ -380,7 +380,7 @@ export class WidgetsCommands {
         ["fromView"],
       );
     }
-    return withLibraryContract(op, WIDGET, asJson, async () => {
+    return withPresentationContract(op, WIDGET, asJson, async () => {
       const outcome = await initWidget({
         dir: target,
         slug: widgetSlug,
@@ -421,7 +421,7 @@ export class WidgetsCommands {
     dir: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    return withLibraryContract("widgets check", WIDGET, asJson, async () => {
+    return withPresentationContract("widgets check", WIDGET, asJson, async () => {
       const outcome = await checkPresentationFolder({ kind: "widget", dir: resolveCallerPath(dir ?? "") });
       const payload = {
         kind: outcome.kind,
@@ -479,7 +479,7 @@ export class WidgetsCommands {
       );
     }
     const target = out?.trim() ? resolveCallerPath(out.trim()) : join(folder, "preview.html");
-    return withLibraryContract(op, WIDGET, asJson, async () => {
+    return withPresentationContract(op, WIDGET, asJson, async () => {
       const outcome = await previewWidget({
         dir: folder,
         out: target,

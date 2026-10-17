@@ -40,3 +40,11 @@ export function requireTaskProgressMessage(
   }
   return normalized;
 }
+
+/**
+ * Text a worker or observer produced is data when it reaches another session.
+ * Break `[System]` markers so it cannot pose as an internal command there.
+ */
+export function neutralizeSystemMarkers(value: string): string {
+  return value.replace(/\[(\s*)system(\s*)\]/gi, "(system)");
+}

@@ -48,6 +48,17 @@ export interface LibraryVersion {
   contentHash: string;
   publishedAt: string | null;
   files: LibraryVersionFile[];
+  /** Agent definitions only: the shown version's `agent.json` (all empty when it has none). */
+  agent?: LibraryAgentManifest | null;
+}
+
+/** `agent.json` of an agent definition: suggestions the local Ravi applies (or brakes) itself. */
+export interface LibraryAgentManifest {
+  provider: string | null;
+  model: string | null;
+  profile: string | null;
+  /** `org/<slug>`, `<project>/<slug>` or the bare name of a skill shipped with Ravi. */
+  skills: string[];
 }
 
 export interface LibraryShowResponse {
@@ -296,4 +307,112 @@ export interface LibraryThemeUseBody {
   project?: string;
   ref: string | null;
   dryRun?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Pins (phase 3)
+
+/** One local agent as `POST /pins/sync` reports it: never instructions, paths or credentials. */
+export interface LibraryPinAgentReport {
+  id: string;
+  name?: string | null;
+  provider?: string | null;
+  model?: string | null;
+  /** The agent's Console project ref, or null when none resolves for it. */
+  project?: string | null;
+  /** What the agent does, for the directory (at most 300 characters). */
+  description?: string | null;
+  /** Whether the operator opened the agent to requests from other installations. */
+  acceptsRequests?: boolean;
+}
+
+/** One pin of the caller installation, at the item's latest published version. */
+export interface LibraryInstallationPin {
+  agentId: string;
+  ref: string;
+  item: LibraryItem;
+}
+
+/** `GET /pins` and `POST /pins/sync`. */
+export interface LibraryInstallationPinsResponse {
+  installation: { id: string; name: string | null };
+  revision: string;
+  pins: LibraryInstallationPin[];
+}
+
+/** One pin of an item, as `GET /skills/<scope>/<slug>/pins` and `POST .../pin` return it. */
+export interface LibraryItemPin {
+  id: string;
+  installation: { id: string; name: string | null };
+  agent: { id: string; name: string | null; project: string | null; reported: boolean };
+  pinnedBy: { name: string | null } | null;
+  createdAt: string | null;
+}
+
+export interface LibraryItemPinsResponse {
+  pins: LibraryItemPin[];
+  can: { pin: boolean };
+}
+
+// ---------------------------------------------------------------------------
+// Directory and requests (phase 5)
+
+export interface LibraryInstallationRef {
+  id: string;
+  name: string | null;
+}
+
+/** One agent of the directory: never instructions, paths or credentials. */
+export interface LibraryDirectoryAgent {
+  installation: LibraryInstallationRef;
+  agent: {
+    id: string;
+    name: string;
+    description: string | null;
+    provider: string | null;
+    model: string | null;
+    project: { id: string; slug: string; name: string | null } | null;
+  };
+  online: boolean;
+  acceptsRequests: boolean;
+  reportedAt: string | null;
+  /** On the caller's own installation. */
+  self: boolean;
+}
+
+export interface LibraryDirectoryResponse {
+  agents: LibraryDirectoryAgent[];
+  can: { ask: boolean };
+}
+
+export type LibraryRequestStatus = "pending" | "delivered" | "answered" | "failed" | "expired" | "cancelled";
+
+export interface LibraryAgentRequest {
+  id: string;
+  status: LibraryRequestStatus;
+  direction: "sent" | "received";
+  from: {
+    installation: LibraryInstallationRef | null;
+    agentId: string | null;
+    user: { id: string; name: string | null } | null;
+  };
+  to: { installation: LibraryInstallationRef; agentId: string };
+  project: { id: string; slug: string; name: string | null } | null;
+  message: string;
+  reply: string | null;
+  failureReason: string | null;
+  createdAt: string | null;
+  deliveredAt: string | null;
+  answeredAt: string | null;
+  expiresAt: string | null;
+}
+
+export interface LibraryRequestListResponse {
+  installation: LibraryInstallationRef | null;
+  requests: LibraryAgentRequest[];
+}
+
+/** A pull (`/requests/pull`, `/requests/replies/pull`): entries this side could not read are kept apart. */
+export interface LibraryRequestPullResponse extends LibraryRequestListResponse {
+  malformed: Array<{ id: string | null; reason: string }>;
 }
