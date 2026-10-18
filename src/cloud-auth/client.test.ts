@@ -824,6 +824,51 @@ describe("ConsoleApiClient", () => {
   });
 });
 
+describe("ConsoleApiClient person without a link", () => {
+  const notLinked = () =>
+    jsonResponse(
+      { error: { code: "ACTOR_NOT_LINKED", message: "The person asking has not linked their Ravi account here." } },
+      403,
+    );
+
+  it("starts the person's link and says what was set in motion", async () => {
+    const startActorLink = mock(async () => "awaiting_dm" as const);
+    const client = new ConsoleApiClient({
+      consoleUrl: "https://console.example",
+      actorContact: () => "c_ana",
+      startActorLink,
+      fetch: mock(async () => notLinked()),
+    });
+
+    const error = await client
+      .requestJson("POST", "/api/cli/artifacts/publish", {}, "access-secret")
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(CloudAuthError);
+    expect((error as CloudAuthError).code).toBe("ACTOR_NOT_LINKED");
+    expect((error as CloudAuthError).details?.linkFlow).toBe("awaiting_dm");
+    expect(startActorLink).toHaveBeenCalledWith("c_ana");
+  });
+
+  it("starts nothing for the operator's own calls or ravi link's own calls", async () => {
+    const startActorLink = mock(async () => "dm_sent" as const);
+    for (const [actorContact, path] of [
+      [() => null, "/api/cli/artifacts/publish"],
+      [() => "c_ana", "/api/cli/link/requests"],
+    ] as const) {
+      const client = new ConsoleApiClient({
+        consoleUrl: "https://console.example",
+        actorContact,
+        startActorLink,
+        fetch: mock(async () => notLinked()),
+      });
+      const error = await client.requestJson("POST", path, {}, "access-secret").catch((caught: unknown) => caught);
+      expect((error as CloudAuthError).details?.linkFlow).toBeUndefined();
+    }
+    expect(startActorLink).not.toHaveBeenCalled();
+  });
+});
+
 function jsonResponse(payload: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(payload), {
     status,

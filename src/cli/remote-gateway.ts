@@ -45,6 +45,7 @@ import { CALLER_CWD_HEADER, parseCallerCwd } from "./caller-cwd.js";
 import { cloudContractCatalogCopy, safeDomainSetupMessage } from "./cloud-error-contract.js";
 import { plannedPageDomainDns, plannedPageDomainDnsLines, projectPageDomainSetups } from "../pages/domain-setup.js";
 import { localMediaSendCatalogCopy } from "./media-send-auth.js";
+import { turnLinkContract } from "../identity-link/turn-link-copy.js";
 import { isSafeLocalPayloadMessage } from "./payload-error-message.js";
 import { projectPublicIssues, sanitizePublicValue } from "./redaction.js";
 
@@ -363,7 +364,8 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
     try {
       const body = JSON.parse(result.body) as Record<string, unknown>;
       if (isCompleteContractErrorBody(body, op)) {
-        const connectorTurn = connectorTurnRemoteCopy(op, body.error);
+        const turnLink = turnLinkRemoteCopy(body.error);
+        const connectorTurn = turnLink ?? connectorTurnRemoteCopy(op, body.error);
         const library = connectorTurn ? null : libraryRemoteCopy(op, body);
         const projected = remoteContractFailureMessage(
           op,
@@ -459,6 +461,16 @@ const CONNECTOR_REPLY_TO_VALUES = new Set(["same_chat"]);
  * kind that carries a chat line. Errors relayed from Link or the Console were
  * already reduced to catalog copy there and carry none.
  */
+/**
+ * A refusal for a person with no `ravi link` names what the daemon set in
+ * motion (`linkFlow`, a fixed value); the copy is rebuilt here from it.
+ */
+function turnLinkRemoteCopy(
+  remote: CompleteContractErrorBody["error"],
+): { message: string; details: ContractErrorDetails } | null {
+  return remote.code === "ACTOR_NOT_LINKED" ? turnLinkContract(remote.linkFlow) : null;
+}
+
 function connectorTurnRemoteCopy(
   op: string,
   remote: CompleteContractErrorBody["error"],

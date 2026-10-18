@@ -975,6 +975,27 @@ describe("personal connector blocks over the gateway", () => {
     expect(remote?.message).not.toBe("Remote command was blocked by policy.");
   });
 
+  it("rebuilds the 'message me in private' copy for a write refused for a person with no link", async () => {
+    const { local, remote } = await relay(
+      "pages ship",
+      new CloudAuthError("ACTOR_NOT_LINKED", "remote text is never relayed", {
+        status: 403,
+        details: { linkFlow: "awaiting_dm" },
+      }),
+    );
+
+    expect(local.exitCode).toBe(3);
+    expect(local.message).toContain("message you in private");
+    expect(remote).toMatchObject({
+      op: "pages ship",
+      code: "ACTOR_NOT_LINKED",
+      exitCode: 3,
+      message: local.message,
+      details: { linkFlow: "awaiting_dm", chatLinePt: local.details.chatLinePt },
+    });
+    expect(String(remote?.details.chatLinePt)).toContain("Me chama na DM");
+  });
+
   it("keeps the group-blocked line for connectors commands", async () => {
     const { local, remote } = await relay(
       "connectors list",

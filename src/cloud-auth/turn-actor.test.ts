@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import { turnActorContactId } from "./turn-actor.js";
+import { runWithContext } from "../cli/context.js";
+import { inRuntimeTurn, turnActorContactId } from "./turn-actor.js";
 
 describe("turnActorContactId", () => {
   it("is null outside a runtime turn, without classifying anything", () => {
@@ -25,5 +26,15 @@ describe("turnActorContactId", () => {
       },
     };
     expect(turnActorContactId(env, throwing)).toBeNull();
+  });
+});
+
+describe("inRuntimeTurn", () => {
+  it("covers commands the daemon gateway runs for a turn, whose process has no RAVI_CONTEXT_KEY", () => {
+    expect(inRuntimeTurn({})).toBe(false);
+    expect(inRuntimeTurn({ RAVI_CONTEXT_KEY: "ctx_1" })).toBe(true);
+    expect(runWithContext({ transport: "gateway" }, () => inRuntimeTurn({}))).toBe(true);
+    expect(runWithContext({ transport: "tool" }, () => inRuntimeTurn({}))).toBe(true);
+    expect(runWithContext({}, () => inRuntimeTurn({}))).toBe(false);
   });
 });

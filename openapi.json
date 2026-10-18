@@ -80,7 +80,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "8279ea7fefbb59fc"
+    "version": "fa12e4172b4e618c"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -60924,6 +60924,29 @@
                         "status",
                         "linked",
                         "expiresAt"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "linked": {
+                          "const": false,
+                          "type": "boolean"
+                        },
+                        "status": {
+                          "const": "awaiting_dm",
+                          "type": "string"
+                        },
+                        "success": {
+                          "const": true,
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "success",
+                        "status",
+                        "linked"
                       ],
                       "type": "object"
                     }

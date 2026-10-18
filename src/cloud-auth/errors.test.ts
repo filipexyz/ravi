@@ -389,3 +389,20 @@ describe("cloudErrorToContractError", () => {
     });
   });
 });
+
+describe("ACTOR_NOT_LINKED after the person's link started", () => {
+  it("says what to tell the person for each flow, as a policy block", () => {
+    const contract = (linkFlow?: string) =>
+      cloudErrorToContractError(
+        "bases rows add",
+        new CloudAuthError("ACTOR_NOT_LINKED", "x", linkFlow ? { details: { linkFlow } } : {}),
+      );
+    expect(contract("awaiting_dm")).toMatchObject({ exitCode: 3, details: { linkFlow: "awaiting_dm" } });
+    expect(String(contract("awaiting_dm").details.chatLinePt)).toContain("Me chama na DM");
+    expect(contract("dm_sent").message).toContain("sent them a private approval link");
+    expect(contract("already_linked").details.suggestedAction).toBe("retry the same command once");
+    // An unknown value keeps the catalog copy.
+    expect(contract("bogus").details.linkFlow).toBeUndefined();
+    expect(contract().message).toBe("The person asking is not linked to a Console user on this Ravi.");
+  });
+});

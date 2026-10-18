@@ -116,8 +116,11 @@ Derived from the turn actor only:
   (`U…`/`W…`), which lands in the app DM, with `unfurl_links` and
   `unfurl_media` off so no unfurler fetches the single-use URL. The link is
   shown as a labelled markdown link.
-- **WhatsApp** (Omni): the same chat when the turn is already a direct chat,
-  otherwise the sender's own number. Never a group.
+- **WhatsApp** (Omni): the same chat when the turn is already a direct chat.
+  From a group Ravi MUST NOT write to the person first (on WhatsApp the agent
+  never starts a conversation): the command returns `awaiting_dm`, the person
+  enters the linking state and the agent tells them to write in private
+  ("Private Chat Flow"). Never a group.
 - Anything else: `LINK_DM_UNSUPPORTED`.
 
 The URL goes straight from the daemon to the platform: never through
@@ -126,11 +129,59 @@ JSON. On Slack the author's profile email (`users.info`, needs
 `users:read.email`) is sent as `expectedEmail` when available; the Console
 refuses an approver whose verified email does not match.
 
+## Private Chat Flow
+
+The linking state lives in `contact_link_states` (one row per contact,
+`awaiting_dm | link_sent`, with the instance, the agent of the turn, the chat
+where the person asked, and after their first private message the DM chat,
+its route pattern and the link request). It expires after 7 days.
+
+1. A WhatsApp `ravi link` from a group (or a refusal, below) records
+   `awaiting_dm` and sends nothing. A state already in `link_sent` with a
+   valid link keeps it. If the person's binding is cached, the command
+   answers `already_linked` (a refusal drops the cache instead).
+2. The Omni consumer MUST hand every WhatsApp private message from a resolved
+   contact in that state, on that instance, to the link flow before route
+   matching, DM policy and pending review, and MUST NOT start an agent turn
+   for it. The message is still recorded in the chat ledger.
+3. The flow answers in that same chat, with no agent turn:
+   - no valid link yet: create a link request (origin = the chat where the
+     person asked, so the confirmation goes back there) and send the
+     approval link; state `link_sent`;
+   - a link still pending and valid: a reminder with its remaining minutes,
+     no new request;
+   - the Console says the person is already linked: cache the binding, end
+     the flow and say so;
+   - the Console cannot be reached: say to try again shortly; the state stays.
+4. The watcher, for a request of that flow: on approval, route the private
+   chat and end the flow, then confirm in the DM and in the origin chat; on
+   expiry, go back to `awaiting_dm` and say that any new message brings a new
+   link; on denial, end the flow.
+5. Routing on approval: when no explicit route exists for the DM's pattern on
+   that instance and the private chat would reach no agent (no default agent,
+   or DM `pairing` for a contact not allowed), create the route
+   `<pattern> → <agent of the turn>` with `policy: open` and the instance's
+   channel, clear its pending entry and emit `ravi.config.changed`. An
+   explicit route, a chat another agent already answers, and DMs `closed`
+   are left as they are.
+
+`ravi unlink` also ends the flow. Slack keeps sending the link straight to
+the app DM (Slack apps may open it), with no linking state.
+
+## Started By A Refusal
+
+A Console write refused for the person of the turn (`ACTOR_NOT_LINKED`,
+`cli/cloud-auth` "Person Of The Turn") runs this command for that person in
+the same turn: `awaiting_dm` on WhatsApp from a group, `dm_sent` on Slack or
+in a WhatsApp DM. A link created for that person in the last 2 minutes is
+not sent again. The agent only relays the refusal's `chatLinePt`.
+
 ## Output
 
 ```ts
 { success: true, status: "already_linked", linked: true }
 { success: true, status: "dm_sent", linked: false, expiresAt: string }
+{ success: true, status: "awaiting_dm", linked: false }
 { success: true, status: "unlinked" | "not_linked", linked: false }
 ```
 
