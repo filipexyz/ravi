@@ -958,14 +958,289 @@ export const AgendaBriefingReturnSchema = {
   "additionalProperties": false,
   "properties": {
     "event": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
+        "allDay": {
+          "type": "boolean"
+        },
+        "attendees": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "email": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "organizer": {
+                "type": "boolean"
+              },
+              "response": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "self": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "email",
+              "name",
+              "response",
+              "organizer",
+              "self"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "briefing": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "briefingEnabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "briefingMinutes": {
+          "type": "number"
+        },
+        "connectionId": {
+          "type": "string"
+        },
+        "consoleMeetingUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deletedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effectiveRecordMode": {
+          "anyOf": [
+            {
+              "enum": [
+                "ask",
+                "auto",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "endAt": {
+          "type": "string"
+        },
+        "externalAttendees": {
+          "type": "boolean"
+        },
+        "followupEnabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hasBriefing": {
+          "type": "boolean"
+        },
         "id": {
+          "type": "string"
+        },
+        "meetingCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "meetingUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "organizerEmail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordDecision": {
+          "anyOf": [
+            {
+              "enum": [
+                "record",
+                "skip"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordDecisionProjectId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recording": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "meetingId": {
+                  "type": "string"
+                },
+                "projectId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ready": {
+                  "type": "boolean"
+                },
+                "status": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "meetingId",
+                "status",
+                "ready",
+                "projectId"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recurringEventId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "selfResponse": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "startAt": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updatedAt": {
           "type": "string"
         }
       },
       "required": [
-        "id"
+        "id",
+        "connectionId",
+        "title",
+        "startAt",
+        "endAt",
+        "allDay",
+        "status",
+        "meetingUrl",
+        "meetingCode",
+        "attendees",
+        "externalAttendees",
+        "recordDecision",
+        "effectiveRecordMode",
+        "recording"
       ],
       "type": "object"
     }
@@ -1002,14 +1277,289 @@ export const AgendaListReturnSchema = {
   "properties": {
     "events": {
       "items": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
+          "allDay": {
+            "type": "boolean"
+          },
+          "attendees": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "email": {
+                  "type": "string"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "organizer": {
+                  "type": "boolean"
+                },
+                "response": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "self": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "email",
+                "name",
+                "response",
+                "organizer",
+                "self"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "briefing": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "briefingEnabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "briefingMinutes": {
+            "type": "number"
+          },
+          "connectionId": {
+            "type": "string"
+          },
+          "consoleMeetingUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deletedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effectiveRecordMode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ask",
+                  "auto",
+                  "off"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "endAt": {
+            "type": "string"
+          },
+          "externalAttendees": {
+            "type": "boolean"
+          },
+          "followupEnabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hasBriefing": {
+            "type": "boolean"
+          },
           "id": {
+            "type": "string"
+          },
+          "meetingCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meetingUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "organizerEmail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recordDecision": {
+            "anyOf": [
+              {
+                "enum": [
+                  "record",
+                  "skip"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recordDecisionProjectId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recordError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recording": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "meetingId": {
+                    "type": "string"
+                  },
+                  "projectId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "ready": {
+                    "type": "boolean"
+                  },
+                  "status": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "meetingId",
+                  "status",
+                  "ready",
+                  "projectId"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recurringEventId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "selfResponse": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "startAt": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
             "type": "string"
           }
         },
         "required": [
-          "id"
+          "id",
+          "connectionId",
+          "title",
+          "startAt",
+          "endAt",
+          "allDay",
+          "status",
+          "meetingUrl",
+          "meetingCode",
+          "attendees",
+          "externalAttendees",
+          "recordDecision",
+          "effectiveRecordMode",
+          "recording"
         ],
         "type": "object"
       },
@@ -1019,8 +1569,50 @@ export const AgendaListReturnSchema = {
       "type": "string"
     },
     "pagination": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
       "type": "object"
     },
     "to": {
@@ -1072,14 +1664,289 @@ export const AgendaRecordReturnSchema = {
   "additionalProperties": false,
   "properties": {
     "event": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
+        "allDay": {
+          "type": "boolean"
+        },
+        "attendees": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "email": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "organizer": {
+                "type": "boolean"
+              },
+              "response": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "self": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "email",
+              "name",
+              "response",
+              "organizer",
+              "self"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "briefing": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "briefingEnabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "briefingMinutes": {
+          "type": "number"
+        },
+        "connectionId": {
+          "type": "string"
+        },
+        "consoleMeetingUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deletedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effectiveRecordMode": {
+          "anyOf": [
+            {
+              "enum": [
+                "ask",
+                "auto",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "endAt": {
+          "type": "string"
+        },
+        "externalAttendees": {
+          "type": "boolean"
+        },
+        "followupEnabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hasBriefing": {
+          "type": "boolean"
+        },
         "id": {
+          "type": "string"
+        },
+        "meetingCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "meetingUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "organizerEmail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordDecision": {
+          "anyOf": [
+            {
+              "enum": [
+                "record",
+                "skip"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordDecisionProjectId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recording": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "meetingId": {
+                  "type": "string"
+                },
+                "projectId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ready": {
+                  "type": "boolean"
+                },
+                "status": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "meetingId",
+                "status",
+                "ready",
+                "projectId"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recurringEventId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "selfResponse": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "startAt": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updatedAt": {
           "type": "string"
         }
       },
       "required": [
-        "id"
+        "id",
+        "connectionId",
+        "title",
+        "startAt",
+        "endAt",
+        "allDay",
+        "status",
+        "meetingUrl",
+        "meetingCode",
+        "attendees",
+        "externalAttendees",
+        "recordDecision",
+        "effectiveRecordMode",
+        "recording"
       ],
       "type": "object"
     }
@@ -1135,14 +2002,128 @@ export const AgendaSettingsReturnSchema = {
   "additionalProperties": false,
   "properties": {
     "connection": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "connectionId": {
           "type": "string"
+        },
+        "displayName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "email": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hasCalendarScope": {
+          "type": "boolean"
+        },
+        "lastSyncError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastSyncedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "settings": {
+          "additionalProperties": false,
+          "properties": {
+            "briefingEnabled": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "briefingMinutes": {
+              "type": "number"
+            },
+            "followupEnabled": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "projectId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "recordMode": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "ask",
+                    "auto",
+                    "off"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "syncEnabled": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "syncEnabled",
+            "recordMode",
+            "projectId",
+            "briefingEnabled",
+            "briefingMinutes",
+            "followupEnabled"
+          ],
+          "type": "object"
         }
       },
       "required": [
-        "connectionId"
+        "connectionId",
+        "email",
+        "displayName",
+        "hasCalendarScope",
+        "settings",
+        "lastSyncedAt",
+        "lastSyncError"
       ],
       "type": "object"
     }
@@ -1173,14 +2154,289 @@ export const AgendaShowReturnSchema = {
   "additionalProperties": false,
   "properties": {
     "event": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
+        "allDay": {
+          "type": "boolean"
+        },
+        "attendees": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "email": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "organizer": {
+                "type": "boolean"
+              },
+              "response": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "self": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "email",
+              "name",
+              "response",
+              "organizer",
+              "self"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "briefing": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "briefingEnabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "briefingMinutes": {
+          "type": "number"
+        },
+        "connectionId": {
+          "type": "string"
+        },
+        "consoleMeetingUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deletedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effectiveRecordMode": {
+          "anyOf": [
+            {
+              "enum": [
+                "ask",
+                "auto",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "endAt": {
+          "type": "string"
+        },
+        "externalAttendees": {
+          "type": "boolean"
+        },
+        "followupEnabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hasBriefing": {
+          "type": "boolean"
+        },
         "id": {
+          "type": "string"
+        },
+        "meetingCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "meetingUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "organizerEmail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordDecision": {
+          "anyOf": [
+            {
+              "enum": [
+                "record",
+                "skip"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordDecisionProjectId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recording": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "meetingId": {
+                  "type": "string"
+                },
+                "projectId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ready": {
+                  "type": "boolean"
+                },
+                "status": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "meetingId",
+                "status",
+                "ready",
+                "projectId"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recurringEventId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "selfResponse": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "startAt": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updatedAt": {
           "type": "string"
         }
       },
       "required": [
-        "id"
+        "id",
+        "connectionId",
+        "title",
+        "startAt",
+        "endAt",
+        "allDay",
+        "status",
+        "meetingUrl",
+        "meetingCode",
+        "attendees",
+        "externalAttendees",
+        "recordDecision",
+        "effectiveRecordMode",
+        "recording"
       ],
       "type": "object"
     }
@@ -1211,14 +2467,289 @@ export const AgendaSkipReturnSchema = {
   "additionalProperties": false,
   "properties": {
     "event": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
+        "allDay": {
+          "type": "boolean"
+        },
+        "attendees": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "email": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "organizer": {
+                "type": "boolean"
+              },
+              "response": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "self": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "email",
+              "name",
+              "response",
+              "organizer",
+              "self"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "briefing": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "briefingEnabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "briefingMinutes": {
+          "type": "number"
+        },
+        "connectionId": {
+          "type": "string"
+        },
+        "consoleMeetingUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deletedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effectiveRecordMode": {
+          "anyOf": [
+            {
+              "enum": [
+                "ask",
+                "auto",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "endAt": {
+          "type": "string"
+        },
+        "externalAttendees": {
+          "type": "boolean"
+        },
+        "followupEnabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hasBriefing": {
+          "type": "boolean"
+        },
         "id": {
+          "type": "string"
+        },
+        "meetingCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "meetingUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "organizerEmail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordDecision": {
+          "anyOf": [
+            {
+              "enum": [
+                "record",
+                "skip"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordDecisionProjectId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recording": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "meetingId": {
+                  "type": "string"
+                },
+                "projectId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ready": {
+                  "type": "boolean"
+                },
+                "status": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "meetingId",
+                "status",
+                "ready",
+                "projectId"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recurringEventId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "selfResponse": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "startAt": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updatedAt": {
           "type": "string"
         }
       },
       "required": [
-        "id"
+        "id",
+        "connectionId",
+        "title",
+        "startAt",
+        "endAt",
+        "allDay",
+        "status",
+        "meetingUrl",
+        "meetingCode",
+        "attendees",
+        "externalAttendees",
+        "recordDecision",
+        "effectiveRecordMode",
+        "recording"
       ],
       "type": "object"
     }
@@ -1238,18 +2769,132 @@ export const AgendaStatusInputSchema = {
 
 /** JSON Schema for the return shape of `agenda.status`. */
 export const AgendaStatusReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "connections": {
       "items": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "connectionId": {
             "type": "string"
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hasCalendarScope": {
+            "type": "boolean"
+          },
+          "lastSyncError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastSyncedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "settings": {
+            "additionalProperties": false,
+            "properties": {
+              "briefingEnabled": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "briefingMinutes": {
+                "type": "number"
+              },
+              "followupEnabled": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "projectId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "recordMode": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "ask",
+                      "auto",
+                      "off"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "syncEnabled": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "syncEnabled",
+              "recordMode",
+              "projectId",
+              "briefingEnabled",
+              "briefingMinutes",
+              "followupEnabled"
+            ],
+            "type": "object"
           }
         },
         "required": [
-          "connectionId"
+          "connectionId",
+          "email",
+          "displayName",
+          "hasCalendarScope",
+          "settings",
+          "lastSyncedAt",
+          "lastSyncError"
         ],
         "type": "object"
       },
@@ -1259,7 +2904,7 @@ export const AgendaStatusReturnSchema = {
       "type": "boolean"
     },
     "policy": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "autoRecordAllowed": {
           "type": "boolean"
@@ -1276,7 +2921,7 @@ export const AgendaStatusReturnSchema = {
     },
     "projects": {
       "items": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "id": {
             "type": "string"
@@ -1331,14 +2976,289 @@ export const AgendaUndoReturnSchema = {
   "additionalProperties": false,
   "properties": {
     "event": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
+        "allDay": {
+          "type": "boolean"
+        },
+        "attendees": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "email": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "organizer": {
+                "type": "boolean"
+              },
+              "response": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "self": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "email",
+              "name",
+              "response",
+              "organizer",
+              "self"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "briefing": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "briefingEnabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "briefingMinutes": {
+          "type": "number"
+        },
+        "connectionId": {
+          "type": "string"
+        },
+        "consoleMeetingUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deletedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effectiveRecordMode": {
+          "anyOf": [
+            {
+              "enum": [
+                "ask",
+                "auto",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "endAt": {
+          "type": "string"
+        },
+        "externalAttendees": {
+          "type": "boolean"
+        },
+        "followupEnabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hasBriefing": {
+          "type": "boolean"
+        },
         "id": {
+          "type": "string"
+        },
+        "meetingCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "meetingUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "organizerEmail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordDecision": {
+          "anyOf": [
+            {
+              "enum": [
+                "record",
+                "skip"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordDecisionProjectId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recording": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "meetingId": {
+                  "type": "string"
+                },
+                "projectId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ready": {
+                  "type": "boolean"
+                },
+                "status": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "meetingId",
+                "status",
+                "ready",
+                "projectId"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recurringEventId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "selfResponse": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "startAt": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updatedAt": {
           "type": "string"
         }
       },
       "required": [
-        "id"
+        "id",
+        "connectionId",
+        "title",
+        "startAt",
+        "endAt",
+        "allDay",
+        "status",
+        "meetingUrl",
+        "meetingCode",
+        "attendees",
+        "externalAttendees",
+        "recordDecision",
+        "effectiveRecordMode",
+        "recording"
       ],
       "type": "object"
     }

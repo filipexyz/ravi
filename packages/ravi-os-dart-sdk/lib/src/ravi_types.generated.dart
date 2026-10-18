@@ -222,7 +222,7 @@ class AgendaListReturn {
 
   final List<RaviJson> events;
   final String from;
-  final Map<String, RaviJson> pagination;
+  final RaviJson pagination;
   final String to;
   final double total;
   final bool truncated;
@@ -231,7 +231,7 @@ class AgendaListReturn {
     return AgendaListReturn(
       events: raviJsonAsList(json["events"], RaviJson.from),
       from: raviJsonAsString(json["from"]),
-      pagination: raviJsonAsRaviJsonMap(json["pagination"]),
+      pagination: RaviJson.from(json["pagination"]),
       to: raviJsonAsString(json["to"]),
       total: raviJsonAsDouble(json["total"]),
       truncated: raviJsonAsBool(json["truncated"]),

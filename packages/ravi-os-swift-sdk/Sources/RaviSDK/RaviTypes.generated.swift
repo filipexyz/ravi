@@ -261,12 +261,12 @@ public struct AgendaListOptions: Codable, Sendable {
 public struct AgendaListReturn: Codable, Sendable {
   public var events: [RaviJSON]
   public var from: String
-  public var pagination: [String: RaviJSON]
+  public var pagination: RaviJSON
   public var to: String
   public var total: Double
   public var truncated: Bool
 
-  public init(events: [RaviJSON], from: String, pagination: [String: RaviJSON], to: String, total: Double, truncated: Bool) {
+  public init(events: [RaviJSON], from: String, pagination: RaviJSON, to: String, total: Double, truncated: Bool) {
     self.events = events
     self.from = from
     self.pagination = pagination

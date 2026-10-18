@@ -29,6 +29,7 @@ import {
 import { cloudErrorToContractError } from "../cloud-error-contract.js";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
+import { strictCliOffsetPaginationSchema } from "../return-schemas.js";
 
 // `ravi agenda`: the operator's calendar as the Ravi Console keeps it, their
 // recording settings and the briefing of each meeting. Every command runs
@@ -48,25 +49,81 @@ export interface AgendaCommandDeps {
   };
 }
 
-const looseEventSchema = z.object({ id: z.string() }).passthrough();
-const agendaStatusReturnSchema = z
-  .object({
-    connections: z.array(z.object({ connectionId: z.string() }).passthrough()),
-    policy: z.object({ autoRecordAllowed: z.boolean(), canManage: z.boolean() }).passthrough(),
-    meetingsEnabled: z.boolean(),
-    projects: z.array(z.object({ id: z.string(), slug: z.string(), name: z.string() }).passthrough()),
-  })
-  .passthrough();
-const agendaSettingsReturnSchema = z.object({ connection: z.object({ connectionId: z.string() }).passthrough() });
+const nullableString = z.string().nullable();
+const recordModeSchema = z.enum(CALENDAR_RECORD_MODES).nullable();
+const agendaEventSchema = z.object({
+  id: z.string(),
+  connectionId: z.string(),
+  title: z.string(),
+  startAt: z.string(),
+  endAt: z.string(),
+  allDay: z.boolean(),
+  status: z.string(),
+  meetingUrl: nullableString,
+  meetingCode: nullableString,
+  organizerEmail: nullableString.optional(),
+  selfResponse: nullableString.optional(),
+  attendees: z.array(
+    z.object({
+      email: z.string(),
+      name: nullableString,
+      response: nullableString,
+      organizer: z.boolean(),
+      self: z.boolean(),
+    }),
+  ),
+  externalAttendees: z.boolean(),
+  recurringEventId: nullableString.optional(),
+  recordDecision: z.enum(["record", "skip"]).nullable(),
+  recordDecisionProjectId: nullableString.optional(),
+  recordError: nullableString.optional(),
+  effectiveRecordMode: recordModeSchema,
+  briefingEnabled: z.boolean().nullable().optional(),
+  briefingMinutes: z.number().optional(),
+  followupEnabled: z.boolean().nullable().optional(),
+  recording: z
+    .object({ meetingId: z.string(), status: z.string(), ready: z.boolean(), projectId: nullableString })
+    .nullable(),
+  hasBriefing: z.boolean().optional(),
+  updatedAt: z.string().optional(),
+  deletedAt: nullableString.optional(),
+  /** `show` and the write commands: the operator's own briefing. */
+  briefing: nullableString.optional(),
+  /** `show`: the recording's page in the Console. */
+  consoleMeetingUrl: nullableString.optional(),
+});
+const agendaConnectionSchema = z.object({
+  connectionId: z.string(),
+  email: nullableString,
+  displayName: nullableString,
+  hasCalendarScope: z.boolean(),
+  settings: z.object({
+    syncEnabled: z.boolean(),
+    recordMode: recordModeSchema,
+    projectId: nullableString,
+    briefingEnabled: z.boolean().nullable(),
+    briefingMinutes: z.number(),
+    followupEnabled: z.boolean().nullable(),
+  }),
+  lastSyncedAt: nullableString,
+  lastSyncError: nullableString,
+});
+const agendaStatusReturnSchema = z.object({
+  connections: z.array(agendaConnectionSchema),
+  policy: z.object({ autoRecordAllowed: z.boolean(), canManage: z.boolean() }),
+  meetingsEnabled: z.boolean(),
+  projects: z.array(z.object({ id: z.string(), slug: z.string(), name: z.string() })),
+});
+const agendaSettingsReturnSchema = z.object({ connection: agendaConnectionSchema });
 const agendaListReturnSchema = z.object({
   from: z.string(),
   to: z.string(),
   truncated: z.boolean(),
   total: z.number(),
-  pagination: z.object({}).passthrough(),
-  events: z.array(looseEventSchema),
+  pagination: strictCliOffsetPaginationSchema,
+  events: z.array(agendaEventSchema),
 });
-const agendaEventReturnSchema = z.object({ event: looseEventSchema });
+const agendaEventReturnSchema = z.object({ event: agendaEventSchema });
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
