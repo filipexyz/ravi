@@ -2,7 +2,11 @@
  * Library request runner (spec skills/library, "Directory and requests").
  *
  * Started by the daemon. While a `ravi login` session with the link scope
- * exists, at start and every `RAVI_LIBRARY_PIN_INTERVAL_MS` it:
+ * exists, at start and then on a pace set by what this machine is waiting for
+ * (see `libraryRequestDelayMs`): every 15 s for a while after a request or an
+ * answer came in, every 30 s while an agent here takes requests (a person in
+ * a Page chat is waiting on it) or a request sent from here is still open,
+ * and otherwise every `RAVI_LIBRARY_PIN_INTERVAL_MS`. It:
  *
  * 1. takes the answers to this machine's requests (`POST /requests/replies/pull`)
  *    and hands each to the session that asked, as a `[System] Inform`, or keeps
@@ -26,6 +30,7 @@ import { logger } from "../utils/logger.js";
 import {
   dbGetLibraryAgentState,
   dbGetLocalAgentRequest,
+  dbListLibraryAgentStates,
   dbListLocalAgentRequests,
   dbSetLocalAgentRequestStatus,
   dbUpsertLocalAgentRequest,
@@ -42,6 +47,8 @@ import { LIBRARY_PIN_SYNC_SCOPE } from "./pins.js";
 import {
   describeLibraryRequester,
   ensureLibraryRequestSession,
+  isPageChatRequest,
+  PAGE_CHAT_REQUESTER_AGENT_ID,
   retireLibraryRequestSession,
   runLibraryRequestTurn,
   type LibraryRequestTurnDeps,
@@ -64,8 +71,65 @@ const FAILURE_CUT_MARK = " […]";
 const RESTARTED_FAILURE = "The asked machine restarted before answering.";
 const UNREADABLE_FAILURE = "The asked machine could not read this request.";
 
+/** Pace right after a request or an answer came in (a conversation is going on). */
+export const LIBRARY_REQUEST_BUSY_INTERVAL_MS = 15_000;
+/** How long the busy pace lasts after the last request or answer. */
+export const LIBRARY_REQUEST_BUSY_WINDOW_MS = 10 * 60_000;
+/** Pace while an agent here takes requests or a request sent from here is open. */
+export const LIBRARY_REQUEST_OPEN_INTERVAL_MS = 30_000;
+
+/**
+ * The wait before the next pull. Requests from a Page chat have a person
+ * waiting in the page, so a machine that answers requests pulls every 30 s
+ * instead of every pin interval, and every 15 s for ten minutes after a request
+ * or answer came in. A tick that could not pull (no login, no link scope, an
+ * error) and a machine with nothing open wait the full interval, so an idle
+ * machine does not call the Console more than it did. Never longer than the
+ * pin interval.
+ */
+export function libraryRequestDelayMs(input: {
+  intervalMs: number;
+  tick: LibraryRequestTickResult | null;
+  now: number;
+  lastTrafficAt: number | null;
+  open: boolean;
+  busyIntervalMs?: number;
+  busyWindowMs?: number;
+  openIntervalMs?: number;
+}): number {
+  if (input.tick?.status !== "ran") return input.intervalMs;
+  const busyWindow = input.busyWindowMs ?? LIBRARY_REQUEST_BUSY_WINDOW_MS;
+  if (input.lastTrafficAt !== null && input.now - input.lastTrafficAt < busyWindow) {
+    return Math.min(input.intervalMs, input.busyIntervalMs ?? LIBRARY_REQUEST_BUSY_INTERVAL_MS);
+  }
+  if (input.open) return Math.min(input.intervalMs, input.openIntervalMs ?? LIBRARY_REQUEST_OPEN_INTERVAL_MS);
+  return input.intervalMs;
+}
+
+/** A sent request older than this no longer keeps the open pace (the Console expires it well before). */
+const OPEN_SENT_REQUEST_MAX_AGE_MS = 24 * 60 * 60_000;
+
+/**
+ * Whether this machine waits on the Console: an agent here takes requests
+ * (`ravi agents requests <agent> on`), or a request sent from here in the
+ * last day is still open.
+ */
+export function libraryRequestsOpenHere(now = Date.now()): boolean {
+  if (dbListLibraryAgentStates().some((state) => state.acceptsRequests && getAgent(state.agentId))) return true;
+  return dbListLocalAgentRequests({ direction: "sent", status: "open" }).some(
+    (row) => now - row.createdAt < OPEN_SENT_REQUEST_MAX_AGE_MS,
+  );
+}
+
 export interface LibraryRequestRunnerOptions {
+  /** The idle pace (default `RAVI_LIBRARY_PIN_INTERVAL_MS`). */
   intervalMs?: number;
+  busyIntervalMs?: number;
+  busyWindowMs?: number;
+  openIntervalMs?: number;
+  /** Clock and open check (tests replace them). */
+  now?: () => number;
+  isOpen?: () => boolean;
   openSession?: (options: LibrarySessionOptions) => Promise<LibrarySession | null>;
   /** Runs one request turn; tests replace it. */
   runTurn?: (input: { agentId: string; request: LibraryAgentRequest }) => Promise<LibraryRequestTurnOutcome>;
@@ -146,6 +210,8 @@ export class LibraryRequestRunner {
   private readonly active = new Set<string>();
   private recovered = false;
   private readonly queuedIds = new Set<string>();
+  /** When the last request or answer came in (ms); drives the busy pace. */
+  private lastTrafficAt: number | null = null;
 
   constructor(private readonly options: LibraryRequestRunnerOptions = {}) {
     this.intervalMs = options.intervalMs ?? libraryPinIntervalMs();
@@ -180,11 +246,42 @@ export class LibraryRequestRunner {
 
   tickOnce(): Promise<LibraryRequestTickResult> {
     if (this.inFlight) return this.inFlight;
-    const current = this.tick().finally(() => {
-      this.inFlight = null;
-    });
+    const current = this.tick()
+      .then((result) => {
+        if (result.replies > 0 || result.requests > 0) this.lastTrafficAt = this.now();
+        return result;
+      })
+      .finally(() => {
+        this.inFlight = null;
+      });
     this.inFlight = current;
     return current;
+  }
+
+  /** The wait before the next pull after `tick` (see `libraryRequestDelayMs`). */
+  nextDelayMs(tick: LibraryRequestTickResult | null): number {
+    let open = false;
+    if (tick?.status === "ran") {
+      try {
+        open = this.options.isOpen ? this.options.isOpen() : libraryRequestsOpenHere(this.now());
+      } catch (error) {
+        log.warn("Could not read whether this machine takes Library requests", { error: errorMessage(error) });
+      }
+    }
+    return libraryRequestDelayMs({
+      intervalMs: this.intervalMs,
+      tick,
+      now: this.now(),
+      lastTrafficAt: this.lastTrafficAt,
+      open,
+      busyIntervalMs: this.options.busyIntervalMs,
+      busyWindowMs: this.options.busyWindowMs,
+      openIntervalMs: this.options.openIntervalMs,
+    });
+  }
+
+  private now(): number {
+    return (this.options.now ?? Date.now)();
   }
 
   private schedule(delay: number): void {
@@ -192,9 +289,13 @@ export class LibraryRequestRunner {
     if (this.timer) clearTimeout(this.timer);
     this.timer = setTimeout(() => {
       this.timer = null;
+      let tick: LibraryRequestTickResult | null = null;
       this.tickOnce()
+        .then((result) => {
+          tick = result;
+        })
         .catch((error) => log.error("Library request tick failed", { error: errorMessage(error) }))
-        .finally(() => this.schedule(this.intervalMs));
+        .finally(() => this.schedule(this.nextDelayMs(tick)));
     }, delay);
     this.timer.unref?.();
   }
@@ -476,6 +577,7 @@ export class LibraryRequestRunner {
 }
 
 function requesterPeer(request: LibraryAgentRequest): string {
+  if (isPageChatRequest(request)) return `page/${PAGE_CHAT_REQUESTER_AGENT_ID}`;
   return `${describeLibraryRequester(request).machine}/${request.from.agentId ?? "terminal"}`;
 }
 

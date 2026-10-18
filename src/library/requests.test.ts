@@ -13,7 +13,16 @@ import {
 } from "./agents-db.js";
 import { collectLocalAgentReports } from "./pins.js";
 import { getOrCreateSession, resolveSession } from "../router/index.js";
-import { buildLibraryReplyInform, clipLibraryText, LibraryRequestRunner } from "./request-runner.js";
+import {
+  buildLibraryReplyInform,
+  clipLibraryText,
+  LIBRARY_REQUEST_BUSY_INTERVAL_MS,
+  LIBRARY_REQUEST_BUSY_WINDOW_MS,
+  LIBRARY_REQUEST_OPEN_INTERVAL_MS,
+  LibraryRequestRunner,
+  libraryRequestDelayMs,
+  libraryRequestsOpenHere,
+} from "./request-runner.js";
 import {
   buildLibraryRequestPrompt,
   libraryRequestSessionKey,
@@ -201,6 +210,30 @@ describe("library requests: the request turn", () => {
     expect(built as unknown as Record<string, unknown>).not.toHaveProperty("_cliDestination");
     expect(built.prompt).toContain("From Ana, on macbook-ana, through their agent finance.");
     expect(built.prompt).toEndWith("What is the close date?");
+  });
+
+  it("words a Page chat request as the person chatting in the page, still not the operator", () => {
+    const built = buildLibraryRequestPrompt(
+      fakeAgentRequest({
+        id: "req-page",
+        from: { installation: null, agentId: "page-chat", user: { id: "user-9", name: "Bia" } },
+        project: { id: "p1", slug: "website", name: "Website" },
+        message: "Qual o status do pedido 42?",
+      }),
+    );
+    expect(built.prompt).toStartWith(
+      "[Library request] From Bia, in a Ravi Page of project Website, through the Page chat.",
+    );
+    expect(built.prompt).toContain("chatting in a Ravi Page of your organization");
+    expect(built.prompt).toContain("They are not your operator");
+    expect(built.prompt).not.toContain("another Ravi machine");
+    expect(built.context).toMatchObject({
+      actorType: "unknown",
+      senderName: "Bia",
+      senderId: "library:page-chat:user-9",
+    });
+    expect(built.source).toMatchObject({ channel: LIBRARY_REQUEST_CHANNEL, actorType: "unknown" });
+    expect(built as unknown as Record<string, unknown>).not.toHaveProperty("_turnOrigin");
   });
 
   it("collects the turn's responses until it completes", async () => {
@@ -463,6 +496,98 @@ describe("library request runner", () => {
     getOrCreateSession("agent:helper:main", "helper", stateDir!, { name: "helper-main" });
     expect(retireLibraryRequestSession("helper-main")).toBe(false);
     expect(resolveSession("helper-main")?.ephemeral).toBe(false);
+  });
+
+  it("answers a Page chat request and records it under the page", async () => {
+    dbSetLibraryAgentAcceptsRequests("helper", true);
+    state.incoming.push(
+      fakeAgentRequest({
+        id: "req-page",
+        toAgentId: "helper",
+        from: { installation: null, agentId: "page-chat", user: { id: "user-9", name: "Bia" } },
+      }),
+    );
+    const instance = runner({ runTurn: async () => ({ ok: true, reply: "Pedido 42 saiu hoje.", sessionName: "s" }) });
+    await instance.tickOnce();
+    await instance.drain();
+    expect(state.posted).toEqual([{ id: "req-page", body: { reply: "Pedido 42 saiu hoje." } }]);
+    expect(dbGetLocalAgentRequest("req-page", "received")).toMatchObject({
+      peer: "page/page-chat",
+      status: "answered",
+    });
+  });
+
+  it("paces pulls by what this machine waits for", () => {
+    const ran = { status: "ran" as const, replies: 0, requests: 0 };
+    const base = { intervalMs: 300_000, now: 1_000_000, lastTrafficAt: null, open: false };
+    expect(libraryRequestDelayMs({ ...base, tick: ran })).toBe(300_000);
+    expect(libraryRequestDelayMs({ ...base, tick: ran, open: true })).toBe(LIBRARY_REQUEST_OPEN_INTERVAL_MS);
+    expect(libraryRequestDelayMs({ ...base, tick: ran, lastTrafficAt: base.now - 60_000 })).toBe(
+      LIBRARY_REQUEST_BUSY_INTERVAL_MS,
+    );
+    expect(
+      libraryRequestDelayMs({
+        ...base,
+        tick: ran,
+        open: true,
+        lastTrafficAt: base.now - LIBRARY_REQUEST_BUSY_WINDOW_MS,
+      }),
+    ).toBe(LIBRARY_REQUEST_OPEN_INTERVAL_MS);
+    // Nothing pulled (no login, no scope, an error): the full interval, even with agents open.
+    for (const tick of [
+      null,
+      { status: "skipped" as const, reason: "no_login" as const, replies: 0, requests: 0 },
+      { status: "error" as const, code: "SERVER_UNAVAILABLE", replies: 0, requests: 0 },
+    ]) {
+      expect(libraryRequestDelayMs({ ...base, tick, open: true, lastTrafficAt: base.now })).toBe(300_000);
+    }
+    // Never slower than a shorter configured interval.
+    expect(libraryRequestDelayMs({ ...base, intervalMs: 10_000, tick: ran, open: true })).toBe(10_000);
+  });
+
+  it("speeds up after a request comes in and while an agent here takes requests", async () => {
+    let now = 5_000_000;
+    let open = false;
+    const instance = runner({
+      intervalMs: 300_000,
+      now: () => now,
+      isOpen: () => open,
+      runTurn: async () => ({ ok: true, reply: "ok", sessionName: "s" }),
+    });
+    const idle = await instance.tickOnce();
+    expect(instance.nextDelayMs(idle)).toBe(300_000);
+    open = true;
+    expect(instance.nextDelayMs(idle)).toBe(LIBRARY_REQUEST_OPEN_INTERVAL_MS);
+
+    dbSetLibraryAgentAcceptsRequests("helper", true);
+    state.incoming.push(fakeAgentRequest({ id: "req-fast", toAgentId: "helper" }));
+    const busy = await instance.tickOnce();
+    await instance.drain();
+    expect(busy.requests).toBe(1);
+    expect(instance.nextDelayMs(await instance.tickOnce())).toBe(LIBRARY_REQUEST_BUSY_INTERVAL_MS);
+    now += LIBRARY_REQUEST_BUSY_WINDOW_MS;
+    expect(instance.nextDelayMs(await instance.tickOnce())).toBe(LIBRARY_REQUEST_OPEN_INTERVAL_MS);
+  });
+
+  it("counts an agent that takes requests and a recent open sent request as open", () => {
+    expect(libraryRequestsOpenHere()).toBe(false);
+    dbSetLibraryAgentAcceptsRequests("helper", true);
+    expect(libraryRequestsOpenHere()).toBe(true);
+    dbSetLibraryAgentAcceptsRequests("helper", false);
+    // An agent that no longer exists here does not count.
+    dbSetLibraryAgentAcceptsRequests("ghost", true);
+    expect(libraryRequestsOpenHere()).toBe(false);
+    dbUpsertLocalAgentRequest({
+      requestId: "req-sent",
+      direction: "sent",
+      agentId: "helper",
+      peer: "macbook-ana/finance",
+      sessionKey: null,
+      sessionName: null,
+      status: "open",
+    });
+    expect(libraryRequestsOpenHere()).toBe(true);
+    expect(libraryRequestsOpenHere(Date.now() + 2 * 24 * 60 * 60_000)).toBe(false);
   });
 
   it("keeps a request this machine sent and one it received under the same id apart", () => {

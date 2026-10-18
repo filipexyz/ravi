@@ -247,7 +247,7 @@ ravi agents set finance description "Answers about closings and invoices"
 
 - The machine is the installation name the directory shows; when two machines share a name, use the installation id (`LIBRARY_TARGET_AMBIGUOUS`, exit 2).
 - Asked from an agent session, the answer arrives in that session as a `[System] Inform`. Asked from the terminal, read it with `ravi agents requests list --all`.
-- On the asked machine, the daemon checks for requests every 5 minutes (`RAVI_LIBRARY_PIN_INTERVAL_MS`) and gives each turn up to 10 minutes (`RAVI_LIBRARY_REQUEST_TIMEOUT_MS`). Requests expire after 24 hours, and a machine can have 20 waiting at once.
+- On the asked machine, the daemon checks for requests every 30 seconds while one of its agents takes requests (every 15 seconds for 10 minutes after a request or answer came in), otherwise every 5 minutes (`RAVI_LIBRARY_PIN_INTERVAL_MS`), and gives each turn up to 10 minutes (`RAVI_LIBRARY_REQUEST_TIMEOUT_MS`). Requests expire after 24 hours, and a machine can have 20 waiting at once.
 - A `CONFLICT` carries its reason in `conflict`: `not_accepting` (the agent is not open to requests), `same_installation` (it runs on this machine: use `ravi sessions send`), `too_many_open` (wait or cancel one), `no_installation` (run `ravi login` on this daemon).
 - Opening an agent is a dry run until you pass `--execute`; closing it applies at once. Agents cannot open or close agents (`LIBRARY_AGENT_CANNOT_OPEN_REQUESTS`, exit 3), and an agent serving someone other than you cannot ask other machines (`LIBRARY_REQUEST_EXTERNAL_DENIED`, exit 3).
 

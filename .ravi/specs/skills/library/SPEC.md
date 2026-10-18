@@ -625,9 +625,19 @@ posts `POST /requests/<id>/cancel` (a request already taken is `CONFLICT`
 
 ### Request runner
 
-The daemon runs a Library request runner at start and every
-`RAVI_LIBRARY_PIN_INTERVAL_MS`, while a login with the
-`console.projects.link` scope exists (otherwise it waits quietly). Each tick:
+The daemon runs a Library request runner at start and then on a pace set by
+what the machine waits for, while a login with the `console.projects.link`
+scope exists (otherwise it waits quietly):
+
+- every 15 s for 10 minutes after a tick that took a request or an answer;
+- otherwise every 30 s while a local agent that exists takes requests, or a
+  request sent from here in the last 24 hours is still `open` (a person in a
+  Page chat may be waiting on a request);
+- otherwise, and after any tick that could not pull (no login, no link
+  scope, an error), every `RAVI_LIBRARY_PIN_INTERVAL_MS`. The faster paces
+  are never slower than that interval.
+
+Each tick:
 
 1. On the first tick after a start, every local received row still `queued`
    or `running` (a stop or a crash cut it), except the ones this process is
@@ -676,7 +686,12 @@ an actor as `missing_contact`, the state of an unknown sender on a channel:
 no agent-identity capabilities, so tools that need authority are denied, and
 the bash hook and approvals fail closed. The prompt starts with who asked
 (the person, their machine, and the agent or terminal they asked through) and
-says the message is theirs, not the operator's. The gateway delivers nothing
+says the message is theirs, not the operator's. A request from the text chat
+of a Ravi Page (`from.installation: null`, `from.agentId: "page-chat"`, sent
+by the Console's Page agent) names `from.user` as the person, chatting in a
+Ravi Page (of the request's project when it has one), through the Page chat;
+the turn is the same untrusted `missing_contact` turn, with `senderId`
+`library:page-chat:<userId>`, and the local row's peer is `page/page-chat`. The gateway delivers nothing
 for this channel (`dropped`, reason `library_request`, not logged as a
 failure); the runner reads the answer from the session's `.response` events
 until `turn.complete` and for a short grace window after it (a response
