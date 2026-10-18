@@ -7,7 +7,11 @@ import {
   closeSlackThread,
   deliverSlackThreadParentReturn,
   finalizeSlackThreadCreation,
+  listSlackThreadsForSession,
   registerSlackThreadInboundLifecycle,
+  reportSlackThreadProgress,
+  sendSlackThreadMessage,
+  slackThreadTitle,
 } from "./thread-lifecycle.js";
 import {
   claimSlackThreadCreation,
@@ -248,7 +252,7 @@ describe("Slack thread lifecycle", () => {
         isGroup: false,
       },
     });
-    expect((prompts[0]?.payload.context as Record<string, unknown>).groupId).toBeUndefined();
+    expect((prompts[0]?.payload.context as Record<string, unknown> | undefined)?.groupId).toBeUndefined();
   });
 
   it("closes silently or returns one structured completion to the parent, then reopens on inbound", async () => {
@@ -392,7 +396,153 @@ describe("Slack thread lifecycle", () => {
   });
 });
 
-function seedPendingCreation(input: { channelId?: string; chatType?: "channel" | "dm" } = {}): {
+describe("Slack thread orchestration", () => {
+  function capture() {
+    const prompts: Array<{
+      sessionName: string;
+      payload: Record<string, unknown>;
+      options?: PublishSessionPromptOptions;
+    }> = [];
+    return {
+      prompts,
+      dependencies: {
+        publishPrompt: mock(
+          async (sessionName: string, payload: Record<string, unknown>, options?: PublishSessionPromptOptions) => {
+            prompts.push({ sessionName, payload, options });
+          },
+        ),
+        publishEvent: mock(async () => {}),
+      },
+    };
+  }
+
+  it("names the thread by title, session and link when it returns or reports to the parent", async () => {
+    const fixture = seedPendingCreation({ teamId: "T0123" });
+    const { prompts, dependencies } = capture();
+    await finalizeSlackThreadCreation(fixture.requestId, dependencies);
+    prompts.length = 0;
+    const child = getSession(`ravi-parent:thread:${fixture.threadTs}`)!;
+
+    const report = await reportSlackThreadProgress(child, "Found the failing commit", dependencies);
+    await closeSlackThread(child, "The branch is fixed", dependencies);
+
+    const link = `https://app.slack.com/client/T0123/C123/thread/C123-${fixture.threadTs}`;
+    expect(prompts.map((entry) => entry.sessionName)).toEqual(["ravi-parent", "ravi-parent"]);
+    expect(prompts[0]!.payload).toMatchObject({
+      prompt: [
+        `[System] Inform: Slack thread "Investigate the branch" (${child.name}) reporta progresso.`,
+        `Link: ${link}`,
+        "Progresso: Found the failing commit",
+      ].join("\n"),
+      source: { chatId: "C123", actorType: "system" },
+      _slackThreadLifecycle: { eventType: "thread.report", eventId: report.messageId },
+      _turnOrigin: { producer: "channel", action: "session.return" },
+    });
+    expect((prompts[0]!.payload.source as Record<string, unknown>).threadId).toBeUndefined();
+    expect(prompts[0]!.options).toEqual({ messageId: report.messageId });
+    expect(prompts[1]!.payload.prompt).toBe(
+      [
+        `[System] Inform: Slack thread "Investigate the branch" (${child.name}) concluída.`,
+        `Link: ${link}`,
+        "Resultado: The branch is fixed",
+      ].join("\n"),
+    );
+    expect(findSlackThreadLifecycleByChildSession(child.sessionKey)?.status).toBe("closed");
+  });
+
+  it("lists a parent's threads from the parent or a child, open by default", async () => {
+    const fixture = seedPendingCreation();
+    const { dependencies } = capture();
+    await finalizeSlackThreadCreation(fixture.requestId, dependencies);
+    const parent = getSession("ravi-parent")!;
+    const child = getSession(`ravi-parent:thread:${fixture.threadTs}`)!;
+
+    const fromParent = listSlackThreadsForSession(parent);
+    expect(fromParent).toMatchObject({
+      parentSessionKey: "ravi-parent",
+      parentSessionName: "ravi-parent",
+      threads: [
+        {
+          requestId: fixture.requestId,
+          title: "Investigate the branch",
+          status: "open",
+          source: "action",
+          childSessionName: child.name,
+          slackThreadTs: fixture.threadTs,
+          link: null,
+          parentReturn: { requested: false, pending: false },
+        },
+      ],
+    });
+    expect(listSlackThreadsForSession(child).threads.map((thread) => thread.requestId)).toEqual([fixture.requestId]);
+
+    await closeSlackThread(child, undefined, dependencies);
+    expect(listSlackThreadsForSession(parent).threads).toEqual([]);
+    expect(listSlackThreadsForSession(parent, { includeClosed: true }).threads[0]?.status).toBe("closed");
+  });
+
+  it("sends parent instructions into the thread, reopening a closed one, and only from the parent", async () => {
+    const fixture = seedPendingCreation();
+    const { prompts, dependencies } = capture();
+    await finalizeSlackThreadCreation(fixture.requestId, dependencies);
+    const parent = getSession("ravi-parent")!;
+    const child = getSession(`ravi-parent:thread:${fixture.threadTs}`)!;
+    await closeSlackThread(child, undefined, dependencies);
+    prompts.length = 0;
+
+    const sent = await sendSlackThreadMessage(
+      { parentSession: parent, ref: child.name!, message: "Also check the release branch" },
+      dependencies,
+    );
+
+    expect(sent.reopened).toBe(true);
+    expect(sent.record.status).toBe("open");
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]!.sessionName).toBe(child.name!);
+    expect(prompts[0]!.payload).toMatchObject({
+      prompt: "[System] Execute: [from: ravi-parent] Also check the release branch",
+      source: { chatId: "C123", threadId: fixture.threadTs, actorType: "agent", actorAgentId: "ravi" },
+      deliveryBarrier: "after_tool",
+      _slackThreadLifecycle: { eventType: "thread.message", reopened: true },
+      _turnOrigin: {
+        producer: "session-relay",
+        action: "execute",
+        principal: { type: "agent", id: "ravi" },
+        session: { key: "ravi-parent", name: "ravi-parent" },
+      },
+    });
+
+    const byRequest = await sendSlackThreadMessage(
+      { parentSession: parent, ref: fixture.requestId, message: "Status?" },
+      dependencies,
+    );
+    expect(byRequest.reopened).toBe(false);
+    await expect(
+      sendSlackThreadMessage({ parentSession: child, ref: fixture.requestId, message: "Hi" }, dependencies),
+    ).rejects.toThrow("this session is a thread");
+    await expect(
+      sendSlackThreadMessage({ parentSession: parent, ref: "unknown-thread", message: "Hi" }, dependencies),
+    ).rejects.toThrow("Slack thread not found for this session: unknown-thread");
+  });
+
+  it("refuses to send to a thread whose first turn has not started", async () => {
+    const fixture = seedPendingCreation();
+    const { dependencies } = capture();
+    const parent = getSession("ravi-parent")!;
+
+    await expect(
+      sendSlackThreadMessage({ parentSession: parent, ref: fixture.requestId, message: "Hi" }, dependencies),
+    ).rejects.toThrow(`Slack thread has not started yet: ${fixture.requestId}`);
+  });
+
+  it("titles a thread with the first line of its initial message, trimmed", () => {
+    expect(slackThreadTitle({ initialPrompt: "\n  Fix the deploy  \nDetails follow" })).toBe("Fix the deploy");
+    expect(slackThreadTitle({ initialPrompt: `${"x".repeat(100)}` })).toBe(`${"x".repeat(79)}…`);
+    expect(slackThreadTitle({})).toBeUndefined();
+  });
+});
+
+function seedPendingCreation(input: { channelId?: string; chatType?: "channel" | "dm"; teamId?: string } = {}): {
   requestId: string;
   threadTs: string;
 } {
@@ -408,6 +558,7 @@ function seedPendingCreation(input: { channelId?: string; chatType?: "channel" |
     platformChatId: channelId,
     chatType,
     title: channelId,
+    ...(input.teamId ? { rawProvenance: { source: "slack.socket_mode", teamId: input.teamId } } : {}),
   });
   const requestId = "slack-thread:req-1";
   const threadTs = "1713000000.000100";

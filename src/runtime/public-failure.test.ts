@@ -177,6 +177,15 @@ describe("public runtime failures", () => {
     );
   });
 
+  it("hides OpenAI-compatible provider account failures behind a generic message", () => {
+    expect(formatUserFacingTurnFailure("402 Insufficient Balance")).toBe(
+      "Error: The agent is temporarily unavailable. Please try again later.",
+    );
+    expect(formatUserFacingTurnFailure("429 Rate limit reached for requests")).toBe(
+      "Error: The agent is temporarily unavailable. Please try again later.",
+    );
+  });
+
   it("uses the Error subtype and hides non-string failures", () => {
     expect(publicRuntimeFailureDetail(new TypeError("handler failed"))).toBe(
       "The agent could not complete this request because of an internal runtime error. Please try again.",

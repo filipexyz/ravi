@@ -620,6 +620,37 @@ describe("CLI command access enforcement", () => {
     expect(result.attempted).toEqual([]);
   });
 
+  it("ignores legacy group grants of a retired group but keeps them for other groups", () => {
+    const access: CommandAccessOptions = {
+      kind: "mutate",
+      resource: "cloud.projects",
+      action: "create",
+      risk: "high",
+      retiredLegacyGroups: ["projects"],
+    };
+
+    for (const objectId of ["projects", "projects_create"]) {
+      const record = context([{ permission: "execute", objectType: "group", objectId }]);
+      const result = runWithContext({ agentId: "dev", context: record }, () =>
+        enforceCliCommandAccess({ group: "projects", command: "create", access, source: "tool" }),
+      );
+      expect(result.allowed).toBe(false);
+      expect(result.attempted.some((decision) => decision.objectType === "group")).toBe(false);
+    }
+
+    const semantic = context([{ permission: "mutate", objectType: "cloud.projects", objectId: "create" }]);
+    const viaSemantic = runWithContext({ agentId: "dev", context: semantic }, () =>
+      enforceCliCommandAccess({ group: "projects", command: "create", access, source: "tool" }),
+    );
+    expect(viaSemantic.allowed).toBe(true);
+
+    const alias = context([{ permission: "execute", objectType: "group", objectId: "cloud.projects" }]);
+    const viaAlias = runWithContext({ agentId: "dev", context: alias }, () =>
+      enforceCliCommandAccess({ group: "cloud.projects", command: "create", access, source: "tool" }),
+    );
+    expect(viaAlias.allowed).toBe(true);
+  });
+
   it("falls back to legacy command-specific execute capabilities", () => {
     const record = context([{ permission: "execute", objectType: "group", objectId: "demo_create" }]);
     const result = runWithContext({ agentId: "dev", context: record }, () =>

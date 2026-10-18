@@ -3,7 +3,6 @@ import { nats } from "../nats.js";
 import { getAgent } from "../router/config.js";
 import { expandHome } from "../router/resolver.js";
 import { findSessionByChatId, getOrCreateSession, getSessionByName, resolveSession } from "../router/sessions.js";
-import { getProjectSurfaceByWorkflowRunId, type ProjectTaskSurface } from "../projects/index.js";
 import { logger } from "../utils/logger.js";
 import { resolveRuntimeDefaults } from "../runtime/runtime-defaults.js";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
@@ -349,7 +348,6 @@ export interface TaskStreamTaskEntity {
   satisfiedDependencyCount: number;
   unsatisfiedDependencyCount: number;
   workflow: TaskWorkflowSurface | null;
-  project: ProjectTaskSurface | null;
   artifacts: TaskArtifactSummary;
 }
 
@@ -415,7 +413,6 @@ export interface TaskStreamEventPayload {
   readiness: TaskReadiness;
   launchPlan: TaskLaunchPlan | null;
   activeAssignment: TaskAssignment | null;
-  project: ProjectTaskSurface | null;
   task: TaskStreamTaskEntity;
   event: TaskEvent;
   artifacts: TaskArtifactSummary;
@@ -1457,7 +1454,6 @@ function toTaskStreamEntity(task: TaskRecord, activeAssignment?: TaskAssignment 
     satisfiedDependencyCount: dependencySurface.readiness.satisfiedDependencyCount,
     unsatisfiedDependencyCount: dependencySurface.readiness.unsatisfiedDependencyCount,
     workflow,
-    project: workflow ? getProjectSurfaceByWorkflowRunId(workflow.workflowRunId) : null,
     artifacts: buildTaskArtifactSummary(task, activeAssignment),
   };
 }
@@ -1752,7 +1748,6 @@ export function buildTaskEventPayload(task: TaskRecord, event: TaskEvent): TaskS
     readiness: dependencySurface.readiness,
     launchPlan: dependencySurface.launchPlan,
     activeAssignment: dbGetActiveAssignment(task.id),
-    project: taskEntity.project,
     task: taskEntity,
     event,
     artifacts,
@@ -2251,7 +2246,6 @@ export function getTaskDetails(taskId: string): {
   task: TaskRecord | null;
   taskProfile: ResolvedTaskProfile | null;
   tags: TagBinding[];
-  project: ProjectTaskSurface | null;
   parentTask: TaskRecord | null;
   childTasks: TaskRecord[];
   activeAssignment: ReturnType<typeof dbGetActiveAssignment>;
@@ -2269,7 +2263,6 @@ export function getTaskDetails(taskId: string): {
     task: surfacedTask?.task ?? null,
     taskProfile: surfacedTask?.profile ?? null,
     tags: surfacedTask ? searchTagBindingsForSelector({ selector: { task: surfacedTask.task.id } }).bindings : [],
-    project: surfacedTask ? getTaskProjectSurface(surfacedTask.task.id) : null,
     parentTask,
     childTasks: surfacedTask
       ? dbListChildTasks(surfacedTask.task.id).map((childTask) => surfaceTaskRecordForRead(childTask).task)
@@ -2279,11 +2272,6 @@ export function getTaskDetails(taskId: string): {
     events: dbListTaskEvents(taskId, 200),
     comments: dbListTaskComments(taskId, 200),
   };
-}
-
-export function getTaskProjectSurface(taskId: string): ProjectTaskSurface | null {
-  const workflow = dbGetTaskWorkflowSurface(taskId);
-  return workflow ? getProjectSurfaceByWorkflowRunId(workflow.workflowRunId) : null;
 }
 
 function isTaskDependencyEditable(task: TaskRecord): boolean {

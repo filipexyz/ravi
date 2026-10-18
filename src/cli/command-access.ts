@@ -260,7 +260,9 @@ function commandAccessCandidates(input: CliCommandAccessInput & { access: Comman
   if (input.access.requireConcreteResource) {
     return concreteResourceCandidates;
   }
-  const legacyCandidates = commandObjectCandidates(input.group, input.command).map((objectId) => ({
+  const retiredGroup = input.access.retiredLegacyGroups?.includes(input.group) ?? false;
+  const legacyObjectIds = retiredGroup ? [] : commandObjectCandidates(input.group, input.command);
+  const legacyCandidates = legacyObjectIds.map((objectId) => ({
     permission: "execute",
     objectType: "group",
     objectId,
@@ -457,6 +459,7 @@ function normalizeAccess(access: CommandAccessOptions): PermissionProviderComman
     ...(access.requiresContext ? { requiresContext: access.requiresContext } : {}),
     ...(access.resourceId ? { resourceId: access.resourceId } : {}),
     ...(access.requireConcreteResource ? { requireConcreteResource: true } : {}),
+    ...(access.retiredLegacyGroups ? { retiredLegacyGroups: access.retiredLegacyGroups } : {}),
     ...(access.resourceIdPattern ? { resourceIdPattern: access.resourceIdPattern } : {}),
     ...(access.input ? { input: access.input } : {}),
     ...(access.redactions ? { redactions: access.redactions } : {}),

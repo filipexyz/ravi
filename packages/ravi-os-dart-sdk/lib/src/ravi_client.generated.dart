@@ -6015,49 +6015,15 @@ class ProjectsNamespace {
 
   final RaviTransport _transport;
 
-  ProjectsFixturesNamespace get fixtures => ProjectsFixturesNamespace(_transport);
-
-  ProjectsResourcesNamespace get resources => ProjectsResourcesNamespace(_transport);
-
-  ProjectsTasksNamespace get tasks => ProjectsTasksNamespace(_transport);
-
-  ProjectsWorkflowsNamespace get workflows => ProjectsWorkflowsNamespace(_transport);
-
-  Future<ProjectsCreateReturn> create(String title, [ProjectsCreateOptions options = const ProjectsCreateOptions()]) async {
+  Future<ProjectsCreateReturn> create(String slug, [ProjectsCreateOptions options = const ProjectsCreateOptions()]) async {
     final requestBody = <String, RaviJson>{};
-    requestBody["title"] = RaviJson.from(title);
+    requestBody["slug"] = RaviJson.from(slug);
     options.encodeBody(requestBody);
     return _transport.callJson(
       groupSegments: const ["projects"],
       command: "create",
       body: requestBody,
       decode: projectsCreateReturnFromJson,
-    );
-  }
-
-  Future<ProjectsInitReturn> init(String title, [ProjectsInitOptions options = const ProjectsInitOptions()]) async {
-    final requestBody = <String, RaviJson>{};
-    requestBody["title"] = RaviJson.from(title);
-    options.encodeBody(requestBody);
-    return _transport.callJson(
-      groupSegments: const ["projects"],
-      command: "init",
-      body: requestBody,
-      decode: projectsInitReturnFromJson,
-    );
-  }
-
-  Future<ProjectsLinkReturn> link(String assetType, String project, String target, [ProjectsLinkOptions options = const ProjectsLinkOptions()]) async {
-    final requestBody = <String, RaviJson>{};
-    requestBody["assetType"] = RaviJson.from(assetType);
-    requestBody["project"] = RaviJson.from(project);
-    requestBody["target"] = RaviJson.from(target);
-    options.encodeBody(requestBody);
-    return _transport.callJson(
-      groupSegments: const ["projects"],
-      command: "link",
-      body: requestBody,
-      decode: projectsLinkReturnFromJson,
     );
   }
 
@@ -6069,202 +6035,6 @@ class ProjectsNamespace {
       command: "list",
       body: requestBody,
       decode: projectsListReturnFromJson,
-    );
-  }
-
-  Future<ProjectsNextReturn> next([ProjectsNextOptions options = const ProjectsNextOptions()]) async {
-    final requestBody = <String, RaviJson>{};
-    options.encodeBody(requestBody);
-    return _transport.callJson(
-      groupSegments: const ["projects"],
-      command: "next",
-      body: requestBody,
-      decode: projectsNextReturnFromJson,
-    );
-  }
-
-  Future<ProjectsShowReturn> show(String project) async {
-    final requestBody = <String, RaviJson>{};
-    requestBody["project"] = RaviJson.from(project);
-    return _transport.callJson(
-      groupSegments: const ["projects"],
-      command: "show",
-      body: requestBody,
-      decode: projectsShowReturnFromJson,
-    );
-  }
-
-  Future<ProjectsStatusReturn> status(String project) async {
-    final requestBody = <String, RaviJson>{};
-    requestBody["project"] = RaviJson.from(project);
-    return _transport.callJson(
-      groupSegments: const ["projects"],
-      command: "status",
-      body: requestBody,
-      decode: projectsStatusReturnFromJson,
-    );
-  }
-
-  Future<ProjectsUpdateReturn> update(String project, [ProjectsUpdateOptions options = const ProjectsUpdateOptions()]) async {
-    final requestBody = <String, RaviJson>{};
-    requestBody["project"] = RaviJson.from(project);
-    options.encodeBody(requestBody);
-    return _transport.callJson(
-      groupSegments: const ["projects"],
-      command: "update",
-      body: requestBody,
-      decode: projectsUpdateReturnFromJson,
-    );
-  }
-}
-
-class ProjectsFixturesNamespace {
-  const ProjectsFixturesNamespace(this._transport);
-
-  final RaviTransport _transport;
-
-  Future<ProjectsFixturesSeedReturn> seed([ProjectsFixturesSeedOptions options = const ProjectsFixturesSeedOptions()]) async {
-    final requestBody = <String, RaviJson>{};
-    options.encodeBody(requestBody);
-    return _transport.callJson(
-      groupSegments: const ["projects", "fixtures"],
-      command: "seed",
-      body: requestBody,
-      decode: projectsFixturesSeedReturnFromJson,
-    );
-  }
-}
-
-class ProjectsResourcesNamespace {
-  const ProjectsResourcesNamespace(this._transport);
-
-  final RaviTransport _transport;
-
-  Future<ProjectsResourcesAddReturn> add(String project, String target, [ProjectsResourcesAddOptions options = const ProjectsResourcesAddOptions()]) async {
-    final requestBody = <String, RaviJson>{};
-    requestBody["project"] = RaviJson.from(project);
-    requestBody["target"] = RaviJson.from(target);
-    options.encodeBody(requestBody);
-    return _transport.callJson(
-      groupSegments: const ["projects", "resources"],
-      command: "add",
-      body: requestBody,
-      decode: projectsResourcesAddReturnFromJson,
-    );
-  }
-
-  Future<ProjectsResourcesImportReturn> import_(String project, [ProjectsResourcesImportOptions options = const ProjectsResourcesImportOptions()]) async {
-    final requestBody = <String, RaviJson>{};
-    requestBody["project"] = RaviJson.from(project);
-    options.encodeBody(requestBody);
-    return _transport.callJson(
-      groupSegments: const ["projects", "resources"],
-      command: "import",
-      body: requestBody,
-      decode: projectsResourcesImportReturnFromJson,
-    );
-  }
-
-  Future<ProjectsResourcesListReturn> list(String project, [ProjectsResourcesListOptions options = const ProjectsResourcesListOptions()]) async {
-    final requestBody = <String, RaviJson>{};
-    requestBody["project"] = RaviJson.from(project);
-    options.encodeBody(requestBody);
-    return _transport.callJson(
-      groupSegments: const ["projects", "resources"],
-      command: "list",
-      body: requestBody,
-      decode: projectsResourcesListReturnFromJson,
-    );
-  }
-
-  Future<ProjectsResourcesShowReturn> show(String project, String resource) async {
-    final requestBody = <String, RaviJson>{};
-    requestBody["project"] = RaviJson.from(project);
-    requestBody["resource"] = RaviJson.from(resource);
-    return _transport.callJson(
-      groupSegments: const ["projects", "resources"],
-      command: "show",
-      body: requestBody,
-      decode: projectsResourcesShowReturnFromJson,
-    );
-  }
-}
-
-class ProjectsTasksNamespace {
-  const ProjectsTasksNamespace(this._transport);
-
-  final RaviTransport _transport;
-
-  Future<ProjectsTasksAttachReturn> attach(String project, String nodeKey, String taskId, [ProjectsTasksAttachOptions options = const ProjectsTasksAttachOptions()]) async {
-    final requestBody = <String, RaviJson>{};
-    requestBody["project"] = RaviJson.from(project);
-    requestBody["nodeKey"] = RaviJson.from(nodeKey);
-    requestBody["taskId"] = RaviJson.from(taskId);
-    options.encodeBody(requestBody);
-    return _transport.callJson(
-      groupSegments: const ["projects", "tasks"],
-      command: "attach",
-      body: requestBody,
-      decode: projectsTasksAttachReturnFromJson,
-    );
-  }
-
-  Future<ProjectsTasksCreateReturn> create(String project, String nodeKey, String title, [ProjectsTasksCreateOptions options = const ProjectsTasksCreateOptions()]) async {
-    final requestBody = <String, RaviJson>{};
-    requestBody["project"] = RaviJson.from(project);
-    requestBody["nodeKey"] = RaviJson.from(nodeKey);
-    requestBody["title"] = RaviJson.from(title);
-    options.encodeBody(requestBody);
-    return _transport.callJson(
-      groupSegments: const ["projects", "tasks"],
-      command: "create",
-      body: requestBody,
-      decode: projectsTasksCreateReturnFromJson,
-    );
-  }
-
-  Future<ProjectsTasksDispatchReturn> dispatch(String project, String taskId, [ProjectsTasksDispatchOptions options = const ProjectsTasksDispatchOptions()]) async {
-    final requestBody = <String, RaviJson>{};
-    requestBody["project"] = RaviJson.from(project);
-    requestBody["taskId"] = RaviJson.from(taskId);
-    options.encodeBody(requestBody);
-    return _transport.callJson(
-      groupSegments: const ["projects", "tasks"],
-      command: "dispatch",
-      body: requestBody,
-      decode: projectsTasksDispatchReturnFromJson,
-    );
-  }
-}
-
-class ProjectsWorkflowsNamespace {
-  const ProjectsWorkflowsNamespace(this._transport);
-
-  final RaviTransport _transport;
-
-  Future<ProjectsWorkflowsAttachReturn> attach(String project, String runId, [ProjectsWorkflowsAttachOptions options = const ProjectsWorkflowsAttachOptions()]) async {
-    final requestBody = <String, RaviJson>{};
-    requestBody["project"] = RaviJson.from(project);
-    requestBody["runId"] = RaviJson.from(runId);
-    options.encodeBody(requestBody);
-    return _transport.callJson(
-      groupSegments: const ["projects", "workflows"],
-      command: "attach",
-      body: requestBody,
-      decode: projectsWorkflowsAttachReturnFromJson,
-    );
-  }
-
-  Future<ProjectsWorkflowsStartReturn> start(String project, String specId, [ProjectsWorkflowsStartOptions options = const ProjectsWorkflowsStartOptions()]) async {
-    final requestBody = <String, RaviJson>{};
-    requestBody["project"] = RaviJson.from(project);
-    requestBody["specId"] = RaviJson.from(specId);
-    options.encodeBody(requestBody);
-    return _transport.callJson(
-      groupSegments: const ["projects", "workflows"],
-      command: "start",
-      body: requestBody,
-      decode: projectsWorkflowsStartReturnFromJson,
     );
   }
 }
@@ -7619,6 +7389,18 @@ class SessionsNamespace {
     );
   }
 
+  Future<SessionsReportReturn> report(String message, [SessionsReportOptions options = const SessionsReportOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["message"] = RaviJson.from(message);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["sessions"],
+      command: "report",
+      body: requestBody,
+      decode: sessionsReportReturnFromJson,
+    );
+  }
+
   Future<SessionsResetReturn> reset(String nameOrKey, [SessionsResetOptions options = const SessionsResetOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["nameOrKey"] = RaviJson.from(nameOrKey);
@@ -7728,6 +7510,30 @@ class SessionsNamespace {
       command: "subscriptions",
       body: requestBody,
       decode: sessionsSubscriptionsReturnFromJson,
+    );
+  }
+
+  Future<SessionsThreadSendReturn> threadSend(String thread, String message, [SessionsThreadSendOptions options = const SessionsThreadSendOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["thread"] = RaviJson.from(thread);
+    requestBody["message"] = RaviJson.from(message);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["sessions"],
+      command: "thread-send",
+      body: requestBody,
+      decode: sessionsThreadSendReturnFromJson,
+    );
+  }
+
+  Future<SessionsThreadsReturn> threads([SessionsThreadsOptions options = const SessionsThreadsOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["sessions"],
+      command: "threads",
+      body: requestBody,
+      decode: sessionsThreadsReturnFromJson,
     );
   }
 

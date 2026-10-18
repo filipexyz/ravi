@@ -3,8 +3,8 @@
 The workflow substrate turns declared specs into live runs whose node runs gate
 real coordinated work. Two ops earned the brake, for different reasons:
 
-- `runs start` is the same class as `projects workflows start` (already braked
-  in `cli/projects`): a misunderstood start instantiates node runs, arms
+- `runs start` is the same class as the old `projects workflows start` (braked
+  until the local projects substrate was removed in 2026-10): a misunderstood start instantiates node runs, arms
   gates and invites task dispatches against the wrong spec. Keeping the
   project-level wrapper braked while the direct op ran immediately was a
   bypass, not a design.
@@ -30,5 +30,5 @@ agents get `WORKFLOW_RUN_NOT_FOUND` with run suggestions instead of a
 misleading node error.
 
 There is no shipped `workflows` skill — a known gap registered in the SPEC.
-Until one exists, `docs/workflow-substrate-v0.md` is the teaching surface and
+Until one exists, `design/workflow-substrate-v0.md` is the teaching surface and
 now carries `--execute` on both braked ops.

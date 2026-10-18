@@ -549,7 +549,9 @@ describe("buildRuntimeSystemPrompt Slack Threads", () => {
       sessionKey: "agent:main:slack:slack-main:group:C0ABC123:thread:1712345678.123456",
     });
 
-    expect(prompt.text).toContain("## Slack Threads\n\nThis session lives in a Slack thread about one subject.");
+    expect(prompt.text).toContain(
+      "## Slack Threads\n\nThis session lives in a Slack thread about one subject, and the DM or channel session that owns the thread orchestrates it.",
+    );
     expect(prompt.text).toContain("Slack threads do not nest");
     expect(prompt.text).toContain('`ravi sessions close-thread`. Add `--return "<result>"`');
     expect(prompt.text).not.toContain("In Slack, keep this DM or channel");

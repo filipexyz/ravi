@@ -73822,45 +73822,37 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
-      "hypothesis": {
-        "description": "Current working hypothesis",
+      "console": {
+        "description": "Console base URL",
         "type": "string"
       },
-      "lastSignalAt": {
-        "description": "now, epoch ms, or ISO-8601",
+      "defaultPageSite": {
+        "description": "Also create a default Ravi Pages site; uses the project slug when omitted",
         "type": "string"
       },
-      "nextStep": {
-        "description": "Next human step",
+      "description": {
+        "description": "Project description",
         "type": "string"
       },
-      "ownerAgent": {
-        "description": "Owning agent id",
-        "type": "string"
+      "execute": {
+        "description": "Actually create the Console project; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
       },
-      "session": {
-        "description": "Operator session name or key",
+      "name": {
+        "description": "Project display name; defaults to the slug",
         "type": "string"
       },
       "slug": {
-        "description": "Stable project slug",
+        "description": "Console project slug",
         "type": "string"
       },
-      "status": {
-        "description": "active|paused|blocked|done|archived",
-        "type": "string"
-      },
-      "summary": {
-        "description": "Human summary for the workstream",
-        "type": "string"
-      },
-      "title": {
-        "description": "Project title",
+      "visibility": {
+        "description": "Default visibility: private|protected_link|public",
         "type": "string"
       }
     },
     "required": [
-      "title"
+      "slug"
     ],
     "type": "object"
   }
@@ -73868,194 +73860,78 @@ public enum RaviSchemas {
 
   public static let ProjectsCreateReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
-    "type": "object"
-  }
-  """#
-
-  public static let ProjectsFixturesSeedInputSchema = #"""
-  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
     "additionalProperties": false,
     "properties": {
-      "execute": {
-        "description": "Actually reset and seed the fixtures; default is a dry-run that only shows the plan (exit 3)",
-        "type": "boolean"
-      },
-      "ownerAgent": {
-        "description": "Owner agent for the seeded projects",
-        "type": "string"
-      }
-    },
-    "type": "object"
-  }
-  """#
-
-  public static let ProjectsFixturesSeedReturnSchema = #"""
-  {
-    "additionalProperties": {},
-    "properties": {
-      "fixtures": {
-        "items": {
-          "additionalProperties": {},
-          "properties": {},
-          "type": "object"
-        },
-        "type": "array"
-      },
-      "total": {
-        "type": "number"
-      }
-    },
-    "required": [
-      "total",
-      "fixtures"
-    ],
-    "type": "object"
-  }
-  """#
-
-  public static let ProjectsInitInputSchema = #"""
-  {
-    "additionalProperties": false,
-    "properties": {
-      "hypothesis": {
-        "description": "Current working hypothesis",
-        "type": "string"
-      },
-      "lastSignalAt": {
-        "description": "now, epoch ms, or ISO-8601",
-        "type": "string"
-      },
-      "nextStep": {
-        "description": "Next human step",
-        "type": "string"
-      },
-      "ownerAgent": {
-        "description": "Owning agent id or 'none' (defaults to current actor agent)",
-        "type": "string"
-      },
-      "resource": {
-        "description": "Resource links to attach: repo|worktree|notion_page|notion_database|file|url|group|contact",
-        "items": {
-          "type": "string"
-        },
-        "type": "array"
-      },
-      "session": {
-        "description": "Operator session name; links existing or creates one for the owner agent",
-        "type": "string"
-      },
-      "slug": {
-        "description": "Stable project slug",
-        "type": "string"
-      },
-      "status": {
-        "description": "active|paused|blocked|done|archived",
-        "type": "string"
-      },
-      "summary": {
-        "description": "Human summary for the workstream",
-        "type": "string"
-      },
-      "title": {
-        "description": "Project title",
-        "type": "string"
-      },
-      "workflowRun": {
-        "description": "Attach existing workflow run ids",
-        "items": {
-          "type": "string"
-        },
-        "type": "array"
-      },
-      "workflowTemplate": {
-        "description": "Instantiate canonical workflow templates: technical-change|gated-release|operational-response",
-        "items": {
-          "type": "string"
-        },
-        "type": "array"
-      }
-    },
-    "required": [
-      "title"
-    ],
-    "type": "object"
-  }
-  """#
-
-  public static let ProjectsInitReturnSchema = #"""
-  {
-    "additionalProperties": {},
-    "properties": {
-      "details": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
-      },
-      "workflows": {
-        "items": {
-          "additionalProperties": {},
-          "properties": {},
-          "type": "object"
-        },
-        "type": "array"
-      }
-    },
-    "required": [
-      "details",
-      "workflows"
-    ],
-    "type": "object"
-  }
-  """#
-
-  public static let ProjectsLinkInputSchema = #"""
-  {
-    "additionalProperties": false,
-    "properties": {
-      "assetType": {
-        "description": "workflow|session|agent|resource|spec",
-        "type": "string"
-      },
-      "label": {
-        "description": "Human label for resource links",
-        "type": "string"
-      },
-      "meta": {
-        "description": "Free JSON metadata for this link",
+      "consoleUrl": {
         "type": "string"
       },
       "project": {
-        "description": "Project id or slug",
-        "type": "string"
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
       },
-      "resourceType": {
-        "description": "Required for resource links",
-        "type": "string"
+      "redirectTo": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
       },
-      "role": {
-        "description": "Optional role for this link",
-        "type": "string"
-      },
-      "target": {
-        "description": "Asset id, session, agent, or locator",
-        "type": "string"
+      "success": {
+        "const": true,
+        "type": "boolean"
       }
     },
     "required": [
-      "assetType",
+      "success",
+      "consoleUrl",
       "project",
-      "target"
+      "redirectTo"
     ],
-    "type": "object"
-  }
-  """#
-
-  public static let ProjectsLinkReturnSchema = #"""
-  {
-    "additionalProperties": {},
-    "properties": {},
     "type": "object"
   }
   """#
@@ -74064,24 +73940,20 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
       "fields": {
         "description": "Compact mode: keep only these fields of each item",
         "type": "string"
       },
       "limit": {
-        "description": "Page size (default: 50, max: 500)",
+        "description": "Maximum projects to return (default: 50)",
         "type": "string"
       },
       "offset": {
-        "description": "Number of matching projects to skip (default: 0)",
-        "type": "string"
-      },
-      "status": {
-        "description": "Filter by status",
-        "type": "string"
-      },
-      "tag": {
-        "description": "Filter by canonical project tag",
+        "description": "Number of projects to skip (default: 0)",
         "type": "string"
       }
     },
@@ -74091,23 +73963,62 @@ public enum RaviSchemas {
 
   public static let ProjectsListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
-      "filters": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
+      "consoleUrl": {
+        "type": "string"
       },
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -74149,776 +74060,37 @@ public enum RaviSchemas {
           "limit",
           "offset",
           "returned",
-          "total",
-          "hasMore",
-          "nextOffset",
-          "nextCommand"
+          "total"
         ],
         "type": "object"
       },
       "projects": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
       },
       "total": {
         "type": "number"
       }
     },
     "required": [
+      "success",
+      "consoleUrl",
       "total",
       "pagination",
-      "items",
-      "filters",
-      "projects"
-    ],
-    "type": "object"
-  }
-  """#
-
-  public static let ProjectsNextInputSchema = #"""
-  {
-    "additionalProperties": false,
-    "properties": {
-      "fields": {
-        "description": "Compact mode: keep only these fields of each item",
-        "type": "string"
-      },
-      "status": {
-        "description": "Filter by project status",
-        "type": "string"
-      },
-      "tag": {
-        "description": "Filter by canonical project tag",
-        "type": "string"
-      }
-    },
-    "type": "object"
-  }
-  """#
-
-  public static let ProjectsNextReturnSchema = #"""
-  {
-    "additionalProperties": {},
-    "properties": {
-      "filters": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
-      },
-      "projects": {
-        "items": {
-          "additionalProperties": {},
-          "properties": {},
-          "type": "object"
-        },
-        "type": "array"
-      },
-      "total": {
-        "type": "number"
-      }
-    },
-    "required": [
-      "total",
-      "filters",
-      "projects"
-    ],
-    "type": "object"
-  }
-  """#
-
-  public static let ProjectsResourcesAddInputSchema = #"""
-  {
-    "additionalProperties": false,
-    "properties": {
-      "label": {
-        "description": "Human label override",
-        "type": "string"
-      },
-      "meta": {
-        "description": "Free JSON metadata for this resource",
-        "type": "string"
-      },
-      "project": {
-        "description": "Project id or slug",
-        "type": "string"
-      },
-      "role": {
-        "description": "Optional role for this resource",
-        "type": "string"
-      },
-      "target": {
-        "description": "Path, URL, group id, or locator",
-        "type": "string"
-      },
-      "type": {
-        "description": "repo|worktree|file|url|group|contact|notion_page|notion_database",
-        "type": "string"
-      }
-    },
-    "required": [
-      "project",
-      "target"
-    ],
-    "type": "object"
-  }
-  """#
-
-  public static let ProjectsResourcesAddReturnSchema = #"""
-  {
-    "additionalProperties": {},
-    "properties": {},
-    "type": "object"
-  }
-  """#
-
-  public static let ProjectsResourcesImportInputSchema = #"""
-  {
-    "additionalProperties": false,
-    "properties": {
-      "group": {
-        "description": "One or more group:<id> or <id>@g.us locators",
-        "items": {
-          "type": "string"
-        },
-        "type": "array"
-      },
-      "meta": {
-        "description": "Common JSON metadata merged into every imported resource",
-        "type": "string"
-      },
-      "project": {
-        "description": "Project id or slug",
-        "type": "string"
-      },
-      "repo": {
-        "description": "One or more repo locators (path or canonical URL)",
-        "items": {
-          "type": "string"
-        },
-        "type": "array"
-      },
-      "role": {
-        "description": "Optional role applied to every imported resource",
-        "type": "string"
-      },
-      "url": {
-        "description": "One or more URLs",
-        "items": {
-          "type": "string"
-        },
-        "type": "array"
-      },
-      "worktree": {
-        "description": "One or more local worktree paths",
-        "items": {
-          "type": "string"
-        },
-        "type": "array"
-      }
-    },
-    "required": [
-      "project"
-    ],
-    "type": "object"
-  }
-  """#
-
-  public static let ProjectsResourcesImportReturnSchema = #"""
-  {
-    "additionalProperties": {},
-    "properties": {
-      "resources": {
-        "items": {
-          "additionalProperties": {},
-          "properties": {},
-          "type": "object"
-        },
-        "type": "array"
-      },
-      "total": {
-        "type": "number"
-      }
-    },
-    "required": [
-      "total",
-      "resources"
-    ],
-    "type": "object"
-  }
-  """#
-
-  public static let ProjectsResourcesListInputSchema = #"""
-  {
-    "additionalProperties": false,
-    "properties": {
-      "fields": {
-        "description": "Compact mode: keep only these fields of each item",
-        "type": "string"
-      },
-      "limit": {
-        "description": "Page size (default: 50, max: 500)",
-        "type": "string"
-      },
-      "offset": {
-        "description": "Number of matching resources to skip (default: 0)",
-        "type": "string"
-      },
-      "project": {
-        "description": "Project id or slug",
-        "type": "string"
-      },
-      "type": {
-        "description": "Optional resource type filter",
-        "type": "string"
-      }
-    },
-    "required": [
-      "project"
-    ],
-    "type": "object"
-  }
-  """#
-
-  public static let ProjectsResourcesListReturnSchema = #"""
-  {
-    "additionalProperties": {},
-    "properties": {
-      "items": {
-        "items": {
-          "additionalProperties": {},
-          "properties": {},
-          "type": "object"
-        },
-        "type": "array"
-      },
-      "pagination": {
-        "additionalProperties": {},
-        "properties": {
-          "hasMore": {
-            "type": "boolean"
-          },
-          "limit": {
-            "type": "number"
-          },
-          "nextCommand": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "nextOffset": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "offset": {
-            "type": "number"
-          },
-          "returned": {
-            "type": "number"
-          },
-          "total": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "limit",
-          "offset",
-          "returned",
-          "total",
-          "hasMore",
-          "nextOffset",
-          "nextCommand"
-        ],
-        "type": "object"
-      },
-      "resources": {
-        "items": {
-          "additionalProperties": {},
-          "properties": {},
-          "type": "object"
-        },
-        "type": "array"
-      },
-      "total": {
-        "type": "number"
-      }
-    },
-    "required": [
-      "total",
-      "pagination",
-      "items",
-      "resources"
-    ],
-    "type": "object"
-  }
-  """#
-
-  public static let ProjectsResourcesShowInputSchema = #"""
-  {
-    "additionalProperties": false,
-    "properties": {
-      "project": {
-        "description": "Project id or slug",
-        "type": "string"
-      },
-      "resource": {
-        "description": "Resource link id, label, or locator",
-        "type": "string"
-      }
-    },
-    "required": [
-      "project",
-      "resource"
-    ],
-    "type": "object"
-  }
-  """#
-
-  public static let ProjectsResourcesShowReturnSchema = #"""
-  {
-    "additionalProperties": {},
-    "properties": {},
-    "type": "object"
-  }
-  """#
-
-  public static let ProjectsShowInputSchema = #"""
-  {
-    "additionalProperties": false,
-    "properties": {
-      "project": {
-        "description": "Project id or slug",
-        "type": "string"
-      }
-    },
-    "required": [
-      "project"
-    ],
-    "type": "object"
-  }
-  """#
-
-  public static let ProjectsShowReturnSchema = #"""
-  {
-    "additionalProperties": {},
-    "properties": {},
-    "type": "object"
-  }
-  """#
-
-  public static let ProjectsStatusInputSchema = #"""
-  {
-    "additionalProperties": false,
-    "properties": {
-      "project": {
-        "description": "Project id or slug",
-        "type": "string"
-      }
-    },
-    "required": [
-      "project"
-    ],
-    "type": "object"
-  }
-  """#
-
-  public static let ProjectsStatusReturnSchema = #"""
-  {
-    "additionalProperties": {},
-    "properties": {},
-    "type": "object"
-  }
-  """#
-
-  public static let ProjectsTasksAttachInputSchema = #"""
-  {
-    "additionalProperties": false,
-    "properties": {
-      "agent": {
-        "description": "Override project owner agent for dispatch",
-        "type": "string"
-      },
-      "dispatch": {
-        "description": "Dispatch after attach using project defaults",
-        "type": "boolean"
-      },
-      "nodeKey": {
-        "description": "Workflow node key",
-        "type": "string"
-      },
-      "project": {
-        "description": "Project id or slug",
-        "type": "string"
-      },
-      "session": {
-        "description": "Override project operator session for dispatch",
-        "type": "string"
-      },
-      "taskId": {
-        "description": "Existing task id",
-        "type": "string"
-      },
-      "workflow": {
-        "description": "Linked workflow run id (defaults to project focus)",
-        "type": "string"
-      }
-    },
-    "required": [
-      "nodeKey",
-      "project",
-      "taskId"
-    ],
-    "type": "object"
-  }
-  """#
-
-  public static let ProjectsTasksAttachReturnSchema = #"""
-  {
-    "additionalProperties": {},
-    "properties": {
-      "defaults": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
-      },
-      "details": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
-      },
-      "workflow": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
-      }
-    },
-    "required": [
-      "details",
-      "workflow",
-      "defaults"
-    ],
-    "type": "object"
-  }
-  """#
-
-  public static let ProjectsTasksCreateInputSchema = #"""
-  {
-    "additionalProperties": false,
-    "properties": {
-      "agent": {
-        "description": "Override project owner agent for dispatch",
-        "type": "string"
-      },
-      "dispatch": {
-        "description": "Dispatch after create using project defaults",
-        "type": "boolean"
-      },
-      "instructions": {
-        "description": "Task instructions",
-        "type": "string"
-      },
-      "nodeKey": {
-        "description": "Workflow node key",
-        "type": "string"
-      },
-      "priority": {
-        "description": "low|normal|high|urgent",
-        "type": "string"
-      },
-      "profile": {
-        "description": "Task profile id",
-        "type": "string"
-      },
-      "project": {
-        "description": "Project id or slug",
-        "type": "string"
-      },
-      "session": {
-        "description": "Override project operator session for dispatch",
-        "type": "string"
-      },
-      "title": {
-        "description": "Task title",
-        "type": "string"
-      },
-      "workflow": {
-        "description": "Linked workflow run id (defaults to project focus)",
-        "type": "string"
-      }
-    },
-    "required": [
-      "nodeKey",
-      "project",
-      "title"
-    ],
-    "type": "object"
-  }
-  """#
-
-  public static let ProjectsTasksCreateReturnSchema = #"""
-  {
-    "additionalProperties": {},
-    "properties": {
-      "defaults": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
-      },
-      "details": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
-      },
-      "workflow": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
-      }
-    },
-    "required": [
-      "details",
-      "workflow",
-      "defaults"
-    ],
-    "type": "object"
-  }
-  """#
-
-  public static let ProjectsTasksDispatchInputSchema = #"""
-  {
-    "additionalProperties": false,
-    "properties": {
-      "agent": {
-        "description": "Override project owner agent",
-        "type": "string"
-      },
-      "execute": {
-        "description": "Actually dispatch the task; default is a dry-run that only shows the plan (exit 3)",
-        "type": "boolean"
-      },
-      "project": {
-        "description": "Project id or slug",
-        "type": "string"
-      },
-      "session": {
-        "description": "Override project operator session",
-        "type": "string"
-      },
-      "taskId": {
-        "description": "Existing task id",
-        "type": "string"
-      }
-    },
-    "required": [
-      "project",
-      "taskId"
-    ],
-    "type": "object"
-  }
-  """#
-
-  public static let ProjectsTasksDispatchReturnSchema = #"""
-  {
-    "additionalProperties": {},
-    "properties": {
-      "defaults": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
-      },
-      "details": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
-      },
-      "workflow": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
-      }
-    },
-    "required": [
-      "details",
-      "workflow",
-      "defaults"
-    ],
-    "type": "object"
-  }
-  """#
-
-  public static let ProjectsUpdateInputSchema = #"""
-  {
-    "additionalProperties": false,
-    "properties": {
-      "hypothesis": {
-        "description": "Working hypothesis",
-        "type": "string"
-      },
-      "lastSignalAt": {
-        "description": "now, epoch ms, or ISO-8601",
-        "type": "string"
-      },
-      "nextStep": {
-        "description": "Next human step",
-        "type": "string"
-      },
-      "ownerAgent": {
-        "description": "Owning agent id or 'none'",
-        "type": "string"
-      },
-      "project": {
-        "description": "Project id or slug",
-        "type": "string"
-      },
-      "session": {
-        "description": "Operator session name or 'none'",
-        "type": "string"
-      },
-      "status": {
-        "description": "active|paused|blocked|done|archived",
-        "type": "string"
-      },
-      "summary": {
-        "description": "Human summary",
-        "type": "string"
-      },
-      "title": {
-        "description": "New title",
-        "type": "string"
-      },
-      "touchSignal": {
-        "description": "Set last_signal_at to now",
-        "type": "boolean"
-      }
-    },
-    "required": [
-      "project"
-    ],
-    "type": "object"
-  }
-  """#
-
-  public static let ProjectsUpdateReturnSchema = #"""
-  {
-    "additionalProperties": {},
-    "properties": {},
-    "type": "object"
-  }
-  """#
-
-  public static let ProjectsWorkflowsAttachInputSchema = #"""
-  {
-    "additionalProperties": false,
-    "properties": {
-      "project": {
-        "description": "Project id or slug",
-        "type": "string"
-      },
-      "role": {
-        "description": "primary|support (defaults from current project state)",
-        "type": "string"
-      },
-      "runId": {
-        "description": "Workflow run id",
-        "type": "string"
-      }
-    },
-    "required": [
-      "project",
-      "runId"
-    ],
-    "type": "object"
-  }
-  """#
-
-  public static let ProjectsWorkflowsAttachReturnSchema = #"""
-  {
-    "additionalProperties": {},
-    "properties": {
-      "details": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
-      },
-      "workflow": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
-      }
-    },
-    "required": [
-      "details",
-      "workflow"
-    ],
-    "type": "object"
-  }
-  """#
-
-  public static let ProjectsWorkflowsStartInputSchema = #"""
-  {
-    "additionalProperties": false,
-    "properties": {
-      "execute": {
-        "description": "Actually start the workflow run; default is a dry-run that only shows the plan (exit 3)",
-        "type": "boolean"
-      },
-      "project": {
-        "description": "Project id or slug",
-        "type": "string"
-      },
-      "role": {
-        "description": "primary|support (defaults from current project state)",
-        "type": "string"
-      },
-      "runId": {
-        "description": "Optional workflow run id",
-        "type": "string"
-      },
-      "specId": {
-        "description": "Workflow spec id",
-        "type": "string"
-      }
-    },
-    "required": [
-      "project",
-      "specId"
-    ],
-    "type": "object"
-  }
-  """#
-
-  public static let ProjectsWorkflowsStartReturnSchema = #"""
-  {
-    "additionalProperties": {},
-    "properties": {
-      "details": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
-      },
-      "workflow": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
-      }
-    },
-    "required": [
-      "details",
-      "workflow"
+      "projects",
+      "items"
     ],
     "type": "object"
   }
@@ -81943,6 +81115,16 @@ public enum RaviSchemas {
       "status": {
         "const": "queued",
         "type": "string"
+      },
+      "title": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
       }
     },
     "required": [
@@ -81951,6 +81133,7 @@ public enum RaviSchemas {
       "actionId",
       "executionMode",
       "requestId",
+      "title",
       "idempotencyKey",
       "publishedNow",
       "publishPending",
@@ -83857,6 +83040,72 @@ public enum RaviSchemas {
   {
     "additionalProperties": {},
     "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsReportInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "message": {
+        "description": "Progress, blocker or decision the parent session needs now",
+        "type": "string"
+      },
+      "session": {
+        "description": "Explicit Slack thread session (defaults to current session)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "message"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsReportReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "actionId": {
+        "const": "thread.report",
+        "type": "string"
+      },
+      "messageId": {
+        "type": "string"
+      },
+      "parentSession": {
+        "additionalProperties": false,
+        "properties": {
+          "sessionKey": {
+            "type": "string"
+          },
+          "sessionName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionKey",
+          "sessionName"
+        ],
+        "type": "object"
+      },
+      "requestId": {
+        "type": "string"
+      },
+      "status": {
+        "const": "published",
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "actionId",
+      "requestId",
+      "messageId",
+      "parentSession"
+    ],
     "type": "object"
   }
   """#
@@ -86471,6 +85720,364 @@ public enum RaviSchemas {
   {
     "additionalProperties": {},
     "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsThreadSendInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "message": {
+        "description": "Instructions for the thread session",
+        "type": "string"
+      },
+      "session": {
+        "description": "Explicit owning session (defaults to current session)",
+        "type": "string"
+      },
+      "thread": {
+        "description": "Thread session name, request id or Slack thread ts (see ravi sessions threads)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "message",
+      "thread"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsThreadSendReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "actionId": {
+        "const": "thread.send",
+        "type": "string"
+      },
+      "messageId": {
+        "type": "string"
+      },
+      "reopened": {
+        "type": "boolean"
+      },
+      "requestId": {
+        "type": "string"
+      },
+      "status": {
+        "const": "published",
+        "type": "string"
+      },
+      "thread": {
+        "additionalProperties": false,
+        "properties": {
+          "childSessionKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "childSessionName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "closedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "link": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "parentReturn": {
+            "additionalProperties": false,
+            "properties": {
+              "pending": {
+                "type": "boolean"
+              },
+              "requested": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "requested",
+              "pending"
+            ],
+            "type": "object"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "slackThreadTs": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "enum": [
+              "action",
+              "inbound"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "root_delivered",
+              "starting",
+              "open",
+              "closed",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "requestId",
+          "title",
+          "status",
+          "source",
+          "childSessionKey",
+          "childSessionName",
+          "slackThreadTs",
+          "link",
+          "createdAt",
+          "updatedAt",
+          "closedAt",
+          "parentReturn"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "status",
+      "actionId",
+      "requestId",
+      "messageId",
+      "reopened",
+      "thread"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsThreadsInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "all": {
+        "description": "Include closed threads",
+        "type": "boolean"
+      },
+      "session": {
+        "description": "Explicit session (defaults to current session)",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsThreadsReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "includeClosed": {
+        "type": "boolean"
+      },
+      "parentSession": {
+        "additionalProperties": false,
+        "properties": {
+          "sessionKey": {
+            "type": "string"
+          },
+          "sessionName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionKey",
+          "sessionName"
+        ],
+        "type": "object"
+      },
+      "threads": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "childSessionKey": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "childSessionName": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "closedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "link": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "parentReturn": {
+              "additionalProperties": false,
+              "properties": {
+                "pending": {
+                  "type": "boolean"
+                },
+                "requested": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "requested",
+                "pending"
+              ],
+              "type": "object"
+            },
+            "requestId": {
+              "type": "string"
+            },
+            "slackThreadTs": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "source": {
+              "enum": [
+                "action",
+                "inbound"
+              ],
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "queued",
+                "root_delivered",
+                "starting",
+                "open",
+                "closed",
+                "failed"
+              ],
+              "type": "string"
+            },
+            "title": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "requestId",
+            "title",
+            "status",
+            "source",
+            "childSessionKey",
+            "childSessionName",
+            "slackThreadTs",
+            "link",
+            "createdAt",
+            "updatedAt",
+            "closedAt",
+            "parentReturn"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "parentSession",
+      "includeClosed",
+      "threads"
+    ],
     "type": "object"
   }
   """#

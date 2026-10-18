@@ -14202,299 +14202,47 @@ export type PermissionsStatusReturn = {
 
 /** Input shape for `projects.create`. */
 export type ProjectsCreateInput = {
-  hypothesis?: string;
-  lastSignalAt?: string;
-  nextStep?: string;
-  ownerAgent?: string;
-  session?: string;
-  slug?: string;
-  status?: string;
-  summary?: string;
-  title: string;
+  console?: string;
+  defaultPageSite?: string;
+  description?: string;
+  execute?: boolean;
+  name?: string;
+  slug: string;
+  visibility?: string;
 };
 
 /** Return shape for `projects.create`. */
-export type ProjectsCreateReturn = Record<string, unknown>;
-
-/** Input shape for `projects.fixtures.seed`. */
-export type ProjectsFixturesSeedInput = {
-  execute?: boolean;
-  ownerAgent?: string;
+export type ProjectsCreateReturn = {
+  consoleUrl: string;
+  project: Record<string, unknown>;
+  redirectTo: string | null;
+  success: true;
 };
-
-/** Return shape for `projects.fixtures.seed`. */
-export type ProjectsFixturesSeedReturn = {
-  fixtures: Array<Record<string, unknown>>;
-  total: number;
-  [k: string]: unknown;
-};
-
-/** Input shape for `projects.init`. */
-export type ProjectsInitInput = {
-  hypothesis?: string;
-  lastSignalAt?: string;
-  nextStep?: string;
-  ownerAgent?: string;
-  resource?: string[];
-  session?: string;
-  slug?: string;
-  status?: string;
-  summary?: string;
-  title: string;
-  workflowRun?: string[];
-  workflowTemplate?: string[];
-};
-
-/** Return shape for `projects.init`. */
-export type ProjectsInitReturn = {
-  details: Record<string, unknown>;
-  workflows: Array<Record<string, unknown>>;
-  [k: string]: unknown;
-};
-
-/** Input shape for `projects.link`. */
-export type ProjectsLinkInput = {
-  assetType: string;
-  label?: string;
-  meta?: string;
-  project: string;
-  resourceType?: string;
-  role?: string;
-  target: string;
-};
-
-/** Return shape for `projects.link`. */
-export type ProjectsLinkReturn = Record<string, unknown>;
 
 /** Input shape for `projects.list`. */
 export type ProjectsListInput = {
+  console?: string;
   fields?: string;
   limit?: string;
   offset?: string;
-  status?: string;
-  tag?: string;
 };
 
 /** Return shape for `projects.list`. */
 export type ProjectsListReturn = {
-  filters: Record<string, unknown>;
+  consoleUrl: string;
   items: Array<Record<string, unknown>>;
   pagination: {
-    hasMore: boolean;
+    hasMore?: boolean;
     limit: number;
-    nextCommand: string | null;
-    nextOffset: number | null;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   projects: Array<Record<string, unknown>>;
+  success: true;
   total: number;
-  [k: string]: unknown;
-};
-
-/** Input shape for `projects.next`. */
-export type ProjectsNextInput = {
-  fields?: string;
-  status?: string;
-  tag?: string;
-};
-
-/** Return shape for `projects.next`. */
-export type ProjectsNextReturn = {
-  filters: Record<string, unknown>;
-  projects: Array<Record<string, unknown>>;
-  total: number;
-  [k: string]: unknown;
-};
-
-/** Input shape for `projects.resources.add`. */
-export type ProjectsResourcesAddInput = {
-  label?: string;
-  meta?: string;
-  project: string;
-  role?: string;
-  target: string;
-  type?: string;
-};
-
-/** Return shape for `projects.resources.add`. */
-export type ProjectsResourcesAddReturn = Record<string, unknown>;
-
-/** Input shape for `projects.resources.import`. */
-export type ProjectsResourcesImportInput = {
-  group?: string[];
-  meta?: string;
-  project: string;
-  repo?: string[];
-  role?: string;
-  url?: string[];
-  worktree?: string[];
-};
-
-/** Return shape for `projects.resources.import`. */
-export type ProjectsResourcesImportReturn = {
-  resources: Array<Record<string, unknown>>;
-  total: number;
-  [k: string]: unknown;
-};
-
-/** Input shape for `projects.resources.list`. */
-export type ProjectsResourcesListInput = {
-  fields?: string;
-  limit?: string;
-  offset?: string;
-  project: string;
-  type?: string;
-};
-
-/** Return shape for `projects.resources.list`. */
-export type ProjectsResourcesListReturn = {
-  items: Array<Record<string, unknown>>;
-  pagination: {
-    hasMore: boolean;
-    limit: number;
-    nextCommand: string | null;
-    nextOffset: number | null;
-    offset: number;
-    returned: number;
-    total: number;
-    [k: string]: unknown;
-  };
-  resources: Array<Record<string, unknown>>;
-  total: number;
-  [k: string]: unknown;
-};
-
-/** Input shape for `projects.resources.show`. */
-export type ProjectsResourcesShowInput = {
-  project: string;
-  resource: string;
-};
-
-/** Return shape for `projects.resources.show`. */
-export type ProjectsResourcesShowReturn = Record<string, unknown>;
-
-/** Input shape for `projects.show`. */
-export type ProjectsShowInput = {
-  project: string;
-};
-
-/** Return shape for `projects.show`. */
-export type ProjectsShowReturn = Record<string, unknown>;
-
-/** Input shape for `projects.status`. */
-export type ProjectsStatusInput = {
-  project: string;
-};
-
-/** Return shape for `projects.status`. */
-export type ProjectsStatusReturn = Record<string, unknown>;
-
-/** Input shape for `projects.tasks.attach`. */
-export type ProjectsTasksAttachInput = {
-  agent?: string;
-  dispatch?: boolean;
-  nodeKey: string;
-  project: string;
-  session?: string;
-  taskId: string;
-  workflow?: string;
-};
-
-/** Return shape for `projects.tasks.attach`. */
-export type ProjectsTasksAttachReturn = {
-  defaults: Record<string, unknown>;
-  details: Record<string, unknown>;
-  workflow: Record<string, unknown>;
-  [k: string]: unknown;
-};
-
-/** Input shape for `projects.tasks.create`. */
-export type ProjectsTasksCreateInput = {
-  agent?: string;
-  dispatch?: boolean;
-  instructions?: string;
-  nodeKey: string;
-  priority?: string;
-  profile?: string;
-  project: string;
-  session?: string;
-  title: string;
-  workflow?: string;
-};
-
-/** Return shape for `projects.tasks.create`. */
-export type ProjectsTasksCreateReturn = {
-  defaults: Record<string, unknown>;
-  details: Record<string, unknown>;
-  workflow: Record<string, unknown>;
-  [k: string]: unknown;
-};
-
-/** Input shape for `projects.tasks.dispatch`. */
-export type ProjectsTasksDispatchInput = {
-  agent?: string;
-  execute?: boolean;
-  project: string;
-  session?: string;
-  taskId: string;
-};
-
-/** Return shape for `projects.tasks.dispatch`. */
-export type ProjectsTasksDispatchReturn = {
-  defaults: Record<string, unknown>;
-  details: Record<string, unknown>;
-  workflow: Record<string, unknown>;
-  [k: string]: unknown;
-};
-
-/** Input shape for `projects.update`. */
-export type ProjectsUpdateInput = {
-  hypothesis?: string;
-  lastSignalAt?: string;
-  nextStep?: string;
-  ownerAgent?: string;
-  project: string;
-  session?: string;
-  status?: string;
-  summary?: string;
-  title?: string;
-  touchSignal?: boolean;
-};
-
-/** Return shape for `projects.update`. */
-export type ProjectsUpdateReturn = Record<string, unknown>;
-
-/** Input shape for `projects.workflows.attach`. */
-export type ProjectsWorkflowsAttachInput = {
-  project: string;
-  role?: string;
-  runId: string;
-};
-
-/** Return shape for `projects.workflows.attach`. */
-export type ProjectsWorkflowsAttachReturn = {
-  details: Record<string, unknown>;
-  workflow: Record<string, unknown>;
-  [k: string]: unknown;
-};
-
-/** Input shape for `projects.workflows.start`. */
-export type ProjectsWorkflowsStartInput = {
-  execute?: boolean;
-  project: string;
-  role?: string;
-  runId?: string;
-  specId: string;
-};
-
-/** Return shape for `projects.workflows.start`. */
-export type ProjectsWorkflowsStartReturn = {
-  details: Record<string, unknown>;
-  workflow: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `prox.calls.cancel`. */
@@ -16197,6 +15945,7 @@ export type SessionsCreateThreadReturn = {
     instanceId: string;
   };
   status: "queued";
+  title: string | null;
 };
 
 /** Input shape for `sessions.delete`. */
@@ -16660,6 +16409,24 @@ export type SessionsRenameInput = {
 
 /** Return shape for `sessions.rename`. */
 export type SessionsRenameReturn = Record<string, unknown>;
+
+/** Input shape for `sessions.report`. */
+export type SessionsReportInput = {
+  message: string;
+  session?: string;
+};
+
+/** Return shape for `sessions.report`. */
+export type SessionsReportReturn = {
+  actionId: "thread.report";
+  messageId: string;
+  parentSession: {
+    sessionKey: string;
+    sessionName: string;
+  };
+  requestId: string;
+  status: "published";
+};
 
 /** Input shape for `sessions.reset`. */
 export type SessionsResetInput = {
@@ -17165,6 +16932,71 @@ export type SessionsSubscriptionsInput = {
 
 /** Return shape for `sessions.subscriptions`. */
 export type SessionsSubscriptionsReturn = Record<string, unknown>;
+
+/** Input shape for `sessions.thread-send`. */
+export type SessionsThreadSendInput = {
+  message: string;
+  session?: string;
+  thread: string;
+};
+
+/** Return shape for `sessions.thread-send`. */
+export type SessionsThreadSendReturn = {
+  actionId: "thread.send";
+  messageId: string;
+  reopened: boolean;
+  requestId: string;
+  status: "published";
+  thread: {
+    childSessionKey: string | null;
+    childSessionName: string | null;
+    closedAt: number | null;
+    createdAt: number;
+    link: string | null;
+    parentReturn: {
+      pending: boolean;
+      requested: boolean;
+    };
+    requestId: string;
+    slackThreadTs: string | null;
+    source: "action" | "inbound";
+    status: "queued" | "root_delivered" | "starting" | "open" | "closed" | "failed";
+    title: string | null;
+    updatedAt: number;
+  };
+};
+
+/** Input shape for `sessions.threads`. */
+export type SessionsThreadsInput = {
+  all?: boolean;
+  session?: string;
+};
+
+/** Return shape for `sessions.threads`. */
+export type SessionsThreadsReturn = {
+  includeClosed: boolean;
+  parentSession: {
+    sessionKey: string;
+    sessionName: string;
+  };
+  threads: Array<{
+    childSessionKey: string | null;
+    childSessionName: string | null;
+    closedAt: number | null;
+    createdAt: number;
+    link: string | null;
+    parentReturn: {
+      pending: boolean;
+      requested: boolean;
+    };
+    requestId: string;
+    slackThreadTs: string | null;
+    source: "action" | "inbound";
+    status: "queued" | "root_delivered" | "starting" | "open" | "closed" | "failed";
+    title: string | null;
+    updatedAt: number;
+  }>;
+};
 
 /** Input shape for `sessions.trace`. */
 export type SessionsTraceInput = {

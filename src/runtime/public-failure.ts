@@ -21,6 +21,10 @@ const RUNTIME_CREDENTIAL_RESOLUTION_PATTERNS = [
 const PROVIDER_ACCOUNT_FAILURE_PATTERNS = [
   /^Claude provider error \((?:rate_limit|authentication_failed|oauth_org_not_allowed|account_on_hold|billing_error|overloaded|server_error|http_(?:401|402|403|429|5\d\d))\)/i,
   /\bout of extra usage\b/i,
+  // OpenAI-compatible clients (pi with DeepSeek, OpenRouter, ...) prefix the
+  // HTTP status: "402 Insufficient Balance", "429 Rate limit reached".
+  /^(?:401|402|403|429|5\d\d)\s/,
+  /\binsufficient (?:balance|credits|quota)\b/i,
   /\b(?:authentication_failed|oauth_org_not_allowed|account_on_hold|billing_error)\b/i,
   /\b(?:invalid|expired|revoked)\s+(?:api[ _-]?key|oauth token|credentials?)\b/i,
 ];
@@ -56,6 +60,10 @@ const INTERNAL_ERROR_PATTERNS = [
   /\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis):\/\/\S+/i,
 ];
 
+export function isRuntimeCredentialResolutionFailure(detail: string): boolean {
+  return RUNTIME_CREDENTIAL_RESOLUTION_PATTERNS.some((pattern) => pattern.test(detail));
+}
+
 export function publicRuntimeFailureDetail(error: unknown): string {
   const raw = runtimeFailureText(error);
   if (raw === null) {
@@ -68,7 +76,7 @@ export function publicRuntimeFailureDetail(error: unknown): string {
     .find(Boolean);
   const detail = (firstLine ?? raw.trim()).replace(/^(?:Error:\s*)+/i, "").trim();
 
-  if (RUNTIME_CREDENTIAL_RESOLUTION_PATTERNS.some((pattern) => pattern.test(detail))) {
+  if (isRuntimeCredentialResolutionFailure(detail)) {
     return RUNTIME_CREDENTIAL_UNAVAILABLE_MESSAGE;
   }
 

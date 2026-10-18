@@ -76,7 +76,7 @@ In **Only when I ask** mode, your agent uses your accounts only for you:
 | You, passing a message to the agent with `ravi sessions send` or `ravi sessions ask` from your terminal | Yes, when the answer comes back to your terminal or goes only to your own linked private chat. No when that session posts its answers into a group or someone else's chat. |
 | You, in your own private chat with the agent (WhatsApp, Slack), after you link it | Yes, when that chat has a session of its own (see the note on sessions below) |
 | A cron job you own, including its shell command, or the agent's heartbeat | Yes, if it posts nowhere or only into your own linked private chat (see the note below). Heartbeats have no owner yet: whoever gets the agent to edit `HEARTBEAT.md` changes what the heartbeat does with your accounts. |
-| Anyone else, in their own chat with the agent | No. The agent tells them: "I can't use <your name>'s Gmail for your request." |
+| Anyone else, in their own chat with the agent | No. The agent tells them: "I can't use `<your name>`'s Gmail for your request." |
 | Anyone in a group chat, including you | No. The agent says "I'll send this to you privately." and asks you to repeat the request in your private chat. |
 | Another agent passing a request along, triggers, observers, session goals and background jobs (`ravi jobs run`), including the commands they start | No |
 | A command run under a turn that has already ended | No. Run it again from the current turn. |
@@ -174,7 +174,7 @@ ravi connectors mode main google shared --execute
 ravi connectors mode main google owner                          # back to the default, at once
 ```
 
-Only you change a mode, from your terminal or your own private chat with the agent. If anyone else asks the agent to change it, nothing changes and the agent says "Only <your name> can change that." If you ask in a group, nothing changes either, and the agent asks you to do it in your private chat. Switching to **The person asking** or **Shared account** lets other people's requests reach an account, so the command shows the plan and stops with exit code `3` until you add `--execute`. Going back to **Only when I ask** applies at once. `ravi settings set` and `ravi settings delete` do not change modes. When you delete an agent, its modes go with it: a new agent with the same id starts at **Only when I ask**.
+Only you change a mode, from your terminal or your own private chat with the agent. If anyone else asks the agent to change it, nothing changes and the agent says "Only `<your name>` can change that." If you ask in a group, nothing changes either, and the agent asks you to do it in your private chat. Switching to **The person asking** or **Shared account** lets other people's requests reach an account, so the command shows the plan and stops with exit code `3` until you add `--execute`. Going back to **Only when I ask** applies at once. `ravi settings set` and `ravi settings delete` do not change modes. When you delete an agent, its modes go with it: a new agent with the same id starts at **Only when I ask**.
 
 In every mode, your own requests, your cron jobs and the agent's heartbeat keep using your own connection. `--connector <id>` names one of your own connections, so Gmail commands refuse it when the request uses someone else's account.
 
@@ -183,8 +183,8 @@ In every mode, your own requests, your cron jobs and the agent's heartbeat keep 
 The agent uses the Gmail of the person writing to it, in their private chat with the agent:
 
 1. **They link their chat once**, like you did: the agent sends them a private link (it runs `ravi link` in their chat) and they approve it in the Console. Until then, the agent says: "To use your Gmail here, first link this chat to your Ravi account. Want me to send you a private link to do it?"
-2. **They allow the agent once.** The first time, the agent sends them a link in that private chat: "To use your Gmail here, approve it once: <link>". They open it signed in to the Console as themselves, choose which of their connections the agent may use, and approve. The link works only for them and expires after 24 hours. After that, the agent uses their Gmail whenever they ask, without asking again. A different agent asks once too.
-3. **They need a connected Gmail** in their own Console. If they have none, the agent says: "To use your Gmail here, connect it in Ravi Console first: <link>". The approval page also offers to connect one.
+2. **They allow the agent once.** The first time, the agent sends them a link in that private chat: "To use your Gmail here, approve it once: `<link>`". They open it signed in to the Console as themselves, choose which of their connections the agent may use, and approve. The link works only for them and expires after 24 hours. After that, the agent uses their Gmail whenever they ask, without asking again. A different agent asks once too.
+3. **They need a connected Gmail** in their own Console. If they have none, the agent says: "To use your Gmail here, connect it in Ravi Console first: `<link>`". The approval page also offers to connect one.
 
 Sending mail always asks the person first, in their own Console, whatever their own tool settings say. Their approvals go to them, not to you. They see the agents they allowed under **Agents that can use your account** on their **Connectors** page, and can remove them there.
 

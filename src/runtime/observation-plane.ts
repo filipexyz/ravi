@@ -4,7 +4,6 @@ import {
   CLI_COMMAND_ACCESS_KIND_MIGRATION_KEYS,
   migrateSerializedCapabilityArray,
 } from "../permissions/command-access-kind-migration.js";
-import { getProjectSurfaceByWorkflowRunId } from "../projects/service.js";
 import { getSession, getSessionByName, type AgentConfig, type SessionEntry } from "../router/index.js";
 import { dbGetAgent, dbListSessionParticipants, getDb, getRaviDbPath } from "../router/router-db.js";
 import { canonicalTagSlugsForAsset, dbGetTagDefinition } from "../tags/index.js";
@@ -19,7 +18,6 @@ import {
 import { dbGetTask, dbResolveActiveTaskBindingForSession } from "../tasks/task-db.js";
 import type { TaskRecord } from "../tasks/types.js";
 import { logger } from "../utils/logger.js";
-import { dbGetTaskWorkflowSurface } from "../workflows/index.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import { validateRuntimeModelSelector } from "./model-validation.js";
 import {
@@ -1122,8 +1120,6 @@ export function buildObservationSourceDescriptor(input: {
   const sourceSessionName = input.session.name ?? input.sessionName;
   const activeTask = dbResolveActiveTaskBindingForSession(sourceSessionName, input.prompt?.taskBarrierTaskId);
   const task = activeTask?.task;
-  const workflow = task?.id ? dbGetTaskWorkflowSurface(task.id) : null;
-  const project = workflow ? getProjectSurfaceByWorkflowRunId(workflow.workflowRunId) : null;
   const contactIds = resolveSessionContactIds(input.session);
   const promptSource = input.prompt?.source;
   const promptContext = input.prompt?.context;
@@ -1135,10 +1131,6 @@ export function buildObservationSourceDescriptor(input: {
     ...collectTagsForTarget("agent", input.agentId ?? input.session.agentId, true),
     ...collectTagsForTarget("task", task?.id, true),
     ...collectTagsForTarget("profile", task?.profileId, true),
-    ...collectTagsForTarget("project", project?.projectId, true),
-    ...(project?.projectSlug && project.projectSlug !== project.projectId
-      ? collectTagsForTarget("project", project.projectSlug, true)
-      : []),
     ...contactIds.flatMap((contactId) => collectTagsForTarget("contact", contactId)),
   ]);
 
@@ -1148,8 +1140,6 @@ export function buildObservationSourceDescriptor(input: {
     agentId: input.agentId ?? input.session.agentId,
     ...(task?.id ? { taskId: task.id } : {}),
     ...(task?.profileId ? { profileId: task.profileId } : {}),
-    ...(project?.projectId ? { projectId: project.projectId } : {}),
-    ...(project?.projectSlug ? { projectSlug: project.projectSlug } : {}),
     ...(contactIds.length > 0 ? { contactIds } : {}),
     ...((promptSource?.channel ?? input.session.channel ?? input.session.lastChannel)
       ? { channel: promptSource?.channel ?? input.session.channel ?? input.session.lastChannel }

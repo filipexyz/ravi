@@ -91,8 +91,13 @@ import {
 } from "../../channels/slack/thread-lifecycle-store.js";
 import {
   closeSlackThread,
+  listSlackThreadsForSession,
+  reportSlackThreadProgress,
+  sendSlackThreadMessage,
   slackThreadParentSessionKey,
+  slackThreadTitle,
   splitSlackThreadPlatformChatId,
+  summarizeSlackThread,
 } from "../../channels/slack/thread-lifecycle.js";
 import { listStickers, stickerAllowedForAgent, stickerAllowedOnChannel } from "../../stickers/catalog.js";
 import { revokeAgentRuntimeContextsForSession } from "../../runtime/context-registry.js";
@@ -371,6 +376,7 @@ const sessionCreateThreadReturnSchema = z
     actionId: z.literal("thread.create"),
     executionMode: z.literal("durable"),
     requestId: z.string(),
+    title: z.string().nullable(),
     idempotencyKey: z.string(),
     publishedNow: z.boolean(),
     publishPending: z.boolean(),
@@ -393,6 +399,57 @@ const sessionCreateThreadReturnSchema = z
       status: z.literal("pending_root_delivery"),
       modelOverride: z.string().nullable(),
     }),
+  })
+  .strict();
+const slackThreadSummarySchema = z
+  .object({
+    requestId: z.string(),
+    title: z.string().nullable(),
+    status: z.enum(["queued", "root_delivered", "starting", "open", "closed", "failed"]),
+    source: z.enum(["action", "inbound"]),
+    childSessionKey: z.string().nullable(),
+    childSessionName: z.string().nullable(),
+    slackThreadTs: z.string().nullable(),
+    link: z.string().nullable(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+    closedAt: z.number().nullable(),
+    parentReturn: z.object({
+      requested: z.boolean(),
+      pending: z.boolean(),
+    }),
+  })
+  .strict();
+const sessionThreadsReturnSchema = z
+  .object({
+    parentSession: z.object({
+      sessionKey: z.string(),
+      sessionName: z.string(),
+    }),
+    includeClosed: z.boolean(),
+    threads: z.array(slackThreadSummarySchema),
+  })
+  .strict();
+const sessionReportReturnSchema = z
+  .object({
+    status: z.literal("published"),
+    actionId: z.literal("thread.report"),
+    requestId: z.string(),
+    messageId: z.string(),
+    parentSession: z.object({
+      sessionKey: z.string(),
+      sessionName: z.string(),
+    }),
+  })
+  .strict();
+const sessionThreadSendReturnSchema = z
+  .object({
+    status: z.literal("published"),
+    actionId: z.literal("thread.send"),
+    requestId: z.string(),
+    messageId: z.string(),
+    reopened: z.boolean(),
+    thread: slackThreadSummarySchema,
   })
   .strict();
 const sessionCloseThreadReturnSchema = z
@@ -646,6 +703,37 @@ function buildSessionActionToolHints(): Record<string, Record<string, unknown>> 
       ],
       promptHint:
         'Use `ravi sessions close-thread` for silent completion or `ravi sessions close-thread --return "<result>"` to notify the parent once.',
+    },
+    reportThread: {
+      id: "thread.report",
+      tool: "ravi sessions report",
+      command: 'ravi sessions report "<progress>"',
+      useWhen: "Tell the parent session about a milestone, blocker or decision before the thread is done.",
+      constraints: [
+        "Use only from a Slack thread child session.",
+        "It does not close the thread; close with `ravi sessions close-thread` when done.",
+      ],
+      promptHint: 'Use `ravi sessions report "<progress>"` to update the parent session without closing the thread.',
+    },
+    listThreads: {
+      id: "thread.list",
+      tool: "ravi sessions threads",
+      command: "ravi sessions threads --json",
+      useWhen: "See the Slack threads this session opened or owns, with status and pending returns.",
+      constraints: ["Add `--all` to include closed threads."],
+      promptHint: "Use `ravi sessions threads --json` to track the threads this session orchestrates.",
+    },
+    sendThread: {
+      id: "thread.send",
+      tool: "ravi sessions thread-send",
+      command: 'ravi sessions thread-send <thread-session> "<instructions>"',
+      useWhen: "Give one of this session's Slack threads new instructions; it answers inside its thread.",
+      constraints: [
+        "Use only from the channel or DM session that owns the thread.",
+        "Name the thread by session name, request id or Slack thread ts from `ravi sessions threads`.",
+        "A closed thread reopens.",
+      ],
+      promptHint: 'Use `ravi sessions thread-send <thread-session> "<instructions>"` to steer a thread.',
     },
   };
 }
@@ -6322,6 +6410,7 @@ export class SessionCommands {
       actionId: "thread.create",
       executionMode: "durable",
       requestId,
+      title: slackThreadTitle({ initialPrompt: initialMessage }) ?? null,
       idempotencyKey: job.request.idempotencyKey,
       publishedNow: published.ok && published.publishedNow,
       publishPending: !published.ok,
@@ -6429,6 +6518,194 @@ export class SessionCommands {
           ? `Closed Slack thread ${result.record.providerThreadId ?? sessionActionRef(session)}`
           : `Slack thread ${result.record.providerThreadId ?? sessionActionRef(session)} was already closed`,
       );
+    }
+    return payload;
+  }
+
+  @Command({
+    name: "threads",
+    description: "List the Slack threads this session opened or owns",
+  })
+  @CommandAccess({
+    kind: "read",
+    resource: "sessions",
+    action: "threads",
+    risk: "low",
+  })
+  threads(
+    @Option({ flags: "--all", description: "Include closed threads" })
+    includeClosed?: boolean,
+    @Option({
+      flags: "--session <nameOrKey>",
+      description: "Explicit session (defaults to current session)",
+    })
+    sessionOverride?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+  ) {
+    const target = sessionOverride?.trim() || resolveCurrentSessionRef();
+    if (!target) {
+      fail(
+        "No current session context found. Use ravi sessions threads inside a Slack session, or pass --session <name> outside one.",
+      );
+      return;
+    }
+    const session = this.resolveTarget(target);
+    if (!session) return;
+    const listed = listSlackThreadsForSession(session, { includeClosed: Boolean(includeClosed) });
+    const payload = {
+      parentSession: {
+        sessionKey: listed.parentSessionKey,
+        sessionName: listed.parentSessionName,
+      },
+      includeClosed: Boolean(includeClosed),
+      threads: listed.threads,
+    };
+    if (asJson) printJson(payload);
+    else if (listed.threads.length === 0) {
+      console.log(`No ${includeClosed ? "" : "open "}Slack threads for ${listed.parentSessionName}`);
+    } else {
+      console.log(`Slack threads for ${listed.parentSessionName}:`);
+      for (const thread of listed.threads) {
+        const name = thread.childSessionName ?? thread.requestId;
+        const title = thread.title ? ` — ${thread.title}` : "";
+        const pending = thread.parentReturn.pending ? " (return pending)" : "";
+        console.log(`  [${thread.status}] ${name}${title}${pending}`);
+      }
+    }
+    return payload;
+  }
+
+  @Command({
+    name: "report",
+    description: "Report progress from a Slack thread to its parent session without closing the thread",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions",
+    action: "report",
+    risk: "medium",
+  })
+  async report(
+    @Arg("message", { description: "Progress, blocker or decision the parent session needs now" })
+    message: string,
+    @Option({
+      flags: "--session <nameOrKey>",
+      description: "Explicit Slack thread session (defaults to current session)",
+    })
+    sessionOverride?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+  ) {
+    if (!message.trim()) {
+      fail("Report message is required");
+      return;
+    }
+    const target = sessionOverride?.trim() || resolveCurrentSessionRef();
+    if (!target) {
+      fail(
+        "No current session context found. Use ravi sessions report inside a Slack thread, or pass --session <name> outside one.",
+      );
+      return;
+    }
+    const session = this.resolveTarget(target);
+    if (!session) return;
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, sessionActionRef(session))) {
+      fail(`Session not found: ${target}`);
+      return;
+    }
+    if (slackThreadParentSessionKey(session.sessionKey) === session.sessionKey) {
+      fail("thread.report is available only inside a Slack thread child session");
+      return;
+    }
+    let result: Awaited<ReturnType<typeof reportSlackThreadProgress>>;
+    try {
+      result = await reportSlackThreadProgress(session, message);
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+      return;
+    }
+    const payload = {
+      status: "published" as const,
+      actionId: "thread.report" as const,
+      requestId: result.record.requestId,
+      messageId: result.messageId,
+      parentSession: {
+        sessionKey: result.record.parentSessionKey,
+        sessionName: result.record.parentSessionName,
+      },
+    };
+    if (asJson) printJson(payload);
+    else console.log(`Reported to ${result.record.parentSessionName}`);
+    return payload;
+  }
+
+  @Command({
+    name: "thread-send",
+    description: "Send new instructions to one of this session's Slack threads",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions",
+    action: "thread-send",
+    risk: "medium",
+  })
+  async threadSend(
+    @Arg("thread", { description: "Thread session name, request id or Slack thread ts (see ravi sessions threads)" })
+    thread: string,
+    @Arg("message", { description: "Instructions for the thread session" })
+    message: string,
+    @Option({
+      flags: "--session <nameOrKey>",
+      description: "Explicit owning session (defaults to current session)",
+    })
+    sessionOverride?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+  ) {
+    if (!message.trim()) {
+      fail("Thread message is required");
+      return;
+    }
+    const target = sessionOverride?.trim() || resolveCurrentSessionRef();
+    if (!target) {
+      fail(
+        "No current session context found. Use ravi sessions thread-send inside a Slack session, or pass --session <name> outside one.",
+      );
+      return;
+    }
+    const session = this.resolveTarget(target);
+    if (!session) return;
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, sessionActionRef(session))) {
+      fail(`Session not found: ${target}`);
+      return;
+    }
+    let result: Awaited<ReturnType<typeof sendSlackThreadMessage>>;
+    try {
+      result = await sendSlackThreadMessage({
+        parentSession: session,
+        ref: thread,
+        message,
+        origin: getContext() ?? {},
+      });
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+      return;
+    }
+    const payload = {
+      status: "published" as const,
+      actionId: "thread.send" as const,
+      requestId: result.record.requestId,
+      messageId: result.messageId,
+      reopened: result.reopened,
+      thread: summarizeSlackThread(result.record),
+    };
+    if (asJson) printJson(payload);
+    else {
+      const name = result.record.childSessionName ?? result.record.requestId;
+      console.log(`Sent to ${name}${result.reopened ? " (reopened)" : ""}`);
     }
     return payload;
   }
@@ -6867,6 +7144,7 @@ declareCommandReturns(SessionCommands, {
   prune: commandEnvelopeReturnSchema,
   read: sessionReadReturnSchema,
   recap: sessionRecapReturnSchema,
+  report: sessionReportReturnSchema,
   rename: commandEnvelopeReturnSchema,
   reset: commandEnvelopeReturnSchema,
   send: sessionSendReturnSchema,
@@ -6877,6 +7155,8 @@ declareCommandReturns(SessionCommands, {
   setThinking: commandEnvelopeReturnSchema,
   setTtl: commandEnvelopeReturnSchema,
   subscriptions: commandEnvelopeReturnSchema,
+  threadSend: sessionThreadSendReturnSchema,
+  threads: sessionThreadsReturnSchema,
   trace: commandEnvelopeReturnSchema,
   visibility: commandEnvelopeReturnSchema,
 });

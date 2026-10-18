@@ -33,6 +33,16 @@ Campos principais:
 
 O evento nao dispara em mensagens seguintes da mesma thread.
 
+## Orquestracao
+
+A sessao do canal (ou DM) orquestra as threads que abre com
+`ravi sessions create-thread`. Ela lista as threads com
+`ravi sessions threads --json` e manda instrucoes com
+`ravi sessions thread-send <sessao-da-thread> "..."`. A thread avisa a sessao do
+canal com `ravi sessions report "..."` sem fechar e termina com
+`ravi sessions close-thread [--return "..."]`. Progresso e resultado chegam como
+`[System] Inform: Slack thread "<titulo>" (<sessao-da-thread>) ...`.
+
 ## Diagnostico
 
 ```bash
