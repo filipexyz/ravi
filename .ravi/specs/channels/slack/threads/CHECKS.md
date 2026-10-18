@@ -28,11 +28,16 @@
 - [ ] Repeated close MUST be idempotent.
 - [ ] A later inbound Slack reply MUST reuse and reopen the closed child.
 - [ ] Reopening MUST preserve and later deliver a pending parent completion.
+- [ ] A Slack channel-root or DM session that can run `sessions` MUST get the
+      "Slack Threads" section steering off-topic work to `create-thread`.
+- [ ] A Slack thread child MUST get the in-thread variant; sentinels, non-Slack
+      channels and contexts without `sessions` MUST NOT get the section.
 
 ## Commands
 
 ```bash
 bun test src/channels/slack/socket-mode.test.ts src/channels/slack/thread-lifecycle.test.ts src/runtime/runtime-session-continuity.test.ts
+bun test src/prompt-builder.test.ts src/runtime/runtime-system-prompt.test.ts
 bun run typecheck
 bun run build
 ```
