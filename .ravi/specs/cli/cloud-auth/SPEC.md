@@ -10,6 +10,8 @@ owners:
   - ravi-dev
 applies_to:
   - src/cli
+  - src/cloud-auth/client.ts
+  - src/cloud-auth/turn-actor.ts
   - ravi login
   - ravi whoami
   - ravi logout
@@ -203,6 +205,28 @@ the server returns an auth-expired response.
 
 If refresh fails with revoked, reused, or invalid credentials, the CLI MUST
 delete local credentials and require `ravi login`.
+
+## Person Of The Turn
+
+Authenticated Console calls (`ConsoleApiClient.requestJson` with an access
+token) MUST carry `x-ravi-actor-contact: <contactId>` when the runtime turn
+running the CLI was written by a resolved contact other than the operator, so
+Console credits the write to that person through this installation's
+`ravi link` binding (`console/ravi-link`, "Acting As The Person Of The Turn").
+
+- The contact MUST come from the turn classification of
+  `src/access/actor.ts` (`resolveAccessActor`), which reads the daemon's own
+  record of the turn through `RAVI_CONTEXT_KEY`. The CLI MUST NOT take it from
+  `RAVI_CONTACT_ID`, a flag or any other value the agent's shell can change.
+- The operator's own turns, routines the operator owns, turns Ravi cannot
+  attribute and calls outside a runtime turn MUST send no header: Console
+  then acts as the `ravi login` user, as before.
+- `/api/cli/auth/**` and `/api/cli/me` MUST NOT carry it.
+- A failure to classify the turn MUST NOT fail the call; it sends no header.
+
+Console decides who acts: with no active binding approved by that person, or
+when the person is not an active member of the session's organization, the
+operator acts.
 
 ## Artifact Publish Contract
 

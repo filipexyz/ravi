@@ -778,6 +778,50 @@ describe("ConsoleApiClient", () => {
 
     await expect(client.resolveActorBinding({ contactId: "missing" }, "access-secret")).resolves.toBeNull();
   });
+
+  it("names the turn's author on authenticated calls, never on session calls", async () => {
+    const calls: FetchCall[] = [];
+    const actorContact = mock(() => "c_ana");
+    const client = new ConsoleApiClient({
+      consoleUrl: "https://console.example",
+      actorContact,
+      fetch: mock(async (url: string, init?: RequestInit) => {
+        calls.push(recordFetchCall(url, init));
+        return jsonResponse({ ok: true });
+      }),
+    });
+
+    await client.requestJson("POST", "/api/cli/artifacts/publish", { releaseId: "r" }, "access-secret");
+    await client.requestJson("GET", "/api/cli/projects/p/bases/b/rows", undefined, "access-secret");
+    await client.requestJson("GET", "/api/cli/me", undefined, "access-secret");
+    await client.requestJson("POST", "/api/cli/auth/logout", {}, "access-secret");
+    await client.requestJson("GET", "/api/cli/auth/config");
+
+    expect(calls.map((call): string | null => call.headers["x-ravi-actor-contact"] ?? null)).toEqual([
+      "c_ana",
+      "c_ana",
+      null,
+      null,
+      null,
+    ]);
+    expect(actorContact).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends no author when the turn is the operator's or cannot be read", async () => {
+    for (const actorContact of [() => null, () => Promise.reject(new Error("gateway down"))]) {
+      const calls: FetchCall[] = [];
+      const client = new ConsoleApiClient({
+        consoleUrl: "https://console.example",
+        actorContact,
+        fetch: mock(async (url: string, init?: RequestInit) => {
+          calls.push(recordFetchCall(url, init));
+          return jsonResponse({ ok: true });
+        }),
+      });
+      await client.requestJson("POST", "/api/cli/artifacts/publish", {}, "access-secret");
+      expect(calls[0]?.headers["x-ravi-actor-contact"]).toBeUndefined();
+    }
+  });
 });
 
 function jsonResponse(payload: unknown, status = 200, headers: Record<string, string> = {}): Response {
