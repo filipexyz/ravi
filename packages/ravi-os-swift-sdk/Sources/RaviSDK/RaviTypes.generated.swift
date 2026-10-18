@@ -19825,6 +19825,8 @@ public struct PagesAssertionAudiencesSetReturn: Codable, Sendable {
 public struct PagesChatSetOptions: Codable, Sendable {
   public var clearInstructions: Bool?
   public var clearName: Bool?
+  public var clearRaviAgent: Bool?
+  public var clearTextModel: Bool?
   public var console: String?
   public var enabled: String?
   public var execute: Bool?
@@ -19832,11 +19834,17 @@ public struct PagesChatSetOptions: Codable, Sendable {
   public var language: String?
   public var name: String?
   public var project: String?
+  public var raviAgent: String?
+  public var replyPolicy: String?
+  public var text: String?
+  public var textModel: String?
   public var voice: String?
 
-  public init(clearInstructions: Bool? = nil, clearName: Bool? = nil, console: String? = nil, enabled: String? = nil, execute: Bool? = nil, instructions: String? = nil, language: String? = nil, name: String? = nil, project: String? = nil, voice: String? = nil) {
+  public init(clearInstructions: Bool? = nil, clearName: Bool? = nil, clearRaviAgent: Bool? = nil, clearTextModel: Bool? = nil, console: String? = nil, enabled: String? = nil, execute: Bool? = nil, instructions: String? = nil, language: String? = nil, name: String? = nil, project: String? = nil, raviAgent: String? = nil, replyPolicy: String? = nil, text: String? = nil, textModel: String? = nil, voice: String? = nil) {
     self.clearInstructions = clearInstructions
     self.clearName = clearName
+    self.clearRaviAgent = clearRaviAgent
+    self.clearTextModel = clearTextModel
     self.console = console
     self.enabled = enabled
     self.execute = execute
@@ -19844,12 +19852,18 @@ public struct PagesChatSetOptions: Codable, Sendable {
     self.language = language
     self.name = name
     self.project = project
+    self.raviAgent = raviAgent
+    self.replyPolicy = replyPolicy
+    self.text = text
+    self.textModel = textModel
     self.voice = voice
   }
 
   enum CodingKeys: String, CodingKey {
     case clearInstructions = "clearInstructions"
     case clearName = "clearName"
+    case clearRaviAgent = "clearRaviAgent"
+    case clearTextModel = "clearTextModel"
     case console = "console"
     case enabled = "enabled"
     case execute = "execute"
@@ -19857,6 +19871,10 @@ public struct PagesChatSetOptions: Codable, Sendable {
     case language = "language"
     case name = "name"
     case project = "project"
+    case raviAgent = "raviAgent"
+    case replyPolicy = "replyPolicy"
+    case text = "text"
+    case textModel = "textModel"
     case voice = "voice"
   }
 
@@ -19866,6 +19884,12 @@ public struct PagesChatSetOptions: Codable, Sendable {
     }
     if let value = self.clearName {
       body["clearName"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.clearRaviAgent {
+      body["clearRaviAgent"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.clearTextModel {
+      body["clearTextModel"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.console {
       body["console"] = try RaviJSON.fromEncodable(value)
@@ -19887,6 +19911,18 @@ public struct PagesChatSetOptions: Codable, Sendable {
     }
     if let value = self.project {
       body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.raviAgent {
+      body["raviAgent"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.replyPolicy {
+      body["replyPolicy"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.text {
+      body["text"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.textModel {
+      body["textModel"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.voice {
       body["voice"] = try RaviJSON.fromEncodable(value)

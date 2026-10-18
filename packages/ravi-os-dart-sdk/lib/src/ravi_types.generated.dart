@@ -16904,10 +16904,12 @@ class PagesAssertionAudiencesSetReturn {
 PagesAssertionAudiencesSetReturn pagesAssertionAudiencesSetReturnFromJson(Object? json) => PagesAssertionAudiencesSetReturn.fromJsonValue(json);
 
 class PagesChatSetOptions {
-  const PagesChatSetOptions({this.clearInstructions, this.clearName, this.console, this.enabled, this.execute, this.instructions, this.language, this.name, this.project, this.voice});
+  const PagesChatSetOptions({this.clearInstructions, this.clearName, this.clearRaviAgent, this.clearTextModel, this.console, this.enabled, this.execute, this.instructions, this.language, this.name, this.project, this.raviAgent, this.replyPolicy, this.text, this.textModel, this.voice});
 
   final bool? clearInstructions;
   final bool? clearName;
+  final bool? clearRaviAgent;
+  final bool? clearTextModel;
   final String? console;
   final String? enabled;
   final bool? execute;
@@ -16915,6 +16917,10 @@ class PagesChatSetOptions {
   final String? language;
   final String? name;
   final String? project;
+  final String? raviAgent;
+  final String? replyPolicy;
+  final String? text;
+  final String? textModel;
   final String? voice;
 
   void encodeBody(Map<String, RaviJson> into) {
@@ -16923,6 +16929,12 @@ class PagesChatSetOptions {
     }
     if (clearName != null) {
       into["clearName"] = RaviJson.from(clearName);
+    }
+    if (clearRaviAgent != null) {
+      into["clearRaviAgent"] = RaviJson.from(clearRaviAgent);
+    }
+    if (clearTextModel != null) {
+      into["clearTextModel"] = RaviJson.from(clearTextModel);
     }
     if (console != null) {
       into["console"] = RaviJson.from(console);
@@ -16944,6 +16956,18 @@ class PagesChatSetOptions {
     }
     if (project != null) {
       into["project"] = RaviJson.from(project);
+    }
+    if (raviAgent != null) {
+      into["raviAgent"] = RaviJson.from(raviAgent);
+    }
+    if (replyPolicy != null) {
+      into["replyPolicy"] = RaviJson.from(replyPolicy);
+    }
+    if (text != null) {
+      into["text"] = RaviJson.from(text);
+    }
+    if (textModel != null) {
+      into["textModel"] = RaviJson.from(textModel);
     }
     if (voice != null) {
       into["voice"] = RaviJson.from(voice);

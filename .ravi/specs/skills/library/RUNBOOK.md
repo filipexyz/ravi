@@ -60,7 +60,9 @@
     open (`ravi agents requests <agent>`), that `ravi login` has the link
     scope, and the daemon log for `Answering Library request` or
     `Could not post a Library request answer` (`ravi daemon logs`). The runner
-    pulls every `RAVI_LIBRARY_PIN_INTERVAL_MS`; the turn's session is
+    pulls every 30 s while an agent here takes requests (15 s for 10 minutes
+    after a request or answer), else every `RAVI_LIBRARY_PIN_INTERVAL_MS`; a
+    Page chat's requests show as peer `page/page-chat`. The turn's session is
     `<agent>-request-<8 chars>` (`ravi sessions trace <name> --explain`).
 18. An answer that never reached the asking session: `ravi agents requests
     list --all` shows it from the Console; the local row

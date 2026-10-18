@@ -115,16 +115,30 @@ contract errors rethrow first, recognizable Console not-found failures map to
     `PATCH` `/api/cli/projects/:projectRef/pages/:siteRef/chat`. `siteRef`
     accepts a host slug, site id or hostname and is passed through. The PATCH
     body MUST carry only the fields the caller set (`enabled`,
-    `assistantName`, `voice`, `language`, `instructions`); `--clear-name` and
-    `--clear-instructions` send `null`. Unknown voices, non-BCP-47 languages,
-    `assistantName` over 60 or `instructions` over 2000 characters, set+clear
-    conflicts and an empty change set are `PAYLOAD_INVALID` (exit 2) before
-    the brake and before any Console call. `set` with `--enabled true` MUST
-    dry-run (exit 3) before credential reads, project resolution or Console
-    calls unless `--execute` is passed; its plan reports instructions by length
-    only. Every other `set` applies immediately. Success JSON MUST allowlist
-    `projectRef`, `siteRef`, `siteId`, `host`, `featureEnabled`, `settings`
-    and `voices` (plus `changed` on `set`).
+    `assistantName`, `voice`, `language`, `instructions`, `text`,
+    `replyPolicy`, `textModel`, `raviAgent`); `--clear-name`,
+    `--clear-instructions`, `--clear-text-model` and `--clear-ravi-agent` send
+    `null`. `--text <true|false>` is the text chat (bar panel and
+    `<ravi-chat>`), `--reply-policy <mention|always>` when the agent answers in
+    a shared room, `--text-model <id>` an AI Gateway model id (lowercased,
+    `^[a-z0-9][a-z0-9-]{0,40}/[a-z0-9][a-z0-9.:-]{0,80}$`) and
+    `--ravi-agent <installationId>/<agentId>` (a UUID, then an agent id of at
+    most 120 characters without spaces or slashes) is sent as
+    `{installationId, agentId}`. Unknown voices or policies, non-BCP-47
+    languages, malformed model ids or agent targets, `assistantName` over 60
+    or `instructions` over 2000 characters, set+clear conflicts and an empty
+    change set are `PAYLOAD_INVALID` (exit 2) before the brake and before any
+    Console call. `set` with `--enabled true`, `--text true`,
+    `--reply-policy always` or `--ravi-agent` MUST dry-run (exit 3) before
+    credential reads, project resolution or Console calls unless `--execute`
+    is passed; its plan names each widening effect and reports instructions by
+    length only (the text switch appears as `textChat`). Every other `set`
+    applies immediately. Success JSON MUST allowlist `projectRef`, `siteRef`,
+    `siteId`, `host`, `featureEnabled`, `settings` (`enabled`,
+    `assistantName`, `voice`, `language`, `instructions`, `text`,
+    `replyPolicy`, `textModel`, `raviAgent` as `{installationId, agentId}`;
+    fields an older Console omits read as `true`, `"mention"`, `null`,
+    `null`) and `voices` (plus `changed` on `set`).
 
 14. Page kit step of `pages ship`: after the source copy and before upload,
     ship MUST `POST /api/cli/pages/kit` with `{project, site, route,
@@ -194,7 +208,10 @@ contract errors rethrow first, recognizable Console not-found failures map to
 | assertion audiences list | reads the host allowlist | not braked |
 | chat show | reads one site's Page Chat settings and the org feature flag | not braked |
 | chat set → `--enabled true` | turns on a metered voice agent for every signed-in viewer of the site | conditional dry-run + `--execute` |
-| chat set → other fields, `--enabled false` | reversible Console settings change; turning off reduces exposure | not braked (declared) |
+| chat set → `--text true` | turns on the metered text chat agent for every member and guest who can open the site | conditional dry-run + `--execute` |
+| chat set → `--reply-policy always` | the agent answers every message of the page's shared rooms | conditional dry-run + `--execute` |
+| chat set → `--ravi-agent` | lets the Page agent send Library requests to an agent of a Ravi machine for the people chatting | conditional dry-run + `--execute` |
+| chat set → other fields, `--enabled false`, `--text false`, `--reply-policy mention`, `--text-model`, the clear flags | reversible Console settings change; turning off or clearing reduces exposure | not braked (declared) |
 
 There is no `pages remove`/route-removal command on this surface today; if one
 is added it MUST arrive braked. Viewer-assertion audience removal is

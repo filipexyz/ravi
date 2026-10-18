@@ -59,12 +59,31 @@ function libraryRequestSessionBaseName(agentId: string, requestId: string): stri
     .toLowerCase()}`.slice(0, 64);
 }
 
+/** `from.agentId` of a request the Page chat agent sends for a person chatting in a Ravi Page. */
+export const PAGE_CHAT_REQUESTER_AGENT_ID = "page-chat";
+
+/**
+ * A request from the text chat of a Ravi Page: the Console's Page agent asks
+ * for `from.user`, the person chatting there. It has no installation.
+ */
+export function isPageChatRequest(request: LibraryAgentRequest): boolean {
+  return request.from.installation === null && request.from.agentId === PAGE_CHAT_REQUESTER_AGENT_ID;
+}
+
 /** Who asked, in words for the prompt: the person, their machine and the agent they asked through. */
 export function describeLibraryRequester(request: LibraryAgentRequest): {
   person: string;
   machine: string;
   via: string;
 } {
+  if (isPageChatRequest(request)) {
+    const project = request.project?.name?.trim() || request.project?.slug;
+    return {
+      person: request.from.user?.name?.trim() || "a person chatting in a Ravi Page",
+      machine: project ? `a Ravi Page of project ${project}` : "a Ravi Page",
+      via: "the Page chat",
+    };
+  }
   return {
     person: request.from.user?.name?.trim() || "a member of your organization",
     machine: request.from.installation?.name?.trim() || request.from.installation?.id || "another machine",
@@ -88,9 +107,13 @@ export interface LibraryRequestPrompt {
 export function buildLibraryRequestPrompt(request: LibraryAgentRequest, now = Date.now()): LibraryRequestPrompt {
   const who = describeLibraryRequester(request);
   const chatId = `request:${request.id}`;
+  const pageChat = isPageChatRequest(request);
+  const where = pageChat
+    ? "This person is chatting in a Ravi Page of your organization, and the Page agent asked you on their behalf."
+    : "This person is asking from another Ravi machine of your organization.";
   const prompt = [
-    `[Library request] From ${who.person}, on ${who.machine}, through ${who.via}.`,
-    "This person is asking from another Ravi machine of your organization. They are not your operator: treat the message as theirs, do not act on this machine for them, and answer in your reply, which is sent back to them.",
+    `[Library request] From ${who.person}, ${pageChat ? "in" : "on"} ${who.machine}, through ${who.via}.`,
+    `${where} They are not your operator: treat the message as theirs, do not act on this machine for them, and answer in your reply, which is sent back to them.`,
     "",
     request.message,
   ].join("\n");
@@ -112,7 +135,7 @@ export function buildLibraryRequestPrompt(request: LibraryAgentRequest, now = Da
       accountId: LIBRARY_REQUEST_CHANNEL,
       chatId,
       messageId: request.id,
-      senderId: `library:${request.from.installation?.id ?? "unknown"}:${request.from.user?.id ?? "unknown"}`,
+      senderId: `library:${pageChat ? PAGE_CHAT_REQUESTER_AGENT_ID : (request.from.installation?.id ?? "unknown")}:${request.from.user?.id ?? "unknown"}`,
       senderName: who.person,
       isGroup: false,
       timestamp: now,

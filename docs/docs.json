@@ -59,7 +59,8 @@
               "console/widgets",
               "console/connectors",
               "console/meetings",
-              "console/calendar"
+              "console/calendar",
+              "console/mcp"
             ]
           },
           {

@@ -43,6 +43,8 @@ houver mais de um projeto (`ravi cloud scope show`).
 | "Pages viewer principals must name a Ravi Pages site" | o site não existe. Ship de esqueleto, depois `siteId` em `ravi pages list --json` |
 | `PROJECT_ACCESS_DENIED` + `missingScopes` | login anterior às Bases: `ravi login` de novo |
 
+Autoria: num turno que outra pessoa escreveu, a linha (e o `$viewer`) é dela quando ela fez `ravi link` e é membro ativo da org, com o menor papel entre ela e o operador; sem link é do operador, como antes.
+
 Freios: `bases archive|restore`, `rows purge`, `views archive`, `charts archive`,
 `props update --type`, `props delete` e `rows import` param no plano (exit 3).
 
