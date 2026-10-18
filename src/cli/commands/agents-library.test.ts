@@ -212,6 +212,9 @@ describe("agents directory, ask and requests from the CLI", () => {
     await quietAsync(() => runWithContext({}, () => commands.listing("main", "on", true, true)));
     expect(readListed("main")).toBe(true);
     expect(readAcceptsRequests("main")).toBe(false);
+    // Repeating on without --execute is not braked: nothing to write or report.
+    const again = await quietAsync(() => runWithContext({}, () => commands.listing("main", "on", true)));
+    expect(again).toMatchObject({ listed: true, changed: false, reported: false });
 
     await quietAsync(() => runWithContext({}, () => commands.requests("main", "on", true, true)));
     await quietAsync(() => runWithContext({}, () => commands.listing("main", "off", true)));

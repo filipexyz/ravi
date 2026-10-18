@@ -3645,8 +3645,16 @@ function migrateChannelOutboundReceiptSchema(
  */
 function ensureLibraryAgentListedMigration(database: Database): void {
   if (tableHasColumn(database, "library_agents", "listed")) return;
-  ensureColumn(database, "library_agents", "listed", "INTEGER NOT NULL DEFAULT 0 CHECK(listed IN (0,1))");
-  database.exec("UPDATE library_agents SET listed = 1 WHERE accepts_requests = 1");
+  // One write transaction: a crash between the column and the backfill rolls
+  // both back, and a second process sees the column only once it is filled.
+  database
+    .transaction(() => {
+      if (tableHasColumn(database, "library_agents", "listed")) return;
+      database.exec("ALTER TABLE library_agents ADD COLUMN listed INTEGER NOT NULL DEFAULT 0 CHECK(listed IN (0,1))");
+      database.exec("UPDATE library_agents SET listed = 1 WHERE accepts_requests = 1");
+      log.info("Added schema column", { table: "library_agents", column: "listed" });
+    })
+    .immediate();
 }
 
 function ensureColumn(database: Database, table: string, column: string, definition: string): void {

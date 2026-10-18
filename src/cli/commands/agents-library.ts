@@ -749,7 +749,21 @@ export class AgentsLibraryCommands {
         return payload;
       }
       const listed = wanted === "on";
-      if (listed && !current && !execute) {
+      if (listed === current) {
+        // Already in that state: nothing to write or report.
+        const payload = {
+          agent: id,
+          listed,
+          acceptsRequests: readAcceptsRequests(id),
+          changed: false,
+          reported: false,
+        };
+        if (asJson) printJson(payload);
+        else
+          console.log(`= ${id} ${listed ? "is already listed in" : "is not listed in"} the organization's directory`);
+        return payload;
+      }
+      if (listed && !execute) {
         contractDryRun(
           "agents listing",
           {
