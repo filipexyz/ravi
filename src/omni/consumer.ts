@@ -14,6 +14,11 @@ import { publishSessionPrompt } from "./session-stream.js";
 import { expandRaviCommandPrompt, RaviCommandError } from "../commands/index.js";
 import { channelMessagePrefixDelivery, parseChannelMessagePrefix } from "../channels/message-prefix.js";
 import { handleSlashCommand } from "../slash/index.js";
+import {
+  handleLinkingDirectMessage,
+  isLinkingDirectMessage,
+  type LinkingDirectMessage,
+} from "../identity-link/link-dm-flow.js";
 import { isIgnoredOmniInstanceId } from "../router/omni-ignore.js";
 import { promisify } from "node:util";
 
@@ -389,6 +394,8 @@ export class OmniConsumer {
       formatGroupMembers?: typeof formatOmniGroupMembersForPrompt;
       isRuntimeSessionActive?: (sessionName: string) => boolean;
       abortRuntimeSession?: (sessionName: string, provenance: RuntimeAbortProvenance) => boolean;
+      /** Answers a private message of a person in the `ravi link` flow; true when it took the message. */
+      answerLinkingDm?: (message: LinkingDirectMessage) => Promise<boolean>;
     } = {},
   ) {
     this.typingPresence = new TypingPresenceHeartbeat(
@@ -400,6 +407,17 @@ export class OmniConsumer {
       this.options.isRuntimeSessionActive,
       (event) => this.observeTypingPresence(event),
     );
+  }
+
+  private async answerLinkingDm(message: LinkingDirectMessage): Promise<boolean> {
+    try {
+      if (this.options.answerLinkingDm) return await this.options.answerLinkingDm(message);
+      if (!isLinkingDirectMessage(message)) return false;
+      return await handleLinkingDirectMessage(message);
+    } catch (error) {
+      log.warn("Link flow failed on a private message", { accountId: message.accountId, error });
+      return false;
+    }
   }
 
   /**
@@ -1027,6 +1045,37 @@ export class OmniConsumer {
         ingestMode: event.metadata?.ingestMode ?? null,
       });
       return;
+    }
+
+    // A person asked to link their Console account writes here in private:
+    // the daemon answers with the approval link, with no agent turn and
+    // before any route or DM policy, so it works even where unknown DMs are
+    // held for review (src/identity-link/link-dm-flow.ts).
+    if (
+      sessionChannel === "whatsapp" &&
+      !isGroup &&
+      !threadId &&
+      !editInfo &&
+      effectiveActorType === "contact" &&
+      effectiveContactId
+    ) {
+      const linkingDm: LinkingDirectMessage = {
+        contactId: effectiveContactId,
+        channel: sessionChannel,
+        accountId: effectiveAccountId,
+        chatId: chatJid,
+        routePattern: routePhone,
+        platformUserId: effectiveRawSenderId,
+        platformIdentityId: effectivePlatformIdentityId ?? null,
+        displayName: rawPayloadString(rawPayload, "pushName") ?? null,
+      };
+      if (await this.answerLinkingDm(linkingDm)) {
+        log.info("Private message answered by the link flow", {
+          accountId: effectiveAccountId,
+          canonicalChatId: canonicalChat.id,
+        });
+        return;
+      }
     }
 
     // Match route (pure) — no DB writes yet. The session row is only

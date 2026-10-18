@@ -17,7 +17,9 @@ ravi access status <request-id>
 - `3` `WRITE_REQUIRES_EXECUTE`: the brake. Read `plan.actingAs`, then re-run
   with `--execute`.
 - `3` `ACTOR_NOT_LINKED`: the person who wrote the message has no `ravi link`
-  on this installation. Run `ravi link` from their chat, then retry.
+  on this installation. Ravi already started their link: relay `chatLinePt`
+  (on WhatsApp from a group, "me chama na DM"; Ravi answers their private
+  message with the link). Retry only when they ask again.
 - `3` `ACTOR_UNKNOWN`: the turn could not be attributed (unresolved sender,
   another agent's relay, a routine someone else owns, an ended turn). Run it
   from the terminal or have the person ask in their own chat.

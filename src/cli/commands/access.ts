@@ -68,8 +68,9 @@ Write brake:
 Who asks:
   On the operator's own turns the request is made in the ravi login user's
   name. When someone else wrote the chat message, it is made in that person's
-  name through their ravi link (ACTOR_NOT_LINKED, exit 3: run ravi link in
-  their chat). The running agent is named on the request.
+  name through their ravi link (ACTOR_NOT_LINKED, exit 3: Ravi starts their
+  link; relay the error's chatLinePt). The running agent is named on the
+  request.
 `;
 
 const ACCESS_STATUS_HELP = `

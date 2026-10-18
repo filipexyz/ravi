@@ -168,7 +168,9 @@ To show a private page to one person, share it by email; never make it public or
 add a password for that. To bring someone into the organization, invite them. When
 a page is denied, ask its managers (the printed approval link may be forwarded;
 only the page's managers approve). Chat turns from someone else act for that
-person through their `ravi link` (`ACTOR_NOT_LINKED`: send them `ravi link`).
+person through their `ravi link`. Without one, writes fail with `ACTOR_NOT_LINKED`
+and Ravi starts the link itself: relay the error's `chatLinePt` (on WhatsApp,
+"me chama na DM"; Ravi answers their private message with the approval link).
 
 ```bash
 ravi pages share <url> --with <email> --execute
