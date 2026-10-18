@@ -2,9 +2,9 @@
 
 ## Report a vulnerability
 
-Report security problems privately through GitHub: [open a private report](https://github.com/filipexyz/ravi/security/advisories/new). Please do not open a public issue for them.
+Report security problems privately through GitHub: [open a private report](https://github.com/filipexyz/ravi/security/advisories/new). If GitHub does not offer the form, open an issue that asks for a private security contact, without any details, and we will reply with a private channel. Please do not put details in a public issue.
 
-Include the Ravi version (`ravi --version`), what you did, what happened and what an attacker could gain. We reply in the report and keep you informed until a fix ships.
+Include the Ravi version (`ravi --version`), what you did, what happened and what an attacker could gain. We reply privately and keep you informed until a fix ships.
 
 ## Scope
 
@@ -14,7 +14,7 @@ Include the Ravi version (`ravi --version`), what you did, what happened and wha
 
 ## Supported versions
 
-Fixes ship in the newest release on the npm `next` tag, and on `latest` when it is promoted. Older releases do not get backports, so update with `ravi update`.
+Fixes to the `ravi.bot` package ship in the newest release on the npm `next` tag, and on `latest` when it is promoted. Update with `ravi update`, or with `ravi update --next` to get a fix before it reaches `latest`; `--next` keeps the machine on `next` builds until you run `ravi update --stable`. Fixes to the SDKs land in their sources under `packages/`, which always match the CLI of the same commit; build an SDK from those sources to get a fix. `@ravi-os/sdk` on npm is released by hand, `ravi_sdk` on pub.dev has not been republished since 0.1.0, and the Swift package is not published. `ravi update` does not update an SDK. Older releases do not get backports.
 
 ## How Ravi limits damage
 

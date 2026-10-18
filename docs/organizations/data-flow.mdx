@@ -13,7 +13,7 @@ This page describes `ravi.bot@next`. It covers what the machine sends. It does n
 ## The short version
 
 - Without `ravi login`, nothing goes to the Ravi Console. Data goes to the model provider you choose, the chat platforms you connect, and the few services under [Other outbound requests](#other-outbound-requests).
-- After `ravi login`, the daemon calls the Console on a schedule. It sends a short report of your agents and the names of your instances. It pulls pending items, such as events and requests for agents you opened.
+- After `ravi login`, the daemon calls the Console on a schedule. It sends a short report of the agents you listed and the names of your instances. It pulls pending items, such as events and requests for agents you opened.
 - Message content goes to the Console only through features you use, such as publishing, open agents and Knowledge gaps, or through trace sync.
 - Ravi has no analytics or crash-reporting client of its own.
 
@@ -99,7 +99,7 @@ These calls run without anyone typing a command. The table lists each one.
 
 | Call | Schedule | What the machine sends | What comes back |
 |---|---|---|---|
-| Agent report and Library pins | At daemon start, then every 5 minutes | For up to 500 local agents: id, name, provider, model, Console project, directory description (at most 300 characters) and whether it takes requests | The Library items pinned to each agent, which are then downloaded |
+| Agent report and Library pins | At daemon start, then every 5 minutes | For up to 500 agents you listed, with `ravi agents listing <id> on --execute` or `ravi agents requests <id> on --execute` (opening an agent also lists it; none by default, and on upgrade agents already open to requests stay listed): id, name, provider, model, Console project, directory description (at most 300 characters) and whether it takes requests | The Library items pinned to each agent, which are then downloaded |
 | Requests between machines | Same schedule as the agent report | The answers your open agents write (at most 16,000 characters each), or a failure reason (at most 500) | Answers to requests you sent, and requests for your agents |
 | Agent Inbox | Every 15 seconds, when the login holds the `console.inbox.*` scopes | The installation id, a cursor, and the ids and status of items received | Events such as Bases row changes, mail, meetings, Knowledge and watches. The daemon may then fetch the mail message, row or recording an event points to. |
 | Knowledge mirror | 5 seconds after the leader daemon starts, then every 15 minutes | The name and channel of each enabled instance (up to 50) | The Knowledge pages marked for those instances |
@@ -138,6 +138,7 @@ These calls happen only when you, or an agent, run the command. Braked commands 
 | Bases (`ravi bases`) | The bases, properties, views and rows you create or write |
 | Library publishing (`ravi skills publish`, `ravi agents publish`, `ravi themes`, `ravi widgets`) | The skill folder. For an agent definition: its `AGENTS.md`, `HEARTBEAT.md` and suggested provider, model, profile and skills. Theme and widget files. |
 | Library pins (`ravi skills pin`) | An agent report, then the id of the agent to pin |
+| Directory listing (`ravi agents listing <id> on --execute` or `off`, `ravi agents requests <id> on --execute` or `off`) | An agent report of the listed agents, sent at once when the login holds `console.projects.link` |
 | Asking another machine (`ravi agents ask`) | Your message (at most 8,000 characters), the target machine and agent, and the asking agent's id when an agent asks |
 | Knowledge (`ravi knowledge search`, `read`, `propose`) | The query or the text you propose, plus the turn's agent id, session name and contact id. Never a Console user id. |
 | Cloud meetings (`ravi meetings join`) | The meeting link, bot name, title, language and start time. The Console's bot joins and records the call, and the recording downloads to the machine. With `--local`, the recorder runs in Chrome on the machine instead. |
@@ -196,10 +197,11 @@ Each switch below is local to one machine. Environment variables go in `~/.ravi/
 | Report less often | Set `RAVI_LIBRARY_PIN_INTERVAL_MS`, for example `3600000` for once an hour. The minimum is `10000`. |
 | Remove an agent's directory description | `ravi agents set <id> description clear` |
 | Close an agent to other machines | `ravi agents requests <id> off`. Every agent starts closed. |
+| Take an agent out of the report | `ravi agents listing <id> off`. Every agent starts unlisted. |
 
 `ravi logout` asks the Console to revoke the login and deletes the local tokens, even when the revoke fails. The installation key file stays.
 
-While a login exists, there is no switch that stops the agent report or the Knowledge mirror alone. To stop them, log out.
+With no agent listed, the agent report is empty, but the daemon still calls the Console for pins and requests. While a login exists, there is no switch that stops those calls or the Knowledge mirror alone. To stop them, log out.
 
 ## Next
 

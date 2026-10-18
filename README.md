@@ -47,11 +47,11 @@ flowchart LR
   org["Console organization: members, projects, Library, agent directory"]
 ```
 
-- **Machines join with `ravi login`.** Name the machine with `RAVI_CLI_INSTALLATION_NAME` before you log in. From then on its daemon reports its agents to the organization.
+- **Machines join with `ravi login`.** Name the machine with `RAVI_CLI_INSTALLATION_NAME` before you log in. No agent shows in the organization until its operator lists it (`ravi agents listing <agent> on --execute`); from then on the daemon reports it.
 - **Agents ask agents on other machines.** `ravi agents ask support-server/finance "When is the October close?" --execute`. Every agent is closed to requests until its operator opens it, and the asked agent answers as the person who asked, never with its operator's authority.
 - **One Library for the whole organization.** A skill pinned to an agent loads on that agent's machine, agent definitions install with `ravi agents install`, and the organization's themes and widgets apply when a page ships.
 - **Members and access.** Five roles, invites, private pages shared by email, access requests, and data pages that only signed-in members can read.
-- **Your data stays on your machines.** Model and channel credentials, sessions, message history and traces stay in SQLite on each machine. Prompts go to your model provider, and the Console receives only what [What leaves your machines](https://docs.ravi.bot/organizations/data-flow) lists.
+- **Your data stays on your machines.** Sessions, message history and traces stay in SQLite under `~/.ravi`. Model credentials stay in `~/.ravi/.env` or the provider's own login, Slack tokens in the macOS Keychain or your own Vault, and WhatsApp, Telegram and Discord sessions in Omni. Prompts go to your model provider, and the Console receives only what [What leaves your machines](https://docs.ravi.bot/organizations/data-flow) lists.
 
 Machine identity owned by the organization, with admin approval and a removal that a new login cannot undo, is not built yet. See [Ravi for organizations](https://docs.ravi.bot/organizations/overview) and the [Security model](https://docs.ravi.bot/organizations/security).
 

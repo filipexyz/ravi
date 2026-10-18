@@ -71,7 +71,20 @@ To switch users, run `ravi login` and sign in as the other user. The login that 
 
 ## What the Console sees
 
-While a login with `console.projects.link` exists, the daemon reports this machine's agents at start and every 5 minutes. The Console answers with the Library skills pinned to them.
+No agent is reported until its operator lists it. While a login with `console.projects.link` exists, the daemon reports the listed agents at start and every 5 minutes. The Console answers with the Library skills pinned to them.
+
+### List an agent
+
+```bash
+ravi agents listing finance                 # current state
+ravi agents listing finance on              # plan only (exit 3)
+ravi agents listing finance on --execute
+ravi agents listing finance off             # applies at once, and closes it to requests
+```
+
+Listing adds exposure, so it is a dry run until you pass `--execute`. Unlisting applies at once and also closes the agent to requests. An unlisted agent leaves the Console's Running agents at the next report. Its pins keep loading, but a new pin needs it listed (`LIBRARY_AGENT_NOT_LISTED`). Agents cannot list or unlist agents (`LIBRARY_AGENT_CANNOT_LIST`, exit 3).
+
+### What the report carries
 
 | Field | Where it comes from |
 |---|---|
@@ -83,7 +96,7 @@ While a login with `console.projects.link` exists, the daemon reports this machi
 | `description` | `ravi agents set <id> description "<text>"`, at most 300 characters |
 | `acceptsRequests` | `ravi agents requests <id> on --execute`. Off by default. |
 
-The report never carries instructions, paths, credentials, sessions or messages. It covers at most 500 agents per machine.
+The report never carries instructions, paths, credentials, sessions or messages. It covers at most 500 listed agents per machine.
 
 **Change the interval.** Add `RAVI_LIBRARY_PIN_INTERVAL_MS` to `~/.ravi/.env`, in milliseconds, then restart the daemon. The minimum is 10 seconds, and the same interval sets how often the machine checks for requests.
 
@@ -92,7 +105,7 @@ echo 'RAVI_LIBRARY_PIN_INTERVAL_MS=60000' >> ~/.ravi/.env
 ravi daemon restart -m "report agents every minute"
 ```
 
-Some commands report at once instead of waiting: `ravi agents requests <id> on|off` and `ravi skills pin ... --execute`.
+Some commands report at once instead of waiting: `ravi agents listing <id> on|off`, `ravi agents requests <id> on|off` and `ravi skills pin ... --execute`.
 
 ### What else reaches the Console
 
@@ -121,7 +134,7 @@ ravi agents requests finance on --execute
 ravi agents requests finance off             # applies at once
 ```
 
-Opening adds exposure, so it is a dry run until you pass `--execute`. Closing only takes exposure away and applies at once. Agents cannot open or close agents (`LIBRARY_AGENT_CANNOT_OPEN_REQUESTS`, exit 3).
+Opening adds exposure, so it is a dry run until you pass `--execute`, and it also lists the agent. Closing only takes exposure away and applies at once; the agent stays listed until you run `ravi agents listing <agent> off`. Agents cannot open or close agents (`LIBRARY_AGENT_CANNOT_OPEN_REQUESTS`, exit 3).
 
 The directory learns of the change right away when the login has `console.projects.link`. If the Console cannot be reached, it learns at the daemon's next report. Without that scope, it learns nothing until you run `ravi login` again.
 
@@ -174,7 +187,7 @@ The Console Library holds skills, agent definitions, themes and widgets. Each it
 
 | Item | Share it | Use it | Agents may |
 |---|---|---|---|
-| Skill | `ravi skills publish <dir> --scope org --execute` | `ravi skills pin <ref> --agent <id> --execute` on the agent's machine, or `ravi skills grant` | Propose |
+| Skill | `ravi skills publish <dir> --scope org --execute` | `ravi skills pin <ref> --agent <id> --execute` on the agent's machine, once the agent is listed, or `ravi skills grant` | Propose |
 | Agent definition | `ravi agents publish <id> --scope org --execute` | `ravi agents install <ref>` on a machine, then route it yourself | Search and read only |
 | Theme | `ravi themes publish <dir> --scope org --execute` | `ravi themes use <ref> --execute`. Private pages follow it when opened, others at their next ship. | Propose |
 | Widget | `ravi widgets publish <dir> --scope org --execute` | Pages use it in `<ravi-widget>` and `<ravi-view>` tags | Propose |
@@ -192,12 +205,12 @@ See [Library skills](/reference/skills#library-skills-organization-and-project),
 Today you unlink a machine by logging out on it. What the Console shows for that machine afterwards is decided by the Console.
 
 <Steps>
-  <Step title="Close its agents">
+  <Step title="Unlist its agents">
     ```bash
-    ravi agents requests finance off
+    ravi agents listing finance off
     ```
 
-    The switch is stored on the machine and survives logout. Close every open agent while the login still works, so the directory hears about it.
+    Unlisting also closes the agent to requests. The switch is stored on the machine and survives logout. Unlist every listed agent while the login still works, so the directory hears about it.
   </Step>
   <Step title="Unpin skills you want gone">
     ```bash
@@ -225,7 +238,7 @@ When a token refresh fails with `INSTALLATION_REVOKED` from the Console, the CLI
 
 | Capability | Status |
 |---|---|
-| Link a machine with `ravi login`, see its agents in the directory | Ready |
+| Link a machine with `ravi login`, list its agents in the directory | Ready |
 | Unlink a machine with `ravi logout` | Ready |
 | Removal that a new `ravi login` cannot undo | Not yet. The machine key stays, and a new login links the machine again. |
 | An organization install code, or an admin approving a machine | Not yet. A machine is linked by whichever Console user runs `ravi login`. |

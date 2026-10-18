@@ -52,7 +52,7 @@ ravi instances target wa-main --pattern group:120363012345678901
 Both policies default to `open`. `ravi instances connect` rewrites the instance record each time it runs, so the policies go back to `open`. Set `pairing` and `allowlist` again after every connect.
 </Warning>
 
-Members of your organization reach an agent from another machine only after its operator opens it with `ravi agents requests <agent> on --execute`. Those turns run as the person who asked, with no capabilities. See [Machines](/organizations/machines#let-other-machines-ask-an-agent).
+Members of your organization see an agent in the directory only after its operator lists it (`ravi agents listing <agent> on --execute`), and reach it from another machine only after the operator opens it with `ravi agents requests <agent> on --execute`. Those turns run as the person who asked, with no capabilities. See [Machines](/organizations/machines#let-other-machines-ask-an-agent).
 
 Channel details, such as how Slack differs from WhatsApp, are in [Instances and routing](/guides/routing).
 
@@ -90,15 +90,15 @@ See [Permissions](/guides/permissions) for capabilities, the bootstrap floor, go
 
 ## Every command declares its risk
 
-Every `ravi` command declares a kind (`read` or `mutate`), a resource, an action and a risk. A command without that declaration is denied, whoever runs it.
+Every `ravi` command declares a kind (`read` or `mutate`), a resource, an action and a risk. A command without that declaration is denied, whoever runs it. The counts below are from 18 October 2026 and grow as commands are added.
 
 | Risk | Commands |
 |---|---|
 | `low` | 388 |
-| `medium` | 267 |
+| `medium` | 269 |
 | `high` | 165 |
 | `destructive` | 36 |
-| Total | 856 |
+| Total | 858 |
 
 The kind, resource and action form the capability the command checks, such as `mutate:agents:permissions`. The older `execute:group:<group>` form also works, except on a few commands that need an exact resource. To read any command's declaration:
 
@@ -117,7 +117,7 @@ The `access` block shows `kind`, `resource`, `action`, `risk` and `requiresConfi
 | `2` | Usage error, such as an unknown flag |
 | `3` | Blocked by policy. Usually the write brake: the plan was printed and nothing was written. |
 
-156 commands carry the write brake. Without `--execute` they print the plan and exit `3`. Some brake only when the change adds authority: `ravi agents permissions` applies a reduction at once.
+157 commands carry the write brake. Without `--execute` they print the plan and exit `3`. Some brake only when the change adds authority: `ravi agents permissions` applies a reduction at once.
 
 ```bash
 ravi agents permissions main full-access             # plan only, exit 3
@@ -348,4 +348,4 @@ These limits exist today. Plan around them.
 
 ## Report a vulnerability
 
-Report security issues privately through a [GitHub security advisory](https://github.com/filipexyz/ravi/security/advisories/new). Please do not open a public issue for them.
+Report security issues privately through a [GitHub security advisory](https://github.com/filipexyz/ravi/security/advisories/new). If GitHub does not offer the form, open an issue that asks for a private security contact, without any details. Please do not put details in a public issue.
