@@ -90,7 +90,7 @@ When unsure, run the command without `--execute` first. If it is braked, you get
 
 ### Console-scoped commands
 
-Commands that work with the Ravi Console (`pages`, `bases`, `connectors`, `gmail`, `bridges`, `bug`, `feedback`, `cloud projects`) need `ravi login` first; without it they fail with `AUTH_REQUIRED`. Commands that act on a Console project take `--project <ref>`, a project id or slug. `ravi pages` and `ravi bases` fall back to a saved default project when you omit it:
+Commands that work with the Ravi Console (`pages`, `bases`, `connectors`, `gmail`, `bridges`, `bug`, `feedback`, `projects`) need `ravi login` first; without it they fail with `AUTH_REQUIRED`. Commands that act on a Console project take `--project <ref>`, a project id or slug. `ravi pages` and `ravi bases` fall back to a saved default project when you omit it:
 
 ```bash
 ravi cloud scope set --global --project <ref>   # default project for this install
