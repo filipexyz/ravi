@@ -3800,6 +3800,13 @@ public struct MeetingsNamespace: Sendable {
     return try await transport.call(groupSegments: ["meetings"], command: "list", body: requestBody, as: MeetingsListReturn.self)
   }
 
+  public func read(_ meeting: String, _ options: MeetingsReadOptions = .init()) async throws -> MeetingsReadReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["meeting"] = try RaviJSON.fromEncodable(meeting)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["meetings"], command: "read", body: requestBody, as: MeetingsReadReturn.self)
+  }
+
   public func show(_ meetingId: String, _ options: MeetingsShowOptions = .init()) async throws -> MeetingsShowReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["meetingId"] = try RaviJSON.fromEncodable(meetingId)

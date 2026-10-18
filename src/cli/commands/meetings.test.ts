@@ -2,10 +2,14 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ConsoleApiClient } from "../../cloud-auth/client.js";
+import { CloudAuthError } from "../../cloud-auth/errors.js";
+import type { CloudCredentials } from "../../cloud-auth/types.js";
 import { ContractError } from "../agent-contract.js";
 import { runWithContext } from "../context.js";
 import { getCliOnlyMetadata } from "../decorators.js";
 import { MeetingProfileCommands, MeetingsCommands } from "./meetings.js";
+import { meetingsReadReturnSchema } from "./operational-return-schemas.js";
 
 let tempDir: string | undefined;
 let previousPath: string | undefined;
@@ -500,4 +504,159 @@ describe("meetings command annotations", () => {
       expect([...cliOnly]).not.toContain(method);
     }
   });
+});
+
+describe("meetings read", () => {
+  const MEETING_ID = "6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b";
+
+  function readDeps(operatorTurn: boolean, handler: () => Promise<unknown> = async () => readResponse()) {
+    const calls: Array<{ path: string; body: unknown }> = [];
+    const client = {
+      requestJson: async (_method: string, path: string, body: unknown) => {
+        calls.push({ path, body });
+        return handler();
+      },
+    } as unknown as ConsoleApiClient;
+    return { calls, deps: { read: { client, readCredentials: () => readCredentials(), operatorTurn } } };
+  }
+
+  async function failure(run: () => Promise<unknown>) {
+    const { output } = await captureConsole(() =>
+      run().then(
+        () => {
+          throw new Error("expected a failure");
+        },
+        (error: unknown) => {
+          expect(error).toBeInstanceOf(ContractError);
+          caughtError = error as ContractError;
+        },
+      ),
+    );
+    return { error: caughtError as ContractError, output };
+  }
+  let caughtError: ContractError | undefined;
+
+  it("refuses a turn that is not the operator's own with exit 3 and never calls the Console", async () => {
+    const { calls, deps } = readDeps(false);
+    const { error, output } = await failure(() => new MeetingsCommands(deps).read(MEETING_ID, undefined, true));
+    expect(error).toMatchObject({ code: "MEETING_ACCESS_DENIED", exitCode: 3, op: "meetings read" });
+    expect(error.details).toMatchObject({ refusal: "operator_only", turn: "not_owner" });
+    expect(String(error.details.suggestedAction)).toContain("cannot read meeting transcripts for other people");
+    expect(JSON.parse(output)).toMatchObject({
+      success: false,
+      op: "meetings read",
+      error: { code: "MEETING_ACCESS_DENIED" },
+    });
+    expect(calls).toEqual([]);
+  });
+
+  it("reads by link on the operator's turn and returns the payload with the note", async () => {
+    const { calls, deps } = readDeps(true);
+    const link = `https://console.ravi.bot/acme/p/sales/meetings/${MEETING_ID}`;
+    const { output, result } = await captureConsole(() => new MeetingsCommands(deps).read(link, undefined, true));
+    expect(calls).toEqual([{ path: "/api/cli/meetings/read", body: { url: link } }]);
+    const payload = JSON.parse(output);
+    expect(payload).toMatchObject({
+      success: true,
+      crossOrganization: true,
+      organization: { name: "Acme Corp" },
+      transcript: { segments: [{ speaker: "Ana", text: "Hello." }] },
+    });
+    expect(payload.note).toContain("do not share its content with other contacts");
+    expect(payload.note).toContain("Acme Corp");
+    expect(meetingsReadReturnSchema.safeParse(result).success).toBe(true);
+  });
+
+  it("prints the transcript as text by id", async () => {
+    const { calls, deps } = readDeps(true);
+    const { output } = await captureConsole(() => new MeetingsCommands(deps).read(MEETING_ID, "1000", false));
+    expect(calls).toEqual([{ path: "/api/cli/meetings/read", body: { meetingId: MEETING_ID } }]);
+    expect(output).toContain("Weekly sync");
+    expect(output).toContain("[00:05] Ana: Hello.");
+    expect(output).toContain("Note: This transcript was read for this turn only.");
+  });
+
+  it("maps Console refusals to the agent contract", async () => {
+    const disabled = readDeps(true, async () => {
+      throw new CloudAuthError("ORG_ACCESS_DENIED", "remote", {
+        status: 403,
+        details: { reason: "external_agents_disabled", organization: { name: "Acme Corp" } },
+      });
+    });
+    const orgError = await failure(() => new MeetingsCommands(disabled.deps).read(MEETING_ID, undefined, true));
+    expect(orgError.error).toMatchObject({ code: "ORG_ACCESS_DENIED", exitCode: 3 });
+    expect(String(orgError.error.details.suggestedAction)).toContain("An admin of Acme Corp");
+    expect(orgError.error.details).toMatchObject({
+      refusal: "external_agents_disabled",
+      organization: { name: "Acme Corp" },
+    });
+
+    const missing = readDeps(true, async () => {
+      throw new CloudAuthError("NOT_FOUND", "remote", { status: 404 });
+    });
+    const notFound = await failure(() => new MeetingsCommands(missing.deps).read(MEETING_ID, undefined, true));
+    expect(notFound.error).toMatchObject({ code: "NOT_FOUND", exitCode: 1 });
+
+    const down = readDeps(true, async () => {
+      throw new CloudAuthError("SERVER_UNAVAILABLE", "remote", { status: 503 });
+    });
+    const unavailable = await failure(() => new MeetingsCommands(down.deps).read(MEETING_ID, undefined, true));
+    expect(unavailable.error).toMatchObject({ code: "SERVER_UNAVAILABLE", exitCode: 1 });
+  });
+
+  it("rejects a Google Meet link or a bad --max-chars as usage errors before any call", async () => {
+    const { calls, deps } = readDeps(true);
+    const meet = await failure(() =>
+      new MeetingsCommands(deps).read("https://meet.google.com/abc-defg-hij", undefined, true),
+    );
+    expect(meet.error).toMatchObject({ code: "INVALID_ARGUMENT", exitCode: 2 });
+    expect(meet.error.message).toContain("Google Meet call link");
+    const chars = await failure(() => new MeetingsCommands(deps).read(MEETING_ID, "5", true));
+    expect(chars.error).toMatchObject({ code: "INVALID_ARGUMENT", exitCode: 2 });
+    expect(calls).toEqual([]);
+  });
+
+  function readResponse() {
+    return {
+      meeting: { id: MEETING_ID, title: "Weekly sync", status: "done", ready: true, recordingSeconds: 60 },
+      organization: { id: "org_acme", slug: "acme", name: "Acme Corp" },
+      project: { id: "prj_1", slug: "sales", name: "Sales" },
+      access: "guest",
+      crossOrganization: true,
+      transcript: {
+        status: "done",
+        segments: [
+          {
+            speaker: "Ana",
+            speakerId: "p1",
+            isHost: true,
+            startSeconds: 5,
+            endSeconds: 6,
+            startedAt: null,
+            text: "Hello.",
+          },
+        ],
+      },
+      participants: [{ id: "p1", name: "Ana", isHost: true }],
+      chat: [],
+      recordings: [],
+    };
+  }
+
+  function readCredentials(): CloudCredentials {
+    return {
+      version: 1,
+      consoleUrl: "https://console.example",
+      installationId: "ins_123",
+      accessToken: "access-secret",
+      refreshToken: "refresh-secret",
+      accessTokenExpiresAt: "2099-05-10T00:00:00.000Z",
+      refreshTokenExpiresAt: "2099-06-10T00:00:00.000Z",
+      scopes: [],
+      user: { id: "user_1", email: "luis@example.com" },
+      organization: { id: "org_personal", name: "Luis" },
+      createdAt: "2026-05-09T00:00:00.000Z",
+      updatedAt: "2026-05-09T00:00:00.000Z",
+    };
+  }
 });
