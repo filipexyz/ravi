@@ -21594,7 +21594,7 @@ class SessionsCreateThreadOptions {
 }
 
 class SessionsCreateThreadReturn {
-  const SessionsCreateThreadReturn({required this.actionId, required this.child, required this.executionMode, required this.idempotencyKey, required this.initiatorSession, this.nextAttemptAt, required this.parentSession, required this.publishPending, required this.publishedNow, required this.queued, required this.requestId, required this.slack, required this.status});
+  const SessionsCreateThreadReturn({required this.actionId, required this.child, required this.executionMode, required this.idempotencyKey, required this.initiatorSession, this.nextAttemptAt, required this.parentSession, required this.publishPending, required this.publishedNow, required this.queued, required this.requestId, required this.slack, required this.status, required this.title});
 
   final String actionId;
   final RaviJson child;
@@ -21609,6 +21609,7 @@ class SessionsCreateThreadReturn {
   final String requestId;
   final RaviJson slack;
   final String status;
+  final RaviJson title;
 
   factory SessionsCreateThreadReturn.fromJson(Map<String, Object?> json) {
     return SessionsCreateThreadReturn(
@@ -21625,6 +21626,7 @@ class SessionsCreateThreadReturn {
       requestId: raviJsonAsString(json["requestId"]),
       slack: RaviJson.from(json["slack"]),
       status: raviJsonAsString(json["status"]),
+      title: RaviJson.from(json["title"]),
     );
   }
 
@@ -22273,6 +22275,44 @@ typedef SessionsRenameReturn = Map<String, RaviJson>;
 
 SessionsRenameReturn sessionsRenameReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
 
+class SessionsReportOptions {
+  const SessionsReportOptions({this.session});
+
+  final String? session;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (session != null) {
+      into["session"] = RaviJson.from(session);
+    }
+  }
+}
+
+class SessionsReportReturn {
+  const SessionsReportReturn({required this.actionId, required this.messageId, required this.parentSession, required this.requestId, required this.status});
+
+  final String actionId;
+  final String messageId;
+  final RaviJson parentSession;
+  final String requestId;
+  final String status;
+
+  factory SessionsReportReturn.fromJson(Map<String, Object?> json) {
+    return SessionsReportReturn(
+      actionId: raviJsonAsString(json["actionId"]),
+      messageId: raviJsonAsString(json["messageId"]),
+      parentSession: RaviJson.from(json["parentSession"]),
+      requestId: raviJsonAsString(json["requestId"]),
+      status: raviJsonAsString(json["status"]),
+    );
+  }
+
+  static SessionsReportReturn fromJsonValue(Object? json) {
+    return SessionsReportReturn.fromJson(raviJsonObject(json, "SessionsReportReturn"));
+  }
+}
+
+SessionsReportReturn sessionsReportReturnFromJson(Object? json) => SessionsReportReturn.fromJsonValue(json);
+
 class SessionsResetOptions {
   const SessionsResetOptions({this.execute});
 
@@ -22870,6 +22910,84 @@ SessionsSetTtlReturn sessionsSetTtlReturnFromJson(Object? json) => raviJsonAsRav
 typedef SessionsSubscriptionsReturn = Map<String, RaviJson>;
 
 SessionsSubscriptionsReturn sessionsSubscriptionsReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
+
+class SessionsThreadSendOptions {
+  const SessionsThreadSendOptions({this.session});
+
+  final String? session;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (session != null) {
+      into["session"] = RaviJson.from(session);
+    }
+  }
+}
+
+class SessionsThreadSendReturn {
+  const SessionsThreadSendReturn({required this.actionId, required this.messageId, required this.reopened, required this.requestId, required this.status, required this.thread});
+
+  final String actionId;
+  final String messageId;
+  final bool reopened;
+  final String requestId;
+  final String status;
+  final RaviJson thread;
+
+  factory SessionsThreadSendReturn.fromJson(Map<String, Object?> json) {
+    return SessionsThreadSendReturn(
+      actionId: raviJsonAsString(json["actionId"]),
+      messageId: raviJsonAsString(json["messageId"]),
+      reopened: raviJsonAsBool(json["reopened"]),
+      requestId: raviJsonAsString(json["requestId"]),
+      status: raviJsonAsString(json["status"]),
+      thread: RaviJson.from(json["thread"]),
+    );
+  }
+
+  static SessionsThreadSendReturn fromJsonValue(Object? json) {
+    return SessionsThreadSendReturn.fromJson(raviJsonObject(json, "SessionsThreadSendReturn"));
+  }
+}
+
+SessionsThreadSendReturn sessionsThreadSendReturnFromJson(Object? json) => SessionsThreadSendReturn.fromJsonValue(json);
+
+class SessionsThreadsOptions {
+  const SessionsThreadsOptions({this.all, this.session});
+
+  final bool? all;
+  final String? session;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (all != null) {
+      into["all"] = RaviJson.from(all);
+    }
+    if (session != null) {
+      into["session"] = RaviJson.from(session);
+    }
+  }
+}
+
+class SessionsThreadsReturn {
+  const SessionsThreadsReturn({required this.includeClosed, required this.parentSession, required this.threads});
+
+  final bool includeClosed;
+  final RaviJson parentSession;
+  final List<RaviJson> threads;
+
+  factory SessionsThreadsReturn.fromJson(Map<String, Object?> json) {
+    return SessionsThreadsReturn(
+      includeClosed: raviJsonAsBool(json["includeClosed"]),
+      parentSession: RaviJson.from(json["parentSession"]),
+      threads: raviJsonAsList(json["threads"], RaviJson.from),
+    );
+  }
+
+  static SessionsThreadsReturn fromJsonValue(Object? json) {
+    return SessionsThreadsReturn.fromJson(raviJsonObject(json, "SessionsThreadsReturn"));
+  }
+}
+
+SessionsThreadsReturn sessionsThreadsReturnFromJson(Object? json) => SessionsThreadsReturn.fromJsonValue(json);
 
 class SessionsTraceOptions {
   const SessionsTraceOptions({this.correlation, this.explain, this.includeStream, this.limit, this.message, this.only, this.raw, this.run, this.showSystemPrompt, this.showUserPrompt, this.since, this.turn, this.until});
