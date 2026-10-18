@@ -527,7 +527,7 @@ describe("Slack thread orchestration", () => {
   });
 
   it("updates the thread's root card on report, close and reopen", async () => {
-    const fixture = seedPendingCreation();
+    const fixture = seedPendingCreation({ requestedBy: "Ana Souza" });
     const { dependencies } = capture();
     const jobs: ChannelOutboundJob[] = [];
     const withCards = {
@@ -549,9 +549,9 @@ describe("Slack thread orchestration", () => {
 
     // A repeated close and a send to an open thread leave the card as it is.
     expect(jobs.map((job) => (job.request.content as { threadCard?: unknown }).threadCard)).toEqual([
-      { status: "open", note: "Found the failing commit", updatedAt: expect.any(Number) },
-      { status: "closed", note: "The branch is fixed", updatedAt: expect.any(Number) },
-      { status: "reopened", updatedAt: expect.any(Number) },
+      { status: "open", note: "Found the failing commit", updatedAt: expect.any(Number), requestedBy: "Ana Souza" },
+      { status: "closed", note: "The branch is fixed", updatedAt: expect.any(Number), requestedBy: "Ana Souza" },
+      { status: "reopened", updatedAt: expect.any(Number), requestedBy: "Ana Souza" },
     ]);
     expect(jobs[0]!.request).toMatchObject({
       origin: { sessionName: "ravi-parent", responsePhase: "chat_action" },
@@ -613,7 +613,9 @@ describe("Slack thread orchestration", () => {
   });
 });
 
-function seedPendingCreation(input: { channelId?: string; chatType?: "channel" | "dm"; teamId?: string } = {}): {
+function seedPendingCreation(
+  input: { channelId?: string; chatType?: "channel" | "dm"; teamId?: string; requestedBy?: string } = {},
+): {
   requestId: string;
   threadTs: string;
 } {
@@ -644,6 +646,7 @@ function seedPendingCreation(input: { channelId?: string; chatType?: "channel" |
     platformChatId: channelId,
     rootCanonicalChatId: rootChat.id,
     initialPrompt: "Investigate the branch",
+    ...(input.requestedBy ? { requestedBy: input.requestedBy } : {}),
     modelOverride: "gpt-5.6",
   });
   markSlackThreadRootDelivered({

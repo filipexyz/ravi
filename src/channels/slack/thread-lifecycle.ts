@@ -585,7 +585,7 @@ export async function sendSlackThreadMessage(
  */
 async function updateSlackThreadCard(
   record: SlackThreadLifecycleRecord,
-  state: Omit<SlackThreadCardState, "updatedAt">,
+  state: Omit<SlackThreadCardState, "updatedAt" | "requestedBy">,
   dependencies: SlackThreadLifecycleDependencies,
 ): Promise<void> {
   const publish = dependencies.publishOutbound;
@@ -609,6 +609,7 @@ async function updateSlackThreadCard(
         status: state.status,
         ...(state.note?.trim() ? { note: state.note.trim() } : {}),
         updatedAt: Date.now(),
+        ...(record.requestedBy ? { requestedBy: record.requestedBy } : {}),
       },
     },
   });

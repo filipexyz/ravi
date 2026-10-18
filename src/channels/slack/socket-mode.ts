@@ -343,7 +343,10 @@ export class SlackChatActionDelivery implements NativeChatActionDelivery {
     const { action, target } = request;
     const channel = resolveSlackApiChannelId(target);
     if (action.actionId === "thread.create") {
-      const card = buildSlackThreadCard(action.text, { status: "open" });
+      const card = buildSlackThreadCard(action.text, {
+        status: "open",
+        ...(action.requestedBy ? { requestedBy: action.requestedBy } : {}),
+      });
       const result = await this.webClient.postMessage({
         channel,
         text: card.text,

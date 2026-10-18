@@ -147,7 +147,11 @@ ravi sessions thread-send <thread> "<instructions>"
 
 The root of a programmatic thread is a Block Kit card, not the initial message
 as plain text: the first line is the title, the rest a summary of at most 300
-characters, and a context line with the thread status. When the summary leaves
+characters, and a context line with the thread status and who asked. Who asked
+is the contact who wrote the turn running `create-thread`, from the daemon's
+record of the turn; the operator's own turns (and the terminal) fall back to
+the `permission-owner` contact; agents, routines and unknown turns name no one.
+When the summary leaves
 part of the message out, the whole message is posted as the first reply inside
 the thread. `report` (latest progress), `close-thread` (closed, with the
 `--return` result) and a `thread-send` that reopens the thread update the card

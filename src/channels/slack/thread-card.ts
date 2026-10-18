@@ -11,7 +11,8 @@
  * result.
  *
  * Everything shown comes from text that passes the outbound Knowledge guard:
- * the brief (`text`) and the card note (`threadCard.note`).
+ * the brief (`text`) and the card note (`threadCard.note`), plus the name of
+ * the person who asked (`requestedBy`), resolved from the turn's contact.
  */
 
 import type { SlackBlockKitBlock } from "./block-kit.js";
@@ -25,6 +26,8 @@ export interface SlackThreadCardState {
   readonly note?: string;
   /** When the card last changed, in ms; shown as Slack-localized time. */
   readonly updatedAt?: number;
+  /** The person who asked for the thread, by name. */
+  readonly requestedBy?: string;
 }
 
 export interface SlackThreadCardMessage {
@@ -81,6 +84,8 @@ export function buildSlackThreadCard(brief: string, state: SlackThreadCardState)
     });
   }
   const context = [STATUS_LABELS[state.status]];
+  const requestedBy = state.requestedBy?.trim();
+  if (requestedBy) context.push(`pedido por ${escapeSlackText(requestedBy)}`);
   if (state.updatedAt !== undefined) context.push(slackLocalTime(state.updatedAt));
   if (truncated) context.push("instruções completas na thread");
   blocks.push({
@@ -150,6 +155,10 @@ function truncateAtBoundary(text: string, maxLength: number): string {
   const wordEnd = window.lastIndexOf(" ");
   const cut = wordEnd >= maxLength * 0.5 ? window.slice(0, wordEnd) : window.slice(0, maxLength - 1);
   return `${cut.trimEnd()}…`;
+}
+
+function escapeSlackText(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function slackLocalTime(ms: number): string {

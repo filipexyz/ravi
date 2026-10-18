@@ -61,6 +61,15 @@ describe("Slack thread card", () => {
     expect(card.fullBrief).toBeDefined();
   });
 
+  it("names who asked, escaped, in the status line", () => {
+    const card = buildSlackThreadCard("Investigar", { status: "open", requestedBy: "Ana <ops> & Co" });
+
+    expect(blockTexts(card.blocks)).toEqual([
+      "Investigar",
+      ":large_green_circle: *Em andamento*  ·  pedido por Ana &lt;ops&gt; &amp; Co",
+    ]);
+  });
+
   it("labels progress on an open or reopened thread", () => {
     const open = buildSlackThreadCard("Investigar", { status: "open", note: "Metade feita" });
     const reopened = buildSlackThreadCard("Investigar", { status: "reopened" });

@@ -992,10 +992,11 @@ describe("Slack Socket Mode routing", () => {
       sessionName: "ravi-slack-channel",
       idempotencyKey: "thread-long",
       target: { channel: "slack", accountId: "ravi-slack", chatId: "C123" },
-      action: { type: "chat_action", actionId: "thread.create", text: brief },
+      action: { type: "chat_action", actionId: "thread.create", text: brief, requestedBy: "Luís" },
     });
 
-    const card = buildSlackThreadCard(brief, { status: "open" });
+    const card = buildSlackThreadCard(brief, { status: "open", requestedBy: "Luís" });
+    expect(JSON.stringify(card.blocks)).toContain("pedido por Luís");
     expect(card.fullBrief).toBeDefined();
     expect(postMessage).toHaveBeenNthCalledWith(1, {
       channel: "C123",
