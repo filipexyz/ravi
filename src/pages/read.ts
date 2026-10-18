@@ -211,6 +211,56 @@ export function resolveTurnForActiveLogin(
   });
 }
 
+/** Which rule kept this turn from being the operator's own (for a `public_only` refusal). */
+export type PageReadTurnBlock =
+  | "shared_session"
+  | "relay_answer_chat"
+  | "owner_outside_dm"
+  | "group"
+  | "not_owner"
+  | "unknown";
+
+/**
+ * Why the classifier did not count this turn as the operator's own, in words
+ * an agent can relay; null when it did (or a test fixed `publicOnly`). It
+ * only explains the existing classification: it never changes it.
+ */
+export function pageReadTurnBlock(deps: PageReadDeps = {}): { turn: PageReadTurnBlock; why: string } | null {
+  if (deps.publicOnly !== undefined) return null;
+  let result: ConnectorTurnResult;
+  try {
+    result = resolveTurnForActiveLogin(deps);
+  } catch {
+    return { turn: "unknown", why: "Ravi could not classify who is asking in this turn." };
+  }
+  if (result.ok) return null;
+  if (result.sharedSession) {
+    return {
+      turn: "shared_session",
+      why: "the owner's direct chat runs in a session other people's chats share (dmScope main, a route that names the session, or another chat attached to it)",
+    };
+  }
+  if (result.relay) {
+    return {
+      turn: "relay_answer_chat",
+      why: "the operator relayed this turn (ravi sessions send|ask) and the session answers into a chat that is not their direct chat",
+    };
+  }
+  if (result.speakerIsOwner) {
+    return { turn: "owner_outside_dm", why: "the owner wrote outside their own direct chat" };
+  }
+  if (result.error.code === "CONNECTOR_GROUP_BLOCKED") {
+    return { turn: "group", why: "this turn answers into a group or a chat that is not the owner's direct chat" };
+  }
+  if (result.error.code === "CONNECTOR_SPEAKER_NOT_OWNER" && result.candidate) {
+    return {
+      turn: "not_owner",
+      why: "the person writing is not linked to the Console user of this ravi login (the owner writing from an account Ravi does not know links it with `ravi link` in that chat)",
+    };
+  }
+  return { turn: "unknown", why: "Ravi could not tell who is asking in this turn" };
+}
+
 export async function readPage(options: PageReadOptions, deps: PageReadDeps = {}): Promise<PageReadResult> {
   const url = normalizePageReadUrl(options.url, { customDomain: options.customDomain });
   const format = options.format ?? "markdown";

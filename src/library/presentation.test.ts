@@ -202,6 +202,16 @@ describe("theme and widget folders", () => {
     rmSync(join(noJson, "widget.json"));
     expect(() => readPresentationPackage("widget", noJson)).toThrow(/no widget\.json/);
     expect(readPresentationFiles("widget", noJson).map((file) => file.path)).toEqual(["widget.html"]);
+    // widget.js is part of a widget folder; other files (preview.html, chart.js) stay out.
+    const withScript = widgetDir("com-codigo");
+    writeFileSync(join(withScript, "widget.js"), "export function mount(card, ctx) { return {}; }\n");
+    writeFileSync(join(withScript, "preview.html"), "<p>preview</p>");
+    writeFileSync(join(withScript, "chart.js"), "export {};\n");
+    expect(readPresentationPackage("widget", withScript).files.map((file) => file.path)).toEqual([
+      "widget.html",
+      "widget.js",
+      "widget.json",
+    ]);
     expect(() => readPresentationFiles("theme", join(workDir, "nada"))).toThrow(LibraryPackageError);
     const noDescription = themeDir("sem-descricao", JSON.stringify({ color: {} }));
     expect(() => readPresentationPackage("theme", noDescription)).toThrow(/\$description/);
@@ -304,6 +314,27 @@ describe("theme and widget proposals", () => {
     ).catch((thrown) => thrown);
     expect(outside).toMatchObject({ code: "LIBRARY_OUT_OF_VIEW", exitCode: 3 });
 
+    // The refusal names what the session sees and the --scope that works.
+    const named = await prepareLibraryProposal(
+      { kind: "widget", dir: widgetDir(), scope: "outro", caller },
+      {
+        openSession: async (options) => ({
+          ...fakeSession(fake, { slug: "painel" }, "org-1", options.kind),
+          organization: "acme",
+          projectSource: "workspace_default",
+        }),
+        turn: { operatorOwnTurn: true },
+      },
+    ).catch((thrown) => thrown);
+    expect(named).toMatchObject({
+      code: "LIBRARY_OUT_OF_VIEW",
+      details: { view: { organization: "acme", project: "painel", source: "workspace_default" } },
+    });
+    expect(named.message).toContain(
+      "This session sees org acme and project painel (from workspace_default); use --scope painel or --scope org.",
+    );
+    expect(String(named.details.suggestedAction)).toStartWith("Use --scope painel or --scope org, or ask an operator");
+
     const listed = await listLibraryProposals(
       { kind: "widget", ref: parseLibraryRef("clinica/pedido-card")!, caller },
       { ...deps(fake, { slug: "clinica" }), turn: { operatorOwnTurn: false } },
@@ -358,6 +389,8 @@ describe("theme and widget reads", () => {
           description: "",
           fields: { valor: { type: "number", role: null, required: false, label: null, description: null } },
           variants: [],
+          // An older Console sends no `script`: no widget.js.
+          script: false,
         },
       ],
     });
@@ -448,6 +481,51 @@ describe("init, check and preview", () => {
     expect(outcome.files.map((file) => file.file)).toEqual(["widget.html", "widget.json", "example.json"]);
     expect(outcome.diagnostics).toHaveLength(1);
     expect(fake.requests[0]?.body).toEqual({ slug: "pedido", view, project: "clinica" });
+  });
+
+  it("names the project a --from-view scaffold used when the view is not found", async () => {
+    const fake = presentationConsole("widget", [], {
+      routes: (request) =>
+        request.rest[0] === "scaffold" ? json(404, { error: { code: "NOT_FOUND", message: "View not found" } }) : null,
+    });
+    const view = "0b7c3a52-2f0e-4c1e-9a4b-3f1d2c5e6a7b";
+    const error = await initWidget(
+      { dir: join(workDir, "pedido"), slug: "pedido", view },
+      {
+        openSession: async (options) => ({
+          ...fakeSession(fake, { slug: "page-chat-widget" }, "org-1", options.kind),
+          organization: "acme",
+          projectSource: "global_default",
+        }),
+      },
+    ).catch((e) => e);
+    expect(error).toMatchObject({ code: "NOT_FOUND", exitCode: 1 });
+    expect(error.message).toContain(`View ${view} was not found in project page-chat-widget (from global_default)`);
+    expect(String(error.details.suggestedAction)).toContain("--project <slug>");
+    expect(existsSync(join(workDir, "pedido"))).toBe(false);
+
+    // The Console may name the project it looked in and the view's own project.
+    const named = presentationConsole("widget", [], {
+      routes: (request) =>
+        request.rest[0] === "scaffold"
+          ? json(404, {
+              error: {
+                code: "NOT_FOUND",
+                message: "View not found",
+                details: { project: "page-chat-widget", viewProject: "painel" },
+              },
+            })
+          : null,
+    });
+    const located = await initWidget(
+      { dir: join(workDir, "pedido"), slug: "pedido", view },
+      { openSession: async (options) => fakeSession(named, { slug: "page-chat-widget" }, "org-1", options.kind) },
+    ).catch((e) => e);
+    expect(located.message).toContain("It belongs to project painel.");
+    expect(located.details).toMatchObject({
+      viewProject: "painel",
+      suggestedAction: "Run the same init with --project painel",
+    });
   });
 
   it("keeps the contrast report on a failed theme check", async () => {

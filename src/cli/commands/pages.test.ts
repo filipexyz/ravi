@@ -2421,6 +2421,68 @@ describe("pages ship page kit", () => {
     expect(client.createPageUploadSession).not.toHaveBeenCalled();
   });
 
+  it("exits 2 with KIT_WIDGET_UNAUDITED and the Console audit URL in suggestedAction, uploading nothing", async () => {
+    stateDir = await createIsolatedRaviState("ravi-pages-ship-kit-unaudited-");
+    const url = "https://console.example/library/widgets/org/grafico/versions/2";
+    const diagnostics = [
+      {
+        severity: "error",
+        code: "KIT_WIDGET_UNAUDITED",
+        message: "Widget org/grafico@2 has code and no passing accessibility audit.",
+        path: "index.html",
+        line: 3,
+        column: 1,
+        url,
+        widget: "org/grafico@2",
+      },
+    ];
+    const { client } = makeKitClient(() => {
+      throw new CloudAuthError("PAYLOAD_INVALID", "Page kit found errors.", { status: 422, details: { diagnostics } });
+    });
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+    const line = `index.html:3:1 error KIT_WIDGET_UNAUDITED Widget org/grafico@2 has code and no passing accessibility audit. ${url}`;
+
+    const error = await expectContractError(() => shipKit(command, {}), "KIT_WIDGET_UNAUDITED", 2);
+    const envelope = error.envelope().error;
+    expect(envelope.message).toBe(
+      "Refusing to ship: org/grafico@2 has no passing accessibility audit yet. Nothing was uploaded or published.",
+    );
+    expect(envelope.suggestedAction).toBe(
+      `An org owner or admin must open ${url} in the Console and run the accessibility audit until it passes, then ship again`,
+    );
+    expect(envelope.issues).toEqual([{ path: [], code: "KIT_WIDGET_UNAUDITED", message: line }]);
+    expect(error.details.widgets).toEqual(["org/grafico@2"]);
+
+    const text = await captureConsoleError(async () => {
+      await expect(runWithContext({}, () => shipKit(command, { asJson: false }))).rejects.toBeInstanceOf(ContractError);
+    });
+    expect(text).toContain(url);
+    expect(client.createPageUploadSession).not.toHaveBeenCalled();
+
+    // Mixed with another kit error, the ship stays KIT_INVALID and the line keeps the URL.
+    const { client: mixed } = makeKitClient(() => {
+      throw new CloudAuthError("PAYLOAD_INVALID", "Page kit found errors.", {
+        status: 422,
+        details: {
+          diagnostics: [
+            ...diagnostics,
+            { severity: "error", code: "WIDGET_UNKNOWN", message: "Widget org/x does not exist.", path: "index.html" },
+          ],
+        },
+      });
+    });
+    const mixedError = await expectContractError(
+      () => shipKit(new PagesCommands({ client: mixed, readCredentials: makeReadCredentials() }), {}),
+      "KIT_INVALID",
+      2,
+    );
+    expect(mixedError.envelope().error.issues).toContainEqual({
+      path: [],
+      code: "KIT_WIDGET_UNAUDITED",
+      message: line,
+    });
+  });
+
   it("exits 2 with the Console's KIT_TOO_LARGE diagnostic and its message, uploading nothing", async () => {
     stateDir = await createIsolatedRaviState("ravi-pages-ship-kit-too-large-");
     const diagnostics = [

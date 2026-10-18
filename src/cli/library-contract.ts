@@ -52,7 +52,9 @@ import {
   contractDryRun,
   contractFail,
   renderContractError,
+  sanitizePublicContractMessage,
 } from "./agent-contract.js";
+import { quoteCommandToken } from "../utils/pagination.js";
 import { resolveCallerPath } from "./caller-cwd.js";
 import { cloudErrorToContractError } from "./cloud-error-contract.js";
 import {
@@ -275,8 +277,29 @@ export async function withLibraryContract<T>(
       const base = cloudErrorToContractError(op, error);
       const reason = typeof error.details?.reason === "string" ? error.details.reason : undefined;
       const copy = error.code === "CONFLICT" && reason ? libraryConflictCopy(op, reason, profile) : null;
+      // A Library conflict this side has no copy for keeps the Console's own words.
+      const consoleMessage = error.code === "CONFLICT" ? sanitizePublicContractMessage(error.message) : undefined;
+      const target = conflictTarget(error.details);
+      const taken =
+        reason?.startsWith("slug_taken") && target.ref
+          ? ` (${target.ref}${target.archived ? ", archived: its slug stays taken" : ""})`
+          : "";
+      const conflictMessage = copy?.message
+        ? taken
+          ? `${copy.message.replace(/\.$/, "")}${taken}.`
+          : copy.message
+        : (consoleMessage ?? base.message);
+      if (!copy && consoleMessage) {
+        const contract = new ContractError(op, base.code, conflictMessage, base.exitCode, {
+          ...base.details,
+          ...target,
+          suggestedAction: "Run the same command without --execute to see the current plan",
+        });
+        renderContractError(contract, asJson);
+        throw contract;
+      }
       const contract = copy
-        ? new ContractError(op, base.code, copy.message ?? base.message, base.exitCode, {
+        ? new ContractError(op, base.code, conflictMessage, base.exitCode, {
             ...base.details,
             // The envelope redacts `reason` as free text; `conflict` carries the code.
             reason,
@@ -286,6 +309,7 @@ export async function withLibraryContract<T>(
               : {}),
             ...(typeof error.details?.baseVersion === "number" ? { baseVersion: error.details.baseVersion } : {}),
             ...(typeof error.details?.status === "string" ? { proposalStatus: error.details.status } : {}),
+            ...conflictTarget(error.details),
             suggestedAction: copy.suggestedAction,
           })
         : base;
@@ -294,6 +318,30 @@ export async function withLibraryContract<T>(
     }
     throw error;
   }
+}
+
+/**
+ * Which item a Console slug conflict is about: `ref`, `scope`, `project`
+ * and `archived`, kept only in their typed shapes.
+ */
+function conflictTarget(details: Record<string, unknown> | undefined): {
+  ref?: string;
+  scope?: "org" | "project";
+  project?: string;
+  archived?: boolean;
+} {
+  const ref =
+    typeof details?.ref === "string" && details.ref.length <= 160 && parseLibraryRef(details.ref)
+      ? details.ref.toLowerCase()
+      : undefined;
+  const scope = details?.scope === "org" || details?.scope === "project" ? details.scope : undefined;
+  const project = typeof details?.project === "string" && isLibrarySlug(details.project) ? details.project : undefined;
+  return {
+    ...(ref ? { ref } : {}),
+    ...(scope ? { scope } : {}),
+    ...(project ? { project } : {}),
+    ...(typeof details?.archived === "boolean" ? { archived: details.archived } : {}),
+  };
 }
 
 /** `withLibraryContract` for `ravi themes` and `ravi widgets`: diagnostics and copy in the kind's words. */
@@ -685,6 +733,7 @@ export const widgetCatalogReturnSchema = z
           description: z.string(),
           fields: z.record(z.string(), widgetFieldReturnSchema),
           variants: z.array(z.string()),
+          script: z.boolean().describe("The current version has a widget.js (text: com código)"),
         })
         .strict(),
     ),
@@ -816,7 +865,7 @@ const SHOWN_TEXT_FILES = new Set([
   "widget.json",
   "widget.html",
   "example.json",
-]);
+]); // widget.js is listed with its size, never printed: it is bundled code.
 
 export async function runPresentationShow(
   profile: PresentationProfile,
@@ -903,7 +952,7 @@ export async function runPresentationPublish(profile: PresentationProfile, input
     op,
     LIBRARY_AGENT_CANNOT_PUBLISH,
     `Agents do not publish Library ${profile.noun}s: propose the change and a person reviews and publishes it in the Console.`,
-    `ravi ${profile.group} propose <dir> --scope ${scopeHint} --execute`,
+    `Run 'ravi ${profile.group} propose ${input.dir?.trim() ? quoteCommandToken(input.dir.trim()) : "<dir>"} --scope ${scopeHint} --execute' (an agent proposes to org or to its own Console project; see which with: ravi cloud scope explain)`,
     input.asJson,
   );
   return withPresentationContract(op, profile, input.asJson, async () => {

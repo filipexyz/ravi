@@ -21331,6 +21331,7 @@ export type WidgetsCatalogReturn = {
     }>;
     name: string;
     ref: string;
+    script: boolean;
     variants: string[];
   }>;
 };
