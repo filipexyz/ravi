@@ -9,6 +9,7 @@ description: |
   - mostrar uma página privada a uma pessoa (`ravi pages share`), trazer alguém para a org (`ravi invites create`) ou pedir acesso a uma página negada (`ravi access request`)
   - dar à página a asserção do viewer para chamar a sua própria API
   - ligar ou ajustar o Page Chat (agente de voz da página) e registrar ações que ele pode executar
+  - ligar ou ajustar o chat de texto do Ravi na página (painel "Fale com o Ravi" e a tag `<ravi-chat>`)
   page, pages, HTML, rota, URL, publicar, hospedar, landing, snapshot, site, tema, widget
   Página de dados só funciona para membros logados da org, em rota private ou protected_link; gente de fora recebe snapshot ou mensagem (skill solucoes).
   Não use para o ledger de artifacts (skill artifacts). Não crie um host *.ravi.page por página.
@@ -33,7 +34,7 @@ Rode com `--json` sempre que for decidir programaticamente. Com `--json`, falha 
 
 Exit: `0` sucesso · `1` erro de execução (`SITE_NOT_FOUND`, `ROUTE_NOT_FOUND`, `CONFLICT` de comentário não lido, auth/provider) · `2` uso (falta `--title`, `--body`/`--html`/`--dir` conflitantes, slug reservado) · `3` freio de escrita, não erro: nada foi enviado; o envelope traz `dryRun:true` e `plan`. Revise e repita com `--execute`.
 
-Exit 3 não se aplica a `pages ship`. O ship escreve na hora, e `--execute` nele é no-op (aceito por compatibilidade). O freio continua em `pages create`, `pages publish`, `password set/remove`, `domains`, `assertion audiences set/remove`, `visibility`/`update` para `public`, `chat set --enabled true`, `pages share`, `invites create` e `access request`.
+Exit 3 não se aplica a `pages ship`. O ship escreve na hora, e `--execute` nele é no-op (aceito por compatibilidade). O freio continua em `pages create`, `pages publish`, `password set/remove`, `domains`, `assertion audiences set/remove`, `visibility`/`update` para `public`, `chat set` com `--enabled true`, `--text true`, `--reply-policy always` ou `--ravi-agent`, `pages share`, `invites create` e `access request`.
 
 `--json` de sucesso do ship. `slug` é o host do projeto. `route` é a página. O campo `site` é o registro desse host:
 
@@ -118,7 +119,7 @@ ravi pages unshare --grant <grant-id>
 ```
 
 - `share` tem freio: sem `--execute` sai o plano (exit 3). `unshare` só reduz acesso e aplica na hora.
-- A pessoa entra no Console com aquele e-mail (verificado) e vê só o que recebeu: a rota, ou com `--site` toda rota privada do host. Não vira membro: sem barra do Pages, sem Page Chat e sem dados vivos de Bases (página de dados continua só para membros).
+- A pessoa entra no Console com aquele e-mail (verificado) e vê só o que recebeu: a rota, ou com `--site` toda rota privada do host. Não vira membro: sem barra do Pages, sem Page Chat de voz e sem dados vivos de Bases (página de dados continua só para membros). No chat de texto ela entra pelo link flutuante de convidado, nas rotas que recebeu.
 - `--expires`: `30d`, `12h`, `2w` ou data ISO, até 365 dias. Compartilhar de novo com a mesma pessoa atualiza validade e motivo.
 - Quem pode: quem publica no projeto (owner, admin ou developer da org, ou admin/developer do projeto).
 
@@ -250,11 +251,47 @@ window.ravi.pageChat.actions.push({
 
 `name`: letras, dígitos, `_` e `-`, até 64 caracteres. `parameters` é JSON Schema. Ação `kind: "write"` só roda depois que o viewer confirma por voz. Na dúvida, marque `write`.
 
+## Chat de texto do Ravi
+
+Toda Ravi Page tem um chat de texto com o Ravi. Na barra do Pages, o campo "Fale com o Ravi" abre o painel de conversa à direita (embaixo, em tela estreita), com um ponto quando há mensagem não lida. Para pôr o chat dentro da página, em tela cheia no container:
+
+```html
+<ravi-chat></ravi-chat>
+```
+
+O Pages troca a tag por um iframe do chat da rota atual. Não escreva o iframe à mão.
+
+- Salas: uma sala compartilhada por rota (todo mundo que abre aquela página conversa ali) e uma sala privada por pessoa naquela rota. Comentário feito na barra também aparece na sala compartilhada, apontando para o item.
+- Quem fala: membros da org que leem o projeto e convidados que receberam a rota ou o site (`ravi pages share`). Anônimo não entra. O agente sabe quem está falando.
+- Quando o agente responde na sala compartilhada: quando é chamado (`@ravi` ou `@<nome do assistente>`), quando alguém clica num botão dele, enquanto só uma pessoa escreveu na sala, ou sempre, se o site estiver com `--reply-policy always`. Na sala privada, responde sempre.
+- Escrita sempre pede clique: o agente mostra o que vai mudar e só executa depois que a pessoa a quem ele perguntou clica em confirmar no painel. Ele age como essa pessoa, nunca com mais acesso que ela.
+- Na sala compartilhada ele só lê os dados que a página já usa (o `--uses` do host) e o conhecimento liberado para quem vê páginas.
+- Respostas podem trazer blocos `ravi.ui/v1`: widget da Library da org por ref, view de Bases por referência (cada pessoa carrega as linhas com o próprio acesso, então duas pessoas podem ver linhas diferentes), gráfico, botões e cartão. Detalhes em `references/chat.md`.
+- O chat de texto usa o mesmo feature da org (`console.pages.chat`) e é medido por org.
+
+```bash
+ravi pages chat show <host> --json
+ravi pages chat set <host> --text false
+ravi pages chat set <host> --text true --execute
+ravi pages chat set <host> --reply-policy always --execute
+ravi pages chat set <host> --reply-policy mention
+ravi pages chat set <host> --text-model acme/chat-large-2.1
+ravi pages chat set <host> --clear-text-model
+ravi pages chat set <host> --ravi-agent <installation-id>/<agente> --execute
+ravi pages chat set <host> --clear-ravi-agent
+```
+
+- `--text` liga ou desliga o chat de texto; `--enabled` continua sendo só a voz. Padrão: texto ligado, `--reply-policy mention`, modelo da plataforma, sem agente.
+- Freio: `--text true`, `--reply-policy always` e `--ravi-agent` ampliam o que o agente faz, então sem `--execute` sai o plano (exit 3). Desligar, voltar para `mention`, trocar o modelo e as flags `--clear-*` aplicam na hora.
+- `--text-model` é um id do AI Gateway (`<provedor>/<modelo>`).
+- `--ravi-agent` deixa o agente da página "perguntar ao Ravi": ele manda um pedido da Library para aquele agente de uma máquina Ravi da org. Pegue o id da instalação em `ravi agents directory --json`. O agente precisa aceitar pedidos (`ravi agents requests <agente> on --execute`, na máquina dele). O pedido chega como da pessoa que perguntou no chat, nunca do operador: o agente responde no texto e não age na máquina por ela.
+
 ## Referências
 
 Abra só o que precisar com `ravi skills show pages --file references/<arquivo>`.
 
 - `widgets.md`: tags `<ravi-view>`, `<ravi-widget>` e `<ravi-form>`, busca de widget, o que o ship faz, criar e propor widget, acessibilidade.
+- `chat.md`: chat de texto, blocos `ravi.ui/v1` das respostas, o que o autor da página controla.
 - `theme.md`: tema ativo, `--theme`, variáveis CSS, claro e escuro, contraste.
 - `data-pages.md`: site → view → ship, `--uses`, quem passa, connectors, erros, valores, segurança.
 - `layouts.md`: tabela, board, lista, calendário, formulário, gráficos e dashboards.

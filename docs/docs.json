@@ -57,7 +57,8 @@
               "console/pages",
               "console/bases",
               "console/widgets",
-              "console/connectors"
+              "console/connectors",
+              "console/mcp"
             ]
           },
           {

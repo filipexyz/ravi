@@ -220,6 +220,21 @@ const executeInstructions = [
     instruction: "ravi pages chat set <host> --enabled true --execute",
   },
   {
+    name: "Page text chat enable skill",
+    path: "src/plugins/internal/ravi-system/skills/pages/SKILL.md",
+    instruction: "ravi pages chat set <host> --text true --execute",
+  },
+  {
+    name: "Page text chat reply-always skill",
+    path: "src/plugins/internal/ravi-system/skills/pages/SKILL.md",
+    instruction: "ravi pages chat set <host> --reply-policy always --execute",
+  },
+  {
+    name: "Page text chat Ravi agent skill",
+    path: "src/plugins/internal/ravi-system/skills/pages/SKILL.md",
+    instruction: "ravi pages chat set <host> --ravi-agent <installation-id>/<agente> --execute",
+  },
+  {
     name: "Library publish skill",
     path: "src/plugins/internal/ravi-system/skills/skills/SKILL.md",
     instruction: "ravi skills publish ./agenda-semanal --scope org --execute",
@@ -408,6 +423,26 @@ const executeInstructions = [
     name: "Page Chat enable documentation",
     path: "docs/console/pages.mdx",
     instruction: "ravi pages chat set acme-website --enabled true --execute",
+  },
+  {
+    name: "Page text chat enable documentation",
+    path: "docs/console/pages.mdx",
+    instruction: "ravi pages chat set acme-website --text true --execute",
+  },
+  {
+    name: "Page text chat reply-always documentation",
+    path: "docs/console/pages.mdx",
+    instruction: "ravi pages chat set acme-website --reply-policy always --execute",
+  },
+  {
+    name: "Page text chat Ravi agent documentation",
+    path: "docs/console/pages.mdx",
+    instruction: "ravi pages chat set acme-website --ravi-agent <installation-id>/finance --execute",
+  },
+  {
+    name: "Page text chat brakes in the command help",
+    path: "src/cli/commands/pages.ts",
+    instruction: "ravi pages chat set acme-website --text true --execute",
   },
   {
     name: "Pages share root instructions",
@@ -692,6 +727,42 @@ const obsoleteExecuteConsumers = [
     path: "docs/console/pages.mdx",
     obsolete: "ravi pages chat set acme-website --enabled false --execute",
     current: "ravi pages chat set acme-website --enabled false",
+  },
+  {
+    name: "Page text chat disable skill: turning it off applies at once",
+    path: "src/plugins/internal/ravi-system/skills/pages/SKILL.md",
+    obsolete: "ravi pages chat set <host> --text false --execute",
+    current: "ravi pages chat set <host> --text false",
+  },
+  {
+    name: "Page text chat mention skill: back to mention applies at once",
+    path: "src/plugins/internal/ravi-system/skills/pages/SKILL.md",
+    obsolete: "ravi pages chat set <host> --reply-policy mention --execute",
+    current: "ravi pages chat set <host> --reply-policy mention",
+  },
+  {
+    name: "Page text chat clear agent skill: clearing applies at once",
+    path: "src/plugins/internal/ravi-system/skills/pages/SKILL.md",
+    obsolete: "ravi pages chat set <host> --clear-ravi-agent --execute",
+    current: "ravi pages chat set <host> --clear-ravi-agent",
+  },
+  {
+    name: "Page text chat disable documentation",
+    path: "docs/console/pages.mdx",
+    obsolete: "ravi pages chat set acme-website --text false --execute",
+    current: "ravi pages chat set acme-website --text false",
+  },
+  {
+    name: "Page text chat mention documentation",
+    path: "docs/console/pages.mdx",
+    obsolete: "ravi pages chat set acme-website --reply-policy mention --execute",
+    current: "ravi pages chat set acme-website --reply-policy mention",
+  },
+  {
+    name: "Page text chat clear agent documentation",
+    path: "docs/console/pages.mdx",
+    obsolete: "ravi pages chat set acme-website --clear-ravi-agent --execute",
+    current: "ravi pages chat set acme-website --clear-ravi-agent",
   },
   {
     name: "Pages unshare root instructions: reducing access applies at once",
