@@ -68,7 +68,7 @@ const executeConsumers: readonly ExecuteConsumer[] = [
   {
     name: "Library theme/widget publish refusal inside an agent and proposal review answer hint",
     path: "src/cli/library-contract.ts",
-    marker: "propose <dir> --scope",
+    marker: "ravi $" + "{profile.group} propose",
     expected: "--execute",
     matches: 2,
   },

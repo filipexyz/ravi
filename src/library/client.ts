@@ -408,6 +408,8 @@ export class LibraryClient {
                 description: stringOr(widget.description, ""),
                 fields: normalizeWidgetFields(widget.fields),
                 variants: stringArray(widget.variants),
+                // `widget.js` on the current version ("com código" in the text); false on an older Console.
+                script: widget.script === true,
               },
             ];
           })
@@ -637,6 +639,10 @@ export interface LibrarySession {
   orgId: string;
   /** The caller's Console project, or null (org items only). */
   project: ConsoleScopeProject | null;
+  /** Where `project` came from (`ravi cloud scope explain`): explicit, agent_default, workspace_default... */
+  projectSource?: string | null;
+  /** The login's organization as people name it (slug, else name, else id). */
+  organization?: string | null;
   /** The linked installation (the daemon) of the `ravi login` session. */
   installationId: string;
   /** CLI scopes of the session (`console.projects.link` reports agents for pins). */
@@ -657,6 +663,7 @@ export async function openLibrarySession(
   if (!credentials) return null;
   if (options.console && normalizeConsoleUrl(options.console) !== credentials.consoleUrl) return null;
   let project: ConsoleScopeProject | null = null;
+  let projectSource: string | null = null;
   if (options.resolveProject !== false) {
     try {
       const scope = await resolveConsoleScope(
@@ -664,8 +671,10 @@ export async function openLibrarySession(
         { ...deps, readCredentials },
       );
       project = scope.project?.ref ? scope.project : null;
+      projectSource = project ? scope.source : null;
     } catch {
       project = options.project ? { ref: options.project } : null;
+      projectSource = project ? "explicit" : null;
     }
   }
   return {
@@ -682,6 +691,12 @@ export async function openLibrarySession(
     consoleUrl: credentials.consoleUrl,
     orgId: credentials.organization?.id?.trim() || credentials.organization?.slug?.trim() || "default",
     project,
+    projectSource,
+    organization:
+      credentials.organization?.slug?.trim() ||
+      credentials.organization?.name?.trim() ||
+      credentials.organization?.id?.trim() ||
+      null,
     installationId: credentials.installationId,
     scopes: Array.isArray(credentials.scopes) ? credentials.scopes : [],
   };

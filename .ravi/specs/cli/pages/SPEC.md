@@ -147,7 +147,13 @@ contract errors rethrow first, recognizable Console not-found failures map to
     `path:line:column severity code message` (diagnostics read from the body
     top level or from `error.details.diagnostics`; the Console's
     `KIT_TOO_LARGE` error, for a rewritten page over its limit, is one of
-    them). Any other Console or
+    them). When every error diagnostic is `KIT_WIDGET_UNAUDITED` (a widget
+    whose `widget.js` has no passing Console accessibility audit; also read
+    from a Console answer coded `KIT_WIDGET_UNAUDITED` with `details.url`),
+    ship MUST exit 2 with code `KIT_WIDGET_UNAUDITED`, upload nothing, and
+    put the diagnostic's Console URL (`url`, `auditUrl` or `consoleUrl`,
+    `http(s)` only) in `suggestedAction` and at the end of its issue line;
+    mixed with other errors it stays `KIT_INVALID`. Any other Console or
     network failure fails like other Console calls. The kit never brakes
     ship (invariant 4).
 16. `pages ship --theme <ref|none>` is declared before `--execute`. Without
@@ -156,7 +162,12 @@ contract errors rethrow first, recognizable Console not-found failures map to
     empty value is `PAYLOAD_INVALID` before any Console call. Success JSON
     adds `presentation` (object or null) and `kit: {status, changedFiles,
     warnings, theme, widgets}`; kit warnings also appear in `warnings` and
-    text output prints them.
+    text output prints them. A kit answer never loses a warning: every
+    diagnostic of a 200 answer (any severity, any code, also codes this CLI
+    does not know such as `KIT_THEME_DEFAULT` or `KIT_ACTIONS_NEED_VIEW`) is
+    one `path:line:column severity code message` warning, a `warnings[]`
+    entry may be a string or a `{code, message, path?, line?, column?}`
+    object, and an entry missing its code or its message keeps the other.
 17. `pages outdated [--project] [--json]` MUST `GET
     /api/cli/pages/outdated?project=<ref>` and return `{projectRef, total,
     items}`, each item `{siteSlug, hostname, route, releaseId, publishedAt,
@@ -199,6 +210,7 @@ route.
 | braked write without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
 | ship with `ravi.bases.*` (declared or kit-derived) on a public route | `LIVE_DATA_PUBLIC_ROUTE` | 2 |
 | page kit rejects the HTML (422) | `KIT_INVALID` + one issue per diagnostic | 2 |
+| page kit: only widgets with code and no passing audit | `KIT_WIDGET_UNAUDITED` + audit URL in `suggestedAction` | 2 |
 | Console without the page kit route | success + warning `KIT_UNAVAILABLE` | 0 |
 | domain setup saved but waiting for DNS/provider readiness | `DOMAIN_SETUP_REQUIRED` + exact safe DNS action | 1 |
 | Console HTTPS failed from a provider sandbox | `HOST_UNREACHABLE` + host CLI suggestedAction | 1 |

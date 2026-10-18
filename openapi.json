@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "11ab1f66ec939d84"
+    "version": "8f880c774f496b9e"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -129968,6 +129968,10 @@
                           "ref": {
                             "type": "string"
                           },
+                          "script": {
+                            "description": "The current version has a widget.js (text: com código)",
+                            "type": "boolean"
+                          },
                           "variants": {
                             "items": {
                               "type": "string"
@@ -129980,7 +129984,8 @@
                           "name",
                           "description",
                           "fields",
-                          "variants"
+                          "variants",
+                          "script"
                         ],
                         "type": "object"
                       },

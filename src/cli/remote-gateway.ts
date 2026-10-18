@@ -363,19 +363,26 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
       const body = JSON.parse(result.body) as Record<string, unknown>;
       if (isCompleteContractErrorBody(body, op)) {
         const connectorTurn = connectorTurnRemoteCopy(op, body.error);
+        const library = connectorTurn ? null : libraryRemoteCopy(op, body);
+        const projected = remoteContractFailureMessage(
+          op,
+          body.outcome,
+          projectPublicIssues(body.error.issues),
+          body.error.message,
+          body.error.code,
+        );
+        // An issue-first projection already names the field; the Library copy only replaces the generic line.
+        const generic = projected === REMOTE_GENERIC_FAILURE || projected === REMOTE_GENERIC_BLOCKED;
         return new ContractError(
           op,
           body.error.code,
-          connectorTurn?.message ??
-            remoteContractFailureMessage(
-              op,
-              body.outcome,
-              projectPublicIssues(body.error.issues),
-              body.error.message,
-              body.error.code,
-            ),
+          connectorTurn?.message ?? (generic ? library?.message : undefined) ?? projected,
           body.exitCode,
-          { ...projectRemoteContractDetails(op, body, result.status), ...(connectorTurn?.details ?? {}) },
+          {
+            ...projectRemoteContractDetails(op, body, result.status),
+            ...(connectorTurn?.details ?? {}),
+            ...(library?.details ?? {}),
+          },
         );
       }
       if (body.error === "PermissionDenied") {
@@ -467,6 +474,102 @@ function connectorTurnRemoteCopy(
   Object.assign(details, connectorApprovalDetails(remote));
   Object.assign(details, connectorConsentDetails(remote));
   return { message, details };
+}
+
+/**
+ * Library and Console-backed commands whose refusals the daemon writes for
+ * the agent: a Library conflict (`conflict`), an item out of the session's
+ * view (`view`), a missing view, a private Page on a turn that is not the
+ * operator's own. Their message and next step are the public envelope the
+ * daemon already built (local copy, or Console copy it sanitized), so the
+ * relay keeps them and a few typed details instead of "Remote command failed".
+ */
+const LIBRARY_REMOTE_GROUPS = ["skills ", "themes ", "widgets ", "agents requests"];
+const LIBRARY_REMOTE_OPS = new Set([
+  "agents search",
+  "agents install",
+  "agents update",
+  "agents publish",
+  "agents directory",
+  "agents ask",
+  "pages read",
+]);
+const REMOTE_GENERIC_FAILURE = "Remote command failed.";
+const REMOTE_GENERIC_BLOCKED = "Remote command was blocked by policy.";
+const LIBRARY_REMOTE_MESSAGE_MAX = 1_200;
+const LIBRARY_REMOTE_ACTION_MAX = 600;
+const LIBRARY_REMOTE_TOKEN_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
+const LIBRARY_REMOTE_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._ -]{0,63}$/;
+const LIBRARY_REMOTE_FILE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const LIBRARY_REMOTE_REF_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}\/[a-z0-9][a-z0-9-]{0,63}$/;
+
+export function isLibraryRemoteOp(op: string): boolean {
+  return LIBRARY_REMOTE_OPS.has(op) || LIBRARY_REMOTE_GROUPS.some((prefix) => op.startsWith(prefix));
+}
+
+/**
+ * Text mode prints the message and the issues; a Library refusal's next step
+ * is printed too when no issue already carries it.
+ */
+export function remoteNextStepLine(error: ContractError): string | null {
+  if (!isLibraryRemoteOp(error.op)) return null;
+  const next = error.details.suggestedAction;
+  if (typeof next !== "string" || !next.trim()) return null;
+  const issues = Array.isArray(error.details.issues) ? error.details.issues : [];
+  const carried = issues.some(
+    (issue) => issue && typeof issue === "object" && (issue as { code?: unknown }).code === "SUGGESTED_ACTION",
+  );
+  return carried ? null : `Next: ${next}`;
+}
+
+function libraryRemoteCopy(
+  op: string,
+  body: CompleteContractErrorBody,
+): { message: string; details: ContractErrorDetails } | null {
+  // Usage errors keep their issue-first projection; denials and the write brake keep theirs.
+  if (!isLibraryRemoteOp(op) || body.outcome === "denied" || body.outcome === "usage_error") return null;
+  if (isRemoteWriteBrake(body)) return null;
+  const remote = body.error;
+  const message = boundedRemoteLine(remote.message, LIBRARY_REMOTE_MESSAGE_MAX);
+  if (!message) return null;
+  const details: ContractErrorDetails = {};
+  const suggestedAction = boundedRemoteLine(remote.suggestedAction, LIBRARY_REMOTE_ACTION_MAX, "suggestedAction");
+  if (suggestedAction) details.suggestedAction = suggestedAction;
+  // `reason` never arrives: the envelope redacts it as free text, so `conflict` carries the code.
+  for (const key of ["conflict", "proposalStatus", "turn"] as const) {
+    const value = remote[key];
+    if (typeof value === "string" && LIBRARY_REMOTE_TOKEN_PATTERN.test(value)) details[key] = value;
+  }
+  for (const key of ["currentVersion", "baseVersion", "errors", "warnings"] as const) {
+    const value = remote[key];
+    if (typeof value === "number" && Number.isInteger(value) && value >= 0) details[key] = value;
+  }
+  if (typeof remote.ref === "string" && LIBRARY_REMOTE_REF_PATTERN.test(remote.ref)) details.ref = remote.ref;
+  if (remote.scope === "org" || remote.scope === "project") details.scope = remote.scope;
+  if (typeof remote.project === "string" && LIBRARY_REMOTE_FILE_PATTERN.test(remote.project)) {
+    details.project = remote.project;
+  }
+  if (typeof remote.viewProject === "string" && LIBRARY_REMOTE_FILE_PATTERN.test(remote.viewProject)) {
+    details.viewProject = remote.viewProject;
+  }
+  if (typeof remote.archived === "boolean") details.archived = remote.archived;
+  const view = libraryRemoteView(remote.view);
+  if (view) details.view = view;
+  const existing = boundedStringList(remote.existing, LIBRARY_REMOTE_FILE_PATTERN);
+  if (existing) details.existing = existing;
+  return { message, details };
+}
+
+/** `{ organization, project, source }`: names only, each a short identifier or null. */
+function libraryRemoteView(value: unknown): Record<string, string | null> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const view: Record<string, string | null> = {};
+  for (const key of ["organization", "project", "source"] as const) {
+    const entry = record[key];
+    view[key] = typeof entry === "string" && LIBRARY_REMOTE_NAME_PATTERN.test(entry) ? entry : null;
+  }
+  return view.organization || view.project ? view : undefined;
 }
 
 const CONNECTOR_CONSENT_PATH = /\/connectors\/consent\/([A-Za-z0-9_-]{16,256})$/;
@@ -586,7 +689,7 @@ function remoteContractFailureMessage(
   }
   // The write brake is a dry-run, not a policy denial: say how to proceed with local copy.
   if (outcome === "blocked" && code === "WRITE_REQUIRES_EXECUTE") return REMOTE_DRY_RUN_MESSAGE;
-  if (outcome === "blocked") return "Remote command was blocked by policy.";
+  if (outcome === "blocked") return REMOTE_GENERIC_BLOCKED;
   if (issues?.[0]) return remoteValidationFailureMessage(issues, sourceMessage);
   if (code === "PAYLOAD_INVALID") return remoteValidationFailureMessage(issues, sourceMessage);
   if (op === "media send" && code) {
@@ -597,7 +700,7 @@ function remoteContractFailureMessage(
     const catalog = cloudContractCatalogCopy(code);
     if (catalog) return catalog.message;
   }
-  return "Remote command failed.";
+  return REMOTE_GENERIC_FAILURE;
 }
 
 function remoteValidationFailureMessage(

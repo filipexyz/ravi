@@ -106,8 +106,9 @@ FONTES
 
 const WIDGETS_SHOW_HELP_AFTER = `
 LEITURA — mostra um widget: versão, descrição e os arquivos (widget.html,
-widget.json, example.json, README.md). Ref org/<slug> ou <projeto>/<slug>; um
-slug sem barra resolve no projeto e depois na org. Palavras reservadas
+widget.json, widget.js, example.json, README.md; o widget.js é listado, não
+impresso). Ref org/<slug> ou <projeto>/<slug>; um slug sem barra resolve no
+projeto e depois na org. Palavras reservadas
 (catalog, check, preview, scaffold, proposals, none) não são widgets: saem
 com USAGE_ERROR (exit 2) e o comando certo (ravi widgets catalog...).
 
@@ -154,7 +155,7 @@ FONTES
 
 const WIDGETS_CHECK_HELP_AFTER = `
 LEITURA — o Console compila a pasta do widget (widget.html, widget.json,
-example.json) e roda o lint de acessibilidade. Não grava nada. Cada problema
+widget.js, example.json) e roda o lint de acessibilidade. Não grava nada. Cada problema
 sai como \`arquivo:linha:coluna severidade código mensagem\`; com erro, exit 2.
 
 EXAMPLES
@@ -197,7 +198,9 @@ com exit 2) e o plano sai com exit 3. Com --execute: publica a versão nova.
 
 ARQUIVOS
   widget.html e widget.json (obrigatórios; name e description no widget.json),
-  example.json, README.md. Outros arquivos da pasta (preview.html) ficam fora.
+  widget.js, example.json, README.md. Outros arquivos da pasta (preview.html)
+  ficam fora. Com widget.js, só owner ou admin da org publica, e o ship só usa
+  a versão depois que a auditoria de acessibilidade passa no Console.
   Slug = --slug, senão o nome da pasta. catalog, check, preview, scaffold,
   proposals e none são reservados.
 
@@ -215,6 +218,8 @@ ON ERROR (reason → fix)
   exit 3 WRITE_REQUIRES_EXECUTE → revise o plano e repita com --execute.
   WIDGET_INVALID (2)           → corrija as linhas indicadas (ravi widgets check).
   LIBRARY_PACKAGE_INVALID (2)  → falta widget.html, widget.json ou a description.
+  ORG_ACCESS_DENIED            → com widget.js e sem ser owner/admin da org
+                                 (LIBRARY_SCRIPT_REQUIRES_ORG_ADMIN): proponha.
   CONFLICT reason=stale_base   → alguém publicou antes: rode sem --execute de novo.
   AUTH_REQUIRED                → rode \`ravi login\`.
 

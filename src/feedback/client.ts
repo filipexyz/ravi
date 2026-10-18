@@ -1,7 +1,7 @@
 import { ConsoleApiClient, getMeWithAutoRefresh, normalizeConsoleUrl } from "../cloud-auth/client.js";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 import { deleteCloudCredentials, readCloudCredentials, writeCloudCredentials } from "../cloud-auth/storage.js";
-import type { CloudCredentials } from "../cloud-auth/types.js";
+import type { CloudAuthOrganization, CloudCredentials } from "../cloud-auth/types.js";
 
 export type FeedbackKind = "bug" | "idea" | "ux" | "docs" | "performance" | "security" | "other";
 export type FeedbackSeverity = "low" | "medium" | "high" | "critical";
@@ -73,7 +73,7 @@ export async function submitFeedback(
     success: true,
     consoleUrl: auth.consoleUrl,
     feedback,
-    url: `${auth.consoleUrl}/org/feedback`,
+    url: consoleOrganizationUrl(auth.consoleUrl, auth.organization, "feedback"),
   };
 }
 
@@ -90,7 +90,19 @@ async function createAuthenticatedFeedbackContext(consoleUrl: string | undefined
     accessToken: auth.credentials.accessToken,
     client,
     consoleUrl: auth.credentials.consoleUrl,
+    organization: auth.credentials.organization ?? null,
   };
+}
+
+/**
+ * A Console page of the signed-in organization. Console URLs carry the
+ * organization (`/<org>/feedback`), so the link opens it even when the reader
+ * last used another one; without a known organization the Console's old
+ * `/org/<section>` path still redirects.
+ */
+function consoleOrganizationUrl(consoleUrl: string, organization: CloudAuthOrganization | null, section: string) {
+  const ref = organization?.slug?.trim() || organization?.id?.trim();
+  return ref ? `${consoleUrl}/${encodeURIComponent(ref)}/${section}` : `${consoleUrl}/org/${section}`;
 }
 
 function requireStoredCredentials(credentials: CloudCredentials | null, consoleUrl?: string): CloudCredentials {

@@ -119,6 +119,11 @@ export class CloudAuthError extends Error {
   /** Structured `error.details` from the Console CLI envelope. Never serialized by `toJSON`. */
   readonly details?: Record<string, unknown>;
   readonly requestId?: string;
+  /**
+   * The Console's own `error.code` when it is not a {@link CloudAuthErrorCode}
+   * (such as `KIT_WIDGET_UNAUDITED`), so a caller can act on it. Never serialized.
+   */
+  readonly consoleCode?: string;
   readonly exitCode: number;
 
   constructor(
@@ -133,6 +138,7 @@ export class CloudAuthError extends Error {
       retryable?: boolean;
       details?: Record<string, unknown>;
       requestId?: string;
+      consoleCode?: string;
     } = {},
   ) {
     super(message, options.cause === undefined ? undefined : { cause: options.cause });
@@ -144,6 +150,7 @@ export class CloudAuthError extends Error {
     this.issues = options.issues;
     this.details = options.details;
     this.requestId = options.requestId;
+    this.consoleCode = options.consoleCode;
     this.exitCode = options.exitCode ?? defaultExitCode(code);
   }
 

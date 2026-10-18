@@ -87,7 +87,8 @@ export const PRESENTATION_FILES: Readonly<Record<PresentationKind, PresentationF
   widget: {
     entry: "widget.html",
     required: ["widget.html", "widget.json"],
-    allowed: ["widget.html", "widget.json", "example.json", "README.md"],
+    // widget.js: optional ES module that enhances the template (the Console checks and audits it).
+    allowed: ["widget.html", "widget.json", "widget.js", "example.json", "README.md"],
     manifest: "widget.json",
   },
 };

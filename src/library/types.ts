@@ -246,6 +246,8 @@ export interface LibraryWidgetCatalog {
     description: string;
     fields: Record<string, LibraryWidgetField>;
     variants: string[];
+    /** The current version has a `widget.js`. */
+    script: boolean;
   }>;
 }
 

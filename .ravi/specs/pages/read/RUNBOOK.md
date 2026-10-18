@@ -17,7 +17,12 @@ entry file marked.
 - `3` with `PAGE_ACCESS_DENIED`, `reason: public_only`: the turn is not the
   operator's own and the route is not public. Expected; the agent tells the
   person it cannot open that private Page. Run it from the terminal to check
-  that the Page itself is readable.
+  that the Page itself is readable. `details.turn` names the rule: on the
+  owner's own direct chat, `shared_session` means other chats share its
+  session (give each person their own session, dmScope per-peer, and no
+  route naming it); `not_owner` means the owner's chat account is not linked
+  to this `ravi login` user (`ravi link` in that chat). Never clear the
+  runtime env to get around it.
 - `1` with `PAGE_ACCESS_DENIED`: `org_forbidden` (the `ravi login` is in
   another org), `project_forbidden` (no read on the project) or
   `password_route`. Check `ravi login` and the project membership.
