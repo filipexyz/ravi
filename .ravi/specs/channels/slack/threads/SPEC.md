@@ -19,6 +19,8 @@ applies_to:
   - src/channels/slack/thread-lifecycle-store.ts
   - src/router/resolver.ts
   - src/runtime/runtime-session-continuity.ts
+  - src/prompt-builder.ts
+  - src/runtime/runtime-system-prompt.ts
 owners:
   - dev
 status: active
@@ -75,6 +77,13 @@ When a user replies in a Slack thread, Ravi MUST create or reuse a dedicated chi
   it MUST NOT create a replacement fork.
 - Reopening a thread MUST preserve any parent completion that is still pending
   delivery.
+- A non-sentinel Slack session whose context can run the `sessions` group MUST
+  get the "Slack Threads" system prompt section. A channel-root or DM session
+  MUST be told to open a thread with `thread.create` for work that strays from
+  the conversation, and to fall back to the current conversation when
+  `thread.create` fails or is unavailable. A thread child session (key with
+  `:thread:`) MUST be told to keep its work in the thread, to open a sibling
+  thread for a different subject, and how to close with or without `--return`.
 
 ## Route Semantics
 

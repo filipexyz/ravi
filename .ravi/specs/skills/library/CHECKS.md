@@ -21,7 +21,7 @@
 - `ravi skills proposal <ref> <n>` prints files with sizes and comments with `path:line`, outdated and resolved markers; `--json` includes contents only when `contentsVisible`.
 - A turn that is not the operator's own does not list or show proposals not marked `externalAllowed`.
 - `proposals` is a reserved slug.
-- The pin runner reports every local agent with its resolved Console project (`POST /pins/sync`) when the login has `console.projects.link`, else reads `GET /pins`; at most 500 agents.
+- The pin runner reports only the local agents listed with `ravi agents listing <id> on` (none by default; the migration lists only agents already open to requests), each with its resolved Console project (`POST /pins/sync`) when the login has `console.projects.link`, else reads `GET /pins`; at most 500 agents.
 - A sync with new pins caches each version, writes a generation under `<stateDir>/library/plugins/g-*/` with `union`, `agents/<agent>/all` and `agents/<agent>/external` plugins named `ravi-library`, replaces `library_pins`, and publishes `ravi.config.changed`; the same answer again changes nothing and publishes nothing.
 - A new published version of a pinned item (same revision or not) produces a new generation.
 - Offline, a 401, or any Console error keeps the pins and the generation; only the error is recorded. A 401 is not logged above debug.
@@ -47,7 +47,9 @@
 - `install`/`update` inside an agent runtime exit 3 with `LIBRARY_AGENT_CANNOT_INSTALL`, `publish` with `LIBRARY_AGENT_CANNOT_PUBLISH`, before any request.
 - `ravi agents set <id> description` stores at most 300 characters (exit 2 above) without a brake; `agents show <id>` reports `library`.
 - The pin sync reports each agent's `description` (at most 300 characters) and `acceptsRequests` (false unless the operator opened it).
-- `ravi agents requests <id> on` exits 3 without `--execute`; `off` applies at once; both exit 3 with `LIBRARY_AGENT_CANNOT_OPEN_REQUESTS` inside an agent; a linked login reports the change at once.
+- `ravi agents requests <id> on` exits 3 without `--execute` and also lists the agent; `off` applies at once; both exit 3 with `LIBRARY_AGENT_CANNOT_OPEN_REQUESTS` inside an agent; a linked login reports the change at once.
+- `ravi agents listing <id> on` exits 3 without `--execute`; `off` applies at once and closes the agent to requests; both exit 3 with `LIBRARY_AGENT_CANNOT_LIST` inside an agent; a linked login reports the change at once, and the next sync no longer reports an unlisted agent.
+- `ravi skills pin <ref> --agent <id>` refuses an unlisted agent with `LIBRARY_AGENT_NOT_LISTED` (exit 1) before any request.
 - `ravi agents ask` exits 3 without `--execute`; resolves the machine by installation id, else name; two installations with the name are `LIBRARY_TARGET_AMBIGUOUS` (exit 2); sends `agent: {id}` inside an agent and records the asking session; an agent turn that is not the operator's own is refused with `LIBRARY_REQUEST_EXTERNAL_DENIED` before any request.
 - The request runner fails requests for agents missing here or closed by the local switch without a turn, answers the others in `agent:<id>:library-request:<requestId>`, posts the reply or a failure, and retires that session once the outcome is posted.
 - Each pulled request is recorded `queued` before it waits; after a stop or a crash, the next start fails every `queued` or `running` row it is not answering, once.

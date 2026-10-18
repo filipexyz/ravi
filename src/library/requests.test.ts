@@ -30,6 +30,7 @@ import {
   parseRequestTarget,
   prepareLibraryAsk,
   setAcceptsRequests,
+  setListed,
   type LibraryRequestServiceDeps,
 } from "./requests.js";
 import { LibraryCommandError } from "./service.js";
@@ -168,22 +169,35 @@ const collectDeps = {
 };
 
 describe("library requests: opening an agent", () => {
-  it("stores the switch, reports it with description, and defaults closed", async () => {
-    expect((await collectLocalAgentReports(collectDeps)).find((a) => a.id === "helper")).toMatchObject({
-      acceptsRequests: false,
-      description: null,
-    });
+  it("stores the switch, reports it with description, and defaults closed and unlisted", async () => {
+    // Unlisted by default: the sync does not report the agent at all.
+    expect((await collectLocalAgentReports(collectDeps)).find((a) => a.id === "helper")).toBeUndefined();
     dbSetLibraryAgentDescription("helper", "Helps");
     const result = await setAcceptsRequests(
       { agentId: "helper", accepts: true },
       deps({ pins: { collectAgents: () => collectLocalAgentReports(collectDeps) } }),
     );
-    expect(result).toMatchObject({ acceptsRequests: true, changed: true, reported: true });
+    // Opening it to requests lists it.
+    expect(result).toMatchObject({ listed: true, acceptsRequests: true, changed: true, reported: true });
     const reported = base.reportedAgents.get("inst-1")?.find((agent) => agent.id === "helper") as Record<
       string,
       unknown
     >;
     expect(reported).toMatchObject({ acceptsRequests: true, description: "Helps" });
+  });
+
+  it("lists an agent closed to requests, and unlisting closes it and stops reporting it", async () => {
+    const reportDeps = deps({ pins: { collectAgents: () => collectLocalAgentReports(collectDeps) } });
+    const listed = await setListed({ agentId: "helper", listed: true }, reportDeps);
+    expect(listed).toMatchObject({ listed: true, acceptsRequests: false, changed: true, reported: true });
+    expect(base.reportedAgents.get("inst-1")?.find((agent) => agent.id === "helper")).toMatchObject({
+      acceptsRequests: false,
+    });
+
+    await setAcceptsRequests({ agentId: "helper", accepts: true }, reportDeps);
+    const unlisted = await setListed({ agentId: "helper", listed: false }, reportDeps);
+    expect(unlisted).toMatchObject({ listed: false, acceptsRequests: false, changed: true, reported: true });
+    expect(base.reportedAgents.get("inst-1")?.find((agent) => agent.id === "helper")).toBeUndefined();
   });
 });
 
