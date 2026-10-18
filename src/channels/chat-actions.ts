@@ -1,4 +1,5 @@
 import { canonicalChannelId } from "./capabilities.js";
+import type { SlackThreadCardState } from "./slack/thread-card.js";
 
 export const CHAT_ACTION_IDS = [
   "message.delete",
@@ -72,6 +73,8 @@ export type ChannelChatActionContent =
       readonly canonicalMessageId?: string;
       readonly providerMessageId: string;
       readonly text: string;
+      /** Re-render a thread root card: `text` is the thread brief, this is its new state. */
+      readonly threadCard?: SlackThreadCardState;
     }
   | {
       readonly type: "chat_action";

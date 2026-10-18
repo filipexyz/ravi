@@ -54,6 +54,7 @@ import {
   createSlackNativeRuntimesFromEnv,
   slackClientMessageId,
 } from "./socket-mode.js";
+import { buildSlackThreadCard } from "./thread-card.js";
 import {
   acceptSlackInboundEnvelope,
   claimSlackInboundEnvelope,
@@ -967,7 +968,77 @@ describe("Slack Socket Mode routing", () => {
     expect(postMessage).toHaveBeenCalledWith({
       channel: "C123",
       text: "Investigate this branch",
+      blocks: buildSlackThreadCard("Investigate this branch", { status: "open" }).blocks,
       clientMsgId: slackClientMessageId(idempotencyKey),
+    });
+    // A one-line brief fits the card: nothing more is posted in the thread.
+    expect(postMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("posts a long thread brief as a card and the whole brief as the first thread reply", async () => {
+    const postMessage = mock(async () => ({
+      channel: "C123",
+      ts: "1713000000.000300",
+      messageId: "1713000000.000300",
+      raw: { ok: true },
+    }));
+    const delivery = new SlackChatActionDelivery({ postMessage } as never);
+    const brief = [
+      "Estudo do Ravi Knowledge para o Luis.",
+      `O Luis pediu: estuda como funciona o **ravi knowledge**. ${"Explique o fluxo de indexação e busca. ".repeat(12)}`,
+    ].join("\n");
+
+    await delivery.executeChatAction({
+      sessionName: "ravi-slack-channel",
+      idempotencyKey: "thread-long",
+      target: { channel: "slack", accountId: "ravi-slack", chatId: "C123" },
+      action: { type: "chat_action", actionId: "thread.create", text: brief },
+    });
+
+    const card = buildSlackThreadCard(brief, { status: "open" });
+    expect(card.fullBrief).toBeDefined();
+    expect(postMessage).toHaveBeenNthCalledWith(1, {
+      channel: "C123",
+      text: "Estudo do Ravi Knowledge para o Luis.",
+      blocks: card.blocks,
+      clientMsgId: slackClientMessageId("thread-long"),
+    });
+    expect(postMessage).toHaveBeenNthCalledWith(2, {
+      channel: "C123",
+      text: card.fullBrief,
+      threadTs: "1713000000.000300",
+      clientMsgId: slackClientMessageId("thread-long:brief"),
+    });
+  });
+
+  it("re-renders a thread root card on a card edit", async () => {
+    const updateMessage = mock(async () => ({
+      channel: "C123",
+      ts: "1713000000.000100",
+      messageId: "1713000000.000100",
+      raw: { ok: true },
+    }));
+    const delivery = new SlackChatActionDelivery({ updateMessage } as never);
+    const threadCard = { status: "closed" as const, note: "Achados entregues", updatedAt: 1_713_000_000_000 };
+
+    await delivery.executeChatAction({
+      sessionName: "ravi-slack-channel",
+      idempotencyKey: "card-edit",
+      target: { channel: "slack", accountId: "ravi-slack", chatId: "C123" },
+      action: {
+        type: "chat_action",
+        actionId: "message.edit",
+        providerMessageId: "1713000000.000100",
+        text: "Investigate this branch",
+        threadCard,
+      },
+    });
+
+    expect(updateMessage).toHaveBeenCalledWith({
+      channel: "C123",
+      ts: "1713000000.000100",
+      text: "Investigate this branch",
+      blocks: buildSlackThreadCard("Investigate this branch", threadCard).blocks,
     });
   });
 
@@ -1010,7 +1081,8 @@ describe("Slack Socket Mode routing", () => {
 
     expect(postMessage).toHaveBeenCalledWith({
       channel: "C123",
-      text: "Look at *this* <https://example.com/diff|diff>",
+      text: "Look at this diff",
+      blocks: buildSlackThreadCard("Look at **this** [diff](https://example.com/diff)", { status: "open" }).blocks,
       clientMsgId: slackClientMessageId("thread-md"),
     });
     expect(updateMessage).toHaveBeenCalledWith({

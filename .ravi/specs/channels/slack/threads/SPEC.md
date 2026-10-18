@@ -143,6 +143,17 @@ ravi sessions thread-send <thread> "<instructions>"
   its children. `thread-send` names a thread by child session name or key,
   request id or Slack `thread_ts`, and works only from the channel-root session.
 
+## Root Card
+
+The root of a programmatic thread is a Block Kit card, not the initial message
+as plain text: the first line is the title, the rest a summary of at most 300
+characters, and a context line with the thread status. When the summary leaves
+part of the message out, the whole message is posted as the first reply inside
+the thread. `report` (latest progress), `close-thread` (closed, with the
+`--return` result) and a `thread-send` that reopens the thread update the card
+in place. The card shows only text that passed the outbound Knowledge guard.
+A thread a person started keeps their message as root; Ravi never edits it.
+
 ## Acceptance Criteria
 
 - Replying to a Slack message in a thread creates or reuses a child session distinct from the route-forced parent.
@@ -154,5 +165,6 @@ ravi sessions thread-send <thread> "<instructions>"
 - Responses from the child stay inside the Slack thread.
 - Programmatic creation posts exactly one Slack root and starts exactly one
   child turn.
+- The programmatic root is a status card; report, close and reopen update it.
 - The selected model is visible on the child session before the child turn.
 - Internal close is durable and an optional parent return is delivered once.
