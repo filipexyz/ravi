@@ -13140,6 +13140,8 @@ export type PagesAssertionAudiencesSetReturn = {
 export type PagesChatSetInput = {
   clearInstructions?: boolean;
   clearName?: boolean;
+  clearRaviAgent?: boolean;
+  clearTextModel?: boolean;
   console?: string;
   enabled?: string;
   execute?: boolean;
@@ -13147,7 +13149,11 @@ export type PagesChatSetInput = {
   language?: string;
   name?: string;
   project?: string;
+  raviAgent?: string;
+  replyPolicy?: string;
   site: string;
+  text?: string;
+  textModel?: string;
   voice?: string;
 };
 
