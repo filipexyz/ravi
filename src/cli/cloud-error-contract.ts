@@ -166,6 +166,12 @@ function publicMessage(code: CloudAuthError["code"], sourceMessage: string): str
       return "Only the owner of this connection can do that.";
     case "ACTOR_NOT_LINKED":
       return "The person asking is not linked to a Console user on this Ravi.";
+    case "KNOWLEDGE_TURN_NOT_OPERATOR":
+      return "Knowledge answers only the operator's own turns.";
+    case "KNOWLEDGE_DISABLED":
+      return "Knowledge is not enabled for this organization.";
+    case "KNOWLEDGE_UNAVAILABLE":
+      return "This Console does not serve Knowledge yet.";
   }
 }
 
@@ -262,6 +268,12 @@ function suggestedAction(code: CloudAuthError["code"]): string {
       return "send the consent link to that person privately, then retry after they approve";
     case "CONNECTOR_NOT_LINKED":
       return "run `ravi link` from the person's own chat turn; Ravi sends them a private approval link";
+    case "KNOWLEDGE_TURN_NOT_OPERATOR":
+      return "ask in the operator's private chat or terminal";
+    case "KNOWLEDGE_DISABLED":
+      return "ask an org owner or admin to enable Knowledge in the Console";
+    case "KNOWLEDGE_UNAVAILABLE":
+      return "update Ravi Console, then retry";
     case "CONNECTOR_CONNECTION_REQUIRED":
       return "ask the account owner to connect one on the Console Connectors page (`ravi connectors connect google`)";
     case "CONNECTOR_REAUTH_REQUIRED":

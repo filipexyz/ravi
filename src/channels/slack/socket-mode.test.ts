@@ -681,6 +681,34 @@ describe("Slack Socket Mode routing", () => {
     ).toBe(false);
   });
 
+  it("posts with link and media unfurls off only for Knowledge-guarded chats", async () => {
+    const postMessage = mock(async (_input: Record<string, unknown>) => ({
+      channel: "C123",
+      ts: "1713000000.000100",
+      messageId: "slack:C123:1713000000.000100",
+      raw: { ok: true },
+    }));
+    const delivery = new SlackTextDelivery(
+      { postMessage } as never,
+      { threadReplyMode: "thread" } as never,
+      undefined,
+      { isKnowledgeGuardedChat: (target) => target.chatId === "DGUARDED" },
+    );
+    const send = (chatId: string) =>
+      delivery.deliverText({
+        sessionName: "s",
+        emitId: "e",
+        idempotencyKey: `k:${chatId}`,
+        target: { channel: "slack", accountId: "T1", chatId },
+        text: "https://acme.ravi.page/politica",
+      });
+    await send("DGUARDED");
+    await send("C123");
+    expect(postMessage.mock.calls[0]?.[0]).toMatchObject({ unfurlLinks: false, unfurlMedia: false });
+    expect(postMessage.mock.calls[1]?.[0]).not.toHaveProperty("unfurlLinks");
+    expect(postMessage.mock.calls[1]?.[0]).not.toHaveProperty("unfurlMedia");
+  });
+
   it("uses a stable UUID client_msg_id and preserves Slack's provider timestamp", async () => {
     const postMessage = mock(async () => ({
       channel: "C123",

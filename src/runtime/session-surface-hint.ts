@@ -1,3 +1,4 @@
+import { combineKnowledgePreambles, stripKnowledgePreamble } from "../knowledge/turn/preamble-text.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import { isSessionRelayTurn } from "./turn-origin.js";
 
@@ -76,7 +77,11 @@ export function withSessionSurfaceHint(prompt: RuntimeLaunchPrompt): RuntimeLaun
 /** Keep one surface instruction when same-surface messages share a turn. */
 export function combineSessionSurfacePromptContents(contents: string[]): string {
   const hint = contents.map((content) => content.match(CURRENT_SESSION_SURFACE_LINE)?.[0]).find(Boolean);
-  const body = contents.map(stripSessionSurfacePrefixes).join("\n\n");
+  // One Knowledge preamble per turn, right after the surface line.
+  const parts = contents.map((content) => stripKnowledgePreamble(stripSessionSurfacePrefixes(content)));
+  const preamble = combineKnowledgePreambles(parts);
+  const joined = parts.map((part) => part.body).join("\n\n");
+  const body = preamble ? `${preamble}\n${joined}` : joined;
   return hint ? `${hint}\n${body}` : body;
 }
 

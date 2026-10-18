@@ -28,6 +28,7 @@ import {
 } from "./router-db.js";
 import { executeWrite } from "../db/write-retry.js";
 import { logger } from "../utils/logger.js";
+import { clearSessionReads } from "../knowledge/store/turn-reads.js";
 
 const log = logger.child("router:sessions");
 
@@ -670,7 +671,14 @@ export function resetSession(sessionKey: string): boolean {
     WHERE session_key = ?
   `,
   ).run(Date.now(), sessionKey);
-  return getDbChanges() > 0;
+  const changed = getDbChanges() > 0;
+  try {
+    // What the old context read no longer gates writes (Knowledge §11.4).
+    clearSessionReads(sessionKey);
+  } catch (error) {
+    log.warn("knowledge session reads not cleared", { sessionKey, error: String(error) });
+  }
+  return changed;
 }
 
 function parseRuntimeSessionParams(raw: string | null): Record<string, unknown> | undefined {

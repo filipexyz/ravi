@@ -3,6 +3,11 @@ import { spawn } from "node:child_process";
 import { basename, dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { syncCodexSkills } from "../plugins/codex-skills.js";
+import {
+  getAgentRuntimePermissionsConfigFromDefaults,
+  type AgentRuntimePermissionsConfig,
+} from "../permissions/agent-default-capabilities-provider.js";
+import { dbGetAgent } from "../router/router-db.js";
 import { logger } from "../utils/logger.js";
 import { ensureCodexBashHookConfig } from "./codex-hooks.js";
 import {
@@ -118,6 +123,8 @@ interface CodexJsonRpcMessage extends Record<string, unknown> {
 
 interface CodexCliTurnRequest {
   cwd: string;
+  /** Sandbox and native tool switches for this agent's thread (contract §13.10). */
+  security?: CodexThreadSecurity;
   env: NodeJS.ProcessEnv;
   model?: string;
   effort?: string;
@@ -153,6 +160,104 @@ interface CodexCliTransport {
   startTurn(input: CodexCliTurnRequest): CodexCliTurnHandle;
   control?(request: RuntimeControlRequest): Promise<RuntimeControlResult>;
   close?(): Promise<void>;
+}
+
+export type CodexSandboxMode = "read-only" | "danger-full-access";
+
+/** What a Codex thread may touch: the sandbox plus native tool switches sent as thread config. */
+export interface CodexThreadSecurity {
+  sandbox: CodexSandboxMode;
+  /** Merged into the thread `config` (app-server) or passed as `-c` overrides (`codex exec`). */
+  config: Record<string, unknown>;
+  /** True for `chat-only` and for `explicit-only` without exec capabilities. */
+  restricted: boolean;
+}
+
+const UNRESTRICTED_CODEX_THREAD_SECURITY: CodexThreadSecurity = Object.freeze({
+  sandbox: CODEX_APP_SERVER_SANDBOX,
+  config: Object.freeze({}) as Record<string, unknown>,
+  restricted: false,
+}) as CodexThreadSecurity;
+
+/**
+ * Restricted agents get the read-only sandbox (so `apply_patch` cannot write)
+ * and no `web_search` or `view_image`. The Bash hook matcher stays global
+ * (`codex-hooks.ts`); `shell` remains gated by it.
+ */
+const RESTRICTED_CODEX_THREAD_SECURITY: CodexThreadSecurity = Object.freeze({
+  sandbox: "read-only",
+  config: Object.freeze({
+    "tools.web_search": false,
+    web_search: "disabled",
+    "tools.view_image": false,
+  }) as Record<string, unknown>,
+  restricted: true,
+}) as CodexThreadSecurity;
+
+/** Capability prefixes that count as exec for `explicit-only` (contract §11.3, `agentHasNoExec`). */
+const CODEX_EXEC_CAPABILITY_PREFIXES = [
+  "use:tool:",
+  "use:toolgroup:",
+  "execute:executable:",
+  "execute:group:",
+  "admin:system:",
+];
+
+function runtimeCapabilityKey(capability: unknown): string | null {
+  if (typeof capability === "string") return capability.trim();
+  const record = asRecord(capability);
+  if (!record) return null;
+  const permission = firstString(record.permission);
+  const objectType = firstString(record.objectType);
+  if (!permission || !objectType) return null;
+  return `${permission}:${objectType}:${firstString(record.objectId) ?? ""}`;
+}
+
+/** `chat-only`, or `explicit-only` holding no tool or exec capability at all. */
+export function isCodexRestrictedRuntimeProfile(config: AgentRuntimePermissionsConfig | null | undefined): boolean {
+  if (config?.profile === "chat-only") return true;
+  if (config?.profile !== "explicit-only") return false;
+  return !(config.capabilities ?? []).some((capability) => {
+    const key = runtimeCapabilityKey(capability);
+    return key === null || CODEX_EXEC_CAPABILITY_PREFIXES.some((prefix) => key.startsWith(prefix));
+  });
+}
+
+/** The thread security for a runtime permissions config. Pure. */
+export function buildCodexThreadSecurity(
+  config: AgentRuntimePermissionsConfig | null | undefined,
+): CodexThreadSecurity {
+  return isCodexRestrictedRuntimeProfile(config)
+    ? RESTRICTED_CODEX_THREAD_SECURITY
+    : UNRESTRICTED_CODEX_THREAD_SECURITY;
+}
+
+/**
+ * The thread security for an agent, read from `agents.defaults.runtimePermissions`.
+ * No agent id keeps today's behaviour; a read that fails twice fails closed.
+ */
+export function resolveCodexThreadSecurity(
+  agentId: string | null | undefined,
+  getAgent: (id: string) => { defaults?: Record<string, unknown> | null } | null = dbGetAgent,
+): CodexThreadSecurity {
+  const id = agentId?.trim();
+  if (!id) return UNRESTRICTED_CODEX_THREAD_SECURITY;
+  const read = () =>
+    buildCodexThreadSecurity(getAgentRuntimePermissionsConfigFromDefaults(getAgent(id)?.defaults ?? null));
+  try {
+    try {
+      return read();
+    } catch {
+      // A busy database fails one read now and then: try once more.
+      return read();
+    }
+  } catch (error) {
+    log.warn("codex runtime profile unreadable; using the read-only sandbox", {
+      agentId: id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return RESTRICTED_CODEX_THREAD_SECURITY;
+  }
 }
 
 function isCodexSubAgentDirectInputError(error: unknown): boolean {
@@ -655,6 +760,7 @@ async function* normalizeCodexEvents(
 
       const turn = transport.startTurn({
         cwd: input.cwd,
+        security: resolveCodexThreadSecurity(input.agentId),
         env: input.env ?? process.env,
         model: resolveCodexModelArg(input.model, defaultModel),
         effort,
@@ -1024,6 +1130,8 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   let forcedKillTimer: ReturnType<typeof setTimeout> | null = null;
   let nextRequestId = 1;
   let currentThreadId: string | undefined;
+  // The security of the thread this transport opened; the control thread.fork reuses it.
+  let currentSecurity: CodexThreadSecurity = UNRESTRICTED_CODEX_THREAD_SECURITY;
   let currentInstructionSources: string[] = [];
   let currentGoalStatus: string | undefined;
   let resolvedModel: string | null = null;
@@ -1563,8 +1671,8 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             cwd: request.cwd ?? null,
             approvalPolicy: "never",
             approvalsReviewer: null,
-            sandbox: CODEX_APP_SERVER_SANDBOX,
-            config: null,
+            sandbox: currentSecurity.sandbox,
+            config: currentSecurity.restricted ? { ...currentSecurity.config } : null,
             baseInstructions: null,
             developerInstructions: null,
             ephemeral: false,
@@ -1943,7 +2051,9 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     forkBeforeTurnId: string | null = null,
   ): Promise<void> {
     const effort = toCodexRuntimeEffort(input.effort);
-    const config: Record<string, unknown> = { model_reasoning_effort: effort };
+    const security = input.security ?? UNRESTRICTED_CODEX_THREAD_SECURITY;
+    currentSecurity = security;
+    const config: Record<string, unknown> = { model_reasoning_effort: effort, ...security.config };
     if (input.allowedSkills?.length || input.hiddenSkills?.length) {
       const inventory = await sendRequest("skills/list", { cwds: [input.cwd], forceReload: true });
       config["skills.config"] = buildCodexDisabledSkillConfig(
@@ -1969,7 +2079,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           cwd: input.cwd,
           approvalPolicy: "never",
           approvalsReviewer: null,
-          sandbox: CODEX_APP_SERVER_SANDBOX,
+          sandbox: security.sandbox,
           config,
           baseInstructions: null,
           developerInstructions: null,
@@ -1983,7 +2093,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             modelProvider: null,
             cwd: input.cwd,
             approvalPolicy: "never",
-            sandbox: CODEX_APP_SERVER_SANDBOX,
+            sandbox: security.sandbox,
             config,
             baseInstructions: null,
             developerInstructions: input.systemPromptAppend || null,
@@ -1996,7 +2106,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             modelProvider: null,
             cwd: input.cwd,
             approvalPolicy: "never",
-            sandbox: CODEX_APP_SERVER_SANDBOX,
+            sandbox: security.sandbox,
             config,
             serviceName: null,
             baseInstructions: null,
@@ -2366,7 +2476,7 @@ function _createCodexCliTransport(options: { command?: string } = {}): CodexCliT
 
   return {
     startTurn(input) {
-      const args = buildExecArgs(input.resume, input.model, toCodexRuntimeEffort(input.effort));
+      const args = buildExecArgs(input.resume, input.model, toCodexRuntimeEffort(input.effort), input.security);
       const child = spawn(command, args, {
         cwd: input.cwd,
         detached: true,
@@ -2452,10 +2562,37 @@ function _createCodexCliTransport(options: { command?: string } = {}): CodexCliT
   };
 }
 
-function buildExecArgs(resume: string | undefined, model?: string, effort?: string): string[] {
+/**
+ * `codex exec` arguments. A restricted agent (contract §13.10) gets the
+ * read-only sandbox and the native tool switches instead of the bypass flag.
+ */
+export function buildCodexExecArgs(
+  resume: string | undefined,
+  model?: string,
+  effort?: string,
+  agentId?: string,
+): string[] {
+  return buildExecArgs(resume, model, effort, resolveCodexThreadSecurity(agentId));
+}
+
+function buildExecArgs(
+  resume: string | undefined,
+  model?: string,
+  effort?: string,
+  security: CodexThreadSecurity = UNRESTRICTED_CODEX_THREAD_SECURITY,
+): string[] {
   const args = resume ? ["exec", "resume"] : ["exec"];
 
-  args.push("--json", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox");
+  args.push("--json", "--skip-git-repo-check");
+  if (security.restricted) {
+    // `-c` overrides apply to `exec` and `exec resume` alike.
+    args.push("-c", `sandbox_mode=${JSON.stringify(security.sandbox)}`);
+    for (const [key, value] of Object.entries(security.config)) {
+      args.push("-c", `${key}=${JSON.stringify(value)}`);
+    }
+  } else {
+    args.push("--dangerously-bypass-approvals-and-sandbox");
+  }
 
   if (model) {
     args.push("--model", model);

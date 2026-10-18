@@ -3,144 +3,62 @@ id: knowledge/runbook
 title: "Ravi Knowledge Runbook"
 kind: domain
 domain: knowledge
-status: draft
+status: active
 normative: false
 ---
 
 # Ravi Knowledge Runbook
 
-## Inspect a Thread
+## Enable for an agent
+
+1. Make sure no outsider-reachable agent can read files:
+
+   ```bash
+   ravi doctor --json
+   ```
+
+   If `permissions.knowledge_exposure` fails, make the listed agents chat-only (`ravi agents permissions <id> chat-only`) or close their outside routes.
+
+2. Grant the agent Knowledge:
+
+   ```bash
+   ravi agents permissions main explicit-only --capabilities use:tool:Bash,execute:executable:ravi,read:knowledge:*,mutate:knowledge:remember --execute
+   ```
+
+3. Log in to the Console (`ravi login`) so Console results are included. Without it, searches return local history only with `issues: ["console_not_logged_in"]`.
+
+## Search fails with exit 3
+
+| Code | Action |
+|---|---|
+| `KNOWLEDGE_EXPOSURE_UNSAFE` | Read `issues` (up to 5 offending agents) and fix them as above |
+| `KNOWLEDGE_TURN_NOT_OPERATOR` | Expected outside operator turns; ask from the terminal or the owner's DM |
+| `KNOWLEDGE_DISABLED` | An org owner or admin enables Knowledge for the organization in the Console |
+
+## Results are missing
 
 ```bash
-ravi knowledge threads show <thread-id-or-slug>
-ravi knowledge items list --thread <thread-id-or-slug>
-ravi knowledge sources show <source-id>
+ravi knowledge sources --json
+ravi knowledge sources --failing --json
+ravi knowledge why --last --json
 ```
 
-Check:
+- `local.lastIndexedAt` old: the daemon is not the leader or is down; the next terminal search indexes with a 1.5 s budget.
+- `local.fts5: false`: SQLite lacks FTS5; search uses `LIKE` and is slower but correct.
+- `issues` has `console_unavailable: <code>`: check `ravi login` and network; local results still work.
 
-- thread status;
-- last signal;
-- canonical note URI;
-- item count by kind/status;
-- source coverage;
-- stale items;
-- pending draft items.
-
-## Explain Why an Item Exists
+## Contact memory
 
 ```bash
-ravi knowledge items show <item-id>
+ravi settings set knowledge.contactMemory.agents "support"
+ravi settings set knowledge.project <project>
+ravi doctor --json      # knowledge.f2_setup lists what is missing
+ravi knowledge forget --about contact:<contact-id>
 ```
 
-The output SHOULD include:
+`knowledge.f2_setup` warns when the project, owner target, curator agent profile, codex parity or Console inbox subscription is missing.
 
-- item kind;
-- confidence;
-- evidence level;
-- source links;
-- extractor profile;
-- curator or publisher actor;
-- merge/supersession history.
+## Local data
 
-If this cannot explain the item, the item is not ready to be canonical.
-
-## Ingest a Session
-
-```bash
-ravi knowledge ingest --source session:<session-key> --profile default --dry-run
-ravi knowledge ingest --source session:<session-key> --profile default
-```
-
-Use `--dry-run` first for large sessions.
-
-Expected result:
-
-- existing items reused or linked;
-- new items created as draft unless auto-review is explicitly enabled;
-- sources recorded;
-- no raw transcript dumped into item bodies.
-
-## Publish to Obsidian
-
-```bash
-ravi knowledge publish --adapter obsidian --thread <thread> --dry-run
-ravi knowledge publish --adapter obsidian --thread <thread>
-```
-
-Check before write:
-
-- target note path;
-- managed block boundaries;
-- manual content preservation;
-- source frontmatter;
-- diff preview.
-
-If a note has manual edits inside the managed block, publisher SHOULD refuse or require `--force`.
-
-## Fix Duplicate Items
-
-1. Inspect the candidate duplicates.
-2. Confirm source overlap and semantic equivalence.
-3. Merge them.
-
-```bash
-ravi knowledge items merge <item-a> <item-b>
-```
-
-The merge MUST preserve all sources and append an audit event.
-
-## Fix Wrong Thread Assignment
-
-```bash
-ravi knowledge items move <item-id> --thread <thread>
-```
-
-The move MUST record:
-
-- previous thread;
-- new thread;
-- actor;
-- reason when provided.
-
-## Handle Bad Inference
-
-If an item overstates an inference as fact:
-
-```bash
-ravi knowledge items update <item-id> --kind inference --confidence low
-```
-
-Then add a source/comment explaining why.
-
-## Backfill a Time Window
-
-```bash
-ravi knowledge ingest --source session:main --since 2026-05-01 --until 2026-05-05 --profile workstream
-ravi knowledge ingest --source life-review:2026-W18 --profile life-review
-```
-
-Backfills MUST be bounded. Avoid all-time ingestion without an explicit plan.
-
-## Diagnose Missing Knowledge
-
-Ask:
-
-- Was the source ingested?
-- Was the source visible to the profile?
-- Did redaction remove the relevant content?
-- Did the item merge into an existing canonical item?
-- Did the item stay in draft?
-- Was publication separate from canonical storage?
-
-## Diagnose Vault Drift
-
-If Obsidian does not match Ravi Knowledge:
-
-1. Check the canonical thread.
-2. Check latest publication record.
-3. Run publisher dry-run.
-4. Compare managed blocks.
-5. Preserve manual sections.
-
-The vault should be repaired from canonical knowledge, not the other way around unless an explicit import workflow is used.
+- Database: `~/.ravi/knowledge.db`. It can be deleted with the daemon stopped; the indexer rebuilds local history from `chat.db` and `~/.ravi/meetings/`. Contact items, forgotten subjects and gaps are lost with it.
+- Retention runs once a day in the leader's index runner.

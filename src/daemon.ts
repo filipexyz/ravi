@@ -51,6 +51,7 @@ import { startInboxRunner, stopInboxRunner } from "./inbox/index.js";
 import { startLinkRequestWatcher, stopLinkRequestWatcher } from "./identity-link/link-watcher.js";
 import { startHookRunner, stopHookRunner } from "./hooks-runtime/index.js";
 import { startTaskCheckpointRunner, stopTaskCheckpointRunner } from "./tasks/index.js";
+import { startKnowledgeLeaderRunners, stopKnowledgeLeaderRunners } from "./knowledge/runners.js";
 import { startSyncRunner, stopSyncRunner } from "./sync/index.js";
 import { startLibraryPinRunner, stopLibraryPinRunner } from "./library/pin-runner.js";
 import { startLibraryRequestRunner, stopLibraryRequestRunner } from "./library/request-runner.js";
@@ -267,6 +268,7 @@ async function shutdown(signal: string, exitCode = 0) {
     await stopGhFollowMaintenanceRunner();
     await stopJobsRunner();
     await stopTaskCheckpointRunner();
+    stopKnowledgeLeaderRunners();
     await releaseLeadership("runners");
 
     // Stop gateway
@@ -435,6 +437,8 @@ export async function startDaemon() {
       canPublishSessionPrompt: (sessionName) => bot?.canAcceptRuntimePrompt(sessionName) ?? true,
     });
     log.info("Task checkpoint runner started (leader)");
+    startKnowledgeLeaderRunners();
+    log.info("Knowledge runners started (leader)");
   } else {
     log.info("Not leader — heartbeat, cron, and task checkpoint runners skipped (another daemon is running them)");
     watchForLeadershipVacancy("runners", async () => {
@@ -448,6 +452,7 @@ export async function startDaemon() {
       await startTaskCheckpointRunner({
         canPublishSessionPrompt: (sessionName) => bot?.canAcceptRuntimePrompt(sessionName) ?? true,
       });
+      startKnowledgeLeaderRunners();
       log.info("Heartbeat, cron, session followup, and task checkpoint runners started (new leader)");
     }).catch((err) => log.error("Leadership watcher failed", err));
   }

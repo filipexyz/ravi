@@ -2204,3 +2204,49 @@ describe("OmniConsumer channel context", () => {
     expect(prompt.prompt).toContain("[Audio]\nTranscript:\nhistórico recuperado pelo metadata db");
   });
 });
+
+describe("OmniSender knowledge egress (last hop)", () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("guards text sent to a guarded chat, given the Omni UUID and a normalized JID", async () => {
+    const { OmniSender } = await import("./sender.js");
+    const bodies: Array<Record<string, unknown>> = [];
+    globalThis.fetch = mock(async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return Response.json({ data: { messageId: "msg-1", status: "sent" } });
+    }) as unknown as typeof fetch;
+    const lookups: Array<[string, string]> = [];
+    const sender = new OmniSender("http://omni.local", "test-key", {
+      knowledgeGuard: (instanceId, to) => {
+        lookups.push([instanceId, to]);
+        return to === "5511999990000@s.whatsapp.net"
+          ? {
+              sessionName: "kagent-dm-1",
+              agentId: "kagent",
+              instanceId: "wa-main",
+              channel: "whatsapp",
+              chatId: "5511999990000@s.whatsapp.net",
+              normalizedChatId: "5511999990000@s.whatsapp.net",
+              contactId: "contact-1",
+              guardedUntil: Date.now() + 60_000,
+            }
+          : null;
+      },
+    });
+
+    await sender.send(
+      "11111111-2222-4333-8444-555555555555",
+      "5511999990000@s.whatsapp.net",
+      "veja console.ravi.bot/x",
+    );
+    await sender.send("11111111-2222-4333-8444-555555555555", "120363@g.us", "veja console.ravi.bot/x");
+
+    expect(lookups[0]).toEqual(["11111111-2222-4333-8444-555555555555", "5511999990000@s.whatsapp.net"]);
+    expect(bodies[0]?.text).toBe("veja [link removido]");
+    expect(bodies[1]?.text).toBe("veja console.ravi.bot/x");
+  });
+});

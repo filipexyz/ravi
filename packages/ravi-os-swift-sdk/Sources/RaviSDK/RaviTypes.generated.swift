@@ -16270,6 +16270,483 @@ public struct JobsWaitReturn: Codable, Sendable {
   }
 }
 
+public struct KnowledgeForgetOptions: Codable, Sendable {
+  public var about: String?
+  public var execute: Bool?
+  public var redact: Bool?
+
+  public init(about: String? = nil, execute: Bool? = nil, redact: Bool? = nil) {
+    self.about = about
+    self.execute = execute
+    self.redact = redact
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case about = "about"
+    case execute = "execute"
+    case redact = "redact"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.about {
+      body["about"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.redact {
+      body["redact"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct KnowledgeForgetReturn: Codable, Sendable {
+  public var archived: Double
+  public var ftsRowsDeleted: Double
+  public var redacted: Double
+
+  public init(archived: Double, ftsRowsDeleted: Double, redacted: Double) {
+    self.archived = archived
+    self.ftsRowsDeleted = ftsRowsDeleted
+    self.redacted = redacted
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case archived = "archived"
+    case ftsRowsDeleted = "ftsRowsDeleted"
+    case redacted = "redacted"
+  }
+}
+
+public struct KnowledgeMarksOptions: Codable, Sendable {
+  public var url: String?
+
+  public init(url: String? = nil) {
+    self.url = url
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case url = "url"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.url {
+      body["url"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct KnowledgeMarksReturn: Codable, Sendable {
+  public var card: RaviJSON
+  public var issues: [String]
+  public var marks: [RaviJSON]
+  public var next: [String]
+
+  public init(card: RaviJSON, issues: [String], marks: [RaviJSON], next: [String]) {
+    self.card = card
+    self.issues = issues
+    self.marks = marks
+    self.next = next
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case card = "card"
+    case issues = "issues"
+    case marks = "marks"
+    case next = "next"
+  }
+}
+
+public struct KnowledgeProposeOptions: Codable, Sendable {
+  public var audience: String?
+  public var correction: String?
+  public var execute: Bool?
+  public var from: [String]?
+  public var gap: String?
+  public var note: String?
+  public var project: String?
+  public var supersedes: String?
+  public var transcript: String?
+
+  public init(audience: String? = nil, correction: String? = nil, execute: Bool? = nil, from: [String]? = nil, gap: String? = nil, note: String? = nil, project: String? = nil, supersedes: String? = nil, transcript: String? = nil) {
+    self.audience = audience
+    self.correction = correction
+    self.execute = execute
+    self.from = from
+    self.gap = gap
+    self.note = note
+    self.project = project
+    self.supersedes = supersedes
+    self.transcript = transcript
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case audience = "audience"
+    case correction = "correction"
+    case execute = "execute"
+    case from = "from"
+    case gap = "gap"
+    case note = "note"
+    case project = "project"
+    case supersedes = "supersedes"
+    case transcript = "transcript"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.audience {
+      body["audience"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.correction {
+      body["correction"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.from {
+      body["from"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.gap {
+      body["gap"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.note {
+      body["note"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.supersedes {
+      body["supersedes"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.transcript {
+      body["transcript"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct KnowledgeProposeReturn: Codable, Sendable {
+  public var deduped: Bool
+  public var next: [String]
+  public var proposal: RaviJSON
+
+  public init(deduped: Bool, next: [String], proposal: RaviJSON) {
+    self.deduped = deduped
+    self.next = next
+    self.proposal = proposal
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case deduped = "deduped"
+    case next = "next"
+    case proposal = "proposal"
+  }
+}
+
+public struct KnowledgeReadOptions: Codable, Sendable {
+  public var around: String?
+
+  public init(around: String? = nil) {
+    self.around = around
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case around = "around"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.around {
+      body["around"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct KnowledgeReadReturn: Codable, Sendable {
+  public var excerpt: String
+  public var header: String
+  public var issues: [String]
+  public var next: [String]
+  public var nonce: String
+  public var ref: String
+  public var rule: String
+  public var runId: RaviJSON
+  public var trust: String
+  public var url: RaviJSON
+
+  public init(excerpt: String, header: String, issues: [String], next: [String], nonce: String, ref: String, rule: String, runId: RaviJSON, trust: String, url: RaviJSON) {
+    self.excerpt = excerpt
+    self.header = header
+    self.issues = issues
+    self.next = next
+    self.nonce = nonce
+    self.ref = ref
+    self.rule = rule
+    self.runId = runId
+    self.trust = trust
+    self.url = url
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case excerpt = "excerpt"
+    case header = "header"
+    case issues = "issues"
+    case next = "next"
+    case nonce = "nonce"
+    case ref = "ref"
+    case rule = "rule"
+    case runId = "runId"
+    case trust = "trust"
+    case url = "url"
+  }
+}
+
+public struct KnowledgeRememberOptions: Codable, Sendable {
+  public var about: String?
+  public var agent: String?
+  public var confirm: String?
+  public var key: String?
+  public var kind: String?
+
+  public init(about: String? = nil, agent: String? = nil, confirm: String? = nil, key: String? = nil, kind: String? = nil) {
+    self.about = about
+    self.agent = agent
+    self.confirm = confirm
+    self.key = key
+    self.kind = kind
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case about = "about"
+    case agent = "agent"
+    case confirm = "confirm"
+    case key = "key"
+    case kind = "kind"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.about {
+      body["about"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.agent {
+      body["agent"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.confirm {
+      body["confirm"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.key {
+      body["key"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.kind {
+      body["kind"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct KnowledgeRememberReturn: Codable, Sendable {
+  public var activated: Bool
+  public var item: RaviJSON
+  public var next: [String]
+  public var reason: RaviJSON
+
+  public init(activated: Bool, item: RaviJSON, next: [String], reason: RaviJSON) {
+    self.activated = activated
+    self.item = item
+    self.next = next
+    self.reason = reason
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case activated = "activated"
+    case item = "item"
+    case next = "next"
+    case reason = "reason"
+  }
+}
+
+public struct KnowledgeSearchOptions: Codable, Sendable {
+  public var about: String?
+  public var limit: String?
+  public var localOnly: Bool?
+  public var project: String?
+  public var since: String?
+  public var type: String?
+  public var who: String?
+
+  public init(about: String? = nil, limit: String? = nil, localOnly: Bool? = nil, project: String? = nil, since: String? = nil, type: String? = nil, who: String? = nil) {
+    self.about = about
+    self.limit = limit
+    self.localOnly = localOnly
+    self.project = project
+    self.since = since
+    self.type = type
+    self.who = who
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case about = "about"
+    case limit = "limit"
+    case localOnly = "localOnly"
+    case project = "project"
+    case since = "since"
+    case type = "type"
+    case who = "who"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.about {
+      body["about"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.localOnly {
+      body["localOnly"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.since {
+      body["since"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.type {
+      body["type"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.who {
+      body["who"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct KnowledgeSearchReturn: Codable, Sendable {
+  public var audience: String
+  public var issues: [String]
+  public var localRunId: String
+  public var next: [String]
+  public var nonce: String
+  public var query: String
+  public var results: [RaviJSON]
+  public var rule: String
+  public var runId: RaviJSON
+  public var withheld: RaviJSON
+
+  public init(audience: String, issues: [String], localRunId: String, next: [String], nonce: String, query: String, results: [RaviJSON], rule: String, runId: RaviJSON, withheld: RaviJSON) {
+    self.audience = audience
+    self.issues = issues
+    self.localRunId = localRunId
+    self.next = next
+    self.nonce = nonce
+    self.query = query
+    self.results = results
+    self.rule = rule
+    self.runId = runId
+    self.withheld = withheld
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case audience = "audience"
+    case issues = "issues"
+    case localRunId = "localRunId"
+    case next = "next"
+    case nonce = "nonce"
+    case query = "query"
+    case results = "results"
+    case rule = "rule"
+    case runId = "runId"
+    case withheld = "withheld"
+  }
+}
+
+public struct KnowledgeSourcesOptions: Codable, Sendable {
+  public var failing: Bool?
+
+  public init(failing: Bool? = nil) {
+    self.failing = failing
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case failing = "failing"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.failing {
+      body["failing"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct KnowledgeSourcesReturn: Codable, Sendable {
+  public var console: RaviJSON
+  public var issues: [String]
+  public var local: RaviJSON
+  public var next: [String]
+
+  public init(console: RaviJSON, issues: [String], local: RaviJSON, next: [String]) {
+    self.console = console
+    self.issues = issues
+    self.local = local
+    self.next = next
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case issues = "issues"
+    case local = "local"
+    case next = "next"
+  }
+}
+
+public struct KnowledgeWhyOptions: Codable, Sendable {
+  public var last: Bool?
+  public var limit: String?
+  public var run: String?
+  public var session: String?
+
+  public init(last: Bool? = nil, limit: String? = nil, run: String? = nil, session: String? = nil) {
+    self.last = last
+    self.limit = limit
+    self.run = run
+    self.session = session
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case last = "last"
+    case limit = "limit"
+    case run = "run"
+    case session = "session"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.last {
+      body["last"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.run {
+      body["run"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.session {
+      body["session"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct KnowledgeWhyReturn: Codable, Sendable {
+  public var issues: [String]
+  public var next: [String]
+  public var runs: [RaviJSON]
+
+  public init(issues: [String], next: [String], runs: [RaviJSON]) {
+    self.issues = issues
+    self.next = next
+    self.runs = runs
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case issues = "issues"
+    case next = "next"
+    case runs = "runs"
+  }
+}
+
 public struct MailAccountsCreateOptions: Codable, Sendable {
   public var credentialsRef: String?
   public var id: String?

@@ -33,6 +33,23 @@ import {
   EXTERNAL_AUTHORITY_AUDIENCE_SETTING,
   EXTERNAL_AUTHORITY_PUBKEY_SETTING,
 } from "../../permissions/external-authority-provider.js";
+import {
+  DEFAULT_KNOWLEDGE_DIGEST_TIME,
+  KNOWLEDGE_CONTACT_MEMORY_AGENTS_SETTING,
+  KNOWLEDGE_CURATOR_AGENT_SETTING,
+  KNOWLEDGE_DIGEST_TIME_SETTING,
+  KNOWLEDGE_DIGEST_TIMEZONE_SETTING,
+  KNOWLEDGE_EGRESS_ALLOW_SETTING,
+  KNOWLEDGE_OWNER_TARGET_SETTING,
+  KNOWLEDGE_PROJECT_SETTING,
+  validateContactMemoryAgents,
+  validateCuratorAgent,
+  validateDigestTime,
+  validateDigestTimezone,
+  validateEgressAllow,
+  validateKnowledgeProject,
+  validateOwnerTarget,
+} from "../../knowledge/settings.js";
 
 /**
  * Settings `permissions.*` definem QUEM tem autoridade (cadeia de providers e
@@ -285,6 +302,38 @@ const KNOWN_SETTINGS: Record<string, { description: string; validate?: (value: s
         throw new Error(`Invalid value. Must be one of: ${DM_POLICIES.join(", ")}`);
       }
     },
+  },
+  [KNOWLEDGE_CONTACT_MEMORY_AGENTS_SETTING]: {
+    description:
+      "Knowledge: comma-separated agent ids opted in to contact memory and the contact packet (default: none)",
+    validate: (value: string) => validateContactMemoryAgents(value),
+  },
+  [KNOWLEDGE_PROJECT_SETTING]: {
+    description:
+      "Knowledge: Console project ref for gaps, notes and transcripts (default: none; propose needs --project)",
+    validate: validateKnowledgeProject,
+  },
+  [KNOWLEDGE_CURATOR_AGENT_SETTING]: {
+    description: "Knowledge: agent id that runs the nightly curator; it must be chat-only or no-exec (default: off)",
+    validate: (value: string) => validateCuratorAgent(value),
+  },
+  [KNOWLEDGE_DIGEST_TIME_SETTING]: {
+    description: `Knowledge: local HH:MM of the morning DM (default: ${DEFAULT_KNOWLEDGE_DIGEST_TIME})`,
+    validate: validateDigestTime,
+  },
+  [KNOWLEDGE_DIGEST_TIMEZONE_SETTING]: {
+    description: "Knowledge: IANA timezone of the morning DM (default: system timezone)",
+    validate: validateDigestTimezone,
+  },
+  [KNOWLEDGE_OWNER_TARGET_SETTING]: {
+    description:
+      "Knowledge: <channel>:<instance>:<to> picking among the owner contact's own identities (default: resolved from the owner contact)",
+    validate: (value: string) => validateOwnerTarget(value),
+  },
+  [KNOWLEDGE_EGRESS_ALLOW_SETTING]: {
+    description:
+      'Knowledge: JSON map of hostnames allowed in contact-packet replies per instance, e.g. {"main":["example.com"]} (default: unrestricted)',
+    validate: (value: string) => validateEgressAllow(value),
   },
 };
 

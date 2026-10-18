@@ -9,6 +9,11 @@ import { readFileSync } from "node:fs";
 import { createOmniClient, type OmniClient } from "./client.js";
 import { logger } from "../utils/logger.js";
 import type { OmniUserMention } from "./mentions.js";
+import {
+  type GuardedSession,
+  guardedSessionForInstanceChat,
+  guardTextForGuardedSession,
+} from "../knowledge/egress/guard.js";
 
 const log = logger.child("omni:sender");
 
@@ -26,11 +31,40 @@ function isRetryable(err: unknown): boolean {
   return false; // Don't retry unknown errors (could be application bugs)
 }
 
+export interface OmniSenderOptions {
+  /** Knowledge guard row for (Omni instance UUID, normalized JID); defaults to the knowledge.db lookup. */
+  knowledgeGuard?: (instanceId: string, to: string) => GuardedSession | null;
+}
+
 export class OmniSender {
   private client: OmniClient;
+  private knowledgeGuard: (instanceId: string, to: string) => GuardedSession | null;
 
-  constructor(apiUrl: string, apiKey: string) {
+  constructor(apiUrl: string, apiKey: string, options: OmniSenderOptions = {}) {
     this.client = createOmniClient({ baseUrl: apiUrl, apiKey });
+    this.knowledgeGuard = options.knowledgeGuard ?? ((instanceId, to) => guardedSessionForInstanceChat(instanceId, to));
+  }
+
+  /**
+   * Last hop of the Knowledge egress guard: a text bound for a packet
+   * conversation passes the guard even when an upstream path skipped it.
+   */
+  private guardKnowledgeEgress(instanceId: string, to: string, text: string): string {
+    return this.guardKnowledgeEgressDetailed(instanceId, to, text).text;
+  }
+
+  private guardKnowledgeEgressDetailed(
+    instanceId: string,
+    to: string,
+    text: string,
+  ): { text: string; guarded: boolean } {
+    let guarded: GuardedSession | null = null;
+    try {
+      guarded = this.knowledgeGuard(instanceId, to);
+    } catch (err) {
+      log.warn("Knowledge guard lookup failed", { instanceId, error: err });
+    }
+    return guarded ? { text: guardTextForGuardedSession(text, guarded).text, guarded: true } : { text, guarded: false };
   }
 
   /**
@@ -64,6 +98,14 @@ export class OmniSender {
     text: string,
     optionsOrThreadId?: string | { threadId?: string; mentions?: OmniUserMention[] },
   ): Promise<{ messageId?: string }> {
+    const original = text;
+    const guard = this.guardKnowledgeEgressDetailed(instanceId, to, text);
+    text = guard.text;
+    // Only a text the guard emptied is dropped; anything else goes as before.
+    if (guard.guarded && original.trim() && !text.trim()) {
+      log.warn("Message dropped by the Knowledge egress guard", { instanceId });
+      return {};
+    }
     try {
       const options =
         typeof optionsOrThreadId === "string" ? { threadId: optionsOrThreadId } : (optionsOrThreadId ?? {});
@@ -137,6 +179,7 @@ export class OmniSender {
    * Edit a channel message sent by the current instance.
    */
   async editMessage(instanceId: string, to: string, messageId: string, text: string): Promise<void> {
+    text = this.guardKnowledgeEgress(instanceId, to, text);
     try {
       await this.withRetry(
         () => this.client.messages.editChannel({ instanceId, channelId: to, messageId, text }),
@@ -161,6 +204,7 @@ export class OmniSender {
     caption?: string,
     voiceNote?: boolean,
   ): Promise<{ messageId?: string }> {
+    if (caption) caption = this.guardKnowledgeEgress(instanceId, to, caption);
     try {
       const data = readFileSync(localPath);
       const base64 = data.toString("base64");

@@ -27,7 +27,7 @@ import {
   type ContactChatOverlay,
 } from "../permissions/contact-policy-permissions-provider.js";
 import { materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
-import { consoleIdentityFromBinding, readCachedActorBinding } from "../cloud-auth/actor-bindings.js";
+import { consoleIdentityFromBinding, readActorBindingForActiveLogin } from "../cloud-auth/actor-bindings.js";
 import { dbResolveActiveTaskBindingForSession } from "../tasks/task-db.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
 import { buildRuntimeEnv, buildTaskRuntimeEnv } from "./host-env.js";
@@ -469,7 +469,7 @@ function resolveConsoleBindingMetadata(actorPrincipal: AuthorityPrincipal | null
 } {
   if (actorPrincipal?.subjectType !== "contact") return {};
   try {
-    return consoleIdentityFromBinding(readCachedActorBinding(actorPrincipal.subjectId));
+    return consoleIdentityFromBinding(readActorBindingForActiveLogin(actorPrincipal.subjectId));
   } catch {
     return {};
   }

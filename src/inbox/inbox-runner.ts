@@ -29,6 +29,7 @@ import {
 import { flushNats, publish } from "../nats.js";
 import { logger } from "../utils/logger.js";
 import { handOffMeetingInboxItem } from "../meetings/inbox-handoff.js";
+import { handleKnowledgeInboxItem, isKnowledgeInboxEvent } from "../knowledge/inbox/handler.js";
 import { watchEventFromInboxPayload } from "../watch/events.js";
 import {
   ackInboxItems as ackInboxItemsRemote,
@@ -82,6 +83,8 @@ const POLL_LOCK_RENEW_MS = 30_000;
 interface RunnerOptions {
   /** Called once per newly delivered item; turns cloud meeting events into local artifacts. */
   meetingHandoff?: (payload: InboxNatsPayload) => void;
+  /** Called once per newly delivered item; runs `knowledge.*` items (mirror sync, gap answers) in the background. */
+  knowledgeHandoff?: (payload: InboxNatsPayload) => void;
   intervalMs?: number;
   nats?: InboxNatsPublishDependencies;
 }
@@ -132,11 +135,17 @@ export class InboxRunner {
   private readonly natsDependencies: InboxNatsPublishDependencies;
   private tickInFlight: Promise<void> | null = null;
   private readonly meetingHandoff: (payload: InboxNatsPayload) => void;
+  private readonly knowledgeHandoff: (payload: InboxNatsPayload) => void;
 
   constructor(options: RunnerOptions = {}) {
     this.intervalMs = options.intervalMs ?? DEFAULT_POLL_INTERVAL_MS;
     this.natsDependencies = options.nats ?? { publish, flush: flushNats };
     this.meetingHandoff = options.meetingHandoff ?? ((payload) => void handOffMeetingInboxItem(payload));
+    this.knowledgeHandoff =
+      options.knowledgeHandoff ??
+      ((payload) => {
+        if (isKnowledgeInboxEvent(payload.eventType)) void handleKnowledgeInboxItem(payload);
+      });
   }
 
   async start(): Promise<void> {
@@ -688,11 +697,16 @@ export class InboxRunner {
     input.assertPollLock();
     markItemDelivered(localItem.id, Date.now());
     // 4. Side work that must not hold the poll or undo the delivery: cloud
-    // meeting recordings.
+    // meeting recordings and Knowledge items.
     try {
       this.meetingHandoff(enrichedNatsPayload);
     } catch (error) {
       log.warn("Meeting inbox handoff failed", { itemId: input.item.itemId, error: errMessage(error) });
+    }
+    try {
+      this.knowledgeHandoff(enrichedNatsPayload);
+    } catch (error) {
+      log.warn("Knowledge inbox handoff failed", { itemId: input.item.itemId, error: errMessage(error) });
     }
     return { delivered: true };
   }
