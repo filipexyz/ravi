@@ -176,6 +176,137 @@ export type AdaptersShowReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `agenda.briefing`. */
+export type AgendaBriefingInput = {
+  clear?: boolean;
+  eventId: string;
+  file?: string;
+  text?: string;
+};
+
+/** Return shape for `agenda.briefing`. */
+export type AgendaBriefingReturn = {
+  event: {
+    id: string;
+    [k: string]: unknown;
+  };
+};
+
+/** Input shape for `agenda.list`. */
+export type AgendaListInput = {
+  days?: string;
+};
+
+/** Return shape for `agenda.list`. */
+export type AgendaListReturn = {
+  events: Array<{
+    id: string;
+    [k: string]: unknown;
+  }>;
+  from: string;
+  to: string;
+  truncated: boolean;
+};
+
+/** Input shape for `agenda.record`. */
+export type AgendaRecordInput = {
+  eventId: string;
+  execute?: boolean;
+  project?: string;
+};
+
+/** Return shape for `agenda.record`. */
+export type AgendaRecordReturn = {
+  event: {
+    id: string;
+    [k: string]: unknown;
+  };
+};
+
+/** Input shape for `agenda.settings`. */
+export type AgendaSettingsInput = {
+  briefing?: string;
+  briefingMinutes?: string;
+  connection?: string;
+  execute?: boolean;
+  followup?: string;
+  project?: string;
+  record?: string;
+  sync?: string;
+};
+
+/** Return shape for `agenda.settings`. */
+export type AgendaSettingsReturn = {
+  connection: {
+    connectionId: string;
+    [k: string]: unknown;
+  };
+};
+
+/** Input shape for `agenda.show`. */
+export type AgendaShowInput = {
+  eventId: string;
+};
+
+/** Return shape for `agenda.show`. */
+export type AgendaShowReturn = {
+  event: {
+    id: string;
+    [k: string]: unknown;
+  };
+};
+
+/** Input shape for `agenda.skip`. */
+export type AgendaSkipInput = {
+  eventId: string;
+};
+
+/** Return shape for `agenda.skip`. */
+export type AgendaSkipReturn = {
+  event: {
+    id: string;
+    [k: string]: unknown;
+  };
+};
+
+/** Input shape for `agenda.status`. */
+export type AgendaStatusInput = Record<string, never>;
+
+/** Return shape for `agenda.status`. */
+export type AgendaStatusReturn = {
+  connections: Array<{
+    connectionId: string;
+    [k: string]: unknown;
+  }>;
+  meetingsEnabled: boolean;
+  policy: {
+    autoRecordAllowed: boolean;
+    canManage: boolean;
+    [k: string]: unknown;
+  };
+  projects: Array<{
+    id: string;
+    name: string;
+    slug: string;
+    [k: string]: unknown;
+  }>;
+  [k: string]: unknown;
+};
+
+/** Input shape for `agenda.undo`. */
+export type AgendaUndoInput = {
+  eventId: string;
+  execute?: boolean;
+};
+
+/** Return shape for `agenda.undo`. */
+export type AgendaUndoReturn = {
+  event: {
+    id: string;
+    [k: string]: unknown;
+  };
+};
+
 /** Input shape for `agents.ask`. */
 export type AgentsAskInput = {
   execute?: boolean;

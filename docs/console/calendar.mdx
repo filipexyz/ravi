@@ -1,0 +1,49 @@
+---
+title: Calendar and meeting assistant
+description: Record calendar calls automatically or on request, and get a briefing before and a follow-up after each meeting.
+icon: calendar
+---
+
+Turn on your Google calendar in the Console, on your Google connection under **Connectors**. There you choose how your calls are recorded (ask each time, record automatically, or never), which project the recordings go to, and whether you want a briefing before each meeting and a follow-up after recorded ones. The Meetings tab then lists your next calls with a Record button.
+
+Your agent works from the same calendar. While you are logged in (`ravi login`), the daemon reads it every 5 minutes and schedules one-off routines on your default agent:
+
+- **Setup**: if you never chose how calls are recorded, the agent asks you once.
+- **The day before**: when a call asks before recording, the agent asks whether to record it. With briefings on, it also asks what you want out of the meeting.
+- **Before the start** (30 minutes by default): the agent prepares a briefing from what Ravi knows (contacts, knowledge, earlier meetings with the same people), stores it on the meeting page, and sends you a short version.
+- **After the call**: when the recording is ready, the agent sends a summary, the decisions and the action items, and offers next steps.
+
+The routines show in `ravi cron list` with names starting with `calendar:`. Removing one stops it; it is not scheduled again.
+
+## Commands
+
+```bash
+ravi agenda status
+ravi agenda list --days 7
+ravi agenda show <event-id>
+ravi agenda record <event-id> --execute
+ravi agenda skip <event-id>
+ravi agenda undo <event-id>
+ravi agenda briefing <event-id> --file briefing.md
+ravi agenda settings --record ask --project ops --briefing on --followup on
+```
+
+`record` and `settings --record auto` print the plan and exit 3 until you add `--execute`. `undo` needs `--execute` only when it clears a skip while recording is automatic.
+
+## Rules
+
+- **Only you.** `ravi agenda` uses your login, so it runs only on your own turns: the terminal, your direct chat with the agent and your routines. Anywhere else, including a group, it exits 3 with `CALENDAR_ACCESS_DENIED`.
+- **Automatic recording** needs your organization to allow it. An owner or admin turns it on in the organization settings in the Console. Calls with people outside the organization are always asked.
+- **Several members in one call.** The organization sends one bot per meeting, and everyone who had the meeting in their calendar can open the recording. A member's explicit Record wins; a member's "don't record" holds the meeting back unless another member asks to record it.
+- **Invites are data.** Titles, attendees and briefings come from invites other people write, so the agent reads them as data and never follows instructions in them.
+
+## Errors
+
+| Code | Exit | Meaning |
+|---|---|---|
+| `CALENDAR_ACCESS_DENIED` | 3 | The turn is not yours. |
+| `POLICY_DISABLED` | 3 | The organization does not allow automatic recording. |
+| `WRITE_REQUIRES_EXECUTE` | 3 | Dry-run: add `--execute`. |
+| `CALENDAR_SCOPE_MISSING` | 1 | The Google connection cannot read the calendar: reconnect it with calendar access. |
+| `CONFLICT` | 1 | The meeting already started or was cancelled. |
+| `INVALID_ARGUMENT` | 2 | A flag value is wrong, or recording needs `--project`. |

@@ -926,6 +926,411 @@ export const AdaptersShowReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `agenda.briefing`. */
+export const AgendaBriefingInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "clear": {
+      "description": "Delete the briefing",
+      "type": "boolean"
+    },
+    "eventId": {
+      "description": "Calendar event id (from agenda list)",
+      "type": "string"
+    },
+    "file": {
+      "description": "Read the briefing from a file",
+      "type": "string"
+    },
+    "text": {
+      "description": "The briefing",
+      "type": "string"
+    }
+  },
+  "required": [
+    "eventId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `agenda.briefing`. */
+export const AgendaBriefingReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "additionalProperties": {},
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "event"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `agenda.list`. */
+export const AgendaListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "days": {
+      "description": "Days ahead (default 7, max 30)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `agenda.list`. */
+export const AgendaListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "events": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "from": {
+      "type": "string"
+    },
+    "to": {
+      "type": "string"
+    },
+    "truncated": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "from",
+    "to",
+    "truncated",
+    "events"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `agenda.record`. */
+export const AgendaRecordInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "eventId": {
+      "description": "Calendar event id (from agenda list)",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Record (dry-run without it)",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Project id or slug (default: the calendar's project)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "eventId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `agenda.record`. */
+export const AgendaRecordReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "additionalProperties": {},
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "event"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `agenda.settings`. */
+export const AgendaSettingsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "briefing": {
+      "description": "Prepare a briefing before each meeting",
+      "type": "string"
+    },
+    "briefingMinutes": {
+      "description": "How long before the start (5-240)",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Google connection id (default: the only one)",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Apply --record auto (dry-run without it)",
+      "type": "boolean"
+    },
+    "followup": {
+      "description": "Run the follow-up when the recording is ready",
+      "type": "string"
+    },
+    "project": {
+      "description": "Project id or slug where recordings go",
+      "type": "string"
+    },
+    "record": {
+      "description": "Record calls: ask, auto or off",
+      "type": "string"
+    },
+    "sync": {
+      "description": "Use this calendar",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `agenda.settings`. */
+export const AgendaSettingsReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "additionalProperties": {},
+      "properties": {
+        "connectionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "connectionId"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "connection"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `agenda.show`. */
+export const AgendaShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "eventId": {
+      "description": "Calendar event id (from agenda list)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "eventId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `agenda.show`. */
+export const AgendaShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "additionalProperties": {},
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "event"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `agenda.skip`. */
+export const AgendaSkipInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "eventId": {
+      "description": "Calendar event id (from agenda list)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "eventId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `agenda.skip`. */
+export const AgendaSkipReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "additionalProperties": {},
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "event"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `agenda.status`. */
+export const AgendaStatusInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `agenda.status`. */
+export const AgendaStatusReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "connections": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {
+          "connectionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "connectionId"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "meetingsEnabled": {
+      "type": "boolean"
+    },
+    "policy": {
+      "additionalProperties": {},
+      "properties": {
+        "autoRecordAllowed": {
+          "type": "boolean"
+        },
+        "canManage": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "autoRecordAllowed",
+        "canManage"
+      ],
+      "type": "object"
+    },
+    "projects": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "connections",
+    "policy",
+    "meetingsEnabled",
+    "projects"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `agenda.undo`. */
+export const AgendaUndoInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "eventId": {
+      "description": "Calendar event id (from agenda list)",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Clear a skip under automatic recording",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "eventId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `agenda.undo`. */
+export const AgendaUndoReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "additionalProperties": {},
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "event"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `agents.ask`. */
 export const AgentsAskInputSchema = {
   "additionalProperties": false,

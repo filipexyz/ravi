@@ -55,6 +55,7 @@ import { startKnowledgeLeaderRunners, stopKnowledgeLeaderRunners } from "./knowl
 import { startSyncRunner, stopSyncRunner } from "./sync/index.js";
 import { startLibraryPinRunner, stopLibraryPinRunner } from "./library/pin-runner.js";
 import { startLibraryRequestRunner, stopLibraryRequestRunner } from "./library/request-runner.js";
+import { startCalendarAssistantRunner, stopCalendarAssistantRunner } from "./calendar/assistant-runner.js";
 import { createSessionAdapterBus } from "./adapters/index.js";
 import { resolveOmniConnection } from "./omni-config.js";
 import { ensureSessionPromptsStream, publishSessionPrompt } from "./omni/session-stream.js";
@@ -258,6 +259,7 @@ async function shutdown(signal: string, exitCode = 0) {
     await stopSyncRunner();
     await stopLibraryPinRunner();
     await stopLibraryRequestRunner();
+    await stopCalendarAssistantRunner();
     await stopEphemeralRunner();
     await stopHookRunner();
     await stopTriggerRunner();
@@ -480,6 +482,9 @@ export async function startDaemon() {
 
   await startLibraryRequestRunner();
   log.info("Library request runner started");
+
+  await startCalendarAssistantRunner();
+  log.info("Meeting assistant runner started");
 
   sessionAdapterBus = createSessionAdapterBus();
   await sessionAdapterBus.start();

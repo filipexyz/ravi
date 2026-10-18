@@ -58,7 +58,8 @@
               "console/bases",
               "console/widgets",
               "console/connectors",
-              "console/meetings"
+              "console/meetings",
+              "console/calendar"
             ]
           },
           {

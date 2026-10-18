@@ -929,6 +929,427 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let AgendaBriefingInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "clear": {
+        "description": "Delete the briefing",
+        "type": "boolean"
+      },
+      "eventId": {
+        "description": "Calendar event id (from agenda list)",
+        "type": "string"
+      },
+      "file": {
+        "description": "Read the briefing from a file",
+        "type": "string"
+      },
+      "text": {
+        "description": "The briefing",
+        "type": "string"
+      }
+    },
+    "required": [
+      "eventId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let AgendaBriefingReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "event": {
+        "additionalProperties": {},
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "event"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let AgendaListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "days": {
+        "description": "Days ahead (default 7, max 30)",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let AgendaListReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "events": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "from": {
+        "type": "string"
+      },
+      "to": {
+        "type": "string"
+      },
+      "truncated": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "from",
+      "to",
+      "truncated",
+      "events"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let AgendaRecordInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "eventId": {
+        "description": "Calendar event id (from agenda list)",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Record (dry-run without it)",
+        "type": "boolean"
+      },
+      "project": {
+        "description": "Project id or slug (default: the calendar's project)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "eventId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let AgendaRecordReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "event": {
+        "additionalProperties": {},
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "event"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let AgendaSettingsInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "briefing": {
+        "description": "Prepare a briefing before each meeting",
+        "type": "string"
+      },
+      "briefingMinutes": {
+        "description": "How long before the start (5-240)",
+        "type": "string"
+      },
+      "connection": {
+        "description": "Google connection id (default: the only one)",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Apply --record auto (dry-run without it)",
+        "type": "boolean"
+      },
+      "followup": {
+        "description": "Run the follow-up when the recording is ready",
+        "type": "string"
+      },
+      "project": {
+        "description": "Project id or slug where recordings go",
+        "type": "string"
+      },
+      "record": {
+        "description": "Record calls: ask, auto or off",
+        "type": "string"
+      },
+      "sync": {
+        "description": "Use this calendar",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let AgendaSettingsReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "additionalProperties": {},
+        "properties": {
+          "connectionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "connectionId"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "connection"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let AgendaShowInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "eventId": {
+        "description": "Calendar event id (from agenda list)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "eventId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let AgendaShowReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "event": {
+        "additionalProperties": {},
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "event"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let AgendaSkipInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "eventId": {
+        "description": "Calendar event id (from agenda list)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "eventId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let AgendaSkipReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "event": {
+        "additionalProperties": {},
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "event"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let AgendaStatusInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let AgendaStatusReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {
+      "connections": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {
+            "connectionId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "connectionId"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "meetingsEnabled": {
+        "type": "boolean"
+      },
+      "policy": {
+        "additionalProperties": {},
+        "properties": {
+          "autoRecordAllowed": {
+            "type": "boolean"
+          },
+          "canManage": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "autoRecordAllowed",
+          "canManage"
+        ],
+        "type": "object"
+      },
+      "projects": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "slug": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "slug",
+            "name"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "connections",
+      "policy",
+      "meetingsEnabled",
+      "projects"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let AgendaUndoInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "eventId": {
+        "description": "Calendar event id (from agenda list)",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Clear a skip under automatic recording",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "eventId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let AgendaUndoReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "event": {
+        "additionalProperties": {},
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "event"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let AgentsAskInputSchema = #"""
   {
     "additionalProperties": false,

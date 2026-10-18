@@ -929,6 +929,427 @@ class RaviSchemas {
 }
 ''';
 
+  static const agendaBriefingInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "clear": {
+      "description": "Delete the briefing",
+      "type": "boolean"
+    },
+    "eventId": {
+      "description": "Calendar event id (from agenda list)",
+      "type": "string"
+    },
+    "file": {
+      "description": "Read the briefing from a file",
+      "type": "string"
+    },
+    "text": {
+      "description": "The briefing",
+      "type": "string"
+    }
+  },
+  "required": [
+    "eventId"
+  ],
+  "type": "object"
+}
+''';
+
+  static const agendaBriefingReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "additionalProperties": {},
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "event"
+  ],
+  "type": "object"
+}
+''';
+
+  static const agendaListInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "days": {
+      "description": "Days ahead (default 7, max 30)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const agendaListReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "events": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "from": {
+      "type": "string"
+    },
+    "to": {
+      "type": "string"
+    },
+    "truncated": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "from",
+    "to",
+    "truncated",
+    "events"
+  ],
+  "type": "object"
+}
+''';
+
+  static const agendaRecordInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "eventId": {
+      "description": "Calendar event id (from agenda list)",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Record (dry-run without it)",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Project id or slug (default: the calendar's project)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "eventId"
+  ],
+  "type": "object"
+}
+''';
+
+  static const agendaRecordReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "additionalProperties": {},
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "event"
+  ],
+  "type": "object"
+}
+''';
+
+  static const agendaSettingsInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "briefing": {
+      "description": "Prepare a briefing before each meeting",
+      "type": "string"
+    },
+    "briefingMinutes": {
+      "description": "How long before the start (5-240)",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Google connection id (default: the only one)",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Apply --record auto (dry-run without it)",
+      "type": "boolean"
+    },
+    "followup": {
+      "description": "Run the follow-up when the recording is ready",
+      "type": "string"
+    },
+    "project": {
+      "description": "Project id or slug where recordings go",
+      "type": "string"
+    },
+    "record": {
+      "description": "Record calls: ask, auto or off",
+      "type": "string"
+    },
+    "sync": {
+      "description": "Use this calendar",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const agendaSettingsReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "additionalProperties": {},
+      "properties": {
+        "connectionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "connectionId"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "connection"
+  ],
+  "type": "object"
+}
+''';
+
+  static const agendaShowInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "eventId": {
+      "description": "Calendar event id (from agenda list)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "eventId"
+  ],
+  "type": "object"
+}
+''';
+
+  static const agendaShowReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "additionalProperties": {},
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "event"
+  ],
+  "type": "object"
+}
+''';
+
+  static const agendaSkipInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "eventId": {
+      "description": "Calendar event id (from agenda list)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "eventId"
+  ],
+  "type": "object"
+}
+''';
+
+  static const agendaSkipReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "additionalProperties": {},
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "event"
+  ],
+  "type": "object"
+}
+''';
+
+  static const agendaStatusInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+}
+''';
+
+  static const agendaStatusReturnSchema = r'''
+{
+  "additionalProperties": {},
+  "properties": {
+    "connections": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {
+          "connectionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "connectionId"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "meetingsEnabled": {
+      "type": "boolean"
+    },
+    "policy": {
+      "additionalProperties": {},
+      "properties": {
+        "autoRecordAllowed": {
+          "type": "boolean"
+        },
+        "canManage": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "autoRecordAllowed",
+        "canManage"
+      ],
+      "type": "object"
+    },
+    "projects": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "connections",
+    "policy",
+    "meetingsEnabled",
+    "projects"
+  ],
+  "type": "object"
+}
+''';
+
+  static const agendaUndoInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "eventId": {
+      "description": "Calendar event id (from agenda list)",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Clear a skip under automatic recording",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "eventId"
+  ],
+  "type": "object"
+}
+''';
+
+  static const agendaUndoReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "additionalProperties": {},
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "event"
+  ],
+  "type": "object"
+}
+''';
+
   static const agentsAskInputSchema = r'''
 {
   "additionalProperties": false,
