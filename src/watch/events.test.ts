@@ -82,6 +82,27 @@ describe("watch events", () => {
     });
   });
 
+  it("hoists the comment's route so a per-route trigger can filter on it", () => {
+    const event = watchEventFromInboxPayload(
+      makeInboxPayload({
+        eventType: "page.comment.created",
+        payload: {
+          pageId: "site_1",
+          path: "/weekly/",
+          routePath: "/weekly",
+          body: "troca o título",
+          url: "https://acme-site.ravi.page/weekly/",
+        },
+      }),
+    );
+
+    expect(event).toMatchObject({
+      pageId: "site_1",
+      routePath: "/weekly",
+      payload: { routePath: "/weekly", path: "/weekly/" },
+    });
+  });
+
   it("reserves page.comment.resolved on the same watch bridge", () => {
     const event = watchEventFromInboxPayload(
       makeInboxPayload({

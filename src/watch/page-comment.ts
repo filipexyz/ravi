@@ -18,7 +18,7 @@ export const PAGE_COMMENT_CREATED_TOPIC = "ravi.watch.console.page.comment.creat
 export const PAGE_COMMENT_RESOLVED_TOPIC = "ravi.watch.console.page.comment.resolved";
 
 export const PAGE_COMMENT_CREATED_MESSAGE =
-  "A comment was added on page {{data.payload.pageId}}. Tell the user what it says and include the page URL. Comment: {{data.payload.body}} URL: {{data.payload.url}}";
+  "A comment was added on {{data.payload.routePath}}, a page this session published. Tell the user what it says and include the page URL. Comment: {{data.payload.body}} URL: {{data.payload.url}}";
 
 export const PAGE_COMMENT_RESOLVED_MESSAGE =
   "A comment was resolved on page {{data.payload.pageId}}. Tell the user and include the page URL. Comment: {{data.payload.body}} URL: {{data.payload.url}}";
