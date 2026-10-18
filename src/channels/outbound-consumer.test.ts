@@ -1856,6 +1856,34 @@ describe("channel outbound consumer knowledge egress", () => {
     expect((job.request.content as { text: string }).text).toBe("https://acme.ravi.page/x");
   });
 
+  it("guards a thread card's note along with its brief", () => {
+    const job = makeJob();
+    job.request.content = {
+      type: "chat_action",
+      actionId: "message.edit",
+      providerMessageId: "1713000000.000100",
+      text: "Brief https://acme.ravi.page/a",
+      threadCard: { status: "closed", note: "Result https://acme.ravi.page/b", updatedAt: 1 },
+    };
+    const guarded = guardChannelOutboundJob(job, {
+      knowledgeGuard: () => ({
+        sessionName: "s",
+        agentId: "a",
+        instanceId: "T1",
+        channel: "slack",
+        chatId: "C123",
+        normalizedChatId: "C123",
+        contactId: "c",
+        guardedUntil: Date.now() + 60_000,
+      }),
+      guardKnowledgeText: (text) => text.replace(/https:\/\/\S+/g, "[link removido]"),
+    });
+    expect(guarded.request.content).toMatchObject({
+      text: "Brief [link removido]",
+      threadCard: { status: "closed", note: "Result [link removido]", updatedAt: 1 },
+    });
+  });
+
   it("delivers unchanged and never creates knowledge.db when the file does not exist (ravi-channels)", async () => {
     const job = makeJob();
     job.request.content = { type: "text", text: "veja https://acme.ravi.page/x" };
