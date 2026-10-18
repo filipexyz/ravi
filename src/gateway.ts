@@ -69,6 +69,7 @@ import { buildRaviTtsRequest, handleRaviTtsRequest, RAVI_TTS_TOPIC, shouldAutoTt
 import { handleSlackThreadCreationDelivery, reconcileSlackThreadLifecycle } from "./channels/slack/thread-lifecycle.js";
 import { sendSlackMedia } from "./channels/slack/media.js";
 import { sendSlackText } from "./channels/slack/text-send.js";
+import { SessionResponseQueue } from "./gateway-response-order.js";
 
 const log = logger.child("gateway");
 const PRESENCE_RENEW_THROTTLE_MS = 4_000;
@@ -381,6 +382,7 @@ export class Gateway {
   private omniConsumer: OmniConsumer;
   private emitEvent: typeof nats.emit;
   private activeSubscriptions = new Set<string>();
+  private responseQueue = new SessionResponseQueue();
   private presenceRenewedAt = new Map<string, number>();
   private activeRuntimeSessions = new Set<string>();
   private runtimeActivitySequences = new Map<string, number>();
@@ -1698,7 +1700,8 @@ export class Gateway {
       async (event) => {
         const sessionName = event.topic.split(".")[2];
         const response = event.data as unknown as ResponseMessage;
-        await this.handleResponseEvent(sessionName, response);
+        // One session's parts must reach the chat in emit order.
+        await this.responseQueue.run(sessionName, () => this.handleResponseEvent(sessionName, response));
       },
       { queue: "ravi-gateway" },
     );

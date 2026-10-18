@@ -127,6 +127,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/runtime-system-prompt.test.ts",
     // The Page link guard installed in host-hooks.ts PreToolUse.
     "src/hooks/pages-link-guard.test.ts",
+    // Empty-join mash split: initials such as "R.M." stay inside one reply.
+    "src/runtime/assistant-transcript.test.ts",
   ],
   "src/jobs/": ["src/jobs/jobs.test.ts", "src/jobs/promotion.test.ts"],
   "src/watch/": [
