@@ -121,6 +121,13 @@ const executeConsumers: readonly ExecuteConsumer[] = [
     expected: "--execute",
     matches: 1,
   },
+  {
+    name: "meeting prep routine asks before recording",
+    path: "src/calendar/assistant.ts",
+    marker: "ravi agenda record",
+    expected: "--execute",
+    matches: 1,
+  },
 ];
 
 const executeInstructions = [

@@ -266,6 +266,7 @@ Operating Ravi is documented in the system skills (`ravi skills show <skill>`) a
 | Cron, triggers, heartbeat | `cron`, `triggers`, `heartbeat` | `guides/cron-jobs`, `guides/triggers`, `guides/heartbeat` |
 | Logs, doctor, events, JetStream | `daemon`, `events` | `guides/troubleshooting`, `reference/nats-events` |
 | Console login, Pages | `pages` | `console/login`, `console/pages` |
+| Calendar, meeting briefings and follow-ups | `agenda`, `meetings` | `console/calendar`, `console/meetings` |
 | Bases and data pages | `solucoes`, `bases` | `console/bases` |
 | Media, artifacts, skills | `audio`, `image`, `video`, `artifacts`, `skills` | `reference/media`, `reference/artifacts`, `reference/skills` |
 | Tasks, CLI conventions, SDK and HTTP gateway | `tasks` | `cli/overview`, `guides/sdk` |

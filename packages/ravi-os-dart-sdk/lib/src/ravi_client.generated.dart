@@ -13,6 +13,7 @@ class RaviClient {
 
   AccessNamespace get access => AccessNamespace(_transport);
   AdaptersNamespace get adapters => AdaptersNamespace(_transport);
+  AgendaNamespace get agenda => AgendaNamespace(_transport);
   AgentsNamespace get agents => AgentsNamespace(_transport);
   AppsNamespace get apps => AppsNamespace(_transport);
   ArtifactsNamespace get artifacts => ArtifactsNamespace(_transport);
@@ -141,6 +142,102 @@ class AdaptersNamespace {
       command: "show",
       body: requestBody,
       decode: adaptersShowReturnFromJson,
+    );
+  }
+}
+
+class AgendaNamespace {
+  const AgendaNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<AgendaBriefingReturn> briefing(String eventId, [AgendaBriefingOptions options = const AgendaBriefingOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["eventId"] = RaviJson.from(eventId);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["agenda"],
+      command: "briefing",
+      body: requestBody,
+      decode: agendaBriefingReturnFromJson,
+    );
+  }
+
+  Future<AgendaListReturn> list([AgendaListOptions options = const AgendaListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["agenda"],
+      command: "list",
+      body: requestBody,
+      decode: agendaListReturnFromJson,
+    );
+  }
+
+  Future<AgendaRecordReturn> record(String eventId, [AgendaRecordOptions options = const AgendaRecordOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["eventId"] = RaviJson.from(eventId);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["agenda"],
+      command: "record",
+      body: requestBody,
+      decode: agendaRecordReturnFromJson,
+    );
+  }
+
+  Future<AgendaSettingsReturn> settings([AgendaSettingsOptions options = const AgendaSettingsOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["agenda"],
+      command: "settings",
+      body: requestBody,
+      decode: agendaSettingsReturnFromJson,
+    );
+  }
+
+  Future<AgendaShowReturn> show(String eventId) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["eventId"] = RaviJson.from(eventId);
+    return _transport.callJson(
+      groupSegments: const ["agenda"],
+      command: "show",
+      body: requestBody,
+      decode: agendaShowReturnFromJson,
+    );
+  }
+
+  Future<AgendaSkipReturn> skip(String eventId) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["eventId"] = RaviJson.from(eventId);
+    return _transport.callJson(
+      groupSegments: const ["agenda"],
+      command: "skip",
+      body: requestBody,
+      decode: agendaSkipReturnFromJson,
+    );
+  }
+
+  Future<AgendaStatusReturn> status() async {
+    final requestBody = <String, RaviJson>{};
+    return _transport.callJson(
+      groupSegments: const ["agenda"],
+      command: "status",
+      body: requestBody,
+      decode: agendaStatusReturnFromJson,
+    );
+  }
+
+  Future<AgendaUndoReturn> undo(String eventId, [AgendaUndoOptions options = const AgendaUndoOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["eventId"] = RaviJson.from(eventId);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["agenda"],
+      command: "undo",
+      body: requestBody,
+      decode: agendaUndoReturnFromJson,
     );
   }
 }
