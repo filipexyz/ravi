@@ -74,7 +74,8 @@ Who acts:
   On the operator's own turns the ravi login user invites. When someone else
   wrote the chat message, Console acts for that person through their ravi
   link, and both they and the ravi login user must be allowed to invite.
-  ACTOR_NOT_LINKED (exit 3): run ravi link in their chat.
+  ACTOR_NOT_LINKED (exit 3): Ravi starts their link; relay the error's
+  chatLinePt.
 `;
 
 const INVITES_LIST_HELP = `

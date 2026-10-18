@@ -249,7 +249,8 @@ const ACCESS_WHO_ACTS_HELP = `Who acts:
   the ravi login user acts. When someone else wrote the chat message, Console
   acts for that person through their ravi link, and both they and the ravi
   login user must be allowed. A person without a link gets ACTOR_NOT_LINKED
-  (exit 3): run ravi link in their chat. A turn Ravi cannot attribute is
+  (exit 3) and Ravi starts their link: relay the error's chatLinePt (on
+  WhatsApp, "me chama na DM"). A turn Ravi cannot attribute is
   refused before any Console call (ACTOR_UNKNOWN, exit 3).`;
 
 const PAGES_SHARE_HELP = `

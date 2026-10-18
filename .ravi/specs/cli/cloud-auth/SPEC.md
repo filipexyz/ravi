@@ -216,17 +216,30 @@ Console credits the write to that person through this installation's
 
 - The contact MUST come from the turn classification of
   `src/access/actor.ts` (`resolveAccessActor`), which reads the daemon's own
-  record of the turn through `RAVI_CONTEXT_KEY`. The CLI MUST NOT take it from
-  `RAVI_CONTACT_ID`, a flag or any other value the agent's shell can change.
+  record of the turn through `RAVI_CONTEXT_KEY`, or the context the daemon
+  gateway runs the command under (the daemon's own environment has no
+  `RAVI_CONTEXT_KEY`). The CLI MUST NOT take it from `RAVI_CONTACT_ID`, a
+  flag or any other value the agent's shell can change.
 - The operator's own turns, routines the operator owns, turns Ravi cannot
   attribute and calls outside a runtime turn MUST send no header: Console
-  then acts as the `ravi login` user, as before.
+  then acts as the `ravi login` user.
 - `/api/cli/auth/**` and `/api/cli/me` MUST NOT carry it.
 - A failure to classify the turn MUST NOT fail the call; it sends no header.
 
-Console decides who acts: with no active binding approved by that person, or
-when the person is not an active member of the session's organization, the
-operator acts.
+Console decides who acts. With no active binding approved by that person,
+reads keep the operator and writes are refused with `ACTOR_NOT_LINKED`; a
+person who is not an active member of the session's organization gets
+`PROJECT_ACCESS_DENIED` on writes.
+
+When a call that named a contact gets `ACTOR_NOT_LINKED` (outside
+`/api/cli/link/**`), the client MUST start that person's `ravi link`
+(`cli/ravi-link`, "Started By A Refusal") before failing, and the error MUST
+carry `details.linkFlow`: `awaiting_dm | dm_sent | already_linked |
+unavailable`. Every surface (the CLI envelope, the gateway relay, the access
+commands) MUST word the refusal from that value with local copy, exit 3,
+with `suggestedAction` and a PT-BR `chatLinePt` for the person: "me chama na
+DM" for `awaiting_dm` and `unavailable`, "te mandei um link no privado" for
+`dm_sent`, a single retry for `already_linked`.
 
 ## Artifact Publish Contract
 

@@ -985,6 +985,62 @@ describe("OmniConsumer channel context", () => {
     expect(commitMatchedRouteCalls[0]?.matched.agentId).toBe("main");
   });
 
+  it("lets the link flow answer a private message of a person who must link, before any route or agent turn", async () => {
+    contactByRef.set("contact_luis", { id: "contact_luis", status: "allowed", name: "Luis" });
+    platformIdentityByUser.set("5511947879044", {
+      id: "pi_luis",
+      ownerType: "contact",
+      ownerId: "contact_luis",
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformUserId: "5511947879044@s.whatsapp.net",
+      normalizedPlatformUserId: "5511947879044",
+      confidence: 1,
+    });
+    const linkingMessages: Array<Record<string, unknown>> = [];
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+      answerLinkingDm: async (message) => {
+        linkingMessages.push({ ...message });
+        return true;
+      },
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-dm-linking",
+      type: "message.received",
+      payload: {
+        externalId: "msg-dm-linking",
+        chatId: "5511947879044@s.whatsapp.net",
+        from: "5511947879044@s.whatsapp.net",
+        content: { type: "text", text: "oi" },
+        rawPayload: { pushName: "Luis Filipe", isGroup: false },
+      },
+      metadata: { instanceId: "instance-1", channelType: "whatsapp-baileys", ingestMode: "realtime" },
+      timestamp: Date.now(),
+    });
+
+    expect(linkingMessages).toEqual([
+      {
+        contactId: "contact_luis",
+        channel: "whatsapp",
+        accountId: "main",
+        chatId: "5511947879044@s.whatsapp.net",
+        routePattern: "5511947879044",
+        platformUserId: "5511947879044",
+        platformIdentityId: "pi_luis",
+        displayName: "Luis Filipe",
+      },
+    ]);
+    expect(promptCalls).toHaveLength(0);
+    expect(commitMatchedRouteCalls).toHaveLength(0);
+  });
+
   it("routes unresolved WhatsApp LID DMs by lid: identity instead of falling through to main", async () => {
     const lidRoute: RouteConfig = {
       pattern: "lid:224420715061374",

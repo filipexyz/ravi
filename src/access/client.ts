@@ -18,6 +18,7 @@
  * shows only to the installation that made the request.
  */
 
+import { turnLinkContract } from "../identity-link/turn-link-copy.js";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 import { createAuthenticatedPagesContext, type PagesClientDeps, type PagesClientOptions } from "../pages/client.js";
 import {
@@ -577,7 +578,10 @@ export function describeAccessFailure(error: unknown, op: AccessOperation): Acce
   const reason = typeof error.details?.reason === "string" ? error.details.reason : undefined;
   const withReason = (details: Record<string, unknown>) => (reason ? { reason, ...details } : details);
   switch (error.code) {
-    case "ACTOR_NOT_LINKED":
+    case "ACTOR_NOT_LINKED": {
+      // The client already started the person's link; say what happens next.
+      const started = turnLinkContract(error.details?.linkFlow);
+      if (started) return { code: "ACTOR_NOT_LINKED", message: started.message, exitCode: 3, details: started.details };
       return {
         code: "ACTOR_NOT_LINKED",
         message:
@@ -585,6 +589,7 @@ export function describeAccessFailure(error: unknown, op: AccessOperation): Acce
         exitCode: 3,
         details: { suggestedAction: "run `ravi link` from the person's own chat turn, then retry the same command" },
       };
+    }
     case "PROJECT_ACCESS_DENIED":
       return {
         code: "PROJECT_ACCESS_DENIED",

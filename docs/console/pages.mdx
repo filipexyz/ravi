@@ -171,7 +171,7 @@ ravi access status <request-id>
 
 The answer carries an approval link. Anyone can forward it; opening it changes nothing, and only the page's managers can approve.
 
-When your agent runs these commands, it acts for whoever wrote the message: you on your own turns, and otherwise that person through their `ravi link` (to share or invite, both of you must have the role; a request is made in their name). A person without a link gets `ACTOR_NOT_LINKED` and the agent sends them `ravi link`. To let a narrower agent use them, grant `mutate:pages.access:*`, `read:pages.access:*`, `mutate:invites:*`, `read:invites:*` or `mutate:access.requests:create` as needed.
+When your agent runs these commands, it acts for whoever wrote the message: you on your own turns, and otherwise that person through their `ravi link` (to share or invite, both of you must have the role; a request is made in their name). A person without a link gets `ACTOR_NOT_LINKED`, and Ravi starts their link itself: on WhatsApp the agent asks them to message it in private, where Ravi sends the approval link. To let a narrower agent use them, grant `mutate:pages.access:*`, `read:pages.access:*`, `mutate:invites:*`, `read:invites:*` or `mutate:access.requests:create` as needed.
 
 ## The operator bar and comments
 

@@ -63,8 +63,11 @@ the write brake and who the turn says is acting.
    `--execute`: print the plan (page, target, who acts) and exit 3 before any
    Console call. `pages unshare` and `invites revoke` only reduce access and
    MUST apply immediately.
-5. Console `ACTOR_NOT_LINKED` MUST surface as `ACTOR_NOT_LINKED`, exit 3, and
-   tell the agent to run `ravi link` in that person's chat.
+5. Console `ACTOR_NOT_LINKED` MUST surface as `ACTOR_NOT_LINKED`, exit 3. The
+   client has already started the person's link (`cli/cloud-auth`, "Person
+   Of The Turn"), so the message says what to tell them from `linkFlow`
+   ("me chama na DM" on WhatsApp from a group); without a `linkFlow` it tells
+   the agent to run `ravi link` in that person's chat.
 6. `access request` and `access status` MUST print the approval link and say
    that anyone can forward it and only the page's managers approve. The link
    is Console's `request.url` when it is https, else

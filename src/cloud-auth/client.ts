@@ -30,12 +30,15 @@ import type {
 } from "./types.js";
 import { DEFAULT_CONSOLE_URL } from "./types.js";
 import { completeVerificationUri } from "./verification-uri.js";
+import type { TurnLinkFlow } from "../identity-link/turn-link-copy.js";
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
 /** Same name as `ACTOR_CONTACT_HEADER` in `turn-actor.ts`, kept here so this module never loads it eagerly. */
 const ACTOR_CONTACT_HEADER = "x-ravi-actor-contact";
 const LINK_REQUESTS_PATH = "/api/cli/link/requests";
+/** `ravi link`'s own calls never start another link. */
+const LINK_PATH_PREFIX = "/api/cli/link";
 const LINK_REQUEST_STATUSES: readonly LinkRequestStatus[] = ["pending", "approved", "denied", "expired", "cancelled"];
 
 export interface ConsoleApiClientOptions {
@@ -47,6 +50,11 @@ export interface ConsoleApiClientOptions {
    * authenticated calls (default: `turnActorContactId`, read once per client).
    */
   actorContact?: () => string | null | Promise<string | null>;
+  /**
+   * Console refused a call for that contact (`ACTOR_NOT_LINKED`): start their
+   * `ravi link` and say what was set in motion (default: `startTurnLink`).
+   */
+  startActorLink?: (contactId: string) => Promise<TurnLinkFlow>;
 }
 
 /** Calls that are about the `ravi login` session itself never name the turn's author. */
@@ -56,6 +64,7 @@ export class ConsoleApiClient {
   readonly consoleUrl: string;
   private readonly fetchImpl: FetchLike;
   private readonly actorContact: () => string | null | Promise<string | null>;
+  private readonly startActorLink: (contactId: string) => Promise<TurnLinkFlow>;
   private actorContactValue: Promise<string | null> | null = null;
 
   constructor(options: ConsoleApiClientOptions = {}) {
@@ -68,10 +77,17 @@ export class ConsoleApiClient {
     this.actorContact =
       options.actorContact ??
       (async () => {
-        // Only a runtime turn can have an author other than the operator.
-        if (!process.env.RAVI_CONTEXT_KEY?.trim()) return null;
+        // Only a runtime turn can have an author other than the operator; the
+        // check covers commands the daemon gateway runs for a turn, whose
+        // process has no RAVI_CONTEXT_KEY.
         const { turnActorContactId } = await import("./turn-actor.js");
         return turnActorContactId();
+      });
+    this.startActorLink =
+      options.startActorLink ??
+      (async (contactId) => {
+        const { startTurnLink } = await import("../identity-link/turn-link.js");
+        return startTurnLink(contactId);
       });
   }
 
@@ -235,9 +251,10 @@ export class ConsoleApiClient {
       ...extraHeaders,
     };
     if (body !== undefined) headers["Content-Type"] = "application/json";
+    let contactId: string | null = null;
     if (accessToken) {
       headers.Authorization = `Bearer ${accessToken}`;
-      const contactId = await this.turnActorContact(path);
+      contactId = await this.turnActorContact(path);
       if (contactId) headers[ACTOR_CONTACT_HEADER] = contactId;
     }
 
@@ -254,7 +271,13 @@ export class ConsoleApiClient {
 
     const payload = await readJsonBody(response);
     if (!response.ok) {
-      throw mapConsoleError(response.status, payload, response.headers, path);
+      const error = mapConsoleError(response.status, payload, response.headers, path);
+      // The person of the turn has no link: start it, so the refusal says what happens next.
+      if (contactId && error.code === "ACTOR_NOT_LINKED" && !path.startsWith(LINK_PATH_PREFIX)) {
+        const { withTurnLinkFlow } = await import("../identity-link/turn-link.js");
+        throw withTurnLinkFlow(error, await this.startActorLink(contactId).catch(() => "unavailable" as const));
+      }
+      throw error;
     }
     return (payload ?? {}) as T;
   }

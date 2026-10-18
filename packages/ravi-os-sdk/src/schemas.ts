@@ -53837,6 +53837,29 @@ export const IdentityLinkReturnSchema = {
         "expiresAt"
       ],
       "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "linked": {
+          "const": false,
+          "type": "boolean"
+        },
+        "status": {
+          "const": "awaiting_dm",
+          "type": "string"
+        },
+        "success": {
+          "const": true,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "success",
+        "status",
+        "linked"
+      ],
+      "type": "object"
     }
   ]
 } as const satisfies SdkJsonSchema;

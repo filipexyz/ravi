@@ -86,7 +86,7 @@ ravi permissions list --chat <chat-id>
 
 Console access calls made from a chat, such as `ravi pages share`, `ravi invites` and `ravi access request`, act for the person who wrote. The Console resolves that person through their `ravi link`. A turn that cannot be attributed is refused and never falls back to your login.
 
-Other Console writes made in a chat, such as `ravi pages ship` and `ravi bases rows`, are credited to the person who wrote when they have linked their account with `ravi link` and are an active member of your organization. The Console then acts with the lesser of their role and yours, and records both of you in the audit log. Without that link, your login acts, as before.
+Other Console writes made in a chat, such as `ravi pages ship` and `ravi bases rows`, are credited to the person who wrote when they have linked their account with `ravi link` and are an active member of your organization. The Console then acts with the lesser of their role and yours, and records both of you in the audit log. Without that link the write is refused, and Ravi starts the link for them: on WhatsApp the agent asks them to message it in private (it never starts the conversation), and Ravi answers that message with their approval link. Once they approve, their private chat reaches the agent even if it had no route. Reads still use your login.
 
 See [Permissions](/guides/permissions) for capabilities, the bootstrap floor, governed chats and admin tags.
 

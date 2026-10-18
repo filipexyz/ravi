@@ -15,6 +15,7 @@ import {
 } from "./agent-contract.js";
 import { getContext } from "./context.js";
 import { projectPageDomainSetups } from "../pages/domain-setup.js";
+import { turnLinkContract } from "../identity-link/turn-link-copy.js";
 import { payloadInvalidIssues, sanitizePayloadInvalidMessage } from "./payload-error-message.js";
 
 export function commandOperation(group: string, command: string): string {
@@ -28,10 +29,11 @@ export function cloudErrorToContractError(op: string, error: CloudAuthError): Co
   const connectorTurn = connectorTurnCopy(error);
   const domainSetup =
     error.code === "DOMAIN_SETUP_REQUIRED" ? projectPageDomainSetups(error.details?.setups) : undefined;
+  const turnLink = turnLinkErrorCopy(error);
   return new ContractError(
     op,
     error.code,
-    connectorTurn?.message ?? publicMessage(error.code, error.message),
+    turnLink?.message ?? connectorTurn?.message ?? publicMessage(error.code, error.message),
     error.code === "PAYLOAD_INVALID"
       ? CONTRACT_EXIT_USAGE
       : isConnectorPolicyCode(error.code) || connectorTurn?.policy
@@ -44,8 +46,18 @@ export function cloudErrorToContractError(op: string, error: CloudAuthError): Co
       suggestedAction: suggestedAction(error.code),
       ...(domainSetup ? { domainSetup } : {}),
       ...(connectorTurn?.details ?? {}),
+      ...(turnLink?.details ?? {}),
     },
   );
+}
+
+/**
+ * `ACTOR_NOT_LINKED` after the client started the person's link: local copy
+ * for what was set in motion (a "message me in private" on WhatsApp, a link
+ * sent on Slack), with the line to say in the chat.
+ */
+function turnLinkErrorCopy(error: CloudAuthError): { message: string; details: ContractErrorDetails } | null {
+  return error.code === "ACTOR_NOT_LINKED" ? turnLinkContract(error.details?.linkFlow) : null;
 }
 
 /** Details a locally built connector-turn error may carry into the public envelope. */

@@ -18,6 +18,7 @@ const identityLinkReturnSchema = z.discriminatedUnion("status", [
     linked: z.literal(false),
     expiresAt: z.string(),
   }),
+  z.object({ success: z.literal(true), status: z.literal("awaiting_dm"), linked: z.literal(false) }),
 ]);
 
 const identityUnlinkReturnSchema = z.object({
@@ -31,8 +32,15 @@ Links the author of the current chat message, and only that person, to their
 Ravi Console account. There is no flag to name someone else.
 
   1. Ravi sends the author a private message with a single-use link (10 min).
+     On WhatsApp Ravi never starts a private chat: from a group the result is
+     awaiting_dm, so tell the author to message you in private ("me chama na
+     DM"). Ravi answers that message itself with the link, with no agent turn.
   2. The author signs in to the Console and approves.
-  3. Ravi confirms in the private chat and where the request was made.
+  3. Ravi confirms in the private chat and where the request was made. A
+     private chat that reached no agent is routed to this agent.
+
+A Console write refused for someone with no link (ACTOR_NOT_LINKED) starts
+this same flow by itself; its error says what to tell the person.
 
 Output never contains the link, tokens, emails or ids. Repeating the command
 reports an existing link without changing anything; while a link is pending it
@@ -70,7 +78,9 @@ export class IdentityCommands {
     print(result, asJson, () =>
       result.status === "already_linked"
         ? "✓ Already linked. Nothing changed."
-        : `✓ Sent a private approval link to the message author (expires ${result.expiresAt}).`,
+        : result.status === "awaiting_dm"
+          ? "Waiting for the message author to write to you in private: tell them to message you in private (me chama na DM). Ravi answers there with the approval link."
+          : `✓ Sent a private approval link to the message author (expires ${result.expiresAt}).`,
     );
     return result;
   }

@@ -10554,6 +10554,10 @@ export type IdentityLinkReturn = ({
   linked: false;
   status: "dm_sent";
   success: true;
+}) | ({
+  linked: false;
+  status: "awaiting_dm";
+  success: true;
 });
 
 /** Input shape for `identity.unlink`. */
