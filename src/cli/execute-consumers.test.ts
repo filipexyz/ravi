@@ -390,6 +390,21 @@ const executeInstructions = [
     instruction: "ravi agents requests finance on --execute",
   },
   {
+    name: "Library agent listing on skill",
+    path: "src/plugins/internal/ravi-system/skills/agents/SKILL.md",
+    instruction: "ravi agents listing financeiro on --execute",
+  },
+  {
+    name: "Library agent listing on documentation",
+    path: "docs/reference/skills.mdx",
+    instruction: "ravi agents listing finance on --execute",
+  },
+  {
+    name: "Library agent listing on help",
+    path: "src/cli/commands/agents-library.ts",
+    instruction: "ravi agents listing finance on --execute",
+  },
+  {
     name: "Library agent ask skill",
     path: "src/plugins/internal/ravi-system/skills/agents/SKILL.md",
     instruction: 'ravi agents ask macbook-ana/financeiro "Qual a data de fechamento?" --execute',
@@ -480,6 +495,24 @@ const obsoleteExecuteConsumers = [
     path: "src/cli/commands/agents-library.ts",
     obsolete: "ravi agents requests finance off --execute",
     current: "ravi agents requests finance off",
+  },
+  {
+    name: "Library agent listing off skill: unlisting an agent applies at once",
+    path: "src/plugins/internal/ravi-system/skills/agents/SKILL.md",
+    obsolete: "ravi agents listing financeiro off --execute",
+    current: "ravi agents listing financeiro off",
+  },
+  {
+    name: "Library agent listing off documentation: unlisting an agent applies at once",
+    path: "docs/reference/skills.mdx",
+    obsolete: "ravi agents listing finance off --execute",
+    current: "ravi agents listing finance off",
+  },
+  {
+    name: "Library agent listing off help: unlisting an agent applies at once",
+    path: "src/cli/commands/agents-library.ts",
+    obsolete: "ravi agents listing finance off --execute",
+    current: "ravi agents listing finance off",
   },
   {
     name: "Library unpin skill: reducing what an agent loads applies at once",

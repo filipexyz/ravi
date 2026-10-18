@@ -467,6 +467,46 @@ class AgentsListReturn {
 
 AgentsListReturn agentsListReturnFromJson(Object? json) => AgentsListReturn.fromJsonValue(json);
 
+class AgentsListingOptions {
+  const AgentsListingOptions({this.execute});
+
+  final bool? execute;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+  }
+}
+
+class AgentsListingReturn {
+  const AgentsListingReturn({required this.acceptsRequests, required this.agent, required this.changed, this.hint, required this.listed, required this.reported});
+
+  final bool acceptsRequests;
+  final String agent;
+  final bool changed;
+  final String? hint;
+  final bool listed;
+  final bool reported;
+
+  factory AgentsListingReturn.fromJson(Map<String, Object?> json) {
+    return AgentsListingReturn(
+      acceptsRequests: raviJsonAsBool(json["acceptsRequests"]),
+      agent: raviJsonAsString(json["agent"]),
+      changed: raviJsonAsBool(json["changed"]),
+      hint: json["hint"] == null ? null : raviJsonAsString(json["hint"]),
+      listed: raviJsonAsBool(json["listed"]),
+      reported: raviJsonAsBool(json["reported"]),
+    );
+  }
+
+  static AgentsListingReturn fromJsonValue(Object? json) {
+    return AgentsListingReturn.fromJson(raviJsonObject(json, "AgentsListingReturn"));
+  }
+}
+
+AgentsListingReturn agentsListingReturnFromJson(Object? json) => AgentsListingReturn.fromJsonValue(json);
+
 class AgentsModelBrokerOptions {
   const AgentsModelBrokerOptions({this.broker, this.clear, this.execute, this.profile, this.required_});
 
@@ -678,12 +718,13 @@ class AgentsRequestsOptions {
 }
 
 class AgentsRequestsReturn {
-  const AgentsRequestsReturn({required this.acceptsRequests, required this.agent, required this.changed, this.hint, required this.reported});
+  const AgentsRequestsReturn({required this.acceptsRequests, required this.agent, required this.changed, this.hint, required this.listed, required this.reported});
 
   final bool acceptsRequests;
   final String agent;
   final bool changed;
   final String? hint;
+  final bool listed;
   final bool reported;
 
   factory AgentsRequestsReturn.fromJson(Map<String, Object?> json) {
@@ -692,6 +733,7 @@ class AgentsRequestsReturn {
       agent: raviJsonAsString(json["agent"]),
       changed: raviJsonAsBool(json["changed"]),
       hint: json["hint"] == null ? null : raviJsonAsString(json["hint"]),
+      listed: raviJsonAsBool(json["listed"]),
       reported: raviJsonAsBool(json["reported"]),
     );
   }

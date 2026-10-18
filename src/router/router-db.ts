@@ -1391,12 +1391,14 @@ function getDb(): Database {
       last_error_at     INTEGER
     );
 
-    -- Library agents (spec skills/library): what the directory reports for a
-    -- local agent, whether its operator opened it to requests, and the Library
-    -- definition it was installed from.
+    -- Library agents (spec skills/library): whether its operator listed a
+    -- local agent in the org directory, what the directory shows for it,
+    -- whether it is open to requests, and the Library definition it was
+    -- installed from.
     CREATE TABLE IF NOT EXISTS library_agents (
       agent_id             TEXT PRIMARY KEY,
       description          TEXT,
+      listed               INTEGER NOT NULL DEFAULT 0 CHECK(listed IN (0,1)),
       accepts_requests     INTEGER NOT NULL DEFAULT 0 CHECK(accepts_requests IN (0,1)),
       origin_ref           TEXT,
       origin_version       INTEGER,
@@ -3384,6 +3386,7 @@ function getDb(): Database {
   ensureColumn(db, "daemon_restart_resume_deliveries", "decision_reason", "TEXT");
   ensureIdentityChatMigrations(db);
   ensureAgentVisibilityMigration(db);
+  ensureLibraryAgentListedMigration(db);
   ensureCliCommandAccessKindGrantMigration(db);
   backfillChatModelOnce(db);
   ensureSessionGoalBlockedMigration(db);
@@ -3633,6 +3636,17 @@ function migrateChannelOutboundReceiptSchema(
     missingColumns,
     removedLegacyColumns: legacyColumns,
   });
+}
+
+/**
+ * The directory used to report every local agent; now an agent is reported
+ * only once its operator lists it (`ravi agents listing <id> on`). An agent
+ * already open to requests was opened on purpose, so it stays listed.
+ */
+function ensureLibraryAgentListedMigration(database: Database): void {
+  if (tableHasColumn(database, "library_agents", "listed")) return;
+  ensureColumn(database, "library_agents", "listed", "INTEGER NOT NULL DEFAULT 0 CHECK(listed IN (0,1))");
+  database.exec("UPDATE library_agents SET listed = 1 WHERE accepts_requests = 1");
 }
 
 function ensureColumn(database: Database, table: string, column: string, definition: string): void {

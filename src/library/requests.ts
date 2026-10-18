@@ -6,7 +6,9 @@
  * its pin sync) and relays requests; it decides who may ask and which agents
  * a member sees. This side resolves `<machine>/<agent>` from the directory,
  * sends and lists requests, remembers which local session asked, and keeps the
- * per-agent switch that opens an agent to requests (default closed).
+ * per-agent switches: listed in the directory (default not, so an agent is
+ * reported only once its operator lists it) and open to requests (default
+ * closed; opening one lists it).
  */
 
 import { getAgent } from "../router/config.js";
@@ -14,6 +16,7 @@ import {
   dbGetLibraryAgentState,
   dbListLocalAgentRequests,
   dbSetLibraryAgentAcceptsRequests,
+  dbSetLibraryAgentListed,
   dbSetLocalAgentRequestStatus,
   dbUpsertLocalAgentRequest,
   type LocalAgentRequest,
@@ -34,6 +37,7 @@ import type { LibraryAgentRequest, LibraryDirectoryAgent, LibraryDirectoryRespon
 
 export const LIBRARY_TARGET_AMBIGUOUS = "LIBRARY_TARGET_AMBIGUOUS";
 export const LIBRARY_AGENT_CANNOT_OPEN_REQUESTS = "LIBRARY_AGENT_CANNOT_OPEN_REQUESTS";
+export const LIBRARY_AGENT_CANNOT_LIST = "LIBRARY_AGENT_CANNOT_LIST";
 export const LIBRARY_REQUEST_EXTERNAL_DENIED = "LIBRARY_REQUEST_EXTERNAL_DENIED";
 
 export interface LibraryRequestServiceDeps {
@@ -311,10 +315,23 @@ export async function cancelLibraryRequest(
 }
 
 // ---------------------------------------------------------------------------
-// Opening an agent to requests
+// Listing an agent and opening it to requests
 
 export interface LibraryAcceptsRequestsResult {
   agent: string;
+  /** Listed in the org directory (opening an agent to requests lists it). */
+  listed: boolean;
+  acceptsRequests: boolean;
+  changed: boolean;
+  /** Whether the directory heard about it now (a pin sync), or will at the next one. */
+  reported: boolean;
+  hint?: string;
+}
+
+export interface LibraryListingResult {
+  agent: string;
+  listed: boolean;
+  /** Listing off also closes the agent to requests. */
   acceptsRequests: boolean;
   changed: boolean;
   /** Whether the directory heard about it now (a pin sync), or will at the next one. */
@@ -326,11 +343,32 @@ export function readAcceptsRequests(agentId: string): boolean {
   return dbGetLibraryAgentState(agentId)?.acceptsRequests === true;
 }
 
+export function readListed(agentId: string): boolean {
+  return dbGetLibraryAgentState(agentId)?.listed === true;
+}
+
 export function requireLocalAgent(agentId: string): void {
   if (!getAgent(agentId)) {
     throw new LibraryCommandError("AGENT_NOT_FOUND", `Agent not found: ${agentId}`, 1, {
       suggestedAction: "Check the agent id with: ravi agents list --json",
     });
+  }
+}
+
+/** Report the listed agents now so the directory follows (best effort). */
+async function reportNow(deps: LibraryRequestServiceDeps): Promise<{ reported: boolean; hint?: string }> {
+  try {
+    const session = await openSession({ resolveProject: false }, deps);
+    if (session?.scopes.includes(LIBRARY_PIN_SYNC_SCOPE)) {
+      await syncLibraryPins(session, { report: true }, deps.pins);
+      return { reported: true };
+    }
+    return {
+      reported: false,
+      hint: "Not reported yet: the daemon reports it with its next pin sync once `ravi login` is linked.",
+    };
+  } catch {
+    return { reported: false, hint: "Not reported yet: the daemon reports it with its next pin sync." };
   }
 }
 
@@ -342,23 +380,35 @@ export async function setAcceptsRequests(
   requireLocalAgent(input.agentId);
   const before = readAcceptsRequests(input.agentId);
   dbSetLibraryAgentAcceptsRequests(input.agentId, input.accepts);
-  let reported = false;
-  let hint: string | undefined;
-  try {
-    const session = await openSession({ resolveProject: false }, deps);
-    if (session?.scopes.includes(LIBRARY_PIN_SYNC_SCOPE)) {
-      await syncLibraryPins(session, { report: true }, deps.pins);
-      reported = true;
-    } else {
-      hint = "Not reported yet: the daemon reports it with its next pin sync once `ravi login` is linked.";
-    }
-  } catch {
-    hint = "Not reported yet: the daemon reports it with its next pin sync.";
-  }
+  const { reported, hint } = await reportNow(deps);
   return {
     agent: input.agentId,
+    listed: readListed(input.agentId),
     acceptsRequests: input.accepts,
     changed: before !== input.accepts,
+    reported,
+    ...(hint ? { hint } : {}),
+  };
+}
+
+/**
+ * List or unlist an agent in the org directory, then report now (best
+ * effort). Unlisting also closes it to requests; the Console drops an agent
+ * the sync no longer reports.
+ */
+export async function setListed(
+  input: { agentId: string; listed: boolean },
+  deps: LibraryRequestServiceDeps = {},
+): Promise<LibraryListingResult> {
+  requireLocalAgent(input.agentId);
+  const before = readListed(input.agentId);
+  dbSetLibraryAgentListed(input.agentId, input.listed);
+  const { reported, hint } = await reportNow(deps);
+  return {
+    agent: input.agentId,
+    listed: input.listed,
+    acceptsRequests: readAcceptsRequests(input.agentId),
+    changed: before !== input.listed,
     reported,
     ...(hint ? { hint } : {}),
   };

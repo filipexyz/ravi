@@ -494,6 +494,23 @@ export type AgentsListReturn = {
   total: number;
 };
 
+/** Input shape for `agents.listing`. */
+export type AgentsListingInput = {
+  execute?: boolean;
+  id: string;
+  state?: string;
+};
+
+/** Return shape for `agents.listing`. */
+export type AgentsListingReturn = {
+  acceptsRequests: boolean;
+  agent: string;
+  changed: boolean;
+  hint?: string;
+  listed: boolean;
+  reported: boolean;
+};
+
 /** Input shape for `agents.model-broker`. */
 export type AgentsModelBrokerInput = {
   broker?: string;
@@ -781,6 +798,7 @@ export type AgentsRequestsReturn = {
   agent: string;
   changed: boolean;
   hint?: string;
+  listed: boolean;
   reported: boolean;
 };
 
@@ -1079,6 +1097,7 @@ export type AgentsShowReturn = ({
   library?: {
     acceptsRequests: boolean;
     description: string | null;
+    listed: boolean;
     origin: ({
       installedAt: number | null;
       ref: string;
