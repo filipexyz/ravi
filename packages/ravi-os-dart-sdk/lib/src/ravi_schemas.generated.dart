@@ -81943,6 +81943,16 @@ class RaviSchemas {
     "status": {
       "const": "queued",
       "type": "string"
+    },
+    "title": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "required": [
@@ -81951,6 +81961,7 @@ class RaviSchemas {
     "actionId",
     "executionMode",
     "requestId",
+    "title",
     "idempotencyKey",
     "publishedNow",
     "publishPending",
@@ -83857,6 +83868,72 @@ class RaviSchemas {
 {
   "additionalProperties": {},
   "properties": {},
+  "type": "object"
+}
+''';
+
+  static const sessionsReportInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "message": {
+      "description": "Progress, blocker or decision the parent session needs now",
+      "type": "string"
+    },
+    "session": {
+      "description": "Explicit Slack thread session (defaults to current session)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "message"
+  ],
+  "type": "object"
+}
+''';
+
+  static const sessionsReportReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "actionId": {
+      "const": "thread.report",
+      "type": "string"
+    },
+    "messageId": {
+      "type": "string"
+    },
+    "parentSession": {
+      "additionalProperties": false,
+      "properties": {
+        "sessionKey": {
+          "type": "string"
+        },
+        "sessionName": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionKey",
+        "sessionName"
+      ],
+      "type": "object"
+    },
+    "requestId": {
+      "type": "string"
+    },
+    "status": {
+      "const": "published",
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "actionId",
+    "requestId",
+    "messageId",
+    "parentSession"
+  ],
   "type": "object"
 }
 ''';
@@ -86471,6 +86548,364 @@ class RaviSchemas {
 {
   "additionalProperties": {},
   "properties": {},
+  "type": "object"
+}
+''';
+
+  static const sessionsThreadSendInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "message": {
+      "description": "Instructions for the thread session",
+      "type": "string"
+    },
+    "session": {
+      "description": "Explicit owning session (defaults to current session)",
+      "type": "string"
+    },
+    "thread": {
+      "description": "Thread session name, request id or Slack thread ts (see ravi sessions threads)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "message",
+    "thread"
+  ],
+  "type": "object"
+}
+''';
+
+  static const sessionsThreadSendReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "actionId": {
+      "const": "thread.send",
+      "type": "string"
+    },
+    "messageId": {
+      "type": "string"
+    },
+    "reopened": {
+      "type": "boolean"
+    },
+    "requestId": {
+      "type": "string"
+    },
+    "status": {
+      "const": "published",
+      "type": "string"
+    },
+    "thread": {
+      "additionalProperties": false,
+      "properties": {
+        "childSessionKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "childSessionName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "closedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "link": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parentReturn": {
+          "additionalProperties": false,
+          "properties": {
+            "pending": {
+              "type": "boolean"
+            },
+            "requested": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "requested",
+            "pending"
+          ],
+          "type": "object"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "slackThreadTs": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "enum": [
+            "action",
+            "inbound"
+          ],
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "queued",
+            "root_delivered",
+            "starting",
+            "open",
+            "closed",
+            "failed"
+          ],
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "requestId",
+        "title",
+        "status",
+        "source",
+        "childSessionKey",
+        "childSessionName",
+        "slackThreadTs",
+        "link",
+        "createdAt",
+        "updatedAt",
+        "closedAt",
+        "parentReturn"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "status",
+    "actionId",
+    "requestId",
+    "messageId",
+    "reopened",
+    "thread"
+  ],
+  "type": "object"
+}
+''';
+
+  static const sessionsThreadsInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "all": {
+      "description": "Include closed threads",
+      "type": "boolean"
+    },
+    "session": {
+      "description": "Explicit session (defaults to current session)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const sessionsThreadsReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "includeClosed": {
+      "type": "boolean"
+    },
+    "parentSession": {
+      "additionalProperties": false,
+      "properties": {
+        "sessionKey": {
+          "type": "string"
+        },
+        "sessionName": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionKey",
+        "sessionName"
+      ],
+      "type": "object"
+    },
+    "threads": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "childSessionKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "childSessionName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "closedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "link": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "parentReturn": {
+            "additionalProperties": false,
+            "properties": {
+              "pending": {
+                "type": "boolean"
+              },
+              "requested": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "requested",
+              "pending"
+            ],
+            "type": "object"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "slackThreadTs": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "enum": [
+              "action",
+              "inbound"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "root_delivered",
+              "starting",
+              "open",
+              "closed",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "requestId",
+          "title",
+          "status",
+          "source",
+          "childSessionKey",
+          "childSessionName",
+          "slackThreadTs",
+          "link",
+          "createdAt",
+          "updatedAt",
+          "closedAt",
+          "parentReturn"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "parentSession",
+    "includeClosed",
+    "threads"
+  ],
   "type": "object"
 }
 ''';

@@ -7619,6 +7619,18 @@ class SessionsNamespace {
     );
   }
 
+  Future<SessionsReportReturn> report(String message, [SessionsReportOptions options = const SessionsReportOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["message"] = RaviJson.from(message);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["sessions"],
+      command: "report",
+      body: requestBody,
+      decode: sessionsReportReturnFromJson,
+    );
+  }
+
   Future<SessionsResetReturn> reset(String nameOrKey, [SessionsResetOptions options = const SessionsResetOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["nameOrKey"] = RaviJson.from(nameOrKey);
@@ -7728,6 +7740,30 @@ class SessionsNamespace {
       command: "subscriptions",
       body: requestBody,
       decode: sessionsSubscriptionsReturnFromJson,
+    );
+  }
+
+  Future<SessionsThreadSendReturn> threadSend(String thread, String message, [SessionsThreadSendOptions options = const SessionsThreadSendOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["thread"] = RaviJson.from(thread);
+    requestBody["message"] = RaviJson.from(message);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["sessions"],
+      command: "thread-send",
+      body: requestBody,
+      decode: sessionsThreadSendReturnFromJson,
+    );
+  }
+
+  Future<SessionsThreadsReturn> threads([SessionsThreadsOptions options = const SessionsThreadsOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["sessions"],
+      command: "threads",
+      body: requestBody,
+      decode: sessionsThreadsReturnFromJson,
     );
   }
 

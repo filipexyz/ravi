@@ -16197,6 +16197,7 @@ export type SessionsCreateThreadReturn = {
     instanceId: string;
   };
   status: "queued";
+  title: string | null;
 };
 
 /** Input shape for `sessions.delete`. */
@@ -16660,6 +16661,24 @@ export type SessionsRenameInput = {
 
 /** Return shape for `sessions.rename`. */
 export type SessionsRenameReturn = Record<string, unknown>;
+
+/** Input shape for `sessions.report`. */
+export type SessionsReportInput = {
+  message: string;
+  session?: string;
+};
+
+/** Return shape for `sessions.report`. */
+export type SessionsReportReturn = {
+  actionId: "thread.report";
+  messageId: string;
+  parentSession: {
+    sessionKey: string;
+    sessionName: string;
+  };
+  requestId: string;
+  status: "published";
+};
 
 /** Input shape for `sessions.reset`. */
 export type SessionsResetInput = {
@@ -17165,6 +17184,71 @@ export type SessionsSubscriptionsInput = {
 
 /** Return shape for `sessions.subscriptions`. */
 export type SessionsSubscriptionsReturn = Record<string, unknown>;
+
+/** Input shape for `sessions.thread-send`. */
+export type SessionsThreadSendInput = {
+  message: string;
+  session?: string;
+  thread: string;
+};
+
+/** Return shape for `sessions.thread-send`. */
+export type SessionsThreadSendReturn = {
+  actionId: "thread.send";
+  messageId: string;
+  reopened: boolean;
+  requestId: string;
+  status: "published";
+  thread: {
+    childSessionKey: string | null;
+    childSessionName: string | null;
+    closedAt: number | null;
+    createdAt: number;
+    link: string | null;
+    parentReturn: {
+      pending: boolean;
+      requested: boolean;
+    };
+    requestId: string;
+    slackThreadTs: string | null;
+    source: "action" | "inbound";
+    status: "queued" | "root_delivered" | "starting" | "open" | "closed" | "failed";
+    title: string | null;
+    updatedAt: number;
+  };
+};
+
+/** Input shape for `sessions.threads`. */
+export type SessionsThreadsInput = {
+  all?: boolean;
+  session?: string;
+};
+
+/** Return shape for `sessions.threads`. */
+export type SessionsThreadsReturn = {
+  includeClosed: boolean;
+  parentSession: {
+    sessionKey: string;
+    sessionName: string;
+  };
+  threads: Array<{
+    childSessionKey: string | null;
+    childSessionName: string | null;
+    closedAt: number | null;
+    createdAt: number;
+    link: string | null;
+    parentReturn: {
+      pending: boolean;
+      requested: boolean;
+    };
+    requestId: string;
+    slackThreadTs: string | null;
+    source: "action" | "inbound";
+    status: "queued" | "root_delivered" | "starting" | "open" | "closed" | "failed";
+    title: string | null;
+    updatedAt: number;
+  }>;
+};
 
 /** Input shape for `sessions.trace`. */
 export type SessionsTraceInput = {
