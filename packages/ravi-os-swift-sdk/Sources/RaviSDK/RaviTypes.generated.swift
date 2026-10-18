@@ -539,6 +539,51 @@ public struct AgentsListReturn: Codable, Sendable {
   }
 }
 
+public struct AgentsListingOptions: Codable, Sendable {
+  public var execute: Bool?
+
+  public init(execute: Bool? = nil) {
+    self.execute = execute
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case execute = "execute"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct AgentsListingReturn: Codable, Sendable {
+  public var acceptsRequests: Bool
+  public var agent: String
+  public var changed: Bool
+  public var hint: String?
+  public var listed: Bool
+  public var reported: Bool
+
+  public init(acceptsRequests: Bool, agent: String, changed: Bool, hint: String? = nil, listed: Bool, reported: Bool) {
+    self.acceptsRequests = acceptsRequests
+    self.agent = agent
+    self.changed = changed
+    self.hint = hint
+    self.listed = listed
+    self.reported = reported
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case acceptsRequests = "acceptsRequests"
+    case agent = "agent"
+    case changed = "changed"
+    case hint = "hint"
+    case listed = "listed"
+    case reported = "reported"
+  }
+}
+
 public struct AgentsModelBrokerOptions: Codable, Sendable {
   public var broker: String?
   public var clear: Bool?
@@ -814,13 +859,15 @@ public struct AgentsRequestsReturn: Codable, Sendable {
   public var agent: String
   public var changed: Bool
   public var hint: String?
+  public var listed: Bool
   public var reported: Bool
 
-  public init(acceptsRequests: Bool, agent: String, changed: Bool, hint: String? = nil, reported: Bool) {
+  public init(acceptsRequests: Bool, agent: String, changed: Bool, hint: String? = nil, listed: Bool, reported: Bool) {
     self.acceptsRequests = acceptsRequests
     self.agent = agent
     self.changed = changed
     self.hint = hint
+    self.listed = listed
     self.reported = reported
   }
 
@@ -829,6 +876,7 @@ public struct AgentsRequestsReturn: Codable, Sendable {
     case agent = "agent"
     case changed = "changed"
     case hint = "hint"
+    case listed = "listed"
     case reported = "reported"
   }
 }

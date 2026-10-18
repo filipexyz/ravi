@@ -2313,10 +2313,11 @@ export const agentsListReturnSchema = z
   })
   .strict();
 
-/** What the Library side knows of a local agent: its directory description, requests, and origin. */
+/** What the Library side knows of a local agent: its directory listing and description, requests, and origin. */
 const agentLibraryStateReturnSchema = z
   .object({
     description: z.string().nullable(),
+    listed: z.boolean(),
     acceptsRequests: z.boolean(),
     origin: z.object({ ref: z.string(), version: z.number(), installedAt: z.number().nullable() }).strict().nullable(),
   })
@@ -3691,6 +3692,18 @@ export const agentsAskReturnSchema = z
 export const agentsRequestsToggleReturnSchema = z
   .object({
     agent: z.string(),
+    listed: z.boolean(),
+    acceptsRequests: z.boolean(),
+    changed: z.boolean(),
+    reported: z.boolean(),
+    hint: z.string().optional(),
+  })
+  .strict();
+
+export const agentsListingReturnSchema = z
+  .object({
+    agent: z.string(),
+    listed: z.boolean(),
     acceptsRequests: z.boolean(),
     changed: z.boolean(),
     reported: z.boolean(),

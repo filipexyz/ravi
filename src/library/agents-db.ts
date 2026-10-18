@@ -1,9 +1,10 @@
 /**
  * Local state of Library agents in `ravi.db` (spec skills/library).
  *
- * `library_agents`: per local agent, the description the directory shows,
- * whether the operator opened it to requests from other installations
- * (default closed), and the Library definition it was installed from (ref,
+ * `library_agents`: per local agent, whether the operator listed it in the
+ * org directory (default not: an unlisted agent is never reported), the
+ * description the directory shows, whether the operator opened it to requests
+ * from other installations (default closed; only a listed agent), and the Library definition it was installed from (ref,
  * version, and the hashes of `AGENTS.md`/`HEARTBEAT.md` as installed, so an
  * update can tell a local edit from an untouched file).
  *
@@ -31,6 +32,7 @@ export interface LibraryAgentOrigin {
 export interface LibraryAgentState {
   agentId: string;
   description: string | null;
+  listed: boolean;
   acceptsRequests: boolean;
   origin: LibraryAgentOrigin | null;
   updatedAt: number;
@@ -39,6 +41,7 @@ export interface LibraryAgentState {
 interface AgentRow {
   agent_id: string;
   description: string | null;
+  listed: number;
   accepts_requests: number;
   origin_ref: string | null;
   origin_version: number | null;
@@ -62,6 +65,7 @@ function rowToState(row: AgentRow): LibraryAgentState {
   return {
     agentId: row.agent_id,
     description: row.description,
+    listed: row.listed === 1,
     acceptsRequests: row.accepts_requests === 1,
     origin:
       row.origin_ref && row.origin_version !== null
@@ -90,7 +94,7 @@ export function dbListLibraryAgentStates(): LibraryAgentState[] {
   return rows.map(rowToState);
 }
 
-/** Never throws: an unreadable table means no description and closed to requests. */
+/** Never throws: an unreadable table means unlisted, no description and closed to requests. */
 export function readLibraryAgentState(agentId: string): LibraryAgentState | null {
   try {
     return dbGetLibraryAgentState(agentId);
@@ -112,11 +116,28 @@ export function dbSetLibraryAgentDescription(agentId: string, description: strin
     .run(description, now, agentId);
 }
 
+/** Listing off also closes the agent to requests: an unlisted agent is not reported at all. */
+export function dbSetLibraryAgentListed(agentId: string, listed: boolean, now = Date.now()): void {
+  ensureRow(agentId, now);
+  getDb()
+    .prepare(
+      listed
+        ? "UPDATE library_agents SET listed = 1, updated_at = ? WHERE agent_id = ?"
+        : "UPDATE library_agents SET listed = 0, accepts_requests = 0, updated_at = ? WHERE agent_id = ?",
+    )
+    .run(now, agentId);
+}
+
+/** Opening an agent to requests also lists it: other machines find it in the directory. */
 export function dbSetLibraryAgentAcceptsRequests(agentId: string, accepts: boolean, now = Date.now()): void {
   ensureRow(agentId, now);
   getDb()
-    .prepare("UPDATE library_agents SET accepts_requests = ?, updated_at = ? WHERE agent_id = ?")
-    .run(accepts ? 1 : 0, now, agentId);
+    .prepare(
+      accepts
+        ? "UPDATE library_agents SET accepts_requests = 1, listed = 1, updated_at = ? WHERE agent_id = ?"
+        : "UPDATE library_agents SET accepts_requests = 0, updated_at = ? WHERE agent_id = ?",
+    )
+    .run(now, agentId);
 }
 
 export function dbSetLibraryAgentOrigin(agentId: string, origin: LibraryAgentOrigin, now = Date.now()): void {

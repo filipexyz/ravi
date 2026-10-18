@@ -237,10 +237,11 @@ ravi agents publish recepcao --scope clinica --propose --execute
 
 ## Pedir ajuda a agents de outras máquinas
 
-Cada máquina Ravi ligada (`ravi login`) reporta seus agents ao Console. O
-diretório lista os agents das outras máquinas da organização; um agent aberto
-a pedidos responde, numa sessão própria, como a pessoa que pediu (nunca com a
-autoridade do operador daquela máquina).
+Cada máquina Ravi ligada (`ravi login`) reporta ao Console só os agents que o
+operador listou (`ravi agents listing <id> on --execute`); por padrão nenhum
+agent aparece. O diretório lista os agents das outras máquinas da
+organização; um agent aberto a pedidos responde, numa sessão própria, como a
+pessoa que pediu (nunca com a autoridade do operador daquela máquina).
 
 ```bash
 ravi agents directory                                  # quem dá pra perguntar
@@ -249,7 +250,9 @@ ravi agents ask macbook-ana/financeiro "Qual a data de fechamento?" --execute
 ravi agents requests list --all                        # pedidos enviados e respostas
 ravi agents requests list --received                   # pedidos para os agents daqui
 ravi agents requests cancel <id>
-ravi agents requests financeiro on --execute           # abre este agent a pedidos (freio)
+ravi agents listing financeiro on --execute            # lista este agent no diretório (freio)
+ravi agents listing financeiro off                     # tira do diretório na hora (e fecha a pedidos)
+ravi agents requests financeiro on --execute           # abre este agent a pedidos e lista (freio)
 ravi agents requests financeiro off                    # fecha na hora
 ravi agents set financeiro description "Responde sobre fechamento e notas"
 ```
@@ -260,8 +263,12 @@ ravi agents set financeiro description "Responde sobre fechamento e notas"
   (`LIBRARY_TARGET_AMBIGUOUS`, exit 2).
 - Só turnos do próprio operador podem perguntar
   (`LIBRARY_REQUEST_EXTERNAL_DENIED`, exit 3).
-- Agents não abrem nem fecham agents a pedidos
-  (`LIBRARY_AGENT_CANNOT_OPEN_REQUESTS`, exit 3). Pedidos expiram em 24 h.
+- Agents não listam nem abrem agents a pedidos
+  (`LIBRARY_AGENT_CANNOT_LIST` / `LIBRARY_AGENT_CANNOT_OPEN_REQUESTS`, exit 3).
+  Pedidos expiram em 24 h.
+- Um agent fora do diretório some de "Running agents" no Console na próxima
+  sincronização; os pins dele continuam carregando, mas um pin novo pede o
+  agent listado (`LIBRARY_AGENT_NOT_LISTED`).
 
 ## Permissões / Provider Runtime
 

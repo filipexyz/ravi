@@ -244,6 +244,7 @@ ravi skills pins org/tom-de-voz                                     # onde esse 
 - A skill fixada aparece como `ravi-library:<nome>` (no Codex, `ravi-library-<nome>`). O nome é `org-<slug>` ou `<projeto>-<slug>`; `skills pins --json` mostra em `skill`.
 - Só o agente do pin vê a skill. Skill sem `--external` só carrega nas sessões de turnos do próprio operador; nas outras ela fica de fora.
 - A sessão escolhe as skills fixadas quando começa: depois de um pin, abra uma sessão nova.
+- O Console só fixa em agents que esta máquina reporta: liste o agent antes (`ravi agents listing <id> on --execute`); sem isso o pin para com `LIBRARY_AGENT_NOT_LISTED`.
 - Skill de projeto só fixa em agente daquele projeto (`CONFLICT`, `conflict: agent_out_of_scope`): defina o projeto do agente com `ravi cloud scope set --agent <agente> --project <projeto>` e fixe de novo. `not_published`: publique uma versão antes. `no_installation`: rode `ravi login` neste daemon.
 - Sem rede, os pins da última sincronização continuam carregando, e `skills pins` responde com `stale: true`. Um item que este login não consegue ler aparece em `unavailable` (`LIBRARY_PIN_UNAVAILABLE`) e não carrega.
 - Agente não fixa nem desfixa: dentro de um agente os dois comandos falham com `LIBRARY_AGENT_CANNOT_PIN` (exit 3). Peça ao operador.
