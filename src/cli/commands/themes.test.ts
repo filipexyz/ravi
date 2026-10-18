@@ -194,7 +194,7 @@ describe("themes publish", () => {
       agent(() => new ThemesCommands().publish(themeDir(), "org", undefined, undefined, undefined, true, true)),
     );
     expect(error).toMatchObject({ code: "LIBRARY_AGENT_CANNOT_PUBLISH", exitCode: 3 });
-    expect(String(error.details.suggestedAction)).toBe("ravi themes propose <dir> --scope org --execute");
+    expect(String(error.details.suggestedAction)).toContain(`ravi themes propose ${themeDir()} --scope org --execute`);
     expect(libraryRequests()).toEqual([]);
   });
 

@@ -1,4 +1,4 @@
-import { describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,8 +13,13 @@ import {
   normalizePageReadNumber,
   normalizePageReadUrl,
   pageReadIsPublicOnly,
+  pageReadTurnBlock,
   readPage,
 } from "./read.js";
+import type { ContextRecord } from "../router/router-db.js";
+import { getOrCreateSession } from "../router/sessions.js";
+import { createRuntimeContext } from "../runtime/context-registry.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 
 describe("normalizePageReadUrl", () => {
   it("accepts *.ravi.page links with or without a scheme and drops the fragment", () => {
@@ -70,6 +75,83 @@ describe("pageReadIsPublicOnly", () => {
         turn: { runtimeContext: { present: false, record: null }, env: {} },
       }),
     ).toBe(false);
+  });
+});
+
+describe("pageReadTurnBlock on real turn contexts", () => {
+  let stateDir: string | null = null;
+  const OWNER = { activeUserId: "user_luis", activeOrgId: "org_1", ownerName: "Luis" };
+  const OWNER_DM = "agent:main:whatsapp:wa-main:dm:5511999999999";
+
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-pages-read-turn-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  function turnContext(metadata: Record<string, unknown>, sessionKey: string, sessionName: string): ContextRecord {
+    getOrCreateSession(sessionKey, "main", stateDir ?? "/tmp");
+    return createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: "main",
+      sessionKey,
+      sessionName,
+      metadata: { actorResolution: "resolved", executorAgentId: "main", ...metadata },
+    });
+  }
+
+  function deps(context: ContextRecord, isPrivateDirectSession?: () => boolean) {
+    return {
+      readCredentials: () => makeCredentials(),
+      turn: {
+        ...OWNER,
+        env: { RAVI_CONTEXT_KEY: context.contextKey },
+        ...(isPrivateDirectSession ? { isPrivateDirectSession } : {}),
+      },
+    };
+  }
+
+  const ownerDm = {
+    actorPrincipal: "contact:c_luis",
+    consoleUserId: "user_luis",
+    consoleOrgId: "org_1",
+    agentIdentityCompartment: "dm:5511999999999@s.whatsapp.net",
+  };
+
+  it("counts the linked owner's own direct chat in a session of its own as the operator's turn", () => {
+    const context = turnContext(ownerDm, OWNER_DM, "luis-dm");
+    expect(pageReadIsPublicOnly(deps(context))).toBe(false);
+    expect(pageReadTurnBlock(deps(context))).toBeNull();
+  });
+
+  it("names the shared-session rule when the owner's direct chat shares its session", () => {
+    const context = turnContext(ownerDm, OWNER_DM, "luis-dm");
+    const shared = deps(context, () => false);
+    expect(pageReadIsPublicOnly(shared)).toBe(true);
+    expect(pageReadTurnBlock(shared)).toMatchObject({ turn: "shared_session" });
+    const main = turnContext(ownerDm, "agent:main:main", "main");
+    expect(pageReadTurnBlock(deps(main))).toMatchObject({ turn: "shared_session" });
+  });
+
+  it("names the link rule when the owner writes from an account not linked to this login", () => {
+    const unlinked = turnContext({ ...ownerDm, consoleUserId: undefined }, OWNER_DM, "luis-dm");
+    expect(pageReadIsPublicOnly(deps(unlinked))).toBe(true);
+    const block = pageReadTurnBlock(deps(unlinked));
+    expect(block).toMatchObject({ turn: "not_owner" });
+    expect(block?.why).toContain("ravi link");
+  });
+
+  it("explains nothing on the terminal or when a test fixes publicOnly", () => {
+    expect(
+      pageReadTurnBlock({
+        readCredentials: () => makeCredentials(),
+        turn: { runtimeContext: { present: false, record: null }, env: {} },
+      }),
+    ).toBeNull();
+    expect(pageReadTurnBlock({ publicOnly: true })).toBeNull();
   });
 });
 
