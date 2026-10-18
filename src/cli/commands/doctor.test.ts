@@ -189,6 +189,31 @@ function makeHealthyDeps() {
     tempDir: () => tempDir,
     statDisk: () => ({ totalBytes: 500 * 1024 ** 3, freeBytes: 200 * 1024 ** 3, deviceId: 66 }),
     probeDir: () => ({ ok: true }),
+    inspectKnowledgeExposure: () => ({ ok: true, offenders: [], checkedAgents: 2 }),
+    knowledgeSettings: () => knowledgeSettingsFixture(),
+    resolveOwnerDirectTarget: () => ({
+      channel: "whatsapp",
+      accountId: "main",
+      to: "5511999999999@s.whatsapp.net",
+      chatId: "5511999999999@s.whatsapp.net",
+      contactId: "c_owner",
+    }),
+    agentHasNoExec: () => true,
+    codexKnowledgeParityHolds: () => true,
+    listInboxSubscriptions: () => [{ id: "sub_1" }],
+  };
+}
+
+function knowledgeSettingsFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    contactMemoryAgents: [] as string[],
+    project: null as string | null,
+    curatorAgent: null as string | null,
+    digestTime: "08:00",
+    digestTimezone: "America/Sao_Paulo",
+    ownerTarget: null as string | null,
+    egressAllow: () => null,
+    ...overrides,
   };
 }
 
@@ -839,5 +864,73 @@ describe("runDoctor", () => {
     expect(Array.isArray(payload.checks)).toBe(true);
     expect(payload.checks.some((check: { id: string }) => check.id === "codex.bash-hook")).toBe(true);
     expect(Array.isArray(payload.findings)).toBe(true);
+  });
+
+  describe("knowledge checks", () => {
+    function knowledgeChecks(report: ReturnType<typeof inspectDoctor>) {
+      return {
+        exposure: report.checks.find((check) => check.id === "permissions.knowledge_exposure"),
+        f2: report.checks.find((check) => check.id === "knowledge.f2_setup"),
+        f2Finding: report.findings.find((finding) => finding.id === "knowledge.f2_setup"),
+      };
+    }
+
+    it("passes both checks with healthy deps", () => {
+      const { exposure, f2 } = knowledgeChecks(inspectDoctor(makeHealthyDeps()));
+      expect(exposure?.status).toBe("pass");
+      expect(f2?.status).toBe("pass");
+    });
+
+    it("passes the F2 check when contact memory is configured", () => {
+      const { f2 } = knowledgeChecks(
+        inspectDoctor({
+          ...makeHealthyDeps(),
+          knowledgeSettings: () =>
+            knowledgeSettingsFixture({ contactMemoryAgents: ["main"], project: "acme", curatorAgent: "main" }),
+        } as any),
+      );
+      expect(f2?.status).toBe("pass");
+    });
+
+    it("fails the exposure check with an offender", () => {
+      const report = inspectDoctor({
+        ...makeHealthyDeps(),
+        inspectKnowledgeExposure: () => ({
+          ok: false,
+          checkedAgents: 2,
+          offenders: [
+            { agentId: "main", profile: "bootstrap", reasons: ["instance main admits open DMs", "profile bootstrap"] },
+          ],
+        }),
+      } as any);
+      const { exposure } = knowledgeChecks(report);
+      expect(exposure?.status).toBe("fail");
+      expect(exposure?.severity).toBe("error");
+      const finding = report.findings.find((item) => item.id === "permissions.knowledge_exposure");
+      expect(finding?.fixHint).toContain("chat-only");
+      expect(JSON.stringify(finding?.evidence)).toContain("agent:main");
+      expect(report.ok).toBe(false);
+    });
+
+    it("warns on F2 misconfigurations without failing", () => {
+      const report = inspectDoctor({
+        ...makeHealthyDeps(),
+        knowledgeSettings: () => knowledgeSettingsFixture({ contactMemoryAgents: ["codex-dev"], curatorAgent: "main" }),
+        dbGetAgent: (id: string) => ({ id, provider: id === "codex-dev" ? "codex" : "claude" }) as any,
+        resolveOwnerDirectTarget: () => null,
+        agentHasNoExec: () => false,
+        codexKnowledgeParityHolds: () => false,
+        listInboxSubscriptions: () => [],
+      } as any);
+      const { f2, f2Finding } = knowledgeChecks(report);
+      expect(f2?.status).toBe("fail");
+      expect(f2?.severity).toBe("warn");
+      const text = JSON.stringify(f2Finding);
+      expect(text).toContain("knowledge.project");
+      expect(text).toContain("owner contact");
+      expect(text).toContain("curator agent main");
+      expect(text).toContain("codex parity fixture fails for codex-dev");
+      expect(text).toContain("inbox subscription");
+    });
   });
 });

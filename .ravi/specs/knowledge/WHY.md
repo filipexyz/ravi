@@ -3,89 +3,30 @@ id: knowledge/why
 title: "Ravi Knowledge Why"
 kind: domain
 domain: knowledge
-status: draft
+status: active
 normative: false
 ---
 
-# Why Ravi Knowledge Exists
+# Why Ravi Knowledge Works This Way
 
 ## Problem
 
-Ravi already has many places where important context appears:
+What the organization knows is scattered: meetings recorded by the Ravi bot, published Ravi Pages, approved notes in the Console, and the local chat history and transcripts on the operator's machine. Agents answered from memory or not at all, and nothing showed where an answer came from.
 
-- WhatsApp and other channel messages;
-- runtime sessions;
-- task reports;
-- life-review files;
-- artifacts;
-- project state;
-- specs;
-- commits and PRs;
-- observer summaries;
-- ad hoc notes.
+## Decisions
 
-The current failure mode is not lack of memory. It is memory confetti.
+- **One search, with sources.** The operator asks one question and gets meetings, pages, notes and local chats merged (reciprocal rank fusion), each with a ref, a trust tier and a url. Citing is cheaper than guessing.
+- **Operator turns only.** Meeting speech and internal pages must not reach a contact or a group through a curious agent. The turn classifier and the Console both check the turn; any other audience gets exit 3 and no data.
+- **Exposure gate before anything.** An agent that outsiders can reach and that can read files could leak the local index or `knowledge.db`. Until every such agent is chat-only or limited to an allowlist of capabilities, Knowledge refuses everywhere, including the terminal, so the fix is never postponed.
+- **Quoted data, never instructions.** Excerpts come from people and pages Ravi does not control. Fences with a per-call nonce and neutralized text keep them from steering the agent. Display names in meetings are chosen by participants, so attribution says "attributed to".
+- **Local stays local.** Chat history and contact memory never go to the Console. Only gap questions (what the contact asked and nobody answered) go up, so an org member can answer them on a card.
+- **Own database file.** FTS5 tables do not fit the `ravi.db` column reconciler, chat history lives in `chat.db`, and an own file can be dropped and rebuilt.
+- **Brakes where text leaves the machine.** `propose` sends text to the Console and `forget --redact` destroys it, so both dry-run first; the plan never echoes the body. Archiving is reversible and runs at once.
+- **Write after read.** A turn that read unapproved content could forward it by a send, a publish or a scheduled job. Those commands ask the operator once per action.
+- **Superseded design.** The earlier canonical-items, threads, profiles, curators and Obsidian publisher sub-specs described a vault-publication model that was never built. They are superseded by this spec and scheduled for removal.
 
-The same idea can appear in a chat, a task, a spec, a daily review, and a system inform. Agents then re-read the wrong layer, duplicate extraction work, or miss the canonical version.
+## Accepted risks
 
-## Decision
-
-Create `Ravi Knowledge` as the canonical semantic layer.
-
-The core product is `ravi knowledge`.
-
-The domain should be called `Knowledge Layer`, not `Vault`, because the vault is only one interface.
-
-## Why Not Just Obsidian
-
-Obsidian is excellent as a human reading and editing surface.
-
-It is not enough as the canonical system of record because:
-
-- it cannot represent every Ravi source with typed provenance;
-- concurrent agents can corrupt notes without locks;
-- file names are not stable semantic ids;
-- manual edits and generated sections need boundaries;
-- permissions, redaction, and audit need Ravi context;
-- agent briefs need scoped reads, not arbitrary vault search.
-
-So Obsidian should be a publisher adapter. Ravi owns the canonical model.
-
-## Why Not Just Sessions
-
-Sessions are runtime state. They are optimized for interaction and provider continuity, not semantic memory.
-
-A topic can span:
-
-- many sessions;
-- many chats;
-- multiple agents;
-- tasks and projects;
-- weeks of life-review output.
-
-Treating a runtime session as the topic creates the wrong abstraction and makes knowledge disappear when the runtime changes.
-
-## Why Not Just Tags
-
-Tags classify assets. They do not hold evidence, decisions, summaries, or source lineage.
-
-Knowledge uses tags for discovery, but the knowledge item/thread model owns semantic content.
-
-## Why Curator Agents
-
-Specialized agents can extract better knowledge if they have narrow attention:
-
-- social loops;
-- workstreams;
-- decisions and wins;
-- open loops;
-- state-base;
-- project context.
-
-But curators should draft. A separate publisher/canonicalizer should merge, review, and publish to avoid five agents writing five conflicting notes.
-
-## Tradeoff
-
-This adds another domain to Ravi.
-
-The cost is justified only if it reduces redundancy and prompt bloat. The implementation must therefore ship with idempotency, deduplication, source lineage, and bounded brief generation from the first version.
+- Forwarded messages look authored to `remember` (the envelope has no forward marker).
+- Channel-backend turns bypass the gateway egress guard; such sessions get no packet.
+- `runtime_prompt_queue` persists the per-turn preamble for crash recovery.

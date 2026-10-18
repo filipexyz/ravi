@@ -54987,6 +54987,1273 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let KnowledgeForgetInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "about": {
+        "description": "Every item of contact:<id> or chat:<id>",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Apply --redact. Without it, prints the plan and exits 3",
+        "type": "boolean"
+      },
+      "id": {
+        "description": "An item id (ki:<id> or the bare id)",
+        "type": "string"
+      },
+      "redact": {
+        "description": "Overwrite the text and keep a tombstone (needs --execute)",
+        "type": "boolean"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let KnowledgeForgetReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "archived": {
+        "type": "number"
+      },
+      "ftsRowsDeleted": {
+        "type": "number"
+      },
+      "redacted": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "archived",
+      "redacted",
+      "ftsRowsDeleted"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let KnowledgeMarksInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "url": {
+        "description": "A Ravi Page URL: its marks and the card to mark it",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let KnowledgeMarksReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "card": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "url": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "url"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "issues": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "marks": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "approvedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "approvedVersion": {
+              "type": "number"
+            },
+            "audiences": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "cardUrl": {
+              "type": "string"
+            },
+            "routeId": {
+              "type": "string"
+            },
+            "state": {
+              "enum": [
+                "active",
+                "suspended"
+              ],
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "routeId",
+            "url",
+            "state",
+            "audiences",
+            "approvedVersion",
+            "approvedAt",
+            "cardUrl"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "next": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "marks",
+      "card",
+      "issues",
+      "next"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let KnowledgeProposeInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "audience": {
+        "description": "contacts:<instance> or members",
+        "type": "string"
+      },
+      "correction": {
+        "description": "A correction (use with --supersedes)",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Send the proposal. Without it, prints the plan and exits 3",
+        "type": "boolean"
+      },
+      "from": {
+        "description": "Evidence refs from ravi knowledge search",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "gap": {
+        "description": "A question nobody has answered yet",
+        "type": "string"
+      },
+      "note": {
+        "description": "A note for the org to approve",
+        "type": "string"
+      },
+      "project": {
+        "description": "Console project (default: the knowledge.project setting)",
+        "type": "string"
+      },
+      "supersedes": {
+        "description": "The ref this corrects",
+        "type": "string"
+      },
+      "transcript": {
+        "description": "A local meeting key under ~/.ravi/meetings",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let KnowledgeProposeReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "deduped": {
+        "type": "boolean"
+      },
+      "next": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "proposal": {
+        "additionalProperties": false,
+        "properties": {
+          "answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "body": {
+            "type": "string"
+          },
+          "cardUrl": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expiresAt": {
+            "type": "string"
+          },
+          "faq": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "anchor": {
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "url",
+                  "anchor"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "note",
+              "gap",
+              "correction",
+              "transcript"
+            ],
+            "type": "string"
+          },
+          "projectId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "waitingCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "projectId",
+          "title",
+          "body",
+          "answer",
+          "faq",
+          "waitingCount",
+          "cardUrl",
+          "createdAt",
+          "expiresAt",
+          "decidedAt"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "proposal",
+      "deduped",
+      "next"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let KnowledgeReadInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "around": {
+        "description": "Neighbours on each side (default 0, max 5)",
+        "type": "string"
+      },
+      "ref": {
+        "description": "A ref from ravi knowledge search (kc:, km: or kt:)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "ref"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let KnowledgeReadReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "excerpt": {
+        "type": "string"
+      },
+      "header": {
+        "type": "string"
+      },
+      "issues": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "next": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "nonce": {
+        "type": "string"
+      },
+      "ref": {
+        "type": "string"
+      },
+      "rule": {
+        "type": "string"
+      },
+      "runId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "trust": {
+        "enum": [
+          "approved",
+          "published",
+          "said",
+          "inferred"
+        ],
+        "type": "string"
+      },
+      "url": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "ref",
+      "nonce",
+      "rule",
+      "trust",
+      "header",
+      "excerpt",
+      "url",
+      "runId",
+      "issues",
+      "next"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let KnowledgeRememberInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "about": {
+        "description": "contact:<id> or chat:<id>",
+        "type": "string"
+      },
+      "agent": {
+        "description": "Only this agent uses it (default: every opted-in agent)",
+        "type": "string"
+      },
+      "confirm": {
+        "description": "Activate a draft item (terminal only)",
+        "type": "string"
+      },
+      "key": {
+        "description": "Stable key; a new item with the same key replaces the old one",
+        "type": "string"
+      },
+      "kind": {
+        "description": "fact, preference, open_loop or commitment (default fact)",
+        "type": "string"
+      },
+      "text": {
+        "description": "What to remember",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let KnowledgeRememberReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "activated": {
+        "type": "boolean"
+      },
+      "item": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "body": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "createdBy": {
+            "enum": [
+              "operator",
+              "curator",
+              "marker"
+            ],
+            "type": "string"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "fact",
+              "preference",
+              "open_loop",
+              "commitment"
+            ],
+            "type": "string"
+          },
+          "recordedAt": {
+            "type": "number"
+          },
+          "scope": {
+            "enum": [
+              "contact",
+              "chat"
+            ],
+            "type": "string"
+          },
+          "speaker": {
+            "anyOf": [
+              {
+                "enum": [
+                  "operator",
+                  "contact",
+                  "agent"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "draft",
+              "active",
+              "archived",
+              "redacted"
+            ],
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "string"
+          },
+          "supersededBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "trust": {
+            "enum": [
+              "approved",
+              "published",
+              "said",
+              "inferred"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "scope",
+          "subjectId",
+          "agentId",
+          "kind",
+          "key",
+          "body",
+          "status",
+          "trust",
+          "speaker",
+          "recordedAt",
+          "expiresAt",
+          "supersededBy",
+          "createdBy",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "next": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "reason": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "item",
+      "activated",
+      "reason",
+      "next"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let KnowledgeSearchInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "about": {
+        "description": "Restrict local history to contact:<id> or chat:<id>",
+        "type": "string"
+      },
+      "limit": {
+        "description": "Maximum results (default 8, max 20)",
+        "type": "string"
+      },
+      "localOnly": {
+        "description": "Skip the Console; search local history only",
+        "type": "boolean"
+      },
+      "project": {
+        "description": "Console project slug or id",
+        "type": "string"
+      },
+      "query": {
+        "description": "What to look for",
+        "type": "string"
+      },
+      "since": {
+        "description": "7d, 30d, 12h, 2w or an ISO date",
+        "type": "string"
+      },
+      "type": {
+        "description": "Comma-separated kinds: meeting, transcript, page, note, manual, chat",
+        "type": "string"
+      },
+      "who": {
+        "description": "Only what this speaker said",
+        "type": "string"
+      }
+    },
+    "required": [
+      "query"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let KnowledgeSearchReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "audience": {
+        "const": "operator",
+        "type": "string"
+      },
+      "issues": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "localRunId": {
+        "type": "string"
+      },
+      "next": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "nonce": {
+        "type": "string"
+      },
+      "query": {
+        "type": "string"
+      },
+      "results": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "excerpt": {
+              "type": "string"
+            },
+            "header": {
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "meeting",
+                "transcript",
+                "page",
+                "note",
+                "manual",
+                "chat"
+              ],
+              "type": "string"
+            },
+            "origin": {
+              "enum": [
+                "console",
+                "local"
+              ],
+              "type": "string"
+            },
+            "project": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "slug": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "slug",
+                    "name"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "recordedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ref": {
+              "type": "string"
+            },
+            "score": {
+              "type": "number"
+            },
+            "speakers": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "trust": {
+              "enum": [
+                "approved",
+                "published",
+                "said",
+                "inferred"
+              ],
+              "type": "string"
+            },
+            "url": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "ref",
+            "origin",
+            "kind",
+            "trust",
+            "header",
+            "excerpt",
+            "url",
+            "recordedAt",
+            "project",
+            "speakers",
+            "score"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "rule": {
+        "type": "string"
+      },
+      "runId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "withheld": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "count": {
+                "type": "number"
+              },
+              "reasons": {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              }
+            },
+            "required": [
+              "count",
+              "reasons"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "query",
+      "audience",
+      "nonce",
+      "rule",
+      "results",
+      "withheld",
+      "runId",
+      "localRunId",
+      "issues",
+      "next"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let KnowledgeSourcesInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "failing": {
+        "description": "Only Console sources whose last job failed",
+        "type": "boolean"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let KnowledgeSourcesReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "console": {
+        "anyOf": [
+          {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "chunks": {
+                  "type": "number"
+                },
+                "documents": {
+                  "type": "number"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "meeting",
+                    "transcript",
+                    "page",
+                    "note",
+                    "manual"
+                  ],
+                  "type": "string"
+                },
+                "lastJob": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": {
+                          "type": "string"
+                        },
+                        "failureCode": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "triggerType": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "triggerType",
+                        "at",
+                        "failureCode"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "project": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "slug": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "slug",
+                        "name"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "trust": {
+                  "enum": [
+                    "approved",
+                    "published",
+                    "said",
+                    "inferred"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "title",
+                "project",
+                "trust",
+                "status",
+                "documents",
+                "chunks",
+                "lastJob"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "issues": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "local": {
+        "additionalProperties": false,
+        "properties": {
+          "chatRows": {
+            "type": "number"
+          },
+          "fts5": {
+            "type": "boolean"
+          },
+          "lastIndexedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "transcriptRows": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "chatRows",
+          "transcriptRows",
+          "lastIndexedAt",
+          "fts5"
+        ],
+        "type": "object"
+      },
+      "next": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "console",
+      "local",
+      "issues",
+      "next"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let KnowledgeWhyInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "last": {
+        "description": "The newest run of this turn",
+        "type": "boolean"
+      },
+      "limit": {
+        "description": "Maximum runs (default 5, max 20)",
+        "type": "string"
+      },
+      "run": {
+        "description": "A run id (kr:<id> or kl:<id>)",
+        "type": "string"
+      },
+      "session": {
+        "description": "Only runs of this session",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let KnowledgeWhyReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "issues": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "next": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "runs": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "audience": {
+              "const": "operator",
+              "type": "string"
+            },
+            "citations": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "available": {
+                    "type": "boolean"
+                  },
+                  "header": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "ref": {
+                    "type": "string"
+                  },
+                  "trust": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "approved",
+                          "published",
+                          "said",
+                          "inferred"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "url": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "ref",
+                  "trust",
+                  "header",
+                  "url",
+                  "available"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "createdAt": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "origin": {
+              "enum": [
+                "console",
+                "local"
+              ],
+              "type": "string"
+            },
+            "query": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "withheld": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "count": {
+                      "type": "number"
+                    },
+                    "reasons": {
+                      "additionalProperties": {
+                        "type": "number"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "count",
+                    "reasons"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "createdAt",
+            "origin",
+            "audience",
+            "query",
+            "citations",
+            "withheld"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "runs",
+      "issues",
+      "next"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let MailAccountsCreateInputSchema = #"""
   {
     "additionalProperties": false,
@@ -65084,6 +66351,571 @@ public enum RaviSchemas {
     "required": [
       "valid",
       "results"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MeetingsReadInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "maxChars": {
+        "description": "Text output only: characters of transcript and chat to print (1000-2000000, default 256000)",
+        "type": "string"
+      },
+      "meeting": {
+        "description": "Console meeting link (https://console.ravi.bot/.../meetings/<id>) or meeting id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "meeting"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MeetingsReadReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "access": {
+        "type": "string"
+      },
+      "chat": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "atSeconds": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sender": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "senderId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sentAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "text": {
+              "type": "string"
+            },
+            "to": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "sender",
+            "senderId",
+            "atSeconds",
+            "sentAt",
+            "to",
+            "text"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "consoleUrl": {
+        "type": "string"
+      },
+      "contentTrust": {
+        "const": "untrusted",
+        "type": "string"
+      },
+      "crossOrganization": {
+        "type": "boolean"
+      },
+      "meeting": {
+        "additionalProperties": false,
+        "properties": {
+          "botName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "doneAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "endedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "joinAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meetingCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meetingUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "projectId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "recordingSeconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recordingStartedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "transcriptStatus": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "platform",
+          "meetingUrl",
+          "meetingCode",
+          "botName",
+          "title",
+          "language",
+          "status",
+          "transcriptStatus",
+          "ready",
+          "joinAt",
+          "recordingStartedAt",
+          "endedAt",
+          "doneAt",
+          "recordingSeconds",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "note": {
+        "type": "string"
+      },
+      "organization": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name"
+        ],
+        "type": "object"
+      },
+      "participants": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "isHost": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "isHost"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "project": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "slug": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "slug",
+              "name"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "recordings": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "completedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "expiresAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "startedAt",
+            "completedAt",
+            "expiresAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "transcript": {
+        "additionalProperties": false,
+        "properties": {
+          "segments": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "endSeconds": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "isHost": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "speaker": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "speakerId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "startSeconds": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "startedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "speaker",
+                "speakerId",
+                "isHost",
+                "startSeconds",
+                "endSeconds",
+                "startedAt",
+                "text"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "segments"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "success",
+      "consoleUrl",
+      "meeting",
+      "organization",
+      "project",
+      "access",
+      "crossOrganization",
+      "transcript",
+      "participants",
+      "chat",
+      "recordings",
+      "note",
+      "contentTrust"
     ],
     "type": "object"
   }

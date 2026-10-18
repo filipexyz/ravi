@@ -10946,6 +10946,250 @@ export type JobsWaitReturn = {
   status: string;
 };
 
+/** Input shape for `knowledge.forget`. */
+export type KnowledgeForgetInput = {
+  about?: string;
+  execute?: boolean;
+  id?: string;
+  redact?: boolean;
+};
+
+/** Return shape for `knowledge.forget`. */
+export type KnowledgeForgetReturn = {
+  archived: number;
+  ftsRowsDeleted: number;
+  redacted: number;
+};
+
+/** Input shape for `knowledge.marks`. */
+export type KnowledgeMarksInput = {
+  url?: string;
+};
+
+/** Return shape for `knowledge.marks`. */
+export type KnowledgeMarksReturn = {
+  card: ({
+    url: string;
+  }) | null;
+  issues: string[];
+  marks: Array<{
+    approvedAt: string | null;
+    approvedVersion: number;
+    audiences: string[];
+    cardUrl: string;
+    routeId: string;
+    state: "active" | "suspended";
+    url: string;
+  }>;
+  next: string[];
+};
+
+/** Input shape for `knowledge.propose`. */
+export type KnowledgeProposeInput = {
+  audience?: string;
+  correction?: string;
+  execute?: boolean;
+  from?: string[];
+  gap?: string;
+  note?: string;
+  project?: string;
+  supersedes?: string;
+  transcript?: string;
+};
+
+/** Return shape for `knowledge.propose`. */
+export type KnowledgeProposeReturn = {
+  deduped: boolean;
+  next: string[];
+  proposal: {
+    answer: string | null;
+    body: string;
+    cardUrl: string;
+    createdAt: string;
+    decidedAt: string | null;
+    expiresAt: string;
+    faq: ({
+      anchor: string;
+      url: string;
+    }) | null;
+    id: string;
+    kind: "note" | "gap" | "correction" | "transcript";
+    projectId: string | null;
+    status: string;
+    title: string | null;
+    waitingCount: number;
+  };
+};
+
+/** Input shape for `knowledge.read`. */
+export type KnowledgeReadInput = {
+  around?: string;
+  ref: string;
+};
+
+/** Return shape for `knowledge.read`. */
+export type KnowledgeReadReturn = {
+  excerpt: string;
+  header: string;
+  issues: string[];
+  next: string[];
+  nonce: string;
+  ref: string;
+  rule: string;
+  runId: string | null;
+  trust: "approved" | "published" | "said" | "inferred";
+  url: string | null;
+};
+
+/** Input shape for `knowledge.remember`. */
+export type KnowledgeRememberInput = {
+  about?: string;
+  agent?: string;
+  confirm?: string;
+  key?: string;
+  kind?: string;
+  text?: string;
+};
+
+/** Return shape for `knowledge.remember`. */
+export type KnowledgeRememberReturn = {
+  activated: boolean;
+  item: {
+    agentId: string | null;
+    body: string;
+    createdAt: number;
+    createdBy: "operator" | "curator" | "marker";
+    expiresAt: number | null;
+    id: string;
+    key: string;
+    kind: "fact" | "preference" | "open_loop" | "commitment";
+    recordedAt: number;
+    scope: "contact" | "chat";
+    speaker: ("operator" | "contact" | "agent") | null;
+    status: "draft" | "active" | "archived" | "redacted";
+    subjectId: string;
+    supersededBy: string | null;
+    trust: "approved" | "published" | "said" | "inferred";
+    updatedAt: number;
+  };
+  next: string[];
+  reason: string | null;
+};
+
+/** Input shape for `knowledge.search`. */
+export type KnowledgeSearchInput = {
+  about?: string;
+  limit?: string;
+  localOnly?: boolean;
+  project?: string;
+  query: string;
+  since?: string;
+  type?: string;
+  who?: string;
+};
+
+/** Return shape for `knowledge.search`. */
+export type KnowledgeSearchReturn = {
+  audience: "operator";
+  issues: string[];
+  localRunId: string;
+  next: string[];
+  nonce: string;
+  query: string;
+  results: Array<{
+    excerpt: string;
+    header: string;
+    kind: "meeting" | "transcript" | "page" | "note" | "manual" | "chat";
+    origin: "console" | "local";
+    project: ({
+      id: string;
+      name: string;
+      slug: string;
+    }) | null;
+    recordedAt: string | null;
+    ref: string;
+    score: number;
+    speakers: string[];
+    trust: "approved" | "published" | "said" | "inferred";
+    url: string | null;
+  }>;
+  rule: string;
+  runId: string | null;
+  withheld: ({
+    count: number;
+    reasons: Record<string, number>;
+  }) | null;
+};
+
+/** Input shape for `knowledge.sources`. */
+export type KnowledgeSourcesInput = {
+  failing?: boolean;
+};
+
+/** Return shape for `knowledge.sources`. */
+export type KnowledgeSourcesReturn = {
+  console: (Array<{
+    chunks: number;
+    documents: number;
+    id: string;
+    kind: "meeting" | "transcript" | "page" | "note" | "manual";
+    lastJob: ({
+      at: string;
+      failureCode: string | null;
+      status: string;
+      triggerType: string;
+    }) | null;
+    project: ({
+      id: string;
+      name: string;
+      slug: string;
+    }) | null;
+    status: string;
+    title: string;
+    trust: "approved" | "published" | "said" | "inferred";
+  }>) | null;
+  issues: string[];
+  local: {
+    chatRows: number;
+    fts5: boolean;
+    lastIndexedAt: string | null;
+    transcriptRows: number;
+  };
+  next: string[];
+};
+
+/** Input shape for `knowledge.why`. */
+export type KnowledgeWhyInput = {
+  last?: boolean;
+  limit?: string;
+  run?: string;
+  session?: string;
+};
+
+/** Return shape for `knowledge.why`. */
+export type KnowledgeWhyReturn = {
+  issues: string[];
+  next: string[];
+  runs: Array<{
+    audience: "operator";
+    citations: Array<{
+      available: boolean;
+      header: string | null;
+      ref: string;
+      trust: ("approved" | "published" | "said" | "inferred") | null;
+      url: string | null;
+    }>;
+    createdAt: string;
+    id: string;
+    origin: "console" | "local";
+    query: string | null;
+    withheld: ({
+      count: number;
+      reasons: Record<string, number>;
+    }) | null;
+  }>;
+};
+
 /** Input shape for `mail.accounts.create`. */
 export type MailAccountsCreateInput = {
   credentialsRef?: string;
@@ -12427,6 +12671,81 @@ export type MeetingsProfilesValidateReturn = {
     valid: boolean;
   }>;
   valid: boolean;
+};
+
+/** Input shape for `meetings.read`. */
+export type MeetingsReadInput = {
+  maxChars?: string;
+  meeting: string;
+};
+
+/** Return shape for `meetings.read`. */
+export type MeetingsReadReturn = {
+  access: string;
+  chat: Array<{
+    atSeconds: number | null;
+    sender: string | null;
+    senderId: string | null;
+    sentAt: string | null;
+    text: string;
+    to: string | null;
+  }>;
+  consoleUrl: string;
+  contentTrust: "untrusted";
+  crossOrganization: boolean;
+  meeting: {
+    botName: string | null;
+    createdAt: string | null;
+    doneAt: string | null;
+    endedAt: string | null;
+    id: string;
+    joinAt: string | null;
+    language: string | null;
+    meetingCode: string | null;
+    meetingUrl: string | null;
+    platform: string | null;
+    projectId: string | null;
+    ready: boolean;
+    recordingSeconds: number | null;
+    recordingStartedAt: string | null;
+    status: string | null;
+    title: string | null;
+    transcriptStatus: string | null;
+  };
+  note: string;
+  organization: {
+    id: string;
+    name: string | null;
+    slug: string | null;
+  };
+  participants: Array<{
+    id: string;
+    isHost: boolean | null;
+    name: string | null;
+  }>;
+  project: ({
+    id: string;
+    name: string | null;
+    slug: string | null;
+  }) | null;
+  recordings: Array<{
+    completedAt: string | null;
+    expiresAt: string | null;
+    startedAt: string | null;
+  }>;
+  success: true;
+  transcript: {
+    segments: Array<{
+      endSeconds: number | null;
+      isHost: boolean | null;
+      speaker: string | null;
+      speakerId: string | null;
+      startSeconds: number | null;
+      startedAt: string | null;
+      text: string;
+    }>;
+    status: string;
+  };
 };
 
 /** Input shape for `meetings.show`. */

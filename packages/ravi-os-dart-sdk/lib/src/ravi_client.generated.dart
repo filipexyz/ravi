@@ -46,6 +46,7 @@ class RaviClient {
   InstancesNamespace get instances => InstancesNamespace(_transport);
   InvitesNamespace get invites => InvitesNamespace(_transport);
   JobsNamespace get jobs => JobsNamespace(_transport);
+  KnowledgeNamespace get knowledge => KnowledgeNamespace(_transport);
   MailNamespace get mail => MailNamespace(_transport);
   MediaNamespace get media => MediaNamespace(_transport);
   MeetingsNamespace get meetings => MeetingsNamespace(_transport);
@@ -4711,6 +4712,108 @@ class JobsNamespace {
   }
 }
 
+class KnowledgeNamespace {
+  const KnowledgeNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<KnowledgeForgetReturn> forget([String? id, KnowledgeForgetOptions options = const KnowledgeForgetOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    if (id != null) {
+      requestBody["id"] = RaviJson.from(id);
+    }
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["knowledge"],
+      command: "forget",
+      body: requestBody,
+      decode: knowledgeForgetReturnFromJson,
+    );
+  }
+
+  Future<KnowledgeMarksReturn> marks([KnowledgeMarksOptions options = const KnowledgeMarksOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["knowledge"],
+      command: "marks",
+      body: requestBody,
+      decode: knowledgeMarksReturnFromJson,
+    );
+  }
+
+  Future<KnowledgeProposeReturn> propose([KnowledgeProposeOptions options = const KnowledgeProposeOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["knowledge"],
+      command: "propose",
+      body: requestBody,
+      decode: knowledgeProposeReturnFromJson,
+    );
+  }
+
+  Future<KnowledgeReadReturn> read(String ref, [KnowledgeReadOptions options = const KnowledgeReadOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["ref"] = RaviJson.from(ref);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["knowledge"],
+      command: "read",
+      body: requestBody,
+      decode: knowledgeReadReturnFromJson,
+    );
+  }
+
+  Future<KnowledgeRememberReturn> remember([String? text, KnowledgeRememberOptions options = const KnowledgeRememberOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    if (text != null) {
+      requestBody["text"] = RaviJson.from(text);
+    }
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["knowledge"],
+      command: "remember",
+      body: requestBody,
+      decode: knowledgeRememberReturnFromJson,
+    );
+  }
+
+  Future<KnowledgeSearchReturn> search(String query, [KnowledgeSearchOptions options = const KnowledgeSearchOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["query"] = RaviJson.from(query);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["knowledge"],
+      command: "search",
+      body: requestBody,
+      decode: knowledgeSearchReturnFromJson,
+    );
+  }
+
+  Future<KnowledgeSourcesReturn> sources([KnowledgeSourcesOptions options = const KnowledgeSourcesOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["knowledge"],
+      command: "sources",
+      body: requestBody,
+      decode: knowledgeSourcesReturnFromJson,
+    );
+  }
+
+  Future<KnowledgeWhyReturn> why([KnowledgeWhyOptions options = const KnowledgeWhyOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["knowledge"],
+      command: "why",
+      body: requestBody,
+      decode: knowledgeWhyReturnFromJson,
+    );
+  }
+}
+
 class MailNamespace {
   const MailNamespace(this._transport);
 
@@ -5206,6 +5309,18 @@ class MeetingsNamespace {
       command: "list",
       body: requestBody,
       decode: meetingsListReturnFromJson,
+    );
+  }
+
+  Future<MeetingsReadReturn> read(String meeting, [MeetingsReadOptions options = const MeetingsReadOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["meeting"] = RaviJson.from(meeting);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["meetings"],
+      command: "read",
+      body: requestBody,
+      decode: meetingsReadReturnFromJson,
     );
   }
 

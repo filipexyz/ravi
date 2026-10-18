@@ -3413,6 +3413,69 @@ export const meetingsCloudFetchReturnSchema = z.union([
   }),
 ]);
 
+/** `meetings read`: one Console meeting's transcript, read for this turn only. */
+export const meetingsReadReturnSchema = z.object({
+  success: z.literal(true),
+  consoleUrl: z.string(),
+  meeting: z.object({
+    id: z.string(),
+    projectId: z.string().nullable(),
+    platform: z.string().nullable(),
+    meetingUrl: z.string().nullable(),
+    meetingCode: z.string().nullable(),
+    botName: z.string().nullable(),
+    title: z.string().nullable(),
+    language: z.string().nullable(),
+    status: z.string().nullable(),
+    transcriptStatus: z.string().nullable(),
+    ready: z.boolean(),
+    joinAt: z.string().nullable(),
+    recordingStartedAt: z.string().nullable(),
+    endedAt: z.string().nullable(),
+    doneAt: z.string().nullable(),
+    recordingSeconds: z.number().nullable(),
+    createdAt: z.string().nullable(),
+  }),
+  organization: z.object({ id: z.string(), slug: z.string().nullable(), name: z.string().nullable() }),
+  project: z.object({ id: z.string(), slug: z.string().nullable(), name: z.string().nullable() }).nullable(),
+  access: z.string(),
+  crossOrganization: z.boolean(),
+  transcript: z.object({
+    status: z.string(),
+    segments: z.array(
+      z.object({
+        speaker: z.string().nullable(),
+        speakerId: z.string().nullable(),
+        isHost: z.boolean().nullable(),
+        startSeconds: z.number().nullable(),
+        endSeconds: z.number().nullable(),
+        startedAt: z.string().nullable(),
+        text: z.string(),
+      }),
+    ),
+  }),
+  participants: z.array(z.object({ id: z.string(), name: z.string().nullable(), isHost: z.boolean().nullable() })),
+  chat: z.array(
+    z.object({
+      sender: z.string().nullable(),
+      senderId: z.string().nullable(),
+      atSeconds: z.number().nullable(),
+      sentAt: z.string().nullable(),
+      to: z.string().nullable(),
+      text: z.string(),
+    }),
+  ),
+  recordings: z.array(
+    z.object({
+      startedAt: z.string().nullable(),
+      completedAt: z.string().nullable(),
+      expiresAt: z.string().nullable(),
+    }),
+  ),
+  note: z.string(),
+  contentTrust: z.literal("untrusted"),
+});
+
 // ---------------------------------------------------------------------------
 // Library agent definitions (spec skills/library, "Agents")
 

@@ -9,6 +9,7 @@ import {
   getOrCreateSession,
   getSession,
   listSessionSubscriptions,
+  resetSession,
   setSessionEphemeral,
   updateSessionContext,
   updateSessionEffortOverride,
@@ -16,6 +17,7 @@ import {
   updateSessionThreadId,
 } from "./sessions.js";
 import type { MessageContext } from "../runtime/message-types.js";
+import { lowestTierReadInTurn, recordKnowledgeRead } from "../knowledge/store/turn-reads.js";
 
 let stateDir: string | null = null;
 
@@ -27,6 +29,15 @@ describe("sessions store", () => {
   afterEach(async () => {
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+  });
+
+  it("clears the session's Knowledge reads on reset, so the old context no longer gates writes", () => {
+    const session = getOrCreateSession("agent:dev:reads", "dev", "/tmp/dev");
+    recordKnowledgeRead({ turnKey: null, sessionKey: session.sessionKey }, "said");
+    expect(lowestTierReadInTurn(null, Date.now(), session.sessionKey)).toBe("said");
+
+    resetSession(session.sessionKey);
+    expect(lowestTierReadInTurn(null, Date.now(), session.sessionKey)).toBeNull();
   });
 
   it("persists effort overrides while preserving default fallback semantics", () => {

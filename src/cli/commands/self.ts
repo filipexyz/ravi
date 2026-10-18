@@ -15,6 +15,10 @@ import {
 } from "./operational-return-schemas.js";
 import { RAVI_CONTEXT_KEY_ENV, resolveRuntimeContextOrThrow } from "../../runtime/context-registry.js";
 import { resolveSession } from "../../router/sessions.js";
+import { readCloudCredentials } from "../../cloud-auth/storage.js";
+import { type KnowledgeExposureReport, inspectKnowledgeExposure } from "../../knowledge/safety/exposure.js";
+import { type KnowledgeTurnVerdict, classifyKnowledgeTurn } from "../../knowledge/safety/turn.js";
+import { knowledgeSettings } from "../../knowledge/settings.js";
 import type { RouteConfig, SessionEntry } from "../../router/types.js";
 import {
   dbGetChat,
@@ -183,10 +187,45 @@ interface SelfPermissionsSummary {
 }
 
 interface SelfKnowledgeSummary {
-  status: "not_implemented";
+  status: "available" | "blocked" | "unavailable";
+  audience: "operator" | "none";
+  reason: "turn_not_operator" | "exposure_unsafe" | "not_logged_in" | null;
+  /** Commands usable now; [] when blocked. */
+  commands: string[];
+  /** This agent is opted in to contact memory (`knowledge.contactMemory.agents`). */
+  contactMemory: boolean;
+  exposure: { ok: boolean; offenders: number };
   specIds: string[];
-  expectedCommandFamily: string;
 }
+
+/** Lookups behind `ravi self knowledge`; tests replace them. */
+export interface SelfKnowledgeDeps {
+  exposure: () => KnowledgeExposureReport;
+  classify: () => KnowledgeTurnVerdict;
+  loggedIn: () => boolean;
+  contactMemoryAgents: () => string[];
+}
+
+const defaultSelfKnowledgeDeps: SelfKnowledgeDeps = {
+  exposure: () => inspectKnowledgeExposure(),
+  classify: () => classifyKnowledgeTurn(),
+  loggedIn: () => readCloudCredentials() !== null,
+  contactMemoryAgents: () => knowledgeSettings().contactMemoryAgents,
+};
+
+export const selfKnowledgeDeps: SelfKnowledgeDeps = { ...defaultSelfKnowledgeDeps };
+
+export function resetSelfKnowledgeDeps(): void {
+  Object.assign(selfKnowledgeDeps, defaultSelfKnowledgeDeps);
+}
+
+const KNOWLEDGE_READ_COMMANDS = [
+  "ravi knowledge search",
+  "ravi knowledge read",
+  "ravi knowledge why",
+  "ravi knowledge sources",
+  "ravi knowledge marks",
+];
 
 interface SelfExplainStep {
   step: string;
@@ -336,7 +375,7 @@ export class SelfCommands {
     const recent = this.buildRecentSection(context, attachment, chatRecord, options.limit);
     const actor = this.buildActorSection(context, recent);
     const permissions = this.buildPermissionsSection(context);
-    const knowledge = this.buildKnowledgeSection();
+    const knowledge = this.buildKnowledgeSection(context.agentId ?? null);
     const sessionSection: SelfSection<SelfSessionSummary> =
       session.status === "ok" && session.data
         ? { status: "ok", data: serializeSession(session.data) }
@@ -508,14 +547,72 @@ export class SelfCommands {
     };
   }
 
-  private buildKnowledgeSection(): SelfSection<SelfKnowledgeSummary> {
+  /** Mirrors the `ravi knowledge` gate (spec knowledge): exposure first, then the turn, then the login. */
+  private buildKnowledgeSection(agentId: string | null): SelfSection<SelfKnowledgeSummary> {
+    const deps = selfKnowledgeDeps;
+    let exposure: { ok: boolean; offenders: number };
+    try {
+      const report = deps.exposure();
+      exposure = { ok: report.ok, offenders: report.offenders.length };
+    } catch {
+      exposure = { ok: false, offenders: 0 };
+    }
+    let operatorTurn = false;
+    try {
+      operatorTurn = deps.classify().ok;
+    } catch {
+      operatorTurn = false;
+    }
+    let contactMemory = false;
+    try {
+      contactMemory = agentId !== null && deps.contactMemoryAgents().includes(agentId);
+    } catch {
+      contactMemory = false;
+    }
+    const base = { exposure, contactMemory, specIds: ["knowledge"] };
+
+    if (!exposure.ok) {
+      return {
+        status: "partial",
+        reason: `ravi knowledge refuses everywhere (exit 3): ${exposure.offenders} agent(s) reachable by outsiders can run tools; see ravi doctor`,
+        data: { status: "blocked", audience: "none", reason: "exposure_unsafe", commands: [], ...base },
+      };
+    }
+    if (!operatorTurn) {
+      return {
+        status: "partial",
+        reason: "ravi knowledge refuses on this turn (exit 3): only the operator's own turns may use it",
+        data: { status: "blocked", audience: "none", reason: "turn_not_operator", commands: [], ...base },
+      };
+    }
+    let loggedIn = false;
+    try {
+      loggedIn = deps.loggedIn();
+    } catch {
+      loggedIn = false;
+    }
+    if (!loggedIn) {
+      return {
+        status: "unavailable",
+        reason: "not logged in to Ravi Console; only local history is searchable (ravi knowledge search --local-only)",
+        data: {
+          status: "unavailable",
+          audience: "operator",
+          reason: "not_logged_in",
+          commands: ["ravi knowledge search --local-only", "ravi knowledge read", "ravi knowledge why"],
+          ...base,
+        },
+      };
+    }
     return {
-      status: "unavailable",
-      reason: "knowledge specs exist, but the knowledge runtime/CLI has not been implemented yet",
+      status: "ok",
+      reason: "ravi knowledge is available on this turn",
       data: {
-        status: "not_implemented",
-        specIds: ["knowledge", "knowledge/threads", "knowledge/profiles", "knowledge/publishers"],
-        expectedCommandFamily: "ravi knowledge",
+        status: "available",
+        audience: "operator",
+        reason: null,
+        commands: [...KNOWLEDGE_READ_COMMANDS],
+        ...base,
       },
     };
   }

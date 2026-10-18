@@ -6,6 +6,7 @@ import { delimiter, join } from "node:path";
 import { z } from "zod";
 import {
   ContractError,
+  CONTRACT_EXIT_POLICY,
   CONTRACT_EXIT_USAGE,
   contractFail,
   pickFields,
@@ -45,7 +46,20 @@ import {
   meetingsCloudLeaveReturnSchema,
   meetingsCloudListReturnSchema,
   meetingsCloudShowReturnSchema,
+  meetingsReadReturnSchema,
 } from "./operational-return-schemas.js";
+import {
+  describeMeetingReadFailure,
+  formatMeetingRead,
+  MEETING_READ_DEFAULT_CHARS,
+  MEETING_READ_MAX_CHARS,
+  MEETING_READ_MIN_CHARS,
+  meetingReadTurnBlock,
+  normalizeMeetingReadMaxChars,
+  parseMeetingReadTarget,
+  readCloudMeeting,
+  type MeetingReadDeps,
+} from "../../meetings/read.js";
 import { finalizeGoogleMeetRecorderRun } from "../../meetings/google-meet/recorder-run.js";
 import { notifyMeetingOwnerSession, spawnDetachedCli } from "../../meetings/handoff.js";
 import {
@@ -775,6 +789,8 @@ async function joinWithCloudBot(input: {
   scope: "open",
 })
 export class MeetingsCommands {
+  constructor(private readonly deps: { read?: MeetingReadDeps } = {}) {}
+
   // Declared UNBRAKED: login opens an interactive human-driven Google login
   // in a local browser profile — the human at the browser IS the confirmation
   // step, and a dry-run gate would only break that flow. No external write
@@ -1543,6 +1559,79 @@ export class MeetingsCommands {
       if (meeting.failureReason) console.log(`Reason: ${meeting.failureReason}`);
     }
     return payload;
+  }
+
+  // Read-only and unbraked: nothing is written here (the Console audits a
+  // cross-organization read). Operator turns only: the transcript is read with
+  // the operator's own login, so any other turn is refused (exit 3) before any
+  // Console call.
+  @Command({
+    name: "read",
+    description: "Read a Console meeting's transcript for this turn (operator only; nothing is saved)",
+  })
+  @CommandAccess({ kind: "read", resource: "meetings", action: "read", risk: "medium" })
+  @Returns(meetingsReadReturnSchema)
+  async read(
+    @Arg("meeting", {
+      description: "Console meeting link (https://console.ravi.bot/.../meetings/<id>) or meeting id",
+    })
+    meeting: string,
+    @Option({
+      flags: "--max-chars <n>",
+      description: `Text output only: characters of transcript and chat to print (${MEETING_READ_MIN_CHARS}-${MEETING_READ_MAX_CHARS}, default ${MEETING_READ_DEFAULT_CHARS})`,
+    })
+    maxChars?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const op = "meetings read";
+    const readDeps = this.deps.read ?? {};
+    return withMeetingsCloud(op, asJson, async () => {
+      // Local input errors keep their own text (the Console funnel would replace it).
+      let limit: number;
+      let target: ReturnType<typeof parseMeetingReadTarget>;
+      try {
+        limit = normalizeMeetingReadMaxChars(maxChars);
+        target = parseMeetingReadTarget(meeting);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        contractFail(op, "INVALID_ARGUMENT", message, { asJson, exitCode: CONTRACT_EXIT_USAGE });
+      }
+      const block = meetingReadTurnBlock(readDeps);
+      if (block) {
+        contractFail(
+          op,
+          "MEETING_ACCESS_DENIED",
+          `Meeting transcripts are read only on the operator's own turns (terminal, their direct chat, their routines). This turn is not the operator's own: ${block.why}.`,
+          {
+            asJson,
+            exitCode: CONTRACT_EXIT_POLICY,
+            details: {
+              refusal: "operator_only",
+              turn: block.turn,
+              suggestedAction:
+                "Tell the person you cannot read meeting transcripts for other people; the operator can ask for it in their own chat.",
+            },
+          },
+        );
+      }
+      let result: Awaited<ReturnType<typeof readCloudMeeting>>;
+      try {
+        result = await readCloudMeeting(target, readDeps);
+      } catch (error) {
+        const failure = describeMeetingReadFailure(error);
+        if (failure) {
+          contractFail(op, failure.code, failure.message, {
+            asJson,
+            exitCode: failure.exitCode,
+            details: failure.details,
+          });
+        }
+        throw error;
+      }
+      if (asJson) printJson(result);
+      else console.log(formatMeetingRead(result, { maxChars: limit }));
+      return result;
+    });
   }
 
   // Declared UNBRAKED: leaving only reduces what the bot does (it stops

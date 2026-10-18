@@ -14,6 +14,7 @@ import {
   type UpsertChatMessageResult,
 } from "../router/router-db.js";
 import { recordDeliveryTrace } from "../session-trace/channel-trace.js";
+import { type GuardedSession, guardedSessionForChat, guardTextForGuardedSession } from "../knowledge/egress/guard.js";
 import { logger } from "../utils/logger.js";
 import { markSlackThreadRootDelivered } from "./slack/thread-lifecycle-store.js";
 import type {
@@ -86,6 +87,10 @@ export interface ChannelOutboundConsumerOptions {
   persistDeliveredChatAction?: PersistDeliveredChatAction;
   recordDeliveryTrace?: typeof recordDeliveryTrace;
   claimLeaseMs?: number;
+  /** Knowledge guard row for `(target.channel, target.chatId)`; defaults to the read-only knowledge.db lookup. */
+  knowledgeGuard?: (channel: string, chatId: string) => GuardedSession | null;
+  /** Rewrites a guarded text; defaults to the live allow list and mirror. */
+  guardKnowledgeText?: (text: string, guarded: GuardedSession) => string;
 }
 
 export interface ChannelOutboundConsumerRuntimeStatus {
@@ -228,6 +233,34 @@ function logNativeOutboundSendFailure(
   });
 }
 
+/**
+ * Applies the Knowledge egress guard to the text of a job bound for a guarded
+ * chat (`text` content and `chat_action` text). Other jobs are returned as is.
+ */
+export function guardChannelOutboundJob(
+  job: ChannelOutboundJob,
+  options: Pick<ChannelOutboundConsumerOptions, "knowledgeGuard" | "guardKnowledgeText"> = {},
+): ChannelOutboundJob {
+  const content = job.request.content as { type?: unknown; text?: unknown };
+  if ((content.type !== "text" && content.type !== "chat_action") || typeof content.text !== "string") return job;
+  let guarded: GuardedSession | null = null;
+  try {
+    guarded = (options.knowledgeGuard ?? guardedSessionForChat)(job.request.target.channel, job.request.target.chatId);
+  } catch (error) {
+    log.warn("Knowledge guard lookup failed", { jobId: job.jobId, error: errorMessage(error) });
+  }
+  if (!guarded) return job;
+  const text = (options.guardKnowledgeText ?? ((value, row) => guardTextForGuardedSession(value, row).text))(
+    content.text,
+    guarded,
+  );
+  if (text === content.text) return job;
+  return {
+    ...job,
+    request: { ...job.request, content: { ...job.request.content, text } as ChannelOutboundJob["request"]["content"] },
+  };
+}
+
 export function acknowledgeChannelOutboundMessage(
   msg: AckableChannelOutboundMessage,
   result: ChannelOutboundProcessingResult,
@@ -240,10 +273,14 @@ export function acknowledgeChannelOutboundMessage(
 }
 
 export async function processChannelOutboundJob(
-  job: ChannelOutboundJob,
+  inputJob: ChannelOutboundJob,
   options: ChannelOutboundConsumerOptions,
 ): Promise<ChannelOutboundProcessingResult> {
   const t0 = Date.now();
+  // Last hop of the Knowledge egress guard. The receipt fingerprint stays on
+  // the job as published, so a redelivery after the mirror changed is not a
+  // fingerprint conflict.
+  const job = guardChannelOutboundJob(inputJob, options);
   const emitEvent = options.emitEvent ?? nats.emit;
   const flushTelemetry = options.flushNats ?? flushNatsConnection;
   const recordTrace = options.recordDeliveryTrace ?? recordDeliveryTrace;
@@ -277,7 +314,7 @@ export async function processChannelOutboundJob(
   const receiptStore = options.receiptStore ?? sqliteChannelOutboundReceiptStore;
   const persistMessage = options.persistDeliveredMessage ?? persistDeliveredMessage;
   const persistChatAction = options.persistDeliveredChatAction ?? persistDeliveredChatAction;
-  const requestFingerprint = channelOutboundRequestFingerprint(job);
+  const requestFingerprint = channelOutboundRequestFingerprint(inputJob);
   let receipt: ChannelOutboundReceipt | null;
 
   try {

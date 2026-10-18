@@ -57,7 +57,8 @@
               "console/pages",
               "console/bases",
               "console/widgets",
-              "console/connectors"
+              "console/connectors",
+              "console/meetings"
             ]
           },
           {
@@ -76,7 +77,8 @@
             "pages": [
               "guides/sessions",
               "guides/contacts",
-              "guides/routing"
+              "guides/routing",
+              "guides/knowledge"
             ]
           },
           {
