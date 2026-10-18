@@ -1,6 +1,6 @@
 import { dbGetChannelBackendRuntimeState, type ChannelConfig } from "../../router/router-db.js";
 import { logger } from "../../utils/logger.js";
-import type { ChannelOutputEnvelope } from "../backend.js";
+import type { ChannelOutputEnvelope, ChannelSafeError } from "../backend.js";
 import { publishChannelOutboundJobDurably, type ChannelOutboundPublishResult } from "../outbound-publish-outbox.js";
 import { buildChannelTextOutboundJob, type ChannelOutboundJob } from "../outbound-stream.js";
 import {
@@ -180,9 +180,32 @@ function resolveRuntimeCanonicalMessageId(envelope: ChannelOutputEnvelope): stri
 
 export function renderSlackBackendOutput(envelope: ChannelOutputEnvelope): string {
   if (envelope.kind === "safe_error") {
-    return `Unable to complete the request (${envelope.error?.code ?? "INTERNAL"}).`;
+    return renderSlackSafeError(envelope.error);
   }
   return renderSlackContent(envelope.content ?? []);
+}
+
+const SLACK_SAFE_ERROR_MESSAGES: Partial<Record<ChannelSafeError["code"], string>> = {
+  RATE_LIMITED: "The agent's model provider is rate limiting requests right now. Please try again in a few minutes.",
+  OVERLOADED: "The agent's model provider is overloaded right now. Please try again shortly.",
+  PERMISSION_DENIED: "The agent is not allowed to do that.",
+  LOCAL_PERMISSION_DENIED: "The agent is not allowed to do that.",
+  NOT_FOUND: "The agent could not find what this request refers to.",
+  INVALID_REQUEST: "The agent could not process this request.",
+};
+
+const SLACK_UNAVAILABLE_RETRYABLE_MESSAGE = "The agent is temporarily unavailable. Please try again later.";
+const SLACK_UNAVAILABLE_MESSAGE =
+  "The agent is unavailable because of a problem with its model provider account. Please contact the operator.";
+const SLACK_INTERNAL_ERROR_MESSAGE = "The agent could not complete this request because of an internal error.";
+
+export function renderSlackSafeError(error: ChannelSafeError | undefined): string {
+  if (error?.code === "UNAVAILABLE") {
+    return error.retryable ? SLACK_UNAVAILABLE_RETRYABLE_MESSAGE : SLACK_UNAVAILABLE_MESSAGE;
+  }
+  const message = (error && SLACK_SAFE_ERROR_MESSAGES[error.code]) ?? SLACK_INTERNAL_ERROR_MESSAGE;
+  const retryHint = error?.code === "INTERNAL" && error.retryable ? " Please try again." : "";
+  return `${message}${retryHint}`;
 }
 
 export function renderSlackContent(content: NonNullable<ChannelOutputEnvelope["content"]>): string {

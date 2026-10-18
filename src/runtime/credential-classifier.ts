@@ -142,7 +142,8 @@ function classifyKind(input: {
     code === "billing_error" ||
     type === "billing_error" ||
     code === "account_on_hold" ||
-    text.includes("insufficient credits")
+    text.includes("insufficient credits") ||
+    text.includes("insufficient balance")
   ) {
     return { kind: "billing_blocked", confidence: "high", scope: "account" };
   }

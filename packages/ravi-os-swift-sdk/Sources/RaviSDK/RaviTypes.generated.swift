@@ -21449,261 +21449,98 @@ public struct PermissionsStatusReturn: Codable, Sendable {
 }
 
 public struct ProjectsCreateOptions: Codable, Sendable {
-  public var hypothesis: String?
-  public var lastSignalAt: String?
-  public var nextStep: String?
-  public var ownerAgent: String?
-  public var session: String?
-  public var slug: String?
-  public var status: String?
-  public var summary: String?
-
-  public init(hypothesis: String? = nil, lastSignalAt: String? = nil, nextStep: String? = nil, ownerAgent: String? = nil, session: String? = nil, slug: String? = nil, status: String? = nil, summary: String? = nil) {
-    self.hypothesis = hypothesis
-    self.lastSignalAt = lastSignalAt
-    self.nextStep = nextStep
-    self.ownerAgent = ownerAgent
-    self.session = session
-    self.slug = slug
-    self.status = status
-    self.summary = summary
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case hypothesis = "hypothesis"
-    case lastSignalAt = "lastSignalAt"
-    case nextStep = "nextStep"
-    case ownerAgent = "ownerAgent"
-    case session = "session"
-    case slug = "slug"
-    case status = "status"
-    case summary = "summary"
-  }
-
-  func encodeBody(into body: inout [String: RaviJSON]) throws {
-    if let value = self.hypothesis {
-      body["hypothesis"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.lastSignalAt {
-      body["lastSignalAt"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.nextStep {
-      body["nextStep"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.ownerAgent {
-      body["ownerAgent"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.session {
-      body["session"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.slug {
-      body["slug"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.status {
-      body["status"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.summary {
-      body["summary"] = try RaviJSON.fromEncodable(value)
-    }
-  }
-}
-
-public typealias ProjectsCreateReturn = [String: RaviJSON]
-
-public struct ProjectsFixturesSeedOptions: Codable, Sendable {
+  public var console: String?
+  public var defaultPageSite: String?
+  public var description: String?
   public var execute: Bool?
-  public var ownerAgent: String?
+  public var name: String?
+  public var visibility: String?
 
-  public init(execute: Bool? = nil, ownerAgent: String? = nil) {
+  public init(console: String? = nil, defaultPageSite: String? = nil, description: String? = nil, execute: Bool? = nil, name: String? = nil, visibility: String? = nil) {
+    self.console = console
+    self.defaultPageSite = defaultPageSite
+    self.description = description
     self.execute = execute
-    self.ownerAgent = ownerAgent
+    self.name = name
+    self.visibility = visibility
   }
 
   enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case defaultPageSite = "defaultPageSite"
+    case description = "description"
     case execute = "execute"
-    case ownerAgent = "ownerAgent"
+    case name = "name"
+    case visibility = "visibility"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.defaultPageSite {
+      body["defaultPageSite"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.description {
+      body["description"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.execute {
       body["execute"] = try RaviJSON.fromEncodable(value)
     }
-    if let value = self.ownerAgent {
-      body["ownerAgent"] = try RaviJSON.fromEncodable(value)
+    if let value = self.name {
+      body["name"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.visibility {
+      body["visibility"] = try RaviJSON.fromEncodable(value)
     }
   }
 }
 
-public struct ProjectsFixturesSeedReturn: Codable, Sendable {
-  public var fixtures: [[String: RaviJSON]]
-  public var total: Double
+public struct ProjectsCreateReturn: Codable, Sendable {
+  public var consoleUrl: String
+  public var project: [String: RaviJSON]
+  public var redirectTo: RaviJSON
+  public var success: Bool
 
-  public init(fixtures: [[String: RaviJSON]], total: Double) {
-    self.fixtures = fixtures
-    self.total = total
+  public init(consoleUrl: String, project: [String: RaviJSON], redirectTo: RaviJSON, success: Bool) {
+    self.consoleUrl = consoleUrl
+    self.project = project
+    self.redirectTo = redirectTo
+    self.success = success
   }
 
   enum CodingKeys: String, CodingKey {
-    case fixtures = "fixtures"
-    case total = "total"
+    case consoleUrl = "consoleUrl"
+    case project = "project"
+    case redirectTo = "redirectTo"
+    case success = "success"
   }
 }
-
-public struct ProjectsInitOptions: Codable, Sendable {
-  public var hypothesis: String?
-  public var lastSignalAt: String?
-  public var nextStep: String?
-  public var ownerAgent: String?
-  public var resource: [String]?
-  public var session: String?
-  public var slug: String?
-  public var status: String?
-  public var summary: String?
-  public var workflowRun: [String]?
-  public var workflowTemplate: [String]?
-
-  public init(hypothesis: String? = nil, lastSignalAt: String? = nil, nextStep: String? = nil, ownerAgent: String? = nil, resource: [String]? = nil, session: String? = nil, slug: String? = nil, status: String? = nil, summary: String? = nil, workflowRun: [String]? = nil, workflowTemplate: [String]? = nil) {
-    self.hypothesis = hypothesis
-    self.lastSignalAt = lastSignalAt
-    self.nextStep = nextStep
-    self.ownerAgent = ownerAgent
-    self.resource = resource
-    self.session = session
-    self.slug = slug
-    self.status = status
-    self.summary = summary
-    self.workflowRun = workflowRun
-    self.workflowTemplate = workflowTemplate
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case hypothesis = "hypothesis"
-    case lastSignalAt = "lastSignalAt"
-    case nextStep = "nextStep"
-    case ownerAgent = "ownerAgent"
-    case resource = "resource"
-    case session = "session"
-    case slug = "slug"
-    case status = "status"
-    case summary = "summary"
-    case workflowRun = "workflowRun"
-    case workflowTemplate = "workflowTemplate"
-  }
-
-  func encodeBody(into body: inout [String: RaviJSON]) throws {
-    if let value = self.hypothesis {
-      body["hypothesis"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.lastSignalAt {
-      body["lastSignalAt"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.nextStep {
-      body["nextStep"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.ownerAgent {
-      body["ownerAgent"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.resource {
-      body["resource"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.session {
-      body["session"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.slug {
-      body["slug"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.status {
-      body["status"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.summary {
-      body["summary"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.workflowRun {
-      body["workflowRun"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.workflowTemplate {
-      body["workflowTemplate"] = try RaviJSON.fromEncodable(value)
-    }
-  }
-}
-
-public struct ProjectsInitReturn: Codable, Sendable {
-  public var details: [String: RaviJSON]
-  public var workflows: [[String: RaviJSON]]
-
-  public init(details: [String: RaviJSON], workflows: [[String: RaviJSON]]) {
-    self.details = details
-    self.workflows = workflows
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case details = "details"
-    case workflows = "workflows"
-  }
-}
-
-public struct ProjectsLinkOptions: Codable, Sendable {
-  public var label: String?
-  public var meta: String?
-  public var resourceType: String?
-  public var role: String?
-
-  public init(label: String? = nil, meta: String? = nil, resourceType: String? = nil, role: String? = nil) {
-    self.label = label
-    self.meta = meta
-    self.resourceType = resourceType
-    self.role = role
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case label = "label"
-    case meta = "meta"
-    case resourceType = "resourceType"
-    case role = "role"
-  }
-
-  func encodeBody(into body: inout [String: RaviJSON]) throws {
-    if let value = self.label {
-      body["label"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.meta {
-      body["meta"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.resourceType {
-      body["resourceType"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.role {
-      body["role"] = try RaviJSON.fromEncodable(value)
-    }
-  }
-}
-
-public typealias ProjectsLinkReturn = [String: RaviJSON]
 
 public struct ProjectsListOptions: Codable, Sendable {
+  public var console: String?
   public var fields: String?
   public var limit: String?
   public var offset: String?
-  public var status: String?
-  public var tag: String?
 
-  public init(fields: String? = nil, limit: String? = nil, offset: String? = nil, status: String? = nil, tag: String? = nil) {
+  public init(console: String? = nil, fields: String? = nil, limit: String? = nil, offset: String? = nil) {
+    self.console = console
     self.fields = fields
     self.limit = limit
     self.offset = offset
-    self.status = status
-    self.tag = tag
   }
 
   enum CodingKeys: String, CodingKey {
+    case console = "console"
     case fields = "fields"
     case limit = "limit"
     case offset = "offset"
-    case status = "status"
-    case tag = "tag"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.fields {
       body["fields"] = try RaviJSON.fromEncodable(value)
     }
@@ -21712,569 +21549,34 @@ public struct ProjectsListOptions: Codable, Sendable {
     }
     if let value = self.offset {
       body["offset"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.status {
-      body["status"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.tag {
-      body["tag"] = try RaviJSON.fromEncodable(value)
     }
   }
 }
 
 public struct ProjectsListReturn: Codable, Sendable {
-  public var filters: [String: RaviJSON]
+  public var consoleUrl: String
   public var items: [[String: RaviJSON]]
   public var pagination: RaviJSON
   public var projects: [[String: RaviJSON]]
+  public var success: Bool
   public var total: Double
 
-  public init(filters: [String: RaviJSON], items: [[String: RaviJSON]], pagination: RaviJSON, projects: [[String: RaviJSON]], total: Double) {
-    self.filters = filters
+  public init(consoleUrl: String, items: [[String: RaviJSON]], pagination: RaviJSON, projects: [[String: RaviJSON]], success: Bool, total: Double) {
+    self.consoleUrl = consoleUrl
     self.items = items
     self.pagination = pagination
     self.projects = projects
+    self.success = success
     self.total = total
   }
 
   enum CodingKeys: String, CodingKey {
-    case filters = "filters"
+    case consoleUrl = "consoleUrl"
     case items = "items"
     case pagination = "pagination"
     case projects = "projects"
+    case success = "success"
     case total = "total"
-  }
-}
-
-public struct ProjectsNextOptions: Codable, Sendable {
-  public var fields: String?
-  public var status: String?
-  public var tag: String?
-
-  public init(fields: String? = nil, status: String? = nil, tag: String? = nil) {
-    self.fields = fields
-    self.status = status
-    self.tag = tag
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case fields = "fields"
-    case status = "status"
-    case tag = "tag"
-  }
-
-  func encodeBody(into body: inout [String: RaviJSON]) throws {
-    if let value = self.fields {
-      body["fields"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.status {
-      body["status"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.tag {
-      body["tag"] = try RaviJSON.fromEncodable(value)
-    }
-  }
-}
-
-public struct ProjectsNextReturn: Codable, Sendable {
-  public var filters: [String: RaviJSON]
-  public var projects: [[String: RaviJSON]]
-  public var total: Double
-
-  public init(filters: [String: RaviJSON], projects: [[String: RaviJSON]], total: Double) {
-    self.filters = filters
-    self.projects = projects
-    self.total = total
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case filters = "filters"
-    case projects = "projects"
-    case total = "total"
-  }
-}
-
-public struct ProjectsResourcesAddOptions: Codable, Sendable {
-  public var label: String?
-  public var meta: String?
-  public var role: String?
-  public var type: String?
-
-  public init(label: String? = nil, meta: String? = nil, role: String? = nil, type: String? = nil) {
-    self.label = label
-    self.meta = meta
-    self.role = role
-    self.type = type
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case label = "label"
-    case meta = "meta"
-    case role = "role"
-    case type = "type"
-  }
-
-  func encodeBody(into body: inout [String: RaviJSON]) throws {
-    if let value = self.label {
-      body["label"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.meta {
-      body["meta"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.role {
-      body["role"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.type {
-      body["type"] = try RaviJSON.fromEncodable(value)
-    }
-  }
-}
-
-public typealias ProjectsResourcesAddReturn = [String: RaviJSON]
-
-public struct ProjectsResourcesImportOptions: Codable, Sendable {
-  public var group: [String]?
-  public var meta: String?
-  public var repo: [String]?
-  public var role: String?
-  public var url: [String]?
-  public var worktree: [String]?
-
-  public init(group: [String]? = nil, meta: String? = nil, repo: [String]? = nil, role: String? = nil, url: [String]? = nil, worktree: [String]? = nil) {
-    self.group = group
-    self.meta = meta
-    self.repo = repo
-    self.role = role
-    self.url = url
-    self.worktree = worktree
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case group = "group"
-    case meta = "meta"
-    case repo = "repo"
-    case role = "role"
-    case url = "url"
-    case worktree = "worktree"
-  }
-
-  func encodeBody(into body: inout [String: RaviJSON]) throws {
-    if let value = self.group {
-      body["group"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.meta {
-      body["meta"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.repo {
-      body["repo"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.role {
-      body["role"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.url {
-      body["url"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.worktree {
-      body["worktree"] = try RaviJSON.fromEncodable(value)
-    }
-  }
-}
-
-public struct ProjectsResourcesImportReturn: Codable, Sendable {
-  public var resources: [[String: RaviJSON]]
-  public var total: Double
-
-  public init(resources: [[String: RaviJSON]], total: Double) {
-    self.resources = resources
-    self.total = total
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case resources = "resources"
-    case total = "total"
-  }
-}
-
-public struct ProjectsResourcesListOptions: Codable, Sendable {
-  public var fields: String?
-  public var limit: String?
-  public var offset: String?
-  public var type: String?
-
-  public init(fields: String? = nil, limit: String? = nil, offset: String? = nil, type: String? = nil) {
-    self.fields = fields
-    self.limit = limit
-    self.offset = offset
-    self.type = type
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case fields = "fields"
-    case limit = "limit"
-    case offset = "offset"
-    case type = "type"
-  }
-
-  func encodeBody(into body: inout [String: RaviJSON]) throws {
-    if let value = self.fields {
-      body["fields"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.limit {
-      body["limit"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.offset {
-      body["offset"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.type {
-      body["type"] = try RaviJSON.fromEncodable(value)
-    }
-  }
-}
-
-public struct ProjectsResourcesListReturn: Codable, Sendable {
-  public var items: [[String: RaviJSON]]
-  public var pagination: RaviJSON
-  public var resources: [[String: RaviJSON]]
-  public var total: Double
-
-  public init(items: [[String: RaviJSON]], pagination: RaviJSON, resources: [[String: RaviJSON]], total: Double) {
-    self.items = items
-    self.pagination = pagination
-    self.resources = resources
-    self.total = total
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case items = "items"
-    case pagination = "pagination"
-    case resources = "resources"
-    case total = "total"
-  }
-}
-
-public typealias ProjectsResourcesShowReturn = [String: RaviJSON]
-
-public typealias ProjectsShowReturn = [String: RaviJSON]
-
-public typealias ProjectsStatusReturn = [String: RaviJSON]
-
-public struct ProjectsTasksAttachOptions: Codable, Sendable {
-  public var agent: String?
-  public var dispatch: Bool?
-  public var session: String?
-  public var workflow: String?
-
-  public init(agent: String? = nil, dispatch: Bool? = nil, session: String? = nil, workflow: String? = nil) {
-    self.agent = agent
-    self.dispatch = dispatch
-    self.session = session
-    self.workflow = workflow
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case agent = "agent"
-    case dispatch = "dispatch"
-    case session = "session"
-    case workflow = "workflow"
-  }
-
-  func encodeBody(into body: inout [String: RaviJSON]) throws {
-    if let value = self.agent {
-      body["agent"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.dispatch {
-      body["dispatch"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.session {
-      body["session"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.workflow {
-      body["workflow"] = try RaviJSON.fromEncodable(value)
-    }
-  }
-}
-
-public struct ProjectsTasksAttachReturn: Codable, Sendable {
-  public var defaults: [String: RaviJSON]
-  public var details: [String: RaviJSON]
-  public var workflow: [String: RaviJSON]
-
-  public init(defaults: [String: RaviJSON], details: [String: RaviJSON], workflow: [String: RaviJSON]) {
-    self.defaults = defaults
-    self.details = details
-    self.workflow = workflow
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case defaults = "defaults"
-    case details = "details"
-    case workflow = "workflow"
-  }
-}
-
-public struct ProjectsTasksCreateOptions: Codable, Sendable {
-  public var agent: String?
-  public var dispatch: Bool?
-  public var instructions: String?
-  public var priority: String?
-  public var profile: String?
-  public var session: String?
-  public var workflow: String?
-
-  public init(agent: String? = nil, dispatch: Bool? = nil, instructions: String? = nil, priority: String? = nil, profile: String? = nil, session: String? = nil, workflow: String? = nil) {
-    self.agent = agent
-    self.dispatch = dispatch
-    self.instructions = instructions
-    self.priority = priority
-    self.profile = profile
-    self.session = session
-    self.workflow = workflow
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case agent = "agent"
-    case dispatch = "dispatch"
-    case instructions = "instructions"
-    case priority = "priority"
-    case profile = "profile"
-    case session = "session"
-    case workflow = "workflow"
-  }
-
-  func encodeBody(into body: inout [String: RaviJSON]) throws {
-    if let value = self.agent {
-      body["agent"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.dispatch {
-      body["dispatch"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.instructions {
-      body["instructions"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.priority {
-      body["priority"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.profile {
-      body["profile"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.session {
-      body["session"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.workflow {
-      body["workflow"] = try RaviJSON.fromEncodable(value)
-    }
-  }
-}
-
-public struct ProjectsTasksCreateReturn: Codable, Sendable {
-  public var defaults: [String: RaviJSON]
-  public var details: [String: RaviJSON]
-  public var workflow: [String: RaviJSON]
-
-  public init(defaults: [String: RaviJSON], details: [String: RaviJSON], workflow: [String: RaviJSON]) {
-    self.defaults = defaults
-    self.details = details
-    self.workflow = workflow
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case defaults = "defaults"
-    case details = "details"
-    case workflow = "workflow"
-  }
-}
-
-public struct ProjectsTasksDispatchOptions: Codable, Sendable {
-  public var agent: String?
-  public var execute: Bool?
-  public var session: String?
-
-  public init(agent: String? = nil, execute: Bool? = nil, session: String? = nil) {
-    self.agent = agent
-    self.execute = execute
-    self.session = session
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case agent = "agent"
-    case execute = "execute"
-    case session = "session"
-  }
-
-  func encodeBody(into body: inout [String: RaviJSON]) throws {
-    if let value = self.agent {
-      body["agent"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.execute {
-      body["execute"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.session {
-      body["session"] = try RaviJSON.fromEncodable(value)
-    }
-  }
-}
-
-public struct ProjectsTasksDispatchReturn: Codable, Sendable {
-  public var defaults: [String: RaviJSON]
-  public var details: [String: RaviJSON]
-  public var workflow: [String: RaviJSON]
-
-  public init(defaults: [String: RaviJSON], details: [String: RaviJSON], workflow: [String: RaviJSON]) {
-    self.defaults = defaults
-    self.details = details
-    self.workflow = workflow
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case defaults = "defaults"
-    case details = "details"
-    case workflow = "workflow"
-  }
-}
-
-public struct ProjectsUpdateOptions: Codable, Sendable {
-  public var hypothesis: String?
-  public var lastSignalAt: String?
-  public var nextStep: String?
-  public var ownerAgent: String?
-  public var session: String?
-  public var status: String?
-  public var summary: String?
-  public var title: String?
-  public var touchSignal: Bool?
-
-  public init(hypothesis: String? = nil, lastSignalAt: String? = nil, nextStep: String? = nil, ownerAgent: String? = nil, session: String? = nil, status: String? = nil, summary: String? = nil, title: String? = nil, touchSignal: Bool? = nil) {
-    self.hypothesis = hypothesis
-    self.lastSignalAt = lastSignalAt
-    self.nextStep = nextStep
-    self.ownerAgent = ownerAgent
-    self.session = session
-    self.status = status
-    self.summary = summary
-    self.title = title
-    self.touchSignal = touchSignal
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case hypothesis = "hypothesis"
-    case lastSignalAt = "lastSignalAt"
-    case nextStep = "nextStep"
-    case ownerAgent = "ownerAgent"
-    case session = "session"
-    case status = "status"
-    case summary = "summary"
-    case title = "title"
-    case touchSignal = "touchSignal"
-  }
-
-  func encodeBody(into body: inout [String: RaviJSON]) throws {
-    if let value = self.hypothesis {
-      body["hypothesis"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.lastSignalAt {
-      body["lastSignalAt"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.nextStep {
-      body["nextStep"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.ownerAgent {
-      body["ownerAgent"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.session {
-      body["session"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.status {
-      body["status"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.summary {
-      body["summary"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.title {
-      body["title"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.touchSignal {
-      body["touchSignal"] = try RaviJSON.fromEncodable(value)
-    }
-  }
-}
-
-public typealias ProjectsUpdateReturn = [String: RaviJSON]
-
-public struct ProjectsWorkflowsAttachOptions: Codable, Sendable {
-  public var role: String?
-
-  public init(role: String? = nil) {
-    self.role = role
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case role = "role"
-  }
-
-  func encodeBody(into body: inout [String: RaviJSON]) throws {
-    if let value = self.role {
-      body["role"] = try RaviJSON.fromEncodable(value)
-    }
-  }
-}
-
-public struct ProjectsWorkflowsAttachReturn: Codable, Sendable {
-  public var details: [String: RaviJSON]
-  public var workflow: [String: RaviJSON]
-
-  public init(details: [String: RaviJSON], workflow: [String: RaviJSON]) {
-    self.details = details
-    self.workflow = workflow
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case details = "details"
-    case workflow = "workflow"
-  }
-}
-
-public struct ProjectsWorkflowsStartOptions: Codable, Sendable {
-  public var execute: Bool?
-  public var role: String?
-  public var runId: String?
-
-  public init(execute: Bool? = nil, role: String? = nil, runId: String? = nil) {
-    self.execute = execute
-    self.role = role
-    self.runId = runId
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case execute = "execute"
-    case role = "role"
-    case runId = "runId"
-  }
-
-  func encodeBody(into body: inout [String: RaviJSON]) throws {
-    if let value = self.execute {
-      body["execute"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.role {
-      body["role"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.runId {
-      body["runId"] = try RaviJSON.fromEncodable(value)
-    }
-  }
-}
-
-public struct ProjectsWorkflowsStartReturn: Codable, Sendable {
-  public var details: [String: RaviJSON]
-  public var workflow: [String: RaviJSON]
-
-  public init(details: [String: RaviJSON], workflow: [String: RaviJSON]) {
-    self.details = details
-    self.workflow = workflow
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case details = "details"
-    case workflow = "workflow"
   }
 }
 

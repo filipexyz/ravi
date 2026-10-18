@@ -1,7 +1,12 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { ChannelOutputSink } from "../backend.js";
 import type { ChannelOutboundJob } from "../outbound-stream.js";
-import { createSlackNativeChannelDriver, renderSlackBackendOutput, renderSlackContent } from "./driver.js";
+import {
+  createSlackNativeChannelDriver,
+  renderSlackBackendOutput,
+  renderSlackContent,
+  renderSlackSafeError,
+} from "./driver.js";
 
 const binding = {
   channelInstanceId: "slack-a",
@@ -52,7 +57,28 @@ describe("renderSlackBackendOutput", () => {
         error: { code: "INTERNAL", category: "internal", retryable: false },
         emittedAt: "2026-09-22T12:00:00.000Z",
       }),
-    ).toBe("Unable to complete the request (INTERNAL).");
+    ).toBe("The agent could not complete this request because of an internal error.");
+  });
+});
+
+describe("renderSlackSafeError", () => {
+  it("renders a readable sentence per code", () => {
+    expect(renderSlackSafeError({ code: "UNAVAILABLE", category: "availability", retryable: false })).toBe(
+      "The agent is unavailable because of a problem with its model provider account. Please contact the operator.",
+    );
+    expect(renderSlackSafeError({ code: "UNAVAILABLE", category: "availability", retryable: true })).toBe(
+      "The agent is temporarily unavailable. Please try again later.",
+    );
+    expect(renderSlackSafeError({ code: "RATE_LIMITED", category: "capacity", retryable: true })).toContain(
+      "rate limiting",
+    );
+    expect(renderSlackSafeError({ code: "OVERLOADED", category: "capacity", retryable: true })).toContain("overloaded");
+    expect(renderSlackSafeError({ code: "INTERNAL", category: "internal", retryable: true })).toBe(
+      "The agent could not complete this request because of an internal error. Please try again.",
+    );
+    expect(renderSlackSafeError(undefined)).toBe(
+      "The agent could not complete this request because of an internal error.",
+    );
   });
 });
 

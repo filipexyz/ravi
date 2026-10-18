@@ -396,7 +396,7 @@ describe("channel runner native delivery registry", () => {
           }),
           content: {
             type: "text",
-            text: "Unable to complete the request (INTERNAL).",
+            text: "The agent could not complete this request because of an internal error.",
           },
         }),
       }),

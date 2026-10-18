@@ -149,7 +149,7 @@ export async function explainConsoleScope(
     label: "Local Project Console mapping",
     selected: false,
     available: false,
-    reason: "No explicit local Project -> Console project mapping is attached to this runtime context.",
+    reason: "Local Projects were removed; this source is never selected.",
   });
 
   for (const target of scopeTargets(context, deps)) {
@@ -637,7 +637,7 @@ function unknownProjectRefError(
     : "";
   const visibleLine = knownRefs.length
     ? `Visible project refs: ${knownRefs.join(", ")}.`
-    : "No visible Console projects were returned. Run `ravi cloud projects list`.";
+    : "No visible Console projects were returned. Run `ravi projects list`.";
   return new CloudAuthError(
     "PAYLOAD_INVALID",
     `Console project "${ref}" was not found.${agentLine} Use an existing Console project ref or set one with:\n  ravi cloud scope set --project <project-ref>\n${visibleLine}`,

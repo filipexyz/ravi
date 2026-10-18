@@ -29,6 +29,7 @@ import {
   CHANNEL_RUNTIME_EVENTS_SCHEMA_VERSION,
   ChannelRuntimeEventSinkRegistry,
   channelRuntimeEventSinks,
+  classifyChannelRuntimeFailure,
   projectChannelRuntimeEvent,
   readChannelRuntime,
   requestChannelRuntimeInterrupt,
@@ -379,6 +380,85 @@ describe("channel runtime event projection", () => {
       binding: metadata.binding,
     });
     expect(readback.terminalEvent).toEqual(lastTerminalEvent(events));
+  });
+
+  it("reports a provider billing failure by class without its text", async () => {
+    const metadata = await acceptedMetadata();
+    const events: KnownChannelRuntimeEvent[] = [];
+    const outputs: ChannelOutputEnvelope[] = [];
+    unregisterOutput = channelOutputSinks.register(metadata.target, {
+      async emit(output) {
+        outputs.push(output);
+      },
+    });
+
+    await projectChannelRuntimeEvent({
+      metadata,
+      event: { type: "turn.failed", error: "402 Insufficient Balance", recoverable: true },
+      sinks: runtimeSinks(metadata, events),
+    });
+
+    expect(JSON.stringify([events, outputs])).not.toContain("Insufficient");
+    expect(outputs).toEqual([
+      expect.objectContaining({
+        kind: "safe_error",
+        error: expect.objectContaining({ code: "UNAVAILABLE", category: "availability", retryable: false }),
+      }),
+    ]);
+  });
+
+  it("classifies runtime failure text into channel-safe codes", () => {
+    expect(classifyChannelRuntimeFailure("402 Insufficient Balance", true)).toEqual({
+      code: "UNAVAILABLE",
+      category: "availability",
+      retryable: false,
+    });
+    expect(
+      classifyChannelRuntimeFailure("Claude provider error (billing_error): credit balance is too low", true),
+    ).toEqual({
+      code: "UNAVAILABLE",
+      category: "availability",
+      retryable: false,
+    });
+    expect(classifyChannelRuntimeFailure("401 Incorrect API key provided", true)).toMatchObject({
+      code: "UNAVAILABLE",
+      retryable: false,
+    });
+    expect(
+      classifyChannelRuntimeFailure("No managed runtime credential could be resolved for agent main", true),
+    ).toMatchObject({
+      code: "UNAVAILABLE",
+      retryable: false,
+    });
+    expect(classifyChannelRuntimeFailure("429 Rate limit reached for requests", false)).toEqual({
+      code: "RATE_LIMITED",
+      category: "capacity",
+      retryable: true,
+    });
+    expect(classifyChannelRuntimeFailure("Claude provider error (overloaded)", false)).toEqual({
+      code: "OVERLOADED",
+      category: "capacity",
+      retryable: true,
+    });
+    expect(classifyChannelRuntimeFailure("503 Service Unavailable", false)).toMatchObject({
+      code: "OVERLOADED",
+      retryable: true,
+    });
+    expect(classifyChannelRuntimeFailure("Claude provider error (http_502)", false)).toEqual({
+      code: "UNAVAILABLE",
+      category: "availability",
+      retryable: true,
+    });
+    expect(classifyChannelRuntimeFailure("TypeError: Cannot read properties of undefined", true)).toEqual({
+      code: "INTERNAL",
+      category: "internal",
+      retryable: true,
+    });
+    expect(classifyChannelRuntimeFailure("Pi turn failed", false)).toEqual({
+      code: "INTERNAL",
+      category: "internal",
+      retryable: false,
+    });
   });
 
   it("distinguishes a nonterminal turn left by an earlier runtime generation", async () => {
