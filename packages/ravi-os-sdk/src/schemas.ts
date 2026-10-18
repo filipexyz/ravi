@@ -983,6 +983,14 @@ export const AgendaListInputSchema = {
     "days": {
       "description": "Days ahead (default 7, max 30)",
       "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of earlier meetings to skip (default: 0)",
+      "type": "string"
     }
   },
   "type": "object"
@@ -1010,8 +1018,16 @@ export const AgendaListReturnSchema = {
     "from": {
       "type": "string"
     },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
     "to": {
       "type": "string"
+    },
+    "total": {
+      "type": "number"
     },
     "truncated": {
       "type": "boolean"
@@ -1021,6 +1037,8 @@ export const AgendaListReturnSchema = {
     "from",
     "to",
     "truncated",
+    "total",
+    "pagination",
     "events"
   ],
   "type": "object"

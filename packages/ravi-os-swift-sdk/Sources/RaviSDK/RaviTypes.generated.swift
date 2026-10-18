@@ -230,18 +230,30 @@ public struct AgendaBriefingReturn: Codable, Sendable {
 
 public struct AgendaListOptions: Codable, Sendable {
   public var days: String?
+  public var limit: String?
+  public var offset: String?
 
-  public init(days: String? = nil) {
+  public init(days: String? = nil, limit: String? = nil, offset: String? = nil) {
     self.days = days
+    self.limit = limit
+    self.offset = offset
   }
 
   enum CodingKeys: String, CodingKey {
     case days = "days"
+    case limit = "limit"
+    case offset = "offset"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
     if let value = self.days {
       body["days"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
     }
   }
 }
@@ -249,20 +261,26 @@ public struct AgendaListOptions: Codable, Sendable {
 public struct AgendaListReturn: Codable, Sendable {
   public var events: [RaviJSON]
   public var from: String
+  public var pagination: [String: RaviJSON]
   public var to: String
+  public var total: Double
   public var truncated: Bool
 
-  public init(events: [RaviJSON], from: String, to: String, truncated: Bool) {
+  public init(events: [RaviJSON], from: String, pagination: [String: RaviJSON], to: String, total: Double, truncated: Bool) {
     self.events = events
     self.from = from
+    self.pagination = pagination
     self.to = to
+    self.total = total
     self.truncated = truncated
   }
 
   enum CodingKeys: String, CodingKey {
     case events = "events"
     case from = "from"
+    case pagination = "pagination"
     case to = "to"
+    case total = "total"
     case truncated = "truncated"
   }
 }

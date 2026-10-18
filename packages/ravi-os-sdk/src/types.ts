@@ -195,6 +195,8 @@ export type AgendaBriefingReturn = {
 /** Input shape for `agenda.list`. */
 export type AgendaListInput = {
   days?: string;
+  limit?: string;
+  offset?: string;
 };
 
 /** Return shape for `agenda.list`. */
@@ -204,7 +206,9 @@ export type AgendaListReturn = {
     [k: string]: unknown;
   }>;
   from: string;
+  pagination: Record<string, unknown>;
   to: string;
+  total: number;
   truncated: boolean;
 };
 

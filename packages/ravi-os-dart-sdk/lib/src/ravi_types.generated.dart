@@ -198,30 +198,42 @@ class AgendaBriefingReturn {
 AgendaBriefingReturn agendaBriefingReturnFromJson(Object? json) => AgendaBriefingReturn.fromJsonValue(json);
 
 class AgendaListOptions {
-  const AgendaListOptions({this.days});
+  const AgendaListOptions({this.days, this.limit, this.offset});
 
   final String? days;
+  final String? limit;
+  final String? offset;
 
   void encodeBody(Map<String, RaviJson> into) {
     if (days != null) {
       into["days"] = RaviJson.from(days);
     }
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
   }
 }
 
 class AgendaListReturn {
-  const AgendaListReturn({required this.events, required this.from, required this.to, required this.truncated});
+  const AgendaListReturn({required this.events, required this.from, required this.pagination, required this.to, required this.total, required this.truncated});
 
   final List<RaviJson> events;
   final String from;
+  final Map<String, RaviJson> pagination;
   final String to;
+  final double total;
   final bool truncated;
 
   factory AgendaListReturn.fromJson(Map<String, Object?> json) {
     return AgendaListReturn(
       events: raviJsonAsList(json["events"], RaviJson.from),
       from: raviJsonAsString(json["from"]),
+      pagination: raviJsonAsRaviJsonMap(json["pagination"]),
       to: raviJsonAsString(json["to"]),
+      total: raviJsonAsDouble(json["total"]),
       truncated: raviJsonAsBool(json["truncated"]),
     );
   }

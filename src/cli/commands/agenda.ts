@@ -28,6 +28,7 @@ import {
 } from "../agent-contract.js";
 import { cloudErrorToContractError } from "../cloud-error-contract.js";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 
 // `ravi agenda`: the operator's calendar as the Ravi Console keeps it, their
 // recording settings and the briefing of each meeting. Every command runs
@@ -61,6 +62,8 @@ const agendaListReturnSchema = z.object({
   from: z.string(),
   to: z.string(),
   truncated: z.boolean(),
+  total: z.number(),
+  pagination: z.object({}).passthrough(),
   events: z.array(looseEventSchema),
 });
 const agendaEventReturnSchema = z.object({ event: looseEventSchema });
@@ -170,6 +173,9 @@ export class AgendaCommands {
   async list(
     @Option({ flags: "--days <n>", description: `Days ahead (default ${DEFAULT_LIST_DAYS}, max ${MAX_LIST_DAYS})` })
     days?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of earlier meetings to skip (default: 0)" })
+    offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const op = "agenda list";
@@ -182,15 +188,25 @@ export class AgendaCommands {
       const from = new Date(now - LIST_LOOKBACK_MS);
       const to = new Date(now + span * 24 * 3600 * 1000);
       const listed = await client.events({ from, to });
+      const page = paginateCliItems(listed.events, { limit, offset }, { defaultLimit: 50, maxLimit: 500 });
+      const pagination = buildCliOffsetPagination({
+        baseCommand: ["ravi", "agenda", "list", ...(days !== undefined ? ["--days", days] : [])],
+        limit: page.limit,
+        offset: page.offset,
+        returned: page.items.length,
+        total: page.total,
+      });
       const payload = {
         from: from.toISOString(),
         to: to.toISOString(),
         truncated: listed.truncated,
-        events: listed.events,
+        total: page.total,
+        pagination,
+        events: page.items,
       };
       if (asJson) printJson(payload);
-      else if (listed.events.length === 0) console.log("No meetings in that window.");
-      else for (const event of listed.events) console.log(eventLine(event));
+      else if (page.items.length === 0) console.log("No meetings in that window.");
+      else for (const event of page.items) console.log(eventLine(event));
       return payload;
     });
   }

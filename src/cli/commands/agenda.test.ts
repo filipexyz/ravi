@@ -100,10 +100,18 @@ describe("agenda", () => {
 
   it("refuses a turn that is not the operator's own before any Console call", async () => {
     const { calls, commands } = setup(false);
-    const { error } = await quiet(() => commands.list(undefined, true));
+    const { error } = await quiet(() => commands.list(undefined, undefined, undefined, true));
     expect(error?.code).toBe("CALENDAR_ACCESS_DENIED");
     expect(error?.exitCode).toBe(3);
     expect(calls).toEqual([]);
+  });
+
+  it("pages the listing", async () => {
+    const events = Array.from({ length: 3 }, (_, index) => event({ id: `evt-${index}` }));
+    const { commands } = setup(true, () => ({ events, truncated: false }));
+    const { result } = await quiet(() => commands.list("7", "2", "1", true));
+    expect(result?.events.map((entry) => entry.id)).toEqual(["evt-1", "evt-2"]);
+    expect(result?.total).toBe(3);
   });
 
   it("dry-runs record without --execute and records with it", async () => {

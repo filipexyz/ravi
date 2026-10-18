@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "a77446af77add6f6"
+    "version": "b9f565b2bb14edac"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -1154,6 +1154,14 @@
                   "days": {
                     "description": "Days ahead (default 7, max 30)",
                     "type": "string"
+                  },
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of earlier meetings to skip (default: 0)",
+                    "type": "string"
                   }
                 },
                 "type": "object"
@@ -1187,8 +1195,16 @@
                     "from": {
                       "type": "string"
                     },
+                    "pagination": {
+                      "additionalProperties": {},
+                      "properties": {},
+                      "type": "object"
+                    },
                     "to": {
                       "type": "string"
+                    },
+                    "total": {
+                      "type": "number"
                     },
                     "truncated": {
                       "type": "boolean"
@@ -1198,6 +1214,8 @@
                     "from",
                     "to",
                     "truncated",
+                    "total",
+                    "pagination",
                     "events"
                   ],
                   "type": "object"

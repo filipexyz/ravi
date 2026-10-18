@@ -81,6 +81,8 @@ export class RaviClient {
     /** List the next meetings on the operator's calendar */
     list: async (options?: {
       days?: string;
+      limit?: string;
+      offset?: string;
     }): Promise<AgendaListReturn> => {
       return this.transport.call({
         groupSegments: ["agenda"],
