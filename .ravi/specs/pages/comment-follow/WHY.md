@@ -19,14 +19,16 @@ This follows bug follow and gh-follow:
 
 - Console delivers `page.comment.created` on the Agent Inbox, not the sync ledger. The sync path never publishes to NATS.
 - `publishInboxNatsEvents` already turns `watch.*` inbox items into `ravi.watch.<connector>.<event>`. Page comments do not use the `watch.` prefix, so the inbox bridge special-cases `page.comment.created` and `page.comment.resolved` onto `ravi.watch.console.page.comment.created` and `ravi.watch.console.page.comment.resolved`.
-- `pages ship` creates or reuses `page-comment:<siteId>` filtered to that id. Site ids stay stable across re-ships of the same slug. The publish response id wins over the slug.
+- `pages ship` creates or reuses `page-comment:<siteId>:<routePath>` filtered to that site and route. A project has one host and pages are its routes, so a per-site trigger handed every route to the first session that shipped anything; the per-route trigger follows "the pages this session published". Site ids stay stable across re-ships. The publish response id wins over the slug.
+- The session never goes to Console. A session name can carry a phone number and is not unique across machines, while the daemon already knows which session shipped which route. Console only needs the publishing installation, which it records on the artifact version and uses to target the inbox item.
 - The trigger row is the durable creator binding. v0 does not add another table.
 
 ## Caveats
 
 - **Gone creator.** `getAgent` returning null used to fall back to `/tmp/ravi-<id>` and could open a phantom session. Those triggers now stay `unbound_agent` and do not fire. Recreating an agent with the same id does not revive the subscription until the next trigger refresh.
-- **Duplicate ship.** A second ship reuses the trigger and keeps the first creator. It does not move the binding to whoever shipped again.
-- **Comment from the creator.** v0 does not suppress the creator's own comments. Console owns fanout. The bound agent still wakes.
+- **Duplicate ship.** A second ship of a route reuses its trigger. When another session shipped it, the trigger moves there: the latest publisher answers for the route. Another installation shipping the route takes the Console event with it.
+- **Cooldown.** 0. A cooldown dropped every comment after the first in a burst.
+- **Comment from the creator.** The operator's own comments still wake the session: that is how they ask it for a change. Console owns fanout.
 - **Anchors.** Comment anchors are left in the payload and are not part of the filter or the prompt contract.
 - **Resolved.** The inbox subject is reserved. Ship does not arm it.
 - **Missing creator.** A ship from a CLI session with no agent id records `missing_creator` and does not guess the default agent.

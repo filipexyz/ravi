@@ -778,7 +778,7 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
     description:
       "Normalized watch event after Console delivers page.comment.created through the Agent Inbox for a shipped page.",
     payload:
-      "{ version, eventId, connector, eventType, subject, payload: { pageId, orgId, projectId, body, url }, pageId, orgId, projectId, occurredAt }",
+      "{ version, eventId, connector, eventType, subject, payload: { pageId, siteId, routePath, path, orgId, projectId, commentId, parentId, body, url, author }, pageId, routePath, orgId, projectId, occurredAt }",
     schema: {
       version: 1,
       fields: [
@@ -791,6 +791,16 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
           description: "Stable page id. Pages ship binds this to the site id Console returned.",
         },
         { path: "payload.siteId", type: "string", description: "Site id when Console sends it beside pageId." },
+        {
+          path: "payload.routePath",
+          type: "string",
+          description:
+            "Path of the published route the comment is on, e.g. / or /weekly. Pages ship binds one trigger per route.",
+        },
+        { path: "payload.path", type: "string", description: "Page path the comment was left on (under routePath)." },
+        { path: "payload.commentId", type: "string", description: "Console comment id." },
+        { path: "payload.parentId", type: ["string", "null"], description: "Parent comment id when this is a reply." },
+        { path: "payload.author.displayName", type: ["string", "null"], description: "Who commented." },
         { path: "payload.orgId", type: "string", description: "Console organization id." },
         { path: "payload.organizationId", type: "string", description: "Organization id when Console uses that name." },
         { path: "payload.projectId", type: "string", description: "Console project id. Slugs are not project ids." },
@@ -802,6 +812,7 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
             "Page URL. Console payload.url when set; otherwise the Page link, else the first http(s) link, else the Console link.",
         },
         { path: "pageId", type: "string", description: "pageId hoisted to the event root for filters." },
+        { path: "routePath", type: "string", description: "routePath hoisted to the event root for filters." },
         { path: "orgId", type: "string", description: "orgId hoisted to the event root for filters." },
         { path: "projectId", type: "string", description: "projectId hoisted to the event root for filters." },
       ],
@@ -810,16 +821,18 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
       id: "page-comment-created-default",
       description: "Default agent-facing notice for a new page comment.",
       template: PAGE_COMMENT_CREATED_MESSAGE,
-      variables: ["data.payload.pageId", "data.payload.body", "data.payload.url"],
+      variables: ["data.payload.routePath", "data.payload.body", "data.payload.url"],
     },
     examples: [
-      `ravi triggers add "Page comment" --topic "${PAGE_COMMENT_CREATED_TOPIC}" --filter '(data.payload.pageId == "<pageId>" || data.pageId == "<pageId>" || data.payload.siteId == "<pageId>" || data.siteId == "<pageId>") && (data.payload.orgId == "<orgId>" || data.orgId == "<orgId>") && (data.payload.projectId == "<projectId>" || data.projectId == "<projectId>")' --session main --cooldown 30s`,
+      `ravi triggers add "Page comment" --topic "${PAGE_COMMENT_CREATED_TOPIC}" --filter '(data.payload.pageId == "<pageId>" || data.pageId == "<pageId>" || data.payload.siteId == "<pageId>" || data.siteId == "<pageId>") && (data.payload.routePath == "/" || data.routePath == "/") && (data.payload.orgId == "<orgId>" || data.orgId == "<orgId>") && (data.payload.projectId == "<projectId>" || data.projectId == "<projectId>")' --session main --cooldown 0s`,
     ],
     filters: [
       'data.payload.pageId == "<pageId>"',
       'data.pageId == "<pageId>"',
       'data.payload.siteId == "<pageId>"',
       'data.siteId == "<pageId>"',
+      'data.payload.routePath == "/weekly"',
+      'data.routePath == "/weekly"',
       'data.payload.orgId == "<orgId>"',
       'data.orgId == "<orgId>"',
       'data.payload.projectId == "<projectId>"',
@@ -827,7 +840,7 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
     ],
     notes: [
       "Console Agent Inbox eventType is page.comment.created. Local NATS after the inbox bridge is ravi.watch.console.page.comment.created.",
-      "pages ship creates or reuses one trigger per stable page id, bound to the creator agent. Fanout and history stay in Console.",
+      "pages ship creates or reuses one trigger per shipped route (site id + route path) that wakes the session that shipped it last. Console sends the event only to the installation that published the commented version. Fanout and history stay in Console.",
       "Always filter by this page id. Do not create a broad all-pages trigger. Invalid filters fail closed and are not saved.",
       "payload.url comes from Console when present. Older inbox items only have links; the bridge copies Page, else the first http(s) link, else Console.",
       "Comment anchors are not part of v0. A comment written by the creator still wakes that agent.",
@@ -841,7 +854,7 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
     description:
       "Reserved normalized watch event after Console delivers page.comment.resolved through the Agent Inbox. v0 ship does not arm this topic.",
     payload:
-      "{ version, eventId, connector, eventType, subject, payload: { pageId, orgId, projectId, body, url }, pageId, orgId, projectId, occurredAt }",
+      "{ version, eventId, connector, eventType, subject, payload: { pageId, siteId, routePath, path, orgId, projectId, commentId, parentId, body, url, author }, pageId, routePath, orgId, projectId, occurredAt }",
     schema: {
       version: 1,
       fields: [
@@ -856,6 +869,7 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
             "Page URL. Console payload.url when set; otherwise the Page link, else the first http(s) link, else the Console link.",
         },
         { path: "pageId", type: "string", description: "pageId hoisted to the event root for filters." },
+        { path: "routePath", type: "string", description: "routePath hoisted to the event root for filters." },
       ],
     },
     messageTemplate: {

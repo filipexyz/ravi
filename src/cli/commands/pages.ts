@@ -750,6 +750,7 @@ export class PagesCommands {
             publish: result,
             organizationId: stringValue(resolved.scope.organization?.id),
             projectId: stringValue(resolved.scope.project?.id),
+            route: resolvedRoute,
           },
           this.deps,
         );
@@ -2132,7 +2133,11 @@ const pageCommentFollowReturnSchema = z.object({
   agentId: z.string().optional(),
   triggerId: z.string().optional(),
   reused: z.boolean().optional(),
+  rebound: z.boolean().optional(),
+  replySession: z.string().optional(),
+  replacedTriggerId: z.string().optional(),
   pageId: z.string().optional(),
+  routePath: z.string().optional(),
   orgId: z.string().nullable().optional(),
   projectId: z.string().nullable().optional(),
   warning: z.string().optional(),
@@ -2794,8 +2799,11 @@ function printAssertionAudienceMutation(result: PageAssertionAudienceMutationRes
 function printCommentFollow(follow: PageCommentFollowResult | undefined): void {
   if (!follow) return;
   if (follow.triggerId) {
-    const action = follow.reused ? "reused" : "created";
-    console.log(`  Comments   ${action} trigger ${follow.triggerId} for agent ${follow.agentId ?? "(unbound)"}`);
+    const action = follow.rebound ? "moved" : follow.reused ? "reused" : "created";
+    const target = follow.replySession ? `session ${follow.replySession}` : `agent ${follow.agentId ?? "(unbound)"}`;
+    console.log(
+      `  Comments   ${action} trigger ${follow.triggerId}: comments on ${follow.routePath ?? "/"} wake ${target}`,
+    );
     return;
   }
   if (follow.warning) console.log(`  Comments   ${follow.warning}`);

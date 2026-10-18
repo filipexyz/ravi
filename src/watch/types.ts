@@ -168,6 +168,7 @@ export interface WatchNatsPayload {
    */
   pageId?: string;
   siteId?: string;
+  routePath?: string;
   orgId?: string;
   organizationId?: string;
   projectId?: string;
