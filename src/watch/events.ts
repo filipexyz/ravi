@@ -2,7 +2,7 @@ import type { InboxNatsPayload } from "../inbox/types.js";
 import { isPageCommentInboxEvent, pageCommentWatchSubject, type PageCommentEventType } from "./page-comment.js";
 import type { EffectiveWatchPlacement, WatchNatsPayload } from "./types.js";
 
-const PAGE_COMMENT_IDENTITY_KEYS = ["pageId", "siteId", "orgId", "organizationId", "projectId"] as const;
+const PAGE_COMMENT_IDENTITY_KEYS = ["pageId", "siteId", "routePath", "orgId", "organizationId", "projectId"] as const;
 
 export function watchEventFromInboxPayload(
   inbox: InboxNatsPayload,

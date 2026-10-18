@@ -72909,8 +72909,20 @@ export const PagesShipReturnSchema = {
             }
           ]
         },
+        "rebound": {
+          "type": "boolean"
+        },
+        "replacedTriggerId": {
+          "type": "string"
+        },
+        "replySession": {
+          "type": "string"
+        },
         "reused": {
           "type": "boolean"
+        },
+        "routePath": {
+          "type": "string"
         },
         "session": {
           "const": "main",

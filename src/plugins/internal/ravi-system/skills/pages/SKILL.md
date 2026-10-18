@@ -69,7 +69,7 @@ Regras:
 - Liste rotas com `ravi pages published` antes de publicar. `--route /` substitui a home. Outra página precisa de outra rota (`/relatorio`, `/docs`).
 - `[project]` posicional junto com um segundo argumento é host legado. O projeto entra por `--project` ou pelo scope do Console.
 - `--visibility public` vale no mesmo comando, sem `--execute`. Só para página estática.
-- O ship arma um trigger `page-comment:<site id>` (`ravi.watch.console.page.comment.created`) para o agent do ship, mas hoje o Console não emite esse evento: comentário de página não acorda ninguém. Feedback que precisa acordar vai numa base `feedback` com formulário e trigger.
+- Comentário ou resposta numa página acorda a sessão que publicou essa rota por último: o ship arma um trigger `page-comment:<site id>:<rota>` (`ravi.watch.console.page.comment.created`) com o texto, o autor e a URL. Outra sessão que publica a mesma rota passa a recebê-los. O Console manda o evento só pra instalação que publicou a versão comentada; uma rota publicada antes disso só avisa depois de um novo ship.
 
 Prefixos reservados de host: `ravi` e `ravi-*`. O CLI não cria esses slugs.
 

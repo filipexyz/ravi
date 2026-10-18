@@ -1275,11 +1275,12 @@ describe("pages agent-first contract", () => {
     expect(payload).toEqual({
       artifactId: "cloud_art_ship",
       commentFollow: {
-        filter: pageCommentFilter({ pageId: "site_1", orgId: "org_1" }),
+        filter: pageCommentFilter({ pageId: "site_1", routePath: "/", orgId: "org_1" }),
         ok: false,
         orgId: "org_1",
         pageId: "site_1",
         projectId: null,
+        routePath: "/",
         session: "main",
         skipped: "missing_creator",
         topic: "ravi.watch.console.page.comment.created",
@@ -1367,10 +1368,12 @@ describe("pages agent-first contract", () => {
       reused: false,
       agentId: "creator",
       pageId: "site_1",
+      routePath: "/",
       orgId: "org_1",
       projectId: "proj_real",
       topic: "ravi.watch.console.page.comment.created",
       session: "main",
+      replySession: "creator-main",
     });
     expect(secondPayload.commentFollow).toMatchObject({
       ok: true,
@@ -1380,12 +1383,14 @@ describe("pages agent-first contract", () => {
     });
     expect(triggers).toHaveLength(1);
     expect(triggers[0]).toMatchObject({
-      name: "page-comment:site_1",
+      name: "page-comment:site_1:/",
       agentId: "creator",
       topic: "ravi.watch.console.page.comment.created",
       replySession: "creator-main",
     });
-    expect(triggers[0]?.filter).toBe(pageCommentFilter({ pageId: "site_1", orgId: "org_1", projectId: "proj_real" }));
+    expect(triggers[0]?.filter).toBe(
+      pageCommentFilter({ pageId: "site_1", routePath: "/", orgId: "org_1", projectId: "proj_real" }),
+    );
   });
 
   it("ship with --execute creates the legacy host when an explicit slug is new", async () => {

@@ -14070,7 +14070,11 @@ export type PagesShipReturn = {
     orgId?: string | null;
     pageId?: string;
     projectId?: string | null;
+    rebound?: boolean;
+    replacedTriggerId?: string;
+    replySession?: string;
     reused?: boolean;
+    routePath?: string;
     session: "main";
     skipped?: "missing_page" | "missing_creator" | "invalid_filter" | "unbound_agent";
     topic: string;
