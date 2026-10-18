@@ -55,6 +55,7 @@ import { startKnowledgeLeaderRunners, stopKnowledgeLeaderRunners } from "./knowl
 import { startSyncRunner, stopSyncRunner } from "./sync/index.js";
 import { startLibraryPinRunner, stopLibraryPinRunner } from "./library/pin-runner.js";
 import { startLibraryRequestRunner, stopLibraryRequestRunner } from "./library/request-runner.js";
+import { startCalendarAssistantRunner, stopCalendarAssistantRunner } from "./calendar/assistant-runner.js";
 import { createSessionAdapterBus } from "./adapters/index.js";
 import { resolveOmniConnection } from "./omni-config.js";
 import { ensureSessionPromptsStream, publishSessionPrompt } from "./omni/session-stream.js";
@@ -258,6 +259,7 @@ async function shutdown(signal: string, exitCode = 0) {
     await stopSyncRunner();
     await stopLibraryPinRunner();
     await stopLibraryRequestRunner();
+    await stopCalendarAssistantRunner();
     await stopEphemeralRunner();
     await stopHookRunner();
     await stopTriggerRunner();
@@ -439,6 +441,8 @@ export async function startDaemon() {
     log.info("Task checkpoint runner started (leader)");
     startKnowledgeLeaderRunners();
     log.info("Knowledge runners started (leader)");
+    await startCalendarAssistantRunner();
+    log.info("Meeting assistant runner started (leader)");
   } else {
     log.info("Not leader — heartbeat, cron, and task checkpoint runners skipped (another daemon is running them)");
     watchForLeadershipVacancy("runners", async () => {
@@ -453,6 +457,7 @@ export async function startDaemon() {
         canPublishSessionPrompt: (sessionName) => bot?.canAcceptRuntimePrompt(sessionName) ?? true,
       });
       startKnowledgeLeaderRunners();
+      await startCalendarAssistantRunner();
       log.info("Heartbeat, cron, session followup, and task checkpoint runners started (new leader)");
     }).catch((err) => log.error("Leadership watcher failed", err));
   }

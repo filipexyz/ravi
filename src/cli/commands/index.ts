@@ -7,6 +7,7 @@
 
 export * from "./access.js";
 export * from "./adapters.js";
+export * from "./agenda.js";
 export * from "./agents-library.js";
 export * from "./agents.js";
 export * from "./apps.js";

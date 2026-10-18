@@ -176,6 +176,386 @@ export type AdaptersShowReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `agenda.briefing`. */
+export type AgendaBriefingInput = {
+  clear?: boolean;
+  eventId: string;
+  file?: string;
+  text?: string;
+};
+
+/** Return shape for `agenda.briefing`. */
+export type AgendaBriefingReturn = {
+  event: {
+    allDay: boolean;
+    attendees: Array<{
+      email: string;
+      name: string | null;
+      organizer: boolean;
+      response: string | null;
+      self: boolean;
+    }>;
+    briefing?: string | null;
+    briefingEnabled?: boolean | null;
+    briefingMinutes?: number;
+    connectionId: string;
+    consoleMeetingUrl?: string | null;
+    deletedAt?: string | null;
+    effectiveRecordMode: ("ask" | "auto" | "off") | null;
+    endAt: string;
+    externalAttendees: boolean;
+    followupEnabled?: boolean | null;
+    hasBriefing?: boolean;
+    id: string;
+    meetingCode: string | null;
+    meetingUrl: string | null;
+    organizerEmail?: string | null;
+    recordDecision: ("record" | "skip") | null;
+    recordDecisionProjectId?: string | null;
+    recordError?: string | null;
+    recording: ({
+      meetingId: string;
+      projectId: string | null;
+      ready: boolean;
+      status: string;
+    }) | null;
+    recurringEventId?: string | null;
+    selfResponse?: string | null;
+    startAt: string;
+    status: string;
+    title: string;
+    updatedAt?: string;
+  };
+};
+
+/** Input shape for `agenda.list`. */
+export type AgendaListInput = {
+  days?: string;
+  limit?: string;
+  offset?: string;
+};
+
+/** Return shape for `agenda.list`. */
+export type AgendaListReturn = {
+  events: Array<{
+    allDay: boolean;
+    attendees: Array<{
+      email: string;
+      name: string | null;
+      organizer: boolean;
+      response: string | null;
+      self: boolean;
+    }>;
+    briefing?: string | null;
+    briefingEnabled?: boolean | null;
+    briefingMinutes?: number;
+    connectionId: string;
+    consoleMeetingUrl?: string | null;
+    deletedAt?: string | null;
+    effectiveRecordMode: ("ask" | "auto" | "off") | null;
+    endAt: string;
+    externalAttendees: boolean;
+    followupEnabled?: boolean | null;
+    hasBriefing?: boolean;
+    id: string;
+    meetingCode: string | null;
+    meetingUrl: string | null;
+    organizerEmail?: string | null;
+    recordDecision: ("record" | "skip") | null;
+    recordDecisionProjectId?: string | null;
+    recordError?: string | null;
+    recording: ({
+      meetingId: string;
+      projectId: string | null;
+      ready: boolean;
+      status: string;
+    }) | null;
+    recurringEventId?: string | null;
+    selfResponse?: string | null;
+    startAt: string;
+    status: string;
+    title: string;
+    updatedAt?: string;
+  }>;
+  from: string;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  to: string;
+  total: number;
+  truncated: boolean;
+};
+
+/** Input shape for `agenda.record`. */
+export type AgendaRecordInput = {
+  eventId: string;
+  execute?: boolean;
+  project?: string;
+};
+
+/** Return shape for `agenda.record`. */
+export type AgendaRecordReturn = {
+  event: {
+    allDay: boolean;
+    attendees: Array<{
+      email: string;
+      name: string | null;
+      organizer: boolean;
+      response: string | null;
+      self: boolean;
+    }>;
+    briefing?: string | null;
+    briefingEnabled?: boolean | null;
+    briefingMinutes?: number;
+    connectionId: string;
+    consoleMeetingUrl?: string | null;
+    deletedAt?: string | null;
+    effectiveRecordMode: ("ask" | "auto" | "off") | null;
+    endAt: string;
+    externalAttendees: boolean;
+    followupEnabled?: boolean | null;
+    hasBriefing?: boolean;
+    id: string;
+    meetingCode: string | null;
+    meetingUrl: string | null;
+    organizerEmail?: string | null;
+    recordDecision: ("record" | "skip") | null;
+    recordDecisionProjectId?: string | null;
+    recordError?: string | null;
+    recording: ({
+      meetingId: string;
+      projectId: string | null;
+      ready: boolean;
+      status: string;
+    }) | null;
+    recurringEventId?: string | null;
+    selfResponse?: string | null;
+    startAt: string;
+    status: string;
+    title: string;
+    updatedAt?: string;
+  };
+};
+
+/** Input shape for `agenda.settings`. */
+export type AgendaSettingsInput = {
+  briefing?: string;
+  briefingMinutes?: string;
+  connection?: string;
+  execute?: boolean;
+  followup?: string;
+  project?: string;
+  record?: string;
+  sync?: string;
+};
+
+/** Return shape for `agenda.settings`. */
+export type AgendaSettingsReturn = {
+  connection: {
+    connectionId: string;
+    displayName: string | null;
+    email: string | null;
+    hasCalendarScope: boolean;
+    lastSyncError: string | null;
+    lastSyncedAt: string | null;
+    settings: {
+      briefingEnabled: boolean | null;
+      briefingMinutes: number;
+      followupEnabled: boolean | null;
+      projectId: string | null;
+      recordMode: ("ask" | "auto" | "off") | null;
+      syncEnabled: boolean;
+    };
+  };
+};
+
+/** Input shape for `agenda.show`. */
+export type AgendaShowInput = {
+  eventId: string;
+};
+
+/** Return shape for `agenda.show`. */
+export type AgendaShowReturn = {
+  event: {
+    allDay: boolean;
+    attendees: Array<{
+      email: string;
+      name: string | null;
+      organizer: boolean;
+      response: string | null;
+      self: boolean;
+    }>;
+    briefing?: string | null;
+    briefingEnabled?: boolean | null;
+    briefingMinutes?: number;
+    connectionId: string;
+    consoleMeetingUrl?: string | null;
+    deletedAt?: string | null;
+    effectiveRecordMode: ("ask" | "auto" | "off") | null;
+    endAt: string;
+    externalAttendees: boolean;
+    followupEnabled?: boolean | null;
+    hasBriefing?: boolean;
+    id: string;
+    meetingCode: string | null;
+    meetingUrl: string | null;
+    organizerEmail?: string | null;
+    recordDecision: ("record" | "skip") | null;
+    recordDecisionProjectId?: string | null;
+    recordError?: string | null;
+    recording: ({
+      meetingId: string;
+      projectId: string | null;
+      ready: boolean;
+      status: string;
+    }) | null;
+    recurringEventId?: string | null;
+    selfResponse?: string | null;
+    startAt: string;
+    status: string;
+    title: string;
+    updatedAt?: string;
+  };
+};
+
+/** Input shape for `agenda.skip`. */
+export type AgendaSkipInput = {
+  eventId: string;
+};
+
+/** Return shape for `agenda.skip`. */
+export type AgendaSkipReturn = {
+  event: {
+    allDay: boolean;
+    attendees: Array<{
+      email: string;
+      name: string | null;
+      organizer: boolean;
+      response: string | null;
+      self: boolean;
+    }>;
+    briefing?: string | null;
+    briefingEnabled?: boolean | null;
+    briefingMinutes?: number;
+    connectionId: string;
+    consoleMeetingUrl?: string | null;
+    deletedAt?: string | null;
+    effectiveRecordMode: ("ask" | "auto" | "off") | null;
+    endAt: string;
+    externalAttendees: boolean;
+    followupEnabled?: boolean | null;
+    hasBriefing?: boolean;
+    id: string;
+    meetingCode: string | null;
+    meetingUrl: string | null;
+    organizerEmail?: string | null;
+    recordDecision: ("record" | "skip") | null;
+    recordDecisionProjectId?: string | null;
+    recordError?: string | null;
+    recording: ({
+      meetingId: string;
+      projectId: string | null;
+      ready: boolean;
+      status: string;
+    }) | null;
+    recurringEventId?: string | null;
+    selfResponse?: string | null;
+    startAt: string;
+    status: string;
+    title: string;
+    updatedAt?: string;
+  };
+};
+
+/** Input shape for `agenda.status`. */
+export type AgendaStatusInput = Record<string, never>;
+
+/** Return shape for `agenda.status`. */
+export type AgendaStatusReturn = {
+  connections: Array<{
+    connectionId: string;
+    displayName: string | null;
+    email: string | null;
+    hasCalendarScope: boolean;
+    lastSyncError: string | null;
+    lastSyncedAt: string | null;
+    settings: {
+      briefingEnabled: boolean | null;
+      briefingMinutes: number;
+      followupEnabled: boolean | null;
+      projectId: string | null;
+      recordMode: ("ask" | "auto" | "off") | null;
+      syncEnabled: boolean;
+    };
+  }>;
+  meetingsEnabled: boolean;
+  policy: {
+    autoRecordAllowed: boolean;
+    canManage: boolean;
+  };
+  projects: Array<{
+    id: string;
+    name: string;
+    slug: string;
+  }>;
+};
+
+/** Input shape for `agenda.undo`. */
+export type AgendaUndoInput = {
+  eventId: string;
+  execute?: boolean;
+};
+
+/** Return shape for `agenda.undo`. */
+export type AgendaUndoReturn = {
+  event: {
+    allDay: boolean;
+    attendees: Array<{
+      email: string;
+      name: string | null;
+      organizer: boolean;
+      response: string | null;
+      self: boolean;
+    }>;
+    briefing?: string | null;
+    briefingEnabled?: boolean | null;
+    briefingMinutes?: number;
+    connectionId: string;
+    consoleMeetingUrl?: string | null;
+    deletedAt?: string | null;
+    effectiveRecordMode: ("ask" | "auto" | "off") | null;
+    endAt: string;
+    externalAttendees: boolean;
+    followupEnabled?: boolean | null;
+    hasBriefing?: boolean;
+    id: string;
+    meetingCode: string | null;
+    meetingUrl: string | null;
+    organizerEmail?: string | null;
+    recordDecision: ("record" | "skip") | null;
+    recordDecisionProjectId?: string | null;
+    recordError?: string | null;
+    recording: ({
+      meetingId: string;
+      projectId: string | null;
+      ready: boolean;
+      status: string;
+    }) | null;
+    recurringEventId?: string | null;
+    selfResponse?: string | null;
+    startAt: string;
+    status: string;
+    title: string;
+    updatedAt?: string;
+  };
+};
+
 /** Input shape for `agents.ask`. */
 export type AgentsAskInput = {
   execute?: boolean;

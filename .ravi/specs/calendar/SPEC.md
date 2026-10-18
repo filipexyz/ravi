@@ -58,6 +58,10 @@ Providers own:
 - provider-specific capabilities, rate limits, and conflict semantics;
 - provider credentials and refresh tokens through their existing auth systems.
 
+The operator's Ravi Console calendar (provider `ravi-calendar`) is read live,
+not synced into these tables: `ravi agenda` and the meeting assistant
+(`calendar/meeting-assistant`) read it on the operator's own turns only.
+
 The OSS calendar domain MUST NOT embed Console-only authorization policy,
 billing, hosting, organization rules, provider credential custody, or remote
 database schema.

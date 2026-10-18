@@ -159,6 +159,274 @@ class AdaptersShowReturn {
 
 AdaptersShowReturn adaptersShowReturnFromJson(Object? json) => AdaptersShowReturn.fromJsonValue(json);
 
+class AgendaBriefingOptions {
+  const AgendaBriefingOptions({this.clear, this.file, this.text});
+
+  final bool? clear;
+  final String? file;
+  final String? text;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (clear != null) {
+      into["clear"] = RaviJson.from(clear);
+    }
+    if (file != null) {
+      into["file"] = RaviJson.from(file);
+    }
+    if (text != null) {
+      into["text"] = RaviJson.from(text);
+    }
+  }
+}
+
+class AgendaBriefingReturn {
+  const AgendaBriefingReturn({required this.event});
+
+  final RaviJson event;
+
+  factory AgendaBriefingReturn.fromJson(Map<String, Object?> json) {
+    return AgendaBriefingReturn(
+      event: RaviJson.from(json["event"]),
+    );
+  }
+
+  static AgendaBriefingReturn fromJsonValue(Object? json) {
+    return AgendaBriefingReturn.fromJson(raviJsonObject(json, "AgendaBriefingReturn"));
+  }
+}
+
+AgendaBriefingReturn agendaBriefingReturnFromJson(Object? json) => AgendaBriefingReturn.fromJsonValue(json);
+
+class AgendaListOptions {
+  const AgendaListOptions({this.days, this.limit, this.offset});
+
+  final String? days;
+  final String? limit;
+  final String? offset;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (days != null) {
+      into["days"] = RaviJson.from(days);
+    }
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+  }
+}
+
+class AgendaListReturn {
+  const AgendaListReturn({required this.events, required this.from, required this.pagination, required this.to, required this.total, required this.truncated});
+
+  final List<RaviJson> events;
+  final String from;
+  final RaviJson pagination;
+  final String to;
+  final double total;
+  final bool truncated;
+
+  factory AgendaListReturn.fromJson(Map<String, Object?> json) {
+    return AgendaListReturn(
+      events: raviJsonAsList(json["events"], RaviJson.from),
+      from: raviJsonAsString(json["from"]),
+      pagination: RaviJson.from(json["pagination"]),
+      to: raviJsonAsString(json["to"]),
+      total: raviJsonAsDouble(json["total"]),
+      truncated: raviJsonAsBool(json["truncated"]),
+    );
+  }
+
+  static AgendaListReturn fromJsonValue(Object? json) {
+    return AgendaListReturn.fromJson(raviJsonObject(json, "AgendaListReturn"));
+  }
+}
+
+AgendaListReturn agendaListReturnFromJson(Object? json) => AgendaListReturn.fromJsonValue(json);
+
+class AgendaRecordOptions {
+  const AgendaRecordOptions({this.execute, this.project});
+
+  final bool? execute;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class AgendaRecordReturn {
+  const AgendaRecordReturn({required this.event});
+
+  final RaviJson event;
+
+  factory AgendaRecordReturn.fromJson(Map<String, Object?> json) {
+    return AgendaRecordReturn(
+      event: RaviJson.from(json["event"]),
+    );
+  }
+
+  static AgendaRecordReturn fromJsonValue(Object? json) {
+    return AgendaRecordReturn.fromJson(raviJsonObject(json, "AgendaRecordReturn"));
+  }
+}
+
+AgendaRecordReturn agendaRecordReturnFromJson(Object? json) => AgendaRecordReturn.fromJsonValue(json);
+
+class AgendaSettingsOptions {
+  const AgendaSettingsOptions({this.briefing, this.briefingMinutes, this.connection, this.execute, this.followup, this.project, this.record, this.sync});
+
+  final String? briefing;
+  final String? briefingMinutes;
+  final String? connection;
+  final bool? execute;
+  final String? followup;
+  final String? project;
+  final String? record;
+  final String? sync;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (briefing != null) {
+      into["briefing"] = RaviJson.from(briefing);
+    }
+    if (briefingMinutes != null) {
+      into["briefingMinutes"] = RaviJson.from(briefingMinutes);
+    }
+    if (connection != null) {
+      into["connection"] = RaviJson.from(connection);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (followup != null) {
+      into["followup"] = RaviJson.from(followup);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (record != null) {
+      into["record"] = RaviJson.from(record);
+    }
+    if (sync != null) {
+      into["sync"] = RaviJson.from(sync);
+    }
+  }
+}
+
+class AgendaSettingsReturn {
+  const AgendaSettingsReturn({required this.connection});
+
+  final RaviJson connection;
+
+  factory AgendaSettingsReturn.fromJson(Map<String, Object?> json) {
+    return AgendaSettingsReturn(
+      connection: RaviJson.from(json["connection"]),
+    );
+  }
+
+  static AgendaSettingsReturn fromJsonValue(Object? json) {
+    return AgendaSettingsReturn.fromJson(raviJsonObject(json, "AgendaSettingsReturn"));
+  }
+}
+
+AgendaSettingsReturn agendaSettingsReturnFromJson(Object? json) => AgendaSettingsReturn.fromJsonValue(json);
+
+class AgendaShowReturn {
+  const AgendaShowReturn({required this.event});
+
+  final RaviJson event;
+
+  factory AgendaShowReturn.fromJson(Map<String, Object?> json) {
+    return AgendaShowReturn(
+      event: RaviJson.from(json["event"]),
+    );
+  }
+
+  static AgendaShowReturn fromJsonValue(Object? json) {
+    return AgendaShowReturn.fromJson(raviJsonObject(json, "AgendaShowReturn"));
+  }
+}
+
+AgendaShowReturn agendaShowReturnFromJson(Object? json) => AgendaShowReturn.fromJsonValue(json);
+
+class AgendaSkipReturn {
+  const AgendaSkipReturn({required this.event});
+
+  final RaviJson event;
+
+  factory AgendaSkipReturn.fromJson(Map<String, Object?> json) {
+    return AgendaSkipReturn(
+      event: RaviJson.from(json["event"]),
+    );
+  }
+
+  static AgendaSkipReturn fromJsonValue(Object? json) {
+    return AgendaSkipReturn.fromJson(raviJsonObject(json, "AgendaSkipReturn"));
+  }
+}
+
+AgendaSkipReturn agendaSkipReturnFromJson(Object? json) => AgendaSkipReturn.fromJsonValue(json);
+
+class AgendaStatusReturn {
+  const AgendaStatusReturn({required this.connections, required this.meetingsEnabled, required this.policy, required this.projects});
+
+  final List<RaviJson> connections;
+  final bool meetingsEnabled;
+  final RaviJson policy;
+  final List<RaviJson> projects;
+
+  factory AgendaStatusReturn.fromJson(Map<String, Object?> json) {
+    return AgendaStatusReturn(
+      connections: raviJsonAsList(json["connections"], RaviJson.from),
+      meetingsEnabled: raviJsonAsBool(json["meetingsEnabled"]),
+      policy: RaviJson.from(json["policy"]),
+      projects: raviJsonAsList(json["projects"], RaviJson.from),
+    );
+  }
+
+  static AgendaStatusReturn fromJsonValue(Object? json) {
+    return AgendaStatusReturn.fromJson(raviJsonObject(json, "AgendaStatusReturn"));
+  }
+}
+
+AgendaStatusReturn agendaStatusReturnFromJson(Object? json) => AgendaStatusReturn.fromJsonValue(json);
+
+class AgendaUndoOptions {
+  const AgendaUndoOptions({this.execute});
+
+  final bool? execute;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+  }
+}
+
+class AgendaUndoReturn {
+  const AgendaUndoReturn({required this.event});
+
+  final RaviJson event;
+
+  factory AgendaUndoReturn.fromJson(Map<String, Object?> json) {
+    return AgendaUndoReturn(
+      event: RaviJson.from(json["event"]),
+    );
+  }
+
+  static AgendaUndoReturn fromJsonValue(Object? json) {
+    return AgendaUndoReturn.fromJson(raviJsonObject(json, "AgendaUndoReturn"));
+  }
+}
+
+AgendaUndoReturn agendaUndoReturnFromJson(Object? json) => AgendaUndoReturn.fromJsonValue(json);
+
 class AgentsAskOptions {
   const AgentsAskOptions({this.execute});
 
