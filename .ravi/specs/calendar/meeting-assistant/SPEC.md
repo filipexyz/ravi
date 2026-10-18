@@ -75,7 +75,8 @@ to exit 1.
 
 ## Routines
 
-The daemon runs the assistant runner: at start and every
+The daemon that holds the runners leadership (the one running cron) runs the
+assistant runner: at start and every
 `RAVI_CALENDAR_ASSISTANT_INTERVAL_MS` (default 5 minutes) while a login
 exists, it reads the overview and the events from 3 days back to 28 days
 ahead, plans reminders and keeps one one-shot cron job per reminder:
@@ -85,7 +86,10 @@ ahead, plans reminders and keeps one one-shot cron job per reminder:
 - scheduled at most 36 hours ahead and never sooner than 10 seconds;
 - a key is scheduled once (table `calendar_assistant_marks`); a waiting job
   whose reminder is no longer planned is removed and its key forgotten,
-  unless it runs within a minute.
+  unless it runs within a minute;
+- only jobs with a mark are ever removed, so a job the operator named
+  `calendar:...` stays; when the Console cut the events listing
+  (`truncated`), nothing is removed in that tick.
 
 Reminders, only for connections with sync on and only for meetings (timed,
 not cancelled, not declined, with a Meet code or another attendee):

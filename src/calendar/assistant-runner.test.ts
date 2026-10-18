@@ -100,13 +100,30 @@ describe("reconcileCalendarRoutines", () => {
       routines: store,
     });
     store.create({ name: "weekly report", schedule: { type: "at", at: NOW + 3600_000 }, message: "x" });
+    store.create({ name: "calendar:personal", schedule: { type: "at", at: NOW + 3600_000 }, message: "x" });
 
     expect(reconcileCalendarRoutines({ reminders: [], agentId: "main", now: NOW, routines: store })).toEqual({
       created: 0,
       removed: 1,
     });
-    expect(store.jobs.map((job) => job.name)).toEqual(["weekly report"]);
+    expect(store.jobs.map((job) => job.name)).toEqual(["weekly report", "calendar:personal"]);
     expect(calendarRoutineScheduled(key)).toBe(false);
+  });
+
+  it("keeps waiting routines when the events listing was cut", () => {
+    const store = memoryStore();
+    const key = "calendar:briefing:evt-1:2";
+    reconcileCalendarRoutines({
+      reminders: [reminder(key, NOW + 3600_000)],
+      agentId: "main",
+      now: NOW,
+      routines: store,
+    });
+
+    expect(
+      reconcileCalendarRoutines({ reminders: [], agentId: "main", now: NOW, routines: store, keepUnplanned: true }),
+    ).toEqual({ created: 0, removed: 0 });
+    expect(store.jobs.map((job) => job.name)).toEqual([key]);
   });
 
   it("leaves a routine about to run, and schedules nothing beyond the horizon", () => {

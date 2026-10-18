@@ -441,6 +441,8 @@ export async function startDaemon() {
     log.info("Task checkpoint runner started (leader)");
     startKnowledgeLeaderRunners();
     log.info("Knowledge runners started (leader)");
+    await startCalendarAssistantRunner();
+    log.info("Meeting assistant runner started (leader)");
   } else {
     log.info("Not leader — heartbeat, cron, and task checkpoint runners skipped (another daemon is running them)");
     watchForLeadershipVacancy("runners", async () => {
@@ -455,6 +457,7 @@ export async function startDaemon() {
         canPublishSessionPrompt: (sessionName) => bot?.canAcceptRuntimePrompt(sessionName) ?? true,
       });
       startKnowledgeLeaderRunners();
+      await startCalendarAssistantRunner();
       log.info("Heartbeat, cron, session followup, and task checkpoint runners started (new leader)");
     }).catch((err) => log.error("Leadership watcher failed", err));
   }
@@ -482,9 +485,6 @@ export async function startDaemon() {
 
   await startLibraryRequestRunner();
   log.info("Library request runner started");
-
-  await startCalendarAssistantRunner();
-  log.info("Meeting assistant runner started");
 
   sessionAdapterBus = createSessionAdapterBus();
   await sessionAdapterBus.start();

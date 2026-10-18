@@ -516,14 +516,14 @@ function pickConnection(
       (entry) => entry.connectionId === wanted || entry.email?.toLowerCase() === wanted.toLowerCase(),
     );
     if (found) return found;
-    contractFail(op, "NOT_FOUND", `No Google connection ${wanted} on this login.`, {
+    contractFail(op, "CALENDAR_CONNECTION_NOT_FOUND", `No Google connection ${wanted} on this login.`, {
       asJson,
-      details: { suggestions: overview.connections.map((entry) => entry.connectionId) },
+      details: { suggestions: overview.connections.slice(0, 3).map((entry) => entry.connectionId) },
     });
   }
   if (overview.connections.length === 1) return overview.connections[0];
   if (overview.connections.length === 0) {
-    contractFail(op, "NOT_FOUND", "This login has no personal Google connection.", {
+    contractFail(op, "CALENDAR_CONNECTION_NOT_FOUND", "This login has no personal Google connection.", {
       asJson,
       details: {
         suggestedAction: "Ask the operator to connect Google (with calendar access) in the Console, under Connectors.",

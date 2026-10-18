@@ -174,6 +174,27 @@ describe("agenda", () => {
     });
   });
 
+  it("names a missing connection with a stable code and at most three suggestions", async () => {
+    const many = {
+      ...overview,
+      connections: Array.from({ length: 5 }, (_, index) => ({
+        ...overview.connections[0],
+        connectionId: `conn-${index}`,
+      })),
+    };
+    const { commands } = setup(true, () => many);
+    const { error } = await quiet(() =>
+      commands.settings("nope", "on", undefined, undefined, undefined, undefined, undefined, true, false),
+    );
+    expect(error?.code).toBe("CALENDAR_CONNECTION_NOT_FOUND");
+    expect(error?.exitCode).toBe(1);
+    expect((error?.details as { suggestions?: string[] } | undefined)?.suggestions).toEqual([
+      "conn-0",
+      "conn-1",
+      "conn-2",
+    ]);
+  });
+
   it("maps the Console's policy refusal to exit 3", async () => {
     const { commands } = setup(true, () => {
       throw new CloudAuthError("ORG_ACCESS_DENIED", "denied", { status: 403, consoleCode: "POLICY_DISABLED" });

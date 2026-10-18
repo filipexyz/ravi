@@ -37,5 +37,8 @@ owners:
   from now.
 - A waiting job whose reminder is no longer planned MUST be removed unless it
   runs within a minute.
+- Removal MUST touch only jobs the assistant marked, and MUST NOT happen in a
+  tick whose events listing came back `truncated`.
+- Only the daemon holding the runners leadership MUST run the assistant.
 - Without a login, or when the Console answers 404, the runner MUST do nothing
   and fail no tick.

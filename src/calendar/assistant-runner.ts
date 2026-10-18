@@ -137,6 +137,7 @@ export class CalendarAssistantRunner {
 
     const now = (this.options.now ?? Date.now)();
     let reminders: CalendarReminder[];
+    let keepUnplanned = false;
     try {
       const overview = await client.overview();
       const synced = overview.connections.some((connection) => connection.settings.syncEnabled);
@@ -147,6 +148,8 @@ export class CalendarAssistantRunner {
           })
         : { events: [], truncated: false };
       reminders = planCalendarReminders({ overview, events: events.events, now });
+      // A cut listing misses events, so their routines must not look obsolete.
+      keepUnplanned = events.truncated;
     } catch (error) {
       const code = isCloudAuthError(error) ? error.code : "UNKNOWN";
       // A Console from before the calendar answers 404: nothing to do here yet.
@@ -162,6 +165,7 @@ export class CalendarAssistantRunner {
       agentId,
       now,
       routines: this.options.routines ?? defaultRoutineStore,
+      keepUnplanned,
     });
     if (result.created > 0 || result.removed > 0) {
       log.info("Meeting assistant routines updated", result);
@@ -181,6 +185,8 @@ export function reconcileCalendarRoutines(input: {
   agentId: string;
   now: number;
   routines: CalendarRoutineStore;
+  /** Keep waiting routines whose reminder is not planned (the listing was incomplete). */
+  keepUnplanned?: boolean;
 }): { created: number; removed: number } {
   ensureCalendarAssistantSchema();
   const { now, routines } = input;
@@ -188,8 +194,10 @@ export function reconcileCalendarRoutines(input: {
   let created = 0;
   let removed = 0;
 
-  for (const job of routines.list()) {
+  for (const job of input.keepUnplanned ? [] : routines.list()) {
     if (!job.name.startsWith(CALENDAR_ROUTINE_PREFIX) || wanted.has(job.name)) continue;
+    // Only routines this assistant scheduled: a job the operator named calendar:... stays.
+    if (!calendarRoutineScheduled(job.name)) continue;
     if (!job.enabled || (job.nextRunAt ?? 0) <= now + KEEP_IF_DUE_WITHIN_MS) continue;
     if (routines.delete(job.id)) {
       forgetCalendarRoutine(job.name);
