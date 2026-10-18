@@ -39,6 +39,9 @@
       hiding closed ones unless `--all`.
 - [ ] `thread.send` MUST publish one in-thread Execute turn, reopen a closed
       thread, and refuse thread callers, unknown threads and unstarted threads.
+- [ ] The channel-root variant MUST route follow-ups on an existing thread's
+      subject to that thread and relay between threads; the thread variant MUST
+      ask for relays through `thread.report`.
 
 ## Commands
 

@@ -286,6 +286,8 @@ ravi sessions close-thread [--return "resultado"]
 
 Progresso e resultado chegam na sessão do canal como `[System] Inform: Slack thread "<título>" (<sessão-da-thread>) ...`. `thread-send` reabre uma thread fechada; a filha responde dentro da thread.
 
+Uma mensagem no canal que continua o assunto de uma thread já aberta vai para essa thread com `thread-send`, sem abrir outra. Threads não falam entre si: quando uma precisa de algo de outra, ela pede com `report` e a sessão do canal repassa com `thread-send`.
+
 `sessions send` envia prompt/contexto para a sessão do agent; ele não publica texto visível diretamente em WhatsApp, Telegram, Matrix ou outro canal externo. Se o objetivo é falar com uma pessoa/canal, deixe a sessão responder normalmente ou use uma CLI explícita de canal/mídia/outbound apropriada.
 
 ### Session Trace
