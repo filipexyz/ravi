@@ -317,6 +317,58 @@ describe("cloudErrorToContractError", () => {
     expect(JSON.stringify(contract.envelope())).not.toContain("PRIVATE_PROVIDER_BODY_8K2R");
   });
 
+  it("carries the projected domain setup steps and drops anything else Console adds", () => {
+    const source = new CloudAuthError("DOMAIN_SETUP_REQUIRED", "nba-ui.rbbt.page (step 2 of 3: DNS): add the CNAME", {
+      status: 400,
+      details: {
+        setups: [
+          {
+            hostname: "nba-ui.rbbt.page",
+            state: "pages_pending",
+            providerId: "cf_custom_hostname_PRIVATE",
+            nextAction: {
+              code: "configure_pages_dns",
+              message: "free text",
+              dnsRecords: [{ type: "CNAME", name: "nba-ui.rbbt.page", value: "cname.ravi.page" }],
+            },
+            steps: [
+              { id: "ownership", status: "done", dnsRecords: [] },
+              {
+                id: "dns",
+                status: "pending",
+                dnsRecords: [{ type: "CNAME", name: "nba-ui.rbbt.page", value: "cname.ravi.page" }],
+              },
+              { id: "certificate", status: "pending", dnsRecords: [] },
+            ],
+            globalHost: { active: false, dnsRecord: { type: "CNAME", name: "*.rbbt.page", value: "cname.ravi.page" } },
+          },
+        ],
+      },
+    });
+    const contract = cloudErrorToContractError("pages domains", source);
+
+    expect(contract.details.domainSetup).toEqual([
+      {
+        hostname: "nba-ui.rbbt.page",
+        state: "pages_pending",
+        currentStep: { id: "dns", number: 2, total: 3 },
+        steps: [
+          { id: "ownership", status: "done", dnsRecords: [] },
+          {
+            id: "dns",
+            status: "pending",
+            dnsRecords: [{ type: "CNAME", name: "nba-ui.rbbt.page", value: "cname.ravi.page" }],
+          },
+          { id: "certificate", status: "pending", dnsRecords: [] },
+        ],
+        nextActionCode: "configure_pages_dns",
+        dnsRecords: [{ type: "CNAME", name: "nba-ui.rbbt.page", value: "cname.ravi.page" }],
+        globalHost: { active: false, dnsRecord: { type: "CNAME", name: "*.rbbt.page", value: "cname.ravi.page" } },
+      },
+    ]);
+    expect(JSON.stringify(contract.envelope())).not.toContain("PRIVATE");
+  });
+
   it("surfaces the sanitized DNS instruction for Pages domain setup", () => {
     const source = new CloudAuthError(
       "DOMAIN_SETUP_REQUIRED",

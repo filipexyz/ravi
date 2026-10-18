@@ -327,6 +327,18 @@ ravi pages read https://docs.acme.com/ --custom-domain
 - The read is static: the published file, not run in a browser. A data page built with JavaScript shows little text, and the result says so.
 - Ravi blocks browser and fetch tools aimed at `*.ravi.page` links and points the agent to `ravi pages read`. Every read of a private route is recorded in the Console audit log.
 
+## Custom domains
+
+`ravi pages domains <host> <hostname>` binds a domain you own to a host. Without `--execute` it prints the DNS to create and writes nothing. With `--execute` it moves the setup forward and exits with `DOMAIN_SETUP_REQUIRED` while DNS work is pending. The message names the step (ownership, DNS, certificate) and the exact records; run the same command again once DNS has propagated.
+
+| Record | When |
+|---|---|
+| `TXT _ravi-verify.<domain>` | Once per domain, proves the organization owns it. |
+| `CNAME <hostname> → cname.ravi.page` | Per hostname, with the proxy off (DNS only). |
+| `CNAME *.<domain> → cname.ravi.page` | Optional global host. Added once, every later subdomain skips the DNS step and only needs the command. |
+
+The root domain (`example.com`) serves the host directly when your DNS provider supports a CNAME at the root (CNAME flattening on Cloudflare, ALIAS or ANAME elsewhere). Plain A records are not supported. A subdomain that was never bound answers Cloudflare's 522 error instead of a Pages 404.
+
 ## Data pages
 
 Pages that read and write a Base (`--uses ravi.bases.*`) work only for signed-in members of the organization, on `private` or `protected_link` routes. `ship` refuses them on a public route (exit 2) unless you pass `--members-best-effort` on purpose. `--uses` applies to the whole host. See [Interactive pages with Bases](/console/bases).

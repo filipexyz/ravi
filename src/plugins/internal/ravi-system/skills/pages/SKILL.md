@@ -196,6 +196,14 @@ ravi pages domains <host> docs.example.com --execute
 
 `pages visibility` sem `--route` muda só o `defaultVisibility` do host; rotas com visibility explícita (ex.: `/` private) não mudam. Com `--route /` (ou `/foo`), muda a política daquela rota sem reenviar arquivos. Para `public`, sem `--execute` sai o plano (host vs rota, atual vs alvo; exit 3); com `--execute`, a saída traz a visibility efetiva. Em rota de dados, nada de `public` nem senha (regra 3).
 
+### Domínio custom
+
+`ravi pages domains <host> <hostname>` sem `--execute` já mostra o DNS a criar (CNAME `<hostname>` → `cname.ravi.page`, proxy desligado) e não grava nada. Com `--execute`, o mesmo comando avança a configuração e sai `DOMAIN_SETUP_REQUIRED` (exit 1) enquanto falta DNS. A mensagem diz a etapa (`step N of 3`: posse, DNS, certificado) e os registros exatos; em `--json`, `error.domainSetup` traz as etapas. Passe esses registros para a pessoa e rode o mesmo comando de novo depois que o DNS propagar.
+
+- Posse: um TXT `_ravi-verify.<domínio>`, uma vez por domínio da organização. Vem junto com o CNAME na primeira resposta.
+- Host global: `*.<domínio>` CNAME `cname.ravi.page`, criado uma vez. Depois, cada subdomínio novo só precisa de `ravi pages domains <host> <sub>.<domínio> --execute`, sem DNS. Subdomínio que nunca passou pelo comando responde 522 do Cloudflare, não 404.
+- Domínio principal (`exemplo.com`): serve o host direto, se o DNS aceitar CNAME na raiz (CNAME flattening no Cloudflare, ALIAS/ANAME nos outros). Registro A não serve.
+
 `password set` sem `--execute` nem pede a senha. Automação: `--stdin` com input redirecionado. Nunca coloque a senha em argumento, env, log ou JSON.
 
 ## Backend auth / assertion audiences

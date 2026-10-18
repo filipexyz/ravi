@@ -14,6 +14,7 @@ import {
   type ContractErrorDetails,
 } from "./agent-contract.js";
 import { getContext } from "./context.js";
+import { projectPageDomainSetups } from "../pages/domain-setup.js";
 import { payloadInvalidIssues, sanitizePayloadInvalidMessage } from "./payload-error-message.js";
 
 export function commandOperation(group: string, command: string): string {
@@ -25,6 +26,8 @@ export function commandOperation(group: string, command: string): string {
 export function cloudErrorToContractError(op: string, error: CloudAuthError): ContractError {
   const issues = error.code === "PAYLOAD_INVALID" ? payloadInvalidIssues(error.message, error.issues) : error.issues;
   const connectorTurn = connectorTurnCopy(error);
+  const domainSetup =
+    error.code === "DOMAIN_SETUP_REQUIRED" ? projectPageDomainSetups(error.details?.setups) : undefined;
   return new ContractError(
     op,
     error.code,
@@ -39,6 +42,7 @@ export function cloudErrorToContractError(op: string, error: CloudAuthError): Co
       ...(error.status !== undefined ? { status: error.status } : {}),
       ...(issues ? { issues } : {}),
       suggestedAction: suggestedAction(error.code),
+      ...(domainSetup ? { domainSetup } : {}),
       ...(connectorTurn?.details ?? {}),
     },
   );
@@ -289,7 +293,7 @@ function suggestedAction(code: CloudAuthError["code"]): string {
   }
 }
 
-function safeDomainSetupMessage(message: string): string {
+export function safeDomainSetupMessage(message: string): string {
   const sanitized = stripVTControlCharacters(message)
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")
     .trim();

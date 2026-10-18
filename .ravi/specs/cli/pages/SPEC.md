@@ -109,7 +109,14 @@ contract errors rethrow first, recognizable Console not-found failures map to
     1, and tell the operator to rerun the same command after propagation. This
     is the only cloud error whose authenticated Console message may cross the
     generic provider-message redaction boundary; terminal control characters
-    MUST be stripped and output MUST be length-bounded.
+    MUST be stripped and output MUST be length-bounded. The same message MUST
+    cross the CLI remote gateway for `pages domains` (agent turns run the CLI
+    through it). Console's `details.setups` MUST be projected field by field
+    (hostnames, step ids and statuses, DNS-shaped records) into
+    `error.domainSetup`; nothing else from it may cross. The dry-run (no
+    `--execute`) MUST print the CNAME each hostname needs, plus the ownership
+    TXT, global host (`*.<domain>`) and root-domain notes, before any
+    credential or Console call, and carry the CNAMEs in `plan.dnsSetup`.
 
 13. `pages chat show <site>` MUST `GET` and `pages chat set <site>` MUST
     `PATCH` `/api/cli/projects/:projectRef/pages/:siteRef/chat`. `siteRef`

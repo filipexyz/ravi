@@ -849,6 +849,12 @@ describe("pages agent-first contract", () => {
       site: "demo",
       hostnameCount: 1,
       readinessCheck: true,
+      dnsSetup: [
+        {
+          hostname: "docs.example.com",
+          dnsRecords: [{ type: "CNAME", name: "docs.example.com", value: "cname.ravi.page" }],
+        },
+      ],
     });
     expect(credentialReads).toBe(0);
     expect(calls).toEqual([]);

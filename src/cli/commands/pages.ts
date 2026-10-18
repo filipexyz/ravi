@@ -119,6 +119,8 @@ import {
   validateShipSourceInput,
 } from "../../pages/ship.js";
 import { CONTRACT_EXIT_USAGE, ContractError, contractDryRun, contractFail, pickFields } from "../agent-contract.js";
+import { getContext } from "../context.js";
+import { plannedPageDomainDns, plannedPageDomainDnsLines } from "../../pages/domain-setup.js";
 import { jsonObjectSchema, jsonValueSchema, strictCliOffsetPaginationSchema } from "../return-schemas.js";
 import { readConfirmedSecret, type ConfirmedSecretInputOptions } from "../secret-input.js";
 import { artifactPublishReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
@@ -1022,6 +1024,10 @@ export class PagesCommands {
     return runPagesCommand("pages domains", asJson, async () => {
       const parsed = parseDomainsArgs(args, projectOption);
       if (execute !== true) {
+        // The DNS to add is known before anything is written; show it up front.
+        if (!asJson && getContext({ localOnly: true })?.suppressCliOutput !== true) {
+          for (const line of plannedPageDomainDnsLines(parsed.hostnames)) console.log(line);
+        }
         contractDryRun(
           "pages domains",
           {
@@ -1029,6 +1035,7 @@ export class PagesCommands {
             site: parsed.site,
             hostnameCount: parsed.hostnames.length,
             readinessCheck: Boolean(check),
+            dnsSetup: plannedPageDomainDns(parsed.hostnames),
           },
           { asJson },
         );
