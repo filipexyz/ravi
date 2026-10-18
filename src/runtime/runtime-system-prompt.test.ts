@@ -489,3 +489,83 @@ describe("buildRuntimeSystemPrompt Building Solutions", () => {
     expectMounted(await promptFor(capabilities, { allowedSkills: ["ravi-system-solucoes"] }), true);
   });
 });
+
+describe("buildRuntimeSystemPrompt Slack Threads", () => {
+  let stateDir: string | null = null;
+  let cwd: string;
+
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-runtime-slack-threads-");
+    cwd = mkdtempSync(join(tmpdir(), "ravi-runtime-slack-threads-cwd-"));
+  });
+
+  afterEach(async () => {
+    rmSync(cwd, { recursive: true, force: true });
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  const sessions: ContextCapability = { permission: "execute", objectType: "group", objectId: "sessions" };
+
+  async function slackPrompt(input: {
+    capabilities: ContextCapability[] | null;
+    sessionKey?: string;
+    channelId?: string;
+    mode?: "active" | "sentinel";
+  }) {
+    const channelId = input.channelId ?? "slack";
+    return buildRuntimeSystemPrompt({
+      cwd,
+      sessionName: "ops",
+      agent: { id: "main", cwd, ...(input.mode ? { mode: input.mode } : {}) },
+      ctx: { channelId, channelName: channelId === "slack" ? "Slack" : "WhatsApp", isGroup: true },
+      ...(input.capabilities
+        ? {
+            runtimeContext: {
+              contextId: "ctx_slack",
+              kind: "agent-runtime",
+              agentId: "main",
+              sessionKey: input.sessionKey ?? "agent:main:slack:slack-main:group:C0ABC123",
+              capabilities: input.capabilities,
+            },
+          }
+        : {}),
+    });
+  }
+
+  it("steers channel-root sessions to open a thread for off-topic work", async () => {
+    const prompt = await slackPrompt({ capabilities: [sessions] });
+
+    expect(prompt.sections.map((section) => section.id)).toContain("channel.slack_threads");
+    expect(prompt.text).toContain("## Slack Threads\n\nIn Slack, keep this DM or channel on the subject");
+    expect(prompt.text).toContain('Open it with `ravi sessions create-thread "<initial-message>"`.');
+    expect(prompt.text).toContain("do not also do it here");
+    expect(prompt.text).not.toContain("This session lives in a Slack thread");
+  });
+
+  it("keeps thread child sessions on their subject and tells them how to close", async () => {
+    const prompt = await slackPrompt({
+      capabilities: [sessions],
+      sessionKey: "agent:main:slack:slack-main:group:C0ABC123:thread:1712345678.123456",
+    });
+
+    expect(prompt.text).toContain("## Slack Threads\n\nThis session lives in a Slack thread about one subject.");
+    expect(prompt.text).toContain("Slack threads do not nest");
+    expect(prompt.text).toContain('`ravi sessions close-thread`. Add `--return "<result>"`');
+    expect(prompt.text).not.toContain("In Slack, keep this DM or channel");
+  });
+
+  it("leaves it out without the sessions group, for sentinels and off Slack", async () => {
+    const hasSection = (prompt: { sections: { id: string }[] }) =>
+      prompt.sections.some((section) => section.id === "channel.slack_threads");
+
+    expect(hasSection(await slackPrompt({ capabilities: null }))).toBe(false);
+    expect(
+      hasSection(
+        await slackPrompt({ capabilities: [{ permission: "execute", objectType: "group", objectId: "pages" }] }),
+      ),
+    ).toBe(false);
+    expect(hasSection(await slackPrompt({ capabilities: [sessions], mode: "sentinel" }))).toBe(false);
+    expect(hasSection(await slackPrompt({ capabilities: [sessions], channelId: "whatsapp-baileys" }))).toBe(false);
+  });
+});

@@ -4,7 +4,11 @@
 
 import { BUG_REPORT_SESSION_PROMPT } from "./bug-report/prompt.js";
 import type { ChannelContext } from "./runtime/message-types.js";
-import { renderChannelCapabilities, supportsChannelCapability } from "./channels/capabilities.js";
+import {
+  renderChannelCapabilities,
+  resolveChannelCapabilitySet,
+  supportsChannelCapability,
+} from "./channels/capabilities.js";
 
 /** Silent reply token - when response contains this, don't send to channel */
 export const SILENT_TOKEN = "@@SILENT@@";
@@ -387,6 +391,36 @@ Não use \`ravi whatsapp group list\` para descobrir grupo recém-criado ou como
 Não sugira grupo novo para perguntas rápidas, correções pequenas, respostas pontuais, ou quando a sugestão atrapalharia o fluxo atual.`;
 }
 
+/** Where a Slack session sits: the DM or channel root, or a thread child session. */
+export type SlackThreadsPlacement = "channel" | "thread";
+
+function slackThreadInitialMessageText(): string {
+  return `The initial message is posted visibly as the thread's first message in this DM or channel, and it becomes the first instruction of a new session that does the work inside the thread. Write it for both readers: a first line saying what the thread is for, then the task and the context the thread session needs, since it may not see this conversation. Use the conversation's language. Add \`--model <model>\` only when the work needs a different model.`;
+}
+
+function slackThreadsText(placement: SlackThreadsPlacement): string {
+  if (placement === "thread") {
+    return `This session lives in a Slack thread about one subject. Keep the work and its progress in this thread; a normal reply stays here.
+
+- When someone brings up a different subject or asks for separate work, open a new thread for it with \`ravi sessions create-thread "<initial-message>"\` instead of mixing it into this one. Slack threads do not nest: the new thread starts at the channel root, beside this one. ${slackThreadInitialMessageText()}
+- When this thread's work is done, close it with \`ravi sessions close-thread\`. Add \`--return "<result>"\` only when the channel session needs the result, for example because it opened this thread to get it. A later reply in the thread reopens it.`;
+  }
+
+  return `In Slack, keep this DM or channel on the subject people are discussing in it. Work that strays from that subject goes to its own Slack thread.
+
+Before starting a task, decide where it belongs:
+- Open a thread for any separate operation: an investigation, a fix, a build, a deploy, a report, a long run of tools, or a subject this conversation is not about. Prefer a thread whenever the work takes several steps or will post progress, and when you are unsure.
+- Stay here only for replies that are part of this conversation: an answer you already know, a short confirmation, a small correction, or when someone asks you to keep it here.
+
+Open it with \`ravi sessions create-thread "<initial-message>"\`. ${slackThreadInitialMessageText()}
+
+The thread session does the work; do not also do it here. Its first message already tells people where the work went, so do not repeat it: react to the request or reply with ${SILENT_TOKEN}, and write here only what the thread does not say.
+
+A thread's result arrives here as a \`[System] Inform: Slack thread <id> concluída.\` message; tell the people here in one line when it matters to them.
+
+If \`ravi sessions create-thread\` fails, or \`ravi sessions actions --json\` shows \`thread.create\` unavailable, do the work here.`;
+}
+
 /**
  * Build reactions section for system prompt
  */
@@ -420,6 +454,12 @@ export interface SystemPromptOptions {
    * runtime decides it from capabilities; ignored for sentinels.
    */
   pagesLinks?: boolean;
+  /**
+   * Mounts "Slack Threads" (move off-topic work into its own Slack thread) on
+   * Slack turns. The runtime decides it from capabilities and the session key;
+   * ignored for sentinels and non-Slack channels.
+   */
+  slackThreads?: SlackThreadsPlacement;
 }
 
 export function buildSystemPromptSections(
@@ -499,6 +539,10 @@ Your text output is NOT sent to the channel. Use these tools to send explicitly.
 
       if (ctx.channelName === "WhatsApp") {
         add("channel.thread_workspaces", "WhatsApp Thread Workspaces", whatsappThreadWorkspaceText(), 75);
+      }
+
+      if (opts?.slackThreads && resolveChannelCapabilitySet(ctx).channelId === "slack") {
+        add("channel.slack_threads", "Slack Threads", slackThreadsText(opts.slackThreads), 75);
       }
 
       if (supportsChannelCapability(ctx, "reactions")) {
