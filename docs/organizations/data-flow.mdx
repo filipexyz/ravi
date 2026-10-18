@@ -149,6 +149,8 @@ These calls happen only when you, or an agent, run the command. Braked commands 
 | MCP bridges (`ravi bridges create`) | The bridge name, description and allowed capability classes |
 | Bug reports and feedback (`ravi bug`, `ravi feedback`) | What you put in the report. `ravi bug comment` redacts tokens and keys before it sends. |
 
+When someone other than you wrote the message the agent is answering, each of these calls also sends that person's contact id, so the Console can credit the write to their linked account.
+
 Connectors (`ravi connectors`, `ravi gmail`) go to Ravi's connector service at `https://link.ravi.so`, signed with your Console login. Each action sends its arguments, such as the email to send, with the turn's agent id and contact id. See [Connect your accounts](/console/connectors).
 
 ## Other outbound requests

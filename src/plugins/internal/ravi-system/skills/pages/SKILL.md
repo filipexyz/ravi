@@ -145,6 +145,8 @@ ravi access status <request-id>
 
 Quem age: no turno do próprio operador (terminal, a DM dele, as rotinas dele) age o usuário do `ravi login`. Quando outra pessoa escreveu a mensagem, o Console age por ELA, pelo `ravi link` dela. Para compartilhar ou convidar, ela e o operador precisam ter o papel; para pedir acesso, basta ser ela. Sem link sai `ACTOR_NOT_LINKED` (exit 3): rode `ravi link` no chat dela e tente de novo. Turno que o Ravi não consegue atribuir é recusado antes de qualquer chamada (`ACTOR_UNKNOWN`, exit 3). `invites list` só roda no turno do operador.
 
+Autoria do resto (`ship`, `publish`, Bases, comentários): num turno que outra pessoa escreveu, o Console grava a escrita no nome dela quando ela fez `ravi link` e é membro ativo da org, com o menor papel entre ela e o operador, e registra os dois na auditoria. Sem link, fica no nome do operador, como antes. Se o papel dela não permitir, a escrita é recusada: diga isso a ela e não contorne.
+
 ## Página de dados
 
 Lê e grava uma base pelos connectors `ravi.bases.*`, sempre através de uma view, que é o contrato de acesso (skill bases). Três regras:
