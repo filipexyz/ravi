@@ -1,0 +1,232 @@
+---
+title: Machines and shared agents
+description: Link a machine to your Console organization, see what it reports, let other machines ask its agents, and share skills and agents.
+icon: server
+---
+
+By the end of this page you will know how to link a machine to your organization and what the Console learns about it. You will also know how agents on different machines ask each other, how the Library shares items, and what unlinking does today.
+
+<Note>
+This page describes `ravi.bot@next`.
+</Note>
+
+## Add a machine to your organization
+
+A machine joins your organization when someone runs `ravi login` on it. Run it as the OS user that runs the daemon, so the daemon reads the same `~/.ravi`.
+
+<Steps>
+  <Step title="Name the machine and log in">
+    ```bash
+    RAVI_CLI_INSTALLATION_NAME=support-server ravi login --no-open
+    ```
+
+    Without `RAVI_CLI_INSTALLATION_NAME`, the machine is named after its hostname. Other machines see its agents as `<machine name>/<agent>`, so pick a name people recognize.
+
+    `--no-open` prints the URL and code without opening a browser. Use it on a server or over SSH, and approve from any other device. On a laptop, plain `ravi login` opens the browser for you.
+
+    In the browser, pick the organization this machine works in. One login works in one organization.
+  </Step>
+  <Step title="Check the login">
+    ```bash
+    ravi whoami
+    ```
+
+    `Installation` is this machine's installation id. `Scopes` must include `console.projects.link`: without it the daemon cannot report its agents or take requests. If it is missing, run `ravi login` again.
+  </Step>
+  <Step title="Choose the default project">
+    ```bash
+    ravi cloud projects list
+    ravi cloud scope set --global --project website
+    ravi cloud scope set --agent finance --project website
+    ravi cloud scope show
+    ```
+
+    The project each agent resolves to is the project the Console shows for it. `--global` covers the whole machine, and `--agent` overrides it for one agent. See [Project scope](/console/login#project-scope) for every level.
+  </Step>
+</Steps>
+
+### What the Console learns at login
+
+`ravi login` sends a short description of the machine with the login request. Nothing about agents, sessions or files is part of it.
+
+| Field | Value |
+|---|---|
+| Name | `RAVI_CLI_INSTALLATION_NAME`, else the hostname |
+| Hostname | The machine's hostname |
+| Platform | Operating system and CPU, such as `linux-x64` or `darwin-arm64` |
+| Ravi version | `RAVI_VERSION` or `npm_package_version`, when one of them is set |
+| Machine key | A random key stored in `~/.ravi/cloud-auth/installation-key` |
+
+The machine key is random and not derived from hardware. It survives `ravi logout`, so the Console recognizes this machine when the same user logs in again. The Console also learns your user and organization from the browser approval.
+
+The name is sent only at login, so set `RAVI_CLI_INSTALLATION_NAME` before you log in. Whether a later login renames the machine is decided by the Console.
+
+### Several Console users on one machine
+
+Ravi keeps one stored login per Console user, and one of them is active. `ravi whoami` shows the active one. The daemon uses the active login for everything it sends: the agent report, pins and requests.
+
+To switch users, run `ravi login` and sign in as the other user. The login that completes becomes the active one. There is no separate switch command.
+
+`ravi logout` removes only the active login and makes another stored login active. Run `ravi whoami` after it to see who is active now.
+
+## What the Console sees
+
+While a login with `console.projects.link` exists, the daemon reports this machine's agents at start and every 5 minutes. The Console answers with the Library skills pinned to them.
+
+| Field | Where it comes from |
+|---|---|
+| `id` | The local agent id |
+| `name` | The agent's name |
+| `provider` | Its runtime provider, such as `codex` or `claude` |
+| `model` | Its model |
+| `project` | The Console project its scope resolves to, else empty |
+| `description` | `ravi agents set <id> description "<text>"`, at most 300 characters |
+| `acceptsRequests` | `ravi agents requests <id> on --execute`. Off by default. |
+
+The report never carries instructions, paths, credentials, sessions or messages. It covers at most 500 agents per machine.
+
+**Change the interval.** Add `RAVI_LIBRARY_PIN_INTERVAL_MS` to `~/.ravi/.env`, in milliseconds, then restart the daemon. The minimum is 10 seconds, and the same interval sets how often the machine checks for requests.
+
+```bash
+echo 'RAVI_LIBRARY_PIN_INTERVAL_MS=60000' >> ~/.ravi/.env
+ravi daemon restart -m "report agents every minute"
+```
+
+Some commands report at once instead of waiting: `ravi agents requests <id> on|off` and `ravi skills pin ... --execute`.
+
+### What else reaches the Console
+
+These features also send data to the Console. See [Data flow](/organizations/data-flow) for the full list.
+
+| What | When |
+|---|---|
+| Instance names and their channels | Every 15 minutes from the daemon running the Knowledge runners, while logged in. See [Knowledge](/guides/knowledge). |
+| Open Knowledge questions (gaps) | With that same sync, when the `knowledge.project` setting names a project |
+| Pages, Bases, Library items, shares | When you or an agent run the command that sends them |
+| Session traces: turn events, redacted previews, tokens and cost | Only with `RAVI_SYNC_RUNNER_ENABLED=1` in `~/.ravi/.env`, or `ravi sync push --traces --execute` |
+
+Cost and token metrics stay in the local database unless you turn on trace upload.
+
+## Let other machines ask an agent
+
+Every agent is closed to other machines until its operator opens it. An open agent answers each request in a session of its own, as the person who asked.
+
+### Open an agent
+
+```bash
+ravi agents requests finance                 # current state
+ravi agents set finance description "Answers about closings and invoices"
+ravi agents requests finance on              # plan only (exit 3)
+ravi agents requests finance on --execute
+ravi agents requests finance off             # applies at once
+```
+
+Opening adds exposure, so it is a dry run until you pass `--execute`. Closing only takes exposure away and applies at once. Agents cannot open or close agents (`LIBRARY_AGENT_CANNOT_OPEN_REQUESTS`, exit 3).
+
+The directory learns of the change right away when the login has `console.projects.link`. If the Console cannot be reached, it learns at the daemon's next report. Without that scope, it learns nothing until you run `ravi login` again.
+
+### Ask an agent on another machine
+
+```bash
+ravi agents directory                     # agents you can ask, each shown online or offline
+ravi agents directory finance --json
+ravi agents ask support-server/finance "When is the October close?"            # plan only (exit 3)
+ravi agents ask support-server/finance "When is the October close?" --execute
+ravi agents requests list --all           # what you asked, and the answers
+ravi agents requests cancel <request-id>  # before the other machine takes it
+```
+
+| Command | What it does | Needs `--execute` |
+|---|---|---|
+| `ravi agents directory [words]` | Lists org-wide agents and those of projects you can read. Your own machine's agents show as `this machine`. | No |
+| `ravi agents ask <machine>/<agent> "<message>"` | Sends a message of 1 to 8000 characters | Yes |
+| `ravi agents requests list` | Open requests sent from this machine. `--all` adds answered, failed, expired and cancelled ones. `--received` lists requests to this machine's agents. | No |
+| `ravi agents requests cancel <id>` | Cancels a request the asked machine has not taken yet | No |
+
+- `<machine>` is the name the directory shows. When two machines share a name, use the installation id instead (`LIBRARY_TARGET_AMBIGUOUS`, exit 2). The error lists each candidate's id.
+- Asked from an agent session, the answer arrives in that session as a `[System] Inform`. The text marks it as untrusted output from another machine.
+- Asked from the terminal, the answer waits in `ravi agents requests list --all`.
+- Inside an agent, only the operator's own turns may ask (`LIBRARY_REQUEST_EXTERNAL_DENIED`, exit 3). An agent serving someone else does not carry that conversation to other machines.
+- Requests expire after 24 hours, and a machine can have 20 open at once.
+
+### How the asked machine answers
+
+The asked machine runs one turn of its agent per request, in a new session that it retires once the answer or failure is sent. The prompt names who asked, from which machine, and through which agent or terminal.
+
+The turn acts as the person who asked, never with the operator's authority. Ravi gives it no contact, so it holds no capabilities, like a message from an unknown sender (see [What a turn may do](/guides/permissions#what-a-turn-may-do)). The agent answers in text, except for the gaps in the warning below.
+
+<Warning>
+Ravi does not check tools that a runtime loads from its own configuration, such as MCP servers in the agent's `.mcp.json`. Before you open an agent, remove any such server you would not let every member of the organization use. See [Agent ceilings](/guides/permissions#agent-ceilings).
+
+On Codex, Ravi checks only shell commands per turn. A request turn can still edit files and search the web, unless the agent is `chat-only`, or `explicit-only` without tool or exec capabilities.
+</Warning>
+
+| Limit | Value |
+|---|---|
+| Turns answering at once | 3 per machine |
+| Time for one turn | 10 minutes. Change it with `RAVI_LIBRARY_REQUEST_TIMEOUT_MS` (at least 10 seconds). |
+| Answer length | 16,000 characters. Longer answers are cut and say so. |
+| A request that cannot be answered | Fails with a reason, such as agent gone, closed to requests, timeout or restart |
+
+## Share skills and agents across the organization
+
+The Console Library holds skills, agent definitions, themes and widgets. Each item belongs to the organization (`--scope org`) or to one project (`--scope <project>`).
+
+| Item | Share it | Use it | Agents may |
+|---|---|---|---|
+| Skill | `ravi skills publish <dir> --scope org --execute` | `ravi skills pin <ref> --agent <id> --execute` on the agent's machine, or `ravi skills grant` | Propose |
+| Agent definition | `ravi agents publish <id> --scope org --execute` | `ravi agents install <ref>` on a machine, then route it yourself | Search and read only |
+| Theme | `ravi themes publish <dir> --scope org --execute` | `ravi themes use <ref> --execute`. Private pages follow it when opened, others at their next ship. | Propose |
+| Widget | `ravi widgets publish <dir> --scope org --execute` | Pages use it in `<ravi-widget>` and `<ravi-view>` tags | Propose |
+
+- The Console decides who may publish and who may pin. A person who may not publish proposes instead: `ravi skills propose`, `ravi themes propose`, `ravi widgets propose`, or `ravi agents publish --propose`.
+- Agents only propose skills, themes and widgets. They never publish items, pin skills, install, update or publish agents, or set the active theme (exit 3).
+- A pinned skill loads in every new session of that agent, at the latest published version. A skill published without `--external` loads only in the operator's own turns.
+- If a sync fails or the Console is unreachable, the machine keeps the last pins and its cached copies. Pinned skills keep loading.
+- An agent definition never brings routes, instances, contacts or credentials.
+
+See [Library skills](/reference/skills#library-skills-organization-and-project), [Pin a skill to an agent](/reference/skills#pin-a-skill-to-an-agent), [Library agents](/reference/skills#library-agents) and [Themes and widgets](/console/widgets).
+
+## Remove a machine
+
+Today you unlink a machine by logging out on it. What the Console shows for that machine afterwards is decided by the Console.
+
+<Steps>
+  <Step title="Close its agents">
+    ```bash
+    ravi agents requests finance off
+    ```
+
+    The switch is stored on the machine and survives logout. Close every open agent while the login still works, so the directory hears about it.
+  </Step>
+  <Step title="Unpin skills you want gone">
+    ```bash
+    ravi skills pins
+    ravi skills unpin org/tone-of-voice --agent finance
+    ```
+
+    `unpin` needs the login. Pins already on the machine stay after logout, and new sessions can still load them.
+  </Step>
+  <Step title="Log out">
+    ```bash
+    ravi logout
+    ravi whoami
+    ```
+
+    `ravi logout` asks the Console to revoke the login, then deletes the local credentials. If the Console cannot be reached, it still deletes them and prints `Console revoke did not complete: <code>`. Repeat until `ravi whoami` says `AUTH_REQUIRED`, since each run removes one stored user.
+  </Step>
+</Steps>
+
+Without a login, the daemon stops reporting agents and stops taking requests. It waits quietly and resumes at the next `ravi login`.
+
+When a token refresh fails with `INSTALLATION_REVOKED` from the Console, the CLI deletes the local login and asks you to run `ravi login` again.
+
+### What is ready and what is not
+
+| Capability | Status |
+|---|---|
+| Link a machine with `ravi login`, see its agents in the directory | Ready |
+| Unlink a machine with `ravi logout` | Ready |
+| Removal that a new `ravi login` cannot undo | Not yet. The machine key stays, and a new login links the machine again. |
+| An organization install code, or an admin approving a machine | Not yet. A machine is linked by whichever Console user runs `ravi login`. |
+| A Console screen with every machine's health | Not yet. `ravi agents directory` shows each agent as online or offline. |

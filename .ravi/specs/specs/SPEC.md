@@ -14,7 +14,7 @@ applies_to:
   - .ravi/specs
   - src/specs
   - src/cli/commands/specs.ts
-  - docs/ravi-specs-memory-prd.md
+  - design/ravi-specs-memory-prd.md
 owners:
   - ravi-dev
 status: active

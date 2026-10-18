@@ -22,7 +22,7 @@ applies_to:
   - src/runtime
   - src/session-trace
   - src/bot.ts
-  - docs/runtime-provider-contract.md
+  - design/runtime-provider-contract.md
 owners:
   - ravi-dev
 status: active

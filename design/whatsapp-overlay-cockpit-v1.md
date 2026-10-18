@@ -244,7 +244,7 @@ Implement reliable open behavior:
 
 Manual validation checklist for this phase:
 
-- [`docs/whatsapp-overlay-manual-checklist.md`](./whatsapp-overlay-manual-checklist.md)
+- [`design/whatsapp-overlay-manual-checklist.md`](./whatsapp-overlay-manual-checklist.md)
 
 ### Phase 4. Operational Polish
 

@@ -8,7 +8,7 @@
 
 <p align="center">
   <strong>Local-first runtime for long-lived AI agents.</strong><br />
-  Run agents on your own machine, reach them from Slack, WhatsApp or the terminal, publish what they build as pages, and build your own frontends on SDKs generated from the CLI.
+  Run agents on machines you control, one or many, under one organization. Reach them from Slack, WhatsApp or the terminal, publish what they build as pages, and build your own frontends on SDKs generated from the CLI.
 </p>
 
 <p align="center">
@@ -34,6 +34,26 @@ Documentation: **[docs.ravi.bot](https://docs.ravi.bot)**
 - **Permissions you can reason about.** Each agent has a runtime profile (`bootstrap`, `chat-only`, `explicit-only`, `full-access`) and optional explicit capabilities. In a governed chat, each person gets their own grants intersected with the agent's ceiling; in any other chat, every sender who resolves to a contact gets the whole ceiling, so entry policies and routes decide who gets in. Approvals can be resolved from Slack with buttons that only authorized people can click, and every denial is published on `ravi.audit.denied`.
 - **Planned restarts resume work.** `ravi daemon restart -m "<reason>"` tells the calling session why it restarted and resumes the sessions that were active. A crash does not resume sessions.
 - **Pages and Bases.** Publish HTML to your project's `ravi.page` host with one command, and build members-only pages that read and write typed tables (Bases) in the Ravi Console.
+
+## For organizations
+
+One person can run Ravi on a laptop. A company can run it on many machines, one per team or service, all linked to the same organization in the [Ravi Console](https://console.ravi.bot).
+
+```mermaid
+flowchart LR
+  laptop["Laptop: daemon and agents"] --> org
+  team["Team server: daemon and agents"] --> org
+  support["Support server: daemon and agents"] --> org
+  org["Console organization: members, projects, Library, agent directory"]
+```
+
+- **Machines join with `ravi login`.** Name the machine with `RAVI_CLI_INSTALLATION_NAME` before you log in. From then on its daemon reports its agents to the organization.
+- **Agents ask agents on other machines.** `ravi agents ask support-server/finance "When is the October close?" --execute`. Every agent is closed to requests until its operator opens it, and the asked agent answers as the person who asked, never with its operator's authority.
+- **One Library for the whole organization.** A skill pinned to an agent loads on that agent's machine, agent definitions install with `ravi agents install`, and the organization's themes and widgets apply when a page ships.
+- **Members and access.** Five roles, invites, private pages shared by email, access requests, and data pages that only signed-in members can read.
+- **Your data stays on your machines.** Model and channel credentials, sessions, message history and traces stay in SQLite on each machine. Prompts go to your model provider, and the Console receives only what [What leaves your machines](https://docs.ravi.bot/organizations/data-flow) lists.
+
+Machine identity owned by the organization, with admin approval and a removal that a new login cannot undo, is not built yet. See [Ravi for organizations](https://docs.ravi.bot/organizations/overview) and the [Security model](https://docs.ravi.bot/organizations/security).
 
 ## Quick start
 
@@ -130,4 +150,8 @@ Method names follow the CLI: `ravi instances routes add` is `ravi.instances.rout
 
 ## Development
 
-Building from source, tests, the git hooks and pull requests are covered in [CONTRIBUTING.md](CONTRIBUTING.md). Coding agents working in this repository load [AGENTS.md](AGENTS.md).
+Building from source, tests, the git hooks and pull requests are covered in [CONTRIBUTING.md](CONTRIBUTING.md). Coding agents working in this repository load [AGENTS.md](AGENTS.md). To report a vulnerability, see [SECURITY.md](SECURITY.md).
+
+## License
+
+The daemon, the CLI and the SDKs in this repository are [MIT](LICENSE). The Ravi Console and `ravi.page` are hosted services.
