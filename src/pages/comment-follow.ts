@@ -339,12 +339,11 @@ export async function ensurePageCommentTrigger(
   input.filter = filter;
 
   const triggers = (deps.listTriggers ?? dbListTriggers)();
-  const replacedTriggerId = removeLegacySiteTrigger(binding.pageId, triggers, deps);
   const existing = findExistingPageCommentTrigger(binding, triggers);
 
   let trigger: Trigger;
   let rebound = false;
-  let changed = replacedTriggerId !== undefined;
+  let changed = false;
   if (existing) {
     const updates = rebindUpdates(existing, input);
     rebound = updates.agentId !== undefined || updates.replySession !== undefined;
@@ -360,6 +359,10 @@ export async function ensurePageCommentTrigger(
     trigger = (deps.createTrigger ?? dbCreateTrigger)(input);
     changed = true;
   }
+
+  // Only after the route trigger is saved, so a failed write keeps the old site trigger.
+  const replacedTriggerId = removeLegacySiteTrigger(binding.pageId, triggers, deps);
+  if (replacedTriggerId !== undefined) changed = true;
 
   if (changed) {
     try {

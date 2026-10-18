@@ -171,6 +171,23 @@ describe("page comment follow", () => {
     expect(stored.map((trigger) => trigger.name)).toEqual([`page-comment:${PAGE_ID}:/`]);
   });
 
+  it("keeps the old per-site trigger when saving the route trigger fails", async () => {
+    const stored: Trigger[] = [
+      fakeTrigger({ id: "trg_legacy", name: legacyPageCommentTriggerName(PAGE_ID), agentId: "creator" }),
+    ];
+    const deps = {
+      ...memoryDeps(stored),
+      createTrigger: () => {
+        throw new Error("db locked");
+      },
+    };
+
+    await expect(
+      ensurePageCommentTrigger(binding, { agentId: "creator", sessionName: "main-session" }, deps),
+    ).rejects.toThrow("db locked");
+    expect(stored.map((trigger) => trigger.id)).toEqual(["trg_legacy"]);
+  });
+
   it("does not persist an invalid generated filter", async () => {
     const stored: Trigger[] = [];
     const deps = memoryDeps(stored);
