@@ -32,12 +32,19 @@
       "Slack Threads" section steering off-topic work to `create-thread`.
 - [ ] A Slack thread child MUST get the in-thread variant; sentinels, non-Slack
       channels and contexts without `sessions` MUST NOT get the section.
+- [ ] `thread.report` MUST reach the parent at the channel root, named by title
+      and child session, and leave the thread open.
+- [ ] A close return MUST carry the same title, child session and link.
+- [ ] `thread.list` MUST list the parent's threads from the root or a child,
+      hiding closed ones unless `--all`.
+- [ ] `thread.send` MUST publish one in-thread Execute turn, reopen a closed
+      thread, and refuse thread callers, unknown threads and unstarted threads.
 
 ## Commands
 
 ```bash
 bun test src/channels/slack/socket-mode.test.ts src/channels/slack/thread-lifecycle.test.ts src/runtime/runtime-session-continuity.test.ts
-bun test src/prompt-builder.test.ts src/runtime/runtime-system-prompt.test.ts
+bun test src/prompt-builder.test.ts src/runtime/runtime-system-prompt.test.ts src/cli/commands/sessions.test.ts
 bun run typecheck
 bun run build
 ```

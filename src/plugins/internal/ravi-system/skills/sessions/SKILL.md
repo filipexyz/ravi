@@ -267,6 +267,25 @@ ravi sessions execute <name> "tarefa"
 ravi sessions inform <name> "info"
 ```
 
+### Threads do Slack (orquestração)
+
+A sessão de um DM ou canal do Slack orquestra as threads que abre; cada thread é uma sessão filha. Os comandos inferem a sessão atual.
+
+```bash
+# Abrir uma thread nova na raiz do canal; a mensagem é a raiz visível e a primeira instrução da filha
+ravi sessions create-thread "<mensagem inicial>" [--model <model>]
+
+# Na sessão do canal: listar as threads (abertas; --all inclui fechadas) e mandar instruções para uma
+ravi sessions threads [--all] --json
+ravi sessions thread-send <sessão-da-thread|request-id|thread-ts> "instruções"
+
+# Na thread: avisar a sessão do canal sem fechar, e fechar (com ou sem resultado)
+ravi sessions report "progresso, bloqueio ou decisão"
+ravi sessions close-thread [--return "resultado"]
+```
+
+Progresso e resultado chegam na sessão do canal como `[System] Inform: Slack thread "<título>" (<sessão-da-thread>) ...`. `thread-send` reabre uma thread fechada; a filha responde dentro da thread.
+
 `sessions send` envia prompt/contexto para a sessão do agent; ele não publica texto visível diretamente em WhatsApp, Telegram, Matrix ou outro canal externo. Se o objetivo é falar com uma pessoa/canal, deixe a sessão responder normalmente ou use uma CLI explícita de canal/mídia/outbound apropriada.
 
 ### Session Trace

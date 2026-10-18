@@ -25685,8 +25685,9 @@ public struct SessionsCreateThreadReturn: Codable, Sendable {
   public var requestId: String
   public var slack: RaviJSON
   public var status: String
+  public var title: RaviJSON
 
-  public init(actionId: String, child: RaviJSON, executionMode: String, idempotencyKey: String, initiatorSession: RaviJSON, nextAttemptAt: Double? = nil, parentSession: RaviJSON, publishPending: Bool, publishedNow: Bool, queued: Bool, requestId: String, slack: RaviJSON, status: String) {
+  public init(actionId: String, child: RaviJSON, executionMode: String, idempotencyKey: String, initiatorSession: RaviJSON, nextAttemptAt: Double? = nil, parentSession: RaviJSON, publishPending: Bool, publishedNow: Bool, queued: Bool, requestId: String, slack: RaviJSON, status: String, title: RaviJSON) {
     self.actionId = actionId
     self.child = child
     self.executionMode = executionMode
@@ -25700,6 +25701,7 @@ public struct SessionsCreateThreadReturn: Codable, Sendable {
     self.requestId = requestId
     self.slack = slack
     self.status = status
+    self.title = title
   }
 
   enum CodingKeys: String, CodingKey {
@@ -25716,6 +25718,7 @@ public struct SessionsCreateThreadReturn: Codable, Sendable {
     case requestId = "requestId"
     case slack = "slack"
     case status = "status"
+    case title = "title"
   }
 }
 
@@ -26510,6 +26513,48 @@ public struct SessionsRecapReturn: Codable, Sendable {
 
 public typealias SessionsRenameReturn = [String: RaviJSON]
 
+public struct SessionsReportOptions: Codable, Sendable {
+  public var session: String?
+
+  public init(session: String? = nil) {
+    self.session = session
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case session = "session"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.session {
+      body["session"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct SessionsReportReturn: Codable, Sendable {
+  public var actionId: String
+  public var messageId: String
+  public var parentSession: RaviJSON
+  public var requestId: String
+  public var status: String
+
+  public init(actionId: String, messageId: String, parentSession: RaviJSON, requestId: String, status: String) {
+    self.actionId = actionId
+    self.messageId = messageId
+    self.parentSession = parentSession
+    self.requestId = requestId
+    self.status = status
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case actionId = "actionId"
+    case messageId = "messageId"
+    case parentSession = "parentSession"
+    case requestId = "requestId"
+    case status = "status"
+  }
+}
+
 public struct SessionsResetOptions: Codable, Sendable {
   public var execute: Bool?
 
@@ -27221,6 +27266,93 @@ public typealias SessionsSetThinkingReturn = [String: RaviJSON]
 public typealias SessionsSetTtlReturn = [String: RaviJSON]
 
 public typealias SessionsSubscriptionsReturn = [String: RaviJSON]
+
+public struct SessionsThreadSendOptions: Codable, Sendable {
+  public var session: String?
+
+  public init(session: String? = nil) {
+    self.session = session
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case session = "session"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.session {
+      body["session"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct SessionsThreadSendReturn: Codable, Sendable {
+  public var actionId: String
+  public var messageId: String
+  public var reopened: Bool
+  public var requestId: String
+  public var status: String
+  public var thread: RaviJSON
+
+  public init(actionId: String, messageId: String, reopened: Bool, requestId: String, status: String, thread: RaviJSON) {
+    self.actionId = actionId
+    self.messageId = messageId
+    self.reopened = reopened
+    self.requestId = requestId
+    self.status = status
+    self.thread = thread
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case actionId = "actionId"
+    case messageId = "messageId"
+    case reopened = "reopened"
+    case requestId = "requestId"
+    case status = "status"
+    case thread = "thread"
+  }
+}
+
+public struct SessionsThreadsOptions: Codable, Sendable {
+  public var all: Bool?
+  public var session: String?
+
+  public init(all: Bool? = nil, session: String? = nil) {
+    self.all = all
+    self.session = session
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case all = "all"
+    case session = "session"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.all {
+      body["all"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.session {
+      body["session"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct SessionsThreadsReturn: Codable, Sendable {
+  public var includeClosed: Bool
+  public var parentSession: RaviJSON
+  public var threads: [RaviJSON]
+
+  public init(includeClosed: Bool, parentSession: RaviJSON, threads: [RaviJSON]) {
+    self.includeClosed = includeClosed
+    self.parentSession = parentSession
+    self.threads = threads
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case includeClosed = "includeClosed"
+    case parentSession = "parentSession"
+    case threads = "threads"
+  }
+}
 
 public struct SessionsTraceOptions: Codable, Sendable {
   public var correlation: String?
