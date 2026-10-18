@@ -1535,7 +1535,8 @@ Ravi.section('slack', { always: always, desk: motionBuild, touch: motionBuild, f
 try {
 /* 03 · #scale: ONE PERSON OR THE WHOLE ORG. Unpinned; one timeline flips Just me to The whole org:
      .1 → .45  the thumb slides to The whole org (it lands as the view flips, at .5)
-     .2 → .8   the counters roll up (People 1 → 40, Agents 1 → 6, Pages 1 → 12), through a proxy that scrubs both ways
+     .2 → .8   the counters roll up (People 1 → 40, Machines 1 → 4, Agents 1 → 6), each from its dd's data-me to
+               its data-org, through a proxy that scrubs both ways
      .2 → .38  the Calendar and Morning brief tiles shrink into the first slot and are gone by .38
      .2 → .32  the dashed slots the org tiles will fill show (they are hidden in Just me)
      .42 → 1   the four org tiles pop in, one at a time

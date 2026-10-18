@@ -30,6 +30,6 @@ credentials — inspection should never require the keys that execution does.
 The client construction moved below the brake for exactly that reason.
 
 Known consumers that teach `devin sessions create|send` (tasks skill
-delegation protocol, docs/task-profiles-catalog-v1.md) include `--execute` in
+delegation protocol, design/task-profiles-catalog-v1.md) include `--execute` in
 their real-dispatch steps. Their plain insights examples remain unbraked. No
 dedicated `devin` skill exists yet — the gap is registered in SPEC.md.
