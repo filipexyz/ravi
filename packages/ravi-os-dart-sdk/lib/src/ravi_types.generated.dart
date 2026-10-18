@@ -15621,6 +15621,60 @@ class MeetingsProfilesValidateReturn {
 
 MeetingsProfilesValidateReturn meetingsProfilesValidateReturnFromJson(Object? json) => MeetingsProfilesValidateReturn.fromJsonValue(json);
 
+class MeetingsReadOptions {
+  const MeetingsReadOptions({this.maxChars});
+
+  final String? maxChars;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (maxChars != null) {
+      into["maxChars"] = RaviJson.from(maxChars);
+    }
+  }
+}
+
+class MeetingsReadReturn {
+  const MeetingsReadReturn({required this.access, required this.chat, required this.consoleUrl, required this.contentTrust, required this.crossOrganization, required this.meeting, required this.note, required this.organization, required this.participants, required this.project, required this.recordings, required this.success, required this.transcript});
+
+  final String access;
+  final List<RaviJson> chat;
+  final String consoleUrl;
+  final String contentTrust;
+  final bool crossOrganization;
+  final RaviJson meeting;
+  final String note;
+  final RaviJson organization;
+  final List<RaviJson> participants;
+  final RaviJson project;
+  final List<RaviJson> recordings;
+  final bool success;
+  final RaviJson transcript;
+
+  factory MeetingsReadReturn.fromJson(Map<String, Object?> json) {
+    return MeetingsReadReturn(
+      access: raviJsonAsString(json["access"]),
+      chat: raviJsonAsList(json["chat"], RaviJson.from),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      contentTrust: raviJsonAsString(json["contentTrust"]),
+      crossOrganization: raviJsonAsBool(json["crossOrganization"]),
+      meeting: RaviJson.from(json["meeting"]),
+      note: raviJsonAsString(json["note"]),
+      organization: RaviJson.from(json["organization"]),
+      participants: raviJsonAsList(json["participants"], RaviJson.from),
+      project: RaviJson.from(json["project"]),
+      recordings: raviJsonAsList(json["recordings"], RaviJson.from),
+      success: raviJsonAsBool(json["success"]),
+      transcript: RaviJson.from(json["transcript"]),
+    );
+  }
+
+  static MeetingsReadReturn fromJsonValue(Object? json) {
+    return MeetingsReadReturn.fromJson(raviJsonObject(json, "MeetingsReadReturn"));
+  }
+}
+
+MeetingsReadReturn meetingsReadReturnFromJson(Object? json) => MeetingsReadReturn.fromJsonValue(json);
+
 class MeetingsShowOptions {
   const MeetingsShowOptions({this.project});
 

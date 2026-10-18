@@ -5297,6 +5297,18 @@ class MeetingsNamespace {
     );
   }
 
+  Future<MeetingsReadReturn> read(String meeting, [MeetingsReadOptions options = const MeetingsReadOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["meeting"] = RaviJson.from(meeting);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["meetings"],
+      command: "read",
+      body: requestBody,
+      decode: meetingsReadReturnFromJson,
+    );
+  }
+
   Future<MeetingsShowReturn> show(String meetingId, [MeetingsShowOptions options = const MeetingsShowOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["meetingId"] = RaviJson.from(meetingId);

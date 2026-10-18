@@ -66290,6 +66290,571 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let MeetingsReadInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "maxChars": {
+        "description": "Text output only: characters of transcript and chat to print (1000-2000000, default 256000)",
+        "type": "string"
+      },
+      "meeting": {
+        "description": "Console meeting link (https://console.ravi.bot/.../meetings/<id>) or meeting id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "meeting"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MeetingsReadReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "access": {
+        "type": "string"
+      },
+      "chat": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "atSeconds": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sender": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "senderId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sentAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "text": {
+              "type": "string"
+            },
+            "to": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "sender",
+            "senderId",
+            "atSeconds",
+            "sentAt",
+            "to",
+            "text"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "consoleUrl": {
+        "type": "string"
+      },
+      "contentTrust": {
+        "const": "untrusted",
+        "type": "string"
+      },
+      "crossOrganization": {
+        "type": "boolean"
+      },
+      "meeting": {
+        "additionalProperties": false,
+        "properties": {
+          "botName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "doneAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "endedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "joinAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meetingCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meetingUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "projectId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "recordingSeconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recordingStartedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "transcriptStatus": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "platform",
+          "meetingUrl",
+          "meetingCode",
+          "botName",
+          "title",
+          "language",
+          "status",
+          "transcriptStatus",
+          "ready",
+          "joinAt",
+          "recordingStartedAt",
+          "endedAt",
+          "doneAt",
+          "recordingSeconds",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "note": {
+        "type": "string"
+      },
+      "organization": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name"
+        ],
+        "type": "object"
+      },
+      "participants": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "isHost": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "isHost"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "project": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "slug": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "slug",
+              "name"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "recordings": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "completedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "expiresAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "startedAt",
+            "completedAt",
+            "expiresAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "transcript": {
+        "additionalProperties": false,
+        "properties": {
+          "segments": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "endSeconds": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "isHost": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "speaker": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "speakerId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "startSeconds": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "startedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "speaker",
+                "speakerId",
+                "isHost",
+                "startSeconds",
+                "endSeconds",
+                "startedAt",
+                "text"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "segments"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "success",
+      "consoleUrl",
+      "meeting",
+      "organization",
+      "project",
+      "access",
+      "crossOrganization",
+      "transcript",
+      "participants",
+      "chat",
+      "recordings",
+      "note",
+      "contentTrust"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let MeetingsShowInputSchema = #"""
   {
     "additionalProperties": false,

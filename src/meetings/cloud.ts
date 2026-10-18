@@ -253,24 +253,51 @@ export class MeetingsCloudClient {
   }
 
   private async request<T>(method: string, relativePath: string, body?: unknown): Promise<T> {
-    const path = `${meetingsApiRoot(this.session.projectRef)}${relativePath}`;
+    const session: ConsoleRefreshingSession = { ...this.session, credentials: this.credentials };
     try {
-      try {
-        return await this.session.client.requestJson<T>(method, path, body, this.credentials.accessToken);
-      } catch (error) {
-        if (!isCloudAuthError(error) || error.code !== "AUTH_EXPIRED") throw error;
-      }
-      this.credentials = await refreshCredentialsForStore({
-        client: this.session.client,
-        credentials: this.credentials,
-        write: this.session.write,
-        delete: this.session.delete,
-      });
-      return await this.session.client.requestJson<T>(method, path, body, this.credentials.accessToken);
-    } catch (error) {
-      if (error instanceof CloudAuthError) throw error;
-      throw classifyConsoleNetworkError(error, inspectExecutionPlane());
+      return await requestConsoleWithRefresh<T>(
+        session,
+        method,
+        `${meetingsApiRoot(this.session.projectRef)}${relativePath}`,
+        body,
+      );
+    } finally {
+      this.credentials = session.credentials;
     }
+  }
+}
+
+/** Console credentials plus what a refresh needs; a refresh replaces `credentials` in place. */
+export interface ConsoleRefreshingSession {
+  client: ConsoleApiClient;
+  credentials: CloudCredentials;
+  write: typeof writeCloudCredentials;
+  delete: typeof deleteCloudCredentials;
+}
+
+/** One Console JSON call that refreshes the access token once when it expired. */
+export async function requestConsoleWithRefresh<T>(
+  session: ConsoleRefreshingSession,
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<T> {
+  try {
+    try {
+      return await session.client.requestJson<T>(method, path, body, session.credentials.accessToken);
+    } catch (error) {
+      if (!isCloudAuthError(error) || error.code !== "AUTH_EXPIRED") throw error;
+    }
+    session.credentials = await refreshCredentialsForStore({
+      client: session.client,
+      credentials: session.credentials,
+      write: session.write,
+      delete: session.delete,
+    });
+    return await session.client.requestJson<T>(method, path, body, session.credentials.accessToken);
+  } catch (error) {
+    if (error instanceof CloudAuthError) throw error;
+    throw classifyConsoleNetworkError(error, inspectExecutionPlane());
   }
 }
 

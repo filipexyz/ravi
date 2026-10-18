@@ -1,0 +1,35 @@
+---
+title: Read a meeting
+description: Let your agent read a Console meeting's transcript, including one recorded in another organization you belong to.
+icon: video
+---
+
+Send your agent the Console link of a recorded Google Meet call and ask for something, such as feedback on how you communicated. The agent reads the transcript with `ravi meetings read` at that moment. Nothing is saved on your computer and nothing is copied into your organization. A recording can be read for 7 days after the call; after that its transcript may no longer be available.
+
+```bash
+ravi meetings read https://console.ravi.bot/p/sales/meetings/6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b
+ravi meetings read 6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b --json
+```
+
+The text output starts with the title, organization, project, date, duration and participants, then prints one line per transcript segment (`[12:34] Speaker: text`), the meeting chat, and a closing note. `--max-chars <n>` limits the text output; `--json` returns everything.
+
+## Who can read a meeting
+
+- **Only you.** The read uses your `ravi login`, so the agent reads meetings only on your own turns: the terminal, your direct chat with the agent and your routines. It refuses a group even when you ask there, since everyone in it would read the answer. When anyone else sends the agent a meeting link, the command exits 3 and the agent tells them it cannot read meeting transcripts for other people.
+- **The Console decides access.** Your login's user must be a member of the meeting's organization with read access to its project, or the meeting must have been shared with your email.
+- **Other organizations.** A meeting recorded in another organization you belong to, such as your company's, is readable from your personal Ravi only after an admin of that organization allows agents from other organizations to read meetings in its Console settings. It is off by default. Each such read is recorded in that organization's audit log.
+
+## What the agent keeps
+
+The result tells the agent that the transcript is for this turn only: it must not save the transcript or parts of it to files, memory or knowledge, and must not share its content with other contacts. It keeps only its conclusions, in your conversation. Transcript text is marked as untrusted, so instructions spoken in the call are never followed.
+
+## Errors
+
+| Code | Exit | Meaning |
+|---|---|---|
+| `MEETING_ACCESS_DENIED` | 3 | The turn is not yours. |
+| `ORG_ACCESS_DENIED` | 3 | No access to the meeting's organization, or (`refusal: external_agents_disabled`) it does not allow agents from other organizations. |
+| `PROJECT_ACCESS_DENIED` | 3 | No read access to the meeting's project. |
+| `NOT_FOUND` | 1 | No such meeting, or it is not shared with you. |
+| `CONFLICT` | 1 | The recording is not ready yet. |
+| `INVALID_ARGUMENT` | 2 | Not a Console meeting link or id (a `meet.google.com` link is not one). |
