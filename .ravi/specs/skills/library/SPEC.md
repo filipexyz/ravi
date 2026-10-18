@@ -311,9 +311,10 @@ The daemon runs a Library pin runner. At start and every
 
 1. opens the `ravi login` session; without one it waits quietly for the next
    tick;
-2. with the `console.projects.link` scope, reports every local agent
-   (`POST /pins/sync`, body `{agents:[{id, name, provider, model, project}]}`,
-   at most 500), where `project` is the agent's Console project ref as
+2. with the `console.projects.link` scope, reports the local agents the
+   operator listed (`ravi agents listing <id> on`; default: none) (`POST
+   /pins/sync`, body `{agents:[{id, name, provider, model, project}]}`, at
+   most 500), where `project` is the agent's Console project ref as
    `ravi cloud scope` resolves it for that agent (its agent default, else the
    saved default, else the single visible project; `null` when none). Without
    the scope it only reads `GET /pins`;
@@ -404,7 +405,10 @@ unreadable pin table denies.
 ### `ravi skills pin <ref> --agent <id>`
 
 Flags: `--agent` (required, a local agent), `--json`, `--execute` (last).
-Braked: without `--execute` it reads the item (`GET
+The agent must be listed (the Console pins only agents this installation
+reports): an unlisted one is `LIBRARY_AGENT_NOT_LISTED` (exit 1) before any
+request, pointing at `ravi agents listing <id> on --execute`. Braked: without
+`--execute` it reads the item (`GET
 /skills/<scope>/<slug>`) and exits 3 with a plan: `ref`, `id`, `agent`,
 `installationId`, `item` (`name`, `description`, `scope`, `project`,
 `version`, `externalAllowed`), `alreadyPinned` and `effect`. With `--execute`
@@ -463,8 +467,9 @@ A definition never carries routes, instances, contacts, sessions, local paths
 or credentials, in either direction.
 
 Local state lives in `ravi.db`, table `library_agents` (one row per local
-agent): `description` (at most 300 characters, the directory text),
-`accepts_requests` (0/1, default 0), and the origin of an installed agent:
+agent): `listed` (0/1, default 0: whether the pin sync reports the agent),
+`description` (at most 300 characters, the directory text),
+`accepts_requests` (0/1, default 0; 1 implies `listed`), and the origin of an installed agent:
 `origin_ref`, `origin_version`, `origin_content_hash`, `agents_md_sha256`,
 `heartbeat_md_sha256` (the files as installed), `origin_profile` and
 `origin_skills_json` (what the installed version asked for), `installed_at`.
@@ -487,7 +492,7 @@ under `<RAVI_STATE_DIR>/library/agent-definitions/<orgId>/`.
 cache while offline), `manifest`, `files`, `instructions`, `heartbeat` and
 `next` (`ravi agents install <ref>`). `externalAllowed: false` in a turn that
 is not the operator's own is `LIBRARY_SKILL_EXTERNAL_DENIED` (exit 3). A
-local agent's `show` adds `library` (`description`, `acceptsRequests`,
+local agent's `show` adds `library` (`description`, `listed`, `acceptsRequests`,
 `origin` with `ref`, `version`, `installedAt`) when it has a row.
 
 ### `ravi agents install <ref>`
@@ -499,7 +504,8 @@ and a cwd that already has `AGENTS.md` (`AGENT_CWD_IN_USE`); read the current
 version; plan the profile and the skills; then write `AGENTS.md` (and
 `HEARTBEAT.md`), create the agent with the suggested provider and model,
 apply the profile, store the grants, record the origin with the sha256 of
-each file, set `accepts_requests` to 0 and the description from the item.
+each file, set `listed` and `accepts_requests` to 0 and the description from
+the item.
 
 The brake is local: without `--execute` it exits 3 with the plan
 (`WRITE_REQUIRES_EXECUTE`) when the suggested profile is above the bootstrap
@@ -578,19 +584,38 @@ side only transports, keeps local state and enforces its own switch.
 
 ### What the pin sync reports
 
+Only listed agents are reported. An agent is unlisted by default, including
+every agent that existed before the switch (the migration lists only those
+already open to requests), and the Console replaces the installation's
+reported agents with each sync, so an agent drops out of the directory at the
+first sync after it is unlisted. Existing pins stay: the Console keeps them
+(`reported: false`) and this side keeps loading them.
+
 Each agent report also carries `description` (the `ravi agents set <id>
 description` text, at most 300 characters, else null) and `acceptsRequests`
 (`library_agents.accepts_requests`, default false).
 
+### `ravi agents listing <id> [on|off]`
+
+Without a state: shows the switch (read). `on` lists the agent in the
+organization's directory (the Console's "Running agents"): braked (exit 3
+with the plan without `--execute`). `off` only takes exposure away and applies
+at once; it also closes the agent to requests. Both refuse inside an agent
+runtime with `LIBRARY_AGENT_CANNOT_LIST` (exit 3). After storing the switch,
+it runs a pin sync when the login has the link scope (`reported: true`);
+otherwise the daemon reports it at its next sync (`hint`). `--json`: `agent`,
+`listed`, `acceptsRequests`, `changed`, `reported`, `hint`.
+
 ### `ravi agents requests <id> [on|off]`
 
-Without a state: shows the switch (read). `on` opens the agent to requests:
-braked (exit 3 with the plan without `--execute`). `off` only takes exposure
-away and applies at once. Both refuse inside an agent runtime with
+Without a state: shows the switch (read). `on` opens the agent to requests
+and lists it: braked (exit 3 with the plan without `--execute`). `off` only
+takes exposure away and applies at once (the agent stays listed). Both refuse inside an agent runtime with
 `LIBRARY_AGENT_CANNOT_OPEN_REQUESTS` (exit 3). After storing the switch, it
 runs a pin sync when the login has the link scope, so the directory follows
 at once (`reported: true`); otherwise the daemon reports it at its next sync
-(`hint`). `--json`: `agent`, `acceptsRequests`, `changed`, `reported`, `hint`.
+(`hint`). `--json`: `agent`, `listed`, `acceptsRequests`, `changed`,
+`reported`, `hint`.
 
 ### `ravi agents directory [query]`
 
@@ -730,6 +755,8 @@ session's stored history when there was none.
 | update of a file edited here and changed in the Library, without `--keep-local` or `--take-library` | `LIBRARY_AGENT_EDITED_LOCALLY` | 2 |
 | `agents requests <id> on` without `--execute`, or `agents ask` without `--execute` | `WRITE_REQUIRES_EXECUTE` | 3 |
 | `agents requests <id> on` or `off` inside an agent runtime | `LIBRARY_AGENT_CANNOT_OPEN_REQUESTS` | 3 |
+| `agents listing <id> on` or `off` inside an agent runtime | `LIBRARY_AGENT_CANNOT_LIST` | 3 |
+| `skills pin` to an agent that is not listed | `LIBRARY_AGENT_NOT_LISTED` | 1 |
 | `agents ask` from an agent turn that is not the operator's own | `LIBRARY_REQUEST_EXTERNAL_DENIED` | 3 |
 | `agents ask` target matching two installations by name | `LIBRARY_TARGET_AMBIGUOUS` | 2 |
 | `agents ask` target not in the directory | `NOT_FOUND` | 1 |

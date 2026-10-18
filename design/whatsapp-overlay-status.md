@@ -110,8 +110,8 @@ Removed:
 
 ## Related Documents
 
-- `docs/whatsapp-overlay-cockpit-v1.md`
-- `docs/whatsapp-overlay-rbac.md`
-- `docs/whatsapp-overlay-manual-checklist.md`
-- `docs/whatsapp-overlay-cockpit-v1-browser-validation-2026-03-28.md`
-- `docs/ravi-v3-cli-stream-core.md`
+- `design/whatsapp-overlay-cockpit-v1.md`
+- `design/whatsapp-overlay-rbac.md`
+- `design/whatsapp-overlay-manual-checklist.md`
+- `design/whatsapp-overlay-cockpit-v1-browser-validation-2026-03-28.md`
+- `design/ravi-v3-cli-stream-core.md`

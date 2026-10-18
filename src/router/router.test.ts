@@ -339,6 +339,37 @@ describe("router context queries", () => {
     ).toEqual({ marker: "materialization" });
   });
 
+  it("adds library_agents.listed and keeps listed only the agents already open to requests", () => {
+    const legacyDb = new Database(join(stateDir!, "ravi.db"));
+    legacyDb.exec(`
+      CREATE TABLE library_agents (
+        agent_id             TEXT PRIMARY KEY,
+        description          TEXT,
+        accepts_requests     INTEGER NOT NULL DEFAULT 0 CHECK(accepts_requests IN (0,1)),
+        origin_ref           TEXT,
+        origin_version       INTEGER,
+        origin_content_hash  TEXT,
+        agents_md_sha256     TEXT,
+        heartbeat_md_sha256  TEXT,
+        origin_profile       TEXT,
+        origin_skills_json   TEXT,
+        installed_at         INTEGER,
+        updated_at           INTEGER NOT NULL
+      );
+      INSERT INTO library_agents (agent_id, description, accepts_requests, updated_at)
+      VALUES ('aberto', 'Answers', 1, 100), ('descrito', 'Only described', 0, 100);
+    `);
+    legacyDb.close();
+
+    const rows = getDb()
+      .prepare("SELECT agent_id, listed, accepts_requests FROM library_agents ORDER BY agent_id")
+      .all();
+    expect(rows).toEqual([
+      { agent_id: "aberto", listed: 1, accepts_requests: 1 },
+      { agent_id: "descrito", listed: 0, accepts_requests: 0 },
+    ]);
+  });
+
   it("persists native Slack instanceId and canonicalChatId on context source", () => {
     dbCreateAgent({ id: "agent-a", cwd: "/tmp/ravi-agent-a" });
     getOrCreateSession("agent:agent-a:slack:hana-slack:C123", "agent-a", "/tmp/ravi-agent-a", {

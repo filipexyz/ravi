@@ -22,6 +22,7 @@ import type {
   MessageTarget,
   RuntimeTurnOriginPrincipal,
 } from "../../runtime/message-types.js";
+import { buildSessionRelayTurnOrigin, type SessionRelayOriginContext } from "../../runtime/turn-origin.js";
 import { logger } from "../../utils/logger.js";
 import {
   claimSlackThreadCreation,
@@ -33,9 +34,11 @@ import {
   getSlackThreadLifecycle,
   listPendingSlackThreadCreations,
   listPendingSlackThreadParentReturns,
+  listSlackThreadLifecyclesByParent,
   registerInboundSlackThread,
   releaseSlackThreadCreationClaim,
   releaseSlackThreadParentReturnClaim,
+  reopenSlackThreadLifecycle,
   type CloseSlackThreadLifecycleResult,
   type SlackThreadLifecycleRecord,
 } from "./thread-lifecycle-store.js";
@@ -315,34 +318,14 @@ export async function deliverSlackThreadParentReturn(
     if (!record.closeResult || !record.parentEventId || !record.providerThreadId) {
       throw new Error(`Slack thread parent return is incomplete: ${record.requestId}`);
     }
-    const rootChat =
-      (record.rootCanonicalChatId ? dbGetChat(record.rootCanonicalChatId) : null) ??
-      dbFindChat({
-        channel: "slack",
-        instanceId: record.instanceId,
-        platformChatId: record.platformChatId,
-      });
-    const source: MessageTarget = {
-      channel: "slack",
-      accountId: record.accountId,
-      instanceId: record.instanceId,
-      chatId: record.platformChatId,
-      ...(rootChat ? { canonicalChatId: rootChat.id } : {}),
-      sourceMessageId: record.providerThreadId,
-      actorType: "system",
-      suppressPresence: true,
-    };
     await publishChannelSessionPrompt(
       {
         sessionName: parent.name ?? parent.sessionKey,
         action: "session.return",
         principal: resolveChannelLifecyclePrincipal("session.return", record.childSessionKey),
         payload: {
-          prompt: [
-            `[System] Inform: Slack thread ${record.providerThreadId} concluída.`,
-            `Resultado: ${record.closeResult}`,
-          ].join("\n"),
-          source,
+          prompt: buildSlackThreadParentNotice(record, "concluída.", "Resultado", record.closeResult),
+          source: buildSlackThreadParentSource(record, record.providerThreadId),
           deliveryBarrier: "after_tool",
           deliveryBarrierSource: "default",
           _slackThreadLifecycle: {
@@ -371,6 +354,219 @@ export async function deliverSlackThreadParentReturn(
     });
     throw error;
   }
+}
+
+const SLACK_THREAD_TITLE_MAX_LENGTH = 80;
+const SLACK_ID_PATTERN = /^[A-Z0-9]+$/;
+const SLACK_TS_PATTERN = /^\d+\.\d+$/;
+
+export interface SlackThreadSummary {
+  requestId: string;
+  title: string | null;
+  status: SlackThreadLifecycleRecord["status"];
+  source: SlackThreadLifecycleRecord["source"];
+  childSessionKey: string | null;
+  childSessionName: string | null;
+  slackThreadTs: string | null;
+  link: string | null;
+  createdAt: number;
+  updatedAt: number;
+  closedAt: number | null;
+  parentReturn: { requested: boolean; pending: boolean };
+}
+
+export interface SlackThreadReportResult {
+  record: SlackThreadLifecycleRecord;
+  messageId: string;
+}
+
+export interface SlackThreadSendResult {
+  record: SlackThreadLifecycleRecord;
+  reopened: boolean;
+  messageId: string;
+}
+
+/** First non-empty line of the initial message, used to name a programmatic thread to its parent. */
+export function slackThreadTitle(record: Pick<SlackThreadLifecycleRecord, "initialPrompt">): string | undefined {
+  const line = record.initialPrompt
+    ?.split("\n")
+    .map((part) => part.trim())
+    .find(Boolean);
+  if (!line) return undefined;
+  return line.length > SLACK_THREAD_TITLE_MAX_LENGTH
+    ? `${line.slice(0, SLACK_THREAD_TITLE_MAX_LENGTH - 1).trimEnd()}…`
+    : line;
+}
+
+/** Slack web link to the thread, when the workspace id is known from inbound provenance. */
+export function slackThreadLink(record: SlackThreadLifecycleRecord): string | undefined {
+  const channelId = record.platformChatId;
+  const threadTs = record.providerThreadId;
+  if (!threadTs || !SLACK_ID_PATTERN.test(channelId) || !SLACK_TS_PATTERN.test(threadTs)) return undefined;
+  const chats = [
+    record.rootCanonicalChatId ? dbGetChat(record.rootCanonicalChatId) : null,
+    record.threadCanonicalChatId ? dbGetChat(record.threadCanonicalChatId) : null,
+  ];
+  const teamId = chats
+    .map((chat) => chat?.rawProvenance?.teamId)
+    .find((value): value is string => typeof value === "string" && SLACK_ID_PATTERN.test(value));
+  return teamId ? `https://app.slack.com/client/${teamId}/${channelId}/thread/${channelId}-${threadTs}` : undefined;
+}
+
+export function summarizeSlackThread(record: SlackThreadLifecycleRecord): SlackThreadSummary {
+  return {
+    requestId: record.requestId,
+    title: slackThreadTitle(record) ?? null,
+    status: record.status,
+    source: record.source,
+    childSessionKey: record.childSessionKey ?? null,
+    childSessionName: record.childSessionName ?? null,
+    slackThreadTs: record.providerThreadId ?? null,
+    link: slackThreadLink(record) ?? null,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    closedAt: record.closedAt ?? null,
+    parentReturn: {
+      requested: record.parentReturnRequested,
+      pending: record.parentReturnRequested && record.parentNotifiedAt === undefined,
+    },
+  };
+}
+
+/** Threads owned by the channel-root session of `session` (itself, or the parent of a thread child). */
+export function listSlackThreadsForSession(
+  session: SessionEntry,
+  options: { includeClosed?: boolean } = {},
+): { parentSessionKey: string; parentSessionName: string; threads: SlackThreadSummary[] } {
+  const parentSessionKey = slackThreadParentSessionKey(session.sessionKey);
+  const parent = parentSessionKey === session.sessionKey ? session : getSession(parentSessionKey);
+  return {
+    parentSessionKey,
+    parentSessionName: parent?.name ?? parentSessionKey,
+    threads: listSlackThreadLifecyclesByParent(parentSessionKey, { includeClosed: options.includeClosed }).map(
+      summarizeSlackThread,
+    ),
+  };
+}
+
+/** Find one of a parent's threads by request id, thread session name or key, or Slack thread ts. */
+export function findSlackThreadForParent(parentSessionKey: string, ref: string): SlackThreadLifecycleRecord | null {
+  const normalized = ref.trim();
+  if (!normalized) return null;
+  const direct = getSlackThreadLifecycle(normalized);
+  if (direct) return direct.parentSessionKey === parentSessionKey ? direct : null;
+  return (
+    listSlackThreadLifecyclesByParent(parentSessionKey, { includeClosed: true, limit: 500 }).find(
+      (record) =>
+        record.childSessionName === normalized ||
+        record.childSessionKey === normalized ||
+        record.providerThreadId === normalized,
+    ) ?? null
+  );
+}
+
+/** A thread child tells its parent session about progress without closing the thread. */
+export async function reportSlackThreadProgress(
+  session: SessionEntry,
+  message: string,
+  dependencies: SlackThreadLifecycleDependencies = DEFAULT_DEPENDENCIES,
+): Promise<SlackThreadReportResult> {
+  const text = message.trim();
+  if (!text) throw new Error("Report message is required");
+  const record = ensureSlackThreadLifecycleForSession(session);
+  if (!record.providerThreadId) throw new Error(`Slack thread has not started yet: ${record.requestId}`);
+  const parent = getSession(record.parentSessionKey);
+  if (!parent) throw new Error(`Slack thread parent session not found: ${record.parentSessionKey}`);
+  const messageId = `slack-thread-report:${record.requestId}:${randomUUID()}`;
+  await publishChannelSessionPrompt(
+    {
+      sessionName: parent.name ?? parent.sessionKey,
+      action: "session.return",
+      principal: resolveChannelLifecyclePrincipal("session.return", session.sessionKey),
+      payload: {
+        prompt: buildSlackThreadParentNotice(record, "reporta progresso.", "Progresso", text),
+        source: buildSlackThreadParentSource(record, record.providerThreadId),
+        deliveryBarrier: "after_tool",
+        deliveryBarrierSource: "default",
+        _slackThreadLifecycle: {
+          eventId: messageId,
+          eventType: "thread.report",
+          requestId: record.requestId,
+          parentSessionKey: record.parentSessionKey,
+          childSessionKey: session.sessionKey,
+          childSessionName: session.name ?? session.sessionKey,
+          providerThreadId: record.providerThreadId,
+        },
+      },
+      options: { messageId },
+    },
+    dependencies.publishPrompt,
+  );
+  return { record, messageId };
+}
+
+/**
+ * The channel-root session sends new instructions to one of its threads. The
+ * thread answers inside the Slack thread; a closed thread reopens.
+ */
+export async function sendSlackThreadMessage(
+  input: {
+    parentSession: SessionEntry;
+    ref: string;
+    message: string;
+    /** Who is sending, for turn provenance; defaults to the parent session itself. */
+    origin?: SessionRelayOriginContext;
+  },
+  dependencies: SlackThreadLifecycleDependencies = DEFAULT_DEPENDENCIES,
+): Promise<SlackThreadSendResult> {
+  const text = input.message.trim();
+  if (!text) throw new Error("Thread message is required");
+  const parent = input.parentSession;
+  if (slackThreadParentSessionKey(parent.sessionKey) !== parent.sessionKey) {
+    throw new Error("Only the channel session that owns these threads can send to them; this session is a thread");
+  }
+  const found = findSlackThreadForParent(parent.sessionKey, input.ref);
+  if (!found) throw new Error(`Slack thread not found for this session: ${input.ref}`);
+  if (
+    (found.status !== "open" && found.status !== "closed") ||
+    !found.childSessionKey ||
+    !found.providerThreadId ||
+    !found.threadCanonicalChatId
+  ) {
+    throw new Error(`Slack thread has not started yet: ${found.requestId}`);
+  }
+  const child = getSession(found.childSessionKey);
+  if (!child) throw new Error(`Slack thread session not found: ${found.childSessionKey}`);
+  const reopened = found.status === "closed";
+  const record = reopened ? reopenSlackThreadLifecycle(found.requestId) : found;
+  const parentName = parent.name ?? parent.sessionKey;
+  const messageId = `slack-thread-send:${record.requestId}:${randomUUID()}`;
+  await dependencies.publishPrompt(
+    child.name ?? child.sessionKey,
+    {
+      prompt: `[System] Execute: [from: ${parentName}] ${text}`,
+      source: buildSlackThreadChildSource(record, found.threadCanonicalChatId, child.agentId),
+      context: buildSlackThreadMessageContext(record, found.threadCanonicalChatId, child.agentId),
+      deliveryBarrier: "after_tool",
+      deliveryBarrierSource: "default",
+      _slackThreadLifecycle: {
+        eventId: messageId,
+        eventType: "thread.message",
+        requestId: record.requestId,
+        parentSessionKey: parent.sessionKey,
+        childSessionKey: child.sessionKey,
+        childSessionName: child.name ?? child.sessionKey,
+        providerThreadId: found.providerThreadId,
+        reopened,
+      },
+      _turnOrigin: buildSessionRelayTurnOrigin(
+        "execute",
+        input.origin ?? { agentId: parent.agentId, sessionKey: parent.sessionKey, sessionName: parent.name },
+      ),
+    },
+    { messageId },
+  );
+  return { record, reopened, messageId };
 }
 
 export function slackThreadParentSessionKey(sessionKey: string): string {
@@ -469,20 +665,9 @@ function buildSlackThreadInitialPrompt(
   },
 ): Record<string, unknown> {
   const providerThreadId = record.providerThreadId!;
-  const source: MessageTarget = {
-    channel: "slack",
-    accountId: record.accountId,
-    instanceId: record.instanceId,
-    chatId: record.platformChatId,
-    canonicalChatId: materialized.threadCanonicalChatId,
-    threadId: providerThreadId,
-    sourceMessageId: providerThreadId,
-    actorType: "agent",
-    actorAgentId: materialized.agentId,
-  };
   return {
     prompt: `[System] Execute: [from: ${record.parentSessionName}] ${record.initialPrompt}`,
-    source,
+    source: buildSlackThreadChildSource(record, materialized.threadCanonicalChatId, materialized.agentId),
     context: buildSlackThreadMessageContext(record, materialized.threadCanonicalChatId, materialized.agentId),
     deliveryBarrier: "after_tool",
     deliveryBarrierSource: "default",
@@ -498,6 +683,66 @@ function buildSlackThreadInitialPrompt(
       modelOverride: record.modelOverride ?? null,
     },
   };
+}
+
+function buildSlackThreadChildSource(
+  record: SlackThreadLifecycleRecord,
+  threadCanonicalChatId: string,
+  agentId: string,
+): MessageTarget {
+  const providerThreadId = record.providerThreadId!;
+  return {
+    channel: "slack",
+    accountId: record.accountId,
+    instanceId: record.instanceId,
+    chatId: record.platformChatId,
+    canonicalChatId: threadCanonicalChatId,
+    threadId: providerThreadId,
+    sourceMessageId: providerThreadId,
+    actorType: "agent",
+    actorAgentId: agentId,
+  };
+}
+
+/** Parent turns from a thread reply at the channel root, never inside the thread. */
+function buildSlackThreadParentSource(record: SlackThreadLifecycleRecord, providerThreadId: string): MessageTarget {
+  const rootChat =
+    (record.rootCanonicalChatId ? dbGetChat(record.rootCanonicalChatId) : null) ??
+    dbFindChat({
+      channel: "slack",
+      instanceId: record.instanceId,
+      platformChatId: record.platformChatId,
+    });
+  return {
+    channel: "slack",
+    accountId: record.accountId,
+    instanceId: record.instanceId,
+    chatId: record.platformChatId,
+    ...(rootChat ? { canonicalChatId: rootChat.id } : {}),
+    sourceMessageId: providerThreadId,
+    actorType: "system",
+    suppressPresence: true,
+  };
+}
+
+function slackThreadLabel(record: SlackThreadLifecycleRecord): string {
+  const name = record.childSessionName ?? record.providerThreadId ?? record.requestId;
+  const title = slackThreadTitle(record);
+  return title ? `"${title}" (${name})` : name;
+}
+
+function buildSlackThreadParentNotice(
+  record: SlackThreadLifecycleRecord,
+  headline: string,
+  label: string,
+  body: string,
+): string {
+  const link = slackThreadLink(record);
+  return [
+    `[System] Inform: Slack thread ${slackThreadLabel(record)} ${headline}`,
+    ...(link ? [`Link: ${link}`] : []),
+    `${label}: ${body}`,
+  ].join("\n");
 }
 
 function buildSlackThreadMessageContext(

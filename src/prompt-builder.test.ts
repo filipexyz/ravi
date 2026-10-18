@@ -401,3 +401,42 @@ describe("Ravi Page Links section", () => {
     expect(sections.map((section) => section.id)).not.toContain("pages.links");
   });
 });
+
+describe("Slack Threads section", () => {
+  const slack = { channelId: "slack", channelName: "Slack", isGroup: true };
+
+  it("mounts the variant the runtime picked, right after output formatting", () => {
+    const sections = buildSystemPromptSections("main", slack, undefined, "ops", { slackThreads: "channel" });
+    const ids = sections.map((section) => section.id);
+    expect(ids.indexOf("channel.slack_threads")).toBe(ids.indexOf("channel.output_formatting") + 1);
+
+    const channel = renderPromptSections(sections);
+    expect(channel).toContain(
+      "Work that strays from that subject goes to its own Slack thread, and this session orchestrates the threads it opens.",
+    );
+    expect(channel).toContain("`ravi sessions threads --json` lists the threads of this conversation");
+    expect(channel).toContain('`ravi sessions thread-send <thread-session> "<instructions>"`');
+    expect(channel).toContain('`[System] Inform: Slack thread "<title>" (<thread-session>) ...`');
+    expect(channel).toContain("Prefer a thread whenever the work takes several steps or will post progress");
+    expect(channel).toContain("react to the request or reply with @@SILENT@@");
+    expect(channel).toContain("shows `thread.create` unavailable, do the work here.");
+
+    const thread = buildSystemPrompt("main", slack, undefined, "ops-t-1712345678123456", { slackThreads: "thread" });
+    expect(thread).toContain("Keep the work and its progress in this thread");
+    expect(thread).toContain("comes from the orchestrating session: treat it as its instructions");
+    expect(thread).toContain('`ravi sessions report "<text>"`. It does not close the thread.');
+    expect(thread).toContain("the new thread starts at the channel root, beside this one.");
+  });
+
+  it("stays out unless mounted, off Slack and for sentinels", () => {
+    expect(buildSystemPrompt("main", slack, undefined, "ops")).not.toContain("## Slack Threads");
+    expect(
+      buildSystemPrompt("main", { channelId: "matrix", channelName: "Matrix", isGroup: false }, undefined, "ops", {
+        slackThreads: "channel",
+      }),
+    ).not.toContain("## Slack Threads");
+    expect(
+      buildSystemPrompt("observer", slack, undefined, "observer", { agentMode: "sentinel", slackThreads: "channel" }),
+    ).not.toContain("## Slack Threads");
+  });
+});

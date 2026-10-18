@@ -609,6 +609,49 @@ export function listPendingSlackThreadParentReturns(
   return rows.map(rowToSlackThreadLifecycle);
 }
 
+export function listSlackThreadLifecyclesByParent(
+  parentSessionKey: string,
+  input: { includeClosed?: boolean; limit?: number } = {},
+): SlackThreadLifecycleRecord[] {
+  const limit = Math.max(1, Math.min(input.limit ?? 50, 500));
+  const rows = getDb()
+    .prepare(
+      `
+      SELECT *
+      FROM slack_thread_lifecycle
+      WHERE parent_session_key = ?
+        AND (? = 1 OR status != 'closed')
+      ORDER BY created_at DESC
+      LIMIT ?
+    `,
+    )
+    .all(parentSessionKey, input.includeClosed ? 1 : 0, limit) as SlackThreadLifecycleRow[];
+  return rows.map(rowToSlackThreadLifecycle);
+}
+
+/** Reopen a closed thread for new work; a pending parent completion is kept. */
+export function reopenSlackThreadLifecycle(requestId: string, now = Date.now()): SlackThreadLifecycleRecord {
+  return executeWrite(
+    getDb(),
+    (database) => {
+      database
+        .prepare(
+          `
+          UPDATE slack_thread_lifecycle
+          SET status = 'open',
+              closed_at = NULL,
+              updated_at = ?
+          WHERE request_id = ?
+            AND status = 'closed'
+        `,
+        )
+        .run(now, requestId);
+      return selectSlackThreadLifecycle(database, requestId);
+    },
+    { label: "slack_thread_lifecycle_reopen" },
+  );
+}
+
 function selectSlackThreadLifecycle(database: ReturnType<typeof getDb>, requestId: string): SlackThreadLifecycleRecord {
   const row = database.prepare("SELECT * FROM slack_thread_lifecycle WHERE request_id = ?").get(requestId) as
     | SlackThreadLifecycleRow

@@ -494,6 +494,23 @@ export type AgentsListReturn = {
   total: number;
 };
 
+/** Input shape for `agents.listing`. */
+export type AgentsListingInput = {
+  execute?: boolean;
+  id: string;
+  state?: string;
+};
+
+/** Return shape for `agents.listing`. */
+export type AgentsListingReturn = {
+  acceptsRequests: boolean;
+  agent: string;
+  changed: boolean;
+  hint?: string;
+  listed: boolean;
+  reported: boolean;
+};
+
 /** Input shape for `agents.model-broker`. */
 export type AgentsModelBrokerInput = {
   broker?: string;
@@ -781,6 +798,7 @@ export type AgentsRequestsReturn = {
   agent: string;
   changed: boolean;
   hint?: string;
+  listed: boolean;
   reported: boolean;
 };
 
@@ -1079,6 +1097,7 @@ export type AgentsShowReturn = ({
   library?: {
     acceptsRequests: boolean;
     description: string | null;
+    listed: boolean;
     origin: ({
       installedAt: number | null;
       ref: string;
@@ -12654,6 +12673,81 @@ export type MeetingsProfilesValidateReturn = {
   valid: boolean;
 };
 
+/** Input shape for `meetings.read`. */
+export type MeetingsReadInput = {
+  maxChars?: string;
+  meeting: string;
+};
+
+/** Return shape for `meetings.read`. */
+export type MeetingsReadReturn = {
+  access: string;
+  chat: Array<{
+    atSeconds: number | null;
+    sender: string | null;
+    senderId: string | null;
+    sentAt: string | null;
+    text: string;
+    to: string | null;
+  }>;
+  consoleUrl: string;
+  contentTrust: "untrusted";
+  crossOrganization: boolean;
+  meeting: {
+    botName: string | null;
+    createdAt: string | null;
+    doneAt: string | null;
+    endedAt: string | null;
+    id: string;
+    joinAt: string | null;
+    language: string | null;
+    meetingCode: string | null;
+    meetingUrl: string | null;
+    platform: string | null;
+    projectId: string | null;
+    ready: boolean;
+    recordingSeconds: number | null;
+    recordingStartedAt: string | null;
+    status: string | null;
+    title: string | null;
+    transcriptStatus: string | null;
+  };
+  note: string;
+  organization: {
+    id: string;
+    name: string | null;
+    slug: string | null;
+  };
+  participants: Array<{
+    id: string;
+    isHost: boolean | null;
+    name: string | null;
+  }>;
+  project: ({
+    id: string;
+    name: string | null;
+    slug: string | null;
+  }) | null;
+  recordings: Array<{
+    completedAt: string | null;
+    expiresAt: string | null;
+    startedAt: string | null;
+  }>;
+  success: true;
+  transcript: {
+    segments: Array<{
+      endSeconds: number | null;
+      isHost: boolean | null;
+      speaker: string | null;
+      speakerId: string | null;
+      startSeconds: number | null;
+      startedAt: string | null;
+      text: string;
+    }>;
+    status: string;
+  };
+};
+
 /** Input shape for `meetings.show`. */
 export type MeetingsShowInput = {
   meetingId: string;
@@ -16109,6 +16203,7 @@ export type SessionsCreateThreadReturn = {
     instanceId: string;
   };
   status: "queued";
+  title: string | null;
 };
 
 /** Input shape for `sessions.delete`. */
@@ -16572,6 +16667,24 @@ export type SessionsRenameInput = {
 
 /** Return shape for `sessions.rename`. */
 export type SessionsRenameReturn = Record<string, unknown>;
+
+/** Input shape for `sessions.report`. */
+export type SessionsReportInput = {
+  message: string;
+  session?: string;
+};
+
+/** Return shape for `sessions.report`. */
+export type SessionsReportReturn = {
+  actionId: "thread.report";
+  messageId: string;
+  parentSession: {
+    sessionKey: string;
+    sessionName: string;
+  };
+  requestId: string;
+  status: "published";
+};
 
 /** Input shape for `sessions.reset`. */
 export type SessionsResetInput = {
@@ -17077,6 +17190,71 @@ export type SessionsSubscriptionsInput = {
 
 /** Return shape for `sessions.subscriptions`. */
 export type SessionsSubscriptionsReturn = Record<string, unknown>;
+
+/** Input shape for `sessions.thread-send`. */
+export type SessionsThreadSendInput = {
+  message: string;
+  session?: string;
+  thread: string;
+};
+
+/** Return shape for `sessions.thread-send`. */
+export type SessionsThreadSendReturn = {
+  actionId: "thread.send";
+  messageId: string;
+  reopened: boolean;
+  requestId: string;
+  status: "published";
+  thread: {
+    childSessionKey: string | null;
+    childSessionName: string | null;
+    closedAt: number | null;
+    createdAt: number;
+    link: string | null;
+    parentReturn: {
+      pending: boolean;
+      requested: boolean;
+    };
+    requestId: string;
+    slackThreadTs: string | null;
+    source: "action" | "inbound";
+    status: "queued" | "root_delivered" | "starting" | "open" | "closed" | "failed";
+    title: string | null;
+    updatedAt: number;
+  };
+};
+
+/** Input shape for `sessions.threads`. */
+export type SessionsThreadsInput = {
+  all?: boolean;
+  session?: string;
+};
+
+/** Return shape for `sessions.threads`. */
+export type SessionsThreadsReturn = {
+  includeClosed: boolean;
+  parentSession: {
+    sessionKey: string;
+    sessionName: string;
+  };
+  threads: Array<{
+    childSessionKey: string | null;
+    childSessionName: string | null;
+    closedAt: number | null;
+    createdAt: number;
+    link: string | null;
+    parentReturn: {
+      pending: boolean;
+      requested: boolean;
+    };
+    requestId: string;
+    slackThreadTs: string | null;
+    source: "action" | "inbound";
+    status: "queued" | "root_delivered" | "starting" | "open" | "closed" | "failed";
+    title: string | null;
+    updatedAt: number;
+  }>;
+};
 
 /** Input shape for `sessions.trace`. */
 export type SessionsTraceInput = {

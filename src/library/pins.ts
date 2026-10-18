@@ -62,10 +62,12 @@ const log = logger.child("library:pins");
 /** CLI scope `POST /pins/sync` needs (it writes the installation's agent report). */
 export const LIBRARY_PIN_SYNC_SCOPE = "console.projects.link";
 
+export const LIBRARY_AGENT_NOT_LISTED = "LIBRARY_AGENT_NOT_LISTED";
+
 export interface LibraryPinDeps {
   cache?: LibraryCacheOptions;
   plugins?: LibraryPluginOptions;
-  /** The agents this installation reports (default: every local agent). */
+  /** The agents this installation reports (default: the listed local agents). */
   collectAgents?: () => Promise<LibraryPinAgentReport[]>;
   /** Notify the daemon that configuration changed (default: `ravi.config.changed`). */
   emitConfigChanged?: () => void;
@@ -113,12 +115,16 @@ export interface CollectAgentReportsDeps extends Pick<ConsoleScopeResolverDeps, 
 const SESSION_SCOPE_ENV = ["RAVI_CONSOLE_PROJECT_REF", "RAVI_CONSOLE_PROJECT_ID", "RAVI_CONTEXT_KEY"];
 
 /**
- * Every local agent as the sync reports it: id, name, provider, model, and the
- * Console project its cloud scope resolves to (agent default, its workspace,
- * the install default, or the single visible project), else null.
+ * The local agents the operator listed (`ravi agents listing <id> on`) as the
+ * sync reports them: id, name, provider, model, and the Console project its
+ * cloud scope resolves to (agent default, its workspace, the install default,
+ * or the single visible project), else null. An unlisted agent is never
+ * reported, so the Console drops it from the directory.
  */
 export async function collectLocalAgentReports(deps: CollectAgentReportsDeps = {}): Promise<LibraryPinAgentReport[]> {
-  const agents = (deps.agents ?? getAllAgents)().slice(0, LIBRARY_PIN_SYNC_MAX_AGENTS);
+  const agents = (deps.agents ?? getAllAgents)()
+    .filter((agent) => readLibraryAgentState(agent.id)?.listed === true)
+    .slice(0, LIBRARY_PIN_SYNC_MAX_AGENTS);
   const env = { ...(deps.env ?? process.env) };
   for (const key of SESSION_SCOPE_ENV) delete env[key];
   // One project listing per report, shared by every agent's resolution.
@@ -470,6 +476,16 @@ export async function prepareLibraryPin(
   input: { ref: LibraryRef; agentId: string },
   deps: LibraryPinCommandDeps = {},
 ): Promise<PreparedLibraryPin> {
+  // The Console pins only agents this installation reports, and it reports
+  // only the agents the operator listed.
+  if (readLibraryAgentState(input.agentId)?.listed !== true) {
+    throw new LibraryCommandError(
+      LIBRARY_AGENT_NOT_LISTED,
+      `Agent ${input.agentId} is not listed in the organization's directory, so the Console cannot pin to it.`,
+      1,
+      { suggestedAction: `List it first with: ravi agents listing ${input.agentId} on --execute` },
+    );
+  }
   const session = await openPinSession(deps);
   if (!session) throw libraryLoginRequiredError();
   let item: LibraryItem;
@@ -561,7 +577,7 @@ export async function executeLibraryPin(
         1,
         {
           suggestedAction:
-            "Check the agent id (ravi agents list) and that this login reports agents (ravi login with the link scope), then run the same command again",
+            "Check the agent id (ravi agents list), that it is listed (ravi agents listing <id>) and that this login reports agents (ravi login with the link scope), then run the same command again",
         },
       );
     }

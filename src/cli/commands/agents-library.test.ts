@@ -16,7 +16,7 @@ import {
   type FakeConsole,
   type FakeRequestConsole,
 } from "../../library/test-fixtures.js";
-import { readAcceptsRequests } from "../../library/requests.js";
+import { readAcceptsRequests, readListed } from "../../library/requests.js";
 import { getAgent } from "../../router/config.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { ContractError } from "../agent-contract.js";
@@ -171,6 +171,7 @@ describe("agents show and set for the Library", () => {
     };
     expect(local.library).toEqual({
       description: "Answers plainly",
+      listed: false,
       acceptsRequests: false,
       origin: { ref: "org/plain", version: 1, installedAt: expect.any(Number) },
     });
@@ -201,6 +202,34 @@ describe("agents directory, ask and requests from the CLI", () => {
     }
     const shown = await quietAsync(() => runWithContext(asAgent, () => commands.requests("main", undefined, true)));
     expect(shown).toMatchObject({ agent: "main", acceptsRequests: false });
+  });
+
+  it("brakes listing an agent, unlists at once, and refuses both inside an agent", async () => {
+    expect(readListed("main")).toBe(false);
+    const braked = await contractError(() => runWithContext({}, () => commands.listing("main", "on", true)));
+    expect(braked.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect(readListed("main")).toBe(false);
+    await quietAsync(() => runWithContext({}, () => commands.listing("main", "on", true, true)));
+    expect(readListed("main")).toBe(true);
+    expect(readAcceptsRequests("main")).toBe(false);
+    // Repeating on without --execute is not braked: nothing to write or report.
+    const again = await quietAsync(() => runWithContext({}, () => commands.listing("main", "on", true)));
+    expect(again).toMatchObject({ listed: true, changed: false, reported: false });
+
+    await quietAsync(() => runWithContext({}, () => commands.requests("main", "on", true, true)));
+    await quietAsync(() => runWithContext({}, () => commands.listing("main", "off", true)));
+    expect(readListed("main")).toBe(false);
+    expect(readAcceptsRequests("main")).toBe(false);
+
+    for (const state of ["on", "off"]) {
+      const refused = await contractError(() =>
+        runWithContext(asAgent, () => commands.listing("main", state, true, true)),
+      );
+      expect(refused.code).toBe("LIBRARY_AGENT_CANNOT_LIST");
+      expect(refused.exitCode).toBe(3);
+    }
+    const shown = await quietAsync(() => runWithContext(asAgent, () => commands.listing("main", undefined, true)));
+    expect(shown).toMatchObject({ agent: "main", listed: false, acceptsRequests: false });
   });
 
   it("lists the directory and brakes ask", async () => {

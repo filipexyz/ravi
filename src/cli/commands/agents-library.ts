@@ -32,18 +32,22 @@ import {
 import {
   cancelLibraryRequest,
   executeLibraryAsk,
+  LIBRARY_AGENT_CANNOT_LIST,
   LIBRARY_AGENT_CANNOT_OPEN_REQUESTS,
   listLibraryDirectory,
   listLibraryRequests,
   prepareLibraryAsk,
   readAcceptsRequests,
+  readListed,
   requireLocalAgent,
   setAcceptsRequests,
+  setListed,
 } from "../../library/requests.js";
 import {
   agentsAskReturnSchema,
   agentsDirectoryReturnSchema,
   agentsInstallReturnSchema,
+  agentsListingReturnSchema,
   agentsPublishReturnSchema,
   agentsRequestsCancelReturnSchema,
   agentsRequestsListReturnSchema,
@@ -197,8 +201,9 @@ ON ERROR
 const AGENTS_DIRECTORY_HELP_AFTER = `
 READ — lists the agents that the organization's linked Ravi machines report
 (name, description, provider, model, project, online, and whether they take
-requests). Only org-wide agents and those of projects you can read appear.
-Never instructions, paths or credentials.
+requests). A machine reports only the agents its operator listed
+('ravi agents listing <agent> on --execute'). Only org-wide agents and those
+of projects you can read appear. Never instructions, paths or credentials.
 
 EXAMPLES
   ravi agents directory
@@ -245,8 +250,9 @@ each request in a session of its own, as the person who asked, without the
 operator's authority.
 
 RULES
-  • on adds exposure: braked (exit 3 without --execute).
-  • off only takes it away: applies at once.
+  • on adds exposure: braked (exit 3 without --execute). It also lists the
+    agent in the directory, so other machines can find it.
+  • off only takes it away: applies at once (the agent stays listed).
   • Agents do not open or close themselves (LIBRARY_AGENT_CANNOT_OPEN_REQUESTS, exit 3).
   • The directory learns of it right away when 'ravi login' is linked,
     otherwise at the daemon's next pin sync.
@@ -257,6 +263,29 @@ EXAMPLES
   ravi agents requests finance on --execute
   ravi agents requests finance off
   ravi agents requests list --received --all
+`;
+
+const AGENTS_LISTING_HELP_AFTER = `
+Shows or changes whether an agent of this machine appears in the
+organization's directory ("Running agents" in the Console). Default: off.
+This machine reports only listed agents (id, name, provider, model, Console
+project, description), and the Console drops the ones it stops reporting.
+Never instructions, paths or credentials.
+
+RULES
+  • on adds exposure: braked (exit 3 without --execute).
+  • off only takes it away: applies at once, and also closes the agent to
+    requests ('ravi agents requests <agent> off').
+  • Pinning a Library skill to an agent from the Console needs it listed.
+  • Agents do not list or unlist themselves (LIBRARY_AGENT_CANNOT_LIST, exit 3).
+  • The directory learns of it right away when 'ravi login' is linked,
+    otherwise at the daemon's next pin sync.
+
+EXAMPLES
+  ravi agents listing finance                  # current state
+  ravi agents listing finance on               # plan (exit 3)
+  ravi agents listing finance on --execute
+  ravi agents listing finance off
 `;
 
 @Group({
@@ -632,7 +661,13 @@ export class AgentsLibraryCommands {
       requireLocalAgent(id);
       const current = readAcceptsRequests(id);
       if (!wanted) {
-        const payload = { agent: id, acceptsRequests: current, changed: false, reported: false };
+        const payload = {
+          agent: id,
+          listed: readListed(id),
+          acceptsRequests: current,
+          changed: false,
+          reported: false,
+        };
         if (asJson) printJson(payload);
         else
           console.log(
@@ -646,8 +681,9 @@ export class AgentsLibraryCommands {
           "agents requests",
           {
             agent: id,
+            listed: true,
             acceptsRequests: true,
-            effect: `members of the organization may ask ${id} from other machines; it answers as them, without operator authority`,
+            effect: `${id} is listed in the organization's directory, and its members may ask it from other machines; it answers as them, without operator authority`,
           },
           { asJson },
         );
@@ -657,6 +693,92 @@ export class AgentsLibraryCommands {
         printJson(payload);
       } else {
         console.log(`✓ ${id} ${accepts ? "answers" : "no longer answers"} requests from other machines`);
+        if (payload.hint) console.log(`  ${payload.hint}`);
+      }
+      return payload;
+    });
+  }
+
+  @Command({
+    name: "listing",
+    description: "Show or set whether an agent appears in the organization's directory (on requires --execute)",
+    helpAfter: AGENTS_LISTING_HELP_AFTER,
+  })
+  @CommandAccess({ kind: "mutate", resource: "agents", action: "listing", risk: "medium", requiresConfirmation: true })
+  @Returns(agentsListingReturnSchema)
+  async listing(
+    @Arg("id", { description: "Local agent id" }) id: string,
+    @Arg("state", { description: "on or off (omit to show)", required: false }) state?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--execute", description: "Confirm listing the agent (without it, print the plan and exit 3)" })
+    execute?: boolean,
+  ) {
+    const wanted = state?.trim().toLowerCase();
+    if (wanted !== undefined && wanted !== "" && wanted !== "on" && wanted !== "off") {
+      contractFail("agents listing", "USAGE_ERROR", "The state is on or off.", {
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: { suggestedAction: `ravi agents listing ${id} on --execute, or ravi agents listing ${id} off` },
+      });
+    }
+    if (wanted && runtimeLibraryCaller()) {
+      failLibraryPolicy(
+        "agents listing",
+        LIBRARY_AGENT_CANNOT_LIST,
+        "Agents do not list or unlist agents: the operator decides what the organization's directory shows.",
+        `Ask the operator to run: ravi agents listing ${id} ${wanted}${wanted === "on" ? " --execute" : ""}`,
+        asJson,
+      );
+    }
+    return withLibraryContract("agents listing", asJson, async () => {
+      requireLocalAgent(id);
+      const current = readListed(id);
+      if (!wanted) {
+        const payload = {
+          agent: id,
+          listed: current,
+          acceptsRequests: readAcceptsRequests(id),
+          changed: false,
+          reported: false,
+        };
+        if (asJson) printJson(payload);
+        else
+          console.log(
+            `${id}: ${current ? "listed in the organization's directory" : "not listed in the organization's directory"}`,
+          );
+        return payload;
+      }
+      const listed = wanted === "on";
+      if (listed === current) {
+        // Already in that state: nothing to write or report.
+        const payload = {
+          agent: id,
+          listed,
+          acceptsRequests: readAcceptsRequests(id),
+          changed: false,
+          reported: false,
+        };
+        if (asJson) printJson(payload);
+        else
+          console.log(`= ${id} ${listed ? "is already listed in" : "is not listed in"} the organization's directory`);
+        return payload;
+      }
+      if (listed && !execute) {
+        contractDryRun(
+          "agents listing",
+          {
+            agent: id,
+            listed: true,
+            effect: `members of the organization see ${id} in the directory (id, name, provider, model, Console project, description); it stays closed to requests`,
+          },
+          { asJson },
+        );
+      }
+      const payload = await setListed({ agentId: id, listed });
+      if (asJson) {
+        printJson(payload);
+      } else {
+        console.log(`✓ ${id} ${listed ? "is listed in" : "is no longer listed in"} the organization's directory`);
         if (payload.hint) console.log(`  ${payload.hint}`);
       }
       return payload;

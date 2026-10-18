@@ -1,7 +1,7 @@
 {
   "name": "ravi.bot",
-  "version": "3.261018.3",
-  "description": "Personal multi-agent runtime for Ravi",
+  "version": "3.261018.6",
+  "description": "Run AI agents on machines you control, alone or as a whole organization: Slack, WhatsApp, Pages, Bases and SDKs generated from the CLI",
   "type": "module",
   "main": "dist/bundle/index.js",
   "bin": {
@@ -70,11 +70,16 @@
   },
   "keywords": [
     "ai",
-    "agent",
-    "bot",
-    "chatbot",
+    "ai-agents",
+    "agents",
+    "multi-agent",
+    "self-hosted",
+    "local-first",
+    "slack",
     "whatsapp",
-    "nats"
+    "claude-code",
+    "codex",
+    "sdk"
   ],
   "license": "MIT",
   "dependencies": {

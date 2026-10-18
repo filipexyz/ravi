@@ -19,6 +19,9 @@ applies_to:
   - src/channels/slack/thread-lifecycle-store.ts
   - src/router/resolver.ts
   - src/runtime/runtime-session-continuity.ts
+  - src/prompt-builder.ts
+  - src/runtime/runtime-system-prompt.ts
+  - src/cli/commands/sessions.ts
 owners:
   - dev
 status: active
@@ -75,6 +78,28 @@ When a user replies in a Slack thread, Ravi MUST create or reuse a dedicated chi
   it MUST NOT create a replacement fork.
 - Reopening a thread MUST preserve any parent completion that is still pending
   delivery.
+- A non-sentinel Slack session whose context can run the `sessions` group MUST
+  get the "Slack Threads" system prompt section. A channel-root or DM session
+  MUST be told to open a thread with `thread.create` for work that strays from
+  the conversation, and to fall back to the current conversation when
+  `thread.create` fails or is unavailable. A thread child session (key with
+  `:thread:`) MUST be told to keep its work in the thread, to open a sibling
+  thread for a different subject, and how to close with or without `--return`.
+- The channel-root session MUST be able to orchestrate its threads:
+  `thread.list` lists the threads whose parent is that session (open by
+  default), and `thread.send` publishes new instructions to one of them as a
+  `[System] Execute: [from: <parent>]` turn sourced in the Slack thread.
+  `thread.send` MUST be refused from a thread child and for a thread whose
+  first turn has not started, and MUST reopen a closed thread without dropping a
+  pending parent completion.
+- A thread child MUST be able to send progress to its parent with
+  `thread.report` without closing the thread. No `access session` grant is
+  needed for `thread.report` or `thread.send`: the parent/child relation is the
+  authority, and both stay within one agent.
+- Every parent notice (report or close return) MUST name the thread by the first
+  line of its initial message, when it has one, and its child session name, and
+  MUST include a Slack link when the workspace id is known. It MUST be sourced
+  at the channel root, never inside the thread.
 
 ## Route Semantics
 
@@ -103,6 +128,9 @@ channel-root parent.
 ```bash
 ravi sessions create-thread "<initial message>" [--model <model>]
 ravi sessions close-thread [--return "<result>"]
+ravi sessions report "<progress>"
+ravi sessions threads [--all] [--json]
+ravi sessions thread-send <thread> "<instructions>"
 ```
 
 - Both commands infer the current session and Slack surface from tool context.
@@ -110,6 +138,10 @@ ravi sessions close-thread [--return "<result>"]
 - `close-thread` is available only inside an open Slack thread child session.
 - `--return` opts into the parent completion event; omission is intentionally
   silent.
+- `report` is available only inside a Slack thread child session.
+- `threads` lists the channel-root session's threads, from the root or any of
+  its children. `thread-send` names a thread by child session name or key,
+  request id or Slack `thread_ts`, and works only from the channel-root session.
 
 ## Acceptance Criteria
 

@@ -183,6 +183,8 @@ Do not use `ravi instances pending approve` with Slack IDs. For a channel it sto
 
 - With `--session <name>` on the DM route, your DMs go to that session and each DM thread gets a child session. To make a routed channel feed a session that already exists, run `ravi sessions attach main --chat C0123ABCD` ([Sessions](/guides/sessions)).
 - To answer channel root messages in a new thread: `ravi channels set slack-main defaults '{"rootReplyMode":"new_thread"}'`, then `ravi channels restart`. This replaces the whole `defaults` object.
+- The agent keeps a DM or channel on its subject: work that strays from the conversation (an investigation, a fix, a long run of tools, another subject) goes to a new thread it opens with `ravi sessions create-thread`, where a thread session does the work. Inside a thread, it stays on that thread's subject. This needs the agent to be allowed to run `ravi sessions`.
+- The DM or channel session orchestrates the threads it opens. It lists them with `ravi sessions threads` and gives one new instructions with `ravi sessions thread-send <thread-session> "..."`. A thread sends progress back with `ravi sessions report "..."` and its result with `ravi sessions close-thread --return "..."`; both arrive in the channel session naming the thread by its first line.
 - There is no mention-only mode: every human message in a routed channel starts a turn. Other bots are ignored unless they mention your app.
 - Edited messages are ignored. Send a new one.
 - `ravi contacts block` does not stop Slack messages, and reply mode is not enforced. Keep people out with policies and routes ([Instances and routing](/guides/routing)).

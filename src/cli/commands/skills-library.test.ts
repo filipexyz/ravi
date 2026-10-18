@@ -13,6 +13,7 @@ import {
   fakeSkill,
   type FakeConsole,
 } from "../../library/test-fixtures.js";
+import { dbSetLibraryAgentListed } from "../../library/agents-db.js";
 import { setLibraryConfigChangedEmitterForTests } from "../../library/pins.js";
 import { dbListLibraryPins } from "../../library/pins-db.js";
 import { dbCreateAgent, dbListSkillGrantsForAgent, dbUpdateAgent } from "../../router/router-db.js";
@@ -559,6 +560,8 @@ describe("skills publish inside an agent", () => {
 describe("skills pin, unpin and pins", () => {
   beforeEach(() => {
     setLibraryConfigChangedEmitterForTests(() => {});
+    // The Console pins only reported agents, and only listed agents are reported.
+    dbSetLibraryAgentListed("main", true);
   });
   afterEach(() => {
     setLibraryConfigChangedEmitterForTests(null);
@@ -577,6 +580,17 @@ describe("skills pin, unpin and pins", () => {
         "Ask the operator to run: ravi skills pin <ref> --agent <agent> --execute",
       );
     }
+    expect(fake.requests).toEqual([]);
+  });
+
+  it("refuses an unlisted agent with LIBRARY_AGENT_NOT_LISTED before any request", async () => {
+    login();
+    dbSetLibraryAgentListed("main", false);
+    const error = await contractError(() =>
+      runWithContext({}, () => new SkillsCommands().pin("org/aberta", "main", true, true)),
+    );
+    expect(error).toMatchObject({ code: "LIBRARY_AGENT_NOT_LISTED", exitCode: 1 });
+    expect(error.details.suggestedAction).toBe("List it first with: ravi agents listing main on --execute");
     expect(fake.requests).toEqual([]);
   });
 

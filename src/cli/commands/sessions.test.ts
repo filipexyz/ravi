@@ -61,6 +61,27 @@ let stickerCatalog: Array<Record<string, unknown>> = [];
 const publishedOutboundJobs: Array<Record<string, unknown>> = [];
 const createdSlackThreadLifecycles: Array<Record<string, unknown>> = [];
 const closedSlackThreads: Array<{ session: Record<string, unknown>; returnResult?: string }> = [];
+const reportedSlackThreads: Array<{ session: Record<string, unknown>; message: string }> = [];
+const sentSlackThreadMessages: Array<{
+  parentSession: Record<string, unknown>;
+  ref: string;
+  message: string;
+  origin?: unknown;
+}> = [];
+const fakeSlackThreadSummary = {
+  requestId: "slack-thread:req-1",
+  title: "Investigate this branch",
+  status: "open",
+  source: "action",
+  childSessionKey: "agent:dev:slack:ravi-slack:C123:thread:1713000000.000100",
+  childSessionName: "dev-slack-t-1713000000000100",
+  slackThreadTs: "1713000000.000100",
+  link: null,
+  createdAt: 1,
+  updatedAt: 2,
+  closedAt: null,
+  parentReturn: { requested: false, pending: false },
+};
 let displayNameUpdates: Array<{ sessionKey: string; displayName: string }> = [];
 let deletedSessionKeys: string[] = [];
 let renameSessionNameCalls: Array<{ sessionKey: string; newName: string }> = [];
@@ -186,6 +207,38 @@ mock.module("../../channels/slack/thread-lifecycle-store.js", () => ({
 
 mock.module("../../channels/slack/thread-lifecycle.js", () => ({
   slackThreadParentSessionKey: (sessionKey: string) => sessionKey.split(":thread:")[0] ?? sessionKey,
+  slackThreadTitle: (record: { initialPrompt?: string }) => record.initialPrompt?.split("\n")[0]?.trim() || undefined,
+  summarizeSlackThread: () => fakeSlackThreadSummary,
+  listSlackThreadsForSession: (session: Record<string, unknown>) => ({
+    parentSessionKey: String(session.sessionKey).split(":thread:")[0],
+    parentSessionName: "dev-slack",
+    threads: [fakeSlackThreadSummary],
+  }),
+  reportSlackThreadProgress: async (session: Record<string, unknown>, message: string) => {
+    reportedSlackThreads.push({ session, message });
+    return {
+      messageId: "slack-thread-report:slack-thread:req-1:m1",
+      record: {
+        requestId: "slack-thread:req-1",
+        parentSessionKey: "agent:dev:slack:ravi-slack:C123",
+        parentSessionName: "dev-slack",
+      },
+    };
+  },
+  sendSlackThreadMessage: async (input: {
+    parentSession: Record<string, unknown>;
+    ref: string;
+    message: string;
+    origin?: unknown;
+  }) => {
+    sentSlackThreadMessages.push(input);
+    if (input.ref === "missing") throw new Error("Slack thread not found for this session: missing");
+    return {
+      messageId: "slack-thread-send:slack-thread:req-1:m1",
+      reopened: true,
+      record: { requestId: "slack-thread:req-1", childSessionName: "dev-slack-t-1713000000000100" },
+    };
+  },
   splitSlackThreadPlatformChatId: (platformChatId: string) => {
     const [root, thread] = platformChatId.split("#");
     return root && thread ? { platformChatId: root, providerThreadId: thread } : null;
@@ -552,6 +605,8 @@ beforeEach(() => {
   publishedOutboundJobs.length = 0;
   createdSlackThreadLifecycles.length = 0;
   closedSlackThreads.length = 0;
+  reportedSlackThreads.length = 0;
+  sentSlackThreadMessages.length = 0;
   displayNameUpdates = [];
   deletedSessionKeys = [];
   renameSessionNameCalls = [];
@@ -1876,6 +1931,7 @@ describe("SessionCommands attach hints", () => {
     expect(result).toMatchObject({
       status: "queued",
       actionId: "thread.create",
+      title: "Investigate this branch",
       parentSession: { sessionKey, sessionName: "dev-slack" },
       child: { status: "pending_root_delivery", modelOverride: "gpt-5.6" },
     });
@@ -1938,6 +1994,79 @@ describe("SessionCommands attach hints", () => {
         returnResult: "The branch is fixed",
       },
     ]);
+  });
+
+  it("reports progress from a Slack thread child and refuses outside one", async () => {
+    const childKey = "agent:dev:slack:ravi-slack:C123:thread:1713000000.000100";
+    resolvedSession = {
+      sessionKey: childKey,
+      name: "dev-slack-t-1713000000000100",
+      agentId: "dev",
+      agentCwd: "/tmp/dev",
+    };
+    toolContext = { sessionKey: childKey, sessionName: "dev-slack-t-1713000000000100" };
+
+    const result = (await new SessionCommands().report("Found the failing commit", undefined, true)) as Record<
+      string,
+      any
+    >;
+
+    expect(result).toEqual({
+      status: "published",
+      actionId: "thread.report",
+      requestId: "slack-thread:req-1",
+      messageId: "slack-thread-report:slack-thread:req-1:m1",
+      parentSession: { sessionKey: "agent:dev:slack:ravi-slack:C123", sessionName: "dev-slack" },
+    });
+    expect(reportedSlackThreads).toEqual([{ session: resolvedSession, message: "Found the failing commit" }]);
+
+    const rootKey = "agent:dev:slack:ravi-slack:C123";
+    resolvedSession = { sessionKey: rootKey, name: "dev-slack", agentId: "dev", agentCwd: "/tmp/dev" };
+    toolContext = { sessionKey: rootKey, sessionName: "dev-slack" };
+    await expect(new SessionCommands().report("Nope", undefined, true)).rejects.toThrow(
+      "thread.report is available only inside a Slack thread child session",
+    );
+    expect(reportedSlackThreads).toHaveLength(1);
+  });
+
+  it("lists the threads a Slack session owns and sends one new instructions", async () => {
+    const rootKey = "agent:dev:slack:ravi-slack:C123";
+    resolvedSession = { sessionKey: rootKey, name: "dev-slack", agentId: "dev", agentCwd: "/tmp/dev" };
+    toolContext = { sessionKey: rootKey, sessionName: "dev-slack" };
+
+    const listed = (await new SessionCommands().threads(undefined, undefined, true)) as Record<string, any>;
+    expect(listed).toEqual({
+      parentSession: { sessionKey: rootKey, sessionName: "dev-slack" },
+      includeClosed: false,
+      threads: [fakeSlackThreadSummary],
+    });
+
+    const sent = (await new SessionCommands().threadSend(
+      "dev-slack-t-1713000000000100",
+      "Also check the release branch",
+      undefined,
+      true,
+    )) as Record<string, any>;
+    expect(sent).toEqual({
+      status: "published",
+      actionId: "thread.send",
+      requestId: "slack-thread:req-1",
+      messageId: "slack-thread-send:slack-thread:req-1:m1",
+      reopened: true,
+      thread: fakeSlackThreadSummary,
+    });
+    expect(sentSlackThreadMessages).toEqual([
+      {
+        parentSession: resolvedSession,
+        ref: "dev-slack-t-1713000000000100",
+        message: "Also check the release branch",
+        origin: toolContext,
+      },
+    ]);
+
+    await expect(new SessionCommands().threadSend("missing", "Hi", undefined, true)).rejects.toThrow(
+      "Slack thread not found for this session: missing",
+    );
   });
 
   it("queues Slack edits and deletes durably without claiming provider success", async () => {

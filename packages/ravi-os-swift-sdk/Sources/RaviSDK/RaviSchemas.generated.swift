@@ -2634,6 +2634,64 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let AgentsListingInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "execute": {
+        "description": "Confirm listing the agent (without it, print the plan and exit 3)",
+        "type": "boolean"
+      },
+      "id": {
+        "description": "Local agent id",
+        "type": "string"
+      },
+      "state": {
+        "description": "on or off (omit to show)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let AgentsListingReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "acceptsRequests": {
+        "type": "boolean"
+      },
+      "agent": {
+        "type": "string"
+      },
+      "changed": {
+        "type": "boolean"
+      },
+      "hint": {
+        "type": "string"
+      },
+      "listed": {
+        "type": "boolean"
+      },
+      "reported": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "agent",
+      "listed",
+      "acceptsRequests",
+      "changed",
+      "reported"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let AgentsModelBrokerInputSchema = #"""
   {
     "additionalProperties": false,
@@ -4293,12 +4351,16 @@ public enum RaviSchemas {
       "hint": {
         "type": "string"
       },
+      "listed": {
+        "type": "boolean"
+      },
       "reported": {
         "type": "boolean"
       }
     },
     "required": [
       "agent",
+      "listed",
       "acceptsRequests",
       "changed",
       "reported"
@@ -6004,6 +6066,9 @@ public enum RaviSchemas {
                   }
                 ]
               },
+              "listed": {
+                "type": "boolean"
+              },
               "origin": {
                 "anyOf": [
                   {
@@ -6041,6 +6106,7 @@ public enum RaviSchemas {
             },
             "required": [
               "description",
+              "listed",
               "acceptsRequests",
               "origin"
             ],
@@ -66290,6 +66356,571 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let MeetingsReadInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "maxChars": {
+        "description": "Text output only: characters of transcript and chat to print (1000-2000000, default 256000)",
+        "type": "string"
+      },
+      "meeting": {
+        "description": "Console meeting link (https://console.ravi.bot/.../meetings/<id>) or meeting id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "meeting"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let MeetingsReadReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "access": {
+        "type": "string"
+      },
+      "chat": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "atSeconds": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sender": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "senderId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sentAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "text": {
+              "type": "string"
+            },
+            "to": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "sender",
+            "senderId",
+            "atSeconds",
+            "sentAt",
+            "to",
+            "text"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "consoleUrl": {
+        "type": "string"
+      },
+      "contentTrust": {
+        "const": "untrusted",
+        "type": "string"
+      },
+      "crossOrganization": {
+        "type": "boolean"
+      },
+      "meeting": {
+        "additionalProperties": false,
+        "properties": {
+          "botName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "doneAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "endedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "joinAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meetingCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meetingUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "projectId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "recordingSeconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recordingStartedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "transcriptStatus": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "platform",
+          "meetingUrl",
+          "meetingCode",
+          "botName",
+          "title",
+          "language",
+          "status",
+          "transcriptStatus",
+          "ready",
+          "joinAt",
+          "recordingStartedAt",
+          "endedAt",
+          "doneAt",
+          "recordingSeconds",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "note": {
+        "type": "string"
+      },
+      "organization": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name"
+        ],
+        "type": "object"
+      },
+      "participants": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "isHost": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "isHost"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "project": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "slug": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "slug",
+              "name"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "recordings": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "completedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "expiresAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "startedAt",
+            "completedAt",
+            "expiresAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "transcript": {
+        "additionalProperties": false,
+        "properties": {
+          "segments": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "endSeconds": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "isHost": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "speaker": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "speakerId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "startSeconds": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "startedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "speaker",
+                "speakerId",
+                "isHost",
+                "startSeconds",
+                "endSeconds",
+                "startedAt",
+                "text"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "segments"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "success",
+      "consoleUrl",
+      "meeting",
+      "organization",
+      "project",
+      "access",
+      "crossOrganization",
+      "transcript",
+      "participants",
+      "chat",
+      "recordings",
+      "note",
+      "contentTrust"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let MeetingsShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -81336,6 +81967,16 @@ public enum RaviSchemas {
       "status": {
         "const": "queued",
         "type": "string"
+      },
+      "title": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
       }
     },
     "required": [
@@ -81344,6 +81985,7 @@ public enum RaviSchemas {
       "actionId",
       "executionMode",
       "requestId",
+      "title",
       "idempotencyKey",
       "publishedNow",
       "publishPending",
@@ -83250,6 +83892,72 @@ public enum RaviSchemas {
   {
     "additionalProperties": {},
     "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsReportInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "message": {
+        "description": "Progress, blocker or decision the parent session needs now",
+        "type": "string"
+      },
+      "session": {
+        "description": "Explicit Slack thread session (defaults to current session)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "message"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsReportReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "actionId": {
+        "const": "thread.report",
+        "type": "string"
+      },
+      "messageId": {
+        "type": "string"
+      },
+      "parentSession": {
+        "additionalProperties": false,
+        "properties": {
+          "sessionKey": {
+            "type": "string"
+          },
+          "sessionName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionKey",
+          "sessionName"
+        ],
+        "type": "object"
+      },
+      "requestId": {
+        "type": "string"
+      },
+      "status": {
+        "const": "published",
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "actionId",
+      "requestId",
+      "messageId",
+      "parentSession"
+    ],
     "type": "object"
   }
   """#
@@ -85864,6 +86572,364 @@ public enum RaviSchemas {
   {
     "additionalProperties": {},
     "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsThreadSendInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "message": {
+        "description": "Instructions for the thread session",
+        "type": "string"
+      },
+      "session": {
+        "description": "Explicit owning session (defaults to current session)",
+        "type": "string"
+      },
+      "thread": {
+        "description": "Thread session name, request id or Slack thread ts (see ravi sessions threads)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "message",
+      "thread"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsThreadSendReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "actionId": {
+        "const": "thread.send",
+        "type": "string"
+      },
+      "messageId": {
+        "type": "string"
+      },
+      "reopened": {
+        "type": "boolean"
+      },
+      "requestId": {
+        "type": "string"
+      },
+      "status": {
+        "const": "published",
+        "type": "string"
+      },
+      "thread": {
+        "additionalProperties": false,
+        "properties": {
+          "childSessionKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "childSessionName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "closedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "link": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "parentReturn": {
+            "additionalProperties": false,
+            "properties": {
+              "pending": {
+                "type": "boolean"
+              },
+              "requested": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "requested",
+              "pending"
+            ],
+            "type": "object"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "slackThreadTs": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "enum": [
+              "action",
+              "inbound"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "root_delivered",
+              "starting",
+              "open",
+              "closed",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "requestId",
+          "title",
+          "status",
+          "source",
+          "childSessionKey",
+          "childSessionName",
+          "slackThreadTs",
+          "link",
+          "createdAt",
+          "updatedAt",
+          "closedAt",
+          "parentReturn"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "status",
+      "actionId",
+      "requestId",
+      "messageId",
+      "reopened",
+      "thread"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsThreadsInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "all": {
+        "description": "Include closed threads",
+        "type": "boolean"
+      },
+      "session": {
+        "description": "Explicit session (defaults to current session)",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsThreadsReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "includeClosed": {
+        "type": "boolean"
+      },
+      "parentSession": {
+        "additionalProperties": false,
+        "properties": {
+          "sessionKey": {
+            "type": "string"
+          },
+          "sessionName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionKey",
+          "sessionName"
+        ],
+        "type": "object"
+      },
+      "threads": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "childSessionKey": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "childSessionName": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "closedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "link": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "parentReturn": {
+              "additionalProperties": false,
+              "properties": {
+                "pending": {
+                  "type": "boolean"
+                },
+                "requested": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "requested",
+                "pending"
+              ],
+              "type": "object"
+            },
+            "requestId": {
+              "type": "string"
+            },
+            "slackThreadTs": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "source": {
+              "enum": [
+                "action",
+                "inbound"
+              ],
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "queued",
+                "root_delivered",
+                "starting",
+                "open",
+                "closed",
+                "failed"
+              ],
+              "type": "string"
+            },
+            "title": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "requestId",
+            "title",
+            "status",
+            "source",
+            "childSessionKey",
+            "childSessionName",
+            "slackThreadTs",
+            "link",
+            "createdAt",
+            "updatedAt",
+            "closedAt",
+            "parentReturn"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "parentSession",
+      "includeClosed",
+      "threads"
+    ],
     "type": "object"
   }
   """#
