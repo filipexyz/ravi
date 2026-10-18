@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { z } from "zod";
-import { Arg, Command, CommandAccess, Group, Option, getGroupMetadata } from "../decorators.js";
+import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { ContractError, contractDryRun, pickFields } from "../agent-contract.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { cloudAuthErrorFromUnknown } from "../../cloud-auth/errors.js";
@@ -34,11 +34,8 @@ export interface ProjectsCommandDeps extends CloudProjectsClientDeps {
 export class ProjectsCommands {
   constructor(private readonly deps: ProjectsCommandDeps = defaultProjectsDeps()) {}
 
-  /** `["ravi", "projects"]`, or the alias path the command was invoked under. */
-  private commandPath(): string[] {
-    const group = getGroupMetadata(this.constructor)?.name ?? "projects";
-    return ["ravi", ...group.split(".")];
-  }
+  /** The CLI path of this group; the `cloud projects` alias overrides it. */
+  protected readonly commandPath: readonly string[] = ["ravi", "projects"];
 
   @Command({ name: "list", description: "List the organization's projects in Console" })
   @CommandAccess({ kind: "read", resource: "cloud.projects", action: "list", risk: "low" })
@@ -55,7 +52,7 @@ export class ProjectsCommands {
       const page = paginateCliItems(result.projects, { limit, offset });
       const pagination = buildCliOffsetPagination({
         fields,
-        baseCommand: [...this.commandPath(), "list"],
+        baseCommand: [...this.commandPath, "list"],
         limit: page.limit,
         offset: page.offset,
         returned: page.items.length,
@@ -111,7 +108,7 @@ export class ProjectsCommands {
         // Ravi Console (project + optional default Pages site), so dry-run by
         // default and exit 3 before any Console call.
         contractDryRun(
-          `${this.commandPath().slice(1).join(" ")} create`,
+          `${this.commandPath.slice(1).join(" ")} create`,
           {
             slug,
             namePresent: Boolean(name?.trim()),

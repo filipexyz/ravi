@@ -11,4 +11,6 @@ import { ProjectsCommands } from "./projects.js";
   description: "Alias of `ravi projects`: the organization's projects in Ravi Console",
   scope: "open",
 })
-export class CloudProjectsCommands extends ProjectsCommands {}
+export class CloudProjectsCommands extends ProjectsCommands {
+  protected override readonly commandPath: readonly string[] = ["ravi", "cloud", "projects"];
+}
