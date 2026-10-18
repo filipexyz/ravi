@@ -68,7 +68,7 @@ is refused even when the operator asks there).
 | `agenda record <id>` | `--execute` (the bot joins a call with other people) |
 | `agenda skip <id>` | immediate (reduces) |
 | `agenda undo <id>` | immediate, except clearing a `skip` while the effective mode is `auto`, which needs `--execute` |
-| `agenda briefing <id>` | immediate (shown only to the operator), at most 20,000 characters |
+| `agenda briefing <id>` | immediate (shown only to the operator), at most 20,000 characters; `--file` is refused over the gateway (it would read the daemon's machine) |
 
 The Console's `POLICY_DISABLED` maps to exit 3 and `CALENDAR_SCOPE_MISSING`
 to exit 1.

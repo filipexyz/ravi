@@ -27,6 +27,7 @@ import {
   renderContractError,
 } from "../agent-contract.js";
 import { cloudErrorToContractError } from "../cloud-error-contract.js";
+import { getContextValue } from "../context.js";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { strictCliOffsetPaginationSchema } from "../return-schemas.js";
@@ -556,6 +557,10 @@ function resolveProject(
 }
 
 function readBriefingFile(op: string, path: string, asJson: boolean | undefined): string {
+  // A gateway caller would read a file on the daemon's machine; it sends the text instead.
+  if (getContextValue("transport") === "gateway") {
+    usage(op, "--file is not available over the gateway. Pass the briefing with --text.", asJson);
+  }
   try {
     if (statSync(path).size > CALENDAR_BRIEFING_MAX_CHARS * 4) {
       usage(op, `The file is larger than the ${CALENDAR_BRIEFING_MAX_CHARS}-character limit.`, asJson);

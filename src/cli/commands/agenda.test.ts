@@ -3,6 +3,7 @@ import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import { CloudAuthError } from "../../cloud-auth/errors.js";
 import type { CloudCredentials } from "../../cloud-auth/types.js";
 import { ContractError } from "../agent-contract.js";
+import { runWithContext } from "../context.js";
 import { getCliOnlyMetadata } from "../decorators.js";
 import { AgendaCommands } from "./agenda.js";
 
@@ -211,5 +212,13 @@ describe("agenda", () => {
 
     const empty = await quiet(() => commands.briefing(EVENT_ID, "  ", undefined, undefined, true));
     expect(empty.error?.exitCode).toBe(2);
+
+    const remote = await quiet(() =>
+      runWithContext({ transport: "gateway" }, () =>
+        commands.briefing(EVENT_ID, undefined, "/etc/hostname", undefined, true),
+      ),
+    );
+    expect(remote.error?.exitCode).toBe(2);
+    expect(calls).toHaveLength(1);
   });
 });
