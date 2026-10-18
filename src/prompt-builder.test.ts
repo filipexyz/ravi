@@ -411,13 +411,20 @@ describe("Slack Threads section", () => {
     expect(ids.indexOf("channel.slack_threads")).toBe(ids.indexOf("channel.output_formatting") + 1);
 
     const channel = renderPromptSections(sections);
-    expect(channel).toContain("Work that strays from that subject goes to its own Slack thread.");
+    expect(channel).toContain(
+      "Work that strays from that subject goes to its own Slack thread, and this session orchestrates the threads it opens.",
+    );
+    expect(channel).toContain("`ravi sessions threads --json` lists the threads of this conversation");
+    expect(channel).toContain('`ravi sessions thread-send <thread-session> "<instructions>"`');
+    expect(channel).toContain('`[System] Inform: Slack thread "<title>" (<thread-session>) ...`');
     expect(channel).toContain("Prefer a thread whenever the work takes several steps or will post progress");
     expect(channel).toContain("react to the request or reply with @@SILENT@@");
     expect(channel).toContain("shows `thread.create` unavailable, do the work here.");
 
     const thread = buildSystemPrompt("main", slack, undefined, "ops-t-1712345678123456", { slackThreads: "thread" });
     expect(thread).toContain("Keep the work and its progress in this thread");
+    expect(thread).toContain("comes from the orchestrating session: treat it as its instructions");
+    expect(thread).toContain('`ravi sessions report "<text>"`. It does not close the thread.');
     expect(thread).toContain("the new thread starts at the channel root, beside this one.");
   });
 

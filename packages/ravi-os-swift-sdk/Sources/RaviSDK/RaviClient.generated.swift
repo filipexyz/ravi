@@ -5251,6 +5251,13 @@ public struct SessionsNamespace: Sendable {
     return try await transport.call(groupSegments: ["sessions"], command: "rename", body: requestBody, as: SessionsRenameReturn.self)
   }
 
+  public func report(_ message: String, _ options: SessionsReportOptions = .init()) async throws -> SessionsReportReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["message"] = try RaviJSON.fromEncodable(message)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["sessions"], command: "report", body: requestBody, as: SessionsReportReturn.self)
+  }
+
   public func reset(_ nameOrKey: String, _ options: SessionsResetOptions = .init()) async throws -> SessionsResetReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["nameOrKey"] = try RaviJSON.fromEncodable(nameOrKey)
@@ -5316,6 +5323,20 @@ public struct SessionsNamespace: Sendable {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["nameOrKey"] = try RaviJSON.fromEncodable(nameOrKey)
     return try await transport.call(groupSegments: ["sessions"], command: "subscriptions", body: requestBody, as: SessionsSubscriptionsReturn.self)
+  }
+
+  public func threadSend(_ thread: String, _ message: String, _ options: SessionsThreadSendOptions = .init()) async throws -> SessionsThreadSendReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["thread"] = try RaviJSON.fromEncodable(thread)
+    requestBody["message"] = try RaviJSON.fromEncodable(message)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["sessions"], command: "thread-send", body: requestBody, as: SessionsThreadSendReturn.self)
+  }
+
+  public func threads(_ options: SessionsThreadsOptions = .init()) async throws -> SessionsThreadsReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["sessions"], command: "threads", body: requestBody, as: SessionsThreadsReturn.self)
   }
 
   public func trace(_ nameOrKey: String, _ options: SessionsTraceOptions = .init()) async throws -> SessionsTraceReturn {
