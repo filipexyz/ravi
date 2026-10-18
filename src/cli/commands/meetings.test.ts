@@ -563,7 +563,7 @@ describe("meetings read", () => {
       transcript: { segments: [{ speaker: "Ana", text: "Hello." }] },
     });
     expect(payload.note).toContain("do not share its content with other contacts");
-    expect(payload.note).toContain("Acme Corp");
+    expect(payload.note).not.toContain("Acme Corp");
     expect(meetingsReadReturnSchema.safeParse(result).success).toBe(true);
   });
 
@@ -585,7 +585,7 @@ describe("meetings read", () => {
     });
     const orgError = await failure(() => new MeetingsCommands(disabled.deps).read(MEETING_ID, undefined, true));
     expect(orgError.error).toMatchObject({ code: "ORG_ACCESS_DENIED", exitCode: 3 });
-    expect(String(orgError.error.details.suggestedAction)).toContain("An admin of Acme Corp");
+    expect(String(orgError.error.details.suggestedAction)).toContain("An admin of the meeting's organization");
     expect(orgError.error.details).toMatchObject({
       refusal: "external_agents_disabled",
       organization: { name: "Acme Corp" },

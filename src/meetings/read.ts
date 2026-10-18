@@ -187,8 +187,11 @@ export function meetingReadNote(input: {
   const base =
     "This transcript was read for this turn only. Do not save it (or parts of it) to files, memory or knowledge, and do not share its content with other contacts. Keep only your conclusions in this conversation.";
   if (!input.crossOrganization) return base;
-  const org = displayText(input.organization.name) ?? displayText(input.organization.slug) ?? "another organization";
-  return `${base} It comes from ${org}, another organization than this Ravi's login; ${org} records this read in its audit log.`;
+  // The note reads as an instruction, so it carries only a strict identifier,
+  // never a name another organization's admins typed.
+  const slug = safeSlug(input.organization.slug);
+  const org = slug ? `organization "${slug}"` : "another organization";
+  return `${base} It comes from ${org}, not the organization of this Ravi's login; that organization records this read in its audit log.`;
 }
 
 /**
@@ -234,7 +237,8 @@ export function describeMeetingReadFailure(error: unknown): MeetingReadFailure |
     const organization = details.organization as { name?: unknown } | undefined;
     const name = displayText(organization?.name);
     if (reason === "external_agents_disabled") {
-      const org = name ?? "The meeting's organization";
+      // The name stays in `details`; messages read as instructions, so they never carry it.
+      const org = "The meeting's organization";
       return {
         code: "ORG_ACCESS_DENIED",
         message: `${org} does not let agents from other organizations read its meetings.`,
@@ -242,7 +246,8 @@ export function describeMeetingReadFailure(error: unknown): MeetingReadFailure |
         details: {
           refusal: reason,
           ...(name ? { organization: { name } } : {}),
-          suggestedAction: `An admin of ${name ?? "that organization"} must allow agents from other organizations to read meetings in that organization's Console settings. Tell the operator; do not retry until then.`,
+          suggestedAction:
+            "An admin of the meeting's organization (details.organization) must allow agents from other organizations to read meetings in that organization's Console settings. Tell the operator; do not retry until then.",
         },
       };
     }
@@ -316,13 +321,11 @@ export function formatMeetingRead(
   // The title and participant names are chosen by people in the meeting, so
   // they go inside the fence with the transcript; the header keeps ids only.
   lines.push(meeting.meetingCode ? `Google Meet ${meeting.meetingCode}` : `Meeting ${meeting.id}`);
-  const orgName =
-    displayText(result.organization.name) ?? displayText(result.organization.slug) ?? result.organization.id;
-  const projectName = result.project
-    ? (displayText(result.project.name) ?? displayText(result.project.slug) ?? result.project.id)
-    : null;
+  // Outside the fence only strict identifiers; names people typed go inside it.
+  const orgRef = safeSlug(result.organization.slug) ?? safeSlug(result.organization.id) ?? "unknown";
+  const projectRef = result.project ? (safeSlug(result.project.slug) ?? safeSlug(result.project.id)) : null;
   lines.push(
-    `Organization: ${orgName}${result.crossOrganization ? " (another organization)" : ""}${projectName ? ` · Project: ${projectName}` : ""} · Access: ${result.access}`,
+    `Organization: ${orgRef}${result.crossOrganization ? " (another organization)" : ""}${projectRef ? ` · Project: ${projectRef}` : ""} · Access: ${safeSlug(result.access) ?? "unknown"}`,
   );
   const when = formatDate(meeting.recordingStartedAt ?? meeting.joinAt ?? meeting.createdAt);
   const duration = formatDuration(meeting.recordingSeconds);
@@ -338,6 +341,15 @@ export function formatMeetingRead(
   const body: string[] = [];
   const title = displayText(meeting.title);
   if (title) body.push(`Title: ${title}`);
+  const orgName = displayText(result.organization.name);
+  const projectName = result.project ? displayText(result.project.name) : null;
+  if (orgName || projectName) {
+    body.push(
+      [orgName ? `Organization name: ${orgName}` : null, projectName ? `Project name: ${projectName}` : null]
+        .filter(Boolean)
+        .join(" · "),
+    );
+  }
   if (result.participants.length > 0) {
     const names = result.participants.map(
       (participant) =>
@@ -496,6 +508,11 @@ function oneLine(text: string): string {
     .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/** A server identifier (slug, id) that cannot carry instructions; null otherwise. */
+function safeSlug(value: unknown): string | null {
+  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(value) ? value : null;
 }
 
 /** Remote display text, one line, without control characters. */
