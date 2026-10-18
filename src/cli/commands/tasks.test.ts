@@ -210,21 +210,6 @@ let taskDetailsMock: Record<string, unknown> = {
   events: [],
   comments: [],
 };
-let taskProjectSurfaceMock: Record<string, unknown> | null = {
-  projectId: "proj-1",
-  projectSlug: "ops-cadence",
-  projectTitle: "Ops Cadence",
-  projectStatus: "active",
-  projectSummary: "Keep work aligned through workflow runs",
-  projectNextStep: "Review workflow release state",
-  workflowRunId: "wf-run-1",
-  workflowRunTitle: "Ship smoke",
-  workflowRunStatus: "running",
-  workflowLinkId: "plink-1",
-  workflowLinkRole: "primary",
-  workflowCount: 2,
-  workflowAggregateStatus: "running",
-};
 let frontmatterMock: Record<string, unknown> = {};
 let taskListMock: Array<Record<string, unknown>> = [];
 
@@ -648,11 +633,7 @@ mock.module("../../tasks/index.js", () => ({
   buildTaskArtifactSummary: (task: Record<string, unknown>) => buildMockTaskArtifacts(task),
   getTaskDocPath: (task: { taskDir?: string; id: string }) => `${task.taskDir ?? "/tmp/ravi/tasks/task-cli-1"}/TASK.md`,
   getTaskActor: () => taskActorMock,
-  getTaskDetails: () => ({
-    ...taskDetailsMock,
-    project: taskProjectSurfaceMock,
-  }),
-  getTaskProjectSurface: () => taskProjectSurfaceMock,
+  getTaskDetails: () => taskDetailsMock,
   resolveTaskProfile: (profileId?: string | null) => buildMockResolvedProfile(profileId),
   resolveTaskProfileForTask: (task: { profileId?: string | null }) => buildMockResolvedProfile(task.profileId),
   resolveTaskRuntimeForRead: (
@@ -968,21 +949,6 @@ describe("TaskCommands create", () => {
       assignments: [],
       events: [],
       comments: [],
-    };
-    taskProjectSurfaceMock = {
-      projectId: "proj-1",
-      projectSlug: "ops-cadence",
-      projectTitle: "Ops Cadence",
-      projectStatus: "active",
-      projectSummary: "Keep work aligned through workflow runs",
-      projectNextStep: "Review workflow release state",
-      workflowRunId: "wf-run-1",
-      workflowRunTitle: "Ship smoke",
-      workflowRunStatus: "running",
-      workflowLinkId: "plink-1",
-      workflowLinkRole: "primary",
-      workflowCount: 2,
-      workflowAggregateStatus: "running",
     };
     frontmatterMock = {};
     taskListMock = [];
@@ -1551,11 +1517,8 @@ describe("TaskCommands create", () => {
       id: "task-cli-1",
       archivedBy: "dev-session",
       archiveReason: "old backlog",
-      project: {
-        projectSlug: "ops-cadence",
-        workflowAggregateStatus: "running",
-      },
     });
+    expect(payload.tasks[0]).not.toHaveProperty("project");
   });
 
   it("surfaces readiness, launch plan, and visual status in list JSON output", async () => {
@@ -1623,10 +1586,6 @@ describe("TaskCommands create", () => {
     expect(payload.tasks).toEqual([
       expect.objectContaining({
         id: "task-cli-1",
-        project: expect.objectContaining({
-          projectSlug: "ops-cadence",
-          workflowRunId: "wf-run-1",
-        }),
         visualStatus: "waiting",
         launchPlan: expect.objectContaining({
           agentId: "dev",
@@ -2020,10 +1979,7 @@ describe("TaskCommands create", () => {
       progress: 72,
       progressNote: "mapeando o fluxo do runtime",
     });
-    expect(payload.project).toMatchObject({
-      projectSlug: "ops-cadence",
-      workflowRunId: "wf-run-1",
-    });
+    expect(payload).not.toHaveProperty("project");
   });
 
   it("limits show history with --last", async () => {
@@ -2520,8 +2476,7 @@ describe("TaskCommands create", () => {
 
     const output = logs.join("\n");
     expect(output).toContain("Profile:     brainstorm@1");
-    expect(output).toContain("Project:     ops-cadence :: active");
-    expect(output).toContain("Proj next:   Review workflow release state");
+    expect(output).not.toContain("Project:");
     expect(output).toContain("Profile src: system :: system:brainstorm");
     expect(output).toContain("Profile in: flavor=matcha");
     expect(output).toContain("Task profile:");
@@ -2552,7 +2507,7 @@ describe("TaskCommands create", () => {
           progress: 45,
           profileId: "brainstorm",
           taskProfile: taskDetailsMock.taskProfile as Record<string, unknown>,
-          project: taskProjectSurfaceMock,
+          project: { projectSlug: "legacy-local" },
           artifacts: buildMockTaskArtifacts(taskDetailsMock.task as Record<string, unknown>),
           activeAssignment: null,
           event: {
@@ -2583,7 +2538,7 @@ describe("TaskCommands create", () => {
 
     const output = logs.join("\n");
     expect(output).toContain("profile brainstorm");
-    expect(output).toContain("project ops-cadence");
+    expect(output).not.toContain(":: project ");
     expect(output).toContain("Brainstorm draft .genie/brainstorms/task/DRAFT.md");
   });
 });

@@ -43,14 +43,14 @@ Install-level default (`global:default`):
 ```bash
 ravi whoami --json
 ravi cloud auth profiles list --json
-ravi cloud projects list --json
+ravi projects list --json
 ```
 
 Confirm the selected Console organization and the accessible project refs.
 
 The organization shown by `ravi whoami --json` is the remote Console
-organization encoded in the current credentials. It is not the same thing as a
-local Ravi Project.
+organization encoded in the current credentials. `ravi projects list` lists the projects
+of that organization.
 
 If `profiles list` shows only one organization, the local runtime has only one
 approved credential profile. To use another organization, run `ravi login` and
@@ -66,34 +66,30 @@ If the desired organization does not appear during browser approval, debug
 Console membership/picker state. Do not look for `ravi login --org`; normal
 login organization selection belongs in Console.
 
-## Compare Remote Console Projects And Local Projects
+## Check The Project Ref
 
-When an agent says a project/site does not exist, compare both namespaces:
+When an agent says a project/site does not exist, check the organization and
+its projects:
 
 ```bash
 ravi whoami --json
-ravi cloud projects list --json
 ravi projects list --json
 ```
 
-Read them as separate inventories:
+`ravi projects list` (alias `ravi cloud projects list`) returns the Console
+projects of the selected organization. There are no local projects any more:
+the old local alignment substrate (`proj-*` ids) was removed in 2026-10.
 
-- `ravi cloud projects list` returns remote Console Projects in the selected
-  Console organization.
-- `ravi projects list` returns local OSS Projects for alignment/workflow
-  context.
-
-Do not create a Pages site just because `ravi pages list <local-project-slug>`
-returns `total: 0`. First verify that the argument is a remote Console project
-ref from `ravi cloud projects list`.
+Do not create a Pages site just because `ravi pages list <slug>` returns
+`total: 0`. First verify that the argument is a project ref from
+`ravi projects list`.
 
 ## RBBT Wrong-Scope Debug
 
-Known bad pattern:
+Known bad pattern, from when a local `ravi projects` still existed:
 
 ```bash
-ravi projects list --json        # local Project exists: rbbt
-ravi cloud projects list --json  # remote project is: rbbt-ravi
+ravi projects list --json        # (then) local Project: rbbt; now Console: rbbt-ravi
 ravi pages list rbbt --json      # wrong namespace
 ```
 
@@ -111,7 +107,7 @@ After profile support lands, if RBBT was previously approved:
 
 ```bash
 ravi cloud auth profiles switch rbbt
-ravi cloud projects list --json
+ravi projects list --json
 ravi cloud scope explain --json
 ```
 

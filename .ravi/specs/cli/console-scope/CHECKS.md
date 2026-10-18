@@ -110,7 +110,6 @@ owners:
 ```bash
 ravi whoami --json
 ravi cloud auth profiles list --json
-ravi cloud projects list --json
 ravi projects list --json
 ravi cloud scope set --project rbbt-lab --session ravi-console
 ravi cloud scope show --json
@@ -122,10 +121,9 @@ The `pages list` result should show `projectRef` matching the default project.
 ## Regression Smoke For RBBT Case
 
 With current credentials selected to the personal org where `rbbt-ravi` exists
-and local Project `rbbt` also exists:
+and a leftover local project row `rbbt` sits in an old `ravi.db`:
 
 ```bash
-ravi cloud projects list --json
 ravi projects list --json
 ravi cloud scope explain --json
 ```

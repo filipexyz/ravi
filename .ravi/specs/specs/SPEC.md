@@ -44,7 +44,7 @@ Ravi Specs is the durable rules memory for the codebase. It protects business ru
 - `bun src/cli/index.ts specs list --json`
 - `bun src/cli/index.ts specs get specs --mode full --json`
 - `bun src/cli/index.ts specs sync --json`
-- `bun test src/specs/service.test.ts src/cli/commands/specs.test.ts src/cli/commands/projects.test.ts src/cli/commands/json-coverage.test.ts`
+- `bun test src/specs/service.test.ts src/cli/commands/specs.test.ts src/cli/commands/json-coverage.test.ts`
 - `bun run typecheck`
 - `bun run build`
 

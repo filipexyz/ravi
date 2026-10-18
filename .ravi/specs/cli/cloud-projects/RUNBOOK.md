@@ -27,7 +27,7 @@ dry-run):
 
 ```bash
 ravi whoami --json                                   # confirm the org FIRST
-ravi cloud projects list --json                      # remote projects + pagination
-ravi cloud projects list --fields slug,id --json     # expect compact items
-ravi cloud projects create demo-slug --json          # expect exit 3 + plan, nothing created
+ravi projects list --json                            # remote projects + pagination
+ravi projects list --fields slug,id --json           # expect compact items
+ravi projects create demo-slug --json                # expect exit 3 + plan, nothing created
 ```

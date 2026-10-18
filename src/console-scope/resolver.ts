@@ -637,7 +637,7 @@ function unknownProjectRefError(
     : "";
   const visibleLine = knownRefs.length
     ? `Visible project refs: ${knownRefs.join(", ")}.`
-    : "No visible Console projects were returned. Run `ravi cloud projects list`.";
+    : "No visible Console projects were returned. Run `ravi projects list`.";
   return new CloudAuthError(
     "PAYLOAD_INVALID",
     `Console project "${ref}" was not found.${agentLine} Use an existing Console project ref or set one with:\n  ravi cloud scope set --project <project-ref>\n${visibleLine}`,

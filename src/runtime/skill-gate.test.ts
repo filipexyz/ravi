@@ -198,7 +198,7 @@ describe("skill gate loaded-marker equivalence", () => {
     expect(loadedSkillMatchesGate("pages", "ravi-system-pages")).toBe(true);
     expect(loadedSkillMatchesGate("ravi-system-pages", "pages")).toBe(true);
     expect(loadedSkillMatchesGate("cron-manager", "ravi-system-cron-manager")).toBe(true);
-    expect(loadedSkillMatchesGate("projects", "ravi-system-projects")).toBe(true);
+    expect(loadedSkillMatchesGate("knowledge", "ravi-system-knowledge")).toBe(true);
     expect(loadedSkillMatchesGate("ravi-user-skills-pages", "ravi-system-pages")).toBe(true);
     expect(loadedSkillMatchesGate("app-creator", "ravi-dev-app-creator")).toBe(true);
     expect(loadedSkillMatchesGate("Ravi-System-Pages", "ravi-system-pages")).toBe(true);

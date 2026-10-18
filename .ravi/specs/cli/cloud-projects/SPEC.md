@@ -1,6 +1,6 @@
 ---
 id: cli/cloud-projects
-title: "Cloud Projects agent-first CLI contract"
+title: "Projects (Console) agent-first CLI contract"
 kind: capability
 domain: cli
 capabilities:
@@ -14,6 +14,7 @@ tags:
   - exit-taxonomy
   - write-brake
 applies_to:
+  - src/cli/commands/projects.ts
   - src/cli/commands/cloud-projects.ts
   - src/cloud-projects/client.ts
   - src/cli/agent-contract.ts
@@ -22,16 +23,22 @@ owners:
 status: active
 normative: true
 ---
-# Cloud Projects agent-first CLI contract
+# Projects (Console) agent-first CLI contract
 
 ## Intent
 
-Make `ravi cloud projects` (remote Ravi Console projects) reliable for agent
-consumers under the agent-first contract defined by `cli`: typed error
+Make `ravi projects` (the organization's Ravi Console projects, the refs that
+`--project` takes everywhere) reliable for agent consumers under the agent-first contract defined by `cli`: typed error
 envelopes, the 0/1/2/3 exit taxonomy, a write brake on remote project
 creation, and compact discovery. This is the domain of the RBBT wrong-scope
 incident (see `cli/console-scope`): an agent creating a Console project in the
 wrong organization is exactly the mistake the brake prevents.
+
+`ravi cloud projects` is the older name of the same group: a subclass with the
+same commands, kept so scripts and generated SDK calls keep working. Until
+2026-10 `ravi projects` was a separate local alignment substrate (ids
+`proj-*`, never visible in Console); agents kept creating projects there when
+they meant Console projects, so it was removed and the name now means Console.
 
 ## Invariants
 
@@ -39,7 +46,7 @@ wrong organization is exactly the mistake the brake prevents.
    envelope `{success:false, op, error:{code, message, retryable, suggestedAction, ...}}`.
 2. Exit codes on contract paths MUST follow the taxonomy: `0` success · `1`
    error · `2` usage error · `3` blocked by policy (write brake).
-3. `cloud projects create` MUST default to dry-run and require `--execute`;
+3. `projects create` MUST default to dry-run and require `--execute`;
    the dry-run MUST report `dryRun: true` and the plan (`slug`,
    `namePresent`, `descriptionPresent`, effective `defaultVisibility`,
    `defaultPageSite`), MUST NOT expose name/description content, and MUST NOT
@@ -47,13 +54,18 @@ wrong organization is exactly the mistake the brake prevents.
 4. Validation runs BEFORE the brake: an invalid `--visibility` MUST fail with
    `PAYLOAD_INVALID`, exit `2`, with or without `--execute`, and MUST NOT
    produce a plan.
-5. `cloud projects list` MUST accept `--fields a,b,c` for compact output.
+5. `projects list` MUST accept `--fields a,b,c` for compact output.
 6. A `ContractError` thrown inside a command MUST pass through
    `runCloudProjectsCommand` untouched — the legacy CloudAuthError funnel MUST
    NOT rewrap it.
 7. Remote failures preserve their stable CloudAuthError code through the
    global taxonomy: payload validation exits `2`; provider/auth failures exit
    `1`.
+8. `ravi projects` and `ravi cloud projects` MUST run the same commands
+   against the same Console API. The dry-run `op` and the pagination
+   `nextCommand` MUST name the path the caller used.
+9. `ravi projects` MUST NOT read or write local project state; there is no
+   local project store.
 
 ## Write classification (brake decision per op)
 
@@ -76,12 +88,12 @@ from the service layer — the brake on the CLI `create` does not affect it.
 `ravi connectors` no longer lists projects: connections belong to a person,
 not to a project (`cli/connectors`). The wrong-scope debugging
 story (local `rbbt` vs remote `rbbt-ravi`) lives in `cli/console-scope`. There
-is no shipped `cloud-projects` skill — lacuna registrada; the CLI `--help`
+is no shipped `projects` skill — lacuna registrada; the CLI `--help`
 plus this spec are the teaching surface.
 
 ## Validation
 
-- `bun test src/cli/commands/cloud-projects.test.ts` green (contract describes
+- `bun test src/cli/commands/projects.test.ts` green (contract describes
   included).
 - `bun run typecheck` clean.
 

@@ -58,8 +58,8 @@ projection that consume that Console contract.
   as Pages, Artifacts publish, MCP bridges, and sync. Connectors are not
   project-scoped: a connection belongs to the Console user who connected it
   (`cli/connectors`).
-- `Local project`: the OSS Ravi Projects domain stored locally under
-  `src/projects`. It is not the same entity as a Console project.
+  `ravi projects list` lists them. There is no local project entity any more
+  (the old `src/projects` substrate was removed in 2026-10).
 - `Console scope`: non-secret local context containing the Console base URL,
   selected organization identity, and optionally a default Console project.
 - `Credential profile`: local Ravi Cloud credentials for one Console URL, one
@@ -77,14 +77,13 @@ The current OSS implementation is not yet centralized:
 - `src/pages/client.ts` sends that project as the Console `projectRef`.
 - `src/artifacts/publish-client.ts` sends `projectRef` and optional `siteRef`
   during Pages/content publishing.
-- `src/cli/commands/cloud-projects.ts` lists/creates remote Console projects
-  for the organization encoded in cloud-auth credentials.
+- `src/cli/commands/projects.ts` (`ravi projects`, alias `ravi cloud
+  projects`) lists/creates remote Console projects for the organization
+  encoded in cloud-auth credentials.
 - `src/bridges/client.ts` already has command-local fallback to
   `RAVI_PROJECT`.
 - `src/sync/console-bridge.ts` accepts optional project refs but does not use a
   shared resolver.
-- `src/projects/*` owns local Ravi Projects. Those objects are alignment and
-  workflow context, not remote Console Projects.
 - `src/cloud-auth/storage.ts` stores Console sessions keyed by
   `consoleUserId` under `~/.ravi/cloud-auth/users/<userId>/` with an
   `activeUserId` pointer. That is enough for multi-user hosts. Multi-org
@@ -92,7 +91,7 @@ The current OSS implementation is not yet centralized:
 
 Until a shared resolver exists, project-scoped commands MUST keep requiring
 explicit project args or command-specific compatibility env. They MUST NOT
-silently use local Project slugs as remote Console project refs.
+silently guess a project ref from a similar slug.
 
 ## Boundaries
 
@@ -103,11 +102,11 @@ silently use local Project slugs as remote Console project refs.
   cached labels/ids returned by Console.
 - Console scope defaults MUST NOT bypass Console authorization. Every remote
   mutation still uses the access token and lets Console accept or deny it.
-- Local Projects MAY link to Console projects as resources or metadata, but a
-  local project id MUST NOT be treated as a Console project id unless an
-  explicit Console mapping exists.
-- A local Project slug that equals or resembles a Console project slug MUST NOT
-  be enough to select remote scope.
+- There is no local project store: `ravi projects` is the Console catalog.
+  Leftover `projects` rows in an old `ravi.db` MUST NOT be read as Console
+  project refs.
+- A slug that resembles a Console project slug MUST NOT be enough to select
+  remote scope.
 - Command-specific `RAVI_PROJECT` fallbacks SHOULD be replaced by the shared
   Console scope resolver. `RAVI_PROJECT` MAY remain a compatibility input.
 
@@ -122,9 +121,11 @@ The observed failure was:
 - `ravi pages list rbbt --json` returned no site;
 - an agent then tried to create a site/project in the wrong remote scope.
 
-This is exactly what this capability must prevent. The resolver MUST distinguish
-local project identity from Console project identity, and diagnostics MUST show
-the selected Console organization plus the source of the project ref.
+This is exactly what this capability must prevent. Diagnostics MUST show the
+selected Console organization plus the source of the project ref. The same
+confusion recurred in 2026-10 (an agent ran the local `ravi projects create`
+meaning a Console project), so the local substrate was removed and
+`ravi projects` now means the Console catalog (`cli/cloud-projects`).
 
 ## Login Organization Selection
 
@@ -450,7 +451,7 @@ follow the Manual v2 agent-first contract defined by `cli`:
   reversible local-default pair (`set` ⇄ `clear`), write only non-secret local
   scope state, and `set` validates the project against Console before saving.
   The brake for the risky remote consequence lives on the consuming commands
-  (for example the braked `cloud projects create` in `cli/cloud-projects`).
+  (for example the braked `projects create` in `cli/cloud-projects`).
 - A `ContractError` thrown inside a scope command MUST pass through
   `runCloudScopeCommand` untouched — the legacy CloudAuthError funnel MUST NOT
   rewrap it into `SERVER_UNAVAILABLE`.

@@ -1,1239 +1,347 @@
-import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { afterAll, describe, expect, it, mock } from "bun:test";
+import type { ConsoleApiClient } from "../../cloud-auth/client.js";
+import { CloudAuthError } from "../../cloud-auth/errors.js";
+import type { CloudCredentials } from "../../cloud-auth/types.js";
 
-const actualTasksIndexModule = await import("../../tasks/index.js");
-
-const createProjectCalls: Array<Record<string, unknown>> = [];
-const initProjectCalls: Array<Record<string, unknown>> = [];
-const updateProjectCalls: Array<Record<string, unknown>> = [];
-const linkProjectCalls: Array<Record<string, unknown>> = [];
-const createProjectTaskCalls: Array<Record<string, unknown>> = [];
-const attachProjectTaskCalls: Array<Record<string, unknown>> = [];
-const dispatchProjectTaskCalls: Array<Record<string, unknown>> = [];
-const attachProjectWorkflowRunCalls: Array<Record<string, unknown>> = [];
-const startProjectWorkflowRunCalls: Array<Record<string, unknown>> = [];
-const listProjectsCalls: Array<Record<string, unknown>> = [];
-const listProjectStatusEntriesCalls: Array<Record<string, unknown>> = [];
-const getProjectDetailsCalls: string[] = [];
-const seedFixtureCalls: Array<Record<string, unknown>> = [];
-const ensuredSessionCalls: Array<Record<string, unknown>> = [];
-const emittedTaskEvents: Array<Record<string, unknown>> = [];
-const projectResourceLinks = new Map<string, Record<string, unknown>>();
-const unknownProjectRefs = new Set<string>();
-
-const projectDetails = {
-  project: {
-    id: "proj-1",
-    slug: "ops-cadence",
-    title: "Ops Cadence",
-    status: "active",
-    summary: "Keep work aligned",
-    hypothesis: "Workflow is the primary attachment",
-    nextStep: "Attach the run",
-    lastSignalAt: 1_711_234_567_000,
-  },
-  links: [
-    {
-      id: "plink-1",
-      projectId: "proj-1",
-      assetType: "workflow",
-      assetId: "wf-run-1",
-      role: "primary",
-      createdAt: 1_711_234_567_000,
-      updatedAt: 1_711_234_567_000,
-    },
-  ],
-  linkedWorkflows: [
-    {
-      linkId: "plink-1",
-      role: "primary",
-      workflowRunId: "wf-run-1",
-      workflowRunTitle: "Ship smoke",
-      workflowRunStatus: "ready",
-      workflowSpecId: "wf-spec-1",
-      workflowSpecTitle: "Ship smoke",
-      createdAt: 1_711_234_567_000,
-      updatedAt: 1_711_234_567_000,
-    },
-  ],
-  workflowAggregate: {
-    total: 1,
-    missing: 0,
-    draft: 0,
-    waiting: 0,
-    ready: 1,
-    running: 0,
-    blocked: 0,
-    done: 0,
-    failed: 0,
-    cancelled: 0,
-    archived: 0,
-    primaryWorkflowRunId: "wf-run-1",
-    primaryWorkflowTitle: "Ship smoke",
-    primaryWorkflowStatus: "ready",
-    focusedWorkflowRunId: "wf-run-1",
-    focusedWorkflowTitle: "Ship smoke",
-    focusedWorkflowStatus: "ready",
-    focusedWorkflowRole: "primary",
-    overallStatus: "ready",
-  },
-  operational: {
-    runtimeStatus: "ready",
-    workflowCount: 1,
-    hottestWorkflowRunId: "wf-run-1",
-    hottestWorkflowTitle: "Ship smoke",
-    hottestWorkflowStatus: "ready",
-    hottestNodeRunId: "node-run-1",
-    hottestNodeKey: "ship",
-    hottestNodeLabel: "Ship smoke",
-    hottestNodeKind: "task",
-    hottestNodeRequirement: "required",
-    hottestNodeReleaseMode: "auto",
-    hottestNodeStatus: "ready",
-    hottestTaskId: "task-ship",
-    hottestTaskTitle: "Ship release",
-    hottestTaskStatus: "in_progress",
-    hottestTaskProgress: 42,
-    hottestTaskPriority: "high",
-  },
-};
-
-const defaultProjectResourceLink = {
-  id: "plink-resource-1",
-  projectId: "proj-1",
-  assetType: "resource",
-  assetId: "/tmp/ravi.bot",
-  role: "substrate",
-  metadata: {
-    type: "worktree",
-    label: "ravi.bot worktree",
-    locator: "/tmp/ravi.bot",
-    path: "/tmp/ravi.bot",
-    basename: "ravi.bot",
-  },
-  createdAt: 1_711_234_567_000,
-  updatedAt: 1_711_234_567_000,
-  resourceType: "worktree",
-  locator: "/tmp/ravi.bot",
-  label: "ravi.bot worktree",
-};
-
-mock.module("../../projects/index.js", () => ({
-  createProject: (input: Record<string, unknown>) => {
-    createProjectCalls.push(input);
-    return projectDetails.project;
-  },
-  createProjectTask: (input: Record<string, unknown>) => {
-    createProjectTaskCalls.push(input);
-    return {
-      details: projectDetails,
-      workflow: projectDetails.linkedWorkflows[0],
-      defaults: {
-        ownerAgentId: "main",
-        operatorSessionName: "ops-session",
-      },
-      task: {
-        id: "task-project-1",
-        title: input.title,
-        status: input.dispatch ? "dispatched" : "open",
-      },
-      createdTask: {
-        id: "task-project-1",
-        title: input.title,
-        status: "open",
-      },
-      event: {
-        id: 1,
-        taskId: "task-project-1",
-        type: "task.created",
-      },
-      relatedEvents: [],
-      attached: {
-        nodeRun: {
-          specNodeKey: input.nodeKey,
-          currentTaskId: "task-project-1",
-        },
-      },
-      launch: input.dispatch
-        ? {
-            mode: "dispatched",
-            task: {
-              id: "task-project-1",
-              title: input.title,
-              status: "dispatched",
-            },
-            assignment: {
-              id: "assign-1",
-            },
-            event: {
-              id: 2,
-              taskId: "task-project-1",
-              type: "task.dispatched",
-            },
-            sessionName: input.sessionName ?? "ops-session",
-            readiness: {
-              state: "active",
-            },
-            primaryArtifact: null,
-            dispatchSummary: "summary",
-          }
-        : null,
-    };
-  },
-  attachProjectTask: (input: Record<string, unknown>) => {
-    attachProjectTaskCalls.push(input);
-    return {
-      details: projectDetails,
-      workflow: projectDetails.linkedWorkflows[0],
-      defaults: {
-        ownerAgentId: "main",
-        operatorSessionName: "ops-session",
-      },
-      task: {
-        id: input.taskId,
-        title: "Attached task",
-        status: input.dispatch ? "dispatched" : "open",
-      },
-      attached: {
-        nodeRun: {
-          specNodeKey: input.nodeKey,
-          currentTaskId: input.taskId,
-        },
-      },
-      launch: input.dispatch
-        ? {
-            mode: "launch_planned",
-            task: {
-              id: input.taskId,
-              title: "Attached task",
-              status: "open",
-            },
-            launchPlan: {
-              taskId: input.taskId,
-              agentId: input.agentId ?? "main",
-              sessionName: input.sessionName ?? "ops-session",
-            },
-            readiness: {
-              state: "waiting",
-            },
-            event: {
-              id: 3,
-              taskId: input.taskId,
-              type: "task.launch-planned",
-            },
-          }
-        : null,
-    };
-  },
-  dispatchProjectTask: (input: Record<string, unknown>) => {
-    dispatchProjectTaskCalls.push(input);
-    return {
-      details: projectDetails,
-      defaults: {
-        ownerAgentId: "main",
-        operatorSessionName: "ops-session",
-      },
-      task: {
-        id: input.taskId,
-        title: "Dispatched task",
-        status: "dispatched",
-      },
-      project: {
-        projectSlug: "ops-cadence",
-      },
-      launch: {
-        mode: "dispatched",
-        task: {
-          id: input.taskId,
-          title: "Dispatched task",
-          status: "dispatched",
-        },
-        assignment: {
-          id: "assign-2",
-        },
-        event: {
-          id: 4,
-          taskId: input.taskId,
-          type: "task.dispatched",
-        },
-        sessionName: input.sessionName ?? "ops-session",
-        readiness: {
-          state: "active",
-        },
-        primaryArtifact: null,
-        dispatchSummary: "summary",
-      },
-    };
-  },
-  attachProjectWorkflowRun: (input: Record<string, unknown>) => {
-    attachProjectWorkflowRunCalls.push(input);
-    return {
-      details: projectDetails,
-      workflow: projectDetails.linkedWorkflows[0],
-      defaults: {
-        ownerAgentId: "main",
-        operatorSessionName: "ops-session",
-      },
-    };
-  },
-  initProject: (input: Record<string, unknown>) => {
-    initProjectCalls.push(input);
-    return {
-      details: projectDetails,
-      ownerLink: {
-        id: "plink-agent-1",
-        projectId: "proj-1",
-        assetType: "agent",
-        assetId: "main",
-        role: "owner",
-        createdAt: 1_711_234_567_000,
-        updatedAt: 1_711_234_567_000,
-      },
-      sessionLink: {
-        id: "plink-session-1",
-        projectId: "proj-1",
-        assetType: "session",
-        assetId: "ops-room",
-        role: "operator",
-        createdAt: 1_711_234_567_000,
-        updatedAt: 1_711_234_567_000,
-      },
-      resourceLinks: [defaultProjectResourceLink],
-      workflows: [
-        {
-          source: "template",
-          templateId: "technical-change",
-          workflowRunId: "wf-run-1",
-          workflowSpecId: "wf-spec-1",
-          workflowTitle: "Ship smoke",
-          workflowStatus: "ready",
-          role: "primary",
-        },
-      ],
-    };
-  },
-  getProjectDetails: (ref: string) => {
-    getProjectDetailsCalls.push(ref);
-    return unknownProjectRefs.has(ref) ? null : projectDetails;
-  },
-  listProjects: (query: Record<string, unknown>) => {
-    listProjectsCalls.push(query);
-    return [
-      {
-        ...projectDetails.project,
-        linkCount: 1,
-      },
-    ];
-  },
-  listProjectStatusEntries: (query: Record<string, unknown>) => {
-    listProjectStatusEntriesCalls.push(query);
-    return [
-      {
-        project: {
-          ...projectDetails.project,
-          linkCount: 1,
-        },
-        links: projectDetails.links,
-        linkedWorkflows: projectDetails.linkedWorkflows,
-        workflowAggregate: projectDetails.workflowAggregate,
-        operational: projectDetails.operational,
-      },
-    ];
-  },
-  linkProject: (input: Record<string, unknown>) => {
-    linkProjectCalls.push(input);
-    if (input.assetType === "resource" && typeof input.assetId === "string") {
-      const metadata = (input.metadata as Record<string, unknown> | undefined) ?? {};
-      const label = typeof metadata.label === "string" ? metadata.label : null;
-      const resource = {
-        id: `plink-resource-${linkProjectCalls.length}`,
-        projectId: "proj-1",
-        assetType: "resource",
-        assetId: input.assetId,
-        role: typeof input.role === "string" ? input.role : null,
-        metadata,
-        createdAt: 1_711_234_567_000,
-        updatedAt: 1_711_234_567_000,
-        resourceType: typeof metadata.type === "string" ? metadata.type : null,
-        locator: typeof metadata.locator === "string" ? metadata.locator : input.assetId,
-        label,
-      };
-      projectResourceLinks.set(String(input.assetId), resource);
-      projectResourceLinks.set(resource.id, resource);
-      if (label) {
-        projectResourceLinks.set(label, resource);
-      }
-    }
-    return projectDetails;
-  },
-  getProjectResourceLink: (_projectRef: string, resourceRef: string) => projectResourceLinks.get(resourceRef) ?? null,
-  listProjectResourceLinks: (_projectRef: string, resourceType?: string) =>
-    [...new Map([...projectResourceLinks.values()].map((resource) => [String(resource.id), resource])).values()].filter(
-      (resource) => !resourceType || resource.resourceType === resourceType,
-    ),
-  normalizeProjectStatus: (value?: string) => value?.trim().toLowerCase() || "active",
-  normalizeProjectWorkflowLinkRole: (value?: string) =>
-    value?.trim().toLowerCase() === "secondary" ? "support" : value?.trim().toLowerCase(),
-  requireProjectWorkflowTemplateId: (value: string) => value.trim().toLowerCase(),
-  startProjectWorkflowRun: (input: Record<string, unknown>) => {
-    startProjectWorkflowRunCalls.push(input);
-    return {
-      details: projectDetails,
-      workflow: projectDetails.linkedWorkflows[0],
-      defaults: {
-        ownerAgentId: "main",
-        operatorSessionName: "ops-session",
-      },
-      run: {
-        run: {
-          id: "wf-run-1",
-          title: "Ship smoke",
-          status: "ready",
-        },
-      },
-    };
-  },
-  updateProject: (ref: string, input: Record<string, unknown>) => {
-    updateProjectCalls.push({ ref, ...input });
-    return projectDetails.project;
-  },
-}));
-
-mock.module("../../projects/fixtures.js", () => ({
-  seedCanonicalProjectFixtures: async (input: Record<string, unknown>) => {
-    seedFixtureCalls.push(input);
-    return {
-      generatedAt: 1_711_234_567_000,
-      total: 1,
-      fixtures: [
-        {
-          key: "ops-cadence",
-          projectId: "proj-1",
-          projectSlug: "demo-ops-cadence",
-          projectTitle: "Ops Cadence",
-          projectStatus: "active",
-          workflowSpecId: "wf-spec-1",
-          workflowRunId: "wf-run-1",
-          workflowStatus: "running",
-          operatorSessionName: "ops-session",
-          resourceAssetId: "/workspace/ravi.bot",
-          resourceType: "worktree",
-          tasks: [{ nodeKey: "triage", taskId: "task-1", title: "Audit the release queue", status: "in_progress" }],
-          proofCommands: [
-            "ravi projects status demo-ops-cadence",
-            "ravi projects show demo-ops-cadence",
-            "ravi tasks show task-1",
-          ],
-        },
-      ],
-    };
-  },
-}));
-
-mock.module("../../router/config.js", () => ({
-  getRaviDir: () => "/tmp/ravi",
-  getAgent: (id: string) => (id === "main" ? { id: "main", cwd: "/tmp/main" } : null),
-  getAllAgents: () => [{ id: "main", cwd: "/tmp/main" }],
-  createAgent: () => {},
-  updateAgent: () => {},
-  deleteAgent: () => false,
-  setAgentDebounce: () => {},
-  checkAgentDirs: () => [],
-  ensureAgentDirs: () => {},
-  loadRouterConfig: () => ({ defaultAgent: "main" }),
-  setAgentSpecMode: () => {},
-}));
-
-mock.module("../../router/index.js", () => ({
-  resolveSession: (nameOrKey: string) =>
-    nameOrKey === "ops-session" ? { name: "ops-session", sessionKey: "agent:main:main", agentId: "main" } : null,
-  getOrCreateSession: (sessionKey: string, agentId: string, agentCwd: string, defaults?: Record<string, unknown>) => {
-    ensuredSessionCalls.push({ sessionKey, agentId, agentCwd, defaults });
-    return {
-      name: typeof defaults?.name === "string" ? defaults.name : undefined,
-      sessionKey,
-      agentId,
-    };
-  },
-  expandHome: (value: string) => value,
-}));
-
-mock.module("../../workflows/index.js", () => ({
-  getWorkflowRunDetails: (runId: string) =>
-    runId === "wf-run-1"
-      ? {
-          run: {
-            id: "wf-run-1",
-            title: "Ship smoke",
-            status: "ready",
-          },
-        }
-      : null,
-}));
-
-mock.module("../../specs/index.js", () => ({
-  getSpec: (id: string) => {
-    if (id !== "channels/presence/lifecycle") {
-      throw new Error(`Spec not found: ${id}`);
-    }
-    return {
-      id,
-      title: "Presence Lifecycle",
-      kind: "feature",
-      domain: "channels",
-      capability: "presence",
-      feature: "lifecycle",
-      capabilities: ["presence"],
-      tags: [],
-      appliesTo: [],
-      owners: [],
-      status: "active",
-      normative: true,
-      rootPath: "/workspace/.ravi/specs",
-      path: "/workspace/.ravi/specs/channels/presence/lifecycle/SPEC.md",
-      relativePath: "channels/presence/lifecycle/SPEC.md",
-      mtime: 1,
-      updatedAt: 1,
-    };
-  },
-}));
-
-mock.module("../../tasks/index.js", () => ({
-  ...actualTasksIndexModule,
-  emitTaskEvent: async (task: Record<string, unknown>, event: Record<string, unknown>) => {
-    emittedTaskEvents.push({ task, event });
-  },
-}));
-
+// Manual v2 contract: hasContext() true makes the contract helpers throw
+// ContractError instead of process.exit, which is what tests need.
+const actualContext = await import("../context.js");
 mock.module("../context.js", () => ({
-  getContext: () => undefined,
-  // Real hasContext checks RAVI_* envs; the contract helpers use it to throw
-  // ContractError instead of process.exit, which is what tests need.
+  ...actualContext,
   hasContext: () => true,
   fail: (message: string) => {
     throw new Error(message);
   },
 }));
 
-const {
-  ProjectCommands,
-  ProjectFixtureCommands,
-  ProjectResourceCommands,
-  ProjectTaskCommands,
-  ProjectWorkflowCommands,
-} = await import("./projects.js");
+const { ProjectsCommands } = await import("./projects.js");
+const { CloudProjectsCommands } = await import("./cloud-projects.js");
 const { ContractError } = await import("../agent-contract.js");
 
 afterAll(() => mock.restore());
 
-describe("ProjectCommands", () => {
-  beforeEach(() => {
-    createProjectCalls.length = 0;
-    initProjectCalls.length = 0;
-    updateProjectCalls.length = 0;
-    linkProjectCalls.length = 0;
-    createProjectTaskCalls.length = 0;
-    attachProjectTaskCalls.length = 0;
-    dispatchProjectTaskCalls.length = 0;
-    attachProjectWorkflowRunCalls.length = 0;
-    startProjectWorkflowRunCalls.length = 0;
-    listProjectsCalls.length = 0;
-    listProjectStatusEntriesCalls.length = 0;
-    getProjectDetailsCalls.length = 0;
-    seedFixtureCalls.length = 0;
-    ensuredSessionCalls.length = 0;
-    emittedTaskEvents.length = 0;
-    unknownProjectRefs.clear();
-    projectResourceLinks.clear();
-    projectResourceLinks.set(defaultProjectResourceLink.assetId, defaultProjectResourceLink);
-    projectResourceLinks.set(defaultProjectResourceLink.id, defaultProjectResourceLink);
-    projectResourceLinks.set(defaultProjectResourceLink.label, defaultProjectResourceLink);
-  });
-
-  it("creates projects with normalized owner/session inputs", () => {
-    const commands = new ProjectCommands();
-    const originalLog = console.log;
-    console.log = () => {};
-
-    try {
-      commands.create(
-        "Ops Cadence",
-        undefined,
-        "active",
-        "Keep work aligned",
-        "Workflow is the primary attachment",
-        "Attach the run",
-        undefined,
-        "main",
-        "ops-session",
-        true,
-      );
-    } finally {
-      console.log = originalLog;
-    }
-
-    expect(createProjectCalls).toEqual([
-      expect.objectContaining({
-        title: "Ops Cadence",
-        status: "active",
-        summary: "Keep work aligned",
-        hypothesis: "Workflow is the primary attachment",
-        nextStep: "Attach the run",
-        ownerAgentId: "main",
-        operatorSessionName: "ops-session",
-      }),
-    ]);
-    expect(getProjectDetailsCalls).toEqual(["proj-1"]);
-  });
-
-  it("initializes a project with ensured session, parsed resources, and canonical workflows", () => {
-    const commands = new ProjectCommands();
-    const originalLog = console.log;
-    console.log = () => {};
-
-    try {
-      commands.init(
-        "Ops Cadence",
-        "ops-cadence",
-        "active",
-        "Keep work aligned",
-        "Workflow is the primary attachment",
-        "Attach the run",
-        "main",
-        "ops-room",
-        ["worktree:/workspace/ravi.bot", "url:https://docs.example.com/runbook"],
-        ["technical-change"],
-        ["wf-run-1"],
-        undefined,
-        true,
-      );
-    } finally {
-      console.log = originalLog;
-    }
-
-    expect(ensuredSessionCalls).toEqual([
-      expect.objectContaining({
-        sessionKey: "agent:main:project:ops-cadence:session:ops-room",
-        agentId: "main",
-        defaults: {
-          name: "ops-room",
+describe("projects CLI commands", () => {
+  it("lists Console projects through the Console CLI API", async () => {
+    const calls: Array<{ method: string; path: string; body: unknown; accessToken: string }> = [];
+    const client = makeClient(async (method, path, body, accessToken) => {
+      calls.push({ method, path, body, accessToken });
+      return [
+        {
+          id: "proj_1",
+          slug: "nx-hv",
+          name: "Namastex - Hapvida",
+          defaultVisibility: "private",
         },
-      }),
+      ];
+    });
+    const command = new ProjectsCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() => command.list(undefined, undefined, undefined, true));
+    const payload = JSON.parse(output);
+
+    expect(calls).toEqual([
+      {
+        method: "GET",
+        path: "/api/cli/projects",
+        body: undefined,
+        accessToken: "access-secret",
+      },
     ]);
-    expect(initProjectCalls).toEqual([
-      expect.objectContaining({
-        title: "Ops Cadence",
-        slug: "ops-cadence",
-        ownerAgentId: "main",
-        operatorSessionName: "ops-room",
-        workflowTemplates: ["technical-change"],
-        workflowRunIds: ["wf-run-1"],
-        resources: [
-          expect.objectContaining({
-            type: "worktree",
-            // resolve(): the CLI normalizes locators with path.resolve, which is
-            // platform-dependent (POSIX passthrough, drive-letter on Windows).
-            assetId: resolve("/workspace/ravi.bot"),
-            label: "ravi.bot worktree",
-          }),
-          expect.objectContaining({
-            type: "url",
-            assetId: "https://docs.example.com/runbook",
-            label: "docs.example.com/runbook",
-          }),
-        ],
-      }),
-    ]);
+    expect(payload).toMatchObject({
+      success: true,
+      total: 1,
+      pagination: {
+        limit: 50,
+        offset: 0,
+        returned: 1,
+        total: 1,
+      },
+      projects: [{ slug: "nx-hv", name: "Namastex - Hapvida" }],
+    });
   });
 
-  it("updates projects and can clear owner/session state", () => {
-    const commands = new ProjectCommands();
-    const originalLog = console.log;
-    console.log = () => {};
+  it("creates a Console project without a default page site by default", async () => {
+    const calls: Array<{ method: string; path: string; body: unknown; accessToken: string }> = [];
+    const client = makeClient(async (method, path, body, accessToken) => {
+      calls.push({ method, path, body, accessToken });
+      return {
+        project: {
+          id: "proj_1",
+          slug: "nx-hv",
+          name: "Namastex - Hapvida",
+          defaultVisibility: "private",
+        },
+        redirectTo: "/p/proj_1",
+      };
+    });
+    const command = new ProjectsCommands({ client, readCredentials: makeReadCredentials() });
 
-    try {
-      commands.update(
-        "ops-cadence",
-        undefined,
-        "blocked",
-        undefined,
-        "Waiting on confirmation",
-        "Review workflow state",
-        undefined,
-        false,
-        "none",
-        "none",
-        true,
-      );
-    } finally {
-      console.log = originalLog;
-    }
-
-    expect(updateProjectCalls).toEqual([
-      expect.objectContaining({
-        ref: "ops-cadence",
-        status: "blocked",
-        hypothesis: "Waiting on confirmation",
-        nextStep: "Review workflow state",
-        ownerAgentId: null,
-        operatorSessionName: null,
-      }),
-    ]);
-  });
-
-  it("starts project-scoped workflow runs in one step", () => {
-    const commands = new ProjectWorkflowCommands();
-    const originalLog = console.log;
-    console.log = () => {};
-
-    try {
-      commands.start("ops-cadence", "wf-spec-1", "support", "wf-run-2", true, true);
-    } finally {
-      console.log = originalLog;
-    }
-
-    expect(startProjectWorkflowRunCalls).toEqual([
-      expect.objectContaining({
-        projectRef: "ops-cadence",
-        workflowSpecId: "wf-spec-1",
-        workflowRunId: "wf-run-2",
-        role: "support",
-      }),
-    ]);
-  });
-
-  it("attaches workflow runs from the project surface in one step", () => {
-    const commands = new ProjectWorkflowCommands();
-    const originalLog = console.log;
-    console.log = () => {};
-
-    try {
-      commands.attach("ops-cadence", "wf-run-1", "primary", true);
-    } finally {
-      console.log = originalLog;
-    }
-
-    expect(attachProjectWorkflowRunCalls).toEqual([
-      expect.objectContaining({
-        projectRef: "ops-cadence",
-        workflowRunId: "wf-run-1",
-        role: "primary",
-      }),
-    ]);
-  });
-
-  it("creates project-scoped task attempts with workflow node attach and dispatch defaults", async () => {
-    const commands = new ProjectTaskCommands();
-    const originalLog = console.log;
-    console.log = () => {};
-
-    try {
-      await commands.create(
-        "ops-cadence",
-        "ship",
-        "Ship smoke",
-        "Run the project smoke test",
-        "wf-run-1",
-        "high",
-        "default",
-        true,
-        undefined,
-        undefined,
-        true,
-      );
-    } finally {
-      console.log = originalLog;
-    }
-
-    expect(createProjectTaskCalls).toEqual([
-      expect.objectContaining({
-        projectRef: "ops-cadence",
-        workflowRunId: "wf-run-1",
-        nodeKey: "ship",
-        title: "Ship smoke",
-        instructions: "Run the project smoke test",
-        priority: "high",
-        profileId: "default",
-        dispatch: true,
-      }),
-    ]);
-    expect(emittedTaskEvents.map((entry) => (entry.event as Record<string, unknown>).type)).toEqual([
-      "task.created",
-      "task.dispatched",
-    ]);
-  });
-
-  it("attaches existing project tasks and lets explicit agent/session override defaults", async () => {
-    const commands = new ProjectTaskCommands();
-    const originalLog = console.log;
-    console.log = () => {};
-
-    try {
-      await commands.attach("ops-cadence", "ship", "task-1", "wf-run-1", true, "ops-agent", "ops-room", true);
-    } finally {
-      console.log = originalLog;
-    }
-
-    expect(attachProjectTaskCalls).toEqual([
-      expect.objectContaining({
-        projectRef: "ops-cadence",
-        workflowRunId: "wf-run-1",
-        nodeKey: "ship",
-        taskId: "task-1",
-        dispatch: true,
-        agentId: "ops-agent",
-        sessionName: "ops-room",
-      }),
-    ]);
-    expect(emittedTaskEvents).toHaveLength(1);
-    expect((emittedTaskEvents[0]?.event as Record<string, unknown>).type).toBe("task.launch-planned");
-  });
-
-  it("dispatches tasks from project context without requiring workflow mutation", async () => {
-    const commands = new ProjectTaskCommands();
-    const originalLog = console.log;
-    console.log = () => {};
-
-    try {
-      await commands.dispatch("ops-cadence", "task-1", undefined, undefined, true, true);
-    } finally {
-      console.log = originalLog;
-    }
-
-    expect(dispatchProjectTaskCalls).toEqual([
-      expect.objectContaining({
-        projectRef: "ops-cadence",
-        taskId: "task-1",
-      }),
-    ]);
-    expect(emittedTaskEvents).toHaveLength(1);
-    expect((emittedTaskEvents[0]?.event as Record<string, unknown>).type).toBe("task.dispatched");
-  });
-
-  it("links resources with structured metadata", () => {
-    const commands = new ProjectCommands();
-    const originalLog = console.log;
-    console.log = () => {};
-
-    try {
-      commands.link(
-        "resource",
-        "ops-cadence",
-        "/workspace/ravi.bot",
-        "substrate",
-        "worktree",
-        "ravi.bot",
-        '{"lane":"core"}',
-        true,
-      );
-    } finally {
-      console.log = originalLog;
-    }
-
-    expect(linkProjectCalls).toEqual([
-      expect.objectContaining({
-        projectRef: "ops-cadence",
-        assetType: "resource",
-        // resolve(): the CLI normalizes locators with path.resolve, which is
-        // platform-dependent (POSIX passthrough, drive-letter on Windows).
-        assetId: resolve("/workspace/ravi.bot"),
-        role: "substrate",
-        metadata: expect.objectContaining({
-          lane: "core",
-          type: "worktree",
-          label: "ravi.bot",
-          locator: resolve("/workspace/ravi.bot"),
-          path: resolve("/workspace/ravi.bot"),
-          basename: "ravi.bot",
-        }),
-      }),
-    ]);
-  });
-
-  it("links specs as project context", () => {
-    const commands = new ProjectCommands();
-    const originalLog = console.log;
-    console.log = () => {};
-
-    try {
-      commands.link(
-        "spec",
-        "ops-cadence",
-        "channels/presence/lifecycle",
-        "context",
-        undefined,
-        undefined,
-        '{"context":true}',
-        true,
-      );
-    } finally {
-      console.log = originalLog;
-    }
-
-    expect(linkProjectCalls.at(-1)).toEqual(
-      expect.objectContaining({
-        projectRef: "ops-cadence",
-        assetType: "spec",
-        assetId: "channels/presence/lifecycle",
-        role: "context",
-        metadata: { context: true },
-      }),
+    const { output } = await captureConsole(() =>
+      command.create("nx-hv", "Namastex - Hapvida", undefined, "private", undefined, undefined, true, true),
     );
-  });
+    const payload = JSON.parse(output);
 
-  it("prints workflow runtime rollups in project status", () => {
-    const commands = new ProjectCommands();
-    const originalLog = console.log;
-    const logs: string[] = [];
-    console.log = (value?: unknown) => {
-      if (typeof value === "string") logs.push(value);
-    };
-
-    try {
-      commands.status("ops-cadence");
-    } finally {
-      console.log = originalLog;
-    }
-
-    const output = logs.join("\n");
-    expect(output).toContain("Project:   active");
-    expect(output).toContain("Runtime:   ready");
-    expect(output).toContain("Counts:    ready 1");
-    expect(output).toContain("Lead:      task Ship release :: in_progress · 42%");
-    expect(output).toContain("Primary:   wf-run-1 :: ready :: Ship smoke");
-    expect(output).toContain("Focus:     wf-run-1 :: ready :: Ship smoke :: role primary");
-  });
-
-  it("lists operational next surfaces with runtime lead and next step", () => {
-    const commands = new ProjectCommands();
-    const originalLog = console.log;
-    const logs: string[] = [];
-    console.log = (value?: unknown) => {
-      if (typeof value === "string") logs.push(value);
-    };
-
-    try {
-      commands.next("active");
-    } finally {
-      console.log = originalLog;
-    }
-
-    expect(listProjectStatusEntriesCalls).toEqual([{ status: "active" }]);
-    const output = logs.join("\n");
-    expect(output).toContain("Projects next (1):");
-    expect(output).toContain("ops-cadence :: active :: runtime ready :: wf 1");
-    expect(output).toContain("lead task Ship release :: in_progress · 42%");
-    expect(output).toContain("next Attach the run");
-  });
-
-  it("seeds canonical fixtures with the default owner agent", async () => {
-    const commands = new ProjectFixtureCommands();
-    const originalLog = console.log;
-    console.log = () => {};
-
-    try {
-      await commands.seed(undefined, true, true);
-    } finally {
-      console.log = originalLog;
-    }
-
-    expect(seedFixtureCalls).toEqual([
-      expect.objectContaining({
-        ownerAgentId: "main",
-      }),
+    expect(calls).toEqual([
+      {
+        method: "POST",
+        path: "/api/cli/projects",
+        body: {
+          name: "Namastex - Hapvida",
+          slug: "nx-hv",
+          description: null,
+          defaultVisibility: "private",
+          createDefaultPageSite: false,
+        },
+        accessToken: "access-secret",
+      },
     ]);
+    expect(payload).toMatchObject({
+      success: true,
+      project: { slug: "nx-hv", name: "Namastex - Hapvida" },
+      redirectTo: "/p/proj_1",
+    });
   });
 
-  it("adds resources with inferred worktree metadata", () => {
-    const commands = new ProjectResourceCommands();
-    const tempRoot = mkdtempSync(join(tmpdir(), "ravi-project-resource-"));
-    const originalLog = console.log;
-    console.log = () => {};
+  it("can explicitly request a default page site during project creation", async () => {
+    const calls: Array<{ method: string; path: string; body: unknown; accessToken: string }> = [];
+    const client = makeClient(async (method, path, body, accessToken) => {
+      calls.push({ method, path, body, accessToken });
+      return {
+        project: {
+          id: "proj_1",
+          slug: "demo",
+          name: "Demo",
+          defaultVisibility: "private",
+        },
+      };
+    });
+    const command = new ProjectsCommands({ client, readCredentials: makeReadCredentials() });
 
-    try {
-      commands.add("ops-cadence", tempRoot, undefined, "substrate", undefined, '{"lane":"core"}', true);
-    } finally {
-      console.log = originalLog;
-    }
+    await captureConsole(() => command.create("demo", "Demo", undefined, undefined, "demo", undefined, true, true));
 
-    expect(linkProjectCalls.at(-1)).toEqual(
-      expect.objectContaining({
-        projectRef: "ops-cadence",
-        assetType: "resource",
-        assetId: tempRoot,
-        role: "substrate",
-        metadata: expect.objectContaining({
-          lane: "core",
-          type: "worktree",
-          locator: tempRoot,
-          path: tempRoot,
-          basename: basename(tempRoot),
-          label: `${basename(tempRoot)} worktree`,
-        }),
-      }),
-    );
-  });
-
-  it("lists and shows project resources", () => {
-    const commands = new ProjectResourceCommands();
-    const originalLog = console.log;
-    const logs: string[] = [];
-    console.log = (value?: unknown) => {
-      if (typeof value === "string") logs.push(value);
-    };
-
-    try {
-      commands.list("ops-cadence", "worktree");
-      commands.show("ops-cadence", "ravi.bot worktree");
-    } finally {
-      console.log = originalLog;
-    }
-
-    const output = logs.join("\n");
-    expect(output).toContain("Project resources (1 returned of 1, limit 50, offset 0):");
-    expect(output).toContain("resource:worktree :: ravi.bot worktree :: /tmp/ravi.bot");
-    expect(output).toContain("Resource plink-resource-1");
-    expect(output).toContain("Locator:    /tmp/ravi.bot");
-  });
-
-  it("imports repo, worktree, url, and group resources in batch", () => {
-    const commands = new ProjectResourceCommands();
-    const tempRoot = mkdtempSync(join(tmpdir(), "ravi-project-import-"));
-    const tempFile = join(tempRoot, "brief.txt");
-    writeFileSync(tempFile, "brief");
-    const originalLog = console.log;
-    console.log = () => {};
-
-    try {
-      commands.import(
-        "ops-cadence",
-        ["https://github.com/acme/ravi"],
-        [tempRoot],
-        ["https://docs.example.com/runbook"],
-        ["group:120363425628305127"],
-        "substrate",
-        '{"lane":"core"}',
-        true,
-      );
-    } finally {
-      console.log = originalLog;
-    }
-
-    expect(linkProjectCalls.slice(-4)).toEqual([
-      expect.objectContaining({
-        assetId: "https://github.com/acme/ravi",
-        metadata: expect.objectContaining({
-          type: "repo",
-          locator: "https://github.com/acme/ravi",
-          label: "acme/ravi",
-          lane: "core",
-        }),
-      }),
-      expect.objectContaining({
-        assetId: tempRoot,
-        metadata: expect.objectContaining({
-          type: "worktree",
-          locator: tempRoot,
-          label: `${basename(tempRoot)} worktree`,
-          lane: "core",
-        }),
-      }),
-      expect.objectContaining({
-        assetId: "https://docs.example.com/runbook",
-        metadata: expect.objectContaining({
-          type: "url",
-          locator: "https://docs.example.com/runbook",
-          label: "docs.example.com/runbook",
-          lane: "core",
-        }),
-      }),
-      expect.objectContaining({
-        assetId: "group:120363425628305127",
-        metadata: expect.objectContaining({
-          type: "group",
-          locator: "group:120363425628305127",
-          label: "group 120363425628305127",
-          lane: "core",
-        }),
-      }),
-    ]);
+    expect(calls[0]?.body).toEqual({
+      name: "Demo",
+      slug: "demo",
+      description: null,
+      defaultVisibility: "private",
+      createDefaultPageSite: true,
+      defaultPageSiteSlug: "demo",
+    });
   });
 });
 
-describe("projects agent-first contract", () => {
-  beforeEach(() => {
-    createProjectCalls.length = 0;
-    linkProjectCalls.length = 0;
-    dispatchProjectTaskCalls.length = 0;
-    startProjectWorkflowRunCalls.length = 0;
-    listProjectsCalls.length = 0;
-    getProjectDetailsCalls.length = 0;
-    seedFixtureCalls.length = 0;
-    emittedTaskEvents.length = 0;
-    unknownProjectRefs.clear();
-    projectResourceLinks.clear();
+// Manual v2 agent-first contract: write brake on remote project creation,
+// validation before the brake, `--fields` compact mode, and ContractError
+// passing through the legacy CloudAuthError funnel untouched.
+describe("projects contract", () => {
+  it("create without --execute is a dry-run: exit 3 and NO Console call", async () => {
+    const calls: string[] = [];
+    const client = makeClient(async (_method, path) => {
+      calls.push(path);
+      return { project: { id: "proj_1", slug: "nx-hv" } };
+    });
+    const command = new ProjectsCommands({ client, readCredentials: makeReadCredentials() });
+
+    const error = await expectContractError(
+      () =>
+        command.create(
+          "nx-hv",
+          "PRIVATE_PROJECT_NAME_8K2R",
+          "PRIVATE_PROJECT_DESCRIPTION_7M4Q",
+          "private",
+          undefined,
+          undefined,
+          true,
+          undefined,
+        ),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.op).toBe("projects create");
+    expect(error.details.dryRun).toBe(true);
+    expect(error.details.plan).toEqual({
+      slug: "nx-hv",
+      namePresent: true,
+      descriptionPresent: true,
+      defaultVisibility: "private",
+      defaultPageSite: false,
+    });
+    expect(JSON.stringify(error.details.plan)).not.toContain("PRIVATE_PROJECT");
+    expect(calls).toHaveLength(0);
   });
 
-  async function expectContractError(
-    run: () => unknown | Promise<unknown>,
-  ): Promise<InstanceType<typeof ContractError>> {
-    const originalLog = console.log;
-    console.log = () => {};
-    let thrown: unknown;
+  it("create validates --visibility BEFORE the brake: invalid value fails with PAYLOAD_INVALID and no plan", async () => {
+    const calls: string[] = [];
+    const client = makeClient(async (_method, path) => {
+      calls.push(path);
+      return {};
+    });
+    const command = new ProjectsCommands({ client, readCredentials: makeReadCredentials() });
+
+    let caught: unknown;
     try {
-      await run();
+      await captureConsole(() =>
+        command.create("nx-hv", undefined, undefined, "bogus", undefined, undefined, true, undefined),
+      );
     } catch (error) {
-      thrown = error;
-    } finally {
-      console.log = originalLog;
+      caught = error;
     }
-    expect(thrown).toBeInstanceOf(ContractError);
-    return thrown as InstanceType<typeof ContractError>;
-  }
 
-  it("blocks projects tasks dispatch without --execute (dry-run, exit 3, no dispatch)", async () => {
-    const commands = new ProjectTaskCommands();
-    const error = await expectContractError(() =>
-      commands.dispatch("ops-cadence", "task-1", undefined, undefined, true),
-    );
-    expect(error.exitCode).toBe(3);
-    const envelope = error.envelope();
-    expect(envelope.op).toBe("projects tasks dispatch");
-    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
-    expect(envelope.error.dryRun).toBe(true);
-    expect((envelope.error.plan as Record<string, unknown>).taskId).toBe("task-1");
-    expect(dispatchProjectTaskCalls).toHaveLength(0);
-    expect(emittedTaskEvents).toHaveLength(0);
+    expect(caught).toBeInstanceOf(CloudAuthError);
+    expect((caught as CloudAuthError).code).toBe("PAYLOAD_INVALID");
+    expect(calls).toHaveLength(0);
   });
 
-  it("blocks projects workflows start without --execute (dry-run, exit 3, no run started)", async () => {
-    const commands = new ProjectWorkflowCommands();
-    const error = await expectContractError(() =>
-      commands.start("ops-cadence", "wf-spec-1", "support", undefined, true),
-    );
-    expect(error.exitCode).toBe(3);
-    const envelope = error.envelope();
-    expect(envelope.op).toBe("projects workflows start");
-    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
-    expect((envelope.error.plan as Record<string, unknown>).workflowSpecId).toBe("wf-spec-1");
-    expect(startProjectWorkflowRunCalls).toHaveLength(0);
+  it("list --fields narrows each project to the requested fields", async () => {
+    const client = makeClient(async () => [
+      { id: "proj_1", slug: "nx-hv", name: "Namastex - Hapvida", defaultVisibility: "private" },
+      { id: "proj_2", slug: "demo", name: "Demo", defaultVisibility: "public" },
+    ]);
+    const command = new ProjectsCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() => command.list(undefined, undefined, undefined, true, "slug,id"));
+    const payload = JSON.parse(output);
+
+    expect(payload.items).toHaveLength(2);
+    for (const item of payload.items as Array<Record<string, unknown>>) {
+      expect(Object.keys(item).sort()).toEqual(["id", "slug"]);
+    }
   });
 
-  it("minimizes the fixtures seed effect to an operational flag", async () => {
-    const commands = new ProjectFixtureCommands();
-    const error = await expectContractError(() => commands.seed(undefined, true));
-    expect(error.exitCode).toBe(3);
-    const envelope = error.envelope();
-    expect(envelope.op).toBe("projects fixtures seed");
-    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
-    expect(envelope.error.plan).toEqual({
-      ownerAgentId: "main",
-      resetsCanonicalFixtures: true,
+  it("rethrows ContractError instead of wrapping it in the CloudAuthError funnel", async () => {
+    const boom = new ContractError("projects list", "SOME_CONTRACT_CODE", "boom", 1, {});
+    const command = new ProjectsCommands({
+      client: makeClient(async () => []),
+      readCredentials: () => {
+        throw boom;
+      },
     });
-    expect(JSON.stringify(envelope.error.plan)).not.toContain(
-      "reset and reseed the canonical project/workflow/task fixtures",
-    );
-    expect(seedFixtureCalls).toHaveLength(0);
-  });
 
-  it("imports project resources immediately without --execute", () => {
-    const commands = new ProjectResourceCommands();
-    const originalLog = console.log;
-    console.log = () => {};
+    let caught: unknown;
     try {
-      const payload = commands.import(
-        "ops-cadence",
-        undefined,
-        undefined,
-        ["https://docs.example.com/runbook"],
-        undefined,
-        undefined,
-        undefined,
-        true,
-      );
-      expect(payload.total).toBe(1);
-    } finally {
-      console.log = originalLog;
+      await captureConsole(() => command.list(undefined, undefined, undefined, true));
+    } catch (error) {
+      caught = error;
     }
-    expect(linkProjectCalls).toHaveLength(1);
-    expect(linkProjectCalls[0]).toMatchObject({
-      projectRef: "ops-cadence",
-      assetType: "resource",
-      assetId: "https://docs.example.com/runbook",
-    });
-  });
 
-  it("performs the dispatch when --execute is passed", async () => {
-    const commands = new ProjectTaskCommands();
-    const originalLog = console.log;
-    console.log = () => {};
-    try {
-      await commands.dispatch("ops-cadence", "task-1", undefined, undefined, true, true);
-    } finally {
-      console.log = originalLog;
-    }
-    expect(dispatchProjectTaskCalls).toHaveLength(1);
-  });
-
-  it("emits PROJECT_NOT_FOUND envelope with suggestions on --json (exit 1)", async () => {
-    unknownProjectRefs.add("ops-cadenc");
-    const commands = new ProjectCommands();
-    const error = await expectContractError(() => commands.show("ops-cadenc", true));
-    expect(error.exitCode).toBe(1);
-    const envelope = error.envelope();
-    expect(envelope.success).toBe(false);
-    expect(envelope.op).toBe("projects show");
-    expect(envelope.error.code).toBe("PROJECT_NOT_FOUND");
-    expect(envelope.error.suggestions).toContain("ops-cadence");
-    expect((envelope.error.suggestions as string[]).length).toBeLessThanOrEqual(3);
-  });
-
-  it("emits PROJECT_NOT_FOUND before the brake on projects tasks dispatch", async () => {
-    unknownProjectRefs.add("ghost-project");
-    const commands = new ProjectTaskCommands();
-    const error = await expectContractError(() =>
-      commands.dispatch("ghost-project", "task-1", undefined, undefined, true),
-    );
-    expect(error.exitCode).toBe(1);
-    expect(error.envelope().error.code).toBe("PROJECT_NOT_FOUND");
-    expect(dispatchProjectTaskCalls).toHaveLength(0);
-  });
-
-  it("supports --fields compact mode on projects list", () => {
-    const commands = new ProjectCommands();
-    const logs: string[] = [];
-    const originalLog = console.log;
-    console.log = (value?: unknown) => {
-      if (typeof value === "string") logs.push(value);
-    };
-    try {
-      commands.list(undefined, undefined, true, undefined, undefined, "slug,status");
-    } finally {
-      console.log = originalLog;
-    }
-    const payload = JSON.parse(logs.join("\n"));
-    expect(payload.items).toHaveLength(1);
-    expect(Object.keys(payload.items[0]).sort()).toEqual(["slug", "status"]);
-  });
-
-  it("supports --fields compact mode on projects resources list", () => {
-    projectResourceLinks.set(defaultProjectResourceLink.assetId, defaultProjectResourceLink);
-    projectResourceLinks.set(defaultProjectResourceLink.id, defaultProjectResourceLink);
-    const commands = new ProjectResourceCommands();
-    const logs: string[] = [];
-    const originalLog = console.log;
-    console.log = (value?: unknown) => {
-      if (typeof value === "string") logs.push(value);
-    };
-    try {
-      commands.list("ops-cadence", undefined, true, undefined, undefined, "id,locator");
-    } finally {
-      console.log = originalLog;
-    }
-    const payload = JSON.parse(logs.join("\n"));
-    expect(payload.items).toHaveLength(1);
-    expect(Object.keys(payload.items[0]).sort()).toEqual(["id", "locator"]);
+    expect(caught).toBe(boom);
+    expect((caught as InstanceType<typeof ContractError>).exitCode).toBe(1);
   });
 });
+
+// `ravi cloud projects` is the older name: same Console calls, and the
+// envelope and pagination name the path the caller used.
+describe("cloud projects alias", () => {
+  it("lists through the same Console API and pages under `ravi cloud projects`", async () => {
+    const calls: string[] = [];
+    const client = makeClient(async (method, path) => {
+      calls.push(`${method} ${path}`);
+      return [
+        { id: "proj_1", slug: "a" },
+        { id: "proj_2", slug: "b" },
+      ];
+    });
+    const command = new CloudProjectsCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() => command.list(undefined, "1", undefined, true));
+    const payload = JSON.parse(output);
+
+    expect(calls).toEqual(["GET /api/cli/projects"]);
+    expect(payload.pagination.nextCommand).toContain("ravi cloud projects list");
+  });
+
+  it("dry-runs create under the alias op", async () => {
+    const client = makeClient(async () => {
+      throw new Error("Console must not be called on a dry-run");
+    });
+    const command = new CloudProjectsCommands({ client, readCredentials: makeReadCredentials() });
+
+    const error = await expectContractError(
+      () => command.create("nx-hv", undefined, undefined, undefined, undefined, undefined, true, undefined),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.op).toBe("cloud projects create");
+  });
+
+  it("pages the primary group under `ravi projects`", async () => {
+    const client = makeClient(async () => [
+      { id: "proj_1", slug: "a" },
+      { id: "proj_2", slug: "b" },
+    ]);
+    const command = new ProjectsCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() => command.list(undefined, "1", undefined, true));
+
+    expect(JSON.parse(output).pagination.nextCommand).toContain("ravi projects list");
+  });
+});
+
+async function expectContractError(
+  run: () => Promise<unknown> | unknown,
+  code: string,
+  exitCode: number,
+): Promise<InstanceType<typeof ContractError>> {
+  let caught: unknown;
+  try {
+    await captureConsole(async () => await run());
+  } catch (error) {
+    caught = error;
+  }
+  expect(caught).toBeInstanceOf(ContractError);
+  const contractError = caught as InstanceType<typeof ContractError>;
+  expect(contractError.code).toBe(code);
+  expect(contractError.exitCode).toBe(exitCode);
+  return contractError;
+}
+
+async function captureConsole<T>(run: () => T | Promise<T>): Promise<{ output: string; result: T }> {
+  const originalLog = console.log;
+  const lines: string[] = [];
+  console.log = (...args: unknown[]) => {
+    lines.push(args.map((arg) => String(arg)).join(" "));
+  };
+  try {
+    const result = await run();
+    return { output: lines.join("\n"), result };
+  } finally {
+    console.log = originalLog;
+  }
+}
+
+function makeClient(
+  handler: (method: string, path: string, body: unknown, accessToken: string) => Promise<unknown>,
+): ConsoleApiClient {
+  return {
+    me: mock(async () => ({
+      user: { email: "alice@example.com" },
+      organization: { id: "org_1" },
+    })),
+    requestJson: mock(async (method: string, path: string, body: unknown, accessToken: string) =>
+      handler(method, path, body, accessToken),
+    ),
+  } as unknown as ConsoleApiClient;
+}
+
+function makeReadCredentials() {
+  return () => makeCredentials();
+}
+
+function makeCredentials(): CloudCredentials {
+  return {
+    version: 1,
+    consoleUrl: "https://console.example",
+    installationId: "ins_123",
+    accessToken: "access-secret",
+    refreshToken: "refresh-secret",
+    accessTokenExpiresAt: "2026-05-10T00:00:00.000Z",
+    refreshTokenExpiresAt: "2026-06-10T00:00:00.000Z",
+    scopes: ["console.projects.read", "console.projects.link"],
+    user: { email: "alice@example.com" },
+    organization: { id: "org_1", name: "Acme" },
+    createdAt: "2026-05-09T00:00:00.000Z",
+    updatedAt: "2026-05-09T00:00:00.000Z",
+  };
+}

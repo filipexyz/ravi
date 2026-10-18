@@ -17,7 +17,6 @@ applies_to:
   - src/artifacts
   - src/tasks
   - src/insights
-  - src/projects
 owners:
   - ravi-dev
 status: draft

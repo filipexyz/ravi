@@ -67,7 +67,7 @@ ravi login --console https://console.ravi.bot
 ravi whoami
 ravi logout
 ravi projects list
-ravi projects link <project>
+ravi projects create <slug>
 ravi artifacts publish <artifact-id-or-path> --project <project>
 ```
 
