@@ -116,7 +116,7 @@ describe("agenda", () => {
 
   it("dry-runs record without --execute and records with it", async () => {
     const { calls, commands } = setup(true);
-    const dry = await quiet(() => commands.record(EVENT_ID, undefined, false, true));
+    const dry = await quiet(() => commands.record(EVENT_ID, undefined, true, false));
     expect(dry.error?.code).toBe("WRITE_REQUIRES_EXECUTE");
     expect(dry.error?.exitCode).toBe(3);
     expect(calls.map((call) => call.method)).toEqual(["GET"]);
@@ -138,21 +138,21 @@ describe("agenda", () => {
     const auto = setup(true, (method) =>
       method === "GET" ? { event: event({ recordDecision: "skip", effectiveRecordMode: "auto" }) } : { event: event() },
     );
-    const dry = await quiet(() => auto.commands.undo(EVENT_ID, false, true));
+    const dry = await quiet(() => auto.commands.undo(EVENT_ID, true, false));
     expect(dry.error?.code).toBe("WRITE_REQUIRES_EXECUTE");
     expect(auto.calls.every((call) => call.method === "GET")).toBe(true);
 
     const ask = setup(true, (method) =>
       method === "GET" ? { event: event({ recordDecision: "skip" }) } : { event: event() },
     );
-    await quiet(() => ask.commands.undo(EVENT_ID, false, true));
+    await quiet(() => ask.commands.undo(EVENT_ID, true, false));
     expect(ask.calls.at(-1)?.body).toEqual({ decision: null });
   });
 
   it("brakes --record auto, refuses it while the organization rule is off, and applies other settings at once", async () => {
     const braked = setup(true, () => overview);
     const dry = await quiet(() =>
-      braked.commands.settings(undefined, undefined, "auto", undefined, undefined, undefined, undefined, false, true),
+      braked.commands.settings(undefined, undefined, "auto", undefined, undefined, undefined, undefined, true, false),
     );
     expect(dry.error?.code).toBe("WRITE_REQUIRES_EXECUTE");
 
@@ -165,7 +165,7 @@ describe("agenda", () => {
 
     const applied = setup(true, (method) => (method === "GET" ? overview : { connection: overview.connections[0] }));
     await quiet(() =>
-      applied.commands.settings("conn-1", undefined, undefined, undefined, "on", "45", "on", false, true),
+      applied.commands.settings("conn-1", undefined, undefined, undefined, "on", "45", "on", true, false),
     );
     expect(applied.calls.at(-1)).toEqual({
       method: "POST",

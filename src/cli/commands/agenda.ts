@@ -154,7 +154,7 @@ export class AgendaCommands {
   // operator's own reversible setting. Automatic recording sends a bot into
   // calls nobody confirmed one by one, so it waits for --execute.
   @Command({ name: "settings", description: "Change how a calendar is used: sync, recording, project, briefing" })
-  @CommandAccess({ kind: "mutate", resource: "agenda", action: "settings", risk: "medium" })
+  @CommandAccess({ kind: "mutate", resource: "agenda", action: "settings", risk: "medium", requiresConfirmation: true })
   @Returns(agendaSettingsReturnSchema)
   async settings(
     @Option({ flags: "--connection <id>", description: "Google connection id (default: the only one)" })
@@ -168,8 +168,8 @@ export class AgendaCommands {
     briefingMinutes?: string,
     @Option({ flags: "--followup <on|off>", description: "Run the follow-up when the recording is ready" })
     followup?: string,
-    @Option({ flags: "--execute", description: "Apply --record auto (dry-run without it)" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--execute", description: "Apply --record auto (dry-run without it)" }) execute?: boolean,
   ) {
     const op = "agenda settings";
     return this.withAgenda(op, asJson, async (client) => {
@@ -297,14 +297,14 @@ export class AgendaCommands {
 
   // BRAKED: recording sends the Ravi bot into a call with other people.
   @Command({ name: "record", description: "Record this meeting (the Console sends the bot at the start)" })
-  @CommandAccess({ kind: "mutate", resource: "agenda", action: "record", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "agenda", action: "record", risk: "high", requiresConfirmation: true })
   @Returns(agendaEventReturnSchema)
   async record(
     @Arg("eventId", { description: "Calendar event id (from agenda list)" }) eventId: string,
     @Option({ flags: "--project <ref>", description: "Project id or slug (default: the calendar's project)" })
     project?: string,
-    @Option({ flags: "--execute", description: "Record (dry-run without it)" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--execute", description: "Record (dry-run without it)" }) execute?: boolean,
   ) {
     const op = "agenda record";
     return this.withAgenda(op, asJson, async (client) => {
@@ -346,12 +346,12 @@ export class AgendaCommands {
   // BRAKED only when undoing a skip under automatic recording: then the
   // meeting may be recorded without anyone asking again.
   @Command({ name: "undo", description: "Clear the record or skip decision of this meeting" })
-  @CommandAccess({ kind: "mutate", resource: "agenda", action: "undo", risk: "medium" })
+  @CommandAccess({ kind: "mutate", resource: "agenda", action: "undo", risk: "medium", requiresConfirmation: true })
   @Returns(agendaEventReturnSchema)
   async undo(
     @Arg("eventId", { description: "Calendar event id (from agenda list)" }) eventId: string,
-    @Option({ flags: "--execute", description: "Clear a skip under automatic recording" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--execute", description: "Clear a skip under automatic recording" }) execute?: boolean,
   ) {
     const op = "agenda undo";
     return this.withAgenda(op, asJson, async (client) => {
