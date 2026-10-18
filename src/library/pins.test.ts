@@ -10,6 +10,7 @@ import { resolveAgentSkills } from "../runtime/allowed-skills.js";
 import { isLibrarySkillAuthorizedForAgent, isSkillAuthorizedForAgent } from "../runtime/skill-authorization.js";
 import { extractSkillNameFromFilesystemPath } from "../runtime/skill-visibility.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { dbSetLibraryAgentAcceptsRequests, dbSetLibraryAgentListed } from "./agents-db.js";
 import { parseLibraryRef } from "./refs.js";
 import { LibraryPinRunner, libraryPinIntervalMs } from "./pin-runner.js";
 import { dbGetLibraryPinState, dbListLibraryPins } from "./pins-db.js";
@@ -372,8 +373,18 @@ describe("library pin commands (service)", () => {
     return { ...deps(), openSession: async () => fakeSession(fake) };
   }
 
+  it("refuses to pin an unlisted agent before any request", async () => {
+    const ref = parseLibraryRef("org/interna")!;
+    await expect(prepareLibraryPin({ ref, agentId: "main" }, commandDeps())).rejects.toMatchObject({
+      code: "LIBRARY_AGENT_NOT_LISTED",
+      exitCode: 1,
+    });
+    expect(libraryRequests()).toEqual([]);
+  });
+
   it("plans a pin without writing, then pins, reporting the agents first", async () => {
     const ref = parseLibraryRef("org/interna")!;
+    dbSetLibraryAgentListed("main", true);
     const prepared = await prepareLibraryPin({ ref, agentId: "main" }, commandDeps());
     expect(prepared.plan).toMatchObject({
       ref: "org/interna",
@@ -495,9 +506,16 @@ describe("library pin runner", () => {
 });
 
 describe("library agent report", () => {
-  it("reports every local agent with the Console project its scope resolves to", async () => {
+  it("reports only the listed agents, with the Console project each scope resolves to", async () => {
     dbCreateAgent({ id: "atendente", cwd: "/tmp/atendente" });
     dbUpdateAgent("atendente", { name: "Atendente", provider: "codex", model: "gpt-x" });
+    dbCreateAgent({ id: "financeiro", cwd: "/tmp/financeiro" });
+    dbCreateAgent({ id: "rascunho", cwd: "/tmp/rascunho" });
+    dbSetLibraryAgentListed("atendente", true);
+    // Opening an agent to requests lists it; unlisting closes it again.
+    dbSetLibraryAgentAcceptsRequests("financeiro", true);
+    dbSetLibraryAgentAcceptsRequests("rascunho", true);
+    dbSetLibraryAgentListed("rascunho", false);
     upsertConsoleScopeDefault({
       scopeKind: "agent",
       scopeKey: "atendente",
@@ -526,6 +544,7 @@ describe("library agent report", () => {
       description: null,
       acceptsRequests: false,
     });
-    expect(byId.get("main")?.project).toBeNull();
+    expect(byId.get("financeiro")).toMatchObject({ acceptsRequests: true, project: null });
+    expect([...byId.keys()].sort()).toEqual(["atendente", "financeiro"]);
   });
 });

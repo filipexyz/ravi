@@ -539,6 +539,51 @@ public struct AgentsListReturn: Codable, Sendable {
   }
 }
 
+public struct AgentsListingOptions: Codable, Sendable {
+  public var execute: Bool?
+
+  public init(execute: Bool? = nil) {
+    self.execute = execute
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case execute = "execute"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct AgentsListingReturn: Codable, Sendable {
+  public var acceptsRequests: Bool
+  public var agent: String
+  public var changed: Bool
+  public var hint: String?
+  public var listed: Bool
+  public var reported: Bool
+
+  public init(acceptsRequests: Bool, agent: String, changed: Bool, hint: String? = nil, listed: Bool, reported: Bool) {
+    self.acceptsRequests = acceptsRequests
+    self.agent = agent
+    self.changed = changed
+    self.hint = hint
+    self.listed = listed
+    self.reported = reported
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case acceptsRequests = "acceptsRequests"
+    case agent = "agent"
+    case changed = "changed"
+    case hint = "hint"
+    case listed = "listed"
+    case reported = "reported"
+  }
+}
+
 public struct AgentsModelBrokerOptions: Codable, Sendable {
   public var broker: String?
   public var clear: Bool?
@@ -814,13 +859,15 @@ public struct AgentsRequestsReturn: Codable, Sendable {
   public var agent: String
   public var changed: Bool
   public var hint: String?
+  public var listed: Bool
   public var reported: Bool
 
-  public init(acceptsRequests: Bool, agent: String, changed: Bool, hint: String? = nil, reported: Bool) {
+  public init(acceptsRequests: Bool, agent: String, changed: Bool, hint: String? = nil, listed: Bool, reported: Bool) {
     self.acceptsRequests = acceptsRequests
     self.agent = agent
     self.changed = changed
     self.hint = hint
+    self.listed = listed
     self.reported = reported
   }
 
@@ -829,6 +876,7 @@ public struct AgentsRequestsReturn: Codable, Sendable {
     case agent = "agent"
     case changed = "changed"
     case hint = "hint"
+    case listed = "listed"
     case reported = "reported"
   }
 }
@@ -18399,6 +18447,72 @@ public struct MeetingsProfilesValidateReturn: Codable, Sendable {
   enum CodingKeys: String, CodingKey {
     case results = "results"
     case valid = "valid"
+  }
+}
+
+public struct MeetingsReadOptions: Codable, Sendable {
+  public var maxChars: String?
+
+  public init(maxChars: String? = nil) {
+    self.maxChars = maxChars
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case maxChars = "maxChars"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.maxChars {
+      body["maxChars"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct MeetingsReadReturn: Codable, Sendable {
+  public var access: String
+  public var chat: [RaviJSON]
+  public var consoleUrl: String
+  public var contentTrust: String
+  public var crossOrganization: Bool
+  public var meeting: RaviJSON
+  public var note: String
+  public var organization: RaviJSON
+  public var participants: [RaviJSON]
+  public var project: RaviJSON
+  public var recordings: [RaviJSON]
+  public var success: Bool
+  public var transcript: RaviJSON
+
+  public init(access: String, chat: [RaviJSON], consoleUrl: String, contentTrust: String, crossOrganization: Bool, meeting: RaviJSON, note: String, organization: RaviJSON, participants: [RaviJSON], project: RaviJSON, recordings: [RaviJSON], success: Bool, transcript: RaviJSON) {
+    self.access = access
+    self.chat = chat
+    self.consoleUrl = consoleUrl
+    self.contentTrust = contentTrust
+    self.crossOrganization = crossOrganization
+    self.meeting = meeting
+    self.note = note
+    self.organization = organization
+    self.participants = participants
+    self.project = project
+    self.recordings = recordings
+    self.success = success
+    self.transcript = transcript
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case access = "access"
+    case chat = "chat"
+    case consoleUrl = "consoleUrl"
+    case contentTrust = "contentTrust"
+    case crossOrganization = "crossOrganization"
+    case meeting = "meeting"
+    case note = "note"
+    case organization = "organization"
+    case participants = "participants"
+    case project = "project"
+    case recordings = "recordings"
+    case success = "success"
+    case transcript = "transcript"
   }
 }
 

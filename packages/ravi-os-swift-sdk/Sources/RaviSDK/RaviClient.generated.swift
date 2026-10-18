@@ -426,6 +426,16 @@ public struct AgentsNamespace: Sendable {
     return try await transport.call(groupSegments: ["agents"], command: "list", body: requestBody, as: AgentsListReturn.self)
   }
 
+  public func listing(_ id: String, _ state: String? = nil, _ options: AgentsListingOptions = .init()) async throws -> AgentsListingReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    if let state {
+      requestBody["state"] = try RaviJSON.fromEncodable(state)
+    }
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["agents"], command: "listing", body: requestBody, as: AgentsListingReturn.self)
+  }
+
   public func modelBroker(_ id: String, _ options: AgentsModelBrokerOptions = .init()) async throws -> AgentsModelBrokerReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["id"] = try RaviJSON.fromEncodable(id)
@@ -3798,6 +3808,13 @@ public struct MeetingsNamespace: Sendable {
     var requestBody: [String: RaviJSON] = [:]
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["meetings"], command: "list", body: requestBody, as: MeetingsListReturn.self)
+  }
+
+  public func read(_ meeting: String, _ options: MeetingsReadOptions = .init()) async throws -> MeetingsReadReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["meeting"] = try RaviJSON.fromEncodable(meeting)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["meetings"], command: "read", body: requestBody, as: MeetingsReadReturn.self)
   }
 
   public func show(_ meetingId: String, _ options: MeetingsShowOptions = .init()) async throws -> MeetingsShowReturn {

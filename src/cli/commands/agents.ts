@@ -811,6 +811,7 @@ export class AgentsCommands {
         ? {
             library: {
               description: libraryState.description,
+              listed: libraryState.listed,
               acceptsRequests: libraryState.acceptsRequests,
               origin: libraryState.origin
                 ? {
@@ -849,6 +850,7 @@ export class AgentsCommands {
       if (libraryState?.origin) {
         console.log(`  Library:       ${libraryState.origin.ref} v${libraryState.origin.version}`);
       }
+      console.log(`  Directory:     ${libraryState?.listed ? "listed" : "not listed"}`);
       console.log(`  Requests:      ${libraryState?.acceptsRequests ? "open to other machines" : "closed"}`);
       console.log(`  Spec Mode:     ${agent.specMode ? "enabled" : "disabled"}`);
       console.log(`  Tags:          ${formatTagSlugs(payload.agent.tags)}`);

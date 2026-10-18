@@ -467,6 +467,46 @@ class AgentsListReturn {
 
 AgentsListReturn agentsListReturnFromJson(Object? json) => AgentsListReturn.fromJsonValue(json);
 
+class AgentsListingOptions {
+  const AgentsListingOptions({this.execute});
+
+  final bool? execute;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+  }
+}
+
+class AgentsListingReturn {
+  const AgentsListingReturn({required this.acceptsRequests, required this.agent, required this.changed, this.hint, required this.listed, required this.reported});
+
+  final bool acceptsRequests;
+  final String agent;
+  final bool changed;
+  final String? hint;
+  final bool listed;
+  final bool reported;
+
+  factory AgentsListingReturn.fromJson(Map<String, Object?> json) {
+    return AgentsListingReturn(
+      acceptsRequests: raviJsonAsBool(json["acceptsRequests"]),
+      agent: raviJsonAsString(json["agent"]),
+      changed: raviJsonAsBool(json["changed"]),
+      hint: json["hint"] == null ? null : raviJsonAsString(json["hint"]),
+      listed: raviJsonAsBool(json["listed"]),
+      reported: raviJsonAsBool(json["reported"]),
+    );
+  }
+
+  static AgentsListingReturn fromJsonValue(Object? json) {
+    return AgentsListingReturn.fromJson(raviJsonObject(json, "AgentsListingReturn"));
+  }
+}
+
+AgentsListingReturn agentsListingReturnFromJson(Object? json) => AgentsListingReturn.fromJsonValue(json);
+
 class AgentsModelBrokerOptions {
   const AgentsModelBrokerOptions({this.broker, this.clear, this.execute, this.profile, this.required_});
 
@@ -678,12 +718,13 @@ class AgentsRequestsOptions {
 }
 
 class AgentsRequestsReturn {
-  const AgentsRequestsReturn({required this.acceptsRequests, required this.agent, required this.changed, this.hint, required this.reported});
+  const AgentsRequestsReturn({required this.acceptsRequests, required this.agent, required this.changed, this.hint, required this.listed, required this.reported});
 
   final bool acceptsRequests;
   final String agent;
   final bool changed;
   final String? hint;
+  final bool listed;
   final bool reported;
 
   factory AgentsRequestsReturn.fromJson(Map<String, Object?> json) {
@@ -692,6 +733,7 @@ class AgentsRequestsReturn {
       agent: raviJsonAsString(json["agent"]),
       changed: raviJsonAsBool(json["changed"]),
       hint: json["hint"] == null ? null : raviJsonAsString(json["hint"]),
+      listed: raviJsonAsBool(json["listed"]),
       reported: raviJsonAsBool(json["reported"]),
     );
   }
@@ -15620,6 +15662,60 @@ class MeetingsProfilesValidateReturn {
 }
 
 MeetingsProfilesValidateReturn meetingsProfilesValidateReturnFromJson(Object? json) => MeetingsProfilesValidateReturn.fromJsonValue(json);
+
+class MeetingsReadOptions {
+  const MeetingsReadOptions({this.maxChars});
+
+  final String? maxChars;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (maxChars != null) {
+      into["maxChars"] = RaviJson.from(maxChars);
+    }
+  }
+}
+
+class MeetingsReadReturn {
+  const MeetingsReadReturn({required this.access, required this.chat, required this.consoleUrl, required this.contentTrust, required this.crossOrganization, required this.meeting, required this.note, required this.organization, required this.participants, required this.project, required this.recordings, required this.success, required this.transcript});
+
+  final String access;
+  final List<RaviJson> chat;
+  final String consoleUrl;
+  final String contentTrust;
+  final bool crossOrganization;
+  final RaviJson meeting;
+  final String note;
+  final RaviJson organization;
+  final List<RaviJson> participants;
+  final RaviJson project;
+  final List<RaviJson> recordings;
+  final bool success;
+  final RaviJson transcript;
+
+  factory MeetingsReadReturn.fromJson(Map<String, Object?> json) {
+    return MeetingsReadReturn(
+      access: raviJsonAsString(json["access"]),
+      chat: raviJsonAsList(json["chat"], RaviJson.from),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      contentTrust: raviJsonAsString(json["contentTrust"]),
+      crossOrganization: raviJsonAsBool(json["crossOrganization"]),
+      meeting: RaviJson.from(json["meeting"]),
+      note: raviJsonAsString(json["note"]),
+      organization: RaviJson.from(json["organization"]),
+      participants: raviJsonAsList(json["participants"], RaviJson.from),
+      project: RaviJson.from(json["project"]),
+      recordings: raviJsonAsList(json["recordings"], RaviJson.from),
+      success: raviJsonAsBool(json["success"]),
+      transcript: RaviJson.from(json["transcript"]),
+    );
+  }
+
+  static MeetingsReadReturn fromJsonValue(Object? json) {
+    return MeetingsReadReturn.fromJson(raviJsonObject(json, "MeetingsReadReturn"));
+  }
+}
+
+MeetingsReadReturn meetingsReadReturnFromJson(Object? json) => MeetingsReadReturn.fromJsonValue(json);
 
 class MeetingsShowOptions {
   const MeetingsShowOptions({this.project});

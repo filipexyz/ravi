@@ -494,6 +494,23 @@ export type AgentsListReturn = {
   total: number;
 };
 
+/** Input shape for `agents.listing`. */
+export type AgentsListingInput = {
+  execute?: boolean;
+  id: string;
+  state?: string;
+};
+
+/** Return shape for `agents.listing`. */
+export type AgentsListingReturn = {
+  acceptsRequests: boolean;
+  agent: string;
+  changed: boolean;
+  hint?: string;
+  listed: boolean;
+  reported: boolean;
+};
+
 /** Input shape for `agents.model-broker`. */
 export type AgentsModelBrokerInput = {
   broker?: string;
@@ -781,6 +798,7 @@ export type AgentsRequestsReturn = {
   agent: string;
   changed: boolean;
   hint?: string;
+  listed: boolean;
   reported: boolean;
 };
 
@@ -1079,6 +1097,7 @@ export type AgentsShowReturn = ({
   library?: {
     acceptsRequests: boolean;
     description: string | null;
+    listed: boolean;
     origin: ({
       installedAt: number | null;
       ref: string;
@@ -12652,6 +12671,81 @@ export type MeetingsProfilesValidateReturn = {
     valid: boolean;
   }>;
   valid: boolean;
+};
+
+/** Input shape for `meetings.read`. */
+export type MeetingsReadInput = {
+  maxChars?: string;
+  meeting: string;
+};
+
+/** Return shape for `meetings.read`. */
+export type MeetingsReadReturn = {
+  access: string;
+  chat: Array<{
+    atSeconds: number | null;
+    sender: string | null;
+    senderId: string | null;
+    sentAt: string | null;
+    text: string;
+    to: string | null;
+  }>;
+  consoleUrl: string;
+  contentTrust: "untrusted";
+  crossOrganization: boolean;
+  meeting: {
+    botName: string | null;
+    createdAt: string | null;
+    doneAt: string | null;
+    endedAt: string | null;
+    id: string;
+    joinAt: string | null;
+    language: string | null;
+    meetingCode: string | null;
+    meetingUrl: string | null;
+    platform: string | null;
+    projectId: string | null;
+    ready: boolean;
+    recordingSeconds: number | null;
+    recordingStartedAt: string | null;
+    status: string | null;
+    title: string | null;
+    transcriptStatus: string | null;
+  };
+  note: string;
+  organization: {
+    id: string;
+    name: string | null;
+    slug: string | null;
+  };
+  participants: Array<{
+    id: string;
+    isHost: boolean | null;
+    name: string | null;
+  }>;
+  project: ({
+    id: string;
+    name: string | null;
+    slug: string | null;
+  }) | null;
+  recordings: Array<{
+    completedAt: string | null;
+    expiresAt: string | null;
+    startedAt: string | null;
+  }>;
+  success: true;
+  transcript: {
+    segments: Array<{
+      endSeconds: number | null;
+      isHost: boolean | null;
+      speaker: string | null;
+      speakerId: string | null;
+      startSeconds: number | null;
+      startedAt: string | null;
+      text: string;
+    }>;
+    status: string;
+  };
 };
 
 /** Input shape for `meetings.show`. */

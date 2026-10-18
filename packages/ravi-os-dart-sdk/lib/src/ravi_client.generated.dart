@@ -256,6 +256,21 @@ class AgentsNamespace {
     );
   }
 
+  Future<AgentsListingReturn> listing(String id, [String? state, AgentsListingOptions options = const AgentsListingOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    if (state != null) {
+      requestBody["state"] = RaviJson.from(state);
+    }
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["agents"],
+      command: "listing",
+      body: requestBody,
+      decode: agentsListingReturnFromJson,
+    );
+  }
+
   Future<AgentsModelBrokerReturn> modelBroker(String id, [AgentsModelBrokerOptions options = const AgentsModelBrokerOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["id"] = RaviJson.from(id);
@@ -5294,6 +5309,18 @@ class MeetingsNamespace {
       command: "list",
       body: requestBody,
       decode: meetingsListReturnFromJson,
+    );
+  }
+
+  Future<MeetingsReadReturn> read(String meeting, [MeetingsReadOptions options = const MeetingsReadOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["meeting"] = RaviJson.from(meeting);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["meetings"],
+      command: "read",
+      body: requestBody,
+      decode: meetingsReadReturnFromJson,
     );
   }
 
