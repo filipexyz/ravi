@@ -382,14 +382,19 @@ export class AgendaCommands {
     const op = "agenda briefing";
     const given = [text !== undefined, file !== undefined, clear === true].filter(Boolean).length;
     if (given !== 1) usage(op, "Pass exactly one of --text, --file or --clear.", asJson);
-    let markdown = "";
-    if (file !== undefined) markdown = readBriefingFile(op, file, asJson);
-    else if (text !== undefined) markdown = text.replaceAll("\\n", "\n");
-    if (!clear && !markdown.trim()) usage(op, "The briefing is empty. Use --clear to delete it.", asJson);
-    if (markdown.length > CALENDAR_BRIEFING_MAX_CHARS) {
-      usage(op, `The briefing has ${markdown.length} characters; the limit is ${CALENDAR_BRIEFING_MAX_CHARS}.`, asJson);
-    }
     return this.withAgenda(op, asJson, async (client) => {
+      // The file is read only after the turn check, so another person's turn learns nothing about local files.
+      let markdown = "";
+      if (file !== undefined) markdown = readBriefingFile(op, file, asJson);
+      else if (text !== undefined) markdown = text.replaceAll("\\n", "\n");
+      if (!clear && !markdown.trim()) usage(op, "The briefing is empty. Use --clear to delete it.", asJson);
+      if (markdown.length > CALENDAR_BRIEFING_MAX_CHARS) {
+        usage(
+          op,
+          `The briefing has ${markdown.length} characters; the limit is ${CALENDAR_BRIEFING_MAX_CHARS}.`,
+          asJson,
+        );
+      }
       const event = await client.setBriefing(eventId, clear ? "" : markdown);
       const payload = { event };
       if (asJson) printJson(payload);

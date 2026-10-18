@@ -107,6 +107,13 @@ describe("agenda", () => {
     expect(calls).toEqual([]);
   });
 
+  it("refuses another person's turn before reading a briefing file", async () => {
+    const { calls, commands } = setup(false);
+    const { error } = await quiet(() => commands.briefing(EVENT_ID, undefined, "/does/not/exist", undefined, true));
+    expect(error?.code).toBe("CALENDAR_ACCESS_DENIED");
+    expect(calls).toEqual([]);
+  });
+
   it("pages the listing", async () => {
     const events = Array.from({ length: 3 }, (_, index) => event({ id: `evt-${index}` }));
     const { commands } = setup(true, () => ({ events, truncated: false }));
