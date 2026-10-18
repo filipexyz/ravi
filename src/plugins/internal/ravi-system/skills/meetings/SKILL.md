@@ -137,7 +137,8 @@ ravi meetings read <meeting-id> --json
   outra organizacao da qual ele faz parte (ex.: a empresa dele), se o Console
   deixar.
 - So nos turnos do proprio operador (terminal, a conversa direta dele, as
-  rotinas dele). Em qualquer outro turno sai com exit 3
+  rotinas dele). Num grupo, mesmo quando e ele quem pede, e recusado: todos
+  ali leriam a transcricao. Em qualquer outro turno sai com exit 3
   `MEETING_ACCESS_DENIED`, sem chamar o Console: diga a pessoa que voce nao le
   transcricoes de reuniao para outras pessoas.
 - Uso tipico: dar feedback ao operador sobre como ele se comunicou (clareza,

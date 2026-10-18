@@ -81,7 +81,8 @@ documented write-brake equivalent instead of being renamed.
     `POST /api/cli/meetings/read` (`{url}` or `{meetingId}`) with the
     operator's login, and MUST write nothing to disk. It MUST refuse every turn
     that is not the operator's own (the `pages read` classification; a turn it
-    cannot classify is refused) with exit 3 `MEETING_ACCESS_DENIED`
+    cannot classify is refused), and also the operator's own turn in a group,
+    where everyone in it would read the answer, with exit 3 `MEETING_ACCESS_DENIED`
     (`refusal: operator_only`) BEFORE any Console call. Every success, text or
     JSON, MUST carry the note that the transcript is for this turn only, is not
     to be saved or shared with other contacts, and, for `crossOrganization`,

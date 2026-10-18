@@ -18,7 +18,7 @@ import { ConsoleApiClient } from "../cloud-auth/client.js";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 import { deleteCloudCredentials, readCloudCredentials, writeCloudCredentials } from "../cloud-auth/storage.js";
 import type { ConnectorTurnDeps } from "../link/connector-turn.js";
-import { pageReadTurnBlock, type PageReadTurnBlock } from "../pages/read.js";
+import { pageReadTurnBlock, type PageReadTurnBlock, resolveTurnForActiveLogin } from "../pages/read.js";
 import { requestConsoleWithRefresh } from "./cloud.js";
 
 export const MEETINGS_READ_PATH = "/api/cli/meetings/read";
@@ -155,14 +155,28 @@ export function normalizeMeetingReadMaxChars(value: string | number | undefined)
 
 /**
  * Why this turn may not read a meeting, or null when it is the operator's own.
- * Uses the same classification as `pages read`; a turn Ravi cannot classify is
+ * Uses the same classification as `pages read`, with one rule more: a group
+ * is refused even when the operator asks there, because the answer would put
+ * the transcript in front of everyone in it. A turn Ravi cannot classify is
  * refused (fail closed).
  */
 export function meetingReadTurnBlock(deps: MeetingReadDeps = {}): { turn: PageReadTurnBlock; why: string } | null {
   if (deps.operatorTurn !== undefined) {
     return deps.operatorTurn ? null : { turn: "not_owner", why: "a test marked this turn as someone else's" };
   }
-  return pageReadTurnBlock({ turn: deps.turn, readCredentials: deps.readCredentials });
+  const turnDeps = { turn: deps.turn, readCredentials: deps.readCredentials };
+  try {
+    const result = resolveTurnForActiveLogin(turnDeps);
+    if (result.ok && result.turn.conversation === "group") {
+      return {
+        turn: "group",
+        why: "the answer would go to a group, where people outside the meeting would read the transcript",
+      };
+    }
+  } catch {
+    return { turn: "unknown", why: "Ravi could not classify who is asking in this turn." };
+  }
+  return pageReadTurnBlock(turnDeps);
 }
 
 /** The note every read carries, in the JSON payload and at the end of the text output. */
@@ -299,10 +313,9 @@ export function formatMeetingRead(
   const { meeting } = result;
   const maxChars = options.maxChars ?? MEETING_READ_DEFAULT_CHARS;
   const lines: string[] = [];
-  lines.push(
-    displayText(meeting.title) ??
-      (meeting.meetingCode ? `Google Meet ${meeting.meetingCode}` : `Meeting ${meeting.id}`),
-  );
+  // The title and participant names are chosen by people in the meeting, so
+  // they go inside the fence with the transcript; the header keeps ids only.
+  lines.push(meeting.meetingCode ? `Google Meet ${meeting.meetingCode}` : `Meeting ${meeting.id}`);
   const orgName =
     displayText(result.organization.name) ?? displayText(result.organization.slug) ?? result.organization.id;
   const projectName = result.project
@@ -322,15 +335,17 @@ export function formatMeetingRead(
       .filter(Boolean)
       .join(" · "),
   );
+  const body: string[] = [];
+  const title = displayText(meeting.title);
+  if (title) body.push(`Title: ${title}`);
   if (result.participants.length > 0) {
     const names = result.participants.map(
       (participant) =>
         `${displayText(participant.name) ?? `Participant ${participant.id}`}${participant.isHost ? " (host)" : ""}`,
     );
-    lines.push(`Participants: ${names.join(", ")}`);
+    body.push(`Participants: ${names.join(", ")}`);
   }
-
-  const body: string[] = [];
+  if (body.length > 0) body.push("");
   if (result.transcript.segments.length === 0) body.push("(no transcript segments)");
   for (const segment of result.transcript.segments) {
     body.push(
@@ -475,15 +490,19 @@ function normalizeMeetingReadPayload(payload: unknown, consoleUrl: string): Meet
   };
 }
 
+/** Transcript text on one line, without control characters (ANSI escapes, form feeds, line separators). */
 function oneLine(text: string): string {
-  return text.replace(/\s*[\r\n]+\s*/g, " ").trim();
+  return text
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /** Remote display text, one line, without control characters. */
 function displayText(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const cleaned = value
-    .replace(/[\u0000-\u001f\u007f]+/g, " ")
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
   if (!cleaned) return null;

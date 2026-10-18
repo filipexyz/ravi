@@ -37,3 +37,4 @@
   payload with `success: true` and `note`, and write nothing to disk.
 - `meetings read` MUST map Console `ORG_ACCESS_DENIED` and
   `PROJECT_ACCESS_DENIED` to exit 3, `NOT_FOUND` and `CONFLICT` to exit 1.
+- `meetings read` refuses the operator's own turn in a group (`turn: group`), which `pages read` allows (`src/meetings/read.test.ts`).
