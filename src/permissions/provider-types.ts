@@ -25,6 +25,7 @@ export interface PermissionProviderCommandAccess {
   requiresContext?: string[];
   resourceId?: string;
   requireConcreteResource?: boolean;
+  retiredLegacyGroups?: string[];
   resourceIdPattern?: string;
   input?: string[];
   redactions?: string[];

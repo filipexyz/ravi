@@ -131,12 +131,3 @@ ravi specs sync --json
 
 O índice SQLite é rebuildável. Markdown continua sendo source of truth.
 
-## Linkar a Projects
-
-```bash
-ravi projects link spec ravi-core channels/presence/lifecycle \
-  --role context \
-  --meta '{"context":true,"audit":true}'
-```
-
-Projects não são donos da spec; eles apenas apontam quais regras importam para aquele workstream.

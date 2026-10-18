@@ -71,7 +71,7 @@ FICHA redacao
 Pessoas: membros=repórteres, editores | de fora=leitores do portal
 CAPTAR: "Minha mesa" filtra reporter e status eq Pauta; escreve título, body, pedir_revisao
 GUARDAR: pautas (pedir_revisao, decisao, pedido_correcao, status); equipe (membro, papel)
-MOSTRAR: /redacao private; matéria em snapshot no projeto portal-publico (`ravi cloud projects create portal-publico --visibility public --default-page-site --execute`)
+MOSTRAR: /redacao private; matéria em snapshot no projeto portal-publico (`ravi projects create portal-publico --visibility public --default-page-site --execute`)
 REAGIR: `ravi bases subscribe pautas` + trigger, actor.type == "user", --cooldown 5s, drena três filas
 AGIR: publica só se `ravi bases rows history` mostra a decisão de um editor; HTML escapado; `ravi pages ship --project portal-publico --visibility public`
 RELATAR: —

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { dbCreateProject } from "../projects/project-db.js";
+import { dbCreateAgent } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { attachTagToSelector, detachTagFromSelector } from "./service.js";
 import { dbCreateTagDefinition, dbFindTagBindings, dbUpsertTagBinding } from "./tag-db.js";
@@ -40,18 +40,11 @@ describe("tag target registry", () => {
   });
 
   it("normalizes generic target selectors through the descriptor resolver", () => {
-    const project = dbCreateProject({
-      title: "Registry Project",
-      slug: "registry-project",
-      summary: "Registry test project",
-      hypothesis: "central target resolver",
-      nextStep: "validate",
-      lastSignalAt: Date.now(),
-    });
+    dbCreateAgent({ id: "registry-agent", cwd: "/tmp/registry-agent" });
 
-    expect(resolveTagTargetSelector({ target: `project:${project.id}` }, { operation: "attach" })).toMatchObject({
-      assetType: "project",
-      assetId: "registry-project",
+    expect(resolveTagTargetSelector({ target: "agent:registry-agent" }, { operation: "attach" })).toMatchObject({
+      assetType: "agent",
+      assetId: "registry-agent",
       exists: true,
     });
   });
