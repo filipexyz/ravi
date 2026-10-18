@@ -5356,6 +5356,8 @@ export class RaviClient {
       set: async (site: string, options?: {
         clearInstructions?: boolean;
         clearName?: boolean;
+        clearRaviAgent?: boolean;
+        clearTextModel?: boolean;
         console?: string;
         enabled?: string;
         execute?: boolean;
@@ -5363,6 +5365,10 @@ export class RaviClient {
         language?: string;
         name?: string;
         project?: string;
+        raviAgent?: string;
+        replyPolicy?: string;
+        text?: string;
+        textModel?: string;
         voice?: string;
       }): Promise<PagesChatSetReturn> => {
         return this.transport.call({

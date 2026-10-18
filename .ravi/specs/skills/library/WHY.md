@@ -77,7 +77,11 @@ loads it natively, like Ravi's own skills.
   without the daemon judging it.
 - The runner polls (5 minutes by default) instead of waiting for a push: the
   daemon already polls the Console for its inbox, a pin is not urgent, and the
-  pin and unpin commands refresh right away. The fingerprint, not only the
+  pin and unpin commands refresh right away. Requests are different: a
+  person in a Page chat waits for the answer, so the request runner pulls
+  every 30 s while an agent here takes requests and every 15 s for a while
+  after one came in, and keeps the slow pace on a machine with nothing open,
+  so idle machines do not call the Console more. The fingerprint, not only the
   Console's `revision`, decides whether anything changed, so a new published
   version of a pinned item is picked up even if the revision did not move.
 - A pinned skill must reach only its agent, but the providers differ. Claude

@@ -148,7 +148,7 @@ ravi pages access https://acme-website.ravi.page/report                         
 ravi pages unshare https://acme-website.ravi.page/report --with ana@example.com            # applies at once
 ```
 
-- The person signs in to the Console with that email (verified) and sees only what was shared: the route, or with `--site` every private route of the host. It is not membership: no operator bar, no Page Chat and no live Bases data.
+- The person signs in to the Console with that email (verified) and sees only what was shared: the route, or with `--site` every private route of the host. It is not membership: no operator bar, no voice Page Chat and no live Bases data. They can use the [text chat](#text-chat) of the routes shared with them, from the floating guest link.
 - `--expires` takes `30d`, `12h`, `2w` or an ISO date, up to 365 days. Sharing again updates the expiry and reason. `unshare --grant <id>` removes one grant by the id `pages access` lists.
 - Anyone who can publish to the project can share: an organization `owner`, `admin` or `developer`, or a project admin or developer.
 
@@ -227,6 +227,63 @@ window.ravi.pageChat.actions.push({
 ```
 
 Use the `push` form: it works on every page, and the runtime reads the list where Page Chat is on. Action names use letters, digits, `_` and `-`, up to 64 characters. A `write` action runs only after the viewer confirms by voice.
+
+## Text chat
+
+Every page also has a text chat with Ravi. In the Pages bar, the **Fale com o Ravi** field opens a chat panel docked on the right (a bottom sheet on narrow screens), with a dot when there are unread messages. To put the chat inside a page, add the tag where it should go; the chat fills its container:
+
+```html
+<ravi-chat></ravi-chat>
+```
+
+Pages replaces the tag with the chat of the current route when it serves the page. Give the container a height, for example `min-height: 70vh`, or make a page that holds only the chat.
+
+**Rooms.** Each route has one shared room, where everyone who opens that page talks together, and each person has a private room on that route with the agent. Comments left with **Comentar** also show up in the shared room, pointing at the item they are about. The voice Page Chat is a mode of the same conversation: what is said becomes messages in the room.
+
+**Who can talk.** Members of the organization who can read the project, and guests the route or site was [shared with](#share-a-page-with-one-person). Nobody signed out. The agent knows who wrote each message.
+
+**When the agent answers in a shared room:**
+
+- when someone calls it with `@ravi` or `@` followed by the assistant name (`--name`);
+- when someone clicks one of the buttons in its answers;
+- while only one person has written in the room, since it is still a one-to-one conversation;
+- to every message, when the site's reply policy is `always`.
+
+In a private room it always answers.
+
+**Writes need a click.** The agent acts as the person who asked, with that person's access and nothing more. Reads run at once. Every change, such as adding or editing a row in a Base, shows up in the panel as a summary with a confirm button, and runs only when the person who asked clicks it. Publishing, visibility changes, invites and deletions are not available in the chat.
+
+**What it can read.** In a shared room the agent reads only the data the page itself uses (the host's `--uses`) and the knowledge marked for page viewers. Answers can include blocks besides text: a widget from your organization's Library, a Bases view, a chart, buttons and a card. A view travels by reference: each person's browser loads the rows with that person's own access, so two people in the same room can see different rows.
+
+**Conversations as a Base.** When your organization has Bases, the messages of shared rooms are also copied into a read-only Base of the project, `conversas-pages` (view **Conversas**, one row per message: text, who wrote it, member, guest or agent, text, voice or comment, page and time). Project members can read it like any other Base, so an agent can search or chart conversations with `ravi bases`. Private rooms are never copied, and a deleted message loses its text there too.
+
+The text chat uses the same organization feature, `console.pages.chat`, and each agent turn is metered for the organization. Its settings live next to the voice ones:
+
+```bash
+ravi pages chat set acme-website --text false                      # applies at once
+ravi pages chat set acme-website --text true --execute             # plan only (exit 3) without --execute
+ravi pages chat set acme-website --reply-policy always --execute   # answer every shared-room message
+ravi pages chat set acme-website --reply-policy mention            # back to the default, applies at once
+ravi pages chat set acme-website --text-model acme/chat-large-2.1
+ravi pages chat set acme-website --clear-text-model                # platform default model
+ravi pages chat set acme-website --ravi-agent 11111111-1111-4111-8111-111111111111/finance --execute
+ravi pages chat set acme-website --clear-ravi-agent
+```
+
+- `--text` turns the text chat on or off; `--enabled` stays the voice switch. By default the text chat is on, the reply policy is `mention`, the model is the platform default and no Ravi agent is set.
+- `--text true`, `--reply-policy always` and `--ravi-agent` widen what the agent does, so without `--execute` they print the plan and exit 3. Turning things off, going back to `mention`, changing the model and the `--clear-*` flags apply at once.
+- `--text-model` takes an AI Gateway model id, `<provider>/<model>`.
+- `ravi pages chat show` lists the text chat, reply policy, text model and Ravi agent next to the voice settings (`settings.text`, `settings.replyPolicy`, `settings.textModel`, `settings.raviAgent` in the JSON).
+
+### Let the chat ask your Ravi
+
+`--ravi-agent <installation-id>/<agent>` lets the page's agent ask an agent on one of your organization's Ravi machines, for example to look something up that only that machine knows. The question travels as a [Library request](/reference/skills#ask-agents-on-other-machines), the same way agents on two machines ask each other:
+
+1. Find the installation id with `ravi agents directory --json` (`installation.id` of the agent's entry).
+2. On that machine, open the agent to requests: `ravi agents requests finance on --execute`.
+3. Point the site at it: `ravi pages chat set acme-website --ravi-agent <installation-id>/finance --execute`.
+
+The request arrives as coming from the person who asked in the chat, never from you: the agent answers in its reply and does not act on its machine for them. The machine picks up requests every 30 seconds while one of its agents takes requests, and every 15 seconds for a while after one came in.
 
 ## Releases and restore
 

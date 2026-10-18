@@ -68040,16 +68040,24 @@ export const PagesChatSetInputSchema = {
       "description": "Remove the assistant name",
       "type": "boolean"
     },
+    "clearRaviAgent": {
+      "description": "Stop the text chat from asking a Ravi machine's agent",
+      "type": "boolean"
+    },
+    "clearTextModel": {
+      "description": "Use the platform default text chat model",
+      "type": "boolean"
+    },
     "console": {
       "description": "Console base URL",
       "type": "string"
     },
     "enabled": {
-      "description": "Turn Page Chat on (true) or off (false) for this site",
+      "description": "Turn the Page Chat voice agent on (true) or off (false) for this site",
       "type": "string"
     },
     "execute": {
-      "description": "Required with --enabled true; every other change applies immediately",
+      "description": "Required with --enabled true, --text true, --reply-policy always and --ravi-agent; every other change applies immediately",
       "type": "boolean"
     },
     "instructions": {
@@ -68068,8 +68076,24 @@ export const PagesChatSetInputSchema = {
       "description": "Console project id or slug; overrides saved Console scope",
       "type": "string"
     },
+    "raviAgent": {
+      "description": "Agent of a Ravi machine the text chat may ask (installation id from ravi agents directory --json)",
+      "type": "string"
+    },
+    "replyPolicy": {
+      "description": "When the agent answers in a shared room: mention|always",
+      "type": "string"
+    },
     "site": {
       "description": "Pages host slug, site id, or hostname",
+      "type": "string"
+    },
+    "text": {
+      "description": "Turn the text chat (bar panel and <ravi-chat>) on (true) or off (false)",
+      "type": "string"
+    },
+    "textModel": {
+      "description": "Text chat model, an AI Gateway id such as <provider>/<model>",
       "type": "string"
     },
     "voice": {
