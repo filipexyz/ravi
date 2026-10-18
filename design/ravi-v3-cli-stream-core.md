@@ -129,4 +129,4 @@ Not part of this core document:
 
 - `../../ravi/main/.genie/brainstorms/site-overlay-platform/DRAFT.md`
 - `../../ravi/main/.genie/wishes/ravi-v3-cli-stream-core/WISH.md`
-- `docs/whatsapp-overlay-status.md`
+- `design/whatsapp-overlay-status.md`

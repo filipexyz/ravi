@@ -37,6 +37,7 @@ src/plugins/internal/ravi-system/skills/   system skills (SKILL.md + references/
 src/plugins/internal/ravi-dev/skills/      skills for developing Ravi itself
 .ravi/specs/        normative specs (SPEC.md + WHY, CHECKS, RUNBOOK); repo-only, not shipped
 docs/               Mintlify source of docs.ravi.bot (docs.json is the navigation)
+design/             internal design notes and contracts; repo-only, not published
 bin/ravi            wrapper; rebuilds dist/bundle when src/ or package.json is newer
 ```
 
@@ -123,7 +124,7 @@ agent:main:trigger:<triggerId>[:key:<hash>]           # legacy isolated / named 
 
 ## Message Queue
 
-A message for a busy session is queued with a delivery barrier (`src/delivery-barriers.ts`, `docs/ravi-delivery-barriers-v0.md`). Chat messages default to `after_tool`: they wait for the running tool, then steer the turn. `>>message` waits for the current reply and `!!message` is recorded without a turn. Cron, hooks and `[System] Inform/Ask/Answer` wait for the reply; triggers, heartbeats and `[System] Execute` wait for the task. `ravi sessions send --barrier followup|steer|p0|p1|p2|p3` sets it explicitly.
+A message for a busy session is queued with a delivery barrier (`src/delivery-barriers.ts`, `design/ravi-delivery-barriers-v0.md`). Chat messages default to `after_tool`: they wait for the running tool, then steer the turn. `>>message` waits for the current reply and `!!message` is recorded without a turn. Cron, hooks and `[System] Inform/Ask/Answer` wait for the reply; triggers, heartbeats and `[System] Execute` wait for the task. `ravi sessions send --barrier followup|steer|p0|p1|p2|p3` sets it explicitly.
 
 ## Ravi Pages Publishing
 

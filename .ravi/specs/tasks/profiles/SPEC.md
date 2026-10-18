@@ -23,7 +23,7 @@ applies_to:
   - src/tasks/profile-catalog/system-profiles.json
   - src/cli/commands/tasks-profiles.ts
   - src/tasks/profiles.test.ts
-  - docs/task-profiles-catalog-v1.md
+  - design/task-profiles-catalog-v1.md
 owners:
   - ravi-dev
 status: active

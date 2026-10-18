@@ -63,6 +63,15 @@
             ]
           },
           {
+            "group": "For organizations",
+            "pages": [
+              "organizations/overview",
+              "organizations/machines",
+              "organizations/data-flow",
+              "organizations/security"
+            ]
+          },
+          {
             "group": "Build on Ravi",
             "pages": [
               "guides/sdk"
@@ -182,6 +191,94 @@
     {
       "source": "/session-trace-v1",
       "destination": "/guides/troubleshooting"
+    },
+    {
+      "source": "/context-generator-contract",
+      "destination": "/architecture"
+    },
+    {
+      "source": "/context-guardian-contract-v0",
+      "destination": "/architecture"
+    },
+    {
+      "source": "/cross-send-acl",
+      "destination": "/guides/permissions"
+    },
+    {
+      "source": "/model-broker-runtime",
+      "destination": "/architecture"
+    },
+    {
+      "source": "/physical-orchestrator-group3",
+      "destination": "/architecture"
+    },
+    {
+      "source": "/physical-orchestrator-group4",
+      "destination": "/architecture"
+    },
+    {
+      "source": "/plan-instances",
+      "destination": "/guides/routing"
+    },
+    {
+      "source": "/ravi-delivery-barriers-v0",
+      "destination": "/guides/sessions"
+    },
+    {
+      "source": "/ravi-eval-harness-v0",
+      "destination": "/"
+    },
+    {
+      "source": "/ravi-specs-memory-prd",
+      "destination": "/"
+    },
+    {
+      "source": "/ravi-tag-system-v0",
+      "destination": "/cli/overview"
+    },
+    {
+      "source": "/ravi-task-runtime-v0",
+      "destination": "/cli/overview"
+    },
+    {
+      "source": "/ravi-v3-cli-stream-core",
+      "destination": "/architecture"
+    },
+    {
+      "source": "/runtime-provider-contract",
+      "destination": "/architecture"
+    },
+    {
+      "source": "/task-profiles-catalog-v1",
+      "destination": "/cli/overview"
+    },
+    {
+      "source": "/whatsapp-overlay-cockpit-v1-browser-validation-2026-03-28",
+      "destination": "/channels/whatsapp"
+    },
+    {
+      "source": "/whatsapp-overlay-cockpit-v1",
+      "destination": "/channels/whatsapp"
+    },
+    {
+      "source": "/whatsapp-overlay-manual-checklist",
+      "destination": "/channels/whatsapp"
+    },
+    {
+      "source": "/whatsapp-overlay-rbac",
+      "destination": "/channels/whatsapp"
+    },
+    {
+      "source": "/whatsapp-overlay-status",
+      "destination": "/channels/whatsapp"
+    },
+    {
+      "source": "/workflow-substrate-v0",
+      "destination": "/cli/overview"
+    },
+    {
+      "source": "/workflows-canonical",
+      "destination": "/cli/overview"
     }
   ]
 }

@@ -3,6 +3,7 @@ import {
   renderPromptSections,
   type PromptContextSection,
   type PromptSection,
+  type SlackThreadsPlacement,
 } from "../prompt-builder.js";
 import type { AgentConfig } from "../router/types.js";
 import type { ChannelContext } from "./message-types.js";
@@ -55,6 +56,7 @@ export async function buildRuntimeSystemPrompt(input: RuntimeSystemPromptInput):
       agentMode: input.agent.mode,
       buildingSolutions: shouldMountBuildingSolutions(input),
       pagesLinks: shouldMountPagesLinks(input),
+      slackThreads: resolveSlackThreadsPlacement(input),
     }),
     buildRuntimeOperationalContextSection(input),
     ...buildKnowledgePromptSections(input),
@@ -105,6 +107,21 @@ const PAGES_GROUP_RULE_IDS: ReadonlySet<string> = new Set(["pages"]);
 function shouldMountPagesLinks(input: RuntimeSystemPromptInput): boolean {
   if (input.agent.mode === "sentinel") return false;
   return canRunAnyGroup(input.runtimeContext?.capabilities ?? [], PAGES_GROUP_RULE_IDS);
+}
+
+const SESSIONS_GROUP_RULE_IDS: ReadonlySet<string> = new Set(["sessions"]);
+
+/**
+ * "Slack Threads" tells the agent to open a Slack thread with
+ * `ravi sessions create-thread` for off-topic work: mount it only for a
+ * non-sentinel agent that can run the sessions group. A session key with
+ * `:thread:` is a thread child and gets the in-thread variant.
+ */
+function resolveSlackThreadsPlacement(input: RuntimeSystemPromptInput): SlackThreadsPlacement | undefined {
+  if (input.agent.mode === "sentinel") return undefined;
+  if (!canRunAnyGroup(input.runtimeContext?.capabilities ?? [], SESSIONS_GROUP_RULE_IDS)) return undefined;
+  const sessionKey = input.sessionKey ?? input.runtimeContext?.sessionKey ?? "";
+  return sessionKey.includes(":thread:") ? "thread" : "channel";
 }
 
 /**

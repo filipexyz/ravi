@@ -29,7 +29,7 @@ import { ensureAgentInstructionFiles } from "../runtime/agent-instructions.js";
 import { findSkillByName, listCatalogSkills, listInstalledSkills } from "../skills/manager.js";
 import {
   dbGetLibraryAgentState,
-  dbSetLibraryAgentAcceptsRequests,
+  dbSetLibraryAgentListed,
   dbSetLibraryAgentDescription,
   dbSetLibraryAgentOrigin,
   LIBRARY_AGENT_DESCRIPTION_MAX,
@@ -536,8 +536,8 @@ export function executeLibraryAgentInstall(prepared: PreparedLibraryAgentInstall
     skills: definition.agent.skills,
     installedAt: Date.now(),
   });
-  // A reused id never inherits an earlier agent's openness to requests.
-  dbSetLibraryAgentAcceptsRequests(agentId, false);
+  // A reused id never inherits an earlier agent's listing or openness to requests.
+  dbSetLibraryAgentListed(agentId, false);
   dbSetLibraryAgentDescription(agentId, definition.item.description.slice(0, LIBRARY_AGENT_DESCRIPTION_MAX) || null);
   return {
     ref: definition.ref,

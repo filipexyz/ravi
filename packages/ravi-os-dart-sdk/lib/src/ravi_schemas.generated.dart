@@ -4993,6 +4993,64 @@ class RaviSchemas {
 }
 ''';
 
+  static const agentsListingInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "execute": {
+      "description": "Confirm listing the agent (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Local agent id",
+      "type": "string"
+    },
+    "state": {
+      "description": "on or off (omit to show)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+}
+''';
+
+  static const agentsListingReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "acceptsRequests": {
+      "type": "boolean"
+    },
+    "agent": {
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "hint": {
+      "type": "string"
+    },
+    "listed": {
+      "type": "boolean"
+    },
+    "reported": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "agent",
+    "listed",
+    "acceptsRequests",
+    "changed",
+    "reported"
+  ],
+  "type": "object"
+}
+''';
+
   static const agentsModelBrokerInputSchema = r'''
 {
   "additionalProperties": false,
@@ -6652,12 +6710,16 @@ class RaviSchemas {
     "hint": {
       "type": "string"
     },
+    "listed": {
+      "type": "boolean"
+    },
     "reported": {
       "type": "boolean"
     }
   },
   "required": [
     "agent",
+    "listed",
     "acceptsRequests",
     "changed",
     "reported"
@@ -8363,6 +8425,9 @@ class RaviSchemas {
                 }
               ]
             },
+            "listed": {
+              "type": "boolean"
+            },
             "origin": {
               "anyOf": [
                 {
@@ -8400,6 +8465,7 @@ class RaviSchemas {
           },
           "required": [
             "description",
+            "listed",
             "acceptsRequests",
             "origin"
           ],

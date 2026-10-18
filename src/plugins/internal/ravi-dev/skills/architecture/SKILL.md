@@ -187,7 +187,7 @@ Contrato canônico:
 - provider pode expor `interrupt`, `setModel` e `control`
 - provider não muta task/session/canal diretamente
 
-Documento canônico: `docs/runtime-provider-contract.md`
+Documento canônico: `design/runtime-provider-contract.md`
 
 Checklist para novo provider:
 
