@@ -255,6 +255,8 @@ In a private room it always answers.
 
 **What it can read.** In a shared room the agent reads only the data the page itself uses (the host's `--uses`) and the knowledge marked for page viewers. Answers can include blocks besides text: a widget from your organization's Library, a Bases view, a chart, buttons and a card. A view travels by reference: each person's browser loads the rows with that person's own access, so two people in the same room can see different rows.
 
+**Conversations as a Base.** When your organization has Bases, the messages of shared rooms are also copied into a read-only Base of the project, `conversas-pages` (view **Conversas**, one row per message: text, who wrote it, member, guest or agent, text, voice or comment, page and time). Project members can read it like any other Base, so an agent can search or chart conversations with `ravi bases`. Private rooms are never copied, and a deleted message loses its text there too.
+
 The text chat uses the same organization feature, `console.pages.chat`, and each agent turn is metered for the organization. Its settings live next to the voice ones:
 
 ```bash

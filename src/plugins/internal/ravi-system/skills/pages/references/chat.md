@@ -63,6 +63,14 @@ Uma `view` não leva linhas na mensagem: cada navegador carrega as linhas com o
 acesso de quem está vendo. Duas pessoas na mesma sala podem ver linhas
 diferentes, e quem não lê a view não vê nada dela.
 
+## Conversas numa Base
+
+Quando a org tem Bases, as mensagens das salas compartilhadas também vão para
+uma Base somente leitura do projeto, `conversas-pages` (view `Conversas`, uma
+linha por mensagem: texto, quem escreveu, papel, origem texto/voz/comentário,
+página e hora). Leia com `ravi bases` como qualquer Base. Salas privadas nunca
+entram; mensagem apagada perde o texto lá também.
+
 ## O que o autor da página controla
 
 - Os dados: na sala compartilhada o agente só lê o que a página já usa (o
