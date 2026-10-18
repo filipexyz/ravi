@@ -23,3 +23,6 @@
   list|create`, with `op` and `nextCommand` naming `cloud projects`.
 - `bun test src/cli/commands/projects.test.ts` SHOULD pass after any
   change to this contract surface.
+- `src/cli/command-access.test.ts`: legacy `execute:group:projects` and
+  `projects_create` grants do not authorize `ravi projects create`;
+  `mutate:cloud.projects:create` and `execute:group:cloud.projects` still do.

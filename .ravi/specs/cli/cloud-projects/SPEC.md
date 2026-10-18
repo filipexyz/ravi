@@ -66,6 +66,10 @@ they meant Console projects, so it was removed and the name now means Console.
    `nextCommand` MUST name the path the caller used.
 9. `ravi projects` MUST NOT read or write local project state; there is no
    local project store.
+10. Legacy `execute:group:projects` and `execute:group:projects_<command>`
+    grants were given for the removed local commands and MUST NOT authorize
+    `ravi projects`. Agents need `read|mutate:cloud.projects:<action>` (or the
+    legacy `cloud.projects` group grants, which kept their meaning).
 
 ## Write classification (brake decision per op)
 

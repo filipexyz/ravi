@@ -118,8 +118,7 @@ ravi cloud scope explain --json
 ```
 
 The output should identify whether the project came from explicit input,
-runtime context, local Project mapping, session, agent, workspace, global, or
-single-project fallback.
+runtime context, session, agent, workspace, global, or single-project fallback.
 
 ## Inspect Effective Scope
 
@@ -167,9 +166,9 @@ Use `--global` in multi-project installs so new agents are not born with
 `ravi login`. Prefer session or workspace scope over global scope for
 customer/project work; those layers still win over the install default.
 
-Use local Project mappings only when a local Project is intentionally connected
-to a remote Console project. The mapping must be visible in `scope explain`; a
-matching slug is not a mapping.
+There are no local Project mappings any more: `local_project_mapping` always
+shows as unavailable in `scope explain`. Pin the project with a session,
+workspace or agent default instead.
 
 ## Debug A Wrong Project
 

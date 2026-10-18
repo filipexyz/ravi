@@ -26,6 +26,12 @@ export interface ProjectsCommandDeps extends CloudProjectsClientDeps {
  * that `--project` takes in `pages`, `bases`, `knowledge` and `meetings`.
  * `ravi cloud projects` stays as an alias (see cloud-projects.ts).
  */
+/**
+ * `execute:group:projects` and `projects_<command>` grants were given for the
+ * removed local projects substrate; they must not reach the Console.
+ */
+const RETIRED_LOCAL_PROJECTS_GROUPS = ["projects"];
+
 @Group({
   name: "projects",
   description: "List and create the organization's projects in Ravi Console",
@@ -38,7 +44,13 @@ export class ProjectsCommands {
   protected readonly commandPath: readonly string[] = ["ravi", "projects"];
 
   @Command({ name: "list", description: "List the organization's projects in Console" })
-  @CommandAccess({ kind: "read", resource: "cloud.projects", action: "list", risk: "low" })
+  @CommandAccess({
+    kind: "read",
+    resource: "cloud.projects",
+    action: "list",
+    risk: "low",
+    retiredLegacyGroups: RETIRED_LOCAL_PROJECTS_GROUPS,
+  })
   async list(
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
     @Option({ flags: "--limit <n>", description: "Maximum projects to return (default: 50)" }) limit?: string,
@@ -79,6 +91,7 @@ export class ProjectsCommands {
     action: "create",
     risk: "high",
     requiresConfirmation: true,
+    retiredLegacyGroups: RETIRED_LOCAL_PROJECTS_GROUPS,
   })
   async create(
     @Arg("slug", { description: "Console project slug" }) slug: string,

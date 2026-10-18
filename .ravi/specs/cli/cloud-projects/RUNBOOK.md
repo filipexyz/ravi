@@ -12,7 +12,7 @@
    `protected_link`.
 5. `AUTH_REQUIRED`/`AUTH_EXPIRED`: run `ravi login` and retry.
 6. If `create` hit Console without `--execute`, the brake regressed — check
-   `contractDryRun` ordering in `src/cli/commands/cloud-projects.ts`.
+   `contractDryRun` ordering in `src/cli/commands/projects.ts`.
 7. If a brake exits 5 as `SERVER_UNAVAILABLE`, the ContractError rethrow guard
    in `runCloudProjectsCommand` was lost.
 

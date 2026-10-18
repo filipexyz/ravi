@@ -39,8 +39,7 @@ owners:
   - explicit input wins over all defaults;
   - runtime context wins over session/agent/workspace/global;
   - runtime context organization can select only an already-approved profile;
-  - explicit local Project Console mapping can be used only when runtime
-    context identifies the active local Project;
+  - `local_project_mapping` is listed as unavailable and never selected;
   - session wins over agent;
   - agent wins over workspace;
   - workspace wins over global;
@@ -61,10 +60,8 @@ owners:
   `--global` sets or replaces the install default. New agents inherit it.
 - `bun test src/console-scope/resolver.test.ts src/cli/commands/cloud-scope.test.ts`
   SHOULD pass after resolver or scope-command changes.
-- A local Project slug is never accepted as a Console project ref unless an
-  explicit Console mapping exists.
-- A local Project mapping reports `source="local_project_mapping"` in explain
-  output.
+- `explain` output lists `local_project_mapping` as unavailable; no input
+  selects it.
 - `RAVI_PROJECT` compatibility works but is lower priority than explicit input
   and runtime context.
 - Scope JSON output never includes access tokens, refresh tokens, context keys,
@@ -78,10 +75,8 @@ owners:
 - Child CLI with only `RAVI_CONTEXT_KEY` resolves the same scope.
 - Refreshing a reused `agent-runtime` context updates `consoleScope` metadata
   when the session default changes.
-- A runtime context with local Project `rbbt` and no Console mapping fails
+- A slug that is not a Console project ref (the old local `rbbt`) fails
   project resolution instead of guessing remote project `rbbt`.
-- A runtime context with local Project `rbbt` and an explicit Console mapping to
-  `rbbt-ravi` resolves `project.ref="rbbt-ravi"`.
 
 ## Command Coverage
 

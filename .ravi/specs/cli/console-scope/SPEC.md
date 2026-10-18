@@ -274,8 +274,9 @@ The resolver MUST use this order:
 3. Active cloud-auth credential profile for the Console URL.
 4. Compatibility runtime env projection (`RAVI_CONSOLE_PROJECT_REF` or
    `RAVI_CONSOLE_PROJECT_ID`) when context metadata is unavailable.
-5. Explicit Console mapping attached to the active local Project in runtime
-   context, when the mapping is stored as a Console resource/metadata link.
+5. Reserved, never selected: `local_project_mapping`. Local Projects were
+   removed in 2026-10; `explain` keeps listing this source as unavailable so
+   its output keeps its shape.
 6. Session default for the current `sessionKey` or `sessionName`, scoped to the
    selected organization.
 7. Agent default for the current `agentId`, scoped to the selected
@@ -350,9 +351,8 @@ context metadata:
 Child CLIs MUST prefer `RAVI_CONTEXT_KEY` and context metadata over reconstructing
 identity from environment variables.
 
-If runtime context includes a local Project but no `consoleScope`, the resolver
-MAY inspect that local Project for an explicit Console resource/metadata link.
-It MUST report `source="local_project_mapping"` when that mapping is used.
+The resolver MUST NOT select `source="local_project_mapping"`: there is no local
+Project to carry a mapping. It stays in `explain` as an unavailable candidate.
 
 For compatibility, runtime env MAY also project:
 
@@ -401,8 +401,8 @@ Console.
 - selected Console URL;
 - selected active credential profile and organization from credentials;
 - every candidate project source;
-- whether a candidate came from explicit input, runtime context, local Project
-  mapping, session, agent, workspace, global, or single-project fallback;
+- whether a candidate came from explicit input, runtime context, session,
+  agent, workspace, global, or single-project fallback;
 - the final project ref or the reason resolution failed.
 
 ## Command Adoption
@@ -517,8 +517,7 @@ errors.
   profiles remain available locally.
 - `ravi cloud auth profiles switch rbbt --json` changes the active profile
   without exposing or rewriting token values from other profiles.
-- A local Project named `rbbt` does not make `ravi pages list` target Console
-  project `rbbt` unless the local Project has an explicit Console mapping.
+- `ravi cloud scope explain --json` never selects `local_project_mapping`.
 - A session default saved for org `luis` is not used after switching to org
   `rbbt`.
 - `ravi cloud scope explain --json` can explain why a command is using

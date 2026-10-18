@@ -45,6 +45,11 @@ export interface CommandAccessOptions {
   resourceId?: string;
   /** Require the concrete resource candidate; semantic and legacy command grants cannot substitute for it. */
   requireConcreteResource?: boolean;
+  /**
+   * Groups whose legacy `execute:group:<group>` and `<group>_<command>` grants belonged to a removed
+   * command of the same name; those grants must not authorize this one.
+   */
+  retiredLegacyGroups?: string[];
   /** Optional anchored regular-expression source used to reject non-canonical resource refs before authorization. */
   resourceIdPattern?: string;
   input?: string[];

@@ -149,7 +149,7 @@ export async function explainConsoleScope(
     label: "Local Project Console mapping",
     selected: false,
     available: false,
-    reason: "No explicit local Project -> Console project mapping is attached to this runtime context.",
+    reason: "Local Projects were removed; this source is never selected.",
   });
 
   for (const target of scopeTargets(context, deps)) {
