@@ -90,7 +90,7 @@ irreversible — those two are the braked ops.
 ## Internal consumers
 
 There is NO shipped `workflows` skill — a registered gap: agents currently
-learn this surface only from `docs/workflow-substrate-v0.md` (which documents
+learn this surface only from `design/workflow-substrate-v0.md` (which documents
 `--execute` on both braked ops). SDK/openapi surfaces call the service
 layer, not the CLI brake. Parser-level usage errors use the global exit-2
 `USAGE_ERROR` envelope with `acceptedFlags`.

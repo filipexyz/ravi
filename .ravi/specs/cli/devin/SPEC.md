@@ -84,7 +84,7 @@ runtime is out of scope.
 ## Internal consumers
 
 `src/plugins/internal/ravi-system/skills/tasks/SKILL.md` (delegation protocol)
-and `docs/task-profiles-catalog-v1.md` reference `ravi devin sessions
+and `design/task-profiles-catalog-v1.md` reference `ravi devin sessions
 create|send` — both sit behind the brake, so those flows add `--execute` on
 real dispatch. Plain insights examples remain valid; an example that adds
 `--generate` must also add `--execute`. No dedicated `devin` skill

@@ -80,7 +80,7 @@ ZERO braked ops — that absence is a decision of this spec, not an omission.
 There is NO dedicated `tags` skill in `src/plugins/internal/ravi-system/skills/`
 — this is a registered gap of this wave. The surface is taught incidentally by
 the `permissions` skill (`tags show`), the `contacts` skill and
-`docs/ravi-tag-system-v0.md`. None of them teaches a flag changed by this wave
+`design/ravi-tag-system-v0.md`. None of them teaches a flag changed by this wave
 (no flag was renamed and no brake was added), so no consumer required a syntax
 update. The `contacts` skill teaches `ravi tags define ...`, a command that
 does not exist (`tags create` is the real op) — pre-existing doc bug, reported

@@ -7,7 +7,7 @@ Status: `FIX-FIRST`
 Scope validated:
 
 - browser-real validation through the live WhatsApp Overlay bridge
-- checklist from `docs/whatsapp-overlay-manual-checklist.md`
+- checklist from `design/whatsapp-overlay-manual-checklist.md`
 - focus on cross-chat navigation hardening, row/chat correlation, and `inspect == UI`
 
 Operational note:
@@ -19,7 +19,7 @@ Operational note:
 
 The cockpit is not ready to pull `approval` into this cut yet.
 
-`approval badge` is explicitly Phase 4 polish in `docs/whatsapp-overlay-cockpit-v1.md`, and that phase only starts after deterministic navigation feels solid. The current browser-real run still breaks deterministic open and can leave the native pane in a degraded search-results state.
+`approval badge` is explicitly Phase 4 polish in `design/whatsapp-overlay-cockpit-v1.md`, and that phase only starts after deterministic navigation feels solid. The current browser-real run still breaks deterministic open and can leave the native pane in a degraded search-results state.
 
 ## Evidence
 
@@ -123,7 +123,7 @@ What did not pass:
 Why:
 
 - the design puts `approval badge` in Phase 4, after navigation solidity
-- the current run still fails the Phase 3 deterministic-open bar from `docs/whatsapp-overlay-cockpit-v1.md:236`
+- the current run still fails the Phase 3 deterministic-open bar from `design/whatsapp-overlay-cockpit-v1.md:236`
 
 ## Next Cut
 

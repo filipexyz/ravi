@@ -23,8 +23,8 @@ applies_to:
   - src/cli/commands/tasks-profiles.ts
   - src/cli/commands/tasks-deps.ts
   - src/cli/commands/tasks-automations.ts
-  - docs/ravi-task-runtime-v0.md
-  - docs/task-profiles-catalog-v1.md
+  - design/ravi-task-runtime-v0.md
+  - design/task-profiles-catalog-v1.md
 owners:
   - ravi-dev
 status: active

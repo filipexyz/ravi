@@ -30,5 +30,5 @@ agents get `WORKFLOW_RUN_NOT_FOUND` with run suggestions instead of a
 misleading node error.
 
 There is no shipped `workflows` skill — a known gap registered in the SPEC.
-Until one exists, `docs/workflow-substrate-v0.md` is the teaching surface and
+Until one exists, `design/workflow-substrate-v0.md` is the teaching surface and
 now carries `--execute` on both braked ops.

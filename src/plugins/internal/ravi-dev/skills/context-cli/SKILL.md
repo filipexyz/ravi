@@ -172,7 +172,7 @@ Quando o usuario pedir um "CLI externo integrado ao Ravi", ensine nesta ordem:
 
 ## Artefatos de Referencia
 
-- Contrato formal: `docs/context-generator-contract.md`
+- Contrato formal: `design/context-generator-contract.md`
 - Referencia minima: `src/reference/context-cli.ts`
 - Comandos CLI: `src/cli/commands/context.ts`
 - Registry/runtime: `src/runtime/context-registry.ts`

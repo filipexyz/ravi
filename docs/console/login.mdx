@@ -8,19 +8,20 @@ At the end of this page you will have a Ravi Console account, an organization, a
 
 ## What the Console is
 
-The Ravi Console at [console.ravi.bot](https://console.ravi.bot) is the hosted side of Ravi. Your daemon, agents and channels stay on your machine. The Console holds what needs a public address or shared storage:
+The Ravi Console at [console.ravi.bot](https://console.ravi.bot) is where your organization lives. Your daemon, agents and channels stay on your machines. The Console holds what people and machines share:
 
-- **Organization.** Owns members and projects. Every member has a role.
+- **Organization.** Owns members, projects and the machines linked with `ravi login`. Every member has a role. See [Ravi for organizations](/organizations/overview).
 - **Project.** Holds your Pages and Bases. Each project has one default Pages host, `<org-slug>-<project-slug>.ravi.page`. Every page you publish is a route on that host, such as `https://acme-website.ravi.page/report`.
+- **Library.** Skills, agent definitions, themes and widgets shared with every machine in the organization or in one project. See [Machines and shared agents](/organizations/machines#share-skills-and-agents-across-the-organization).
 - **Roles.** `owner`, `admin` and `developer` can create projects and publish. `viewer` and `billing` cannot. Only `owner` and `admin` can rename the organization or add members.
 
-`ravi login` links your local CLI to your Console user. It has nothing to do with your model provider: Claude or Codex credentials are configured separately, see [Install Ravi](/start/install).
+`ravi login` links this machine and its CLI to your Console user, in one organization. It has nothing to do with your model provider: Claude or Codex credentials are configured separately, see [Install Ravi](/start/install).
 
 Logging in and publishing from your own terminal do not need the daemon. Agents publishing on your behalf do, see [Let your agent publish](/console/pages#let-your-agent-publish).
 
 ## Create your account and organization
 
-Organizations are created, and members are invited, only in the web Console. The CLI has no command for either.
+Organizations are created only in the web Console. Members are invited there or with `ravi invites create`, see [Share a page with one person](/console/pages#share-a-page-with-one-person).
 
 <Steps>
   <Step title="Sign up">
