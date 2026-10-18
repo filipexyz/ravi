@@ -57,7 +57,11 @@
   pass through `runPagesCommand`'s CloudAuthError funnel untouched.
 - A 400 Console response carrying `DOMAIN_SETUP_REQUIRED` MUST preserve that
   code through cloud-auth mapping and render the sanitized TXT/CNAME instruction
-  with exit 1; other provider messages MUST remain redacted.
+  with exit 1; other provider messages MUST remain redacted. Through the remote
+  gateway, `pages domains` keeps that message and the projected
+  `error.domainSetup`; any other op keeps the generic line.
+- `pages domains` without `--execute` prints `CNAME <hostname> = cname.ravi.page`
+  and puts it in `plan.dnsSetup`, locally and through the gateway.
 - `pages list --fields a,b,c --json` and `pages published --fields a,b,c
   --json` MUST return items containing only the requested fields.
 - Unbraked ops (`ship`, `create`, `publish`, visibility reductions and

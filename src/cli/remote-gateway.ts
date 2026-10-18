@@ -42,7 +42,8 @@ import {
 } from "./agent-contract.js";
 import { APPROVAL_ID_PATTERN } from "../link/client.js";
 import { CALLER_CWD_HEADER, parseCallerCwd } from "./caller-cwd.js";
-import { cloudContractCatalogCopy } from "./cloud-error-contract.js";
+import { cloudContractCatalogCopy, safeDomainSetupMessage } from "./cloud-error-contract.js";
+import { plannedPageDomainDns, plannedPageDomainDnsLines, projectPageDomainSetups } from "../pages/domain-setup.js";
 import { localMediaSendCatalogCopy } from "./media-send-auth.js";
 import { isSafeLocalPayloadMessage } from "./payload-error-message.js";
 import { projectPublicIssues, sanitizePublicValue } from "./redaction.js";
@@ -373,10 +374,14 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
         );
         // An issue-first projection already names the field; the Library copy only replaces the generic line.
         const generic = projected === REMOTE_GENERIC_FAILURE || projected === REMOTE_GENERIC_BLOCKED;
+        const dnsHint =
+          op === PAGES_DOMAINS_OP && isRemoteWriteBrake(body) ? plannedDomainDnsHint(body.error.plan) : null;
         return new ContractError(
           op,
           body.error.code,
-          connectorTurn?.message ?? (generic ? library?.message : undefined) ?? projected,
+          connectorTurn?.message ??
+            (generic ? library?.message : undefined) ??
+            (dnsHint ? `${projected}\n${dnsHint}` : projected),
           body.exitCode,
           {
             ...projectRemoteContractDetails(op, body, result.status),
@@ -495,6 +500,11 @@ const LIBRARY_REMOTE_OPS = new Set([
   "pages read",
 ]);
 const REMOTE_GENERIC_FAILURE = "Remote command failed.";
+// `pages domains` relays Console's DNS instruction: the code says external DNS
+// work is pending, and the steps are projected field by field (domain-setup.ts).
+const PAGES_DOMAINS_OP = "pages domains";
+const DOMAIN_SETUP_SUGGESTED_ACTION =
+  "complete the displayed DNS action, wait for propagation, then rerun the same command";
 const REMOTE_GENERIC_BLOCKED = "Remote command was blocked by policy.";
 const LIBRARY_REMOTE_MESSAGE_MAX = 1_200;
 const LIBRARY_REMOTE_ACTION_MAX = 600;
@@ -683,6 +693,9 @@ function remoteContractFailureMessage(
 ): string {
   if (outcome === "denied") return "Remote gateway denied the command.";
   if (outcome === "usage_error") return remoteValidationFailureMessage(issues, sourceMessage);
+  if (op === PAGES_DOMAINS_OP && code === "DOMAIN_SETUP_REQUIRED" && sourceMessage) {
+    return safeDomainSetupMessage(sourceMessage);
+  }
   if (isConnectorOp(op) && code && (outcome === "failed" || code.startsWith("CONNECTOR_"))) {
     const catalog = cloudContractCatalogCopy(code);
     if (catalog) return catalog.message;
@@ -758,7 +771,11 @@ function projectRemoteContractDetails(
     isConnectorOp(op) && (body.outcome === "failed" || remote.code.startsWith("CONNECTOR_"))
       ? cloudContractCatalogCopy(remote.code)
       : undefined;
-  if (mediaCatalog) {
+  if (op === PAGES_DOMAINS_OP && remote.code === "DOMAIN_SETUP_REQUIRED") {
+    details.suggestedAction = DOMAIN_SETUP_SUGGESTED_ACTION;
+    const domainSetup = projectPageDomainSetups(remote.domainSetup);
+    if (domainSetup) details.domainSetup = domainSetup;
+  } else if (mediaCatalog) {
     details.suggestedAction = mediaCatalog.suggestedAction;
   } else if (identityCatalog && body.outcome === "failed") {
     details.suggestedAction = identityCatalog.suggestedAction;
@@ -777,8 +794,25 @@ function projectRemoteContractDetails(
   const issues = projectPublicIssues(remote.issues);
   if (issues) details.issues = issues;
   const plan = projectRemotePlan(remote.plan);
-  if (plan) details.plan = plan;
+  const plannedDns = op === PAGES_DOMAINS_OP ? projectPlannedDomainDns(remote.plan) : undefined;
+  if (plan || plannedDns) details.plan = { ...(plan ?? {}), ...(plannedDns ? { dnsSetup: plannedDns } : {}) };
   return details;
+}
+
+/** The planned CNAMEs of a `pages domains` dry-run, rebuilt locally from validated hostnames only. */
+function projectPlannedDomainDns(plan: unknown): ReturnType<typeof plannedPageDomainDns> | undefined {
+  const entries =
+    plan && typeof plan === "object" && !Array.isArray(plan) ? (plan as Record<string, unknown>).dnsSetup : null;
+  if (!Array.isArray(entries)) return undefined;
+  const setups = projectPageDomainSetups(
+    entries.map((entry) => ({ ...(entry && typeof entry === "object" ? entry : {}), state: "ownership_pending" })),
+  );
+  return setups ? plannedPageDomainDns(setups.map((setup) => setup.hostname)) : undefined;
+}
+
+function plannedDomainDnsHint(plan: unknown): string | null {
+  const planned = projectPlannedDomainDns(plan);
+  return planned?.length ? plannedPageDomainDnsLines(planned.map((entry) => entry.hostname)).join("\n") : null;
 }
 
 function projectRemotePlan(value: unknown, depth = 0): Record<string, unknown> | undefined {

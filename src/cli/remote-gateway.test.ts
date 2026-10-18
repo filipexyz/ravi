@@ -232,6 +232,119 @@ describe("remote gateway exit taxonomy", () => {
     expect(JSON.stringify(error?.envelope())).not.toContain("private upstream response");
   });
 
+  it("relays the Pages domain setup instruction and steps instead of the generic failure", () => {
+    const message = [
+      "Pages domain setup was saved but is not ready yet.",
+      "",
+      "nba-ui.rbbt.page (step 2 of 3: DNS): Add or keep these records.",
+      "CNAME nba-ui.rbbt.page = cname.ravi.page",
+    ].join("\n");
+    const error = remoteGatewayErrorToContractError(
+      "pages domains",
+      result({
+        status: 400,
+        body: JSON.stringify({
+          success: false,
+          op: "pages domains",
+          exitCode: 1,
+          outcome: "failed",
+          error: {
+            code: "DOMAIN_SETUP_REQUIRED",
+            message,
+            retryable: false,
+            suggestedAction: "complete the displayed DNS action, wait for propagation, then rerun the same command",
+            domainSetup: [
+              {
+                hostname: "nba-ui.rbbt.page",
+                state: "pages_pending",
+                steps: [
+                  { id: "ownership", status: "done", dnsRecords: [] },
+                  {
+                    id: "dns",
+                    status: "pending",
+                    dnsRecords: [{ type: "CNAME", name: "nba-ui.rbbt.page", value: "cname.ravi.page" }],
+                  },
+                  { id: "certificate", status: "pending", dnsRecords: [] },
+                ],
+                note: "PRIVATE_REMOTE_TEXT",
+              },
+            ],
+          },
+        }),
+      }),
+    );
+
+    expect(error).toMatchObject({
+      code: "DOMAIN_SETUP_REQUIRED",
+      exitCode: 1,
+      message,
+      details: {
+        suggestedAction: "complete the displayed DNS action, wait for propagation, then rerun the same command",
+        domainSetup: [{ hostname: "nba-ui.rbbt.page", currentStep: { id: "dns", number: 2, total: 3 } }],
+      },
+    });
+    expect(JSON.stringify(error?.envelope())).not.toContain("PRIVATE_REMOTE_TEXT");
+  });
+
+  it("keeps the generic failure for DOMAIN_SETUP_REQUIRED outside pages domains", () => {
+    const error = remoteGatewayErrorToContractError(
+      "pages ship",
+      result({
+        status: 400,
+        body: JSON.stringify({
+          success: false,
+          op: "pages ship",
+          exitCode: 1,
+          outcome: "failed",
+          error: { code: "DOMAIN_SETUP_REQUIRED", message: "PRIVATE_REMOTE_TEXT", retryable: false },
+        }),
+      }),
+    );
+
+    expect(error?.message).toBe("Remote command failed.");
+  });
+
+  it("shows the DNS to add on a pages domains dry-run through the gateway", () => {
+    const error = remoteGatewayErrorToContractError(
+      "pages domains",
+      result({
+        status: 400,
+        body: JSON.stringify({
+          success: false,
+          op: "pages domains",
+          exitCode: 3,
+          outcome: "blocked",
+          error: {
+            code: "WRITE_REQUIRES_EXECUTE",
+            message: "Dry-run: nothing was written. Re-run with --execute to perform the write.",
+            retryable: false,
+            dryRun: true,
+            suggestedAction: "Re-run 'pages domains' adding --execute to perform the write",
+            plan: {
+              site: "briefing",
+              hostnameCount: 2,
+              dnsSetup: [
+                { hostname: "nba.rbbt.page", dnsRecords: [] },
+                { hostname: "bad host; rm -rf", dnsRecords: [] },
+              ],
+            },
+          },
+        }),
+      }),
+    );
+
+    expect(error?.exitCode).toBe(3);
+    expect(error?.message).toContain("CNAME nba.rbbt.page = cname.ravi.page");
+    expect(error?.message).toContain("Global host: CNAME *.<domain> = cname.ravi.page");
+    expect(error?.message).not.toContain("rm -rf");
+    expect(error?.details.plan).toMatchObject({
+      site: "briefing",
+      dnsSetup: [
+        { hostname: "nba.rbbt.page", dnsRecords: [{ type: "CNAME", name: "nba.rbbt.page", value: "cname.ravi.page" }] },
+      ],
+    });
+  });
+
   it("preserves a remote PAYLOAD_INVALID issue instead of the generic rejection", () => {
     const error = remoteGatewayErrorToContractError(
       "pages ship",
