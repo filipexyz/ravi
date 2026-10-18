@@ -235,7 +235,8 @@ function logNativeOutboundSendFailure(
 
 /**
  * Applies the Knowledge egress guard to the text of a job bound for a guarded
- * chat (`text` content and `chat_action` text). Other jobs are returned as is.
+ * chat (`text` content, `chat_action` text and a thread card's note). Other
+ * jobs are returned as is.
  */
 export function guardChannelOutboundJob(
   job: ChannelOutboundJob,
@@ -250,14 +251,22 @@ export function guardChannelOutboundJob(
     log.warn("Knowledge guard lookup failed", { jobId: job.jobId, error: errorMessage(error) });
   }
   if (!guarded) return job;
-  const text = (options.guardKnowledgeText ?? ((value, row) => guardTextForGuardedSession(value, row).text))(
-    content.text,
-    guarded,
-  );
-  if (text === content.text) return job;
+  const guardText = options.guardKnowledgeText ?? ((value, row) => guardTextForGuardedSession(value, row).text);
+  const text = guardText(content.text, guarded);
+  // A thread root card also shows its note (latest progress or result).
+  const threadCard = (content as { threadCard?: { note?: unknown } }).threadCard;
+  const note = typeof threadCard?.note === "string" ? guardText(threadCard.note, guarded) : undefined;
+  if (text === content.text && note === threadCard?.note) return job;
   return {
     ...job,
-    request: { ...job.request, content: { ...job.request.content, text } as ChannelOutboundJob["request"]["content"] },
+    request: {
+      ...job.request,
+      content: {
+        ...job.request.content,
+        text,
+        ...(threadCard && note !== undefined ? { threadCard: { ...threadCard, note } } : {}),
+      } as ChannelOutboundJob["request"]["content"],
+    },
   };
 }
 
