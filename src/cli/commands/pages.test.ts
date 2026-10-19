@@ -941,6 +941,58 @@ describe("pages agent-first contract", () => {
     });
   });
 
+  it("publish dry-run rejects a missing source or entrypoint before the brake", async () => {
+    stateDir = await createIsolatedRaviState("ravi-pages-publish-dry-run-validation-test-");
+    const dir = await tempDir();
+    await writeFile(join(dir, "index.html"), "<h1>Docs</h1>");
+    const client = {
+      me: mock(async () => {
+        throw new Error("dry-run validation must not call Console");
+      }),
+    } as unknown as ConsoleApiClient;
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+    const dryRun = (source: string, route: string | undefined, entrypoint: string | undefined) =>
+      runWithContext({}, () =>
+        command.publish(
+          ["proj", "demo", source],
+          undefined,
+          route,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          entrypoint,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+        ),
+      );
+
+    const entrypointError = await dryRun(dir, "/guide", "missing.html").catch((error: unknown) => error);
+    expect(entrypointError).toBeInstanceOf(CloudAuthError);
+    expect((entrypointError as CloudAuthError).code).toBe("PAYLOAD_INVALID");
+    expect((entrypointError as CloudAuthError).issues).toEqual([
+      { path: ["entrypoint"], code: "invalid", message: "Package entrypoint is not included in files: missing.html" },
+    ]);
+
+    const sourceError = await dryRun(join(dir, "nope"), "/guide", undefined).catch((error: unknown) => error);
+    expect(sourceError).toBeInstanceOf(CloudAuthError);
+    expect((sourceError as CloudAuthError).code).toBe("PAYLOAD_INVALID");
+    expect((sourceError as CloudAuthError).issues?.[0]?.path).toEqual(["source"]);
+
+    // A valid source still brakes, and the plan shows the route the Console will use.
+    const brake = await expectContractError(() => dryRun(dir, "guide", "index.html"), "WRITE_REQUIRES_EXECUTE", 3);
+    expect(brake.details.plan).toMatchObject({ route: "/guide", entrypoint: "index.html" });
+    expect(client.me).not.toHaveBeenCalled();
+  });
+
   it("password set without --execute never prompts for the password nor calls Console", async () => {
     const calls: Array<{ method: string; path: string }> = [];
     const client = makeClient(async (method, path) => {

@@ -6,8 +6,10 @@ import { CloudAuthError, cloudAuthErrorFromUnknown } from "../../cloud-auth/erro
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import { resolveConsoleProjectRef, type ConsoleScopeResolverDeps } from "../../console-scope/resolver.js";
 import type { ResolvedConsoleScope } from "../../console-scope/types.js";
+import { ArtifactInputError } from "../../artifacts/store.js";
 import {
   publishArtifactToConsole,
+  validateArtifactPublishSource,
   type ArtifactPublishDeps,
   type ArtifactPublishResult,
 } from "../../artifacts/publish-client.js";
@@ -122,6 +124,7 @@ import { CONTRACT_EXIT_USAGE, ContractError, contractDryRun, contractFail, pickF
 import { getContext } from "../context.js";
 import { plannedPageDomainDns, plannedPageDomainDnsLines } from "../../pages/domain-setup.js";
 import { jsonObjectSchema, jsonValueSchema, strictCliOffsetPaginationSchema } from "../return-schemas.js";
+import { sanitizePayloadInvalidMessage } from "../payload-error-message.js";
 import { readConfirmedSecret, type ConfirmedSecretInputOptions } from "../secret-input.js";
 import { artifactPublishReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
 
@@ -831,6 +834,9 @@ export class PagesCommands {
       const parsed = parsePublishArgs(args, projectOption, siteOption);
       const normalizedVisibility = normalizePageVisibility(visibility);
       const parsedArtifactVersion = artifactVersion ? parseInteger(artifactVersion, "--artifact-version") : undefined;
+      // Side-effect-free source checks run before the brake, so a dry-run
+      // rejects a missing source or entrypoint instead of approving it.
+      await validateArtifactPublishSource(parsed.source, { entrypoint });
       if (execute !== true) {
         // Write brake (Manual v2 7.8): publishing uploads content and can
         // activate a release on a reachable route. Dry-run by default and exit 3
@@ -841,7 +847,7 @@ export class PagesCommands {
             project: parsed.project ?? "(Console scope default)",
             site: parsed.site ?? "(project Pages host)",
             source: parsed.source,
-            route: route ?? "/",
+            route: normalizePageRoutePath(route),
             visibility: normalizedVisibility ?? "(provider default)",
             entrypoint: entrypoint ?? "index.html",
             artifactVersion: parsedArtifactVersion ?? "latest",
@@ -2386,10 +2392,20 @@ async function runPagesCommand<T>(op: string, asJson: boolean | undefined, run: 
     // envelope (or legacy text) and carry the exit taxonomy (1/2/3). Never let
     // the legacy CloudAuthError funnel swallow them (model: mail.ts).
     if (error instanceof ContractError) throw error;
-    const cloudError = cloudAuthErrorFromUnknown(error);
+    const cloudError = cloudAuthErrorFromUnknown(artifactInputToCloudError(error));
     failPagesNotFoundFromConsole(op, cloudError, asJson);
     throw cloudError;
   }
+}
+
+/** A bad local source or entrypoint is the caller's input, not a Console outage. */
+function artifactInputToCloudError(error: unknown): unknown {
+  if (!(error instanceof ArtifactInputError)) return error;
+  const message = sanitizePayloadInvalidMessage(error.message);
+  return new CloudAuthError("PAYLOAD_INVALID", error.message, {
+    cause: error,
+    ...(message ? { issues: [{ path: [error.field ?? "source"], code: "invalid", message }] } : {}),
+  });
 }
 
 /**
