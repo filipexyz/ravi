@@ -366,7 +366,7 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
       if (isCompleteContractErrorBody(body, op)) {
         const turnLink = turnLinkRemoteCopy(body.error);
         const connectorTurn = turnLink ?? connectorTurnRemoteCopy(op, body.error);
-        const library = connectorTurn ? null : libraryRemoteCopy(op, body);
+        const library = connectorTurn ? null : (operatorOnlyRemoteCopy(op, body) ?? libraryRemoteCopy(op, body));
         const projected = remoteContractFailureMessage(
           op,
           body.outcome,
@@ -530,11 +530,54 @@ export function isLibraryRemoteOp(op: string): boolean {
 }
 
 /**
+ * `meetings read` and `agenda` refuse turns that are not the operator's own
+ * (meetings/read.ts). The daemon wrote the refusal for the agent: the rule
+ * that decided (`turn`), the next step and, when the operator asked in a
+ * group, the line to send them to their own chat. The relay keeps that copy
+ * instead of "Remote command was blocked by policy."
+ */
+const OPERATOR_ONLY_REMOTE_CODES: ReadonlyMap<string, (op: string) => boolean> = new Map([
+  ["MEETING_ACCESS_DENIED", (op: string) => op === "meetings read"],
+  ["CALENDAR_ACCESS_DENIED", (op: string) => op.startsWith("agenda ")],
+]);
+
+function isOperatorOnlyRefusal(op: string, code: string): boolean {
+  return OPERATOR_ONLY_REMOTE_CODES.get(code)?.(op) ?? false;
+}
+
+function operatorOnlyRemoteCopy(
+  op: string,
+  body: CompleteContractErrorBody,
+): { message: string; details: ContractErrorDetails } | null {
+  const remote = body.error;
+  if (body.outcome !== "blocked" || !isOperatorOnlyRefusal(op, remote.code)) return null;
+  const message = boundedRemoteLine(remote.message, LIBRARY_REMOTE_MESSAGE_MAX);
+  if (!message) return null;
+  const details: ContractErrorDetails = {};
+  const suggestedAction = boundedRemoteLine(remote.suggestedAction, LIBRARY_REMOTE_ACTION_MAX, "suggestedAction");
+  if (suggestedAction) details.suggestedAction = suggestedAction;
+  for (const key of ["refusal", "turn"] as const) {
+    const value = remote[key];
+    if (typeof value === "string" && LIBRARY_REMOTE_TOKEN_PATTERN.test(value)) details[key] = value;
+  }
+  const chatLine = boundedRemoteLine(remote.chatLine, CONNECTOR_CHAT_LINE_MAX, "chatLine");
+  if (chatLine) {
+    details.chatLine = chatLine;
+    const chatLinePt = boundedRemoteLine(remote.chatLinePt, CONNECTOR_CHAT_LINE_MAX, "chatLinePt");
+    if (chatLinePt) details.chatLinePt = chatLinePt;
+    if (typeof remote.replyTo === "string" && CONNECTOR_REPLY_TO_VALUES.has(remote.replyTo)) {
+      details.replyTo = remote.replyTo;
+    }
+  }
+  return { message, details };
+}
+
+/**
  * Text mode prints the message and the issues; a Library refusal's next step
  * is printed too when no issue already carries it.
  */
 export function remoteNextStepLine(error: ContractError): string | null {
-  if (!isLibraryRemoteOp(error.op)) return null;
+  if (!isLibraryRemoteOp(error.op) && !isOperatorOnlyRefusal(error.op, error.code)) return null;
   const next = error.details.suggestedAction;
   if (typeof next !== "string" || !next.trim()) return null;
   const issues = Array.isArray(error.details.issues) ? error.details.issues : [];
