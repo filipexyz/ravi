@@ -88,6 +88,45 @@ describe("runtime request crash recovery approval fences", () => {
     expect(streamingSession.currentTurnToolStarted).toBe(true);
   });
 
+  it("announces one approval wait per authorization call and always closes it", async () => {
+    const waits: string[] = [];
+    const hostServices = createHostServices({
+      authorizeCommandExecution: mock(async (request) => {
+        // Tool, then executable: two cards from one authorization call.
+        request.beforeExternalApproval?.();
+        request.beforeExternalApproval?.();
+        waits.push("waiting");
+        return { approved: false, reason: "Timeout" };
+      }),
+      authorizeCapability: mock(async (request) => {
+        request.beforeExternalApproval?.();
+        throw new Error("boom");
+      }),
+      authorizeToolUse: mock(async () => ({ approved: true })),
+    });
+    const streamingSession = {
+      currentCrashRecoveryAttemptId: "attempt-a",
+      currentTurnToolStarted: false,
+      externalApprovalWait: {
+        begin: () => waits.push("begin"),
+        end: () => waits.push("end"),
+      },
+    };
+    installCrashRecoveryApprovalFences({
+      hostServices,
+      streamingSession,
+      crashRecovery: coordinatorWithMarker(() => {}),
+    });
+
+    await hostServices.authorizeCommandExecution({ command: "curl example.com" });
+    await expect(
+      hostServices.authorizeCapability({ permission: "execute", objectType: "group", objectId: "daemon" }),
+    ).rejects.toThrow("boom");
+    // No card, no wait.
+    await hostServices.authorizeToolUse({ toolName: "Edit" });
+    expect(waits).toEqual(["begin", "waiting", "end", "begin", "end"]);
+  });
+
   it("denies user input before marking or externalizing when no durable attempt is bound", async () => {
     const requestUserInput = mock(async () => ({ approved: true }));
     const markSafety = mock(() => {});

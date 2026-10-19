@@ -304,6 +304,11 @@ function canWithBashContext(
   objectType: string,
   objectId: string,
 ): boolean {
+  // A person who can grant it approved this capability for this context (the
+  // approval service adds it with `source: "approval"`). It holds for that
+  // context whatever the agent's ceiling says: otherwise an approved command is
+  // asked for, approved, and still refused.
+  if (hasApprovalGrant(ctx, permission, objectType, objectId)) return true;
   // Resolved agent-identity / delegated turns use the live executor ceiling so
   // `ravi agents permissions` expansions and reductions apply on the next
   // PreToolUse check without requiring a session reset. Unresolved actors and
@@ -332,6 +337,16 @@ function canWithBashContext(
     return canWithMaterializedAgentCapabilities(ctx, permission, objectType, objectId);
   }
   return false;
+}
+
+function hasApprovalGrant(
+  ctx: BashPermissionContext,
+  permission: string,
+  objectType: string,
+  objectId: string,
+): boolean {
+  const approved = (ctx.capabilities ?? []).filter((capability) => capability.source === "approval");
+  return approved.length > 0 && canWithCapabilities(approved, permission, objectType, objectId);
 }
 
 function isDelegatedBashContext(ctx: Pick<BashPermissionContext, "kind" | "metadata">): boolean {

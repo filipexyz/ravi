@@ -7416,6 +7416,28 @@ export function resolvePlatformIdentity(input: {
   return row ? rowToPlatformIdentity(row) : null;
 }
 
+/**
+ * Owned identities of one channel in the given instance scopes (pass "" for the
+ * legacy empty scope). Used to find who can be asked for something, never to
+ * resolve who someone is: identity resolution keeps its own scope order.
+ */
+export function listOwnedPlatformIdentities(input: {
+  channel: string;
+  instanceIds: readonly string[];
+}): PlatformIdentity[] {
+  const instanceIds = [...new Set(input.instanceIds.map((value) => value.trim()))];
+  if (instanceIds.length === 0) return [];
+  const placeholders = instanceIds.map(() => "?").join(", ");
+  const rows = ensureDb()
+    .prepare(
+      `SELECT * FROM platform_identities
+        WHERE channel = ? AND instance_id IN (${placeholders}) AND owner_type IS NOT NULL
+        ORDER BY normalized_platform_user_id, instance_id`,
+    )
+    .all(input.channel, ...instanceIds) as PlatformIdentityRow[];
+  return rows.map(rowToPlatformIdentity);
+}
+
 export function resolveAgentPlatformIdentity(input: {
   channel: string;
   platformUserId: string;

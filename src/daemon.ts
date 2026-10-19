@@ -49,6 +49,7 @@ import { startTriggerRunner, stopTriggerRunner } from "./triggers/index.js";
 import { startEphemeralRunner, stopEphemeralRunner } from "./ephemeral/index.js";
 import { startInboxRunner, stopInboxRunner } from "./inbox/index.js";
 import { startLinkRequestWatcher, stopLinkRequestWatcher } from "./identity-link/link-watcher.js";
+import { startSlackApprovalClickFeedback, stopSlackApprovalClickFeedback } from "./approval/slack-click-feedback.js";
 import { startHookRunner, stopHookRunner } from "./hooks-runtime/index.js";
 import { startTaskCheckpointRunner, stopTaskCheckpointRunner } from "./tasks/index.js";
 import { startKnowledgeLeaderRunners, stopKnowledgeLeaderRunners } from "./knowledge/runners.js";
@@ -257,6 +258,7 @@ async function shutdown(signal: string, exitCode = 0) {
     // Stop runners and release leadership so another daemon can take over
     await stopInboxRunner();
     await stopLinkRequestWatcher();
+    stopSlackApprovalClickFeedback();
     await stopSyncRunner();
     await stopLibraryPinRunner();
     await stopLibraryRequestRunner();
@@ -478,6 +480,9 @@ export async function startDaemon() {
 
   await startLinkRequestWatcher();
   log.info("Link request watcher started");
+
+  await startSlackApprovalClickFeedback();
+  log.info("Slack approval click feedback started");
 
   await startSyncRunner();
   log.info("Sync runner started");

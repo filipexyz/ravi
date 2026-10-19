@@ -124,7 +124,10 @@ export interface RuntimeStartRequestBuildResult {
 
 export function installCrashRecoveryApprovalFences(options: {
   hostServices: RuntimeHostServices;
-  streamingSession: Pick<RuntimeHostStreamingSession, "currentCrashRecoveryAttemptId" | "currentTurnToolStarted">;
+  streamingSession: Pick<
+    RuntimeHostStreamingSession,
+    "currentCrashRecoveryAttemptId" | "currentTurnToolStarted" | "externalApprovalWait"
+  >;
   crashRecovery: Pick<RuntimeCrashRecoveryCoordinator, "markTurnAttemptSafety">;
 }): void {
   const { hostServices, streamingSession, crashRecovery } = options;
@@ -144,7 +147,27 @@ export function installCrashRecoveryApprovalFences(options: {
     reason: CRASH_RECOVERY_APPROVAL_OWNERSHIP_CHANGED_REASON,
   });
 
-  const createBeforeExternalApprovalFence = (attemptId: string) => () => {
+  /**
+   * One authorization call can ask for several approvals (tool, then
+   * executable). The wait is announced once per call and closed when it returns.
+   */
+  const trackExternalApprovalWait = () => {
+    let waiting = false;
+    return {
+      begin: () => {
+        if (waiting) return;
+        waiting = true;
+        streamingSession.externalApprovalWait?.begin();
+      },
+      end: () => {
+        if (!waiting) return;
+        waiting = false;
+        streamingSession.externalApprovalWait?.end();
+      },
+    };
+  };
+
+  const createBeforeExternalApprovalFence = (attemptId: string, onWait?: () => void) => () => {
     if (streamingSession.currentCrashRecoveryAttemptId !== attemptId) {
       throw new RuntimeCrashRecoveryApprovalOwnershipChangedError();
     }
@@ -152,6 +175,7 @@ export function installCrashRecoveryApprovalFences(options: {
     if (streamingSession.currentCrashRecoveryAttemptId !== attemptId) {
       throw new RuntimeCrashRecoveryApprovalOwnershipChangedError();
     }
+    onWait?.();
   };
 
   const authorizeWithFence = async (
@@ -162,13 +186,16 @@ export function installCrashRecoveryApprovalFences(options: {
       return denyOwnershipChanged();
     }
     let result: RuntimeApprovalResult;
+    const wait = trackExternalApprovalWait();
     try {
-      result = await authorize(createBeforeExternalApprovalFence(attemptId));
+      result = await authorize(createBeforeExternalApprovalFence(attemptId, wait.begin));
     } catch (error) {
       if (error instanceof RuntimeCrashRecoveryApprovalOwnershipChangedError) {
         return denyOwnershipChanged();
       }
       throw error;
+    } finally {
+      wait.end();
     }
 
     if (streamingSession.currentCrashRecoveryAttemptId !== attemptId) {
@@ -196,16 +223,19 @@ export function installCrashRecoveryApprovalFences(options: {
     }
 
     let result: Awaited<ReturnType<RuntimeHostServices["authorizeCapability"]>>;
+    const wait = trackExternalApprovalWait();
     try {
       result = await authorizeCapability({
         ...request,
-        beforeExternalApproval: createBeforeExternalApprovalFence(attemptId),
+        beforeExternalApproval: createBeforeExternalApprovalFence(attemptId, wait.begin),
       });
     } catch (error) {
       if (error instanceof RuntimeCrashRecoveryApprovalOwnershipChangedError) {
         return denyCapabilityOwnershipChanged();
       }
       throw error;
+    } finally {
+      wait.end();
     }
     if (streamingSession.currentCrashRecoveryAttemptId !== attemptId) {
       return denyCapabilityOwnershipChanged();

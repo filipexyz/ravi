@@ -4,6 +4,7 @@ import {
   getApprovalRequest,
   getApprovalRequestByMessageId,
   isApprovalRequestOpen,
+  listApprovalDeliveries,
   type ApprovalDecisionValue,
   type ApprovalRequestRecord,
 } from "./store.js";
@@ -28,6 +29,8 @@ export type ApprovalInboundEvaluation =
       readonly decision: ApprovalDecisionValue;
       readonly actorId: string;
       readonly reason?: string;
+      /** Handle to answer the click privately (Slack `response_url`), when there is one. */
+      readonly responseUrlId?: string;
     };
 
 export interface ApprovalInboundEvent {
@@ -56,14 +59,32 @@ export function evaluateApprovalInboundEvent(event: ApprovalInboundEvent, now: n
   if (request.channel === SLACK_CHANNEL && event.topic !== "ravi.inbound.interaction") {
     return { kind: "ignore", reason: "wrong_channel" };
   }
-  if (candidate.messageId && request.messageId && candidate.messageId !== request.messageId) {
-    return { kind: "ignore", reason: "wrong_message" };
-  }
   if (candidate.accountId && candidate.accountId !== request.accountId) {
     return { kind: "ignore", reason: "wrong_account" };
   }
-  if (candidate.chatId && candidate.chatId !== request.chatId) {
-    return { kind: "ignore", reason: "wrong_chat" };
+  const deliveries = event.topic === "ravi.inbound.interaction" ? listApprovalDeliveries(request.id) : [];
+  if (deliveries.length > 0) {
+    // Private cards: each one belongs to one person. A click counts only from
+    // the person the card was sent to, in the chat it was sent to. Ephemeral
+    // cards are correlated by person rather than message ts, because only that
+    // person can see or click them.
+    if (!candidate.actorId) return { kind: "ignore", reason: "missing_actor" };
+    const actorId = candidate.actorId.toUpperCase();
+    const delivery = deliveries.find((entry) => entry.userId.toUpperCase() === actorId);
+    if (!delivery) return { kind: "ignore", reason: "unauthorized_grantor" };
+    if (candidate.chatId && candidate.chatId !== delivery.chatId) {
+      return { kind: "ignore", reason: "wrong_chat" };
+    }
+    if (delivery.kind === "dm" && candidate.messageId && candidate.messageId !== delivery.messageId) {
+      return { kind: "ignore", reason: "wrong_message" };
+    }
+  } else {
+    if (candidate.messageId && request.messageId && candidate.messageId !== request.messageId) {
+      return { kind: "ignore", reason: "wrong_message" };
+    }
+    if (candidate.chatId && candidate.chatId !== request.chatId) {
+      return { kind: "ignore", reason: "wrong_chat" };
+    }
   }
   if (candidate.requestId && candidate.requestId !== request.id) {
     return { kind: "ignore", reason: "unknown_request" };
@@ -87,6 +108,7 @@ export function evaluateApprovalInboundEvent(event: ApprovalInboundEvent, now: n
     decision: candidate.decision,
     actorId: candidate.actorId,
     ...(candidate.reason ? { reason: candidate.reason } : {}),
+    ...(candidate.responseUrlId ? { responseUrlId: candidate.responseUrlId } : {}),
   };
 }
 
@@ -100,6 +122,7 @@ interface ApprovalCandidate {
   readonly channel?: string;
   readonly decision: ApprovalDecisionValue;
   readonly reason?: string;
+  readonly responseUrlId?: string;
 }
 
 function parseApprovalCandidate(event: ApprovalInboundEvent): ApprovalCandidate | null {
@@ -116,6 +139,7 @@ function parseApprovalCandidate(event: ApprovalInboundEvent): ApprovalCandidate 
       actorId: stringField(event.data, "userId"),
       channel: SLACK_CHANNEL,
       decision,
+      responseUrlId: stringField(event.data, "responseUrlId"),
     };
   }
 
