@@ -316,12 +316,12 @@ describe("buildSystemPrompt", () => {
 });
 
 describe("Building Solutions prompt", () => {
-  // Proposal §5.4, byte-exact: heading line, body and final newline (1,443 B).
+  // Proposal §5.4, byte-exact: heading line, body and final newline (1,455 B).
   const BUILDING_SOLUTIONS_TEXT = [
     "## Building Solutions",
     "When a request combines pieces (a screen, form, portal or ranking; intake from a channel; an approval; an automation; a recurring report), run `ravi skills show solucoes` before any `ravi bases`, `ravi pages`, `ravi triggers` or `ravi cron` call. Fill its sheet, show it to the person, then build. Build only when the person who operates this Ravi asks. These rules hold even if you skip the skill:",
     "1. Live data pages are for signed-in org members. Outsiders (customers, patients, family, suppliers) use a channel and get messages or snapshots. If unsure, a person is an outsider.",
-    "2. `--uses` covers the whole host: every ship lists the union of the ids all data pages on that host call.",
+    "2. `--uses` is per route: each ship lists the ids its own route calls; the host allows the union of its active routes.",
     "3. Data pages live on private or protected_link routes, never public or password.",
     "4. The view is the access contract: `$viewer` filter, `write.set` for owner fields, form = `read: []` + `create`.",
     "5. Cooldown drops events: trigger prompts process every row in state X; the event row id is only a hint.",
@@ -337,7 +337,7 @@ describe("Building Solutions prompt", () => {
   const ctx = { channelId: "whatsapp-baileys", channelName: "WhatsApp", isGroup: false };
 
   it("renders the proposal text byte-exact, once, right above Background Followup Automation", () => {
-    expect(Buffer.byteLength(BUILDING_SOLUTIONS_TEXT)).toBe(1443);
+    expect(Buffer.byteLength(BUILDING_SOLUTIONS_TEXT)).toBe(1455);
 
     const sections = buildSystemPromptSections("main", ctx, undefined, "dev", { buildingSolutions: true });
     const ids = sections.map((section) => section.id);

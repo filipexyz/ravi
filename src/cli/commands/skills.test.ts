@@ -1345,9 +1345,11 @@ describe("skills show --file", () => {
       runWithContext({}, () => new SkillsCommands().grant(agentId, KNOWN_CATALOG_SKILL, undefined, true)),
     );
 
+    // Not `bases`: the bootstrap floor reads Bases views, and whoever runs a
+    // bases command can read its skill.
     const denied = expectContractError(() =>
       runWithContext({ transport: "tool", agentId }, () =>
-        new SkillsCommands().show("bases", undefined, undefined, true, "references/nao-existe.md"),
+        new SkillsCommands().show("cron", undefined, undefined, true, "references/nao-existe.md"),
       ),
     );
     expect(denied.code).toBe("SKILL_NOT_AUTHORIZED");

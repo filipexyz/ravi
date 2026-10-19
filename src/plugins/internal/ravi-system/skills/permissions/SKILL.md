@@ -114,7 +114,15 @@ Regras:
   `explicit-only` (só as capabilities explícitas, sem piso bootstrap — para
   agentes que atendem público: `use:tool:Bash` + os grupos/ações necessários),
   `full-access` (break-glass), `none`/`clear`/`off` (apaga overlay e volta ao
-  piso bootstrap). `none` não é zero-authority.
+  piso bootstrap). `none` não é zero-authority. O piso bootstrap inclui
+  leitura de Bases por views e gráficos (`read:bases:list`,
+  `read:bases:show`, `read:bases.views:list`, `read:bases.views:show`,
+  `read:bases.views:query`, `read:bases.charts:list`,
+  `read:bases.charts:show`, `read:bases.charts:data`); `bases rows query`,
+  `aggregate` e escritas seguem opt-in, e `bases rows approve|reject` não
+  entra em grant padrão. A capability só libera o comando: no turno de outra
+  pessoa, o Console lê e grava como ela, pelo `ravi link` dela, e sem link
+  recusa leitura e escrita com `ACTOR_NOT_LINKED` (repasse o `chatLinePt`).
 - `runtime-bootstrap`, `agent-default-capabilities`,
   `agent-identity-permissions` e `contact-policy-permissions` são os
   materializers padrão. `chat-only` e `explicit-only` suprimem a injeção de

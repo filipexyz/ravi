@@ -21,6 +21,24 @@ const TRUSTED_BOOTSTRAP_SUBJECT_TYPES = new Set(["agent", "automation"]);
  * Domínio/admin (cron, crm, whatsapp, db, service…) continuam opt-in por `execute:group:<grupo>`.
  */
 const BASELINE_COMMAND_GROUPS = ["sessions", "tasks", "specs", "skills", "self", "doctor", "identity"] as const;
+
+/**
+ * Bases reads through views (B4): `read:<resource>:<action>` exactly as the
+ * `@CommandAccess` of `bases list|show`, `bases views list|show|query` and
+ * `bases charts list|show|data` ask. The Console still decides what each view
+ * shows to the caller; direct reads (`bases rows`, `aggregate`) and every write
+ * stay opt-in.
+ */
+export const BASELINE_BASES_READ_ACTIONS = [
+  ["bases", "list"],
+  ["bases", "show"],
+  ["bases.views", "list"],
+  ["bases.views", "show"],
+  ["bases.views", "query"],
+  ["bases.charts", "list"],
+  ["bases.charts", "show"],
+  ["bases.charts", "data"],
+] as const;
 const SAFE_EXECUTABLES = [
   "bun",
   "cat",
@@ -100,6 +118,12 @@ function bootstrapCapabilitiesFor(subjectType: string): ContextCapability[] {
     ...BASELINE_COMMAND_GROUPS.map((objectId) => ({
       permission: "execute" as const,
       objectType: "group" as const,
+      objectId,
+      source,
+    })),
+    ...BASELINE_BASES_READ_ACTIONS.map(([objectType, objectId]) => ({
+      permission: "read" as const,
+      objectType,
       objectId,
       source,
     })),

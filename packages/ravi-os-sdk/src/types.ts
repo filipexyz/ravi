@@ -2838,6 +2838,7 @@ export type BasesChartsArchiveReturn = {
 export type BasesChartsCreateInput = {
   base: string;
   console?: string;
+  idempotencyKey?: string;
   name?: string;
   project?: string;
   spec?: string;
@@ -2861,6 +2862,7 @@ export type BasesChartsCreateReturn = {
     viewId: string;
   };
   consoleUrl: string;
+  idempotencyKey: string;
   projectRef: string;
   success: true;
 };
@@ -2893,9 +2895,17 @@ export type BasesChartsDataReturn = {
   data: Array<Record<string, string | number | boolean | null>>;
   fields: Record<string, {
     config: {
+      agent?: string | null;
+      approvers?: Array<{
+        kind: string;
+        minRole?: string;
+        userId?: string;
+      }>;
       currency?: string;
       format?: string;
       includeTime?: boolean;
+      inputs?: string[];
+      instructions?: string;
       options?: Array<{
         archived?: boolean;
         color: string;
@@ -2903,7 +2913,9 @@ export type BasesChartsDataReturn = {
         id: string;
         name: string;
       }>;
+      output?: string;
       precision?: number;
+      resetOn?: string[];
     };
     key: string;
     name: string;
@@ -3040,6 +3052,7 @@ export type BasesCreateInput = {
   console?: string;
   description?: string;
   icon?: string;
+  idempotencyKey?: string;
   name: string;
   project?: string;
   schema?: string;
@@ -3082,9 +3095,17 @@ export type BasesCreateReturn = {
     projectId: string;
     properties: Array<{
       config: {
+        agent?: string | null;
+        approvers?: Array<{
+          kind: string;
+          minRole?: string;
+          userId?: string;
+        }>;
         currency?: string;
         format?: string;
         includeTime?: boolean;
+        inputs?: string[];
+        instructions?: string;
         options?: Array<{
           archived?: boolean;
           color: string;
@@ -3092,7 +3113,9 @@ export type BasesCreateReturn = {
           id: string;
           name: string;
         }>;
+        output?: string;
         precision?: number;
+        resetOn?: string[];
       };
       deletedAt: string | null;
       description: string | null;
@@ -3115,6 +3138,7 @@ export type BasesCreateReturn = {
       baseId: string;
       capabilities: {
         aggregateOnly: boolean;
+        approve?: string[];
         archive: boolean;
         create: boolean;
         manage: boolean;
@@ -3144,6 +3168,7 @@ export type BasesCreateReturn = {
       baseId: string;
       capabilities: {
         aggregateOnly: boolean;
+        approve?: string[];
         archive: boolean;
         create: boolean;
         manage: boolean;
@@ -3152,9 +3177,17 @@ export type BasesCreateReturn = {
       };
       columns: Array<{
         config: {
+          agent?: string | null;
+          approvers?: Array<{
+            kind: string;
+            minRole?: string;
+            userId?: string;
+          }>;
           currency?: string;
           format?: string;
           includeTime?: boolean;
+          inputs?: string[];
+          instructions?: string;
           options?: Array<{
             archived?: boolean;
             color: string;
@@ -3162,7 +3195,9 @@ export type BasesCreateReturn = {
             id: string;
             name: string;
           }>;
+          output?: string;
           precision?: number;
+          resetOn?: string[];
         };
         key: string;
         name: string;
@@ -3178,6 +3213,7 @@ export type BasesCreateReturn = {
     })>;
   };
   consoleUrl: string;
+  idempotencyKey: string;
   projectRef: string;
   success: true;
 };
@@ -3253,17 +3289,24 @@ export type BasesListReturn = {
 
 /** Input shape for `bases.props.add`. */
 export type BasesPropsAddInput = {
+  agent?: string;
+  approvers?: string;
   base: string;
   config?: string;
   console?: string;
   description?: string;
   expectedSchemaVersion?: string;
+  idempotencyKey?: string;
+  inputs?: string;
+  instructions?: string;
   key?: string;
   name: string;
   options?: string;
+  output?: string;
   position?: string;
   project?: string;
   required?: boolean;
+  resetOn?: string;
   type?: string;
 };
 
@@ -3291,12 +3334,21 @@ export type BasesPropsAddReturn = {
     version: number;
   };
   consoleUrl: string;
+  idempotencyKey: string;
   projectRef: string;
   property: {
     config: {
+      agent?: string | null;
+      approvers?: Array<{
+        kind: string;
+        minRole?: string;
+        userId?: string;
+      }>;
       currency?: string;
       format?: string;
       includeTime?: boolean;
+      inputs?: string[];
+      instructions?: string;
       options?: Array<{
         archived?: boolean;
         color: string;
@@ -3304,7 +3356,9 @@ export type BasesPropsAddReturn = {
         id: string;
         name: string;
       }>;
+      output?: string;
       precision?: number;
+      resetOn?: string[];
     };
     deletedAt: string | null;
     description: string | null;
@@ -3372,9 +3426,17 @@ export type BasesPropsDeleteReturn = {
   projectRef: string;
   property: {
     config: {
+      agent?: string | null;
+      approvers?: Array<{
+        kind: string;
+        minRole?: string;
+        userId?: string;
+      }>;
       currency?: string;
       format?: string;
       includeTime?: boolean;
+      inputs?: string[];
+      instructions?: string;
       options?: Array<{
         archived?: boolean;
         color: string;
@@ -3382,7 +3444,9 @@ export type BasesPropsDeleteReturn = {
         id: string;
         name: string;
       }>;
+      output?: string;
       precision?: number;
+      resetOn?: string[];
     };
     deletedAt: string | null;
     description: string | null;
@@ -3430,9 +3494,17 @@ export type BasesPropsListReturn = {
   consoleUrl: string;
   items: Array<{
     config?: {
+      agent?: string | null;
+      approvers?: Array<{
+        kind: string;
+        minRole?: string;
+        userId?: string;
+      }>;
       currency?: string;
       format?: string;
       includeTime?: boolean;
+      inputs?: string[];
+      instructions?: string;
       options?: Array<{
         archived?: boolean;
         color: string;
@@ -3440,7 +3512,9 @@ export type BasesPropsListReturn = {
         id: string;
         name: string;
       }>;
+      output?: string;
       precision?: number;
+      resetOn?: string[];
     };
     deletedAt?: string | null;
     description?: string | null;
@@ -3463,9 +3537,17 @@ export type BasesPropsListReturn = {
   projectRef: string;
   properties: Array<{
     config?: {
+      agent?: string | null;
+      approvers?: Array<{
+        kind: string;
+        minRole?: string;
+        userId?: string;
+      }>;
       currency?: string;
       format?: string;
       includeTime?: boolean;
+      inputs?: string[];
+      instructions?: string;
       options?: Array<{
         archived?: boolean;
         color: string;
@@ -3473,7 +3555,9 @@ export type BasesPropsListReturn = {
         id: string;
         name: string;
       }>;
+      output?: string;
       precision?: number;
+      resetOn?: string[];
     };
     deletedAt?: string | null;
     description?: string | null;
@@ -3525,9 +3609,17 @@ export type BasesPropsRestoreReturn = {
   projectRef: string;
   property: {
     config: {
+      agent?: string | null;
+      approvers?: Array<{
+        kind: string;
+        minRole?: string;
+        userId?: string;
+      }>;
       currency?: string;
       format?: string;
       includeTime?: boolean;
+      inputs?: string[];
+      instructions?: string;
       options?: Array<{
         archived?: boolean;
         color: string;
@@ -3535,7 +3627,9 @@ export type BasesPropsRestoreReturn = {
         id: string;
         name: string;
       }>;
+      output?: string;
       precision?: number;
+      resetOn?: string[];
     };
     deletedAt: string | null;
     description: string | null;
@@ -3611,9 +3705,17 @@ export type BasesPropsUpdateReturn = {
   projectRef: string;
   property: {
     config: {
+      agent?: string | null;
+      approvers?: Array<{
+        kind: string;
+        minRole?: string;
+        userId?: string;
+      }>;
       currency?: string;
       format?: string;
       includeTime?: boolean;
+      inputs?: string[];
+      instructions?: string;
       options?: Array<{
         archived?: boolean;
         color: string;
@@ -3621,7 +3723,9 @@ export type BasesPropsUpdateReturn = {
         id: string;
         name: string;
       }>;
+      output?: string;
       precision?: number;
+      resetOn?: string[];
     };
     deletedAt: string | null;
     description: string | null;
@@ -3726,6 +3830,45 @@ export type BasesRowsAddReturn = {
   warnings?: string[];
 };
 
+/** Input shape for `bases.rows.approve`. */
+export type BasesRowsApproveInput = {
+  base: string;
+  console?: string;
+  execute?: boolean;
+  expectedVersion?: string;
+  idempotencyKey?: string;
+  note?: string;
+  project?: string;
+  prop: string;
+  row: string;
+  view?: string;
+};
+
+/** Return shape for `bases.rows.approve`. */
+export type BasesRowsApproveReturn = {
+  baseRef: string;
+  consoleUrl: string;
+  idempotencyKey: string;
+  idempotentReplay: boolean;
+  projectRef: string;
+  property: string;
+  row: {
+    archivedAt?: string | null;
+    body?: string | null;
+    rowId: string;
+    values: Record<string, unknown>;
+    version: number;
+  };
+  state: "pending" | "approved" | "rejected";
+  success: true;
+  users: Record<string, {
+    avatarUrl: string | null;
+    displayName: string | null;
+    id: string;
+  }>;
+  viewId: string | null;
+};
+
 /** Input shape for `bases.rows.archive`. */
 export type BasesRowsArchiveInput = {
   base: string;
@@ -3788,6 +3931,44 @@ export type BasesRowsExportReturn = {
   viewId: string | null;
 };
 
+/** Input shape for `bases.rows.fill`. */
+export type BasesRowsFillInput = {
+  base: string;
+  console?: string;
+  error?: string;
+  idempotencyKey?: string;
+  inputsHash?: string;
+  project?: string;
+  prop: string;
+  row: string;
+  value?: string;
+};
+
+/** Return shape for `bases.rows.fill`. */
+export type BasesRowsFillReturn = {
+  baseRef: string;
+  consoleUrl: string;
+  idempotencyKey: string;
+  idempotentReplay: boolean;
+  projectRef: string;
+  property: string;
+  row: {
+    archivedAt?: string | null;
+    body?: string | null;
+    rowId: string;
+    values: Record<string, unknown>;
+    version: number;
+  };
+  success: true;
+  users: Record<string, {
+    avatarUrl: string | null;
+    displayName: string | null;
+    id: string;
+  }>;
+  viewId: string | null;
+  warnings?: string[];
+};
+
 /** Input shape for `bases.rows.get`. */
 export type BasesRowsGetInput = {
   base: string;
@@ -3839,6 +4020,10 @@ export type BasesRowsHistoryReturn = {
     actorId: string | null;
     actorType: string | null;
     after: Record<string, unknown>;
+    agent?: ({
+      id: string;
+      installationId: string | null;
+    }) | null;
     before: Record<string, unknown>;
     bodyChanged: boolean;
     changedKeys: string[];
@@ -3975,6 +4160,115 @@ export type BasesRowsQueryReturn = {
   viewId: string | null;
 };
 
+/** Input shape for `bases.rows.reject`. */
+export type BasesRowsRejectInput = {
+  base: string;
+  console?: string;
+  execute?: boolean;
+  expectedVersion?: string;
+  idempotencyKey?: string;
+  note?: string;
+  project?: string;
+  prop: string;
+  row: string;
+  view?: string;
+};
+
+/** Return shape for `bases.rows.reject`. */
+export type BasesRowsRejectReturn = {
+  baseRef: string;
+  consoleUrl: string;
+  idempotencyKey: string;
+  idempotentReplay: boolean;
+  projectRef: string;
+  property: string;
+  row: {
+    archivedAt?: string | null;
+    body?: string | null;
+    rowId: string;
+    values: Record<string, unknown>;
+    version: number;
+  };
+  state: "pending" | "approved" | "rejected";
+  success: true;
+  users: Record<string, {
+    avatarUrl: string | null;
+    displayName: string | null;
+    id: string;
+  }>;
+  viewId: string | null;
+};
+
+/** Input shape for `bases.rows.request-approval`. */
+export type BasesRowsRequestApprovalInput = {
+  base: string;
+  console?: string;
+  expectedVersion?: string;
+  idempotencyKey?: string;
+  note?: string;
+  project?: string;
+  prop: string;
+  row: string;
+  view?: string;
+};
+
+/** Return shape for `bases.rows.request-approval`. */
+export type BasesRowsRequestApprovalReturn = {
+  baseRef: string;
+  consoleUrl: string;
+  idempotencyKey: string;
+  idempotentReplay: boolean;
+  projectRef: string;
+  property: string;
+  row: {
+    archivedAt?: string | null;
+    body?: string | null;
+    rowId: string;
+    values: Record<string, unknown>;
+    version: number;
+  };
+  state: "pending" | "approved" | "rejected";
+  success: true;
+  users: Record<string, {
+    avatarUrl: string | null;
+    displayName: string | null;
+    id: string;
+  }>;
+  viewId: string | null;
+};
+
+/** Input shape for `bases.rows.rerun`. */
+export type BasesRowsRerunInput = {
+  base: string;
+  console?: string;
+  project?: string;
+  prop: string;
+  row: string;
+};
+
+/** Return shape for `bases.rows.rerun`. */
+export type BasesRowsRerunReturn = {
+  baseRef: string;
+  consoleUrl: string;
+  idempotentReplay: boolean;
+  projectRef: string;
+  property: string;
+  row: {
+    archivedAt?: string | null;
+    body?: string | null;
+    rowId: string;
+    values: Record<string, unknown>;
+    version: number;
+  };
+  success: true;
+  users: Record<string, {
+    avatarUrl: string | null;
+    displayName: string | null;
+    id: string;
+  }>;
+  viewId: string | null;
+};
+
 /** Input shape for `bases.rows.restore`. */
 export type BasesRowsRestoreInput = {
   base: string;
@@ -4089,9 +4383,17 @@ export type BasesShowReturn = {
     projectId: string;
     properties: Array<{
       config: {
+        agent?: string | null;
+        approvers?: Array<{
+          kind: string;
+          minRole?: string;
+          userId?: string;
+        }>;
         currency?: string;
         format?: string;
         includeTime?: boolean;
+        inputs?: string[];
+        instructions?: string;
         options?: Array<{
           archived?: boolean;
           color: string;
@@ -4099,7 +4401,9 @@ export type BasesShowReturn = {
           id: string;
           name: string;
         }>;
+        output?: string;
         precision?: number;
+        resetOn?: string[];
       };
       deletedAt: string | null;
       description: string | null;
@@ -4122,6 +4426,7 @@ export type BasesShowReturn = {
       baseId: string;
       capabilities: {
         aggregateOnly: boolean;
+        approve?: string[];
         archive: boolean;
         create: boolean;
         manage: boolean;
@@ -4151,6 +4456,7 @@ export type BasesShowReturn = {
       baseId: string;
       capabilities: {
         aggregateOnly: boolean;
+        approve?: string[];
         archive: boolean;
         create: boolean;
         manage: boolean;
@@ -4159,9 +4465,17 @@ export type BasesShowReturn = {
       };
       columns: Array<{
         config: {
+          agent?: string | null;
+          approvers?: Array<{
+            kind: string;
+            minRole?: string;
+            userId?: string;
+          }>;
           currency?: string;
           format?: string;
           includeTime?: boolean;
+          inputs?: string[];
+          instructions?: string;
           options?: Array<{
             archived?: boolean;
             color: string;
@@ -4169,7 +4483,9 @@ export type BasesShowReturn = {
             id: string;
             name: string;
           }>;
+          output?: string;
           precision?: number;
+          resetOn?: string[];
         };
         key: string;
         name: string;
@@ -4191,9 +4507,16 @@ export type BasesShowReturn = {
 
 /** Input shape for `bases.subscribe`. */
 export type BasesSubscribeInput = {
+  agent?: string;
   base: string;
   console?: string;
+  events?: string;
+  message?: string;
   project?: string;
+  props?: string;
+  session?: string;
+  trigger?: boolean;
+  view?: string;
 };
 
 /** Return shape for `bases.subscribe`. */
@@ -4203,18 +4526,38 @@ export type BasesSubscribeReturn = {
     category: string;
     natsSubject: string;
   };
+  filter: {
+    events: string[];
+    properties: string[];
+    viewId: string | null;
+  };
   projectRef: string;
   subscription: {
     baseId: string;
     createdAt: string;
+    events?: string[];
     id: string;
     installationName: string | null;
     localInstallationId: string;
+    properties?: string[];
     revokedAt: string | null;
     status: string;
     userId: string;
+    viewId?: string | null;
   };
   success: true;
+  trigger?: {
+    agentId: string;
+    created: boolean;
+    draft: boolean;
+    enableCommand: string | null;
+    enabled: boolean;
+    filter: string;
+    id: string;
+    name: string;
+    session: string;
+    topic: string;
+  };
 };
 
 /** Input shape for `bases.subscriptions`. */
@@ -4232,12 +4575,15 @@ export type BasesSubscriptionsReturn = {
   subscriptions: Array<{
     baseId: string;
     createdAt: string;
+    events?: string[];
     id: string;
     installationName: string | null;
     localInstallationId: string;
+    properties?: string[];
     revokedAt: string | null;
     status: string;
     userId: string;
+    viewId?: string | null;
   }>;
   success: true;
 };
@@ -4257,12 +4603,15 @@ export type BasesUnsubscribeReturn = {
   subscription: {
     baseId: string;
     createdAt: string;
+    events?: string[];
     id: string;
     installationName: string | null;
     localInstallationId: string;
+    properties?: string[];
     revokedAt: string | null;
     status: string;
     userId: string;
+    viewId?: string | null;
   };
   success: true;
 };
@@ -4329,6 +4678,7 @@ export type BasesViewsArchiveReturn = {
     baseId: string;
     capabilities: {
       aggregateOnly: boolean;
+      approve?: string[];
       archive: boolean;
       create: boolean;
       manage: boolean;
@@ -4379,6 +4729,7 @@ export type BasesViewsBindReturn = {
     baseId: string;
     capabilities: {
       aggregateOnly: boolean;
+      approve?: string[];
       archive: boolean;
       create: boolean;
       manage: boolean;
@@ -4412,6 +4763,7 @@ export type BasesViewsBindReturn = {
 export type BasesViewsCreateInput = {
   base: string;
   console?: string;
+  idempotencyKey?: string;
   name?: string;
   project?: string;
   spec?: string;
@@ -4421,6 +4773,7 @@ export type BasesViewsCreateInput = {
 export type BasesViewsCreateReturn = {
   baseRef: string;
   consoleUrl: string;
+  idempotencyKey: string;
   projectRef: string;
   success: true;
   view: {
@@ -4428,6 +4781,7 @@ export type BasesViewsCreateReturn = {
     baseId: string;
     capabilities: {
       aggregateOnly: boolean;
+      approve?: string[];
       archive: boolean;
       create: boolean;
       manage: boolean;
@@ -4475,6 +4829,7 @@ export type BasesViewsListReturn = {
     baseId?: string;
     capabilities?: {
       aggregateOnly: boolean;
+      approve?: string[];
       archive: boolean;
       create: boolean;
       manage: boolean;
@@ -4504,6 +4859,7 @@ export type BasesViewsListReturn = {
     baseId?: string;
     capabilities?: {
       aggregateOnly: boolean;
+      approve?: string[];
       archive: boolean;
       create: boolean;
       manage: boolean;
@@ -4512,9 +4868,17 @@ export type BasesViewsListReturn = {
     };
     columns?: Array<{
       config: {
+        agent?: string | null;
+        approvers?: Array<{
+          kind: string;
+          minRole?: string;
+          userId?: string;
+        }>;
         currency?: string;
         format?: string;
         includeTime?: boolean;
+        inputs?: string[];
+        instructions?: string;
         options?: Array<{
           archived?: boolean;
           color: string;
@@ -4522,7 +4886,9 @@ export type BasesViewsListReturn = {
           id: string;
           name: string;
         }>;
+        output?: string;
         precision?: number;
+        resetOn?: string[];
       };
       key: string;
       name: string;
@@ -4553,6 +4919,7 @@ export type BasesViewsListReturn = {
     baseId?: string;
     capabilities?: {
       aggregateOnly: boolean;
+      approve?: string[];
       archive: boolean;
       create: boolean;
       manage: boolean;
@@ -4582,6 +4949,7 @@ export type BasesViewsListReturn = {
     baseId?: string;
     capabilities?: {
       aggregateOnly: boolean;
+      approve?: string[];
       archive: boolean;
       create: boolean;
       manage: boolean;
@@ -4590,9 +4958,17 @@ export type BasesViewsListReturn = {
     };
     columns?: Array<{
       config: {
+        agent?: string | null;
+        approvers?: Array<{
+          kind: string;
+          minRole?: string;
+          userId?: string;
+        }>;
         currency?: string;
         format?: string;
         includeTime?: boolean;
+        inputs?: string[];
+        instructions?: string;
         options?: Array<{
           archived?: boolean;
           color: string;
@@ -4600,7 +4976,9 @@ export type BasesViewsListReturn = {
           id: string;
           name: string;
         }>;
+        output?: string;
         precision?: number;
+        resetOn?: string[];
       };
       key: string;
       name: string;
@@ -4663,6 +5041,74 @@ export type BasesViewsQueryReturn = {
   viewId: string | null;
 };
 
+/** Input shape for `bases.views.share`. */
+export type BasesViewsShareInput = {
+  archive?: boolean;
+  base: string;
+  console?: string;
+  create?: boolean;
+  execute?: boolean;
+  project?: string;
+  site?: string;
+  view: string;
+  write?: string;
+  writeOnly?: boolean;
+};
+
+/** Return shape for `bases.views.share`. */
+export type BasesViewsShareReturn = {
+  baseRef: string;
+  changed: boolean;
+  consoleUrl: string;
+  disclosure: string[];
+  grants: {
+    archive: boolean;
+    create: boolean;
+    read: boolean;
+    writeColumns: string[];
+  };
+  projectRef: string;
+  site: {
+    hostname: string | null;
+    id: string;
+    isDefault: boolean;
+    slug: string | null;
+  };
+  success: true;
+  view: {
+    access: Record<string, unknown>;
+    baseId: string;
+    capabilities: {
+      aggregateOnly: boolean;
+      approve?: string[];
+      archive: boolean;
+      create: boolean;
+      manage: boolean;
+      read: boolean;
+      writeColumns: string[];
+    };
+    columns: string[];
+    createdAt: string;
+    description: string | null;
+    id: string;
+    invalidReason: string | null;
+    layout: Record<string, unknown>;
+    name: string;
+    position: number;
+    query: {
+      filter: unknown | null;
+      sort: Array<{
+        dir: string;
+        prop: string;
+      }>;
+    };
+    status: string;
+    updatedAt: string;
+    valid: boolean;
+    version: number;
+  };
+};
+
 /** Input shape for `bases.views.show`. */
 export type BasesViewsShowInput = {
   base: string;
@@ -4681,6 +5127,7 @@ export type BasesViewsShowReturn = {
     baseId: string;
     capabilities: {
       aggregateOnly: boolean;
+      approve?: string[];
       archive: boolean;
       create: boolean;
       manage: boolean;
@@ -4689,9 +5136,17 @@ export type BasesViewsShowReturn = {
     };
     columns: Array<{
       config: {
+        agent?: string | null;
+        approvers?: Array<{
+          kind: string;
+          minRole?: string;
+          userId?: string;
+        }>;
         currency?: string;
         format?: string;
         includeTime?: boolean;
+        inputs?: string[];
+        instructions?: string;
         options?: Array<{
           archived?: boolean;
           color: string;
@@ -4699,7 +5154,9 @@ export type BasesViewsShowReturn = {
           id: string;
           name: string;
         }>;
+        output?: string;
         precision?: number;
+        resetOn?: string[];
       };
       key: string;
       name: string;
@@ -4717,6 +5174,7 @@ export type BasesViewsShowReturn = {
       baseId: string;
       capabilities: {
         aggregateOnly: boolean;
+        approve?: string[];
         archive: boolean;
         create: boolean;
         manage: boolean;
@@ -4768,6 +5226,7 @@ export type BasesViewsUpdateReturn = {
     baseId: string;
     capabilities: {
       aggregateOnly: boolean;
+      approve?: string[];
       archive: boolean;
       create: boolean;
       manage: boolean;
