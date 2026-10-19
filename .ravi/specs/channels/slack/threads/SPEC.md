@@ -98,7 +98,9 @@ When a user replies in a Slack thread, Ravi MUST create or reuse a dedicated chi
   authority, and both stay within one agent.
 - Every parent notice (report or close return) MUST name the thread by the first
   line of its initial message, when it has one, and its child session name, and
-  MUST include a Slack link when the workspace id is known. It MUST be sourced
+  MUST include a Slack link when the workspace id is known. The link MUST be a
+  `slack://channel?team=<team>&id=<channel>&thread_ts=<ts>` app link, since
+  `https://app.slack.com` links always open the browser. It MUST be sourced
   at the channel root, never inside the thread.
 
 ## Route Semantics

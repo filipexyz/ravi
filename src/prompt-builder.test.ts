@@ -440,3 +440,19 @@ describe("Slack Threads section", () => {
     ).not.toContain("## Slack Threads");
   });
 });
+
+describe("Slack output formatting", () => {
+  it("asks for slack:// app links with text chosen from the context", () => {
+    const sections = buildSystemPromptSections("main", { channelId: "slack", channelName: "Slack", isGroup: true });
+    const formatting = sections.find((section) => section.id === "channel.output_formatting")?.content ?? "";
+
+    expect(formatting).toContain("`slack://channel?team=<team-id>&id=<channel-id>`, adding `&thread_ts=<thread-ts>`");
+    expect(formatting).toContain("`https://app.slack.com` links always open the browser");
+    expect(formatting).toContain("with text you choose from the context");
+  });
+
+  it("leaves other channels without the Slack link rule", () => {
+    const prompt = buildSystemPrompt("main", { channelId: "matrix", channelName: "Matrix", isGroup: false });
+    expect(prompt).not.toContain("slack://");
+  });
+});
