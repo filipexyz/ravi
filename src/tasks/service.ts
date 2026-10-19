@@ -2,7 +2,13 @@ import { getContext } from "../cli/context.js";
 import { nats } from "../nats.js";
 import { getAgent } from "../router/config.js";
 import { expandHome } from "../router/resolver.js";
-import { findSessionByChatId, getOrCreateSession, getSessionByName, resolveSession } from "../router/sessions.js";
+import {
+  deleteSessionByName,
+  findSessionByChatId,
+  getOrCreateSession,
+  getSessionByName,
+  resolveSession,
+} from "../router/sessions.js";
 import { logger } from "../utils/logger.js";
 import { resolveRuntimeDefaults } from "../runtime/runtime-defaults.js";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
@@ -1366,33 +1372,31 @@ export function resolveTaskAssigneeSession(
   }
 
   try {
-    const recreated = !resolveSession(sessionName);
     const profile = resolveTaskProfileForTask(task);
-    const context = resolveTaskSessionContext(
-      task,
-      profile,
-      agentId,
-      sessionName,
-      activeAssignment?.worktree ?? task.worktree,
-    );
-    if (!recreated) {
-      return { ok: true, ...context };
+    const worktreeInput = activeAssignment?.worktree ?? task.worktree;
+    if (resolveSession(sessionName)) {
+      return { ok: true, ...resolveTaskSessionContext(task, profile, agentId, sessionName, worktreeInput) };
     }
+    // Build the brief before the session exists: a failure must not leave an empty session that
+    // the next prompt would treat as live.
+    const agent = requireTaskRuntimeAgent(agentId);
+    const worktree = resolveTaskWorktreeContext(agent.cwd, task, profile, worktreeInput);
     const { taskDocPath, primaryArtifact } = validateTaskProfileRuntimeOrThrow(task, profile, {
       stage: "task.dispatch",
-      effectiveCwd: context.sessionCwd,
-      ...(context.worktree ? { worktree: context.worktree } : {}),
-      agentId: context.agentId,
-      sessionName: context.sessionName,
+      effectiveCwd: agent.cwd,
+      ...(worktree ? { worktree } : {}),
+      agentId: agent.id,
+      sessionName,
       validateDispatch: true,
     });
-    const briefPrompt = buildTaskDispatchPrompt(task, context.agentId, context.sessionName, {
-      sessionCwd: context.sessionCwd,
-      ...(context.worktree ? { worktree: context.worktree } : {}),
+    const briefPrompt = buildTaskDispatchPrompt(task, agent.id, sessionName, {
+      sessionCwd: agent.cwd,
+      ...(worktree ? { worktree } : {}),
       taskDocPath,
       taskProfile: profile,
       primaryArtifact,
     });
+    const context = resolveTaskSessionContext(task, profile, agentId, sessionName, worktreeInput);
     return { ok: true, ...context, briefPrompt };
   } catch (error) {
     return { ok: false, reason: error instanceof Error ? error.message : String(error) };
@@ -1409,17 +1413,23 @@ export async function publishTaskAssigneePrompt(
   target: Extract<TaskAssigneeSessionTarget, { ok: true }>,
   payload: Record<string, unknown> & { prompt: string },
 ): Promise<void> {
-  await publishTaskSessionPrompt(target.sessionName, {
-    ...payload,
-    ...(target.briefPrompt
-      ? {
-          prompt: `${target.briefPrompt}\n\n${payload.prompt}`,
-          deliveryBarrier: "after_task",
-          taskBarrierTaskId: task.id,
-        }
-      : {}),
-    _agentId: target.agentId,
-  });
+  try {
+    await publishTaskSessionPrompt(target.sessionName, {
+      ...payload,
+      ...(target.briefPrompt
+        ? {
+            prompt: `${target.briefPrompt}\n\n${payload.prompt}`,
+            deliveryBarrier: "after_task",
+            taskBarrierTaskId: task.id,
+          }
+        : {}),
+      _agentId: target.agentId,
+    });
+  } catch (error) {
+    // A recreated session that never got its brief is dropped, so the next prompt recreates it again.
+    if (target.briefPrompt) deleteSessionByName(target.sessionName);
+    throw error;
+  }
 }
 
 function assertTaskStartAllowed(task: TaskRecord, action: "dispatch" | "arm a launch plan"): void {

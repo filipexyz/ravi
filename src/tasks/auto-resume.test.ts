@@ -226,6 +226,19 @@ describe("auto-resume blocked tasks", () => {
       expect(prompt).toContain("pick this back up");
     });
 
+    it("drops a recreated session when its first prompt cannot be published", async () => {
+      const task = createBlockedTask("publish fails after recreation");
+      const sessionName = `${task.id}-work`;
+      deleteSession(getSessionByName(sessionName)!.sessionKey);
+      setTaskSessionPromptPublisherForTests(async () => {
+        throw new Error("nats down");
+      });
+
+      await expect(commentTask(task.id, { author: "operator", body: "retry" })).rejects.toThrow("nats down");
+      // No empty session is left behind: the next prompt recreates it with the brief.
+      expect(getSessionByName(sessionName)).toBeNull();
+    });
+
     it("names the assignee agent when the work session still exists", async () => {
       const task = createBlockedTask("live work session");
 
