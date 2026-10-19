@@ -1,4 +1,35 @@
+import { DEFAULT_APPROVAL_TIMEOUT_MS } from "../approval/timeouts.js";
+
 export const DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000;
+
+/**
+ * Tools whose PreToolUse hook waits for a person (plan, spec or question
+ * approval). They emit no progress while waiting, so the generic window would
+ * abort the turn before the hook's own timeout could answer, and the model
+ * would ask again in a loop.
+ */
+export const APPROVAL_GATED_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "ExitPlanMode",
+  "AskUserQuestion",
+  "mcp__spec__exit_spec_mode",
+]);
+
+/**
+ * Delivering the approval message and waiting for the answer each get up to
+ * DEFAULT_APPROVAL_TIMEOUT_MS, plus a margin so the hook's timeout (a deny the
+ * model can read) always wins over the inactivity recovery.
+ */
+export const APPROVAL_GATED_TOOL_TIMEOUT_MS = 2 * DEFAULT_APPROVAL_TIMEOUT_MS + 60 * 1000;
+
+export function isApprovalGatedTool(toolName: string | undefined): boolean {
+  return toolName !== undefined && APPROVAL_GATED_TOOL_NAMES.has(toolName);
+}
+
+/** Inactivity window for a tool that just started. */
+export function resolveToolInactivityTimeoutMs(toolName: string | undefined, input: unknown): number {
+  const declared = resolveDeclaredToolTimeoutMs(input);
+  return isApprovalGatedTool(toolName) ? Math.max(declared, APPROVAL_GATED_TOOL_TIMEOUT_MS) : declared;
+}
 
 /**
  * Ceiling for a timeout a tool declares for itself. Without a ceiling a single

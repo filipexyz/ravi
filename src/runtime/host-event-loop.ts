@@ -132,7 +132,7 @@ import type { ResponseContentPart, ResponseMediaAttachment } from "./message-typ
 import {
   createToolLivenessLease,
   DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS,
-  resolveDeclaredToolTimeoutMs,
+  resolveToolInactivityTimeoutMs,
 } from "./tool-liveness.js";
 import {
   buildSlowToolLivePatch,
@@ -3101,7 +3101,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         // renew this lease without exposing their output to channels or traces.
         // Tools that declare their own `timeout` keep ownership of it: a long
         // scan or build must not be killed by the generic inactivity window.
-        toolLivenessLease.start(event.toolUse.id, resolveDeclaredToolTimeoutMs(event.toolUse.input));
+        // Tools waiting on a human approval outlast the approval's own timeout.
+        toolLivenessLease.start(
+          event.toolUse.id,
+          resolveToolInactivityTimeoutMs(event.toolUse.name, event.toolUse.input),
+        );
         // O lease cuida da paciência; este aviso cuida do silêncio.
         armSlowToolNotice(event.toolUse.id, event.toolUse.name);
         streaming.currentToolSafety = getToolSafety(
