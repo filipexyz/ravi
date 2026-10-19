@@ -1302,3 +1302,23 @@ describe("identity chat schema", () => {
     expect(dbListChatParticipants(chat.id)).toHaveLength(1);
   });
 });
+
+describe("slack thread lifecycle schema", () => {
+  function lifecycleColumns(db: Database): string[] {
+    return (db.prepare("PRAGMA table_info(slack_thread_lifecycle)").all() as Array<{ name: string }>).map(
+      (row) => row.name,
+    );
+  }
+
+  it("adds requested_by to a ravi.db created before the thread card named who asked", () => {
+    expect(lifecycleColumns(getDb())).toContain("requested_by");
+    closeRouterDb();
+
+    const legacyDb = new Database(join(stateDir!, "ravi.db"));
+    legacyDb.exec("ALTER TABLE slack_thread_lifecycle DROP COLUMN requested_by");
+    expect(lifecycleColumns(legacyDb)).not.toContain("requested_by");
+    legacyDb.close();
+
+    expect(lifecycleColumns(getDb())).toContain("requested_by");
+  });
+});
