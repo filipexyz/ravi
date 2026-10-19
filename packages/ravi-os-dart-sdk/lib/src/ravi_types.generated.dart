@@ -7084,17 +7084,19 @@ class CloudAgentsDeployOptions {
 }
 
 class CloudAgentsDeployReturn {
-  const CloudAgentsDeployReturn({required this.agent, required this.success, required this.unchanged});
+  const CloudAgentsDeployReturn({required this.agent, required this.changed, required this.success, required this.warnings});
 
   final RaviJson agent;
+  final bool changed;
   final bool success;
-  final bool unchanged;
+  final List<String> warnings;
 
   factory CloudAgentsDeployReturn.fromJson(Map<String, Object?> json) {
     return CloudAgentsDeployReturn(
       agent: RaviJson.from(json["agent"]),
+      changed: raviJsonAsBool(json["changed"]),
       success: raviJsonAsBool(json["success"]),
-      unchanged: raviJsonAsBool(json["unchanged"]),
+      warnings: raviJsonAsList(json["warnings"], raviJsonAsString),
     );
   }
 
@@ -7398,10 +7400,11 @@ class CloudRunsDenyReturn {
 CloudRunsDenyReturn cloudRunsDenyReturnFromJson(Object? json) => CloudRunsDenyReturn.fromJsonValue(json);
 
 class CloudRunsListOptions {
-  const CloudRunsListOptions({this.agent, this.cursor, this.project, this.status});
+  const CloudRunsListOptions({this.agent, this.cursor, this.limit, this.project, this.status});
 
   final String? agent;
   final String? cursor;
+  final String? limit;
   final String? project;
   final String? status;
 
@@ -7411,6 +7414,9 @@ class CloudRunsListOptions {
     }
     if (cursor != null) {
       into["cursor"] = RaviJson.from(cursor);
+    }
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
     }
     if (project != null) {
       into["project"] = RaviJson.from(project);

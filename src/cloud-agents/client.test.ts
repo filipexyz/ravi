@@ -38,20 +38,28 @@ describe("cloud agents client", () => {
           extra: "dropped",
           approvals: [fakeCloudApproval(), { nope: true }],
           outputs: [{ id: "out_1", name: "report.md", size: 12 }],
-          origin: { kind: "task", installationId: "inst-1", sessionName: "dev", taskId: "task-1", deliveredAt: null },
+          origin: {
+            kind: "task",
+            installationId: "inst-1",
+            sessionName: "dev",
+            taskId: "task-1",
+            delivery: "pending",
+          },
         }),
       ],
     });
     const client = fakeCloudClient(fake);
     const page = await client.listRuns({
       project: "clinica",
-      agent: "triage",
+      agent: "ca_1",
       status: "running",
+      limit: 10,
       origin: "installation",
     });
     const query = fake.requests[0]!.query;
     expect(query.get("project")).toBe("clinica");
-    expect(query.get("agent")).toBe("triage");
+    expect(query.get("agent")).toBe("ca_1");
+    expect(query.get("limit")).toBe("10");
     expect(query.get("status")).toBe("running");
     expect(query.get("origin")).toBe("installation");
     expect(query.has("cursor")).toBe(false);
@@ -59,7 +67,7 @@ describe("cloud agents client", () => {
     expect(run).not.toHaveProperty("extra");
     expect(run.approvals).toHaveLength(1);
     expect(run.outputs[0]).toEqual({ id: "out_1", name: "report.md", size: 12 });
-    expect(run.origin).toMatchObject({ kind: "task", taskId: "task-1", sessionName: "dev" });
+    expect(run.origin).toMatchObject({ kind: "task", taskId: "task-1", sessionName: "dev", delivery: "pending" });
     expect(run.url).toBe(`${FAKE_CONSOLE_URL}/acme/p/p-clinica/cloud/runs/run_1`);
     expect(page.cursor).toBeNull();
   });
@@ -80,7 +88,9 @@ describe("cloud agents client", () => {
     const fake = createFakeCloudConsole({ runs: [fakeCloudRun({ approvals: [fakeCloudApproval()] })] });
     const client = fakeCloudClient(fake);
     const decided = await client.decideApproval("run_1", "ap_1", { decision: "deny", reason: "not now" });
-    expect(decided.approval?.status).toBe("denied");
+    // The Console answers with the run only; the decided approval is in it.
+    expect(decided.approval).toBeNull();
+    expect(decided.run?.approvals[0]?.status).toBe("denied");
     expect(fake.writes()[0]).toMatchObject({
       path: "/runs/run_1/approvals/ap_1",
       body: { decision: "deny", reason: "not now" },
@@ -188,5 +198,45 @@ describe("cloud agents client", () => {
     expect(updated.enabled).toBe(true);
     await client.deleteSchedule(schedule.id);
     expect(await client.listSchedules("clinica")).toHaveLength(0);
+  });
+
+  it("reads 201 answers and the deploy result as the Console sends them", async () => {
+    const fake = createFakeCloudConsole();
+    const client = fakeCloudClient(fake);
+    const deployed = await client.deployAgent({ project: "clinica", agent: "reviewer" });
+    expect(deployed).toMatchObject({ changed: true, warnings: [] });
+    const again = await client.deployAgent({ project: "clinica", agent: "reviewer" });
+    expect(again.changed).toBe(false);
+    const run = await client.startRun({ project: "clinica", agent: "triage", prompt: "x" });
+    expect(run.status).toBe("starting");
+    const schedule = await client.createSchedule({
+      project: "clinica",
+      agent: "triage",
+      cron: "0 9 * * *",
+      timezone: "UTC",
+    });
+    expect(schedule.id).toBe("sch_1");
+    await client.deleteSchedule(schedule.id);
+  });
+
+  it("keeps the Console's access and role codes", async () => {
+    const fake = createFakeCloudConsole();
+    fake.failures.push({
+      path: "/agents",
+      status: 403,
+      body: {
+        error: { code: "PROJECT_ACCESS_DENIED", message: "This CLI session lacks the console.projects.read scope." },
+      },
+      times: 1,
+    });
+    fake.failures.push({
+      path: "/agents",
+      status: 403,
+      body: { error: { code: "forbidden", message: "Admins only." } },
+    });
+    const client = fakeCloudClient(fake);
+    await expect(client.listAgents("clinica")).rejects.toMatchObject({ code: "PROJECT_ACCESS_DENIED" });
+    const forbidden = (await client.listAgents("clinica").catch((caught: unknown) => caught)) as CloudAuthError;
+    expect(forbidden.consoleCode ?? forbidden.code).toBe("FORBIDDEN");
   });
 });

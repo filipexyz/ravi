@@ -80,7 +80,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "534e68b0544e3b5c"
+    "version": "13c34d44b27fae16"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -40038,18 +40038,25 @@
                       ],
                       "type": "object"
                     },
+                    "changed": {
+                      "type": "boolean"
+                    },
                     "success": {
                       "const": true,
                       "type": "boolean"
                     },
-                    "unchanged": {
-                      "type": "boolean"
+                    "warnings": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
                     }
                   },
                   "required": [
                     "success",
                     "agent",
-                    "unchanged"
+                    "changed",
+                    "warnings"
                   ],
                   "type": "object"
                 }
@@ -41414,6 +41421,16 @@
                                     }
                                   ]
                                 },
+                                "delivery": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
                                 "installationId": {
                                   "anyOf": [
                                     {
@@ -41453,6 +41470,7 @@
                                 "installationId",
                                 "sessionName",
                                 "taskId",
+                                "delivery",
                                 "deliveredAt"
                               ],
                               "type": "object"
@@ -41937,6 +41955,16 @@
                                     }
                                   ]
                                 },
+                                "delivery": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
                                 "installationId": {
                                   "anyOf": [
                                     {
@@ -41976,6 +42004,7 @@
                                 "installationId",
                                 "sessionName",
                                 "taskId",
+                                "delivery",
                                 "deliveredAt"
                               ],
                               "type": "object"
@@ -42147,6 +42176,10 @@
                   },
                   "cursor": {
                     "description": "Next page (the cursor of the previous page)",
+                    "type": "string"
+                  },
+                  "limit": {
+                    "description": "Page size (1-100, default 25)",
                     "type": "string"
                   },
                   "project": {
@@ -42379,6 +42412,16 @@
                                       }
                                     ]
                                   },
+                                  "delivery": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
                                   "installationId": {
                                     "anyOf": [
                                       {
@@ -42418,6 +42461,7 @@
                                   "installationId",
                                   "sessionName",
                                   "taskId",
+                                  "delivery",
                                   "deliveredAt"
                                 ],
                                 "type": "object"
@@ -42939,6 +42983,16 @@
                                     }
                                   ]
                                 },
+                                "delivery": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
                                 "installationId": {
                                   "anyOf": [
                                     {
@@ -42978,6 +43032,7 @@
                                 "installationId",
                                 "sessionName",
                                 "taskId",
+                                "delivery",
                                 "deliveredAt"
                               ],
                               "type": "object"
@@ -43357,6 +43412,16 @@
                                     }
                                   ]
                                 },
+                                "delivery": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
                                 "installationId": {
                                   "anyOf": [
                                     {
@@ -43396,6 +43461,7 @@
                                 "installationId",
                                 "sessionName",
                                 "taskId",
+                                "delivery",
                                 "deliveredAt"
                               ],
                               "type": "object"
@@ -43803,6 +43869,16 @@
                                     }
                                   ]
                                 },
+                                "delivery": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
                                 "installationId": {
                                   "anyOf": [
                                     {
@@ -43842,6 +43918,7 @@
                                 "installationId",
                                 "sessionName",
                                 "taskId",
+                                "delivery",
                                 "deliveredAt"
                               ],
                               "type": "object"
@@ -44221,6 +44298,16 @@
                                     }
                                   ]
                                 },
+                                "delivery": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
                                 "installationId": {
                                   "anyOf": [
                                     {
@@ -44260,6 +44347,7 @@
                                 "installationId",
                                 "sessionName",
                                 "taskId",
+                                "delivery",
                                 "deliveredAt"
                               ],
                               "type": "object"

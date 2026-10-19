@@ -7001,8 +7001,9 @@ export type CloudAgentsDeployReturn = {
     provider: string;
     status: string;
   };
+  changed: boolean;
   success: true;
-  unchanged: boolean;
+  warnings: string[];
 };
 
 /** Input shape for `cloud.agents.list`. */
@@ -7235,6 +7236,7 @@ export type CloudRunsApproveReturn = {
     id: string;
     origin: ({
       deliveredAt: string | null;
+      delivery: string | null;
       installationId: string | null;
       kind: string;
       sessionName: string | null;
@@ -7315,6 +7317,7 @@ export type CloudRunsDenyReturn = {
     id: string;
     origin: ({
       deliveredAt: string | null;
+      delivery: string | null;
       installationId: string | null;
       kind: string;
       sessionName: string | null;
@@ -7347,6 +7350,7 @@ export type CloudRunsDenyReturn = {
 export type CloudRunsListInput = {
   agent?: string;
   cursor?: string;
+  limit?: string;
   project?: string;
   status?: string;
 };
@@ -7385,6 +7389,7 @@ export type CloudRunsListReturn = {
     id: string;
     origin: ({
       deliveredAt: string | null;
+      delivery: string | null;
       installationId: string | null;
       kind: string;
       sessionName: string | null;
@@ -7476,6 +7481,7 @@ export type CloudRunsReplyReturn = {
     id: string;
     origin: ({
       deliveredAt: string | null;
+      delivery: string | null;
       installationId: string | null;
       kind: string;
       sessionName: string | null;
@@ -7541,6 +7547,7 @@ export type CloudRunsShowReturn = {
     id: string;
     origin: ({
       deliveredAt: string | null;
+      delivery: string | null;
       installationId: string | null;
       kind: string;
       sessionName: string | null;
@@ -7612,6 +7619,7 @@ export type CloudRunsStartReturn = {
     id: string;
     origin: ({
       deliveredAt: string | null;
+      delivery: string | null;
       installationId: string | null;
       kind: string;
       sessionName: string | null;
@@ -7677,6 +7685,7 @@ export type CloudRunsStopReturn = {
     id: string;
     origin: ({
       deliveredAt: string | null;
+      delivery: string | null;
       installationId: string | null;
       kind: string;
       sessionName: string | null;

@@ -53,25 +53,29 @@ GET  credential                       -> { credential }
 POST credential                       { provider:"anthropic", apiKey, monthlyAlertUsd? }
 POST credential/remove
 GET  agents?project=                  -> { agents }
-POST agents/deploy                    { project, agent, version? } -> { agent, unchanged }
+POST agents/deploy                    { project, agent, version? } -> 201 { agent, changed, warnings } | 200 unchanged
 GET  agents/<id>                      -> { agent }
-POST agents/<id>/archive
+POST agents/<id>/archive              -> { agent }
 POST runs                             { project, agent, prompt, budgetUsd?, repositories?,
-                                        trigger?, origin?, idempotencyKey? } -> { run }
-GET  runs?project=&agent=&status=&cursor=&origin=installation -> { runs, cursor }
+                                        trigger?, origin?, idempotencyKey? } -> 201 { run }
+GET  runs?project=&agent=<cloud agent id>&status=&cursor=&limit=&origin=installation -> { runs, cursor }
 GET  runs/<id>                        -> { run }
 GET  runs/<id>/events?after=          -> { events, cursor }
 POST runs/<id>/messages               { text }
 POST runs/<id>/stop
-POST runs/<id>/approvals/<approvalId> { decision, reason? }
+POST runs/<id>/approvals/<approvalId> { decision, reason? } -> { run }   (messages, stop, delivered too)
 GET  runs/<id>/outputs/<outputId>     -> bytes
 POST runs/<id>/delivered
 GET  schedules?project=               -> { schedules }
-POST schedules                        { project, agent, cron, timezone, prompt?, budgetUsd?, enabled? }
-POST schedules/<id>                   (partial update)
-POST schedules/<id>/delete
+POST schedules                        { project, agent, cron, timezone, prompt?, budgetUsd?, enabled? } -> 201 { schedule }
+POST schedules/<id>                   { cron?, timezone?, prompt?, budgetUsd?, enabled? } -> { schedule }
+POST schedules/<id>/delete            -> { deleted: true, id }
 ```
 
+- Reads need the `console.projects.read` scope and writes also
+  `console.projects.link`; a missing scope is `PROJECT_ACCESS_DENIED`.
+- `runs list --agent` resolves a slug or name to the cloud agent id the Console
+  filters by.
 - An expired access token MUST be refreshed once (or taken from a login another
   process refreshed) and the call retried.
 - A run's `url` MUST be kept only when it is on the Console's own origin.
@@ -178,13 +182,13 @@ runs a task as a cloud run of the local agent's Library definition.
 - It is braked like other spend. The plan names the task, agent, Library ref,
   project, budget, the session that gets the result, and `promptChars`.
 - `--execute` starts the run with trigger `task`, origin
-  `{ kind:"task", installationId, sessionName, taskId }` and an idempotency
-  key, records it in `ravi.db` (`cloud_agent_task_runs`) and marks the task
+  `{ kind:"task", sessionName, taskId }` (the Console adds the installation of
+  the `ravi login` session) and an idempotency key, records it in `ravi.db` (`cloud_agent_task_runs`) and marks the task
   `in_progress` with a progress message. No local assignment is created, so
   restart recovery and checkpoints never prompt a local session for it.
 - The session that gets the result is `--report-to`, else the dispatching
-  session; from the terminal there is none and the task alone carries the
-  result.
+  session. The Console requires one: without it dispatch MUST fail with
+  `CLOUD_TASK_SESSION_REQUIRED` (exit 2) before anything is sent.
 - A task that is done or failed (`CLOUD_TASK_FINISHED`) or already has an open
   cloud run (`CLOUD_TASK_RUN_ACTIVE`) MUST be refused.
 - `--budget` and `--project` without `--cloud` are a usage error.

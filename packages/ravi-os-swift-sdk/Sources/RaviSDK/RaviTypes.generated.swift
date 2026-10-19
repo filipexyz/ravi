@@ -8536,19 +8536,22 @@ public struct CloudAgentsDeployOptions: Codable, Sendable {
 
 public struct CloudAgentsDeployReturn: Codable, Sendable {
   public var agent: RaviJSON
+  public var changed: Bool
   public var success: Bool
-  public var unchanged: Bool
+  public var warnings: [String]
 
-  public init(agent: RaviJSON, success: Bool, unchanged: Bool) {
+  public init(agent: RaviJSON, changed: Bool, success: Bool, warnings: [String]) {
     self.agent = agent
+    self.changed = changed
     self.success = success
-    self.unchanged = unchanged
+    self.warnings = warnings
   }
 
   enum CodingKeys: String, CodingKey {
     case agent = "agent"
+    case changed = "changed"
     case success = "success"
-    case unchanged = "unchanged"
+    case warnings = "warnings"
   }
 }
 
@@ -8873,12 +8876,14 @@ public struct CloudRunsDenyReturn: Codable, Sendable {
 public struct CloudRunsListOptions: Codable, Sendable {
   public var agent: String?
   public var cursor: String?
+  public var limit: String?
   public var project: String?
   public var status: String?
 
-  public init(agent: String? = nil, cursor: String? = nil, project: String? = nil, status: String? = nil) {
+  public init(agent: String? = nil, cursor: String? = nil, limit: String? = nil, project: String? = nil, status: String? = nil) {
     self.agent = agent
     self.cursor = cursor
+    self.limit = limit
     self.project = project
     self.status = status
   }
@@ -8886,6 +8891,7 @@ public struct CloudRunsListOptions: Codable, Sendable {
   enum CodingKeys: String, CodingKey {
     case agent = "agent"
     case cursor = "cursor"
+    case limit = "limit"
     case project = "project"
     case status = "status"
   }
@@ -8896,6 +8902,9 @@ public struct CloudRunsListOptions: Codable, Sendable {
     }
     if let value = self.cursor {
       body["cursor"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.project {
       body["project"] = try RaviJSON.fromEncodable(value)

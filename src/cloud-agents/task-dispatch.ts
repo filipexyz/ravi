@@ -29,6 +29,7 @@ import type { CloudRun, CloudRunStartBody } from "./types.js";
 export const CLOUD_AGENT_NOT_PUBLISHED = "CLOUD_AGENT_NOT_PUBLISHED";
 export const CLOUD_TASK_RUN_ACTIVE = "CLOUD_TASK_RUN_ACTIVE";
 export const CLOUD_TASK_FINISHED = "CLOUD_TASK_FINISHED";
+export const CLOUD_TASK_SESSION_REQUIRED = "CLOUD_TASK_SESSION_REQUIRED";
 const PROMPT_MAX_CHARS = 50_000;
 
 /** Where the local agent's definition lives in the Library. */
@@ -54,8 +55,8 @@ export interface CloudTaskDispatchPlan {
   project: string;
   budgetUsd: number | null;
   repositories: string[];
-  /** The session that gets the result and approval requests; null from the terminal. */
-  informSession: string | null;
+  /** The session that gets the result and approval requests. */
+  informSession: string;
   promptChars: number;
   effect: string;
 }
@@ -95,6 +96,18 @@ export async function prepareCloudTaskDispatch(
       suggestedAction: `Create a new task, or read this one with: ravi tasks show ${task.id}`,
     });
   }
+  // The Console records a task run only with the session its result goes to.
+  const informSession = input.informSession?.trim() || null;
+  if (!informSession) {
+    throw new LibraryCommandError(
+      CLOUD_TASK_SESSION_REQUIRED,
+      "A cloud task run needs the session that gets its result and approval requests.",
+      2,
+      {
+        suggestedAction: `Pass --report-to <session>: ravi tasks dispatch ${task.id} --agent ${agentId} --cloud --report-to <session> --execute`,
+      },
+    );
+  }
   const active = dbGetActiveCloudTaskRunForTask(task.id);
   if (active) {
     throw new LibraryCommandError(
@@ -124,7 +137,8 @@ export async function prepareCloudTaskDispatch(
     agent: library.slug,
     prompt,
     trigger: "task",
-    origin: { kind: "task", installationId: session.installationId, sessionName: input.informSession, taskId: task.id },
+    // The Console takes the installation from the login session, not from the body.
+    origin: { kind: "task", sessionName: informSession, taskId: task.id },
     idempotencyKey: (deps.newIdempotencyKey ?? (() => `ravi-task:${task.id}:${randomUUID()}`))(),
     ...(input.budgetUsd !== undefined ? { budgetUsd: input.budgetUsd } : {}),
     ...(input.repositories ? { repositories: input.repositories } : {}),
@@ -139,7 +153,7 @@ export async function prepareCloudTaskDispatch(
       project,
       budgetUsd: input.budgetUsd ?? null,
       repositories: (input.repositories ?? []).map((entry) => entry.repo),
-      informSession: input.informSession,
+      informSession,
       promptChars: prompt.length,
       effect: `start a paid cloud run of ${library.ref} with the organization's Anthropic key (budget ${
         input.budgetUsd !== undefined ? `US$ ${input.budgetUsd}` : "the agent's default"

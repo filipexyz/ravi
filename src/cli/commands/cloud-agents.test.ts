@@ -169,7 +169,7 @@ describe("ravi cloud agents", () => {
       path: "/agents/deploy",
       body: { project: "clinica", agent: "reviewer", version: 2 },
     });
-    expect(done.result).toMatchObject({ unchanged: false, agent: { library: { slug: "reviewer" } } });
+    expect(done.result).toMatchObject({ changed: true, warnings: [], agent: { library: { slug: "reviewer" } } });
     expectSchema(CloudAgentsCommands, "deploy", done.result);
   });
 
@@ -275,8 +275,11 @@ describe("ravi cloud runs", () => {
     expectSchema(
       CloudRunsCommands,
       "list",
-      (await capture(() => commands.list(undefined, "running", undefined, undefined, true))).result,
+      (await capture(() => commands.list("triage", "running", undefined, "10", undefined, true))).result,
     );
+    // The agent filter goes to the Console as the cloud agent id.
+    expect(fake.requests[1]!.query.get("agent")).toBe("ca_1");
+    expect(fake.requests[1]!.query.get("limit")).toBe("10");
     expectSchema(CloudRunsCommands, "show", (await capture(() => commands.show("run_1", true))).result);
     const stopped = await capture(() => commands.stop("run_1", true));
     expect(stopped.result).toMatchObject({ run: { status: "stopped" } });
@@ -467,7 +470,8 @@ describe("ravi cloud schedules", () => {
         false,
       ),
     );
-    expect(fake.writes()[0]).toMatchObject({ path: "/schedules/sch_1", body: { enabled: false } });
+    expect(fake.writes()[0]).toMatchObject({ path: "/schedules/sch_1" });
+    expect(fake.writes()[0]!.body).toEqual({ enabled: false });
     expectSchema(CloudSchedulesCommands, "update", off.result);
 
     const missing = await capture(() =>

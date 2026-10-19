@@ -144,7 +144,8 @@ export function cloudAgentsErrorToContract(
         retryable: copy.retryable ?? false,
         suggestedAction: copy.suggestedAction,
         ...(error.status !== undefined ? { status: error.status } : {}),
-        ...(error.issues ? { issues: error.issues } : {}),
+        ...(error.issues ? { issues: error.issues } : (consoleIssues(error) ?? {})),
+        ...(typeof error.details?.runId === "string" ? { runId: error.details.runId.slice(0, 80) } : {}),
       },
     );
   }
@@ -158,6 +159,21 @@ export function cloudAgentsErrorToContract(
     );
   }
   return cloudErrorToContractError(op, error);
+}
+
+/** `validation_failed` and `cloud_agent_definition_invalid` carry `details.issues: [{ path, message }]`. */
+function consoleIssues(error: CloudAuthError): { issues: Array<{ path: string; message: string }> } | null {
+  const raw = error.details?.issues;
+  if (!Array.isArray(raw)) return null;
+  const issues = raw.slice(0, 20).flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const issue = entry as { path?: unknown; message?: unknown };
+    const path = Array.isArray(issue.path) ? issue.path.join(".") : typeof issue.path === "string" ? issue.path : "";
+    return typeof issue.message === "string"
+      ? [{ path: path.slice(0, 200), message: issue.message.slice(0, 300) }]
+      : [];
+  });
+  return issues.length > 0 ? { issues } : null;
 }
 
 function notFoundAction(code: string): string {
@@ -404,6 +420,7 @@ export const cloudRunReturnSchema = z
         installationId: z.string().nullable(),
         sessionName: z.string().nullable(),
         taskId: z.string().nullable(),
+        delivery: z.string().nullable(),
         deliveredAt: z.string().nullable(),
       })
       .strict()

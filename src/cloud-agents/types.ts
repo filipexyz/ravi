@@ -96,6 +96,8 @@ export interface CloudRunOrigin {
   installationId: string | null;
   sessionName: string | null;
   taskId: string | null;
+  /** `pending` or `delivered` for a task run (the Console's delivery state). */
+  delivery: string | null;
   /** When this installation acknowledged the result (`POST runs/<id>/delivered`). */
   deliveredAt: string | null;
 }
@@ -155,13 +157,13 @@ export interface CloudRunStartBody {
   budgetUsd?: number;
   repositories?: Array<{ repo: string; branch?: string }>;
   trigger?: "manual" | "task" | "agent";
-  origin?: { kind: "task"; installationId: string; sessionName: string | null; taskId: string };
+  /** The Console takes the installation from the `ravi login` session, never from the body. */
+  origin?: { kind: "task"; sessionName: string; taskId: string };
   idempotencyKey?: string;
 }
 
+/** `POST schedules/<id>` (partial update; the Console refuses other keys). */
 export interface CloudScheduleBody {
-  project?: string;
-  agent?: string;
   cron?: string;
   timezone?: string;
   prompt?: string | null;

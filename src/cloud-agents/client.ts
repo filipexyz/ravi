@@ -92,7 +92,7 @@ export class CloudAgentsClient {
           provider: "anthropic",
           configured: false,
           keyHint: null,
-          status: "revoked",
+          status: "missing",
           verifiedAt: null,
           monthlyAlertUsd: null,
           monthCostUsd: 0,
@@ -112,12 +112,18 @@ export class CloudAgentsClient {
     return requireAgent(objectValue(await this.request<unknown>("GET", `/agents/${segment(id)}`))?.agent);
   }
 
+  /** `201 { agent, changed: true, warnings }` when something changed, `200` with `changed: false` when not. */
   async deployAgent(body: { project: string; agent: string; version?: number }): Promise<{
     agent: CloudAgent;
-    unchanged: boolean;
+    changed: boolean;
+    warnings: string[];
   }> {
     const payload = objectValue(await this.request<unknown>("POST", "/agents/deploy", body));
-    return { agent: requireAgent(payload?.agent), unchanged: payload?.unchanged === true };
+    return {
+      agent: requireAgent(payload?.agent),
+      changed: payload?.changed !== false,
+      warnings: stringArray(payload?.warnings).slice(0, 50),
+    };
   }
 
   async archiveAgent(id: string): Promise<CloudAgent | null> {
@@ -133,7 +139,16 @@ export class CloudAgentsClient {
   }
 
   async listRuns(
-    input: { project?: string | null; agent?: string; status?: string; cursor?: string; origin?: "installation" } = {},
+    input: {
+      project?: string | null;
+      /** A cloud agent id (the Console filters by id only). */
+      agent?: string;
+      status?: string;
+      cursor?: string;
+      /** Page size, 1-100 (Console default 25). */
+      limit?: number;
+      origin?: "installation";
+    } = {},
   ): Promise<{ runs: CloudRun[]; cursor: string | null }> {
     const payload = objectValue(
       await this.request<unknown>(
@@ -143,6 +158,7 @@ export class CloudAgentsClient {
           agent: input.agent,
           status: input.status,
           cursor: input.cursor,
+          limit: input.limit !== undefined ? String(input.limit) : undefined,
           origin: input.origin,
         })}`,
       ),
@@ -213,7 +229,7 @@ export class CloudAgentsClient {
   }
 
   async createSchedule(
-    body: CloudScheduleBody & { project: string; agent: string; cron: string },
+    body: CloudScheduleBody & { project: string; agent: string; cron: string; timezone: string },
   ): Promise<CloudSchedule> {
     return requireSchedule(objectValue(await this.request<unknown>("POST", "/schedules", body))?.schedule);
   }
@@ -489,6 +505,7 @@ function normalizeOrigin(value: unknown): CloudRunOrigin | null {
     installationId: stringOrNull(origin.installationId),
     sessionName: stringOrNull(origin.sessionName),
     taskId: stringOrNull(origin.taskId),
+    delivery: stringOrNull(origin.delivery) ?? stringOrNull(delivery?.status),
     deliveredAt: stringOrNull(origin.deliveredAt) ?? stringOrNull(delivery?.deliveredAt),
   };
 }

@@ -186,7 +186,7 @@ export function createFakeCloudConsole(
         return json(200, { credential: state.credential });
       }
       if (method === "POST" && parts[1] === "remove") {
-        state.credential = { ...state.credential, configured: false, keyHint: null, status: "revoked" };
+        state.credential = { ...state.credential, configured: false, keyHint: null, status: "missing" };
         return json(200, { credential: state.credential });
       }
     }
@@ -196,14 +196,14 @@ export function createFakeCloudConsole(
       if (method === "POST" && parts[1] === "deploy") {
         const slug = String(body?.agent ?? "");
         const existing = state.agents.find((agent) => (agent.library as Json).slug === slug);
-        if (existing) return json(200, { agent: existing, unchanged: true });
+        if (existing) return json(200, { agent: existing, changed: false, warnings: [] });
         const agent = fakeCloudAgent({
           id: `ca_${slug}`,
           name: slug,
           library: { itemId: `item-${slug}`, slug, scope: "clinica", version: body?.version ?? 1 },
         });
         state.agents.push(agent);
-        return json(200, { agent, unchanged: false });
+        return json(201, { agent, changed: true, warnings: [] });
       }
       const agent = state.agents.find((entry) => entry.id === parts[1]);
       if (!agent) return notFound("agent");
@@ -216,6 +216,28 @@ export function createFakeCloudConsole(
     // runs
     if (parts[0] === "runs") {
       if (method === "POST" && parts.length === 1) {
+        // The Console's start body is strict; a task origin needs sessionName and taskId, and the
+        // installation comes from the login session (never from the body).
+        const allowed = [
+          "project",
+          "agent",
+          "prompt",
+          "budgetUsd",
+          "repositories",
+          "trigger",
+          "origin",
+          "idempotencyKey",
+        ];
+        const origin = (body?.origin ?? null) as Json | null;
+        const trigger = body?.trigger ?? (origin?.kind === "task" ? "task" : "manual");
+        if (
+          Object.keys(body ?? {}).some((key) => !allowed.includes(key)) ||
+          (origin &&
+            Object.keys(origin).some((key) => !["kind", "installationId", "sessionName", "taskId"].includes(key))) ||
+          (trigger === "task" && (!origin?.sessionName || !origin.taskId))
+        ) {
+          return json(400, { error: { code: "validation_failed", message: "Send { project, agent, prompt, ... }." } });
+        }
         runSeq += 1;
         const agent = state.agents.find((entry) => (entry.library as Json).slug === body?.agent);
         const run = fakeCloudRun({
@@ -223,19 +245,32 @@ export function createFakeCloudConsole(
           agentId: agent?.id ?? `ca_${body?.agent}`,
           agentName: agent?.name ?? body?.agent,
           status: "starting",
-          trigger: body?.trigger ?? "manual",
+          trigger,
           prompt: body?.prompt ?? "",
           budgetUsd: body?.budgetUsd ?? 5,
           costUsd: 0,
           runningSeconds: 0,
-          origin: body?.origin ? { ...(body.origin as Json), deliveredAt: null } : null,
+          origin:
+            trigger === "task"
+              ? {
+                  kind: "task",
+                  installationId: "inst-1",
+                  sessionName: origin?.sessionName,
+                  taskId: origin?.taskId,
+                  delivery: "pending",
+                }
+              : null,
           url: `/acme/p/p-clinica/cloud/runs/run_${runSeq}`,
         });
         state.runs.set(String(run.id), run);
-        return json(200, { run });
+        return json(201, { run });
       }
       if (method === "GET" && parts.length === 1) {
-        return json(200, { runs: [...state.runs.values()], cursor: null });
+        const limit = Math.min(Math.max(Number(request.query.get("limit") ?? 25), 1), 100);
+        const all = [...state.runs.values()].filter(
+          (run) => !request.query.get("agent") || run.agentId === request.query.get("agent"),
+        );
+        return json(200, { runs: all.slice(0, limit), cursor: all.length > limit ? `c${limit}` : null });
       }
       const run = state.runs.get(parts[1] ?? "");
       if (!run) return notFound("run");
@@ -264,10 +299,14 @@ export function createFakeCloudConsole(
         approval.status = body?.decision === "approve" ? "approved" : "denied";
         approval.decidedAt = "2026-10-18T10:06:00.000Z";
         run.status = "running";
-        return json(200, { run, approval });
+        return json(200, { run });
       }
       if (method === "POST" && parts[2] === "delivered") {
-        run.origin = { ...((run.origin as Json | null) ?? {}), deliveredAt: "2026-10-18T11:00:00.000Z" };
+        run.origin = {
+          ...((run.origin as Json | null) ?? {}),
+          delivery: "delivered",
+          deliveredAt: "2026-10-18T11:00:00.000Z",
+        };
         return json(200, { run });
       }
     }
@@ -286,16 +325,19 @@ export function createFakeCloudConsole(
           enabled: body?.enabled !== false,
         });
         state.schedules.push(schedule);
-        return json(200, { schedule });
+        return json(201, { schedule });
       }
       const schedule = state.schedules.find((entry) => entry.id === parts[1]);
       if (!schedule) return notFound("schedule");
       if (method === "POST" && parts[2] === "delete") {
         state.schedules = state.schedules.filter((entry) => entry !== schedule);
-        return json(200, { success: true });
+        return json(200, { deleted: true, id: schedule.id });
       }
       if (method === "POST" && parts.length === 2) {
-        const { project: _project, ...changes } = body ?? {};
+        const changes = body ?? {};
+        if (Object.keys(changes).some((key) => !["cron", "timezone", "prompt", "budgetUsd", "enabled"].includes(key))) {
+          return json(400, { error: { code: "validation_failed", message: "Unknown schedule field." } });
+        }
         Object.assign(schedule, changes);
         return json(200, { schedule });
       }

@@ -460,7 +460,7 @@ export class CloudAgentsCommands {
     risk: "high",
     requiresConfirmation: true,
   })
-  @Returns(agentPayloadSchema.extend({ unchanged: z.boolean() }).strict())
+  @Returns(agentPayloadSchema.extend({ changed: z.boolean(), warnings: z.array(z.string()) }).strict())
   async deploy(
     @Arg("agent", { description: "Library agent slug or item id" }) agentRef: string,
     @Option({ flags: "--version <n>", description: "Library version (default: the latest published)" })
@@ -505,15 +505,21 @@ export class CloudAgentsCommands {
           agent,
           ...(versionNumber !== undefined ? { version: versionNumber } : {}),
         });
-        const payload = { success: true as const, agent: result.agent, unchanged: result.unchanged };
+        const payload = {
+          success: true as const,
+          agent: result.agent,
+          changed: result.changed,
+          warnings: result.warnings,
+        };
         if (asJson) {
           printJson(payload);
         } else {
           console.log(
-            result.unchanged
+            !result.changed
               ? `= ${result.agent.name} already runs this version (${result.agent.status})`
               : `✓ Deployed ${result.agent.name} v${result.agent.library.version ?? "?"} (${result.agent.status})`,
           );
+          for (const warning of result.warnings) console.log(`  ! ${warning}`);
           console.log(
             `  Run it: ravi cloud runs start ${result.agent.library.slug || agent} "<prompt>" --project ${projectRef} --execute`,
           );
@@ -695,17 +701,30 @@ export class CloudRunsCommands {
     @Option({ flags: "--status <status>", description: "Only this status (running, waiting_approval, completed, ...)" })
     status?: string,
     @Option({ flags: "--cursor <cursor>", description: "Next page (the cursor of the previous page)" }) cursor?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (1-100, default 25)" }) limit?: string,
     @Option({ flags: "--project <project>", description: "Console project slug (default: the cwd's project)" })
     project?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const op = "cloud runs list";
+    let pageSize: number | undefined;
+    if (limit !== undefined) {
+      pageSize = Number(limit);
+      if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) {
+        usageError(op, "--limit must be an integer from 1 to 100.", asJson);
+      }
+    }
     return withCloudAgentsContract(op, asJson, async () => {
       const session = await sessionFor(this.deps, project);
       const projectRef = requireCloudProject(op, session, asJson);
+      // The Console filters by cloud agent id: a slug or name is resolved here.
+      const agentId = agent?.trim()
+        ? (await requireDeployedAgent(op, session.client, projectRef, agent.trim(), asJson)).id
+        : undefined;
       const page = await session.client.listRuns({
         project: projectRef,
-        ...(agent?.trim() ? { agent: agent.trim() } : {}),
+        ...(agentId ? { agent: agentId } : {}),
+        ...(pageSize !== undefined ? { limit: pageSize } : {}),
         ...(status?.trim() ? { status: status.trim() } : {}),
         ...(cursor?.trim() ? { cursor: cursor.trim() } : {}),
       });
@@ -1334,7 +1353,7 @@ export class CloudSchedulesCommands {
             { asJson },
           );
         }
-        const schedule = await session.client.updateSchedule(current.id, { project: projectRef, ...body });
+        const schedule = await session.client.updateSchedule(current.id, body);
         const payload = { success: true as const, schedule };
         if (asJson) printJson(payload);
         else

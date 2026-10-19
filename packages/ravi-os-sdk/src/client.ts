@@ -2148,6 +2148,7 @@ export class RaviClient {
       list: async (options?: {
         agent?: string;
         cursor?: string;
+        limit?: string;
         project?: string;
         status?: string;
       }): Promise<CloudRunsListReturn> => {

@@ -37690,18 +37690,25 @@ class RaviSchemas {
       ],
       "type": "object"
     },
+    "changed": {
+      "type": "boolean"
+    },
     "success": {
       "const": true,
       "type": "boolean"
     },
-    "unchanged": {
-      "type": "boolean"
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
     "success",
     "agent",
-    "unchanged"
+    "changed",
+    "warnings"
   ],
   "type": "object"
 }
@@ -38982,6 +38989,16 @@ class RaviSchemas {
                     }
                   ]
                 },
+                "delivery": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "installationId": {
                   "anyOf": [
                     {
@@ -39021,6 +39038,7 @@ class RaviSchemas {
                 "installationId",
                 "sessionName",
                 "taskId",
+                "delivery",
                 "deliveredAt"
               ],
               "type": "object"
@@ -39479,6 +39497,16 @@ class RaviSchemas {
                     }
                   ]
                 },
+                "delivery": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "installationId": {
                   "anyOf": [
                     {
@@ -39518,6 +39546,7 @@ class RaviSchemas {
                 "installationId",
                 "sessionName",
                 "taskId",
+                "delivery",
                 "deliveredAt"
               ],
               "type": "object"
@@ -39668,6 +39697,10 @@ class RaviSchemas {
     },
     "cursor": {
       "description": "Next page (the cursor of the previous page)",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (1-100, default 25)",
       "type": "string"
     },
     "project": {
@@ -39895,6 +39928,16 @@ class RaviSchemas {
                       }
                     ]
                   },
+                  "delivery": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "installationId": {
                     "anyOf": [
                       {
@@ -39934,6 +39977,7 @@ class RaviSchemas {
                   "installationId",
                   "sessionName",
                   "taskId",
+                  "delivery",
                   "deliveredAt"
                 ],
                 "type": "object"
@@ -40403,6 +40447,16 @@ class RaviSchemas {
                     }
                   ]
                 },
+                "delivery": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "installationId": {
                   "anyOf": [
                     {
@@ -40442,6 +40496,7 @@ class RaviSchemas {
                 "installationId",
                 "sessionName",
                 "taskId",
+                "delivery",
                 "deliveredAt"
               ],
               "type": "object"
@@ -40795,6 +40850,16 @@ class RaviSchemas {
                     }
                   ]
                 },
+                "delivery": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "installationId": {
                   "anyOf": [
                     {
@@ -40834,6 +40899,7 @@ class RaviSchemas {
                 "installationId",
                 "sessionName",
                 "taskId",
+                "delivery",
                 "deliveredAt"
               ],
               "type": "object"
@@ -41215,6 +41281,16 @@ class RaviSchemas {
                     }
                   ]
                 },
+                "delivery": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "installationId": {
                   "anyOf": [
                     {
@@ -41254,6 +41330,7 @@ class RaviSchemas {
                 "installationId",
                 "sessionName",
                 "taskId",
+                "delivery",
                 "deliveredAt"
               ],
               "type": "object"
@@ -41607,6 +41684,16 @@ class RaviSchemas {
                     }
                   ]
                 },
+                "delivery": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "installationId": {
                   "anyOf": [
                     {
@@ -41646,6 +41733,7 @@ class RaviSchemas {
                 "installationId",
                 "sessionName",
                 "taskId",
+                "delivery",
                 "deliveredAt"
               ],
               "type": "object"

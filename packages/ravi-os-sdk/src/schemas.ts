@@ -37398,18 +37398,25 @@ export const CloudAgentsDeployReturnSchema = {
       ],
       "type": "object"
     },
+    "changed": {
+      "type": "boolean"
+    },
     "success": {
       "const": true,
       "type": "boolean"
     },
-    "unchanged": {
-      "type": "boolean"
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
     "success",
     "agent",
-    "unchanged"
+    "changed",
+    "warnings"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -38676,6 +38683,16 @@ export const CloudRunsApproveReturnSchema = {
                     }
                   ]
                 },
+                "delivery": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "installationId": {
                   "anyOf": [
                     {
@@ -38715,6 +38732,7 @@ export const CloudRunsApproveReturnSchema = {
                 "installationId",
                 "sessionName",
                 "taskId",
+                "delivery",
                 "deliveredAt"
               ],
               "type": "object"
@@ -39171,6 +39189,16 @@ export const CloudRunsDenyReturnSchema = {
                     }
                   ]
                 },
+                "delivery": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "installationId": {
                   "anyOf": [
                     {
@@ -39210,6 +39238,7 @@ export const CloudRunsDenyReturnSchema = {
                 "installationId",
                 "sessionName",
                 "taskId",
+                "delivery",
                 "deliveredAt"
               ],
               "type": "object"
@@ -39359,6 +39388,10 @@ export const CloudRunsListInputSchema = {
     },
     "cursor": {
       "description": "Next page (the cursor of the previous page)",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (1-100, default 25)",
       "type": "string"
     },
     "project": {
@@ -39585,6 +39618,16 @@ export const CloudRunsListReturnSchema = {
                       }
                     ]
                   },
+                  "delivery": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "installationId": {
                     "anyOf": [
                       {
@@ -39624,6 +39667,7 @@ export const CloudRunsListReturnSchema = {
                   "installationId",
                   "sessionName",
                   "taskId",
+                  "delivery",
                   "deliveredAt"
                 ],
                 "type": "object"
@@ -40089,6 +40133,16 @@ export const CloudRunsReplyReturnSchema = {
                     }
                   ]
                 },
+                "delivery": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "installationId": {
                   "anyOf": [
                     {
@@ -40128,6 +40182,7 @@ export const CloudRunsReplyReturnSchema = {
                 "installationId",
                 "sessionName",
                 "taskId",
+                "delivery",
                 "deliveredAt"
               ],
               "type": "object"
@@ -40479,6 +40534,16 @@ export const CloudRunsShowReturnSchema = {
                     }
                   ]
                 },
+                "delivery": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "installationId": {
                   "anyOf": [
                     {
@@ -40518,6 +40583,7 @@ export const CloudRunsShowReturnSchema = {
                 "installationId",
                 "sessionName",
                 "taskId",
+                "delivery",
                 "deliveredAt"
               ],
               "type": "object"
@@ -40897,6 +40963,16 @@ export const CloudRunsStartReturnSchema = {
                     }
                   ]
                 },
+                "delivery": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "installationId": {
                   "anyOf": [
                     {
@@ -40936,6 +41012,7 @@ export const CloudRunsStartReturnSchema = {
                 "installationId",
                 "sessionName",
                 "taskId",
+                "delivery",
                 "deliveredAt"
               ],
               "type": "object"
@@ -41287,6 +41364,16 @@ export const CloudRunsStopReturnSchema = {
                     }
                   ]
                 },
+                "delivery": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "installationId": {
                   "anyOf": [
                     {
@@ -41326,6 +41413,7 @@ export const CloudRunsStopReturnSchema = {
                 "installationId",
                 "sessionName",
                 "taskId",
+                "delivery",
                 "deliveredAt"
               ],
               "type": "object"

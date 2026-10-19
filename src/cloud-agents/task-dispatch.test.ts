@@ -109,8 +109,9 @@ describe("tasks dispatch --cloud", () => {
       trigger: "task",
       budgetUsd: 3,
       idempotencyKey: "ravi-task:fixed-key",
-      origin: { kind: "task", installationId: "inst-1", sessionName: "dev-main", taskId: task.id },
+      origin: { kind: "task", sessionName: "dev-main", taskId: task.id },
     });
+    expect(start.body?.origin).not.toHaveProperty("installationId");
     expect(String(start.body?.prompt)).toBe(buildCloudTaskPrompt(task));
     expect(outcome.result).toMatchObject({ mode: "cloud", cloudRun: { id: "run_1" }, task: { status: "in_progress" } });
     expect(dbGetCloudTaskRun("run_1")).toMatchObject({ taskId: task.id, sessionName: "dev-main", state: "active" });
@@ -145,6 +146,13 @@ describe("tasks dispatch --cloud", () => {
       ref: "org/support-triage",
       source: "installed",
     });
+  });
+
+  it("refuses a dispatch without a session for the result", async () => {
+    const fake = createFakeCloudConsole();
+    const outcome = await dispatch(fake, newTask(), false, { informSession: null });
+    expect(outcome.error).toMatchObject({ code: "CLOUD_TASK_SESSION_REQUIRED", exitCode: 2 });
+    expect(fake.requests).toHaveLength(0);
   });
 
   it("refuses a finished task", async () => {

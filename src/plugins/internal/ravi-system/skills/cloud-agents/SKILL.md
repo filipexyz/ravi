@@ -130,6 +130,8 @@ ravi tasks dispatch <task> --agent triage --cloud --budget 5 --execute
 - Roda a task como um run da definição da Library do agent local (a que ele foi
   instalado, ou um agent da Library com o mesmo id). Sem definição publicada:
   `CLOUD_AGENT_NOT_PUBLISHED`; publique antes com `ravi agents publish`.
+- Precisa de uma sessão para o resultado: `--report-to <sessão>`, ou a sessão
+  que despachou. Do terminal sem `--report-to`: `CLOUD_TASK_SESSION_REQUIRED`.
 - A task fica `in_progress`. O daemon acompanha o run: aprovações pendentes
   chegam na sessão (`--report-to`, ou a sessão que despachou) como
   `[System] Inform` com o comando de aprovar; quando o run termina, a task vira

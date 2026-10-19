@@ -37,7 +37,8 @@ owners:
 ## Task Dispatch And Watcher
 
 - `tasks dispatch --cloud` MUST fail with `CLOUD_AGENT_NOT_PUBLISHED` for an agent with no Library definition.
-- `tasks dispatch --cloud --execute` MUST send origin `{kind:"task", installationId, sessionName, taskId}` and record the run.
+- `tasks dispatch --cloud --execute` MUST send origin `{kind:"task", sessionName, taskId}` without an installation id and record the run.
+- `tasks dispatch --cloud` MUST fail with `CLOUD_TASK_SESSION_REQUIRED` when no session gets the result.
 - The watcher MUST make no Console call when no task run is open.
 - The watcher MUST relay each pending approval once with the approve command.
 - The watcher MUST deliver a terminal run once, mark the task done or failed, then acknowledge it.

@@ -108,7 +108,7 @@ The task runs as a cloud run of the local agent's Library definition: the one it
 - a pending approval reaches the session (`--report-to`, or the session that dispatched) with the approve command;
 - when the run ends, the task becomes `done` or `failed` and the result reaches the session once, quoted as untrusted text.
 
-An agent without a Library definition is refused with `CLOUD_AGENT_NOT_PUBLISHED`.
+An agent without a Library definition is refused with `CLOUD_AGENT_NOT_PUBLISHED`. From a terminal, pass `--report-to <session>`: a cloud task needs a session for its result (`CLOUD_TASK_SESSION_REQUIRED` otherwise).
 
 ## The `cloud` block
 
