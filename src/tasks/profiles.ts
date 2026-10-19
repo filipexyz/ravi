@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join as joinPath, resolve as resolvePath } from "node:path";
 import { z } from "zod";
+import { CliExpectedError } from "../cli/expected-error.js";
 import { discoverPlugins } from "../plugins/index.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import systemProfilesRaw from "./profile-catalog/system-profiles.json" with { type: "json" };
@@ -1042,6 +1043,29 @@ function buildArtifactTemplateModel(
   };
 }
 
+/**
+ * A required profile input is empty. Expected usage error (exit 2) so the
+ * gateway and the remote CLI show which inputs are missing instead of a 500.
+ * The message keeps the "Missing " prefix that the remote CLI treats as safe.
+ */
+export class TaskProfileMissingInputError extends CliExpectedError {
+  readonly profileId: string;
+  readonly missingInputs: string[];
+
+  constructor(profileId: string, missingInputs: string[]) {
+    const flags = missingInputs.map((key) => `--input ${key}=...`).join(" ");
+    super(
+      `Missing required input(s) for task profile ${profileId}: ${missingInputs.join(", ")}. Pass them with ${flags}`,
+      "USAGE_ERROR",
+      2,
+      `Run 'ravi tasks profiles show ${profileId} --json' to see the profile inputs, then retry with ${flags}`,
+    );
+    this.name = "TaskProfileMissingInputError";
+    this.profileId = profileId;
+    this.missingInputs = missingInputs;
+  }
+}
+
 function resolveProfileInputValues(
   profile: ResolvedTaskProfile,
   taskInput?: TaskProfileInputValues,
@@ -1063,7 +1087,7 @@ function resolveProfileInputValues(
     .map((definition) => definition.key)
     .filter((key) => !resolved[key]?.trim());
   if (missingRequired.length > 0) {
-    throw new Error(`Task profile ${profile.id} requires input(s): ${missingRequired.join(", ")}.`);
+    throw new TaskProfileMissingInputError(profile.id, missingRequired);
   }
 
   return resolved;
