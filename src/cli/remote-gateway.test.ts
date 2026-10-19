@@ -402,6 +402,25 @@ describe("remote gateway exit taxonomy", () => {
     expect(JSON.stringify(error?.envelope())).not.toContain("Remote gateway rejected the command input");
   });
 
+  it("shows which task profile inputs are missing instead of the generic rejection", () => {
+    const message = "Missing required input(s) for task profile input-contract: goal. Pass them with --input goal=...";
+    const error = remoteGatewayErrorToContractError(
+      "tasks create",
+      result({
+        status: 400,
+        body: JSON.stringify({
+          success: false,
+          op: "tasks create",
+          exitCode: 2,
+          outcome: "usage_error",
+          error: { code: "USAGE_ERROR", message, retryable: false },
+        }),
+      }),
+    );
+
+    expect(error).toMatchObject({ op: "tasks create", code: "USAGE_ERROR", exitCode: 2, message });
+  });
+
   it("projects 400 validation issues into a usage error", () => {
     const error = remoteGatewayErrorToContractError(
       "tasks create",

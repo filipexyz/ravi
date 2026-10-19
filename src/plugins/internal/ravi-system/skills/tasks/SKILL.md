@@ -204,13 +204,14 @@ ravi tasks profiles init <profile-id> --preset <doc-first|brainstorm|runtime-onl
 ## Inputs do Profile
 
 Profiles podem declarar `inputs` estruturados no `profile.json`. Esses valores são
-o contrato de briefing do profile e são passados no create com `--input key=value`:
+o contrato de briefing do profile e são passados no create com `--input key=value`.
+Os nomes dependem do profile: leia `inputs` (com `required`) antes de criar.
 
 ```bash
+ravi tasks profiles show <id> --json
 ravi tasks create "Título" --profile <id> \
   --instructions "Resumo livre para o worker" \
-  --input goal_statement="Outcome final" \
-  --input acceptance_criteria="Como validar done"
+  --input <key>="valor"
 ```
 
 Regras importantes:
@@ -218,7 +219,7 @@ Regras importantes:
 - `--instructions` é texto livre da task; ele não popula `inputs`.
 - `--input` pode ser repetido e fica pinado em `profile_input_json` da task.
 - Templates acessam inputs com `{{input.key}}`.
-- Inputs `required: true` bloqueiam `create|preview|dispatch` quando vazios.
+- Inputs `required: true` bloqueiam `create|preview|dispatch` quando vazios: o comando sai com código 2 (`USAGE_ERROR`) e a mensagem `Missing required input(s) for task profile <id>: ...` lista os que faltam.
 - Inputs opcionais declarados existem como string vazia quando não enviados, então `{{input.optional_key}}` é seguro.
 - Placeholder `{{input.algum_key}}` só deve apontar para um input declarado ou explicitamente passado; placeholders desconhecidos continuam falhando cedo.
 
