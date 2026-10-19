@@ -1,6 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import type { ChannelConfig } from "../../router/router-db.js";
-import { lookupSlackUserEmail, resolveSlackNativeChannel, sendSlackText, updateSlackText } from "./text-send.js";
+import {
+  lookupSlackUserEmail,
+  resolveSlackNativeChannel,
+  sendSlackPrivateCards,
+  sendSlackText,
+  updateSlackText,
+} from "./text-send.js";
 
 function slackChannel(overrides: Partial<ChannelConfig> = {}): ChannelConfig {
   return {
@@ -254,5 +260,88 @@ describe("lookupSlackUserEmail", () => {
     await expect(
       lookupSlackUserEmail({ accountId: "hana-slack", userId: "U123" }, deps({ id: "U123", profile: {} })),
     ).resolves.toBeNull();
+  });
+});
+
+describe("sendSlackPrivateCards", () => {
+  const dependencies = (fetchImpl: typeof fetch) => ({
+    channels: { hana: slackChannel() },
+    resolveSecret: async () => ({
+      secret: JSON.stringify({ appToken: "xapp-test", botToken: "xoxb-test" }),
+    }),
+    fetchImpl,
+    apiBaseUrl: "https://slack.test/api/",
+  });
+
+  it("sends an ephemeral card in the thread to each person, and a DM to whoever is not in the chat", async () => {
+    const requests: Array<{ method: string; body: URLSearchParams }> = [];
+    const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+      const method = String(url).split("/").pop() ?? "";
+      const body = new URLSearchParams(String(init?.body));
+      requests.push({ method, body });
+      if (method === "chat.postEphemeral" && body.get("user") === "UOUT") {
+        return Response.json({ ok: false, error: "user_not_in_channel" });
+      }
+      if (method === "chat.postEphemeral") {
+        return Response.json({ ok: true, message_ts: "1784000000.000200" });
+      }
+      return Response.json({ ok: true, channel: "D777", ts: "1784000000.000300" });
+    }) as typeof fetch;
+
+    const result = await sendSlackPrivateCards(
+      {
+        accountId: "hana-slack",
+        chatId: "C123",
+        threadId: "1783999999.000099",
+        userIds: ["UIN", "UOUT"],
+        text: "Permission requested",
+        blocks: [{ type: "section", text: { type: "mrkdwn", text: "x" } }],
+      },
+      dependencies(fetchImpl),
+    );
+
+    expect(result.failures).toEqual([]);
+    expect(result.deliveries).toEqual([
+      { userId: "UIN", kind: "ephemeral", chatId: "C123", messageId: "1784000000.000200" },
+      { userId: "UOUT", kind: "dm", chatId: "D777", messageId: "1784000000.000300" },
+    ]);
+    expect(requests.map((request) => request.method)).toEqual([
+      "chat.postEphemeral",
+      "chat.postEphemeral",
+      "chat.postMessage",
+    ]);
+    expect(requests[0]?.body.get("channel")).toBe("C123");
+    expect(requests[0]?.body.get("thread_ts")).toBe("1783999999.000099");
+    expect(requests[0]?.body.get("blocks")).toContain("section");
+    // The DM goes to the person, never to the shared chat.
+    expect(requests[2]?.body.get("channel")).toBe("UOUT");
+  });
+
+  it("reports a person as failed only when neither the ephemeral card nor the DM went through", async () => {
+    const requests: Array<{ method: string; channel: string | null }> = [];
+    const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+      const method = String(url).split("/").pop() ?? "";
+      requests.push({ method, channel: new URLSearchParams(String(init?.body)).get("channel") });
+      return Response.json({ ok: false, error: "invalid_blocks" });
+    }) as typeof fetch;
+
+    const result = await sendSlackPrivateCards(
+      {
+        accountId: "hana-slack",
+        chatId: "C123",
+        userIds: ["UIN"],
+        text: "Permission requested",
+        blocks: [],
+      },
+      dependencies(fetchImpl),
+    );
+
+    expect(result.deliveries).toEqual([]);
+    expect(result.failures).toHaveLength(1);
+    // Never a public post in the shared chat: the fallback is the person's DM.
+    expect(requests).toEqual([
+      { method: "chat.postEphemeral", channel: "C123" },
+      { method: "chat.postMessage", channel: "UIN" },
+    ]);
   });
 });

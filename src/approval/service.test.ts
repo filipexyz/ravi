@@ -8,6 +8,7 @@ import {
   emitApprovalResponseOnce,
   setApprovalServiceDependenciesForTest,
   type ApprovalFinalizeSlackInput,
+  type ApprovalRespondSlackInput,
   type ApprovalServiceDependencies,
 } from "./service.js";
 import { setApprovalGrantorRouterConfigForTest } from "./grantor.js";
@@ -31,12 +32,13 @@ import {
   seedApprovalContact,
 } from "./test-support.js";
 
-let requestReplyResult: { messageId?: string } = { messageId: "msg_1" };
+let requestReplyResult: { messageId?: string; deliveries?: Array<Record<string, unknown>> } = { messageId: "msg_1" };
 let subscribeEvents: Array<{ topic: string; data: Record<string, unknown> }> = [];
 let emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
 let auditEvents: Array<{ topic: string; data: Record<string, unknown> }> = [];
 let deliveredRequests: Array<{ topic: string; data: Record<string, unknown> }> = [];
 let finalizedSlack: ApprovalFinalizeSlackInput[] = [];
+let respondedSlack: ApprovalRespondSlackInput[] = [];
 let externalOrder: string[] = [];
 let stateDir: string | null = null;
 let nowMs = APPROVAL_TEST_NOW_MS;
@@ -79,6 +81,47 @@ function seedSlackOwner(instanceId = "main"): void {
   });
 }
 
+function createSlackApprovalContext(id: string) {
+  const context = dbCreateContext({
+    contextId: id,
+    contextKey: `r${id}`,
+    kind: "agent-runtime",
+    sessionName: "dev-main",
+    capabilities: [],
+    metadata: {
+      approvalSource: {
+        channel: "slack",
+        accountId: "main",
+        chatId: "C123",
+        threadId: "1784000000.000001",
+      },
+    },
+    createdAt: 1000,
+  });
+  createdContextIds.add(context.contextId);
+  return context;
+}
+
+function slackClick(input: { userId: string; channelId?: string; messageTs?: string; actionId?: string }): {
+  topic: string;
+  data: Record<string, unknown>;
+} {
+  return {
+    topic: "ravi.inbound.interaction",
+    data: {
+      provider: "slack",
+      accountId: "main",
+      instanceId: "main",
+      channelId: input.channelId ?? "C123",
+      messageTs: input.messageTs ?? "eph_1",
+      userId: input.userId,
+      actionId: input.actionId ?? SLACK_APPROVAL_ACTION_APPROVE,
+      value: "$requestId",
+      responseUrlId: "resp_1",
+    },
+  };
+}
+
 function extractDeliveredRequestId(): string {
   const blocks = deliveredRequests[0]?.data.blocks;
   if (!Array.isArray(blocks)) return "";
@@ -113,6 +156,7 @@ describe("approval service", () => {
     auditEvents = [];
     deliveredRequests = [];
     finalizedSlack = [];
+    respondedSlack = [];
     externalOrder = [];
     nowMs = APPROVAL_TEST_NOW_MS;
     setPermissionAuditPublisherForTest(async (topic, data) => {
@@ -127,6 +171,9 @@ describe("approval service", () => {
       }) satisfies ApprovalServiceDependencies["requestReply"],
       finalizeSlackApproval: async (input) => {
         finalizedSlack.push(input);
+      },
+      respondSlackInteraction: async (input) => {
+        respondedSlack.push(input);
       },
       nats: {
         emit: async (topic: string, data: Record<string, unknown>) => {
@@ -592,6 +639,107 @@ describe("approval service", () => {
     expect(result.approved).toBe(false);
     expect(result.reason ?? "").toMatch(/Timeout/);
     expect(dbGetContext(context.contextId)?.capabilities).toEqual([]);
+  });
+
+  it("sends the Slack card privately, only to the people who can grant it", async () => {
+    seedSlackOwner();
+    seedApprovalContact({
+      phone: APPROVAL_TEST_STRANGER_PHONE,
+      name: "Stranger",
+      tags: ["lead"],
+      slack: { userId: APPROVAL_TEST_SLACK_STRANGER_USER, instanceId: "main" },
+    });
+    requestReplyResult = {
+      messageId: "eph_1",
+      deliveries: [{ userId: OWNER_SLACK_USER, kind: "ephemeral", chatId: "C123", messageId: "eph_1" }],
+    };
+    subscribeEvents = [slackClick({ userId: OWNER_SLACK_USER, messageTs: "eph_seen_by_slack" })];
+
+    const result = await authorizeRuntimeContext({
+      context: createSlackApprovalContext("ctx_slack_private"),
+      permission: "execute",
+      objectType: "executable",
+      objectId: "curl",
+      timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
+    });
+
+    expect(result).toMatchObject({ allowed: true, approved: true });
+    const delivered = deliveredRequests[0]?.data;
+    expect(delivered?.privateTo).toEqual([OWNER_SLACK_USER]);
+    expect(delivered?.threadId).toBe("1784000000.000001");
+    // The clicker's own card loses its buttons through the click's response_url.
+    expect(respondedSlack).toHaveLength(1);
+    expect(respondedSlack[0]?.responseUrlId).toBe("resp_1");
+    expect(respondedSlack[0]?.payload.replace_original).toBe(true);
+    expect(String(respondedSlack[0]?.payload.text)).toContain(`Approved by <@${OWNER_SLACK_USER}>`);
+    expect(JSON.stringify(respondedSlack[0]?.payload.blocks)).not.toContain('"type":"actions"');
+    expect(finalizedSlack).toHaveLength(0);
+  });
+
+  it("denies at once, without sending any card, when nobody in the Slack can grant it", async () => {
+    seedApprovalContact({
+      phone: APPROVAL_TEST_STRANGER_PHONE,
+      name: "Stranger",
+      tags: ["lead"],
+      slack: { userId: APPROVAL_TEST_SLACK_STRANGER_USER, instanceId: "main" },
+    });
+
+    const startedAt = Date.now();
+    const result = await authorizeRuntimeContext({
+      context: createSlackApprovalContext("ctx_slack_no_grantor"),
+      permission: "execute",
+      objectType: "executable",
+      objectId: "curl",
+      timeoutMs: 60_000,
+    });
+
+    expect(Date.now() - startedAt).toBeLessThan(5_000);
+    expect(result).toMatchObject({ allowed: false, approved: false });
+    expect(result.reason ?? "").toContain("Ninguém neste Slack pode aprovar execute:executable:curl");
+    expect(deliveredRequests).toHaveLength(0);
+    expect(dbGetContext("ctx_slack_no_grantor")?.capabilities).toEqual([]);
+  });
+
+  it("edits a DM approval card in place after the decision", async () => {
+    seedSlackOwner();
+    requestReplyResult = {
+      messageId: "dm_1",
+      deliveries: [{ userId: OWNER_SLACK_USER, kind: "dm", chatId: "D777", messageId: "dm_1" }],
+    };
+    subscribeEvents = [slackClick({ userId: OWNER_SLACK_USER, channelId: "D777", messageTs: "dm_1" })];
+
+    const result = await authorizeRuntimeContext({
+      context: createSlackApprovalContext("ctx_slack_dm"),
+      permission: "execute",
+      objectType: "executable",
+      objectId: "curl",
+      timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
+    });
+
+    expect(result.approved).toBe(true);
+    expect(finalizedSlack).toHaveLength(1);
+    expect(finalizedSlack[0]).toMatchObject({ chatId: "D777", messageId: "dm_1" });
+    expect(respondedSlack).toHaveLength(0);
+  });
+
+  it("ignores a click from a grantor the private card was not sent to", async () => {
+    seedSlackOwner();
+    requestReplyResult = {
+      messageId: "eph_1",
+      deliveries: [{ userId: "USOMEONE1", kind: "ephemeral", chatId: "C123", messageId: "eph_1" }],
+    };
+    subscribeEvents = [slackClick({ userId: OWNER_SLACK_USER })];
+
+    const result = await authorizeRuntimeContext({
+      context: createSlackApprovalContext("ctx_slack_not_recipient"),
+      permission: "execute",
+      objectType: "executable",
+      objectId: "curl",
+      timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
+    });
+
+    expect(result.approved).toBe(false);
+    expect(result.reason ?? "").toMatch(/Timeout/);
   });
 
   it("rejects when a matching inbound WhatsApp reply arrives from an authorized grantor", async () => {
