@@ -129,3 +129,43 @@ function scheduleTimeout(callback: () => void, delayMs: number): () => void {
   const timer = setTimeout(callback, delayMs);
   return () => clearTimeout(timer);
 }
+
+export interface ApprovalWaitLeaseTracker {
+  /** An authorization started waiting on a person. */
+  begin(): void;
+  /** That authorization returned. */
+  end(): void;
+  /** Window for a tool that starts while an approval is still pending. */
+  timeoutForStartingTool(timeoutMs: number): number;
+}
+
+/**
+ * A permission approval (the card for a Bash executable, a tool, a capability)
+ * waits on a person and emits nothing. While one is pending the running tool's
+ * window must cover the approval's own timeout, or the inactivity recovery
+ * fires first and the turn runs on while the approval is still open. When the
+ * last wait ends the tool gets its own window back.
+ */
+export function createApprovalWaitLeaseTracker(options: {
+  lease: Pick<ToolLivenessLease, "start">;
+  currentTool(): { id: string; name?: string; input?: unknown } | undefined;
+}): ApprovalWaitLeaseTracker {
+  let pending = 0;
+  return {
+    begin() {
+      pending++;
+      const tool = options.currentTool();
+      if (tool) options.lease.start(tool.id, APPROVAL_GATED_TOOL_TIMEOUT_MS);
+    },
+    end() {
+      if (pending === 0) return;
+      pending--;
+      if (pending > 0) return;
+      const tool = options.currentTool();
+      if (tool) options.lease.start(tool.id, resolveToolInactivityTimeoutMs(tool.name, tool.input));
+    },
+    timeoutForStartingTool(timeoutMs) {
+      return pending > 0 ? Math.max(timeoutMs, APPROVAL_GATED_TOOL_TIMEOUT_MS) : timeoutMs;
+    },
+  };
+}

@@ -26,7 +26,12 @@ export interface SlackApprovalFinalMessageInput {
   readonly type: ApprovalRequestType;
   readonly outcome: ApprovalDecisionValue | "expired";
   readonly reason?: string;
+  /** Slack user id of who decided, shown as a mention. */
+  readonly decidedBy?: string;
 }
+
+/** Why a click did not decide anything, told privately to whoever clicked. */
+export type SlackApprovalClickNotice = "unauthorized" | "expired" | "already_decided" | "unknown";
 
 const TITLE_BY_TYPE: Record<ApprovalRequestType, string> = {
   permission: "Permission requested",
@@ -97,7 +102,7 @@ export function buildSlackApprovalRequestMessage(input: SlackApprovalMessageInpu
 
 export function buildSlackApprovalFinalMessage(input: SlackApprovalFinalMessageInput): SlackBlockKitMessagePayload {
   const title = TITLE_BY_TYPE[input.type];
-  const status = compactApprovalStatus(input.outcome, input.reason);
+  const status = compactApprovalStatus(input.outcome, input.reason, input.decidedBy);
   const payload = {
     text: `${title}: ${status}`,
     blocks: [
@@ -123,9 +128,34 @@ function buildApprovalContextLine(input: SlackApprovalMessageInput): string | un
   return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
-function compactApprovalStatus(outcome: ApprovalDecisionValue | "expired", reason?: string): string {
-  if (outcome === "approved") return "Approved";
+export function buildSlackApprovalClickNotice(
+  notice: SlackApprovalClickNotice,
+  request?: { readonly decision?: ApprovalDecisionValue | null; readonly decidedBy?: string | null },
+): string {
+  if (notice === "unauthorized") return "You can't decide this request: you don't have the permission it asks for.";
+  if (notice === "expired") return "This request expired, so nothing was granted.";
+  if (notice === "already_decided") {
+    const by = slackMention(request?.decidedBy);
+    const verb = request?.decision === "rejected" ? "rejected" : "approved";
+    return by ? `This request was already ${verb} by ${by}.` : `This request was already ${verb}.`;
+  }
+  return "This request no longer exists.";
+}
+
+function compactApprovalStatus(
+  outcome: ApprovalDecisionValue | "expired",
+  reason?: string,
+  decidedBy?: string,
+): string {
+  const by = slackMention(decidedBy);
+  if (outcome === "approved") return by ? `Approved by ${by}` : "Approved";
   if (outcome === "expired") return "Expired — no decision in 5 minutes.";
   const detail = reason?.trim();
-  return detail && detail !== "rejected" ? `Rejected: ${detail}` : "Rejected";
+  const rejected = by ? `Rejected by ${by}` : "Rejected";
+  return detail && detail !== "rejected" ? `${rejected}: ${detail}` : rejected;
+}
+
+function slackMention(userId: string | null | undefined): string | undefined {
+  const id = userId?.trim();
+  return id && /^[UW][A-Z0-9]+$/i.test(id) ? `<@${id.toUpperCase()}>` : undefined;
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { DEFAULT_APPROVAL_TIMEOUT_MS } from "../approval/timeouts.js";
 import {
   APPROVAL_GATED_TOOL_TIMEOUT_MS,
+  createApprovalWaitLeaseTracker,
   createToolLivenessLease,
   DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS,
   MAX_DECLARED_TOOL_TIMEOUT_MS,
@@ -200,5 +201,45 @@ describe("approval-gated tools", () => {
     lease.start("plan-1", resolveToolInactivityTimeoutMs("ExitPlanMode", {}));
     clock.advance(APPROVAL_GATED_TOOL_TIMEOUT_MS);
     expect(inactive).toEqual(["plan-1"]);
+  });
+});
+
+describe("approval wait lease tracker", () => {
+  it("keeps a Bash call alive while its permission card waits, then gives it its window back", () => {
+    const scheduler = createManualScheduler();
+    const inactive: string[] = [];
+    const lease = createToolLivenessLease({
+      onInactive: (toolUseId) => inactive.push(toolUseId),
+      schedule: scheduler.schedule,
+    });
+    const tracker = createApprovalWaitLeaseTracker({
+      lease,
+      currentTool: () => ({ id: "bash-1", name: "Bash", input: { command: "curl example.com" } }),
+    });
+
+    lease.start("bash-1");
+    tracker.begin();
+    // The approval waits its full window: the generic window alone would have expired.
+    scheduler.advance(DEFAULT_APPROVAL_TIMEOUT_MS + 1_000);
+    expect(inactive).toEqual([]);
+
+    tracker.end();
+    scheduler.advance(DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS - 1);
+    expect(inactive).toEqual([]);
+    scheduler.advance(1);
+    expect(inactive).toEqual(["bash-1"]);
+  });
+
+  it("gives a tool that starts during an approval the approval window", () => {
+    const tracker = createApprovalWaitLeaseTracker({
+      lease: { start: () => {} },
+      currentTool: () => undefined,
+    });
+    expect(tracker.timeoutForStartingTool(DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS)).toBe(DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS);
+    tracker.begin();
+    expect(tracker.timeoutForStartingTool(DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS)).toBe(APPROVAL_GATED_TOOL_TIMEOUT_MS);
+    tracker.end();
+    tracker.end();
+    expect(tracker.timeoutForStartingTool(DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS)).toBe(DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS);
   });
 });

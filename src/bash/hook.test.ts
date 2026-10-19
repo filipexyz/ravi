@@ -585,6 +585,24 @@ describe("turn-runtime executor ceiling", () => {
     expect(decision.allowed).toBe(true);
   });
 
+  it("runs an executable a grantor approved for this turn, even outside the agent's ceiling", () => {
+    expect(evaluateBashPermission("curl https://example.com", whatsappTurn(bootstrapCaps)).allowed).toBe(false);
+
+    const approved = whatsappTurn([
+      ...bootstrapCaps,
+      { permission: "execute", objectType: "executable", objectId: "curl", source: "approval" },
+    ]);
+    expect(evaluateBashPermission("curl https://example.com", approved).allowed).toBe(true);
+    // The approval covers what was approved, nothing more.
+    expect(evaluateBashPermission("wget https://example.com", approved).allowed).toBe(false);
+    // A capability that merely sits in the snapshot is still bounded by the ceiling.
+    const unapproved = whatsappTurn([
+      ...bootstrapCaps,
+      { permission: "execute", objectType: "executable", objectId: "curl" },
+    ]);
+    expect(evaluateBashPermission("curl https://example.com", unapproved).allowed).toBe(false);
+  });
+
   it("picks up a mid-turn runtimePermissions expansion without resetting the session", () => {
     const stale = whatsappTurn(bootstrapCaps);
     expect(evaluateBashPermission("ssh host uptime", stale).allowed).toBe(false);

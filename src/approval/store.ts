@@ -45,6 +45,22 @@ export interface CreateApprovalRequestInput {
   readonly expiresAt: number;
 }
 
+/**
+ * Where one approval card went. Slack cards go privately to each person who can
+ * grant the request: an ephemeral card in the request's chat (only that person
+ * sees it) or, when they are not in that chat, a card in their DM with the app.
+ */
+export type ApprovalDeliveryKind = "ephemeral" | "dm";
+
+export interface ApprovalDeliveryRecord {
+  readonly requestId: string;
+  readonly userId: string;
+  readonly kind: ApprovalDeliveryKind;
+  readonly chatId: string;
+  readonly messageId: string;
+  readonly createdAt: number;
+}
+
 export interface ClaimApprovalDecisionInput {
   readonly id: string;
   readonly decision: ApprovalDecisionValue;
@@ -134,6 +150,36 @@ export function getApprovalRequestByMessageId(messageId: string): ApprovalReques
   return row ? rowToRecord(row) : null;
 }
 
+export function recordApprovalDeliveries(
+  requestId: string,
+  deliveries: readonly Omit<ApprovalDeliveryRecord, "requestId">[],
+): void {
+  ensureApprovalRequestTable();
+  const insert = getDb().prepare(
+    `INSERT OR REPLACE INTO approval_request_deliveries (
+      request_id, user_id, kind, chat_id, message_id, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?)`,
+  );
+  for (const delivery of deliveries) {
+    insert.run(requestId, delivery.userId, delivery.kind, delivery.chatId, delivery.messageId, delivery.createdAt);
+  }
+}
+
+export function listApprovalDeliveries(requestId: string): ApprovalDeliveryRecord[] {
+  ensureApprovalRequestTable();
+  const rows = getDb()
+    .prepare("SELECT * FROM approval_request_deliveries WHERE request_id = ? ORDER BY created_at, user_id")
+    .all(requestId) as ApprovalDeliveryRow[];
+  return rows.map((row) => ({
+    requestId: row.request_id,
+    userId: row.user_id,
+    kind: row.kind as ApprovalDeliveryKind,
+    chatId: row.chat_id,
+    messageId: row.message_id,
+    createdAt: row.created_at,
+  }));
+}
+
 export function claimApprovalDecision(input: ClaimApprovalDecisionInput): ApprovalRequestRecord | null {
   ensureApprovalRequestTable();
   const result = getDb()
@@ -169,6 +215,15 @@ export function isApprovalRequestOpen(record: ApprovalRequestRecord, now: number
   return record.status === "pending" && record.expiresAt > now;
 }
 
+interface ApprovalDeliveryRow {
+  request_id: string;
+  user_id: string;
+  kind: string;
+  chat_id: string;
+  message_id: string;
+  created_at: number;
+}
+
 function ensureApprovalRequestTable(): void {
   const db = getDb();
   db.prepare(
@@ -202,6 +257,17 @@ function ensureApprovalRequestTable(): void {
   db.prepare(
     `CREATE INDEX IF NOT EXISTS idx_approval_requests_status_expires
       ON approval_requests(status, expires_at)`,
+  ).run();
+  db.prepare(
+    `CREATE TABLE IF NOT EXISTS approval_request_deliveries (
+      request_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      chat_id TEXT NOT NULL,
+      message_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (request_id, user_id)
+    )`,
   ).run();
 }
 
