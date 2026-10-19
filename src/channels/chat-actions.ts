@@ -88,6 +88,8 @@ export type ChannelChatActionContent =
       readonly type: "chat_action";
       readonly actionId: "thread.create";
       readonly text: string;
+      /** The person who asked for the thread, shown on its root card. */
+      readonly requestedBy?: string;
     };
 
 export interface ChatActionRequest {

@@ -54,6 +54,7 @@ import {
   createSlackNativeRuntimesFromEnv,
   slackClientMessageId,
 } from "./socket-mode.js";
+import { SlackApiError } from "./client.js";
 import { buildSlackThreadCard } from "./thread-card.js";
 import {
   acceptSlackInboundEnvelope,
@@ -992,10 +993,11 @@ describe("Slack Socket Mode routing", () => {
       sessionName: "ravi-slack-channel",
       idempotencyKey: "thread-long",
       target: { channel: "slack", accountId: "ravi-slack", chatId: "C123" },
-      action: { type: "chat_action", actionId: "thread.create", text: brief },
+      action: { type: "chat_action", actionId: "thread.create", text: brief, requestedBy: "Luís" },
     });
 
-    const card = buildSlackThreadCard(brief, { status: "open" });
+    const card = buildSlackThreadCard(brief, { status: "open", requestedBy: "Luís" });
+    expect(JSON.stringify(card.blocks)).toContain("pedido por Luís");
     expect(card.fullBrief).toBeDefined();
     expect(postMessage).toHaveBeenNthCalledWith(1, {
       channel: "C123",
@@ -1009,6 +1011,46 @@ describe("Slack Socket Mode routing", () => {
       threadTs: "1713000000.000300",
       clientMsgId: slackClientMessageId("thread-long:brief"),
     });
+  });
+
+  it("falls back to classic blocks when Slack rejects the card block", async () => {
+    const posted: Array<Record<string, unknown>> = [];
+    const postMessage = mock(async (input: Record<string, unknown>) => {
+      posted.push(input);
+      if (posted.length === 1) throw new SlackApiError("chat.postMessage", "invalid_blocks");
+      return { channel: "C123", ts: "1713000000.000400", messageId: "1713000000.000400", raw: { ok: true } };
+    });
+    const delivery = new SlackChatActionDelivery({ postMessage } as never);
+
+    await expect(
+      delivery.executeChatAction({
+        sessionName: "ravi-slack-channel",
+        idempotencyKey: "thread-fallback",
+        target: { channel: "slack", accountId: "ravi-slack", chatId: "C123" },
+        action: { type: "chat_action", actionId: "thread.create", text: "Investigate this branch" },
+      }),
+    ).resolves.toMatchObject({ platformMessageId: "1713000000.000400" });
+
+    const card = buildSlackThreadCard("Investigate this branch", { status: "open" });
+    expect(posted.map((input) => input.blocks)).toEqual([card.blocks, card.fallbackBlocks]);
+    expect(posted[0]!.clientMsgId).toBe(posted[1]!.clientMsgId);
+  });
+
+  it("does not retry a card post for an error other than invalid blocks", async () => {
+    const postMessage = mock(async () => {
+      throw new SlackApiError("chat.postMessage", "channel_not_found");
+    });
+    const delivery = new SlackChatActionDelivery({ postMessage } as never);
+
+    await expect(
+      delivery.executeChatAction({
+        sessionName: "ravi-slack-channel",
+        idempotencyKey: "thread-missing",
+        target: { channel: "slack", accountId: "ravi-slack", chatId: "C404" },
+        action: { type: "chat_action", actionId: "thread.create", text: "Investigate this branch" },
+      }),
+    ).rejects.toThrow("channel_not_found");
+    expect(postMessage).toHaveBeenCalledTimes(1);
   });
 
   it("re-renders a thread root card on a card edit", async () => {

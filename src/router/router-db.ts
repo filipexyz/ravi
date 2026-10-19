@@ -1772,6 +1772,7 @@ function getDb(): Database {
       provider_thread_id TEXT,
       canonical_root_message_id TEXT,
       initial_prompt TEXT,
+      requested_by TEXT,
       model_override TEXT,
       creation_claim_id TEXT,
       creation_claim_expires_at INTEGER,
@@ -3174,6 +3175,7 @@ function getDb(): Database {
     db.exec("ALTER TABLE triggers ADD COLUMN on_error TEXT");
     log.info("Added on_error column to triggers table");
   }
+  ensureColumn(db, "slack_thread_lifecycle", "requested_by", "TEXT");
   ensureColumn(db, "triggers", "filter_reject_count", "INTEGER DEFAULT 0");
   ensureColumn(db, "triggers", "last_filter_reject_at", "INTEGER");
   migrateTriggerSessionCheck(db);

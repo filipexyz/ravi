@@ -99,6 +99,7 @@ import {
   splitSlackThreadPlatformChatId,
   summarizeSlackThread,
 } from "../../channels/slack/thread-lifecycle.js";
+import { resolveSlackThreadRequester } from "../../channels/slack/thread-requester.js";
 import { listStickers, stickerAllowedForAgent, stickerAllowedOnChannel } from "../../stickers/catalog.js";
 import { revokeAgentRuntimeContextsForSession } from "../../runtime/context-registry.js";
 import {
@@ -6374,6 +6375,7 @@ export class SessionCommands {
     const creationTarget = resolveSlackThreadCreationTarget(session);
     const requestId = `slack-thread:${randomUUID()}`;
     const normalizedModel = model?.trim() || undefined;
+    const requestedBy = resolveSlackThreadRequester();
     createSlackThreadLifecycle({
       requestId,
       parentSessionKey: creationTarget.parentSession.sessionKey,
@@ -6385,6 +6387,7 @@ export class SessionCommands {
       platformChatId: creationTarget.platformChatId,
       rootCanonicalChatId: creationTarget.rootCanonicalChatId,
       initialPrompt: initialMessage,
+      requestedBy,
       modelOverride: normalizedModel,
     });
     const job = buildChannelChatActionJob({
@@ -6401,6 +6404,7 @@ export class SessionCommands {
         type: "chat_action",
         actionId: "thread.create",
         text: initialMessage,
+        ...(requestedBy ? { requestedBy } : {}),
       },
     });
     const published = await publishChannelOutboundJobDurably(job);
