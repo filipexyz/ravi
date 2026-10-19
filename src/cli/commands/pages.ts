@@ -2117,6 +2117,24 @@ const pageDomainBindReturnSchema = z.object({
   total: z.number(),
 });
 
+const consoleScopeNamedRefSchema = z.object({
+  id: z.string().nullable().optional(),
+  slug: z.string().nullable().optional(),
+  name: z.string().nullable().optional(),
+});
+
+const resolvedConsoleScopeSchema = z.object({
+  consoleUrl: z.string(),
+  organization: consoleScopeNamedRefSchema.nullable().optional(),
+  project: consoleScopeNamedRefSchema.extend({ ref: z.string() }).nullable().optional(),
+  source: z.string(),
+});
+
+// `pages publish` returns the artifact publish result plus the Console scope it
+// resolved. The artifact schema is strict, so the scope must be declared here or
+// the gateway answers a successful publish with RETURN_SHAPE_ERROR.
+const pagePublishReturnSchema = artifactPublishReturnSchema.extend({ scope: resolvedConsoleScopeSchema });
+
 const pagePasswordReturnSchema = z.object({
   success: z.literal(true),
   action: z.enum(["remove", "set", "status"]),
@@ -2334,7 +2352,7 @@ declareCommandReturns(PagesCommands, {
   read: pageReadReturnSchema,
   create: pageSiteCreateReturnSchema,
   ship: pageShipReturnSchema,
-  publish: artifactPublishReturnSchema,
+  publish: pagePublishReturnSchema,
   update: pageSiteUpdateReturnSchema,
   visibility: pageSiteUpdateReturnSchema,
   domains: pageDomainBindReturnSchema,

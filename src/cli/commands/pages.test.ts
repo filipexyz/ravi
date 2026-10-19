@@ -636,6 +636,11 @@ describe("pages CLI commands", () => {
       site: { slug: "demo" },
       release: { id: "rel_123" },
     });
+    // The gateway checks the declared return schema; the resolved scope used to
+    // be rejected as an unrecognized key, turning a completed publish into a 500.
+    expect(payload.scope).toMatchObject({ project: { ref: "proj" } });
+    const publishReturnSchema = getReturnsMetadata(PagesCommands).get("publish");
+    expect(publishReturnSchema?.safeParse(payload).error?.issues).toBeUndefined();
   });
 
   it("publishes to the project Pages host without an explicit site slug", async () => {

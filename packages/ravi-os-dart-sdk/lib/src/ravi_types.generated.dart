@@ -17482,7 +17482,7 @@ class PagesPublishOptions {
 }
 
 class PagesPublishReturn {
-  const PagesPublishReturn({required this.artifact, required this.artifactVersion, required this.authenticated, required this.consoleUrl, required this.localSync, required this.publish, required this.release, required this.routes, required this.site, required this.success, required this.upload, required this.uploadSession, required this.url});
+  const PagesPublishReturn({required this.artifact, required this.artifactVersion, required this.authenticated, required this.consoleUrl, required this.localSync, required this.publish, required this.release, required this.routes, required this.scope, required this.site, required this.success, required this.upload, required this.uploadSession, required this.url});
 
   final RaviJson artifact;
   final RaviJson artifactVersion;
@@ -17492,6 +17492,7 @@ class PagesPublishReturn {
   final RaviJson publish;
   final RaviJson release;
   final List<Map<String, RaviJson>> routes;
+  final RaviJson scope;
   final RaviJson site;
   final bool success;
   final RaviJson upload;
@@ -17508,6 +17509,7 @@ class PagesPublishReturn {
       publish: RaviJson.from(json["publish"]),
       release: RaviJson.from(json["release"]),
       routes: raviJsonAsList(json["routes"], raviJsonAsRaviJsonMap),
+      scope: RaviJson.from(json["scope"]),
       site: RaviJson.from(json["site"]),
       success: raviJsonAsBool(json["success"]),
       upload: RaviJson.from(json["upload"]),

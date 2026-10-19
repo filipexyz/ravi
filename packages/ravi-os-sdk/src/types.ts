@@ -13884,6 +13884,21 @@ export type PagesPublishReturn = {
   publish: unknown;
   release: unknown;
   routes: Array<Record<string, unknown>>;
+  scope: {
+    consoleUrl: string;
+    organization?: ({
+      id?: string | null;
+      name?: string | null;
+      slug?: string | null;
+    }) | null;
+    project?: ({
+      id?: string | null;
+      name?: string | null;
+      ref: string;
+      slug?: string | null;
+    }) | null;
+    source: string;
+  };
   site: unknown;
   success: true;
   upload: {
