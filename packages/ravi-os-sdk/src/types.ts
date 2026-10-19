@@ -1086,6 +1086,39 @@ export type AgentsPublishInput = {
 /** Return shape for `agents.publish`. */
 export type AgentsPublishReturn = {
   agent: string;
+  cloud: ({
+    budgetUsd?: number;
+    effort?: string;
+    environment?: {
+      allowedHosts?: string[];
+      networking?: string;
+      packages?: {
+        apt?: string[];
+        npm?: string[];
+        pip?: string[];
+      };
+    };
+    mcp?: {
+      ravi?: boolean;
+      servers?: Array<{
+        name: string;
+        url: string;
+      }>;
+    };
+    model?: string;
+    repositories?: Array<{
+      branch?: string;
+      repo: string;
+    }>;
+    schedule?: {
+      cron: string;
+      timezone?: string;
+    };
+    tools?: {
+      webSearch?: boolean;
+      writes?: string;
+    };
+  }) | null;
   contentHash: string;
   item: ({
     archived: boolean;
@@ -6879,6 +6912,232 @@ export type ChatsReadReturn = {
   total: number;
 };
 
+/** Input shape for `cloud.agents.archive`. */
+export type CloudAgentsArchiveInput = {
+  agent: string;
+  project?: string;
+};
+
+/** Return shape for `cloud.agents.archive`. */
+export type CloudAgentsArchiveReturn = {
+  agent: ({
+    config: {
+      budgetUsd: number;
+      mcpServers: string[];
+      networking: string;
+      raviMcp: boolean;
+      repositories: string[];
+      schedule: ({
+        cron: string;
+        timezone: string;
+      }) | null;
+      webSearch: boolean;
+      writes: string;
+    };
+    deployedAt: string | null;
+    deployedBy: ({
+      id: string;
+      name: string | null;
+    }) | null;
+    id: string;
+    lastError: string | null;
+    library: {
+      itemId: string;
+      scope: string;
+      slug: string;
+      version: number | null;
+    };
+    model: string | null;
+    name: string;
+    projectId: string;
+    provider: string;
+    status: string;
+  }) | null;
+  archived: true;
+  id: string;
+  success: true;
+};
+
+/** Input shape for `cloud.agents.deploy`. */
+export type CloudAgentsDeployInput = {
+  agent: string;
+  execute?: boolean;
+  project?: string;
+  version?: string;
+};
+
+/** Return shape for `cloud.agents.deploy`. */
+export type CloudAgentsDeployReturn = {
+  agent: {
+    config: {
+      budgetUsd: number;
+      mcpServers: string[];
+      networking: string;
+      raviMcp: boolean;
+      repositories: string[];
+      schedule: ({
+        cron: string;
+        timezone: string;
+      }) | null;
+      webSearch: boolean;
+      writes: string;
+    };
+    deployedAt: string | null;
+    deployedBy: ({
+      id: string;
+      name: string | null;
+    }) | null;
+    id: string;
+    lastError: string | null;
+    library: {
+      itemId: string;
+      scope: string;
+      slug: string;
+      version: number | null;
+    };
+    model: string | null;
+    name: string;
+    projectId: string;
+    provider: string;
+    status: string;
+  };
+  success: true;
+  unchanged: boolean;
+};
+
+/** Input shape for `cloud.agents.list`. */
+export type CloudAgentsListInput = {
+  limit?: string;
+  offset?: string;
+  project?: string;
+};
+
+/** Return shape for `cloud.agents.list`. */
+export type CloudAgentsListReturn = {
+  agents: Array<{
+    config: {
+      budgetUsd: number;
+      mcpServers: string[];
+      networking: string;
+      raviMcp: boolean;
+      repositories: string[];
+      schedule: ({
+        cron: string;
+        timezone: string;
+      }) | null;
+      webSearch: boolean;
+      writes: string;
+    };
+    deployedAt: string | null;
+    deployedBy: ({
+      id: string;
+      name: string | null;
+    }) | null;
+    id: string;
+    lastError: string | null;
+    library: {
+      itemId: string;
+      scope: string;
+      slug: string;
+      version: number | null;
+    };
+    model: string | null;
+    name: string;
+    projectId: string;
+    provider: string;
+    status: string;
+  }>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  project: string;
+  success: true;
+};
+
+/** Input shape for `cloud.agents.show`. */
+export type CloudAgentsShowInput = {
+  agent: string;
+  project?: string;
+};
+
+/** Return shape for `cloud.agents.show`. */
+export type CloudAgentsShowReturn = {
+  agent: {
+    config: {
+      budgetUsd: number;
+      mcpServers: string[];
+      networking: string;
+      raviMcp: boolean;
+      repositories: string[];
+      schedule: ({
+        cron: string;
+        timezone: string;
+      }) | null;
+      webSearch: boolean;
+      writes: string;
+    };
+    deployedAt: string | null;
+    deployedBy: ({
+      id: string;
+      name: string | null;
+    }) | null;
+    id: string;
+    lastError: string | null;
+    library: {
+      itemId: string;
+      scope: string;
+      slug: string;
+      version: number | null;
+    };
+    model: string | null;
+    name: string;
+    projectId: string;
+    provider: string;
+    status: string;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.key.remove`. */
+export type CloudKeyRemoveInput = Record<string, never>;
+
+/** Return shape for `cloud.key.remove`. */
+export type CloudKeyRemoveReturn = {
+  credential: {
+    configured: boolean;
+    keyHint: string | null;
+    monthCostUsd: number;
+    monthlyAlertUsd: number | null;
+    provider: string;
+    status: string;
+    verifiedAt: string | null;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.key.status`. */
+export type CloudKeyStatusInput = Record<string, never>;
+
+/** Return shape for `cloud.key.status`. */
+export type CloudKeyStatusReturn = {
+  credential: {
+    configured: boolean;
+    keyHint: string | null;
+    monthCostUsd: number;
+    monthlyAlertUsd: number | null;
+    provider: string;
+    status: string;
+    verifiedAt: string | null;
+  };
+  success: true;
+};
+
 /** Input shape for `cloud.projects.create`. */
 export type CloudProjectsCreateInput = {
   console?: string;
@@ -6922,6 +7181,649 @@ export type CloudProjectsListReturn = {
   projects: Array<Record<string, unknown>>;
   success: true;
   total: number;
+};
+
+/** Input shape for `cloud.runs.approve`. */
+export type CloudRunsApproveInput = {
+  approval: string;
+  execute?: boolean;
+  run: string;
+};
+
+/** Return shape for `cloud.runs.approve`. */
+export type CloudRunsApproveReturn = {
+  approval: {
+    decidedAt: string | null;
+    decidedBy: ({
+      id: string;
+      name: string | null;
+    }) | null;
+    id: string;
+    inputPreview: string | null;
+    requestedAt: string | null;
+    server: string | null;
+    status: string;
+    tool: string;
+  };
+  run: {
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    approvals: Array<{
+      decidedAt: string | null;
+      decidedBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      id: string;
+      inputPreview: string | null;
+      requestedAt: string | null;
+      server: string | null;
+      status: string;
+      tool: string;
+    }>;
+    budgetUsd: number | null;
+    costUsd: number;
+    endedAt: string | null;
+    error: ({
+      code: string;
+      message: string;
+    }) | null;
+    id: string;
+    origin: ({
+      deliveredAt: string | null;
+      installationId: string | null;
+      kind: string;
+      sessionName: string | null;
+      taskId: string | null;
+    }) | null;
+    outputs: Array<{
+      id: string;
+      name: string;
+      size: number;
+    }>;
+    projectId: string;
+    prompt: string;
+    result: string | null;
+    runningSeconds: number;
+    startedAt: string | null;
+    status: string;
+    tokens: {
+      cacheRead: number;
+      cacheWrite: number;
+      input: number;
+      output: number;
+    };
+    trigger: string;
+    url: string | null;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.runs.deny`. */
+export type CloudRunsDenyInput = {
+  approval: string;
+  reason?: string;
+  run: string;
+};
+
+/** Return shape for `cloud.runs.deny`. */
+export type CloudRunsDenyReturn = {
+  approval: {
+    decidedAt: string | null;
+    decidedBy: ({
+      id: string;
+      name: string | null;
+    }) | null;
+    id: string;
+    inputPreview: string | null;
+    requestedAt: string | null;
+    server: string | null;
+    status: string;
+    tool: string;
+  };
+  run: {
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    approvals: Array<{
+      decidedAt: string | null;
+      decidedBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      id: string;
+      inputPreview: string | null;
+      requestedAt: string | null;
+      server: string | null;
+      status: string;
+      tool: string;
+    }>;
+    budgetUsd: number | null;
+    costUsd: number;
+    endedAt: string | null;
+    error: ({
+      code: string;
+      message: string;
+    }) | null;
+    id: string;
+    origin: ({
+      deliveredAt: string | null;
+      installationId: string | null;
+      kind: string;
+      sessionName: string | null;
+      taskId: string | null;
+    }) | null;
+    outputs: Array<{
+      id: string;
+      name: string;
+      size: number;
+    }>;
+    projectId: string;
+    prompt: string;
+    result: string | null;
+    runningSeconds: number;
+    startedAt: string | null;
+    status: string;
+    tokens: {
+      cacheRead: number;
+      cacheWrite: number;
+      input: number;
+      output: number;
+    };
+    trigger: string;
+    url: string | null;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.runs.list`. */
+export type CloudRunsListInput = {
+  agent?: string;
+  cursor?: string;
+  project?: string;
+  status?: string;
+};
+
+/** Return shape for `cloud.runs.list`. */
+export type CloudRunsListReturn = {
+  cursor: string | null;
+  project: string;
+  runs: Array<{
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    approvals: Array<{
+      decidedAt: string | null;
+      decidedBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      id: string;
+      inputPreview: string | null;
+      requestedAt: string | null;
+      server: string | null;
+      status: string;
+      tool: string;
+    }>;
+    budgetUsd: number | null;
+    costUsd: number;
+    endedAt: string | null;
+    error: ({
+      code: string;
+      message: string;
+    }) | null;
+    id: string;
+    origin: ({
+      deliveredAt: string | null;
+      installationId: string | null;
+      kind: string;
+      sessionName: string | null;
+      taskId: string | null;
+    }) | null;
+    outputs: Array<{
+      id: string;
+      name: string;
+      size: number;
+    }>;
+    projectId: string;
+    prompt: string;
+    result: string | null;
+    runningSeconds: number;
+    startedAt: string | null;
+    status: string;
+    tokens: {
+      cacheRead: number;
+      cacheWrite: number;
+      input: number;
+      output: number;
+    };
+    trigger: string;
+    url: string | null;
+  }>;
+  success: true;
+};
+
+/** Input shape for `cloud.runs.outputs`. */
+export type CloudRunsOutputsInput = {
+  download?: string;
+  run: string;
+};
+
+/** Return shape for `cloud.runs.outputs`. */
+export type CloudRunsOutputsReturn = {
+  directory: string | null;
+  downloaded: Array<{
+    bytes: number;
+    id: string;
+    name: string;
+    path: string;
+  }>;
+  outputs: Array<{
+    id: string;
+    name: string;
+    size: number;
+  }>;
+  runId: string;
+  success: true;
+};
+
+/** Input shape for `cloud.runs.reply`. */
+export type CloudRunsReplyInput = {
+  execute?: boolean;
+  run: string;
+  text: string;
+};
+
+/** Return shape for `cloud.runs.reply`. */
+export type CloudRunsReplyReturn = {
+  run: {
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    approvals: Array<{
+      decidedAt: string | null;
+      decidedBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      id: string;
+      inputPreview: string | null;
+      requestedAt: string | null;
+      server: string | null;
+      status: string;
+      tool: string;
+    }>;
+    budgetUsd: number | null;
+    costUsd: number;
+    endedAt: string | null;
+    error: ({
+      code: string;
+      message: string;
+    }) | null;
+    id: string;
+    origin: ({
+      deliveredAt: string | null;
+      installationId: string | null;
+      kind: string;
+      sessionName: string | null;
+      taskId: string | null;
+    }) | null;
+    outputs: Array<{
+      id: string;
+      name: string;
+      size: number;
+    }>;
+    projectId: string;
+    prompt: string;
+    result: string | null;
+    runningSeconds: number;
+    startedAt: string | null;
+    status: string;
+    tokens: {
+      cacheRead: number;
+      cacheWrite: number;
+      input: number;
+      output: number;
+    };
+    trigger: string;
+    url: string | null;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.runs.show`. */
+export type CloudRunsShowInput = {
+  run: string;
+};
+
+/** Return shape for `cloud.runs.show`. */
+export type CloudRunsShowReturn = {
+  run: {
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    approvals: Array<{
+      decidedAt: string | null;
+      decidedBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      id: string;
+      inputPreview: string | null;
+      requestedAt: string | null;
+      server: string | null;
+      status: string;
+      tool: string;
+    }>;
+    budgetUsd: number | null;
+    costUsd: number;
+    endedAt: string | null;
+    error: ({
+      code: string;
+      message: string;
+    }) | null;
+    id: string;
+    origin: ({
+      deliveredAt: string | null;
+      installationId: string | null;
+      kind: string;
+      sessionName: string | null;
+      taskId: string | null;
+    }) | null;
+    outputs: Array<{
+      id: string;
+      name: string;
+      size: number;
+    }>;
+    projectId: string;
+    prompt: string;
+    result: string | null;
+    runningSeconds: number;
+    startedAt: string | null;
+    status: string;
+    tokens: {
+      cacheRead: number;
+      cacheWrite: number;
+      input: number;
+      output: number;
+    };
+    trigger: string;
+    url: string | null;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.runs.start`. */
+export type CloudRunsStartInput = {
+  agent: string;
+  budget?: string;
+  execute?: boolean;
+  idempotencyKey?: string;
+  project?: string;
+  prompt: string;
+  repo?: string[];
+};
+
+/** Return shape for `cloud.runs.start`. */
+export type CloudRunsStartReturn = {
+  run: {
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    approvals: Array<{
+      decidedAt: string | null;
+      decidedBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      id: string;
+      inputPreview: string | null;
+      requestedAt: string | null;
+      server: string | null;
+      status: string;
+      tool: string;
+    }>;
+    budgetUsd: number | null;
+    costUsd: number;
+    endedAt: string | null;
+    error: ({
+      code: string;
+      message: string;
+    }) | null;
+    id: string;
+    origin: ({
+      deliveredAt: string | null;
+      installationId: string | null;
+      kind: string;
+      sessionName: string | null;
+      taskId: string | null;
+    }) | null;
+    outputs: Array<{
+      id: string;
+      name: string;
+      size: number;
+    }>;
+    projectId: string;
+    prompt: string;
+    result: string | null;
+    runningSeconds: number;
+    startedAt: string | null;
+    status: string;
+    tokens: {
+      cacheRead: number;
+      cacheWrite: number;
+      input: number;
+      output: number;
+    };
+    trigger: string;
+    url: string | null;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.runs.stop`. */
+export type CloudRunsStopInput = {
+  run: string;
+};
+
+/** Return shape for `cloud.runs.stop`. */
+export type CloudRunsStopReturn = {
+  run: {
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    approvals: Array<{
+      decidedAt: string | null;
+      decidedBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      id: string;
+      inputPreview: string | null;
+      requestedAt: string | null;
+      server: string | null;
+      status: string;
+      tool: string;
+    }>;
+    budgetUsd: number | null;
+    costUsd: number;
+    endedAt: string | null;
+    error: ({
+      code: string;
+      message: string;
+    }) | null;
+    id: string;
+    origin: ({
+      deliveredAt: string | null;
+      installationId: string | null;
+      kind: string;
+      sessionName: string | null;
+      taskId: string | null;
+    }) | null;
+    outputs: Array<{
+      id: string;
+      name: string;
+      size: number;
+    }>;
+    projectId: string;
+    prompt: string;
+    result: string | null;
+    runningSeconds: number;
+    startedAt: string | null;
+    status: string;
+    tokens: {
+      cacheRead: number;
+      cacheWrite: number;
+      input: number;
+      output: number;
+    };
+    trigger: string;
+    url: string | null;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.schedules.add`. */
+export type CloudSchedulesAddInput = {
+  agent: string;
+  budget?: string;
+  cron?: string;
+  disabled?: boolean;
+  execute?: boolean;
+  project?: string;
+  prompt?: string;
+  timezone?: string;
+};
+
+/** Return shape for `cloud.schedules.add`. */
+export type CloudSchedulesAddReturn = {
+  schedule: {
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    budgetUsd: number | null;
+    cron: string;
+    enabled: boolean;
+    id: string;
+    lastRunAt: string | null;
+    lastRunId: string | null;
+    nextRunAt: string | null;
+    prompt: string | null;
+    timezone: string;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.schedules.list`. */
+export type CloudSchedulesListInput = {
+  limit?: string;
+  offset?: string;
+  project?: string;
+};
+
+/** Return shape for `cloud.schedules.list`. */
+export type CloudSchedulesListReturn = {
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  project: string;
+  schedules: Array<{
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    budgetUsd: number | null;
+    cron: string;
+    enabled: boolean;
+    id: string;
+    lastRunAt: string | null;
+    lastRunId: string | null;
+    nextRunAt: string | null;
+    prompt: string | null;
+    timezone: string;
+  }>;
+  success: true;
+};
+
+/** Input shape for `cloud.schedules.remove`. */
+export type CloudSchedulesRemoveInput = {
+  id: string;
+};
+
+/** Return shape for `cloud.schedules.remove`. */
+export type CloudSchedulesRemoveReturn = {
+  id: string;
+  removed: true;
+  success: true;
+};
+
+/** Input shape for `cloud.schedules.update`. */
+export type CloudSchedulesUpdateInput = {
+  budget?: string;
+  cron?: string;
+  disable?: boolean;
+  enable?: boolean;
+  execute?: boolean;
+  heartbeat?: boolean;
+  id: string;
+  project?: string;
+  prompt?: string;
+  timezone?: string;
+};
+
+/** Return shape for `cloud.schedules.update`. */
+export type CloudSchedulesUpdateReturn = {
+  schedule: {
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    budgetUsd: number | null;
+    cron: string;
+    enabled: boolean;
+    id: string;
+    lastRunAt: string | null;
+    lastRunId: string | null;
+    nextRunAt: string | null;
+    prompt: string | null;
+    timezone: string;
+  };
+  success: true;
 };
 
 /** Input shape for `cloud.scope.clear`. */
@@ -20245,10 +21147,13 @@ export type TasksDepsRmReturn = {
 export type TasksDispatchInput = {
   actorSession?: string;
   agent?: string;
+  budget?: string;
   checkpoint?: string;
+  cloud?: boolean;
   effort?: string;
   execute?: boolean;
   model?: string;
+  project?: string;
   reportEvents?: string;
   reportTo?: string;
   session?: string;

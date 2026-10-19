@@ -1288,6 +1288,9 @@ describe("TaskCommands create", () => {
         undefined,
         undefined,
         undefined,
+        undefined,
+        undefined,
+        undefined,
         true,
       );
     } finally {
@@ -1364,6 +1367,9 @@ describe("TaskCommands create", () => {
         undefined,
         undefined,
         undefined,
+        undefined,
+        undefined,
+        undefined,
         true,
       );
     } finally {
@@ -1430,6 +1436,9 @@ describe("TaskCommands create", () => {
       await commands.dispatch(
         "task-cli-1",
         "dev",
+        undefined,
+        undefined,
+        undefined,
         undefined,
         undefined,
         undefined,

@@ -24,6 +24,34 @@ type ExecuteConsumer = {
 
 const executeConsumers: readonly ExecuteConsumer[] = [
   {
+    name: "cloud run approval hints in run show and follow",
+    path: "src/cli/commands/cloud-agents.ts",
+    marker: "Approve: ravi cloud runs approve",
+    expected: "--execute",
+    matches: 2,
+  },
+  {
+    name: "cloud run approval relayed to a task's session",
+    path: "src/cloud-agents/task-watcher.ts",
+    marker: "Approve: ravi cloud runs approve",
+    expected: "--execute",
+    matches: 1,
+  },
+  {
+    name: "cloud deploy next-step hint",
+    path: "src/cli/commands/cloud-agents.ts",
+    marker: "Run it: ravi cloud runs start",
+    expected: "--execute",
+    matches: 1,
+  },
+  {
+    name: "cloud key error hints",
+    path: "src/cli/cloud-agents-contract.ts",
+    marker: "ravi cloud key set --stdin",
+    expected: "--execute",
+    matches: 2,
+  },
+  {
     name: "task dispatch status hint",
     path: "src/cli/commands/tasks.ts",
     marker: "ravi tasks dispatch",
@@ -546,6 +574,119 @@ const executeInstructions = [
     name: "Knowledge forget redact help",
     path: "src/cli/commands/knowledge.ts",
     instruction: "ravi knowledge forget --about contact:<contact-id> --redact --execute",
+  },
+  {
+    name: "Cloud key set skill",
+    path: "src/plugins/internal/ravi-system/skills/cloud-agents/SKILL.md",
+    instruction: "ravi cloud key set --stdin --execute < ~/secrets/anthropic-key",
+  },
+  {
+    name: "Cloud key set documentation",
+    path: "docs/console/cloud-agents.mdx",
+    instruction: "ravi cloud key set --stdin --execute < ~/secrets/anthropic-key",
+  },
+  {
+    name: "Cloud key set help",
+    path: "src/cli/commands/cloud-agents.ts",
+    instruction: "ravi cloud key set --stdin --execute < ~/secrets/anthropic-key",
+  },
+  {
+    name: "Cloud agents deploy skill",
+    path: "src/plugins/internal/ravi-system/skills/cloud-agents/SKILL.md",
+    instruction: "ravi cloud agents deploy triage --project clinica --execute",
+  },
+  {
+    name: "Cloud agents deploy documentation",
+    path: "docs/console/cloud-agents.mdx",
+    instruction: "ravi cloud agents deploy triage --project clinica --execute",
+  },
+  {
+    name: "Cloud agents deploy help",
+    path: "src/cli/commands/cloud-agents.ts",
+    instruction: "ravi cloud agents deploy triage --project clinica --execute",
+  },
+  {
+    name: "Cloud runs start skill",
+    path: "src/plugins/internal/ravi-system/skills/cloud-agents/SKILL.md",
+    instruction: 'ravi cloud runs start triage "Summarize yesterday\'s open tickets" --project clinica --execute',
+  },
+  {
+    name: "Cloud runs start documentation",
+    path: "docs/console/cloud-agents.mdx",
+    instruction: 'ravi cloud runs start triage "Summarize yesterday\'s open tickets" --project clinica --execute',
+  },
+  {
+    name: "Cloud runs start help",
+    path: "src/cli/commands/cloud-agents.ts",
+    instruction: 'ravi cloud runs start triage "Summarize yesterday\'s open tickets" --project clinica --execute',
+  },
+  {
+    name: "Cloud runs reply skill",
+    path: "src/plugins/internal/ravi-system/skills/cloud-agents/SKILL.md",
+    instruction: 'ravi cloud runs reply <run> "Also check the billing queue" --execute',
+  },
+  {
+    name: "Cloud runs reply documentation",
+    path: "docs/console/cloud-agents.mdx",
+    instruction: 'ravi cloud runs reply <run> "Also check the billing queue" --execute',
+  },
+  {
+    name: "Cloud runs approve skill",
+    path: "src/plugins/internal/ravi-system/skills/cloud-agents/SKILL.md",
+    instruction: "ravi cloud runs approve <run> <approval> --execute",
+  },
+  {
+    name: "Cloud runs approve documentation",
+    path: "docs/console/cloud-agents.mdx",
+    instruction: "ravi cloud runs approve <run> <approval> --execute",
+  },
+  {
+    name: "Cloud runs approve help",
+    path: "src/cli/commands/cloud-agents.ts",
+    instruction: "ravi cloud runs approve <run> <approval> --execute",
+  },
+  {
+    name: "Cloud schedules add skill",
+    path: "src/plugins/internal/ravi-system/skills/cloud-agents/SKILL.md",
+    instruction:
+      'ravi cloud schedules add triage --cron "0 9 * * 1-5" --timezone America/Sao_Paulo --project clinica --execute',
+  },
+  {
+    name: "Cloud schedules add documentation",
+    path: "docs/console/cloud-agents.mdx",
+    instruction:
+      'ravi cloud schedules add triage --cron "0 9 * * 1-5" --timezone America/Sao_Paulo --project clinica --execute',
+  },
+  {
+    name: "Cloud schedules add help",
+    path: "src/cli/commands/cloud-agents.ts",
+    instruction:
+      'ravi cloud schedules add triage --cron "0 9 * * 1-5" --timezone America/Sao_Paulo --project clinica --execute',
+  },
+  {
+    name: "Cloud schedules enable skill",
+    path: "src/plugins/internal/ravi-system/skills/cloud-agents/SKILL.md",
+    instruction: "ravi cloud schedules update <id> --enable --execute",
+  },
+  {
+    name: "Cloud schedules enable documentation",
+    path: "docs/console/cloud-agents.mdx",
+    instruction: "ravi cloud schedules update <id> --enable --execute",
+  },
+  {
+    name: "Cloud schedules enable help",
+    path: "src/cli/commands/cloud-agents.ts",
+    instruction: "ravi cloud schedules update <id> --enable --execute",
+  },
+  {
+    name: "Cloud task dispatch skill",
+    path: "src/plugins/internal/ravi-system/skills/cloud-agents/SKILL.md",
+    instruction: "ravi tasks dispatch <task> --agent triage --cloud --budget 5 --execute",
+  },
+  {
+    name: "Cloud task dispatch documentation",
+    path: "docs/console/cloud-agents.mdx",
+    instruction: "ravi tasks dispatch <task> --agent triage --cloud --budget 5 --execute",
   },
 ] as const;
 

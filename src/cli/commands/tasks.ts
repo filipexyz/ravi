@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import { runCloudTaskDispatch } from "../cloud-task-dispatch.js";
 import { fail, getContext } from "../context.js";
 import {
   decodeListCursor,
@@ -1787,6 +1788,15 @@ export class TaskCommands {
     })
     actorSessionName?: string,
     @Option({
+      flags: "--cloud",
+      description: "Run it as a paid cloud run of the agent's Library definition instead of a local session",
+    })
+    cloud?: boolean,
+    @Option({ flags: "--budget <usd>", description: "With --cloud: budget of the cloud run in US dollars (0.5-200)" })
+    budget?: string,
+    @Option({ flags: "--project <project>", description: "With --cloud: Console project of the run" })
+    project?: string,
+    @Option({
       flags: "--execute",
       description: "Actually dispatch the task; default is a dry-run that only shows the plan (exit 3)",
     })
@@ -1803,6 +1813,27 @@ export class TaskCommands {
     }
 
     const details = getTaskDetailsForContract("tasks dispatch", taskId, asJson);
+
+    if (cloud === true) {
+      if (sessionName || checkpoint || reportEvents || model || effort || thinking) {
+        fail("--session, --checkpoint, --report-events, --model, --effort and --thinking do not apply with --cloud");
+      }
+      // The result comes back as a [System] Inform to the reporting session, or the dispatching one.
+      const actor = resolveDispatchActor(actorSessionName);
+      return runCloudTaskDispatch({
+        task: details.task,
+        agentId: normalizedAgentId,
+        ...(project?.trim() ? { project: project.trim() } : {}),
+        ...(budget !== undefined ? { budget } : {}),
+        informSession: reportToSessionName?.trim() || actor.sessionName || null,
+        actor: actor.actor,
+        execute: execute === true,
+        asJson,
+      });
+    }
+    if (budget !== undefined || project !== undefined) {
+      fail("--budget and --project apply only with --cloud");
+    }
 
     const resolvedSessionName = sessionName?.trim() || getDefaultTaskSessionNameForTask(details.task);
     if (execute !== true) {

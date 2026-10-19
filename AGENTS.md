@@ -270,6 +270,7 @@ Operating Ravi is documented in the system skills (`ravi skills show <skill>`) a
 | Console login, Pages | `pages` | `console/login`, `console/pages` |
 | Calendar, meeting briefings and follow-ups | `agenda`, `meetings` | `console/calendar`, `console/meetings` |
 | Bases and data pages | `solucoes`, `bases` | `console/bases` |
+| Cloud agents: Library agents on Anthropic managed agents, runs, approvals, schedules | `cloud-agents` | `console/cloud-agents` |
 | Media, artifacts, skills | `audio`, `image`, `video`, `artifacts`, `skills` | `reference/media`, `reference/artifacts`, `reference/skills` |
 | Tasks, CLI conventions, SDK and HTTP gateway | `tasks` | `cli/overview`, `guides/sdk` |
 

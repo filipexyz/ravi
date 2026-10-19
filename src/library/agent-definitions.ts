@@ -10,6 +10,11 @@
  * write brake: a permission profile above the bootstrap floor and any skill
  * grant. A definition never carries routes, instances, contacts, paths or
  * credentials, in either direction.
+ *
+ * `agent.json` may also carry a `cloud` block (spec `cloud/agents`): how the
+ * agent runs as a cloud agent. Publish takes it from the agent's own
+ * `agent.json` and validates it; install writes it to the new agent's
+ * `agent.json`, so publishing again keeps it.
  */
 
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -22,6 +27,11 @@ import {
   normalizeAgentRuntimePermissionProfile,
   type AgentRuntimePermissionProfile,
 } from "../permissions/agent-default-capabilities-provider.js";
+import {
+  CLOUD_AGENT_DEFINITION_INVALID,
+  readCloudBlockFromManifest,
+  type CloudAgentBlock,
+} from "../cloud-agents/definition.js";
 import { createAgent, ensureAgentDirs, getAgent, loadRouterConfig, updateAgent } from "../router/config.js";
 import { dbListSkillGrantsForAgent, dbUpsertSkillGrant } from "../router/router-db.js";
 import type { AgentConfig } from "../router/types.js";
@@ -215,6 +225,8 @@ export interface LibraryAgentDefinition {
   agent: LibraryAgentManifest;
   instructions: string;
   heartbeat: string | null;
+  /** The valid `cloud` block of its `agent.json`, or null. */
+  cloud: CloudAgentBlock | null;
   files: Array<{ file: string; bytes: number }>;
   stale: boolean;
 }
@@ -261,6 +273,10 @@ function definitionOf(shown: LibraryShowResponse, stale: boolean): LibraryAgentD
     agent: manifestOf(shown),
     instructions,
     heartbeat: shown.version.files.find((file) => file.path === AGENT_HEARTBEAT_FILE)?.content ?? null,
+    // An invalid block is left out here: the Console refuses it when the agent is deployed.
+    cloud: readCloudBlockFromManifest(
+      shown.version.files.find((file) => file.path === AGENT_MANIFEST_FILE)?.content ?? null,
+    ).cloud,
     files: shown.version.files.map((file) => ({ file: file.path, bytes: file.bytes })),
     stale,
   };
@@ -467,6 +483,7 @@ export async function prepareLibraryAgentInstall(
   const effect = [
     `create local agent '${agentId}' in ${cwd}`,
     `write AGENTS.md${definition.heartbeat !== null ? " and HEARTBEAT.md" : ""} from ${definition.ref} v${definition.version}`,
+    ...(definition.cloud ? ["write agent.json with its cloud block"] : []),
     ...(definition.agent.provider ? [`provider ${definition.agent.provider}`] : []),
     ...(definition.agent.model ? [`model ${definition.agent.model}`] : []),
     ...(profile.apply
@@ -516,6 +533,12 @@ export function executeLibraryAgentInstall(prepared: PreparedLibraryAgentInstall
   mkdirSync(plan.agent.cwd, { recursive: true });
   writeFileSync(join(plan.agent.cwd, AGENT_INSTRUCTIONS_FILE), definition.instructions);
   if (definition.heartbeat !== null) writeFileSync(join(plan.agent.cwd, AGENT_HEARTBEAT_FILE), definition.heartbeat);
+  if (definition.cloud) {
+    writeFileSync(
+      join(plan.agent.cwd, AGENT_MANIFEST_FILE),
+      `${JSON.stringify({ cloud: definition.cloud }, null, 2)}\n`,
+    );
+  }
   createAgent({
     id: agentId,
     cwd: plan.agent.cwd,
@@ -793,6 +816,8 @@ export interface LibraryAgentPublishPlan {
   description: string;
   note: string | null;
   manifest: LibraryAgentManifest;
+  /** The `cloud` block from the agent's own `agent.json`, validated; null when it has none. */
+  cloud: CloudAgentBlock | null;
   files: Array<{ file: string; bytes: number }>;
   contentHash: string;
   /** Skills of the agent left out of `agent.json` (not Library refs, or outside the scope). */
@@ -862,6 +887,20 @@ export async function prepareLibraryAgentPublish(
     );
   }
   const heartbeat = readOptional(join(cwd, AGENT_HEARTBEAT_FILE));
+  const localManifest = readCloudBlockFromManifest(readOptional(join(cwd, AGENT_MANIFEST_FILE)));
+  if (localManifest.issues.length > 0) {
+    const first = localManifest.issues[0]!;
+    throw new LibraryCommandError(
+      CLOUD_AGENT_DEFINITION_INVALID,
+      `${AGENT_MANIFEST_FILE}: ${first.path.join(".")}: ${first.message}`,
+      2,
+      {
+        suggestedAction: "Fix the cloud block in the agent's agent.json, then publish again",
+        issues: localManifest.issues.slice(0, 20),
+      },
+    );
+  }
+  const cloud = localManifest.cloud;
 
   // agent.json: the local provider, model and profile as suggestions, and the
   // Library skills the agent is granted that the scope's agents can see. No
@@ -898,6 +937,7 @@ export async function prepareLibraryAgentPublish(
         model: manifest.model,
         profile: manifest.profile,
         skills: manifest.skills.length > 0 ? manifest.skills : undefined,
+        cloud: cloud ?? undefined,
       }).filter(([, value]) => value !== null && value !== undefined),
     ),
     null,
@@ -946,6 +986,7 @@ export async function prepareLibraryAgentPublish(
       description,
       note: note ?? null,
       manifest,
+      cloud,
       files: files.map((file) => ({ file: file.path, bytes: Buffer.byteLength(file.content, "utf8") })),
       contentHash,
       leftOut,
