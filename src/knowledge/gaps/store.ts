@@ -116,10 +116,21 @@ export function insertKnowledgeGap(
     (db) => {
       const existing = db
         .prepare(
-          `SELECT * FROM knowledge_gaps WHERE question_hash = ? AND status IN ('pending','uploaded')
+          `SELECT * FROM knowledge_gaps WHERE question_hash = ? AND instance_id = ?
+           AND contact_id = ? AND channel = ? AND account_id = ? AND chat_id = ?
+           AND status IN ('pending','uploaded')
            ORDER BY created_at DESC LIMIT 1`,
         )
-        .get(questionHash) as GapRow | null;
+        // Keep a wait per recipient. The Console still deduplicates the
+        // question via question_hash, linking these rows to one proposal.
+        .get(
+          questionHash,
+          input.instanceId,
+          input.contactId,
+          input.channel,
+          input.accountId,
+          input.chatId,
+        ) as GapRow | null;
       if (existing) return { gap: rowToGap(existing), created: false, capped: false };
 
       const gap: KnowledgeGap = {

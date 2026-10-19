@@ -68,6 +68,43 @@ describe("knowledge gaps store", () => {
     expect(listGapsByStatus("pending", 100)).toHaveLength(7);
   });
 
+  it("keeps each recipient while deduplicating retries in the same conversation", () => {
+    const question = "Qual o prazo?";
+    const first = insertKnowledgeGap(gapInput(question)).gap;
+    const secondInput = gapInput(question, { contactId: "contact-2", chatId: "chat-2" });
+    const second = insertKnowledgeGap(secondInput);
+    const otherChat = insertKnowledgeGap({ ...secondInput, chatId: "chat-3" });
+    const otherInstance = insertKnowledgeGap(gapInput(question, { instanceId: "wa-other", accountId: "wa-other" }));
+    const otherChannel = insertKnowledgeGap(gapInput(question, { channel: "slack" }));
+    const otherAccount = insertKnowledgeGap(gapInput(question, { accountId: "other-account" }));
+
+    expect(second).toMatchObject({ created: true, capped: false, gap: { contactId: "contact-2", chatId: "chat-2" } });
+    expect(second.gap.questionHash).toBe(first.questionHash);
+    expect(
+      new Set([
+        first.id,
+        second.gap.id,
+        otherChat.gap.id,
+        otherInstance.gap.id,
+        otherChannel.gap.id,
+        otherAccount.gap.id,
+      ]).size,
+    ).toBe(6);
+    updateGap(second.gap.id, { status: "uploaded", proposalId: "shared-proposal" });
+    expect(insertKnowledgeGap(secondInput)).toMatchObject({ created: false, gap: { id: second.gap.id } });
+  });
+
+  it("forgetting one recipient preserves another recipient's identical question", () => {
+    const first = insertKnowledgeGap(gapInput("Qual o prazo?")).gap;
+    const second = insertKnowledgeGap(gapInput("Qual o prazo?", { contactId: "contact-2", chatId: "chat-2" })).gap;
+    updateGap(first.id, { status: "uploaded", proposalId: "shared-proposal" });
+    updateGap(second.id, { status: "uploaded", proposalId: "shared-proposal" });
+
+    expect(dropGapsForContact("contact-1")).toBe(1);
+    expect(listGapsByStatus("uploaded", 10).map((gap) => gap.id)).toEqual([second.id]);
+    expect(claimGapsForNotification("shared-proposal").map((gap) => gap.id)).toEqual([second.id]);
+  });
+
   it("drops a contact's pending and uploaded gaps", () => {
     const a = insertKnowledgeGap(gapInput("a?")).gap;
     const b = insertKnowledgeGap(gapInput("b?")).gap;

@@ -116,7 +116,11 @@ function fakeClient(options: {
   return { client, state };
 }
 
-function gap(question = "Vocês dão desconto pra ONG?", instanceId = "wa-main") {
+function gap(
+  question = "Vocês dão desconto pra ONG?",
+  instanceId = "wa-main",
+  overrides: Partial<Parameters<typeof insertKnowledgeGap>[0]> = {},
+) {
   return insertKnowledgeGap({
     agentId: "atendimento",
     instanceId,
@@ -126,6 +130,7 @@ function gap(question = "Vocês dão desconto pra ONG?", instanceId = "wa-main")
     contactId: "contact-1",
     sessionName: "atendimento-dm",
     question,
+    ...overrides,
   }).gap;
 }
 
@@ -298,6 +303,75 @@ describe("syncKnowledgeMirror", () => {
       },
     ]);
     expect(getKnowledgeGap(answered.id)?.status).toBe("notified");
+  });
+
+  it("notifies every waiting recipient of a deduped proposal, with independent retries and instance marks", async () => {
+    const first = gap();
+    const second = gap(undefined, "wa-main", { contactId: "contact-2", chatId: "chat-2" });
+    const otherInstance = gap(undefined, "wa-other", { contactId: "contact-3", chatId: "chat-3" });
+    const { client, state } = fakeClient({ mirror: mirror([]) });
+    client.createProposal = async (body) => {
+      state.proposals.push(body);
+      return { proposal: proposalView({ status: "pending" }), deduped: state.proposals.length > 1 };
+    };
+    const uploaded = await syncKnowledgeMirror({
+      client,
+      now: NOW,
+      listInstances: () => [instance("wa-main"), instance("wa-other")],
+      project: () => "acme",
+    });
+    expect(uploaded.gapsUploaded).toBe(3);
+    expect(new Set(state.proposals.map((proposal) => proposal.idempotencyKey)).size).toBe(3);
+    expect(first.questionHash).toBe(second.questionHash);
+    expect(first.questionHash).not.toBe(otherInstance.questionHash);
+    for (const pending of [first, second, otherInstance]) {
+      expect(getKnowledgeGap(pending.id)).toMatchObject({ status: "uploaded", proposalId: "prop-1" });
+      updateGap(pending.id, { status: "answered" });
+    }
+
+    const faqPage = page({ routeId: "route-faq", url: "https://acme.ravi.page/faq", path: "/faq", sections: [] });
+    const answeredClient = fakeClient({ mirror: mirror([faqPage]) }).client;
+    const sent: string[] = [];
+    let failedSecond = false;
+    const deliver = async (payload: { to: string }) => {
+      if (payload.to === "chat-2" && !failedSecond) {
+        failedSecond = true;
+        throw new Error("Temporary failure for the second recipient");
+      }
+      sent.push(payload.to);
+    };
+    const options = { client: answeredClient, now: NOW, listInstances: () => [], deliver };
+    expect((await syncKnowledgeMirror(options)).notified).toBe(1);
+    expect(getKnowledgeGap(first.id)?.status).toBe("notified");
+    expect(getKnowledgeGap(second.id)?.status).toBe("answered");
+    expect((await syncKnowledgeMirror(options)).notified).toBe(1);
+    expect((await syncKnowledgeMirror(options)).notified).toBe(0);
+    expect(sent.sort()).toEqual([first.chatId, second.chatId].sort());
+    expect(getKnowledgeGap(otherInstance.id)?.status).toBe("answered");
+  });
+
+  it("notifies a new recipient when Console deduplication returns an already answered proposal", async () => {
+    const first = gap();
+    updateGap(first.id, { status: "notified", proposalId: "prop-1", notifiedAt: NOW });
+    const second = gap(undefined, "wa-main", { contactId: "contact-2", chatId: "chat-2" });
+    const faqPage = page({ routeId: "route-faq", url: "https://acme.ravi.page/faq", path: "/faq", sections: [] });
+    const { client } = fakeClient({ mirror: mirror([faqPage]) });
+    client.createProposal = async () => ({ proposal: proposalView(), deduped: true });
+    const sent: string[] = [];
+    const options = {
+      client,
+      now: NOW,
+      listInstances: () => [instance("wa-main")],
+      project: () => "acme",
+      deliver: async (payload: { to: string }) => {
+        sent.push(payload.to);
+      },
+    };
+
+    expect((await syncKnowledgeMirror(options)).notified).toBe(1);
+    expect(getKnowledgeGap(second.id)?.status).toBe("notified");
+    expect((await syncKnowledgeMirror(options)).notified).toBe(0);
+    expect(sent).toEqual([second.chatId]);
   });
 
   it("truncates the question to 200 characters in the answer text", () => {

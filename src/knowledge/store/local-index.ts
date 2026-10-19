@@ -442,14 +442,29 @@ export function searchLocal(input: {
     params.push(input.since);
   }
   const who = input.who ? foldKnowledgeText(input.who) : "";
-  const keep = (row: LocalDocRow) => !who || foldKnowledgeText(row.speaker ?? "").includes(who);
-  const fetch = who ? Math.min(500, limit * 10) : limit;
-
   const db = getKnowledgeDb();
+  if (who) {
+    // SQLite does not fold speaker names like foldKnowledgeText. Resolve the
+    // matching names from metadata, then filter in SQL before either search
+    // path ranks or limits candidates. json_each avoids a variable per name.
+    const speakers = (
+      db
+        .prepare(
+          `SELECT DISTINCT d.speaker FROM knowledge_local_docs d WHERE ${where.join(" AND ")} AND d.speaker IS NOT NULL`,
+        )
+        .all(...params) as Array<{ speaker: string }>
+    )
+      .map((row) => row.speaker)
+      .filter((speaker) => foldKnowledgeText(speaker).includes(who));
+    if (speakers.length === 0) return [];
+    where.push("d.speaker IN (SELECT value FROM json_each(?))");
+    params.push(JSON.stringify(speakers));
+  }
+
   const rows = knowledgeFts5Available()
-    ? searchFts(db, input.query, where, params, fetch)
-    : searchLike(db, terms, where, params, fetch);
-  return rows.filter(keep).slice(0, limit).map(toHit);
+    ? searchFts(db, input.query, where, params, limit)
+    : searchLike(db, terms, where, params, limit);
+  return rows.map(toHit);
 }
 
 function searchFts(
