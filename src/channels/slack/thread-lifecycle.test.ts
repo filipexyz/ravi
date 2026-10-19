@@ -427,7 +427,7 @@ describe("Slack thread orchestration", () => {
     const report = await reportSlackThreadProgress(child, "Found the failing commit", dependencies);
     await closeSlackThread(child, "The branch is fixed", dependencies);
 
-    const link = `https://app.slack.com/client/T0123/C123/thread/C123-${fixture.threadTs}`;
+    const link = `slack://channel?team=T0123&id=C123&thread_ts=${fixture.threadTs}`;
     expect(prompts.map((entry) => entry.sessionName)).toEqual(["ravi-parent", "ravi-parent"]);
     expect(prompts[0]!.payload).toMatchObject({
       prompt: [

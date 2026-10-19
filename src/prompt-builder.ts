@@ -360,6 +360,12 @@ Regras:
 - Listas com bullets para organização`;
   }
 
+  if (channelName === "Slack") {
+    return `Use formatação ASCII para tabelas e listas.
+
+Links to a Slack channel, DM or thread use the Slack app link, \`slack://channel?team=<team-id>&id=<channel-id>\`, adding \`&thread_ts=<thread-ts>\` for a thread; \`https://app.slack.com\` links always open the browser. Write the link as markdown, \`[text](slack://...)\`, with text you choose from the context that says what the person will find there, never the bare URL.`;
+  }
+
   // TUI or unknown
   return `Use formatação ASCII para tabelas e listas.
 Tabelas com caracteres | - + funcionam bem no terminal.`;
