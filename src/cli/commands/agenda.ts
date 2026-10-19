@@ -16,7 +16,7 @@ import {
   type ConsoleCalendarSettingsPatch,
 } from "../../calendar/console.js";
 import type { ConnectorTurnDeps } from "../../link/connector-turn.js";
-import { meetingReadTurnBlock } from "../../meetings/read.js";
+import { meetingReadRefusalDetails, meetingReadTurnBlock } from "../../meetings/read.js";
 import {
   ContractError,
   CONTRACT_EXIT_ERROR,
@@ -443,8 +443,12 @@ export class AgendaCommands {
           details: {
             refusal: "operator_only",
             turn: block.turn,
-            suggestedAction:
-              "Tell the person you cannot look at or change the operator's calendar here; the operator can ask in their own chat.",
+            ...meetingReadRefusalDetails(block, {
+              otherPerson:
+                "Tell the person you cannot look at or change the operator's calendar here; the operator can ask in their own chat.",
+              chatLine: "Ask me in our private chat and I'll check the calendar there.",
+              chatLinePt: "Me peça no nosso chat privado que eu vejo a agenda lá.",
+            }),
           },
         },
       );

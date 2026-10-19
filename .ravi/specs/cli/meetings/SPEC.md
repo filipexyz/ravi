@@ -88,7 +88,12 @@ documented write-brake equivalent instead of being renamed.
     to be saved or shared with other contacts, and, for `crossOrganization`,
     which organization it came from. Transcript and chat text is fenced as
     untrusted in the text output. The Console's `details.reason` travels as
-    `refusal`, because the public envelope redacts `reason`.
+    `refusal`, because the public envelope redacts `reason`. When the operator
+    is the one asking in a group, the refusal MUST send them to their own chat
+    (`chatLine`, `chatLinePt`, `replyTo: same_chat`) instead of the "other
+    people" next step. The remote gateway relay MUST keep this refusal's
+    message, `suggestedAction`, `refusal`, `turn` and chat lines (and the same
+    for `agenda`'s `CALENDAR_ACCESS_DENIED`) instead of its generic blocked copy.
 
 ## Write classification (brake decision per op)
 
