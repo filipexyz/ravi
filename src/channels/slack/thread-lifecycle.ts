@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { nats } from "../../nats.js";
 import { publishSessionPrompt, type PublishSessionPromptOptions } from "../../omni/session-stream.js";
 import { publishChannelSessionPrompt } from "../session-prompt.js";
+import { publishChannelOutboundJobDurably } from "../outbound-publish-outbox.js";
+import { buildChannelChatActionJob, type ChannelOutboundJob } from "../outbound-stream.js";
 import {
   attachChatToSession,
   ensureUniqueName,
@@ -42,6 +44,7 @@ import {
   type CloseSlackThreadLifecycleResult,
   type SlackThreadLifecycleRecord,
 } from "./thread-lifecycle-store.js";
+import type { SlackThreadCardState } from "./thread-card.js";
 
 const log = logger.child("channels:slack:thread-lifecycle");
 const SLACK_THREAD_CREATED_TOPIC = "ravi.inbound.thread.created";
@@ -57,11 +60,14 @@ type EventPublisher = (topic: string, payload: Record<string, unknown>) => Promi
 export interface SlackThreadLifecycleDependencies {
   publishPrompt: PromptPublisher;
   publishEvent: EventPublisher;
+  /** Publishes the root card update; without it the card is left as is. */
+  publishOutbound?: (job: ChannelOutboundJob) => Promise<unknown>;
 }
 
 const DEFAULT_DEPENDENCIES: SlackThreadLifecycleDependencies = {
   publishPrompt: publishSessionPrompt,
   publishEvent: nats.emit,
+  publishOutbound: publishChannelOutboundJobDurably,
 };
 
 export interface FinalizeSlackThreadCreationResult {
@@ -288,6 +294,7 @@ export async function closeSlackThread(
           error: errorMessage(error),
         });
       });
+    await updateSlackThreadCard(closed.record, { status: "closed", note: closed.record.closeResult }, dependencies);
   }
 
   let parentReturnDelivered = false;
@@ -502,6 +509,7 @@ export async function reportSlackThreadProgress(
     },
     dependencies.publishPrompt,
   );
+  await updateSlackThreadCard(record, { status: "open", note: text }, dependencies);
   return { record, messageId };
 }
 
@@ -566,7 +574,50 @@ export async function sendSlackThreadMessage(
     },
     { messageId },
   );
+  if (reopened) await updateSlackThreadCard(record, { status: "reopened" }, dependencies);
   return { record, reopened, messageId };
+}
+
+/**
+ * Re-render the root card of a thread Ravi opened (see thread-card.ts). A
+ * thread a person started has their own message as root, which Ravi cannot
+ * edit. Best effort: the lifecycle change already happened.
+ */
+async function updateSlackThreadCard(
+  record: SlackThreadLifecycleRecord,
+  state: Omit<SlackThreadCardState, "updatedAt" | "requestedBy">,
+  dependencies: SlackThreadLifecycleDependencies,
+): Promise<void> {
+  const publish = dependencies.publishOutbound;
+  if (!publish || record.source !== "action" || !record.initialPrompt || !record.providerThreadId) return;
+  const job = buildChannelChatActionJob({
+    sessionName: record.parentSessionName,
+    requestId: `slack-thread-card:${record.requestId}:${randomUUID()}`,
+    target: {
+      channel: "slack",
+      accountId: record.accountId,
+      instanceId: record.instanceId,
+      chatId: record.platformChatId,
+      ...(record.rootCanonicalChatId ? { canonicalChatId: record.rootCanonicalChatId } : {}),
+    },
+    content: {
+      type: "chat_action",
+      actionId: "message.edit",
+      providerMessageId: record.providerThreadId,
+      text: record.initialPrompt,
+      threadCard: {
+        status: state.status,
+        ...(state.note?.trim() ? { note: state.note.trim() } : {}),
+        updatedAt: Date.now(),
+        ...(record.requestedBy ? { requestedBy: record.requestedBy } : {}),
+      },
+    },
+  });
+  try {
+    await publish(job);
+  } catch (error) {
+    log.warn("Failed to update Slack thread card", { requestId: record.requestId, error: errorMessage(error) });
+  }
 }
 
 export function slackThreadParentSessionKey(sessionKey: string): string {

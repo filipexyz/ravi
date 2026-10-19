@@ -19,7 +19,6 @@ applies_to:
   - src/tasks
   - src/router
   - src/artifacts
-  - src/projects
   - src/contacts.ts
 owners:
   - ravi-dev

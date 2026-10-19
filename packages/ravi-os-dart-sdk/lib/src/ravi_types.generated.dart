@@ -159,6 +159,274 @@ class AdaptersShowReturn {
 
 AdaptersShowReturn adaptersShowReturnFromJson(Object? json) => AdaptersShowReturn.fromJsonValue(json);
 
+class AgendaBriefingOptions {
+  const AgendaBriefingOptions({this.clear, this.file, this.text});
+
+  final bool? clear;
+  final String? file;
+  final String? text;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (clear != null) {
+      into["clear"] = RaviJson.from(clear);
+    }
+    if (file != null) {
+      into["file"] = RaviJson.from(file);
+    }
+    if (text != null) {
+      into["text"] = RaviJson.from(text);
+    }
+  }
+}
+
+class AgendaBriefingReturn {
+  const AgendaBriefingReturn({required this.event});
+
+  final RaviJson event;
+
+  factory AgendaBriefingReturn.fromJson(Map<String, Object?> json) {
+    return AgendaBriefingReturn(
+      event: RaviJson.from(json["event"]),
+    );
+  }
+
+  static AgendaBriefingReturn fromJsonValue(Object? json) {
+    return AgendaBriefingReturn.fromJson(raviJsonObject(json, "AgendaBriefingReturn"));
+  }
+}
+
+AgendaBriefingReturn agendaBriefingReturnFromJson(Object? json) => AgendaBriefingReturn.fromJsonValue(json);
+
+class AgendaListOptions {
+  const AgendaListOptions({this.days, this.limit, this.offset});
+
+  final String? days;
+  final String? limit;
+  final String? offset;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (days != null) {
+      into["days"] = RaviJson.from(days);
+    }
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+  }
+}
+
+class AgendaListReturn {
+  const AgendaListReturn({required this.events, required this.from, required this.pagination, required this.to, required this.total, required this.truncated});
+
+  final List<RaviJson> events;
+  final String from;
+  final RaviJson pagination;
+  final String to;
+  final double total;
+  final bool truncated;
+
+  factory AgendaListReturn.fromJson(Map<String, Object?> json) {
+    return AgendaListReturn(
+      events: raviJsonAsList(json["events"], RaviJson.from),
+      from: raviJsonAsString(json["from"]),
+      pagination: RaviJson.from(json["pagination"]),
+      to: raviJsonAsString(json["to"]),
+      total: raviJsonAsDouble(json["total"]),
+      truncated: raviJsonAsBool(json["truncated"]),
+    );
+  }
+
+  static AgendaListReturn fromJsonValue(Object? json) {
+    return AgendaListReturn.fromJson(raviJsonObject(json, "AgendaListReturn"));
+  }
+}
+
+AgendaListReturn agendaListReturnFromJson(Object? json) => AgendaListReturn.fromJsonValue(json);
+
+class AgendaRecordOptions {
+  const AgendaRecordOptions({this.execute, this.project});
+
+  final bool? execute;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class AgendaRecordReturn {
+  const AgendaRecordReturn({required this.event});
+
+  final RaviJson event;
+
+  factory AgendaRecordReturn.fromJson(Map<String, Object?> json) {
+    return AgendaRecordReturn(
+      event: RaviJson.from(json["event"]),
+    );
+  }
+
+  static AgendaRecordReturn fromJsonValue(Object? json) {
+    return AgendaRecordReturn.fromJson(raviJsonObject(json, "AgendaRecordReturn"));
+  }
+}
+
+AgendaRecordReturn agendaRecordReturnFromJson(Object? json) => AgendaRecordReturn.fromJsonValue(json);
+
+class AgendaSettingsOptions {
+  const AgendaSettingsOptions({this.briefing, this.briefingMinutes, this.connection, this.execute, this.followup, this.project, this.record, this.sync});
+
+  final String? briefing;
+  final String? briefingMinutes;
+  final String? connection;
+  final bool? execute;
+  final String? followup;
+  final String? project;
+  final String? record;
+  final String? sync;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (briefing != null) {
+      into["briefing"] = RaviJson.from(briefing);
+    }
+    if (briefingMinutes != null) {
+      into["briefingMinutes"] = RaviJson.from(briefingMinutes);
+    }
+    if (connection != null) {
+      into["connection"] = RaviJson.from(connection);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (followup != null) {
+      into["followup"] = RaviJson.from(followup);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (record != null) {
+      into["record"] = RaviJson.from(record);
+    }
+    if (sync != null) {
+      into["sync"] = RaviJson.from(sync);
+    }
+  }
+}
+
+class AgendaSettingsReturn {
+  const AgendaSettingsReturn({required this.connection});
+
+  final RaviJson connection;
+
+  factory AgendaSettingsReturn.fromJson(Map<String, Object?> json) {
+    return AgendaSettingsReturn(
+      connection: RaviJson.from(json["connection"]),
+    );
+  }
+
+  static AgendaSettingsReturn fromJsonValue(Object? json) {
+    return AgendaSettingsReturn.fromJson(raviJsonObject(json, "AgendaSettingsReturn"));
+  }
+}
+
+AgendaSettingsReturn agendaSettingsReturnFromJson(Object? json) => AgendaSettingsReturn.fromJsonValue(json);
+
+class AgendaShowReturn {
+  const AgendaShowReturn({required this.event});
+
+  final RaviJson event;
+
+  factory AgendaShowReturn.fromJson(Map<String, Object?> json) {
+    return AgendaShowReturn(
+      event: RaviJson.from(json["event"]),
+    );
+  }
+
+  static AgendaShowReturn fromJsonValue(Object? json) {
+    return AgendaShowReturn.fromJson(raviJsonObject(json, "AgendaShowReturn"));
+  }
+}
+
+AgendaShowReturn agendaShowReturnFromJson(Object? json) => AgendaShowReturn.fromJsonValue(json);
+
+class AgendaSkipReturn {
+  const AgendaSkipReturn({required this.event});
+
+  final RaviJson event;
+
+  factory AgendaSkipReturn.fromJson(Map<String, Object?> json) {
+    return AgendaSkipReturn(
+      event: RaviJson.from(json["event"]),
+    );
+  }
+
+  static AgendaSkipReturn fromJsonValue(Object? json) {
+    return AgendaSkipReturn.fromJson(raviJsonObject(json, "AgendaSkipReturn"));
+  }
+}
+
+AgendaSkipReturn agendaSkipReturnFromJson(Object? json) => AgendaSkipReturn.fromJsonValue(json);
+
+class AgendaStatusReturn {
+  const AgendaStatusReturn({required this.connections, required this.meetingsEnabled, required this.policy, required this.projects});
+
+  final List<RaviJson> connections;
+  final bool meetingsEnabled;
+  final RaviJson policy;
+  final List<RaviJson> projects;
+
+  factory AgendaStatusReturn.fromJson(Map<String, Object?> json) {
+    return AgendaStatusReturn(
+      connections: raviJsonAsList(json["connections"], RaviJson.from),
+      meetingsEnabled: raviJsonAsBool(json["meetingsEnabled"]),
+      policy: RaviJson.from(json["policy"]),
+      projects: raviJsonAsList(json["projects"], RaviJson.from),
+    );
+  }
+
+  static AgendaStatusReturn fromJsonValue(Object? json) {
+    return AgendaStatusReturn.fromJson(raviJsonObject(json, "AgendaStatusReturn"));
+  }
+}
+
+AgendaStatusReturn agendaStatusReturnFromJson(Object? json) => AgendaStatusReturn.fromJsonValue(json);
+
+class AgendaUndoOptions {
+  const AgendaUndoOptions({this.execute});
+
+  final bool? execute;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+  }
+}
+
+class AgendaUndoReturn {
+  const AgendaUndoReturn({required this.event});
+
+  final RaviJson event;
+
+  factory AgendaUndoReturn.fromJson(Map<String, Object?> json) {
+    return AgendaUndoReturn(
+      event: RaviJson.from(json["event"]),
+    );
+  }
+
+  static AgendaUndoReturn fromJsonValue(Object? json) {
+    return AgendaUndoReturn.fromJson(raviJsonObject(json, "AgendaUndoReturn"));
+  }
+}
+
+AgendaUndoReturn agendaUndoReturnFromJson(Object? json) => AgendaUndoReturn.fromJsonValue(json);
+
 class AgentsAskOptions {
   const AgentsAskOptions({this.execute});
 
@@ -16636,10 +16904,12 @@ class PagesAssertionAudiencesSetReturn {
 PagesAssertionAudiencesSetReturn pagesAssertionAudiencesSetReturnFromJson(Object? json) => PagesAssertionAudiencesSetReturn.fromJsonValue(json);
 
 class PagesChatSetOptions {
-  const PagesChatSetOptions({this.clearInstructions, this.clearName, this.console, this.enabled, this.execute, this.instructions, this.language, this.name, this.project, this.voice});
+  const PagesChatSetOptions({this.clearInstructions, this.clearName, this.clearRaviAgent, this.clearTextModel, this.console, this.enabled, this.execute, this.instructions, this.language, this.name, this.project, this.raviAgent, this.replyPolicy, this.text, this.textModel, this.voice});
 
   final bool? clearInstructions;
   final bool? clearName;
+  final bool? clearRaviAgent;
+  final bool? clearTextModel;
   final String? console;
   final String? enabled;
   final bool? execute;
@@ -16647,6 +16917,10 @@ class PagesChatSetOptions {
   final String? language;
   final String? name;
   final String? project;
+  final String? raviAgent;
+  final String? replyPolicy;
+  final String? text;
+  final String? textModel;
   final String? voice;
 
   void encodeBody(Map<String, RaviJson> into) {
@@ -16655,6 +16929,12 @@ class PagesChatSetOptions {
     }
     if (clearName != null) {
       into["clearName"] = RaviJson.from(clearName);
+    }
+    if (clearRaviAgent != null) {
+      into["clearRaviAgent"] = RaviJson.from(clearRaviAgent);
+    }
+    if (clearTextModel != null) {
+      into["clearTextModel"] = RaviJson.from(clearTextModel);
     }
     if (console != null) {
       into["console"] = RaviJson.from(console);
@@ -16676,6 +16956,18 @@ class PagesChatSetOptions {
     }
     if (project != null) {
       into["project"] = RaviJson.from(project);
+    }
+    if (raviAgent != null) {
+      into["raviAgent"] = RaviJson.from(raviAgent);
+    }
+    if (replyPolicy != null) {
+      into["replyPolicy"] = RaviJson.from(replyPolicy);
+    }
+    if (text != null) {
+      into["text"] = RaviJson.from(text);
+    }
+    if (textModel != null) {
+      into["textModel"] = RaviJson.from(textModel);
     }
     if (voice != null) {
       into["voice"] = RaviJson.from(voice);
@@ -18114,195 +18406,73 @@ class PermissionsStatusReturn {
 PermissionsStatusReturn permissionsStatusReturnFromJson(Object? json) => PermissionsStatusReturn.fromJsonValue(json);
 
 class ProjectsCreateOptions {
-  const ProjectsCreateOptions({this.hypothesis, this.lastSignalAt, this.nextStep, this.ownerAgent, this.session, this.slug, this.status, this.summary});
+  const ProjectsCreateOptions({this.console, this.defaultPageSite, this.description, this.execute, this.name, this.visibility});
 
-  final String? hypothesis;
-  final String? lastSignalAt;
-  final String? nextStep;
-  final String? ownerAgent;
-  final String? session;
-  final String? slug;
-  final String? status;
-  final String? summary;
-
-  void encodeBody(Map<String, RaviJson> into) {
-    if (hypothesis != null) {
-      into["hypothesis"] = RaviJson.from(hypothesis);
-    }
-    if (lastSignalAt != null) {
-      into["lastSignalAt"] = RaviJson.from(lastSignalAt);
-    }
-    if (nextStep != null) {
-      into["nextStep"] = RaviJson.from(nextStep);
-    }
-    if (ownerAgent != null) {
-      into["ownerAgent"] = RaviJson.from(ownerAgent);
-    }
-    if (session != null) {
-      into["session"] = RaviJson.from(session);
-    }
-    if (slug != null) {
-      into["slug"] = RaviJson.from(slug);
-    }
-    if (status != null) {
-      into["status"] = RaviJson.from(status);
-    }
-    if (summary != null) {
-      into["summary"] = RaviJson.from(summary);
-    }
-  }
-}
-
-typedef ProjectsCreateReturn = Map<String, RaviJson>;
-
-ProjectsCreateReturn projectsCreateReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
-
-class ProjectsFixturesSeedOptions {
-  const ProjectsFixturesSeedOptions({this.execute, this.ownerAgent});
-
+  final String? console;
+  final String? defaultPageSite;
+  final String? description;
   final bool? execute;
-  final String? ownerAgent;
+  final String? name;
+  final String? visibility;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (defaultPageSite != null) {
+      into["defaultPageSite"] = RaviJson.from(defaultPageSite);
+    }
+    if (description != null) {
+      into["description"] = RaviJson.from(description);
+    }
     if (execute != null) {
       into["execute"] = RaviJson.from(execute);
     }
-    if (ownerAgent != null) {
-      into["ownerAgent"] = RaviJson.from(ownerAgent);
+    if (name != null) {
+      into["name"] = RaviJson.from(name);
+    }
+    if (visibility != null) {
+      into["visibility"] = RaviJson.from(visibility);
     }
   }
 }
 
-class ProjectsFixturesSeedReturn {
-  const ProjectsFixturesSeedReturn({required this.fixtures, required this.total});
+class ProjectsCreateReturn {
+  const ProjectsCreateReturn({required this.consoleUrl, required this.project, required this.redirectTo, required this.success});
 
-  final List<Map<String, RaviJson>> fixtures;
-  final double total;
+  final String consoleUrl;
+  final Map<String, RaviJson> project;
+  final RaviJson redirectTo;
+  final bool success;
 
-  factory ProjectsFixturesSeedReturn.fromJson(Map<String, Object?> json) {
-    return ProjectsFixturesSeedReturn(
-      fixtures: raviJsonAsList(json["fixtures"], raviJsonAsRaviJsonMap),
-      total: raviJsonAsDouble(json["total"]),
+  factory ProjectsCreateReturn.fromJson(Map<String, Object?> json) {
+    return ProjectsCreateReturn(
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      project: raviJsonAsRaviJsonMap(json["project"]),
+      redirectTo: RaviJson.from(json["redirectTo"]),
+      success: raviJsonAsBool(json["success"]),
     );
   }
 
-  static ProjectsFixturesSeedReturn fromJsonValue(Object? json) {
-    return ProjectsFixturesSeedReturn.fromJson(raviJsonObject(json, "ProjectsFixturesSeedReturn"));
+  static ProjectsCreateReturn fromJsonValue(Object? json) {
+    return ProjectsCreateReturn.fromJson(raviJsonObject(json, "ProjectsCreateReturn"));
   }
 }
 
-ProjectsFixturesSeedReturn projectsFixturesSeedReturnFromJson(Object? json) => ProjectsFixturesSeedReturn.fromJsonValue(json);
-
-class ProjectsInitOptions {
-  const ProjectsInitOptions({this.hypothesis, this.lastSignalAt, this.nextStep, this.ownerAgent, this.resource, this.session, this.slug, this.status, this.summary, this.workflowRun, this.workflowTemplate});
-
-  final String? hypothesis;
-  final String? lastSignalAt;
-  final String? nextStep;
-  final String? ownerAgent;
-  final List<String>? resource;
-  final String? session;
-  final String? slug;
-  final String? status;
-  final String? summary;
-  final List<String>? workflowRun;
-  final List<String>? workflowTemplate;
-
-  void encodeBody(Map<String, RaviJson> into) {
-    if (hypothesis != null) {
-      into["hypothesis"] = RaviJson.from(hypothesis);
-    }
-    if (lastSignalAt != null) {
-      into["lastSignalAt"] = RaviJson.from(lastSignalAt);
-    }
-    if (nextStep != null) {
-      into["nextStep"] = RaviJson.from(nextStep);
-    }
-    if (ownerAgent != null) {
-      into["ownerAgent"] = RaviJson.from(ownerAgent);
-    }
-    if (resource != null) {
-      into["resource"] = RaviJson.from(resource);
-    }
-    if (session != null) {
-      into["session"] = RaviJson.from(session);
-    }
-    if (slug != null) {
-      into["slug"] = RaviJson.from(slug);
-    }
-    if (status != null) {
-      into["status"] = RaviJson.from(status);
-    }
-    if (summary != null) {
-      into["summary"] = RaviJson.from(summary);
-    }
-    if (workflowRun != null) {
-      into["workflowRun"] = RaviJson.from(workflowRun);
-    }
-    if (workflowTemplate != null) {
-      into["workflowTemplate"] = RaviJson.from(workflowTemplate);
-    }
-  }
-}
-
-class ProjectsInitReturn {
-  const ProjectsInitReturn({required this.details, required this.workflows});
-
-  final Map<String, RaviJson> details;
-  final List<Map<String, RaviJson>> workflows;
-
-  factory ProjectsInitReturn.fromJson(Map<String, Object?> json) {
-    return ProjectsInitReturn(
-      details: raviJsonAsRaviJsonMap(json["details"]),
-      workflows: raviJsonAsList(json["workflows"], raviJsonAsRaviJsonMap),
-    );
-  }
-
-  static ProjectsInitReturn fromJsonValue(Object? json) {
-    return ProjectsInitReturn.fromJson(raviJsonObject(json, "ProjectsInitReturn"));
-  }
-}
-
-ProjectsInitReturn projectsInitReturnFromJson(Object? json) => ProjectsInitReturn.fromJsonValue(json);
-
-class ProjectsLinkOptions {
-  const ProjectsLinkOptions({this.label, this.meta, this.resourceType, this.role});
-
-  final String? label;
-  final String? meta;
-  final String? resourceType;
-  final String? role;
-
-  void encodeBody(Map<String, RaviJson> into) {
-    if (label != null) {
-      into["label"] = RaviJson.from(label);
-    }
-    if (meta != null) {
-      into["meta"] = RaviJson.from(meta);
-    }
-    if (resourceType != null) {
-      into["resourceType"] = RaviJson.from(resourceType);
-    }
-    if (role != null) {
-      into["role"] = RaviJson.from(role);
-    }
-  }
-}
-
-typedef ProjectsLinkReturn = Map<String, RaviJson>;
-
-ProjectsLinkReturn projectsLinkReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
+ProjectsCreateReturn projectsCreateReturnFromJson(Object? json) => ProjectsCreateReturn.fromJsonValue(json);
 
 class ProjectsListOptions {
-  const ProjectsListOptions({this.fields, this.limit, this.offset, this.status, this.tag});
+  const ProjectsListOptions({this.console, this.fields, this.limit, this.offset});
 
+  final String? console;
   final String? fields;
   final String? limit;
   final String? offset;
-  final String? status;
-  final String? tag;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
     if (fields != null) {
       into["fields"] = RaviJson.from(fields);
     }
@@ -18312,30 +18482,26 @@ class ProjectsListOptions {
     if (offset != null) {
       into["offset"] = RaviJson.from(offset);
     }
-    if (status != null) {
-      into["status"] = RaviJson.from(status);
-    }
-    if (tag != null) {
-      into["tag"] = RaviJson.from(tag);
-    }
   }
 }
 
 class ProjectsListReturn {
-  const ProjectsListReturn({required this.filters, required this.items, required this.pagination, required this.projects, required this.total});
+  const ProjectsListReturn({required this.consoleUrl, required this.items, required this.pagination, required this.projects, required this.success, required this.total});
 
-  final Map<String, RaviJson> filters;
+  final String consoleUrl;
   final List<Map<String, RaviJson>> items;
   final RaviJson pagination;
   final List<Map<String, RaviJson>> projects;
+  final bool success;
   final double total;
 
   factory ProjectsListReturn.fromJson(Map<String, Object?> json) {
     return ProjectsListReturn(
-      filters: raviJsonAsRaviJsonMap(json["filters"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
       items: raviJsonAsList(json["items"], raviJsonAsRaviJsonMap),
       pagination: RaviJson.from(json["pagination"]),
       projects: raviJsonAsList(json["projects"], raviJsonAsRaviJsonMap),
+      success: raviJsonAsBool(json["success"]),
       total: raviJsonAsDouble(json["total"]),
     );
   }
@@ -18346,454 +18512,6 @@ class ProjectsListReturn {
 }
 
 ProjectsListReturn projectsListReturnFromJson(Object? json) => ProjectsListReturn.fromJsonValue(json);
-
-class ProjectsNextOptions {
-  const ProjectsNextOptions({this.fields, this.status, this.tag});
-
-  final String? fields;
-  final String? status;
-  final String? tag;
-
-  void encodeBody(Map<String, RaviJson> into) {
-    if (fields != null) {
-      into["fields"] = RaviJson.from(fields);
-    }
-    if (status != null) {
-      into["status"] = RaviJson.from(status);
-    }
-    if (tag != null) {
-      into["tag"] = RaviJson.from(tag);
-    }
-  }
-}
-
-class ProjectsNextReturn {
-  const ProjectsNextReturn({required this.filters, required this.projects, required this.total});
-
-  final Map<String, RaviJson> filters;
-  final List<Map<String, RaviJson>> projects;
-  final double total;
-
-  factory ProjectsNextReturn.fromJson(Map<String, Object?> json) {
-    return ProjectsNextReturn(
-      filters: raviJsonAsRaviJsonMap(json["filters"]),
-      projects: raviJsonAsList(json["projects"], raviJsonAsRaviJsonMap),
-      total: raviJsonAsDouble(json["total"]),
-    );
-  }
-
-  static ProjectsNextReturn fromJsonValue(Object? json) {
-    return ProjectsNextReturn.fromJson(raviJsonObject(json, "ProjectsNextReturn"));
-  }
-}
-
-ProjectsNextReturn projectsNextReturnFromJson(Object? json) => ProjectsNextReturn.fromJsonValue(json);
-
-class ProjectsResourcesAddOptions {
-  const ProjectsResourcesAddOptions({this.label, this.meta, this.role, this.type});
-
-  final String? label;
-  final String? meta;
-  final String? role;
-  final String? type;
-
-  void encodeBody(Map<String, RaviJson> into) {
-    if (label != null) {
-      into["label"] = RaviJson.from(label);
-    }
-    if (meta != null) {
-      into["meta"] = RaviJson.from(meta);
-    }
-    if (role != null) {
-      into["role"] = RaviJson.from(role);
-    }
-    if (type != null) {
-      into["type"] = RaviJson.from(type);
-    }
-  }
-}
-
-typedef ProjectsResourcesAddReturn = Map<String, RaviJson>;
-
-ProjectsResourcesAddReturn projectsResourcesAddReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
-
-class ProjectsResourcesImportOptions {
-  const ProjectsResourcesImportOptions({this.group, this.meta, this.repo, this.role, this.url, this.worktree});
-
-  final List<String>? group;
-  final String? meta;
-  final List<String>? repo;
-  final String? role;
-  final List<String>? url;
-  final List<String>? worktree;
-
-  void encodeBody(Map<String, RaviJson> into) {
-    if (group != null) {
-      into["group"] = RaviJson.from(group);
-    }
-    if (meta != null) {
-      into["meta"] = RaviJson.from(meta);
-    }
-    if (repo != null) {
-      into["repo"] = RaviJson.from(repo);
-    }
-    if (role != null) {
-      into["role"] = RaviJson.from(role);
-    }
-    if (url != null) {
-      into["url"] = RaviJson.from(url);
-    }
-    if (worktree != null) {
-      into["worktree"] = RaviJson.from(worktree);
-    }
-  }
-}
-
-class ProjectsResourcesImportReturn {
-  const ProjectsResourcesImportReturn({required this.resources, required this.total});
-
-  final List<Map<String, RaviJson>> resources;
-  final double total;
-
-  factory ProjectsResourcesImportReturn.fromJson(Map<String, Object?> json) {
-    return ProjectsResourcesImportReturn(
-      resources: raviJsonAsList(json["resources"], raviJsonAsRaviJsonMap),
-      total: raviJsonAsDouble(json["total"]),
-    );
-  }
-
-  static ProjectsResourcesImportReturn fromJsonValue(Object? json) {
-    return ProjectsResourcesImportReturn.fromJson(raviJsonObject(json, "ProjectsResourcesImportReturn"));
-  }
-}
-
-ProjectsResourcesImportReturn projectsResourcesImportReturnFromJson(Object? json) => ProjectsResourcesImportReturn.fromJsonValue(json);
-
-class ProjectsResourcesListOptions {
-  const ProjectsResourcesListOptions({this.fields, this.limit, this.offset, this.type});
-
-  final String? fields;
-  final String? limit;
-  final String? offset;
-  final String? type;
-
-  void encodeBody(Map<String, RaviJson> into) {
-    if (fields != null) {
-      into["fields"] = RaviJson.from(fields);
-    }
-    if (limit != null) {
-      into["limit"] = RaviJson.from(limit);
-    }
-    if (offset != null) {
-      into["offset"] = RaviJson.from(offset);
-    }
-    if (type != null) {
-      into["type"] = RaviJson.from(type);
-    }
-  }
-}
-
-class ProjectsResourcesListReturn {
-  const ProjectsResourcesListReturn({required this.items, required this.pagination, required this.resources, required this.total});
-
-  final List<Map<String, RaviJson>> items;
-  final RaviJson pagination;
-  final List<Map<String, RaviJson>> resources;
-  final double total;
-
-  factory ProjectsResourcesListReturn.fromJson(Map<String, Object?> json) {
-    return ProjectsResourcesListReturn(
-      items: raviJsonAsList(json["items"], raviJsonAsRaviJsonMap),
-      pagination: RaviJson.from(json["pagination"]),
-      resources: raviJsonAsList(json["resources"], raviJsonAsRaviJsonMap),
-      total: raviJsonAsDouble(json["total"]),
-    );
-  }
-
-  static ProjectsResourcesListReturn fromJsonValue(Object? json) {
-    return ProjectsResourcesListReturn.fromJson(raviJsonObject(json, "ProjectsResourcesListReturn"));
-  }
-}
-
-ProjectsResourcesListReturn projectsResourcesListReturnFromJson(Object? json) => ProjectsResourcesListReturn.fromJsonValue(json);
-
-typedef ProjectsResourcesShowReturn = Map<String, RaviJson>;
-
-ProjectsResourcesShowReturn projectsResourcesShowReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
-
-typedef ProjectsShowReturn = Map<String, RaviJson>;
-
-ProjectsShowReturn projectsShowReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
-
-typedef ProjectsStatusReturn = Map<String, RaviJson>;
-
-ProjectsStatusReturn projectsStatusReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
-
-class ProjectsTasksAttachOptions {
-  const ProjectsTasksAttachOptions({this.agent, this.dispatch, this.session, this.workflow});
-
-  final String? agent;
-  final bool? dispatch;
-  final String? session;
-  final String? workflow;
-
-  void encodeBody(Map<String, RaviJson> into) {
-    if (agent != null) {
-      into["agent"] = RaviJson.from(agent);
-    }
-    if (dispatch != null) {
-      into["dispatch"] = RaviJson.from(dispatch);
-    }
-    if (session != null) {
-      into["session"] = RaviJson.from(session);
-    }
-    if (workflow != null) {
-      into["workflow"] = RaviJson.from(workflow);
-    }
-  }
-}
-
-class ProjectsTasksAttachReturn {
-  const ProjectsTasksAttachReturn({required this.defaults, required this.details, required this.workflow});
-
-  final Map<String, RaviJson> defaults;
-  final Map<String, RaviJson> details;
-  final Map<String, RaviJson> workflow;
-
-  factory ProjectsTasksAttachReturn.fromJson(Map<String, Object?> json) {
-    return ProjectsTasksAttachReturn(
-      defaults: raviJsonAsRaviJsonMap(json["defaults"]),
-      details: raviJsonAsRaviJsonMap(json["details"]),
-      workflow: raviJsonAsRaviJsonMap(json["workflow"]),
-    );
-  }
-
-  static ProjectsTasksAttachReturn fromJsonValue(Object? json) {
-    return ProjectsTasksAttachReturn.fromJson(raviJsonObject(json, "ProjectsTasksAttachReturn"));
-  }
-}
-
-ProjectsTasksAttachReturn projectsTasksAttachReturnFromJson(Object? json) => ProjectsTasksAttachReturn.fromJsonValue(json);
-
-class ProjectsTasksCreateOptions {
-  const ProjectsTasksCreateOptions({this.agent, this.dispatch, this.instructions, this.priority, this.profile, this.session, this.workflow});
-
-  final String? agent;
-  final bool? dispatch;
-  final String? instructions;
-  final String? priority;
-  final String? profile;
-  final String? session;
-  final String? workflow;
-
-  void encodeBody(Map<String, RaviJson> into) {
-    if (agent != null) {
-      into["agent"] = RaviJson.from(agent);
-    }
-    if (dispatch != null) {
-      into["dispatch"] = RaviJson.from(dispatch);
-    }
-    if (instructions != null) {
-      into["instructions"] = RaviJson.from(instructions);
-    }
-    if (priority != null) {
-      into["priority"] = RaviJson.from(priority);
-    }
-    if (profile != null) {
-      into["profile"] = RaviJson.from(profile);
-    }
-    if (session != null) {
-      into["session"] = RaviJson.from(session);
-    }
-    if (workflow != null) {
-      into["workflow"] = RaviJson.from(workflow);
-    }
-  }
-}
-
-class ProjectsTasksCreateReturn {
-  const ProjectsTasksCreateReturn({required this.defaults, required this.details, required this.workflow});
-
-  final Map<String, RaviJson> defaults;
-  final Map<String, RaviJson> details;
-  final Map<String, RaviJson> workflow;
-
-  factory ProjectsTasksCreateReturn.fromJson(Map<String, Object?> json) {
-    return ProjectsTasksCreateReturn(
-      defaults: raviJsonAsRaviJsonMap(json["defaults"]),
-      details: raviJsonAsRaviJsonMap(json["details"]),
-      workflow: raviJsonAsRaviJsonMap(json["workflow"]),
-    );
-  }
-
-  static ProjectsTasksCreateReturn fromJsonValue(Object? json) {
-    return ProjectsTasksCreateReturn.fromJson(raviJsonObject(json, "ProjectsTasksCreateReturn"));
-  }
-}
-
-ProjectsTasksCreateReturn projectsTasksCreateReturnFromJson(Object? json) => ProjectsTasksCreateReturn.fromJsonValue(json);
-
-class ProjectsTasksDispatchOptions {
-  const ProjectsTasksDispatchOptions({this.agent, this.execute, this.session});
-
-  final String? agent;
-  final bool? execute;
-  final String? session;
-
-  void encodeBody(Map<String, RaviJson> into) {
-    if (agent != null) {
-      into["agent"] = RaviJson.from(agent);
-    }
-    if (execute != null) {
-      into["execute"] = RaviJson.from(execute);
-    }
-    if (session != null) {
-      into["session"] = RaviJson.from(session);
-    }
-  }
-}
-
-class ProjectsTasksDispatchReturn {
-  const ProjectsTasksDispatchReturn({required this.defaults, required this.details, required this.workflow});
-
-  final Map<String, RaviJson> defaults;
-  final Map<String, RaviJson> details;
-  final Map<String, RaviJson> workflow;
-
-  factory ProjectsTasksDispatchReturn.fromJson(Map<String, Object?> json) {
-    return ProjectsTasksDispatchReturn(
-      defaults: raviJsonAsRaviJsonMap(json["defaults"]),
-      details: raviJsonAsRaviJsonMap(json["details"]),
-      workflow: raviJsonAsRaviJsonMap(json["workflow"]),
-    );
-  }
-
-  static ProjectsTasksDispatchReturn fromJsonValue(Object? json) {
-    return ProjectsTasksDispatchReturn.fromJson(raviJsonObject(json, "ProjectsTasksDispatchReturn"));
-  }
-}
-
-ProjectsTasksDispatchReturn projectsTasksDispatchReturnFromJson(Object? json) => ProjectsTasksDispatchReturn.fromJsonValue(json);
-
-class ProjectsUpdateOptions {
-  const ProjectsUpdateOptions({this.hypothesis, this.lastSignalAt, this.nextStep, this.ownerAgent, this.session, this.status, this.summary, this.title, this.touchSignal});
-
-  final String? hypothesis;
-  final String? lastSignalAt;
-  final String? nextStep;
-  final String? ownerAgent;
-  final String? session;
-  final String? status;
-  final String? summary;
-  final String? title;
-  final bool? touchSignal;
-
-  void encodeBody(Map<String, RaviJson> into) {
-    if (hypothesis != null) {
-      into["hypothesis"] = RaviJson.from(hypothesis);
-    }
-    if (lastSignalAt != null) {
-      into["lastSignalAt"] = RaviJson.from(lastSignalAt);
-    }
-    if (nextStep != null) {
-      into["nextStep"] = RaviJson.from(nextStep);
-    }
-    if (ownerAgent != null) {
-      into["ownerAgent"] = RaviJson.from(ownerAgent);
-    }
-    if (session != null) {
-      into["session"] = RaviJson.from(session);
-    }
-    if (status != null) {
-      into["status"] = RaviJson.from(status);
-    }
-    if (summary != null) {
-      into["summary"] = RaviJson.from(summary);
-    }
-    if (title != null) {
-      into["title"] = RaviJson.from(title);
-    }
-    if (touchSignal != null) {
-      into["touchSignal"] = RaviJson.from(touchSignal);
-    }
-  }
-}
-
-typedef ProjectsUpdateReturn = Map<String, RaviJson>;
-
-ProjectsUpdateReturn projectsUpdateReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
-
-class ProjectsWorkflowsAttachOptions {
-  const ProjectsWorkflowsAttachOptions({this.role});
-
-  final String? role;
-
-  void encodeBody(Map<String, RaviJson> into) {
-    if (role != null) {
-      into["role"] = RaviJson.from(role);
-    }
-  }
-}
-
-class ProjectsWorkflowsAttachReturn {
-  const ProjectsWorkflowsAttachReturn({required this.details, required this.workflow});
-
-  final Map<String, RaviJson> details;
-  final Map<String, RaviJson> workflow;
-
-  factory ProjectsWorkflowsAttachReturn.fromJson(Map<String, Object?> json) {
-    return ProjectsWorkflowsAttachReturn(
-      details: raviJsonAsRaviJsonMap(json["details"]),
-      workflow: raviJsonAsRaviJsonMap(json["workflow"]),
-    );
-  }
-
-  static ProjectsWorkflowsAttachReturn fromJsonValue(Object? json) {
-    return ProjectsWorkflowsAttachReturn.fromJson(raviJsonObject(json, "ProjectsWorkflowsAttachReturn"));
-  }
-}
-
-ProjectsWorkflowsAttachReturn projectsWorkflowsAttachReturnFromJson(Object? json) => ProjectsWorkflowsAttachReturn.fromJsonValue(json);
-
-class ProjectsWorkflowsStartOptions {
-  const ProjectsWorkflowsStartOptions({this.execute, this.role, this.runId});
-
-  final bool? execute;
-  final String? role;
-  final String? runId;
-
-  void encodeBody(Map<String, RaviJson> into) {
-    if (execute != null) {
-      into["execute"] = RaviJson.from(execute);
-    }
-    if (role != null) {
-      into["role"] = RaviJson.from(role);
-    }
-    if (runId != null) {
-      into["runId"] = RaviJson.from(runId);
-    }
-  }
-}
-
-class ProjectsWorkflowsStartReturn {
-  const ProjectsWorkflowsStartReturn({required this.details, required this.workflow});
-
-  final Map<String, RaviJson> details;
-  final Map<String, RaviJson> workflow;
-
-  factory ProjectsWorkflowsStartReturn.fromJson(Map<String, Object?> json) {
-    return ProjectsWorkflowsStartReturn(
-      details: raviJsonAsRaviJsonMap(json["details"]),
-      workflow: raviJsonAsRaviJsonMap(json["workflow"]),
-    );
-  }
-
-  static ProjectsWorkflowsStartReturn fromJsonValue(Object? json) {
-    return ProjectsWorkflowsStartReturn.fromJson(raviJsonObject(json, "ProjectsWorkflowsStartReturn"));
-  }
-}
-
-ProjectsWorkflowsStartReturn projectsWorkflowsStartReturnFromJson(Object? json) => ProjectsWorkflowsStartReturn.fromJsonValue(json);
 
 class ProxCallsCancelOptions {
   const ProxCallsCancelOptions({this.reason});

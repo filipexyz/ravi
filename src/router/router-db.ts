@@ -1772,6 +1772,7 @@ function getDb(): Database {
       provider_thread_id TEXT,
       canonical_root_message_id TEXT,
       initial_prompt TEXT,
+      requested_by TEXT,
       model_override TEXT,
       creation_claim_id TEXT,
       creation_claim_expires_at INTEGER,
@@ -2570,6 +2571,31 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_cloud_link_requests_contact
       ON cloud_link_requests(contact_id, status);
 
+    -- People who must link their Console account before Ravi writes for them
+    -- (ravi link). On WhatsApp the person starts the private chat, so a group
+    -- refusal waits here for their DM ('awaiting_dm'); the daemon then sends
+    -- the approval link in that DM ('link_sent'). One row per contact.
+    CREATE TABLE IF NOT EXISTS contact_link_states (
+      contact_id          TEXT PRIMARY KEY,
+      status              TEXT NOT NULL CHECK(status IN ('awaiting_dm','link_sent')),
+      channel             TEXT NOT NULL,
+      account_id          TEXT NOT NULL,
+      agent_id            TEXT,
+      display_name        TEXT,
+      origin_channel      TEXT,
+      origin_account_id   TEXT,
+      origin_chat_id      TEXT,
+      origin_thread_id    TEXT,
+      origin_message_id   TEXT,
+      dm_chat_id          TEXT,
+      route_pattern       TEXT,
+      request_id          TEXT,
+      request_expires_at  INTEGER,
+      created_at          INTEGER NOT NULL,
+      updated_at          INTEGER NOT NULL,
+      expires_at          INTEGER NOT NULL
+    );
+
     -- Local-first sync: optional, best-effort replication ledger.
     -- SQLite remains the local source of truth; these tables are durable queues
     -- for remote bridge delivery and cursor-based remote intake.
@@ -3149,6 +3175,7 @@ function getDb(): Database {
     db.exec("ALTER TABLE triggers ADD COLUMN on_error TEXT");
     log.info("Added on_error column to triggers table");
   }
+  ensureColumn(db, "slack_thread_lifecycle", "requested_by", "TEXT");
   ensureColumn(db, "triggers", "filter_reject_count", "INTEGER DEFAULT 0");
   ensureColumn(db, "triggers", "last_filter_reject_at", "INTEGER");
   migrateTriggerSessionCheck(db);

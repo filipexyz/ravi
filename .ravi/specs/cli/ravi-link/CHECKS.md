@@ -37,6 +37,26 @@ title: "ravi link checks"
 - Slack outside the native adapter, a non-person Slack sender, a WhatsApp
   group as recipient, and other channels MUST fail `LINK_DM_UNSUPPORTED`.
 
+## Private Chat Flow
+
+- A WhatsApp `ravi link` from a group MUST return `awaiting_dm`, send no
+  message, make no Console call and record the state with the agent and the
+  origin chat.
+- A private message from someone outside the flow MUST go on to the agent.
+- The first private message in the flow MUST get the approval link in that
+  chat and record `link_sent`; the next one, while the link is valid, MUST get
+  a reminder with no new Console request. The Omni consumer MUST NOT publish a
+  prompt or commit a route for either.
+- Approval MUST route a private chat that reaches no agent to the agent of the
+  turn (`policy: open`), end the flow and confirm in the DM and the origin
+  chat. An explicit route, a chat the default agent answers and DMs `closed`
+  MUST stay as they are.
+- Expiry MUST go back to `awaiting_dm`; denial MUST end the flow.
+- A Console refusal (`ACTOR_NOT_LINKED`) for a named contact MUST start the
+  person's link, and its error MUST carry `details.linkFlow`, word the
+  refusal locally (CLI envelope and gateway relay) with exit 3 and a
+  `chatLinePt`.
+
 ## Watcher
 
 - `approved` MUST cache the binding and confirm in the private chat and in
@@ -57,7 +77,7 @@ title: "ravi link checks"
 ## Validation
 
 ```bash
-bun test src/identity-link/ src/cloud-auth/
+bun test src/identity-link/ src/cloud-auth/ src/omni/consumer-context.test.ts src/cli/remote-gateway.test.ts
 bun test src/router/router-db.link-requests.test.ts
 bun test src/channels/slack/text-send.test.ts
 bun test src/cli/remote-gateway.test.ts

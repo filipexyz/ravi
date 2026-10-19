@@ -41,9 +41,13 @@
 - `pages chat set <site> --enabled true` without `--execute` MUST exit 3
   before any Console call and its plan MUST NOT contain the instructions
   text. With `--execute` it MUST PATCH `/pages/:siteRef/chat` with only the
-  set fields. `--enabled false`, `--voice`, `--name`, `--language`,
-  `--instructions` and the clear flags MUST apply immediately. Invalid values
-  MUST exit 2 before the brake (`bun test src/pages/chat.test.ts` and the
+  set fields. `--text true`, `--reply-policy always` and
+  `--ravi-agent <installationId>/<agentId>` MUST brake the same way.
+  `--enabled false`, `--text false`, `--reply-policy mention`, `--voice`,
+  `--name`, `--language`, `--instructions`, `--text-model` and the clear
+  flags MUST apply immediately. `pages chat show` text output MUST show the
+  text chat, reply policy, text model and Ravi agent. Invalid values MUST
+  exit 2 before the brake (`bun test src/pages/chat.test.ts` and the
   `pages chat` block of `src/cli/commands/pages.test.ts`).
 - A Console failure whose message matches a site not-found MUST surface as the
   `SITE_NOT_FOUND` envelope (exit 1) with suggestedAction `ravi pages list
@@ -53,7 +57,11 @@
   pass through `runPagesCommand`'s CloudAuthError funnel untouched.
 - A 400 Console response carrying `DOMAIN_SETUP_REQUIRED` MUST preserve that
   code through cloud-auth mapping and render the sanitized TXT/CNAME instruction
-  with exit 1; other provider messages MUST remain redacted.
+  with exit 1; other provider messages MUST remain redacted. Through the remote
+  gateway, `pages domains` keeps that message and the projected
+  `error.domainSetup`; any other op keeps the generic line.
+- `pages domains` without `--execute` prints `CNAME <hostname> = cname.ravi.page`
+  and puts it in `plan.dnsSetup`, locally and through the gateway.
 - `pages list --fields a,b,c --json` and `pages published --fields a,b,c
   --json` MUST return items containing only the requested fields.
 - Unbraked ops (`ship`, `create`, `publish`, visibility reductions and

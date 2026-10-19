@@ -10,6 +10,8 @@ owners:
   - ravi-dev
 applies_to:
   - src/cli
+  - src/cloud-auth/client.ts
+  - src/cloud-auth/turn-actor.ts
   - ravi login
   - ravi whoami
   - ravi logout
@@ -67,7 +69,7 @@ ravi login --console https://console.ravi.bot
 ravi whoami
 ravi logout
 ravi projects list
-ravi projects link <project>
+ravi projects create <slug> --execute
 ravi artifacts publish <artifact-id-or-path> --project <project>
 ```
 
@@ -203,6 +205,41 @@ the server returns an auth-expired response.
 
 If refresh fails with revoked, reused, or invalid credentials, the CLI MUST
 delete local credentials and require `ravi login`.
+
+## Person Of The Turn
+
+Authenticated Console calls (`ConsoleApiClient.requestJson` with an access
+token) MUST carry `x-ravi-actor-contact: <contactId>` when the runtime turn
+running the CLI was written by a resolved contact other than the operator, so
+Console credits the write to that person through this installation's
+`ravi link` binding (`console/ravi-link`, "Acting As The Person Of The Turn").
+
+- The contact MUST come from the turn classification of
+  `src/access/actor.ts` (`resolveAccessActor`), which reads the daemon's own
+  record of the turn through `RAVI_CONTEXT_KEY`, or the context the daemon
+  gateway runs the command under (the daemon's own environment has no
+  `RAVI_CONTEXT_KEY`). The CLI MUST NOT take it from `RAVI_CONTACT_ID`, a
+  flag or any other value the agent's shell can change.
+- The operator's own turns, routines the operator owns, turns Ravi cannot
+  attribute and calls outside a runtime turn MUST send no header: Console
+  then acts as the `ravi login` user.
+- `/api/cli/auth/**` and `/api/cli/me` MUST NOT carry it.
+- A failure to classify the turn MUST NOT fail the call; it sends no header.
+
+Console decides who acts. With no active binding approved by that person,
+reads keep the operator and writes are refused with `ACTOR_NOT_LINKED`; a
+person who is not an active member of the session's organization gets
+`PROJECT_ACCESS_DENIED` on writes.
+
+When a call that named a contact gets `ACTOR_NOT_LINKED` (outside
+`/api/cli/link/**`), the client MUST start that person's `ravi link`
+(`cli/ravi-link`, "Started By A Refusal") before failing, and the error MUST
+carry `details.linkFlow`: `awaiting_dm | dm_sent | already_linked |
+unavailable`. Every surface (the CLI envelope, the gateway relay, the access
+commands) MUST word the refusal from that value with local copy, exit 3,
+with `suggestedAction` and a PT-BR `chatLinePt` for the person: "me chama na
+DM" for `awaiting_dm` and `unavailable`, "te mandei um link no privado" for
+`dm_sent`, a single retry for `already_linked`.
 
 ## Artifact Publish Contract
 

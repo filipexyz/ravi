@@ -778,6 +778,95 @@ describe("ConsoleApiClient", () => {
 
     await expect(client.resolveActorBinding({ contactId: "missing" }, "access-secret")).resolves.toBeNull();
   });
+
+  it("names the turn's author on authenticated calls, never on session calls", async () => {
+    const calls: FetchCall[] = [];
+    const actorContact = mock(() => "c_ana");
+    const client = new ConsoleApiClient({
+      consoleUrl: "https://console.example",
+      actorContact,
+      fetch: mock(async (url: string, init?: RequestInit) => {
+        calls.push(recordFetchCall(url, init));
+        return jsonResponse({ ok: true });
+      }),
+    });
+
+    await client.requestJson("POST", "/api/cli/artifacts/publish", { releaseId: "r" }, "access-secret");
+    await client.requestJson("GET", "/api/cli/projects/p/bases/b/rows", undefined, "access-secret");
+    await client.requestJson("GET", "/api/cli/me", undefined, "access-secret");
+    await client.requestJson("POST", "/api/cli/auth/logout", {}, "access-secret");
+    await client.requestJson("GET", "/api/cli/auth/config");
+
+    expect(calls.map((call): string | null => call.headers["x-ravi-actor-contact"] ?? null)).toEqual([
+      "c_ana",
+      "c_ana",
+      null,
+      null,
+      null,
+    ]);
+    expect(actorContact).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends no author when the turn is the operator's or cannot be read", async () => {
+    for (const actorContact of [() => null, () => Promise.reject(new Error("gateway down"))]) {
+      const calls: FetchCall[] = [];
+      const client = new ConsoleApiClient({
+        consoleUrl: "https://console.example",
+        actorContact,
+        fetch: mock(async (url: string, init?: RequestInit) => {
+          calls.push(recordFetchCall(url, init));
+          return jsonResponse({ ok: true });
+        }),
+      });
+      await client.requestJson("POST", "/api/cli/artifacts/publish", {}, "access-secret");
+      expect(calls[0]?.headers["x-ravi-actor-contact"]).toBeUndefined();
+    }
+  });
+});
+
+describe("ConsoleApiClient person without a link", () => {
+  const notLinked = () =>
+    jsonResponse(
+      { error: { code: "ACTOR_NOT_LINKED", message: "The person asking has not linked their Ravi account here." } },
+      403,
+    );
+
+  it("starts the person's link and says what was set in motion", async () => {
+    const startActorLink = mock(async () => "awaiting_dm" as const);
+    const client = new ConsoleApiClient({
+      consoleUrl: "https://console.example",
+      actorContact: () => "c_ana",
+      startActorLink,
+      fetch: mock(async () => notLinked()),
+    });
+
+    const error = await client
+      .requestJson("POST", "/api/cli/artifacts/publish", {}, "access-secret")
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(CloudAuthError);
+    expect((error as CloudAuthError).code).toBe("ACTOR_NOT_LINKED");
+    expect((error as CloudAuthError).details?.linkFlow).toBe("awaiting_dm");
+    expect(startActorLink).toHaveBeenCalledWith("c_ana");
+  });
+
+  it("starts nothing for the operator's own calls or ravi link's own calls", async () => {
+    const startActorLink = mock(async () => "dm_sent" as const);
+    for (const [actorContact, path] of [
+      [() => null, "/api/cli/artifacts/publish"],
+      [() => "c_ana", "/api/cli/link/requests"],
+    ] as const) {
+      const client = new ConsoleApiClient({
+        consoleUrl: "https://console.example",
+        actorContact,
+        startActorLink,
+        fetch: mock(async () => notLinked()),
+      });
+      const error = await client.requestJson("POST", path, {}, "access-secret").catch((caught: unknown) => caught);
+      expect((error as CloudAuthError).details?.linkFlow).toBeUndefined();
+    }
+    expect(startActorLink).not.toHaveBeenCalled();
+  });
 });
 
 function jsonResponse(payload: unknown, status = 200, headers: Record<string, string> = {}): Response {

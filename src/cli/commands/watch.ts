@@ -25,6 +25,7 @@ import { getAgent } from "../../router/config.js";
 import { getAccountForAgent } from "../../router/router-db.js";
 import { parseDurationMs, formatDurationMs } from "../../cron/schedule.js";
 import { dbCreateTrigger, type TriggerInput } from "../../triggers/index.js";
+import { nats } from "../../nats.js";
 import {
   createWatch,
   isWatchApiError,
@@ -397,6 +398,9 @@ export class WatchCommands {
         );
       }
       const trigger = dbCreateTrigger(input);
+      // The daemon's trigger runner only subscribes to topics it loaded; without
+      // this refresh the new trigger stays unsubscribed until the next restart.
+      await nats.emit("ravi.triggers.refresh", {});
       const payload = {
         status: "created",
         watch: serializeWatch(watch),

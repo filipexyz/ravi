@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { PublishSessionPromptOptions } from "../../omni/session-stream.js";
+import type { ChannelOutboundJob } from "../outbound-stream.js";
 import { getOrCreateSession, getSession, listSessionSubscriptions } from "../../router/index.js";
 import { dbUpsertChat } from "../../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
@@ -525,6 +526,76 @@ describe("Slack thread orchestration", () => {
     ).rejects.toThrow("Slack thread not found for this session: unknown-thread");
   });
 
+  it("updates the thread's root card on report, close and reopen", async () => {
+    const fixture = seedPendingCreation({ requestedBy: "Ana Souza" });
+    const { dependencies } = capture();
+    const jobs: ChannelOutboundJob[] = [];
+    const withCards = {
+      ...dependencies,
+      publishOutbound: mock(async (job: ChannelOutboundJob) => {
+        jobs.push(job);
+      }),
+    };
+    await finalizeSlackThreadCreation(fixture.requestId, withCards);
+    const parent = getSession("ravi-parent")!;
+    const child = getSession(`ravi-parent:thread:${fixture.threadTs}`)!;
+    expect(jobs).toHaveLength(0);
+
+    await reportSlackThreadProgress(child, "Found the failing commit", withCards);
+    await closeSlackThread(child, "The branch is fixed", withCards);
+    await closeSlackThread(child, "The branch is fixed", withCards);
+    await sendSlackThreadMessage({ parentSession: parent, ref: child.name!, message: "Check again" }, withCards);
+    await sendSlackThreadMessage({ parentSession: parent, ref: child.name!, message: "Status?" }, withCards);
+
+    // A repeated close and a send to an open thread leave the card as it is.
+    expect(jobs.map((job) => (job.request.content as { threadCard?: unknown }).threadCard)).toEqual([
+      { status: "open", note: "Found the failing commit", updatedAt: expect.any(Number), requestedBy: "Ana Souza" },
+      { status: "closed", note: "The branch is fixed", updatedAt: expect.any(Number), requestedBy: "Ana Souza" },
+      { status: "reopened", updatedAt: expect.any(Number), requestedBy: "Ana Souza" },
+    ]);
+    expect(jobs[0]!.request).toMatchObject({
+      origin: { sessionName: "ravi-parent", responsePhase: "chat_action" },
+      target: { channel: "slack", accountId: "ravi-slack", instanceId: "slack-instance-1", chatId: "C123" },
+      content: {
+        type: "chat_action",
+        actionId: "message.edit",
+        providerMessageId: fixture.threadTs,
+        text: "Investigate the branch",
+      },
+    });
+    expect(new Set(jobs.map((job) => job.request.idempotencyKey)).size).toBe(3);
+  });
+
+  it("leaves the root of a thread a person started alone", async () => {
+    const { dependencies } = capture();
+    const publishOutbound = mock(async () => {});
+    getOrCreateSession("ravi-parent", "ravi", "/tmp/ravi", { name: "ravi-parent", chatType: "channel" });
+    const child = getOrCreateSession("ravi-parent:thread:1713000000.000900", "ravi", "/tmp/ravi", {
+      name: "ravi-parent-thread",
+      chatType: "channel",
+    });
+    const threadChat = dbUpsertChat({
+      channel: "slack",
+      instanceId: "slack-instance-1",
+      platformChatId: "C123#1713000000.000900",
+      chatType: "thread",
+      title: "C123",
+    });
+    registerSlackThreadInboundLifecycle({
+      childSession: child,
+      accountId: "ravi-slack",
+      instanceId: "slack-instance-1",
+      platformChatId: "C123",
+      threadCanonicalChatId: threadChat.id,
+      providerThreadId: "1713000000.000900",
+    });
+
+    await reportSlackThreadProgress(child, "Halfway", { ...dependencies, publishOutbound });
+    await closeSlackThread(child, "Done", { ...dependencies, publishOutbound });
+
+    expect(publishOutbound).not.toHaveBeenCalled();
+  });
+
   it("refuses to send to a thread whose first turn has not started", async () => {
     const fixture = seedPendingCreation();
     const { dependencies } = capture();
@@ -542,7 +613,9 @@ describe("Slack thread orchestration", () => {
   });
 });
 
-function seedPendingCreation(input: { channelId?: string; chatType?: "channel" | "dm"; teamId?: string } = {}): {
+function seedPendingCreation(
+  input: { channelId?: string; chatType?: "channel" | "dm"; teamId?: string; requestedBy?: string } = {},
+): {
   requestId: string;
   threadTs: string;
 } {
@@ -573,6 +646,7 @@ function seedPendingCreation(input: { channelId?: string; chatType?: "channel" |
     platformChatId: channelId,
     rootCanonicalChatId: rootChat.id,
     initialPrompt: "Investigate the branch",
+    ...(input.requestedBy ? { requestedBy: input.requestedBy } : {}),
     modelOverride: "gpt-5.6",
   });
   markSlackThreadRootDelivered({

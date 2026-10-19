@@ -103,4 +103,20 @@ describe("assistant transcript empty-join mash", () => {
       "Oi. No que você quer trabalhar?",
     ]);
   });
+
+  it("keeps initials such as R.M. inside one WhatsApp reply", () => {
+    const reply =
+      "Não é bug de contagem — é atribuição. O R.M. tem 727 ações em 30 dias.\n\n" +
+      "1. **Linkar o R.M.** ao Console.\n\nO que eu recomendo: linkar o R.M. e conferir se o número sobe.";
+    expect(looksLikeEmptyJoinMash(reply)).toBe(false);
+    expect(splitEmptyJoinedAssistantUtterances(reply)).toEqual([reply]);
+    expect(resolveVisibleAssistantUtterances(reply, [])).toEqual([reply]);
+    expect(looksLikeEmptyJoinMash("Falei com a equipe da U.S.A.Hoje")).toBe(false);
+    expect(looksLikeEmptyJoinMash("(R.M.) confirmou")).toBe(false);
+    // A real mash next to initials still splits.
+    expect(splitEmptyJoinedAssistantUtterances("O R.M. confirmou.Olá de novo")).toEqual([
+      "O R.M. confirmou.",
+      "Olá de novo",
+    ]);
+  });
 });

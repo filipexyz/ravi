@@ -30,21 +30,42 @@ import type {
 } from "./types.js";
 import { DEFAULT_CONSOLE_URL } from "./types.js";
 import { completeVerificationUri } from "./verification-uri.js";
+import type { TurnLinkFlow } from "../identity-link/turn-link-copy.js";
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
+/** Same name as `ACTOR_CONTACT_HEADER` in `turn-actor.ts`, kept here so this module never loads it eagerly. */
+const ACTOR_CONTACT_HEADER = "x-ravi-actor-contact";
 const LINK_REQUESTS_PATH = "/api/cli/link/requests";
+/** `ravi link`'s own calls never start another link. */
+const LINK_PATH_PREFIX = "/api/cli/link";
 const LINK_REQUEST_STATUSES: readonly LinkRequestStatus[] = ["pending", "approved", "denied", "expired", "cancelled"];
 
 export interface ConsoleApiClientOptions {
   consoleUrl?: string;
   fetch?: FetchLike;
   timeoutMs?: number;
+  /**
+   * The contact who wrote the current turn, sent as `x-ravi-actor-contact` on
+   * authenticated calls (default: `turnActorContactId`, read once per client).
+   */
+  actorContact?: () => string | null | Promise<string | null>;
+  /**
+   * Console refused a call for that contact (`ACTOR_NOT_LINKED`): start their
+   * `ravi link` and say what was set in motion (default: `startTurnLink`).
+   */
+  startActorLink?: (contactId: string) => Promise<TurnLinkFlow>;
 }
+
+/** Calls that are about the `ravi login` session itself never name the turn's author. */
+const SESSION_PATHS = ["/api/cli/auth/", "/api/cli/me"];
 
 export class ConsoleApiClient {
   readonly consoleUrl: string;
   private readonly fetchImpl: FetchLike;
+  private readonly actorContact: () => string | null | Promise<string | null>;
+  private readonly startActorLink: (contactId: string) => Promise<TurnLinkFlow>;
+  private actorContactValue: Promise<string | null> | null = null;
 
   constructor(options: ConsoleApiClientOptions = {}) {
     this.consoleUrl = normalizeConsoleUrl(options.consoleUrl ?? DEFAULT_CONSOLE_URL);
@@ -52,6 +73,21 @@ export class ConsoleApiClient {
       options.fetch ??
       ((url, init) => {
         return fetchWithTimeout(url, init, options.timeoutMs);
+      });
+    this.actorContact =
+      options.actorContact ??
+      (async () => {
+        // Only a runtime turn can have an author other than the operator; the
+        // check covers commands the daemon gateway runs for a turn, whose
+        // process has no RAVI_CONTEXT_KEY.
+        const { turnActorContactId } = await import("./turn-actor.js");
+        return turnActorContactId();
+      });
+    this.startActorLink =
+      options.startActorLink ??
+      (async (contactId) => {
+        const { startTurnLink } = await import("../identity-link/turn-link.js");
+        return startTurnLink(contactId);
       });
   }
 
@@ -215,7 +251,12 @@ export class ConsoleApiClient {
       ...extraHeaders,
     };
     if (body !== undefined) headers["Content-Type"] = "application/json";
-    if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+    let contactId: string | null = null;
+    if (accessToken) {
+      headers.Authorization = `Bearer ${accessToken}`;
+      contactId = await this.turnActorContact(path);
+      if (contactId) headers[ACTOR_CONTACT_HEADER] = contactId;
+    }
 
     let response: Response;
     try {
@@ -230,9 +271,23 @@ export class ConsoleApiClient {
 
     const payload = await readJsonBody(response);
     if (!response.ok) {
-      throw mapConsoleError(response.status, payload, response.headers, path);
+      const error = mapConsoleError(response.status, payload, response.headers, path);
+      // The person of the turn has no link: start it, so the refusal says what happens next.
+      if (contactId && error.code === "ACTOR_NOT_LINKED" && !path.startsWith(LINK_PATH_PREFIX)) {
+        const { withTurnLinkFlow } = await import("../identity-link/turn-link.js");
+        throw withTurnLinkFlow(error, await this.startActorLink(contactId).catch(() => "unavailable" as const));
+      }
+      throw error;
     }
     return (payload ?? {}) as T;
+  }
+
+  private async turnActorContact(path: string): Promise<string | null> {
+    if (SESSION_PATHS.some((prefix) => path.startsWith(prefix))) return null;
+    this.actorContactValue ??= Promise.resolve()
+      .then(() => this.actorContact())
+      .catch(() => null);
+    return this.actorContactValue;
   }
 
   private async requestFormJson<T>(method: string, url: string, body: URLSearchParams): Promise<T> {

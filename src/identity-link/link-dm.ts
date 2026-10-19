@@ -30,6 +30,12 @@ export interface LinkDmRoute {
   recipient: string;
   /** Slack user id used for the optional email hint. */
   slackUserId?: string;
+  /**
+   * The message would open a conversation the person did not start (a
+   * WhatsApp number written to from a group). Ravi never does that on
+   * WhatsApp: the person is asked to write in private instead.
+   */
+  startsConversation?: boolean;
 }
 
 export interface LinkMessenger {
@@ -42,7 +48,8 @@ export interface LinkMessenger {
 /**
  * Resolve the private chat with the author. Slack posts to the user id (Slack
  * opens the DM with the app). WhatsApp answers in the same chat when the turn
- * is already a direct chat, otherwise messages the sender's own number.
+ * is already a direct chat; from a group it names the sender's own number,
+ * marked `startsConversation`, which the caller must not write to first.
  */
 export function resolveLinkDmRoute(
   requester: LinkRequester,
@@ -64,9 +71,15 @@ export function resolveLinkDmRoute(
   if (channel === "whatsapp") {
     const resolved = resolveAccount(origin.accountId, { channel: "whatsapp" });
     if (resolved.kind !== "omni") throw dmUnsupported();
-    const recipient = isWhatsAppGroupChat(origin.chatId) ? sender : origin.chatId;
+    const fromGroup = isWhatsAppGroupChat(origin.chatId);
+    const recipient = fromGroup ? sender : origin.chatId;
     if (isWhatsAppGroupChat(recipient)) throw dmUnsupported();
-    return { channel: "whatsapp", accountId: origin.accountId, recipient };
+    return {
+      channel: "whatsapp",
+      accountId: origin.accountId,
+      recipient,
+      ...(fromGroup ? { startsConversation: true } : {}),
+    };
   }
 
   throw dmUnsupported();
@@ -135,11 +148,15 @@ export function linkRequestDmText(input: {
   channel: LinkDmRoute["channel"];
   displayName: string | null;
   expiresInMinutes: number;
+  /** The person wrote in private because a write needed their link, not because they ran `ravi link`. */
+  answeringDm?: boolean;
 }): string {
   const greeting = input.displayName ? `Oi, ${firstName(input.displayName)}!` : "Oi!";
   const link = input.channel === "slack" ? `[Abrir e aprovar o vínculo](${input.approveUrl})` : input.approveUrl;
   return [
-    `${greeting} Você pediu para vincular este chat à sua conta do Ravi Console.`,
+    input.answeringDm
+      ? `${greeting} Para eu fazer coisas no seu nome no Ravi Console, aprove o vínculo deste chat com a sua conta.`
+      : `${greeting} Você pediu para vincular este chat à sua conta do Ravi Console.`,
     link,
     `O link é só seu, vale por ${input.expiresInMinutes} minutos e funciona uma vez. Se não foi você que pediu, ignore esta mensagem.`,
   ].join("\n\n");
@@ -157,8 +174,25 @@ export function linkDeniedDmText(): string {
   return "Tudo certo, não vinculei nada.";
 }
 
-export function linkExpiredDmText(): string {
-  return "O link de vínculo expirou sem aprovação. Se ainda quiser vincular, é só pedir de novo.";
+export function linkExpiredDmText(options: { awaitingDm?: boolean } = {}): string {
+  return options.awaitingDm
+    ? "O link de vínculo expirou sem aprovação. Se ainda quiser vincular, me mande qualquer mensagem aqui que eu mando outro."
+    : "O link de vínculo expirou sem aprovação. Se ainda quiser vincular, é só pedir de novo.";
+}
+
+/** A new message in the private chat while the approval link is still valid. */
+export function linkPendingDmText(expiresInMinutes: number): string {
+  return `Seu link de vínculo está na mensagem acima e ainda vale por ${expiresInMinutes} minutos. Assim que você aprovar, eu confirmo aqui e você pode pedir de novo.`;
+}
+
+/** The person was already linked when they wrote in private. */
+export function linkAlreadyLinkedDmText(): string {
+  return "Sua conta do Ravi Console já está vinculada a este chat. Pode pedir de novo.";
+}
+
+/** The approval link could not be created or sent right now. */
+export function linkUnavailableDmText(): string {
+  return "Não consegui gerar o link de vínculo agora. Me mande outra mensagem daqui a pouco que eu tento de novo.";
 }
 
 function firstName(displayName: string): string {

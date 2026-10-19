@@ -46,6 +46,11 @@ describe("runtime credential classifier", () => {
     expect(JSON.stringify(signal)).not.toContain("sk-proj-secret_token_value");
   });
 
+  it("classifies insufficient balance as billing_blocked", () => {
+    const signal = classifyRuntimeCredentialFailure({ runtimeProvider: "pi", message: "Insufficient Balance" });
+    expect(signal.kind).toBe("billing_blocked");
+  });
+
   it("classifies model-broker forwarder failures as credential failover only", () => {
     const signal = classifyRuntimeCredentialFailure({
       runtimeProvider: "codex",

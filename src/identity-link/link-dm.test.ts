@@ -48,18 +48,24 @@ describe("resolveLinkDmRoute", () => {
     expect(unsupported(() => resolveLinkDmRoute(requester(origin, null), slackNative))).toBe("LINK_DM_UNSUPPORTED");
   });
 
-  it("messages the WhatsApp sender's own number from a group and answers in place in a direct chat", () => {
+  it("marks the WhatsApp sender's own number from a group as starting a chat, and answers in place in a direct chat", () => {
     const fromGroup = resolveLinkDmRoute(
       requester({ channel: "whatsapp", accountId: "wa-main", chatId: "group:120363000000000000" }, "5511999999999"),
       omni,
     );
-    expect(fromGroup).toEqual({ channel: "whatsapp", accountId: "wa-main", recipient: "5511999999999" });
+    expect(fromGroup).toEqual({
+      channel: "whatsapp",
+      accountId: "wa-main",
+      recipient: "5511999999999",
+      startsConversation: true,
+    });
 
     const fromDm = resolveLinkDmRoute(
       requester({ channel: "whatsapp", accountId: "wa-main", chatId: "5511999999999@s.whatsapp.net" }, "5511999999999"),
       omni,
     );
     expect(fromDm.recipient).toBe("5511999999999@s.whatsapp.net");
+    expect(fromDm.startsConversation).toBeUndefined();
   });
 
   it("never targets a WhatsApp group", () => {

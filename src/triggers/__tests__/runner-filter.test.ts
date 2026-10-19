@@ -289,12 +289,12 @@ describe("page comment wake", () => {
     const { watchEventFromInboxPayload } = await import("../../watch/events.js");
     dbCreateAgent({ id: "page-creator", cwd: "/tmp/page-creator-home" });
     const live = await ensurePageCommentTrigger(
-      { pageId: "site_live", orgId: "org_1", projectId: "proj_1" },
+      { pageId: "site_live", routePath: "/", orgId: "org_1", projectId: "proj_1" },
       { agentId: "page-creator" },
       { emitTriggersRefresh: async () => {}, agentExists: () => true },
     );
     const gone = await ensurePageCommentTrigger(
-      { pageId: "site_gone", orgId: "org_1", projectId: "proj_1" },
+      { pageId: "site_gone", routePath: "/", orgId: "org_1", projectId: "proj_1" },
       { agentId: "gone-creator" },
       { emitTriggersRefresh: async () => {}, agentExists: () => false },
     );
@@ -307,10 +307,12 @@ describe("page comment wake", () => {
     const liveEvent = watchEventFromInboxPayload(pageCommentInbox("site_live", "ship the chart"));
     const goneEvent = watchEventFromInboxPayload(pageCommentInbox("site_gone", "ghost"));
     const otherEvent = watchEventFromInboxPayload(pageCommentInbox("site_other", "nope"));
-    if (!liveEvent || !goneEvent || !otherEvent) throw new Error("expected watch events");
+    const otherRouteEvent = watchEventFromInboxPayload(pageCommentInbox("site_live", "another route", "/weekly"));
+    if (!liveEvent || !goneEvent || !otherEvent || !otherRouteEvent) throw new Error("expected watch events");
 
     emit(topic, goneEvent);
     emit(topic, otherEvent);
+    emit(topic, otherRouteEvent);
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(publishCalls).toEqual([]);
     expect(
@@ -330,14 +332,16 @@ describe("page comment wake", () => {
       ),
     ).toBe(true);
     expect(listSessions().some((session) => session.agentCwd.includes("/tmp/ravi-"))).toBe(false);
-    expect(live.trigger.filter).toBe(pageCommentFilter({ pageId: "site_live", orgId: "org_1", projectId: "proj_1" }));
+    expect(live.trigger.filter).toBe(
+      pageCommentFilter({ pageId: "site_live", routePath: "/", orgId: "org_1", projectId: "proj_1" }),
+    );
   });
 });
 
-function pageCommentInbox(pageId: string, body: string) {
+function pageCommentInbox(pageId: string, body: string, routePath = "/") {
   return {
     version: 1 as const,
-    eventId: `item_${pageId}`,
+    eventId: `item_${pageId}${routePath}`,
     sequence: 1,
     dedupeKey: `page-comment:${pageId}`,
     eventType: "page.comment.created",
@@ -351,7 +355,7 @@ function pageCommentInbox(pageId: string, body: string) {
     source: { type: "console" },
     actor: { type: "user", id: "user_1" },
     target: { type: "page", id: pageId },
-    payload: { pageId, orgId: "org_1", projectId: "proj_1", body, url: `https://${pageId}.ravi.page/` },
+    payload: { pageId, routePath, orgId: "org_1", projectId: "proj_1", body, url: `https://${pageId}.ravi.page/` },
     links: [],
     delivery: {
       subscriptionId: "sub_1",

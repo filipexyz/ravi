@@ -168,7 +168,9 @@ To show a private page to one person, share it by email; never make it public or
 add a password for that. To bring someone into the organization, invite them. When
 a page is denied, ask its managers (the printed approval link may be forwarded;
 only the page's managers approve). Chat turns from someone else act for that
-person through their `ravi link` (`ACTOR_NOT_LINKED`: send them `ravi link`).
+person through their `ravi link`. Without one, writes fail with `ACTOR_NOT_LINKED`
+and Ravi starts the link itself: relay the error's `chatLinePt` (on WhatsApp,
+"me chama na DM"; Ravi answers their private message with the approval link).
 
 ```bash
 ravi pages share <url> --with <email> --execute
@@ -266,6 +268,7 @@ Operating Ravi is documented in the system skills (`ravi skills show <skill>`) a
 | Cron, triggers, heartbeat | `cron`, `triggers`, `heartbeat` | `guides/cron-jobs`, `guides/triggers`, `guides/heartbeat` |
 | Logs, doctor, events, JetStream | `daemon`, `events` | `guides/troubleshooting`, `reference/nats-events` |
 | Console login, Pages | `pages` | `console/login`, `console/pages` |
+| Calendar, meeting briefings and follow-ups | `agenda`, `meetings` | `console/calendar`, `console/meetings` |
 | Bases and data pages | `solucoes`, `bases` | `console/bases` |
 | Media, artifacts, skills | `audio`, `image`, `video`, `artifacts`, `skills` | `reference/media`, `reference/artifacts`, `reference/skills` |
 | Tasks, CLI conventions, SDK and HTTP gateway | `tasks` | `cli/overview`, `guides/sdk` |

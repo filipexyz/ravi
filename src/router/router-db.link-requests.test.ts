@@ -6,6 +6,14 @@ import {
   listPendingLocalLinkRequests,
   pruneLocalLinkRequests,
 } from "../identity-link/link-requests-db.js";
+import {
+  clearContactLinkState,
+  enterAwaitingDm,
+  getContactLinkState,
+  LINK_STATE_TTL_MS,
+  markLinkSent,
+  reopenAwaitingDm,
+} from "../identity-link/link-states-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 
 let stateDir: string | null = null;
@@ -56,5 +64,55 @@ describe("cloud_link_requests", () => {
     expect(pruneLocalLinkRequests(3_000)).toBe(1);
     expect(getLocalLinkRequest("lr_old")).toBeNull();
     expect(getLocalLinkRequest("lr_live")?.status).toBe("pending");
+  });
+});
+
+describe("contact_link_states", () => {
+  const enter = (now: number) =>
+    enterAwaitingDm({
+      contactId: "contact_luis",
+      channel: "whatsapp",
+      accountId: "wa-main",
+      agentId: "vendas",
+      displayName: "Luís",
+      origin: { channel: "whatsapp", accountId: "wa-main", chatId: "120363000000000000@g.us" },
+      now,
+    });
+
+  it("keeps a sent link that is still valid when the person is refused again", () => {
+    enter(1_000);
+    markLinkSent({
+      contactId: "contact_luis",
+      requestId: "lr_1",
+      requestExpiresAt: 601_000,
+      dmChatId: "5511999999999@s.whatsapp.net",
+      routePattern: "5511999999999",
+      now: 2_000,
+    });
+
+    expect(enter(3_000)).toMatchObject({ status: "link_sent", requestId: "lr_1", routePattern: "5511999999999" });
+    // Once that link expired, a new refusal puts the person back to awaiting their private message.
+    expect(enter(700_000).status).toBe("awaiting_dm");
+  });
+
+  it("reopens only the request it was given, and drops expired or cleared states", () => {
+    enter(1_000);
+    markLinkSent({
+      contactId: "contact_luis",
+      requestId: "lr_1",
+      requestExpiresAt: 601_000,
+      dmChatId: "dm",
+      routePattern: null,
+      now: 2_000,
+    });
+
+    expect(reopenAwaitingDm("contact_luis", "lr_other", 3_000)).toBe(false);
+    expect(reopenAwaitingDm("contact_luis", "lr_1", 3_000)).toBe(true);
+    expect(getContactLinkState("contact_luis", 3_000)).toMatchObject({ status: "awaiting_dm", requestId: null });
+
+    expect(getContactLinkState("contact_luis", 1_000 + LINK_STATE_TTL_MS)).toBeNull();
+    enter(4_000);
+    expect(clearContactLinkState("contact_luis")).toBe(true);
+    expect(getContactLinkState("contact_luis", 4_000)).toBeNull();
   });
 });

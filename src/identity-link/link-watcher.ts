@@ -4,7 +4,8 @@
  * - Polls the Console for the link requests this install is waiting on. On
  *   approval it caches the binding (ids only) and confirms in the private
  *   chat and in the chat where the person asked; on denial or expiry it tells
- *   the person in the private chat.
+ *   the person in the private chat. A request from the private-chat flow also
+ *   routes that chat to the agent when it reaches none, and ends the flow.
  * - Every few minutes it re-checks cached bindings against the Console, so a
  *   revoke on the Console reaches this install without waiting for the cache
  *   to expire, and a live binding does not silently drop after the cache TTL.
@@ -38,6 +39,13 @@ import {
   type LocalLinkRequest,
 } from "./link-requests-db.js";
 import { withCloudSession, type IdentityLinkDeps } from "./link-service.js";
+import { ensureLinkedDmRoute, type LinkDmRouteDeps } from "./link-dm-route.js";
+import {
+  clearContactLinkState,
+  getContactLinkState,
+  reopenAwaitingDm,
+  type ContactLinkState,
+} from "./link-states-db.js";
 
 const log = logger.child("identity:link-watcher");
 
@@ -48,7 +56,7 @@ const REVALIDATE_INTERVAL_MS = 10 * 60_000;
 const ABANDON_AFTER_EXPIRY_MS = 60 * 60_000;
 const RETENTION_MS = 7 * 24 * 60 * 60_000;
 
-export type LinkWatcherDeps = IdentityLinkDeps;
+export type LinkWatcherDeps = IdentityLinkDeps & LinkDmRouteDeps;
 
 /** Check every pending request once. Returns how many are still pending. */
 export async function processPendingLinkRequests(deps: LinkWatcherDeps = {}): Promise<number> {
@@ -95,18 +103,23 @@ export async function processPendingLinkRequests(deps: LinkWatcherDeps = {}): Pr
             // this poll was in flight must not see the binding come back.
             if (completeLocalLinkRequest(request.id, "approved", now())) {
               writeCachedActorBinding(status.binding, env);
+              finishLinkingState(request, deps, now());
               await confirmApproved(messenger, request);
             }
             break;
           }
           case "denied":
             if (completeLocalLinkRequest(request.id, "denied", now())) {
+              if (linkingStateOf(request, now())) clearContactLinkState(request.contactId);
               await notify(messenger, request.dm, linkDeniedDmText(), request.id);
             }
             break;
           case "expired":
             if (completeLocalLinkRequest(request.id, "expired", now())) {
-              await notify(messenger, request.dm, linkExpiredDmText(), request.id);
+              // In the private-chat flow the next message from the person gets a new link.
+              const awaitingDm =
+                linkingStateOf(request, now()) !== null && reopenAwaitingDm(request.contactId, request.id, now());
+              await notify(messenger, request.dm, linkExpiredDmText({ awaitingDm }), request.id);
             }
             break;
           case "cancelled":
@@ -168,6 +181,27 @@ export async function revalidateCachedBindings(deps: LinkWatcherDeps = {}): Prom
     log.debug("Cached binding check skipped", { error: errorText(error) });
   }
   return result;
+}
+
+/** The linking state this request belongs to, if it was sent by the private-chat flow. */
+function linkingStateOf(request: LocalLinkRequest, now: number): ContactLinkState | null {
+  const state = getContactLinkState(request.contactId, now);
+  return state && state.requestId === request.id ? state : null;
+}
+
+/**
+ * The person linked from the private-chat flow: route that chat to the agent
+ * when it reaches none, and leave the flow.
+ */
+function finishLinkingState(request: LocalLinkRequest, deps: LinkWatcherDeps, now: number): void {
+  const state = linkingStateOf(request, now);
+  if (!state) return;
+  try {
+    ensureLinkedDmRoute(state, deps);
+  } catch (error) {
+    log.warn("Linked private chat could not be routed", { requestId: request.id, error: errorText(error) });
+  }
+  clearContactLinkState(request.contactId);
 }
 
 async function confirmApproved(messenger: LinkMessenger, request: LocalLinkRequest): Promise<void> {

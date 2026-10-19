@@ -2,9 +2,12 @@
 
 ## Ship binding
 
-- `pages ship --execute` with a creator agent MUST create one trigger named `page-comment:<pageId>` on `ravi.watch.console.page.comment.created`, session `main`, cooldown 30s, bound to that agent.
+- `pages ship` with a creator agent MUST create one trigger named `page-comment:<pageId>:<routePath>` on `ravi.watch.console.page.comment.created`, session `main`, cooldown 0, bound to that agent and `replySession` to the shipping session.
 - `<pageId>` MUST be the site id returned by publish. A slug-only site MUST NOT arm a trigger (`skipped: missing_page`).
-- A second ship of the same page MUST reuse that trigger id and MUST keep the original `agentId`.
+- A second ship of the same route from the same session MUST reuse that trigger id unchanged.
+- A ship of the same route from another session or agent MUST reuse the trigger id and move `agentId`, `accountId`, `replySession` and `replySource` to the new shipper (`rebound: true`).
+- A different route on the same site MUST get its own trigger.
+- A ship MUST delete the v0 `page-comment:<pageId>` trigger of that site and report `replacedTriggerId`.
 - Ship without an agent in context MUST return `commentFollow.skipped: missing_creator` and MUST NOT insert a trigger.
 - Follow failure MUST NOT fail the ship that already published.
 
@@ -12,6 +15,7 @@
 
 - `pageCommentFilter` MUST pass `validateFilter`.
 - The filter MUST match `payload.pageId`, root `pageId`, `payload.siteId`, and root `siteId` for the bound id, and MUST reject a different page id.
+- The filter MUST require `payload.routePath` or root `routePath` equal to the bound route, and MUST reject another route or an event without a route path.
 - When org and project ids are present, the filter MUST reject a different org id or project id.
 - An unquoted filter such as `data.pageId == site_1` MUST fail `validateFilter` and MUST evaluate as no match.
 - `ensurePageCommentTrigger` MUST NOT call create when the generated filter is invalid.
@@ -25,7 +29,7 @@
 - A non-empty inbox `payload.url` MUST be copied unchanged onto the watch event.
 - A missing or blank `payload.url` MUST be filled from inbox links: label `Page`, else the first http(s) link, else label `Console`.
 - An inbox item with no links MUST leave `payload.url` unset and MUST NOT throw.
-- A comment whose author is the creator MUST still match. v0 has no author filter.
+- A comment whose author is the creator MUST still match. There is no author filter.
 - A trigger whose agent row is missing MUST report `runtimeState: unbound_agent`, MUST NOT be subscribed, and MUST NOT create a session whose cwd is `/tmp/ravi-<agentId>`.
 
 ## Commands

@@ -99,6 +99,7 @@ import {
   splitSlackThreadPlatformChatId,
   summarizeSlackThread,
 } from "../../channels/slack/thread-lifecycle.js";
+import { resolveSlackThreadRequester } from "../../channels/slack/thread-requester.js";
 import { listStickers, stickerAllowedForAgent, stickerAllowedOnChannel } from "../../stickers/catalog.js";
 import { revokeAgentRuntimeContextsForSession } from "../../runtime/context-registry.js";
 import {
@@ -684,7 +685,7 @@ function buildSessionActionToolHints(): Record<string, Record<string, unknown>> 
       useWhen: "Branch work into a new native Slack thread and begin it immediately.",
       constraints: [
         "Use only when thread.create is available on a Slack surface.",
-        "The initial message is posted visibly as a new Slack channel root.",
+        "The initial message is posted visibly as a new Slack channel root, shown as a card: its first line is the title, the rest a short summary.",
         "Slack threads are siblings; calling this inside a thread does not nest it.",
       ],
       promptHint:
@@ -6374,6 +6375,7 @@ export class SessionCommands {
     const creationTarget = resolveSlackThreadCreationTarget(session);
     const requestId = `slack-thread:${randomUUID()}`;
     const normalizedModel = model?.trim() || undefined;
+    const requestedBy = resolveSlackThreadRequester();
     createSlackThreadLifecycle({
       requestId,
       parentSessionKey: creationTarget.parentSession.sessionKey,
@@ -6385,6 +6387,7 @@ export class SessionCommands {
       platformChatId: creationTarget.platformChatId,
       rootCanonicalChatId: creationTarget.rootCanonicalChatId,
       initialPrompt: initialMessage,
+      requestedBy,
       modelOverride: normalizedModel,
     });
     const job = buildChannelChatActionJob({
@@ -6401,6 +6404,7 @@ export class SessionCommands {
         type: "chat_action",
         actionId: "thread.create",
         text: initialMessage,
+        ...(requestedBy ? { requestedBy } : {}),
       },
     });
     const published = await publishChannelOutboundJobDurably(job);

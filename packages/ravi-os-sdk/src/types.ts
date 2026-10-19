@@ -176,6 +176,386 @@ export type AdaptersShowReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `agenda.briefing`. */
+export type AgendaBriefingInput = {
+  clear?: boolean;
+  eventId: string;
+  file?: string;
+  text?: string;
+};
+
+/** Return shape for `agenda.briefing`. */
+export type AgendaBriefingReturn = {
+  event: {
+    allDay: boolean;
+    attendees: Array<{
+      email: string;
+      name: string | null;
+      organizer: boolean;
+      response: string | null;
+      self: boolean;
+    }>;
+    briefing?: string | null;
+    briefingEnabled?: boolean | null;
+    briefingMinutes?: number;
+    connectionId: string;
+    consoleMeetingUrl?: string | null;
+    deletedAt?: string | null;
+    effectiveRecordMode: ("ask" | "auto" | "off") | null;
+    endAt: string;
+    externalAttendees: boolean;
+    followupEnabled?: boolean | null;
+    hasBriefing?: boolean;
+    id: string;
+    meetingCode: string | null;
+    meetingUrl: string | null;
+    organizerEmail?: string | null;
+    recordDecision: ("record" | "skip") | null;
+    recordDecisionProjectId?: string | null;
+    recordError?: string | null;
+    recording: ({
+      meetingId: string;
+      projectId: string | null;
+      ready: boolean;
+      status: string;
+    }) | null;
+    recurringEventId?: string | null;
+    selfResponse?: string | null;
+    startAt: string;
+    status: string;
+    title: string;
+    updatedAt?: string;
+  };
+};
+
+/** Input shape for `agenda.list`. */
+export type AgendaListInput = {
+  days?: string;
+  limit?: string;
+  offset?: string;
+};
+
+/** Return shape for `agenda.list`. */
+export type AgendaListReturn = {
+  events: Array<{
+    allDay: boolean;
+    attendees: Array<{
+      email: string;
+      name: string | null;
+      organizer: boolean;
+      response: string | null;
+      self: boolean;
+    }>;
+    briefing?: string | null;
+    briefingEnabled?: boolean | null;
+    briefingMinutes?: number;
+    connectionId: string;
+    consoleMeetingUrl?: string | null;
+    deletedAt?: string | null;
+    effectiveRecordMode: ("ask" | "auto" | "off") | null;
+    endAt: string;
+    externalAttendees: boolean;
+    followupEnabled?: boolean | null;
+    hasBriefing?: boolean;
+    id: string;
+    meetingCode: string | null;
+    meetingUrl: string | null;
+    organizerEmail?: string | null;
+    recordDecision: ("record" | "skip") | null;
+    recordDecisionProjectId?: string | null;
+    recordError?: string | null;
+    recording: ({
+      meetingId: string;
+      projectId: string | null;
+      ready: boolean;
+      status: string;
+    }) | null;
+    recurringEventId?: string | null;
+    selfResponse?: string | null;
+    startAt: string;
+    status: string;
+    title: string;
+    updatedAt?: string;
+  }>;
+  from: string;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  to: string;
+  total: number;
+  truncated: boolean;
+};
+
+/** Input shape for `agenda.record`. */
+export type AgendaRecordInput = {
+  eventId: string;
+  execute?: boolean;
+  project?: string;
+};
+
+/** Return shape for `agenda.record`. */
+export type AgendaRecordReturn = {
+  event: {
+    allDay: boolean;
+    attendees: Array<{
+      email: string;
+      name: string | null;
+      organizer: boolean;
+      response: string | null;
+      self: boolean;
+    }>;
+    briefing?: string | null;
+    briefingEnabled?: boolean | null;
+    briefingMinutes?: number;
+    connectionId: string;
+    consoleMeetingUrl?: string | null;
+    deletedAt?: string | null;
+    effectiveRecordMode: ("ask" | "auto" | "off") | null;
+    endAt: string;
+    externalAttendees: boolean;
+    followupEnabled?: boolean | null;
+    hasBriefing?: boolean;
+    id: string;
+    meetingCode: string | null;
+    meetingUrl: string | null;
+    organizerEmail?: string | null;
+    recordDecision: ("record" | "skip") | null;
+    recordDecisionProjectId?: string | null;
+    recordError?: string | null;
+    recording: ({
+      meetingId: string;
+      projectId: string | null;
+      ready: boolean;
+      status: string;
+    }) | null;
+    recurringEventId?: string | null;
+    selfResponse?: string | null;
+    startAt: string;
+    status: string;
+    title: string;
+    updatedAt?: string;
+  };
+};
+
+/** Input shape for `agenda.settings`. */
+export type AgendaSettingsInput = {
+  briefing?: string;
+  briefingMinutes?: string;
+  connection?: string;
+  execute?: boolean;
+  followup?: string;
+  project?: string;
+  record?: string;
+  sync?: string;
+};
+
+/** Return shape for `agenda.settings`. */
+export type AgendaSettingsReturn = {
+  connection: {
+    connectionId: string;
+    displayName: string | null;
+    email: string | null;
+    hasCalendarScope: boolean;
+    lastSyncError: string | null;
+    lastSyncedAt: string | null;
+    settings: {
+      briefingEnabled: boolean | null;
+      briefingMinutes: number;
+      followupEnabled: boolean | null;
+      projectId: string | null;
+      recordMode: ("ask" | "auto" | "off") | null;
+      syncEnabled: boolean;
+    };
+  };
+};
+
+/** Input shape for `agenda.show`. */
+export type AgendaShowInput = {
+  eventId: string;
+};
+
+/** Return shape for `agenda.show`. */
+export type AgendaShowReturn = {
+  event: {
+    allDay: boolean;
+    attendees: Array<{
+      email: string;
+      name: string | null;
+      organizer: boolean;
+      response: string | null;
+      self: boolean;
+    }>;
+    briefing?: string | null;
+    briefingEnabled?: boolean | null;
+    briefingMinutes?: number;
+    connectionId: string;
+    consoleMeetingUrl?: string | null;
+    deletedAt?: string | null;
+    effectiveRecordMode: ("ask" | "auto" | "off") | null;
+    endAt: string;
+    externalAttendees: boolean;
+    followupEnabled?: boolean | null;
+    hasBriefing?: boolean;
+    id: string;
+    meetingCode: string | null;
+    meetingUrl: string | null;
+    organizerEmail?: string | null;
+    recordDecision: ("record" | "skip") | null;
+    recordDecisionProjectId?: string | null;
+    recordError?: string | null;
+    recording: ({
+      meetingId: string;
+      projectId: string | null;
+      ready: boolean;
+      status: string;
+    }) | null;
+    recurringEventId?: string | null;
+    selfResponse?: string | null;
+    startAt: string;
+    status: string;
+    title: string;
+    updatedAt?: string;
+  };
+};
+
+/** Input shape for `agenda.skip`. */
+export type AgendaSkipInput = {
+  eventId: string;
+};
+
+/** Return shape for `agenda.skip`. */
+export type AgendaSkipReturn = {
+  event: {
+    allDay: boolean;
+    attendees: Array<{
+      email: string;
+      name: string | null;
+      organizer: boolean;
+      response: string | null;
+      self: boolean;
+    }>;
+    briefing?: string | null;
+    briefingEnabled?: boolean | null;
+    briefingMinutes?: number;
+    connectionId: string;
+    consoleMeetingUrl?: string | null;
+    deletedAt?: string | null;
+    effectiveRecordMode: ("ask" | "auto" | "off") | null;
+    endAt: string;
+    externalAttendees: boolean;
+    followupEnabled?: boolean | null;
+    hasBriefing?: boolean;
+    id: string;
+    meetingCode: string | null;
+    meetingUrl: string | null;
+    organizerEmail?: string | null;
+    recordDecision: ("record" | "skip") | null;
+    recordDecisionProjectId?: string | null;
+    recordError?: string | null;
+    recording: ({
+      meetingId: string;
+      projectId: string | null;
+      ready: boolean;
+      status: string;
+    }) | null;
+    recurringEventId?: string | null;
+    selfResponse?: string | null;
+    startAt: string;
+    status: string;
+    title: string;
+    updatedAt?: string;
+  };
+};
+
+/** Input shape for `agenda.status`. */
+export type AgendaStatusInput = Record<string, never>;
+
+/** Return shape for `agenda.status`. */
+export type AgendaStatusReturn = {
+  connections: Array<{
+    connectionId: string;
+    displayName: string | null;
+    email: string | null;
+    hasCalendarScope: boolean;
+    lastSyncError: string | null;
+    lastSyncedAt: string | null;
+    settings: {
+      briefingEnabled: boolean | null;
+      briefingMinutes: number;
+      followupEnabled: boolean | null;
+      projectId: string | null;
+      recordMode: ("ask" | "auto" | "off") | null;
+      syncEnabled: boolean;
+    };
+  }>;
+  meetingsEnabled: boolean;
+  policy: {
+    autoRecordAllowed: boolean;
+    canManage: boolean;
+  };
+  projects: Array<{
+    id: string;
+    name: string;
+    slug: string;
+  }>;
+};
+
+/** Input shape for `agenda.undo`. */
+export type AgendaUndoInput = {
+  eventId: string;
+  execute?: boolean;
+};
+
+/** Return shape for `agenda.undo`. */
+export type AgendaUndoReturn = {
+  event: {
+    allDay: boolean;
+    attendees: Array<{
+      email: string;
+      name: string | null;
+      organizer: boolean;
+      response: string | null;
+      self: boolean;
+    }>;
+    briefing?: string | null;
+    briefingEnabled?: boolean | null;
+    briefingMinutes?: number;
+    connectionId: string;
+    consoleMeetingUrl?: string | null;
+    deletedAt?: string | null;
+    effectiveRecordMode: ("ask" | "auto" | "off") | null;
+    endAt: string;
+    externalAttendees: boolean;
+    followupEnabled?: boolean | null;
+    hasBriefing?: boolean;
+    id: string;
+    meetingCode: string | null;
+    meetingUrl: string | null;
+    organizerEmail?: string | null;
+    recordDecision: ("record" | "skip") | null;
+    recordDecisionProjectId?: string | null;
+    recordError?: string | null;
+    recording: ({
+      meetingId: string;
+      projectId: string | null;
+      ready: boolean;
+      status: string;
+    }) | null;
+    recurringEventId?: string | null;
+    selfResponse?: string | null;
+    startAt: string;
+    status: string;
+    title: string;
+    updatedAt?: string;
+  };
+};
+
 /** Input shape for `agents.ask`. */
 export type AgentsAskInput = {
   execute?: boolean;
@@ -10174,6 +10554,10 @@ export type IdentityLinkReturn = ({
   linked: false;
   status: "dm_sent";
   success: true;
+}) | ({
+  linked: false;
+  status: "awaiting_dm";
+  success: true;
 });
 
 /** Input shape for `identity.unlink`. */
@@ -13234,6 +13618,8 @@ export type PagesAssertionAudiencesSetReturn = {
 export type PagesChatSetInput = {
   clearInstructions?: boolean;
   clearName?: boolean;
+  clearRaviAgent?: boolean;
+  clearTextModel?: boolean;
   console?: string;
   enabled?: string;
   execute?: boolean;
@@ -13241,7 +13627,11 @@ export type PagesChatSetInput = {
   language?: string;
   name?: string;
   project?: string;
+  raviAgent?: string;
+  replyPolicy?: string;
   site: string;
+  text?: string;
+  textModel?: string;
   voice?: string;
 };
 
@@ -13684,7 +14074,11 @@ export type PagesShipReturn = {
     orgId?: string | null;
     pageId?: string;
     projectId?: string | null;
+    rebound?: boolean;
+    replacedTriggerId?: string;
+    replySession?: string;
     reused?: boolean;
+    routePath?: string;
     session: "main";
     skipped?: "missing_page" | "missing_creator" | "invalid_filter" | "unbound_agent";
     topic: string;
@@ -14202,299 +14596,47 @@ export type PermissionsStatusReturn = {
 
 /** Input shape for `projects.create`. */
 export type ProjectsCreateInput = {
-  hypothesis?: string;
-  lastSignalAt?: string;
-  nextStep?: string;
-  ownerAgent?: string;
-  session?: string;
-  slug?: string;
-  status?: string;
-  summary?: string;
-  title: string;
+  console?: string;
+  defaultPageSite?: string;
+  description?: string;
+  execute?: boolean;
+  name?: string;
+  slug: string;
+  visibility?: string;
 };
 
 /** Return shape for `projects.create`. */
-export type ProjectsCreateReturn = Record<string, unknown>;
-
-/** Input shape for `projects.fixtures.seed`. */
-export type ProjectsFixturesSeedInput = {
-  execute?: boolean;
-  ownerAgent?: string;
+export type ProjectsCreateReturn = {
+  consoleUrl: string;
+  project: Record<string, unknown>;
+  redirectTo: string | null;
+  success: true;
 };
-
-/** Return shape for `projects.fixtures.seed`. */
-export type ProjectsFixturesSeedReturn = {
-  fixtures: Array<Record<string, unknown>>;
-  total: number;
-  [k: string]: unknown;
-};
-
-/** Input shape for `projects.init`. */
-export type ProjectsInitInput = {
-  hypothesis?: string;
-  lastSignalAt?: string;
-  nextStep?: string;
-  ownerAgent?: string;
-  resource?: string[];
-  session?: string;
-  slug?: string;
-  status?: string;
-  summary?: string;
-  title: string;
-  workflowRun?: string[];
-  workflowTemplate?: string[];
-};
-
-/** Return shape for `projects.init`. */
-export type ProjectsInitReturn = {
-  details: Record<string, unknown>;
-  workflows: Array<Record<string, unknown>>;
-  [k: string]: unknown;
-};
-
-/** Input shape for `projects.link`. */
-export type ProjectsLinkInput = {
-  assetType: string;
-  label?: string;
-  meta?: string;
-  project: string;
-  resourceType?: string;
-  role?: string;
-  target: string;
-};
-
-/** Return shape for `projects.link`. */
-export type ProjectsLinkReturn = Record<string, unknown>;
 
 /** Input shape for `projects.list`. */
 export type ProjectsListInput = {
+  console?: string;
   fields?: string;
   limit?: string;
   offset?: string;
-  status?: string;
-  tag?: string;
 };
 
 /** Return shape for `projects.list`. */
 export type ProjectsListReturn = {
-  filters: Record<string, unknown>;
+  consoleUrl: string;
   items: Array<Record<string, unknown>>;
   pagination: {
-    hasMore: boolean;
+    hasMore?: boolean;
     limit: number;
-    nextCommand: string | null;
-    nextOffset: number | null;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   projects: Array<Record<string, unknown>>;
+  success: true;
   total: number;
-  [k: string]: unknown;
-};
-
-/** Input shape for `projects.next`. */
-export type ProjectsNextInput = {
-  fields?: string;
-  status?: string;
-  tag?: string;
-};
-
-/** Return shape for `projects.next`. */
-export type ProjectsNextReturn = {
-  filters: Record<string, unknown>;
-  projects: Array<Record<string, unknown>>;
-  total: number;
-  [k: string]: unknown;
-};
-
-/** Input shape for `projects.resources.add`. */
-export type ProjectsResourcesAddInput = {
-  label?: string;
-  meta?: string;
-  project: string;
-  role?: string;
-  target: string;
-  type?: string;
-};
-
-/** Return shape for `projects.resources.add`. */
-export type ProjectsResourcesAddReturn = Record<string, unknown>;
-
-/** Input shape for `projects.resources.import`. */
-export type ProjectsResourcesImportInput = {
-  group?: string[];
-  meta?: string;
-  project: string;
-  repo?: string[];
-  role?: string;
-  url?: string[];
-  worktree?: string[];
-};
-
-/** Return shape for `projects.resources.import`. */
-export type ProjectsResourcesImportReturn = {
-  resources: Array<Record<string, unknown>>;
-  total: number;
-  [k: string]: unknown;
-};
-
-/** Input shape for `projects.resources.list`. */
-export type ProjectsResourcesListInput = {
-  fields?: string;
-  limit?: string;
-  offset?: string;
-  project: string;
-  type?: string;
-};
-
-/** Return shape for `projects.resources.list`. */
-export type ProjectsResourcesListReturn = {
-  items: Array<Record<string, unknown>>;
-  pagination: {
-    hasMore: boolean;
-    limit: number;
-    nextCommand: string | null;
-    nextOffset: number | null;
-    offset: number;
-    returned: number;
-    total: number;
-    [k: string]: unknown;
-  };
-  resources: Array<Record<string, unknown>>;
-  total: number;
-  [k: string]: unknown;
-};
-
-/** Input shape for `projects.resources.show`. */
-export type ProjectsResourcesShowInput = {
-  project: string;
-  resource: string;
-};
-
-/** Return shape for `projects.resources.show`. */
-export type ProjectsResourcesShowReturn = Record<string, unknown>;
-
-/** Input shape for `projects.show`. */
-export type ProjectsShowInput = {
-  project: string;
-};
-
-/** Return shape for `projects.show`. */
-export type ProjectsShowReturn = Record<string, unknown>;
-
-/** Input shape for `projects.status`. */
-export type ProjectsStatusInput = {
-  project: string;
-};
-
-/** Return shape for `projects.status`. */
-export type ProjectsStatusReturn = Record<string, unknown>;
-
-/** Input shape for `projects.tasks.attach`. */
-export type ProjectsTasksAttachInput = {
-  agent?: string;
-  dispatch?: boolean;
-  nodeKey: string;
-  project: string;
-  session?: string;
-  taskId: string;
-  workflow?: string;
-};
-
-/** Return shape for `projects.tasks.attach`. */
-export type ProjectsTasksAttachReturn = {
-  defaults: Record<string, unknown>;
-  details: Record<string, unknown>;
-  workflow: Record<string, unknown>;
-  [k: string]: unknown;
-};
-
-/** Input shape for `projects.tasks.create`. */
-export type ProjectsTasksCreateInput = {
-  agent?: string;
-  dispatch?: boolean;
-  instructions?: string;
-  nodeKey: string;
-  priority?: string;
-  profile?: string;
-  project: string;
-  session?: string;
-  title: string;
-  workflow?: string;
-};
-
-/** Return shape for `projects.tasks.create`. */
-export type ProjectsTasksCreateReturn = {
-  defaults: Record<string, unknown>;
-  details: Record<string, unknown>;
-  workflow: Record<string, unknown>;
-  [k: string]: unknown;
-};
-
-/** Input shape for `projects.tasks.dispatch`. */
-export type ProjectsTasksDispatchInput = {
-  agent?: string;
-  execute?: boolean;
-  project: string;
-  session?: string;
-  taskId: string;
-};
-
-/** Return shape for `projects.tasks.dispatch`. */
-export type ProjectsTasksDispatchReturn = {
-  defaults: Record<string, unknown>;
-  details: Record<string, unknown>;
-  workflow: Record<string, unknown>;
-  [k: string]: unknown;
-};
-
-/** Input shape for `projects.update`. */
-export type ProjectsUpdateInput = {
-  hypothesis?: string;
-  lastSignalAt?: string;
-  nextStep?: string;
-  ownerAgent?: string;
-  project: string;
-  session?: string;
-  status?: string;
-  summary?: string;
-  title?: string;
-  touchSignal?: boolean;
-};
-
-/** Return shape for `projects.update`. */
-export type ProjectsUpdateReturn = Record<string, unknown>;
-
-/** Input shape for `projects.workflows.attach`. */
-export type ProjectsWorkflowsAttachInput = {
-  project: string;
-  role?: string;
-  runId: string;
-};
-
-/** Return shape for `projects.workflows.attach`. */
-export type ProjectsWorkflowsAttachReturn = {
-  details: Record<string, unknown>;
-  workflow: Record<string, unknown>;
-  [k: string]: unknown;
-};
-
-/** Input shape for `projects.workflows.start`. */
-export type ProjectsWorkflowsStartInput = {
-  execute?: boolean;
-  project: string;
-  role?: string;
-  runId?: string;
-  specId: string;
-};
-
-/** Return shape for `projects.workflows.start`. */
-export type ProjectsWorkflowsStartReturn = {
-  details: Record<string, unknown>;
-  workflow: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `prox.calls.cancel`. */

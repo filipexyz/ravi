@@ -860,7 +860,14 @@ export class SlackWebApiClient {
  * expected failure, so CLI and gateway callers get a structured
  * `SLACK_<ERROR>` code instead of an opaque HTTP 500.
  */
-const SLACK_BLOCKS_VALIDATION_ERRORS = ["invalid_blocks", "invalid_blocks_format"] as const;
+// blocks.validate names the rejected target: invalid_blocks, invalid_message or
+// invalid_view, each with an `errors` list pointing at what failed.
+const SLACK_BLOCKS_VALIDATION_ERRORS = [
+  "invalid_blocks",
+  "invalid_blocks_format",
+  "invalid_message",
+  "invalid_view",
+] as const;
 
 export class SlackApiError extends CliExpectedError {
   readonly method: string;

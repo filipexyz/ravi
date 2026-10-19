@@ -926,6 +926,2349 @@ export const AdaptersShowReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `agenda.briefing`. */
+export const AgendaBriefingInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "clear": {
+      "description": "Delete the briefing",
+      "type": "boolean"
+    },
+    "eventId": {
+      "description": "Calendar event id (from agenda list)",
+      "type": "string"
+    },
+    "file": {
+      "description": "Read the briefing from a file",
+      "type": "string"
+    },
+    "text": {
+      "description": "The briefing",
+      "type": "string"
+    }
+  },
+  "required": [
+    "eventId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `agenda.briefing`. */
+export const AgendaBriefingReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "additionalProperties": false,
+      "properties": {
+        "allDay": {
+          "type": "boolean"
+        },
+        "attendees": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "email": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "organizer": {
+                "type": "boolean"
+              },
+              "response": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "self": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "email",
+              "name",
+              "response",
+              "organizer",
+              "self"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "briefing": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "briefingEnabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "briefingMinutes": {
+          "type": "number"
+        },
+        "connectionId": {
+          "type": "string"
+        },
+        "consoleMeetingUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deletedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effectiveRecordMode": {
+          "anyOf": [
+            {
+              "enum": [
+                "ask",
+                "auto",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "endAt": {
+          "type": "string"
+        },
+        "externalAttendees": {
+          "type": "boolean"
+        },
+        "followupEnabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hasBriefing": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "meetingCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "meetingUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "organizerEmail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordDecision": {
+          "anyOf": [
+            {
+              "enum": [
+                "record",
+                "skip"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordDecisionProjectId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recording": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "meetingId": {
+                  "type": "string"
+                },
+                "projectId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ready": {
+                  "type": "boolean"
+                },
+                "status": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "meetingId",
+                "status",
+                "ready",
+                "projectId"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recurringEventId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "selfResponse": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "startAt": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "connectionId",
+        "title",
+        "startAt",
+        "endAt",
+        "allDay",
+        "status",
+        "meetingUrl",
+        "meetingCode",
+        "attendees",
+        "externalAttendees",
+        "recordDecision",
+        "effectiveRecordMode",
+        "recording"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "event"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `agenda.list`. */
+export const AgendaListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "days": {
+      "description": "Days ahead (default 7, max 30)",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of earlier meetings to skip (default: 0)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `agenda.list`. */
+export const AgendaListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "events": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "allDay": {
+            "type": "boolean"
+          },
+          "attendees": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "email": {
+                  "type": "string"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "organizer": {
+                  "type": "boolean"
+                },
+                "response": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "self": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "email",
+                "name",
+                "response",
+                "organizer",
+                "self"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "briefing": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "briefingEnabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "briefingMinutes": {
+            "type": "number"
+          },
+          "connectionId": {
+            "type": "string"
+          },
+          "consoleMeetingUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deletedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effectiveRecordMode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ask",
+                  "auto",
+                  "off"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "endAt": {
+            "type": "string"
+          },
+          "externalAttendees": {
+            "type": "boolean"
+          },
+          "followupEnabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hasBriefing": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "meetingCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meetingUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "organizerEmail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recordDecision": {
+            "anyOf": [
+              {
+                "enum": [
+                  "record",
+                  "skip"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recordDecisionProjectId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recordError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recording": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "meetingId": {
+                    "type": "string"
+                  },
+                  "projectId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "ready": {
+                    "type": "boolean"
+                  },
+                  "status": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "meetingId",
+                  "status",
+                  "ready",
+                  "projectId"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recurringEventId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "selfResponse": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "startAt": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "connectionId",
+          "title",
+          "startAt",
+          "endAt",
+          "allDay",
+          "status",
+          "meetingUrl",
+          "meetingCode",
+          "attendees",
+          "externalAttendees",
+          "recordDecision",
+          "effectiveRecordMode",
+          "recording"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "from": {
+      "type": "string"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "to": {
+      "type": "string"
+    },
+    "total": {
+      "type": "number"
+    },
+    "truncated": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "from",
+    "to",
+    "truncated",
+    "total",
+    "pagination",
+    "events"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `agenda.record`. */
+export const AgendaRecordInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "eventId": {
+      "description": "Calendar event id (from agenda list)",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Record (dry-run without it)",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Project id or slug (default: the calendar's project)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "eventId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `agenda.record`. */
+export const AgendaRecordReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "additionalProperties": false,
+      "properties": {
+        "allDay": {
+          "type": "boolean"
+        },
+        "attendees": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "email": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "organizer": {
+                "type": "boolean"
+              },
+              "response": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "self": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "email",
+              "name",
+              "response",
+              "organizer",
+              "self"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "briefing": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "briefingEnabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "briefingMinutes": {
+          "type": "number"
+        },
+        "connectionId": {
+          "type": "string"
+        },
+        "consoleMeetingUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deletedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effectiveRecordMode": {
+          "anyOf": [
+            {
+              "enum": [
+                "ask",
+                "auto",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "endAt": {
+          "type": "string"
+        },
+        "externalAttendees": {
+          "type": "boolean"
+        },
+        "followupEnabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hasBriefing": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "meetingCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "meetingUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "organizerEmail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordDecision": {
+          "anyOf": [
+            {
+              "enum": [
+                "record",
+                "skip"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordDecisionProjectId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recording": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "meetingId": {
+                  "type": "string"
+                },
+                "projectId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ready": {
+                  "type": "boolean"
+                },
+                "status": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "meetingId",
+                "status",
+                "ready",
+                "projectId"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recurringEventId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "selfResponse": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "startAt": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "connectionId",
+        "title",
+        "startAt",
+        "endAt",
+        "allDay",
+        "status",
+        "meetingUrl",
+        "meetingCode",
+        "attendees",
+        "externalAttendees",
+        "recordDecision",
+        "effectiveRecordMode",
+        "recording"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "event"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `agenda.settings`. */
+export const AgendaSettingsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "briefing": {
+      "description": "Prepare a briefing before each meeting",
+      "type": "string"
+    },
+    "briefingMinutes": {
+      "description": "How long before the start (5-240)",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Google connection id (default: the only one)",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Apply --record auto (dry-run without it)",
+      "type": "boolean"
+    },
+    "followup": {
+      "description": "Run the follow-up when the recording is ready",
+      "type": "string"
+    },
+    "project": {
+      "description": "Project id or slug where recordings go",
+      "type": "string"
+    },
+    "record": {
+      "description": "Record calls: ask, auto or off",
+      "type": "string"
+    },
+    "sync": {
+      "description": "Use this calendar",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `agenda.settings`. */
+export const AgendaSettingsReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "additionalProperties": false,
+      "properties": {
+        "connectionId": {
+          "type": "string"
+        },
+        "displayName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "email": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hasCalendarScope": {
+          "type": "boolean"
+        },
+        "lastSyncError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastSyncedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "settings": {
+          "additionalProperties": false,
+          "properties": {
+            "briefingEnabled": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "briefingMinutes": {
+              "type": "number"
+            },
+            "followupEnabled": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "projectId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "recordMode": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "ask",
+                    "auto",
+                    "off"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "syncEnabled": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "syncEnabled",
+            "recordMode",
+            "projectId",
+            "briefingEnabled",
+            "briefingMinutes",
+            "followupEnabled"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "connectionId",
+        "email",
+        "displayName",
+        "hasCalendarScope",
+        "settings",
+        "lastSyncedAt",
+        "lastSyncError"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "connection"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `agenda.show`. */
+export const AgendaShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "eventId": {
+      "description": "Calendar event id (from agenda list)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "eventId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `agenda.show`. */
+export const AgendaShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "additionalProperties": false,
+      "properties": {
+        "allDay": {
+          "type": "boolean"
+        },
+        "attendees": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "email": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "organizer": {
+                "type": "boolean"
+              },
+              "response": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "self": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "email",
+              "name",
+              "response",
+              "organizer",
+              "self"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "briefing": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "briefingEnabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "briefingMinutes": {
+          "type": "number"
+        },
+        "connectionId": {
+          "type": "string"
+        },
+        "consoleMeetingUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deletedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effectiveRecordMode": {
+          "anyOf": [
+            {
+              "enum": [
+                "ask",
+                "auto",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "endAt": {
+          "type": "string"
+        },
+        "externalAttendees": {
+          "type": "boolean"
+        },
+        "followupEnabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hasBriefing": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "meetingCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "meetingUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "organizerEmail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordDecision": {
+          "anyOf": [
+            {
+              "enum": [
+                "record",
+                "skip"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordDecisionProjectId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recording": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "meetingId": {
+                  "type": "string"
+                },
+                "projectId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ready": {
+                  "type": "boolean"
+                },
+                "status": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "meetingId",
+                "status",
+                "ready",
+                "projectId"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recurringEventId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "selfResponse": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "startAt": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "connectionId",
+        "title",
+        "startAt",
+        "endAt",
+        "allDay",
+        "status",
+        "meetingUrl",
+        "meetingCode",
+        "attendees",
+        "externalAttendees",
+        "recordDecision",
+        "effectiveRecordMode",
+        "recording"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "event"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `agenda.skip`. */
+export const AgendaSkipInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "eventId": {
+      "description": "Calendar event id (from agenda list)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "eventId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `agenda.skip`. */
+export const AgendaSkipReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "additionalProperties": false,
+      "properties": {
+        "allDay": {
+          "type": "boolean"
+        },
+        "attendees": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "email": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "organizer": {
+                "type": "boolean"
+              },
+              "response": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "self": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "email",
+              "name",
+              "response",
+              "organizer",
+              "self"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "briefing": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "briefingEnabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "briefingMinutes": {
+          "type": "number"
+        },
+        "connectionId": {
+          "type": "string"
+        },
+        "consoleMeetingUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deletedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effectiveRecordMode": {
+          "anyOf": [
+            {
+              "enum": [
+                "ask",
+                "auto",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "endAt": {
+          "type": "string"
+        },
+        "externalAttendees": {
+          "type": "boolean"
+        },
+        "followupEnabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hasBriefing": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "meetingCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "meetingUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "organizerEmail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordDecision": {
+          "anyOf": [
+            {
+              "enum": [
+                "record",
+                "skip"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordDecisionProjectId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recording": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "meetingId": {
+                  "type": "string"
+                },
+                "projectId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ready": {
+                  "type": "boolean"
+                },
+                "status": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "meetingId",
+                "status",
+                "ready",
+                "projectId"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recurringEventId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "selfResponse": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "startAt": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "connectionId",
+        "title",
+        "startAt",
+        "endAt",
+        "allDay",
+        "status",
+        "meetingUrl",
+        "meetingCode",
+        "attendees",
+        "externalAttendees",
+        "recordDecision",
+        "effectiveRecordMode",
+        "recording"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "event"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `agenda.status`. */
+export const AgendaStatusInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `agenda.status`. */
+export const AgendaStatusReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connections": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "connectionId": {
+            "type": "string"
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hasCalendarScope": {
+            "type": "boolean"
+          },
+          "lastSyncError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastSyncedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "settings": {
+            "additionalProperties": false,
+            "properties": {
+              "briefingEnabled": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "briefingMinutes": {
+                "type": "number"
+              },
+              "followupEnabled": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "projectId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "recordMode": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "ask",
+                      "auto",
+                      "off"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "syncEnabled": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "syncEnabled",
+              "recordMode",
+              "projectId",
+              "briefingEnabled",
+              "briefingMinutes",
+              "followupEnabled"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "connectionId",
+          "email",
+          "displayName",
+          "hasCalendarScope",
+          "settings",
+          "lastSyncedAt",
+          "lastSyncError"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "meetingsEnabled": {
+      "type": "boolean"
+    },
+    "policy": {
+      "additionalProperties": false,
+      "properties": {
+        "autoRecordAllowed": {
+          "type": "boolean"
+        },
+        "canManage": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "autoRecordAllowed",
+        "canManage"
+      ],
+      "type": "object"
+    },
+    "projects": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "connections",
+    "policy",
+    "meetingsEnabled",
+    "projects"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `agenda.undo`. */
+export const AgendaUndoInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "eventId": {
+      "description": "Calendar event id (from agenda list)",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Clear a skip under automatic recording",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "eventId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `agenda.undo`. */
+export const AgendaUndoReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "additionalProperties": false,
+      "properties": {
+        "allDay": {
+          "type": "boolean"
+        },
+        "attendees": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "email": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "organizer": {
+                "type": "boolean"
+              },
+              "response": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "self": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "email",
+              "name",
+              "response",
+              "organizer",
+              "self"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "briefing": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "briefingEnabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "briefingMinutes": {
+          "type": "number"
+        },
+        "connectionId": {
+          "type": "string"
+        },
+        "consoleMeetingUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deletedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effectiveRecordMode": {
+          "anyOf": [
+            {
+              "enum": [
+                "ask",
+                "auto",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "endAt": {
+          "type": "string"
+        },
+        "externalAttendees": {
+          "type": "boolean"
+        },
+        "followupEnabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hasBriefing": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "meetingCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "meetingUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "organizerEmail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordDecision": {
+          "anyOf": [
+            {
+              "enum": [
+                "record",
+                "skip"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordDecisionProjectId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recording": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "meetingId": {
+                  "type": "string"
+                },
+                "projectId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ready": {
+                  "type": "boolean"
+                },
+                "status": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "meetingId",
+                "status",
+                "ready",
+                "projectId"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recurringEventId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "selfResponse": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "startAt": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "connectionId",
+        "title",
+        "startAt",
+        "endAt",
+        "allDay",
+        "status",
+        "meetingUrl",
+        "meetingCode",
+        "attendees",
+        "externalAttendees",
+        "recordDecision",
+        "effectiveRecordMode",
+        "recording"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "event"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `agents.ask`. */
 export const AgentsAskInputSchema = {
   "additionalProperties": false,
@@ -51494,6 +53837,29 @@ export const IdentityLinkReturnSchema = {
         "expiresAt"
       ],
       "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "linked": {
+          "const": false,
+          "type": "boolean"
+        },
+        "status": {
+          "const": "awaiting_dm",
+          "type": "string"
+        },
+        "success": {
+          "const": true,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "success",
+        "status",
+        "linked"
+      ],
+      "type": "object"
     }
   ]
 } as const satisfies SdkJsonSchema;
@@ -68040,16 +70406,24 @@ export const PagesChatSetInputSchema = {
       "description": "Remove the assistant name",
       "type": "boolean"
     },
+    "clearRaviAgent": {
+      "description": "Stop the text chat from asking a Ravi machine's agent",
+      "type": "boolean"
+    },
+    "clearTextModel": {
+      "description": "Use the platform default text chat model",
+      "type": "boolean"
+    },
     "console": {
       "description": "Console base URL",
       "type": "string"
     },
     "enabled": {
-      "description": "Turn Page Chat on (true) or off (false) for this site",
+      "description": "Turn the Page Chat voice agent on (true) or off (false) for this site",
       "type": "string"
     },
     "execute": {
-      "description": "Required with --enabled true; every other change applies immediately",
+      "description": "Required with --enabled true, --text true, --reply-policy always and --ravi-agent; every other change applies immediately",
       "type": "boolean"
     },
     "instructions": {
@@ -68068,8 +70442,24 @@ export const PagesChatSetInputSchema = {
       "description": "Console project id or slug; overrides saved Console scope",
       "type": "string"
     },
+    "raviAgent": {
+      "description": "Agent of a Ravi machine the text chat may ask (installation id from ravi agents directory --json)",
+      "type": "string"
+    },
+    "replyPolicy": {
+      "description": "When the agent answers in a shared room: mention|always",
+      "type": "string"
+    },
     "site": {
       "description": "Pages host slug, site id, or hostname",
+      "type": "string"
+    },
+    "text": {
+      "description": "Turn the text chat (bar panel and <ravi-chat>) on (true) or off (false)",
+      "type": "string"
+    },
+    "textModel": {
+      "description": "Text chat model, an AI Gateway id such as <provider>/<model>",
       "type": "string"
     },
     "voice": {
@@ -70542,8 +72932,20 @@ export const PagesShipReturnSchema = {
             }
           ]
         },
+        "rebound": {
+          "type": "boolean"
+        },
+        "replacedTriggerId": {
+          "type": "string"
+        },
+        "replySession": {
+          "type": "string"
+        },
         "reused": {
           "type": "boolean"
+        },
+        "routePath": {
+          "type": "string"
         },
         "session": {
           "const": "main",
@@ -72935,233 +75337,115 @@ export const PermissionsStatusReturnSchema = {
 export const ProjectsCreateInputSchema = {
   "additionalProperties": false,
   "properties": {
-    "hypothesis": {
-      "description": "Current working hypothesis",
+    "console": {
+      "description": "Console base URL",
       "type": "string"
     },
-    "lastSignalAt": {
-      "description": "now, epoch ms, or ISO-8601",
+    "defaultPageSite": {
+      "description": "Also create a default Ravi Pages site; uses the project slug when omitted",
       "type": "string"
     },
-    "nextStep": {
-      "description": "Next human step",
+    "description": {
+      "description": "Project description",
       "type": "string"
     },
-    "ownerAgent": {
-      "description": "Owning agent id",
-      "type": "string"
+    "execute": {
+      "description": "Actually create the Console project; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     },
-    "session": {
-      "description": "Operator session name or key",
+    "name": {
+      "description": "Project display name; defaults to the slug",
       "type": "string"
     },
     "slug": {
-      "description": "Stable project slug",
+      "description": "Console project slug",
       "type": "string"
     },
-    "status": {
-      "description": "active|paused|blocked|done|archived",
-      "type": "string"
-    },
-    "summary": {
-      "description": "Human summary for the workstream",
-      "type": "string"
-    },
-    "title": {
-      "description": "Project title",
+    "visibility": {
+      "description": "Default visibility: private|protected_link|public",
       "type": "string"
     }
   },
   "required": [
-    "title"
+    "slug"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
 /** JSON Schema for the return shape of `projects.create`. */
 export const ProjectsCreateReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `projects.fixtures.seed`. */
-export const ProjectsFixturesSeedInputSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": false,
   "properties": {
-    "execute": {
-      "description": "Actually reset and seed the fixtures; default is a dry-run that only shows the plan (exit 3)",
-      "type": "boolean"
-    },
-    "ownerAgent": {
-      "description": "Owner agent for the seeded projects",
-      "type": "string"
-    }
-  },
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `projects.fixtures.seed`. */
-export const ProjectsFixturesSeedReturnSchema = {
-  "additionalProperties": {},
-  "properties": {
-    "fixtures": {
-      "items": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
-      },
-      "type": "array"
-    },
-    "total": {
-      "type": "number"
-    }
-  },
-  "required": [
-    "total",
-    "fixtures"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `projects.init`. */
-export const ProjectsInitInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "hypothesis": {
-      "description": "Current working hypothesis",
-      "type": "string"
-    },
-    "lastSignalAt": {
-      "description": "now, epoch ms, or ISO-8601",
-      "type": "string"
-    },
-    "nextStep": {
-      "description": "Next human step",
-      "type": "string"
-    },
-    "ownerAgent": {
-      "description": "Owning agent id or 'none' (defaults to current actor agent)",
-      "type": "string"
-    },
-    "resource": {
-      "description": "Resource links to attach: repo|worktree|notion_page|notion_database|file|url|group|contact",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "session": {
-      "description": "Operator session name; links existing or creates one for the owner agent",
-      "type": "string"
-    },
-    "slug": {
-      "description": "Stable project slug",
-      "type": "string"
-    },
-    "status": {
-      "description": "active|paused|blocked|done|archived",
-      "type": "string"
-    },
-    "summary": {
-      "description": "Human summary for the workstream",
-      "type": "string"
-    },
-    "title": {
-      "description": "Project title",
-      "type": "string"
-    },
-    "workflowRun": {
-      "description": "Attach existing workflow run ids",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "workflowTemplate": {
-      "description": "Instantiate canonical workflow templates: technical-change|gated-release|operational-response",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "title"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `projects.init`. */
-export const ProjectsInitReturnSchema = {
-  "additionalProperties": {},
-  "properties": {
-    "details": {
-      "additionalProperties": {},
-      "properties": {},
-      "type": "object"
-    },
-    "workflows": {
-      "items": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "details",
-    "workflows"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `projects.link`. */
-export const ProjectsLinkInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "assetType": {
-      "description": "workflow|session|agent|resource|spec",
-      "type": "string"
-    },
-    "label": {
-      "description": "Human label for resource links",
-      "type": "string"
-    },
-    "meta": {
-      "description": "Free JSON metadata for this link",
+    "consoleUrl": {
       "type": "string"
     },
     "project": {
-      "description": "Project id or slug",
-      "type": "string"
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
     },
-    "resourceType": {
-      "description": "Required for resource links",
-      "type": "string"
+    "redirectTo": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
-    "role": {
-      "description": "Optional role for this link",
-      "type": "string"
-    },
-    "target": {
-      "description": "Asset id, session, agent, or locator",
-      "type": "string"
+    "success": {
+      "const": true,
+      "type": "boolean"
     }
   },
   "required": [
-    "assetType",
+    "success",
+    "consoleUrl",
     "project",
-    "target"
+    "redirectTo"
   ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `projects.link`. */
-export const ProjectsLinkReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -73169,24 +75453,20 @@ export const ProjectsLinkReturnSchema = {
 export const ProjectsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
     "fields": {
       "description": "Compact mode: keep only these fields of each item",
       "type": "string"
     },
     "limit": {
-      "description": "Page size (default: 50, max: 500)",
+      "description": "Maximum projects to return (default: 50)",
       "type": "string"
     },
     "offset": {
-      "description": "Number of matching projects to skip (default: 0)",
-      "type": "string"
-    },
-    "status": {
-      "description": "Filter by status",
-      "type": "string"
-    },
-    "tag": {
-      "description": "Filter by canonical project tag",
+      "description": "Number of projects to skip (default: 0)",
       "type": "string"
     }
   },
@@ -73195,23 +75475,62 @@ export const ProjectsListInputSchema = {
 
 /** JSON Schema for the return shape of `projects.list`. */
 export const ProjectsListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
-    "filters": {
-      "additionalProperties": {},
-      "properties": {},
-      "type": "object"
+    "consoleUrl": {
+      "type": "string"
     },
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -73253,750 +75572,37 @@ export const ProjectsListReturnSchema = {
         "limit",
         "offset",
         "returned",
-        "total",
-        "hasMore",
-        "nextOffset",
-        "nextCommand"
+        "total"
       ],
       "type": "object"
     },
     "projects": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
     },
     "total": {
       "type": "number"
     }
   },
   "required": [
+    "success",
+    "consoleUrl",
     "total",
     "pagination",
-    "items",
-    "filters",
-    "projects"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `projects.next`. */
-export const ProjectsNextInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "fields": {
-      "description": "Compact mode: keep only these fields of each item",
-      "type": "string"
-    },
-    "status": {
-      "description": "Filter by project status",
-      "type": "string"
-    },
-    "tag": {
-      "description": "Filter by canonical project tag",
-      "type": "string"
-    }
-  },
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `projects.next`. */
-export const ProjectsNextReturnSchema = {
-  "additionalProperties": {},
-  "properties": {
-    "filters": {
-      "additionalProperties": {},
-      "properties": {},
-      "type": "object"
-    },
-    "projects": {
-      "items": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
-      },
-      "type": "array"
-    },
-    "total": {
-      "type": "number"
-    }
-  },
-  "required": [
-    "total",
-    "filters",
-    "projects"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `projects.resources.add`. */
-export const ProjectsResourcesAddInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "label": {
-      "description": "Human label override",
-      "type": "string"
-    },
-    "meta": {
-      "description": "Free JSON metadata for this resource",
-      "type": "string"
-    },
-    "project": {
-      "description": "Project id or slug",
-      "type": "string"
-    },
-    "role": {
-      "description": "Optional role for this resource",
-      "type": "string"
-    },
-    "target": {
-      "description": "Path, URL, group id, or locator",
-      "type": "string"
-    },
-    "type": {
-      "description": "repo|worktree|file|url|group|contact|notion_page|notion_database",
-      "type": "string"
-    }
-  },
-  "required": [
-    "project",
-    "target"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `projects.resources.add`. */
-export const ProjectsResourcesAddReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `projects.resources.import`. */
-export const ProjectsResourcesImportInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "group": {
-      "description": "One or more group:<id> or <id>@g.us locators",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "meta": {
-      "description": "Common JSON metadata merged into every imported resource",
-      "type": "string"
-    },
-    "project": {
-      "description": "Project id or slug",
-      "type": "string"
-    },
-    "repo": {
-      "description": "One or more repo locators (path or canonical URL)",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "role": {
-      "description": "Optional role applied to every imported resource",
-      "type": "string"
-    },
-    "url": {
-      "description": "One or more URLs",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "worktree": {
-      "description": "One or more local worktree paths",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "project"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `projects.resources.import`. */
-export const ProjectsResourcesImportReturnSchema = {
-  "additionalProperties": {},
-  "properties": {
-    "resources": {
-      "items": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
-      },
-      "type": "array"
-    },
-    "total": {
-      "type": "number"
-    }
-  },
-  "required": [
-    "total",
-    "resources"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `projects.resources.list`. */
-export const ProjectsResourcesListInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "fields": {
-      "description": "Compact mode: keep only these fields of each item",
-      "type": "string"
-    },
-    "limit": {
-      "description": "Page size (default: 50, max: 500)",
-      "type": "string"
-    },
-    "offset": {
-      "description": "Number of matching resources to skip (default: 0)",
-      "type": "string"
-    },
-    "project": {
-      "description": "Project id or slug",
-      "type": "string"
-    },
-    "type": {
-      "description": "Optional resource type filter",
-      "type": "string"
-    }
-  },
-  "required": [
-    "project"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `projects.resources.list`. */
-export const ProjectsResourcesListReturnSchema = {
-  "additionalProperties": {},
-  "properties": {
-    "items": {
-      "items": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
-      },
-      "type": "array"
-    },
-    "pagination": {
-      "additionalProperties": {},
-      "properties": {
-        "hasMore": {
-          "type": "boolean"
-        },
-        "limit": {
-          "type": "number"
-        },
-        "nextCommand": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "nextOffset": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "offset": {
-          "type": "number"
-        },
-        "returned": {
-          "type": "number"
-        },
-        "total": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "limit",
-        "offset",
-        "returned",
-        "total",
-        "hasMore",
-        "nextOffset",
-        "nextCommand"
-      ],
-      "type": "object"
-    },
-    "resources": {
-      "items": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
-      },
-      "type": "array"
-    },
-    "total": {
-      "type": "number"
-    }
-  },
-  "required": [
-    "total",
-    "pagination",
-    "items",
-    "resources"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `projects.resources.show`. */
-export const ProjectsResourcesShowInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "project": {
-      "description": "Project id or slug",
-      "type": "string"
-    },
-    "resource": {
-      "description": "Resource link id, label, or locator",
-      "type": "string"
-    }
-  },
-  "required": [
-    "project",
-    "resource"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `projects.resources.show`. */
-export const ProjectsResourcesShowReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `projects.show`. */
-export const ProjectsShowInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "project": {
-      "description": "Project id or slug",
-      "type": "string"
-    }
-  },
-  "required": [
-    "project"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `projects.show`. */
-export const ProjectsShowReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `projects.status`. */
-export const ProjectsStatusInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "project": {
-      "description": "Project id or slug",
-      "type": "string"
-    }
-  },
-  "required": [
-    "project"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `projects.status`. */
-export const ProjectsStatusReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `projects.tasks.attach`. */
-export const ProjectsTasksAttachInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "agent": {
-      "description": "Override project owner agent for dispatch",
-      "type": "string"
-    },
-    "dispatch": {
-      "description": "Dispatch after attach using project defaults",
-      "type": "boolean"
-    },
-    "nodeKey": {
-      "description": "Workflow node key",
-      "type": "string"
-    },
-    "project": {
-      "description": "Project id or slug",
-      "type": "string"
-    },
-    "session": {
-      "description": "Override project operator session for dispatch",
-      "type": "string"
-    },
-    "taskId": {
-      "description": "Existing task id",
-      "type": "string"
-    },
-    "workflow": {
-      "description": "Linked workflow run id (defaults to project focus)",
-      "type": "string"
-    }
-  },
-  "required": [
-    "nodeKey",
-    "project",
-    "taskId"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `projects.tasks.attach`. */
-export const ProjectsTasksAttachReturnSchema = {
-  "additionalProperties": {},
-  "properties": {
-    "defaults": {
-      "additionalProperties": {},
-      "properties": {},
-      "type": "object"
-    },
-    "details": {
-      "additionalProperties": {},
-      "properties": {},
-      "type": "object"
-    },
-    "workflow": {
-      "additionalProperties": {},
-      "properties": {},
-      "type": "object"
-    }
-  },
-  "required": [
-    "details",
-    "workflow",
-    "defaults"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `projects.tasks.create`. */
-export const ProjectsTasksCreateInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "agent": {
-      "description": "Override project owner agent for dispatch",
-      "type": "string"
-    },
-    "dispatch": {
-      "description": "Dispatch after create using project defaults",
-      "type": "boolean"
-    },
-    "instructions": {
-      "description": "Task instructions",
-      "type": "string"
-    },
-    "nodeKey": {
-      "description": "Workflow node key",
-      "type": "string"
-    },
-    "priority": {
-      "description": "low|normal|high|urgent",
-      "type": "string"
-    },
-    "profile": {
-      "description": "Task profile id",
-      "type": "string"
-    },
-    "project": {
-      "description": "Project id or slug",
-      "type": "string"
-    },
-    "session": {
-      "description": "Override project operator session for dispatch",
-      "type": "string"
-    },
-    "title": {
-      "description": "Task title",
-      "type": "string"
-    },
-    "workflow": {
-      "description": "Linked workflow run id (defaults to project focus)",
-      "type": "string"
-    }
-  },
-  "required": [
-    "nodeKey",
-    "project",
-    "title"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `projects.tasks.create`. */
-export const ProjectsTasksCreateReturnSchema = {
-  "additionalProperties": {},
-  "properties": {
-    "defaults": {
-      "additionalProperties": {},
-      "properties": {},
-      "type": "object"
-    },
-    "details": {
-      "additionalProperties": {},
-      "properties": {},
-      "type": "object"
-    },
-    "workflow": {
-      "additionalProperties": {},
-      "properties": {},
-      "type": "object"
-    }
-  },
-  "required": [
-    "details",
-    "workflow",
-    "defaults"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `projects.tasks.dispatch`. */
-export const ProjectsTasksDispatchInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "agent": {
-      "description": "Override project owner agent",
-      "type": "string"
-    },
-    "execute": {
-      "description": "Actually dispatch the task; default is a dry-run that only shows the plan (exit 3)",
-      "type": "boolean"
-    },
-    "project": {
-      "description": "Project id or slug",
-      "type": "string"
-    },
-    "session": {
-      "description": "Override project operator session",
-      "type": "string"
-    },
-    "taskId": {
-      "description": "Existing task id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "project",
-    "taskId"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `projects.tasks.dispatch`. */
-export const ProjectsTasksDispatchReturnSchema = {
-  "additionalProperties": {},
-  "properties": {
-    "defaults": {
-      "additionalProperties": {},
-      "properties": {},
-      "type": "object"
-    },
-    "details": {
-      "additionalProperties": {},
-      "properties": {},
-      "type": "object"
-    },
-    "workflow": {
-      "additionalProperties": {},
-      "properties": {},
-      "type": "object"
-    }
-  },
-  "required": [
-    "details",
-    "workflow",
-    "defaults"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `projects.update`. */
-export const ProjectsUpdateInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "hypothesis": {
-      "description": "Working hypothesis",
-      "type": "string"
-    },
-    "lastSignalAt": {
-      "description": "now, epoch ms, or ISO-8601",
-      "type": "string"
-    },
-    "nextStep": {
-      "description": "Next human step",
-      "type": "string"
-    },
-    "ownerAgent": {
-      "description": "Owning agent id or 'none'",
-      "type": "string"
-    },
-    "project": {
-      "description": "Project id or slug",
-      "type": "string"
-    },
-    "session": {
-      "description": "Operator session name or 'none'",
-      "type": "string"
-    },
-    "status": {
-      "description": "active|paused|blocked|done|archived",
-      "type": "string"
-    },
-    "summary": {
-      "description": "Human summary",
-      "type": "string"
-    },
-    "title": {
-      "description": "New title",
-      "type": "string"
-    },
-    "touchSignal": {
-      "description": "Set last_signal_at to now",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "project"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `projects.update`. */
-export const ProjectsUpdateReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `projects.workflows.attach`. */
-export const ProjectsWorkflowsAttachInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "project": {
-      "description": "Project id or slug",
-      "type": "string"
-    },
-    "role": {
-      "description": "primary|support (defaults from current project state)",
-      "type": "string"
-    },
-    "runId": {
-      "description": "Workflow run id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "project",
-    "runId"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `projects.workflows.attach`. */
-export const ProjectsWorkflowsAttachReturnSchema = {
-  "additionalProperties": {},
-  "properties": {
-    "details": {
-      "additionalProperties": {},
-      "properties": {},
-      "type": "object"
-    },
-    "workflow": {
-      "additionalProperties": {},
-      "properties": {},
-      "type": "object"
-    }
-  },
-  "required": [
-    "details",
-    "workflow"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `projects.workflows.start`. */
-export const ProjectsWorkflowsStartInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "execute": {
-      "description": "Actually start the workflow run; default is a dry-run that only shows the plan (exit 3)",
-      "type": "boolean"
-    },
-    "project": {
-      "description": "Project id or slug",
-      "type": "string"
-    },
-    "role": {
-      "description": "primary|support (defaults from current project state)",
-      "type": "string"
-    },
-    "runId": {
-      "description": "Optional workflow run id",
-      "type": "string"
-    },
-    "specId": {
-      "description": "Workflow spec id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "project",
-    "specId"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `projects.workflows.start`. */
-export const ProjectsWorkflowsStartReturnSchema = {
-  "additionalProperties": {},
-  "properties": {
-    "details": {
-      "additionalProperties": {},
-      "properties": {},
-      "type": "object"
-    },
-    "workflow": {
-      "additionalProperties": {},
-      "properties": {},
-      "type": "object"
-    }
-  },
-  "required": [
-    "details",
-    "workflow"
+    "projects",
+    "items"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;

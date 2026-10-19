@@ -1378,6 +1378,22 @@ describe("slack agent-first contract", () => {
     expect(callsTo("blocksValidate")).toHaveLength(1);
     expect(payload).toMatchObject({ ok: true });
   });
+
+  it("blocks-validate reports Slack's invalid_message answer as valid:false with its errors", async () => {
+    const errors = [{ message: "unsupported block type", pointer: "/blocks/0/type" }];
+    blocksValidateResult = { ok: false, error: "invalid_message", errors };
+    try {
+      const commands = new SlackCommands();
+      const payload = await silenced(() => commands.blocksValidate(jsonFixturePath, "ravi-slack", "message", true));
+
+      expect(payload).toMatchObject({
+        ok: true,
+        item: { target: "message", valid: false, error: "invalid_message", errors },
+      });
+    } finally {
+      blocksValidateResult = { ok: true };
+    }
+  });
 });
 
 describe("slack Block Kit payload files over the gateway", () => {

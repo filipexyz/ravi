@@ -849,6 +849,12 @@ describe("pages agent-first contract", () => {
       site: "demo",
       hostnameCount: 1,
       readinessCheck: true,
+      dnsSetup: [
+        {
+          hostname: "docs.example.com",
+          dnsRecords: [{ type: "CNAME", name: "docs.example.com", value: "cname.ravi.page" }],
+        },
+      ],
     });
     expect(credentialReads).toBe(0);
     expect(calls).toEqual([]);
@@ -1269,11 +1275,12 @@ describe("pages agent-first contract", () => {
     expect(payload).toEqual({
       artifactId: "cloud_art_ship",
       commentFollow: {
-        filter: pageCommentFilter({ pageId: "site_1", orgId: "org_1" }),
+        filter: pageCommentFilter({ pageId: "site_1", routePath: "/", orgId: "org_1" }),
         ok: false,
         orgId: "org_1",
         pageId: "site_1",
         projectId: null,
+        routePath: "/",
         session: "main",
         skipped: "missing_creator",
         topic: "ravi.watch.console.page.comment.created",
@@ -1361,10 +1368,12 @@ describe("pages agent-first contract", () => {
       reused: false,
       agentId: "creator",
       pageId: "site_1",
+      routePath: "/",
       orgId: "org_1",
       projectId: "proj_real",
       topic: "ravi.watch.console.page.comment.created",
       session: "main",
+      replySession: "creator-main",
     });
     expect(secondPayload.commentFollow).toMatchObject({
       ok: true,
@@ -1374,12 +1383,14 @@ describe("pages agent-first contract", () => {
     });
     expect(triggers).toHaveLength(1);
     expect(triggers[0]).toMatchObject({
-      name: "page-comment:site_1",
+      name: "page-comment:site_1:/",
       agentId: "creator",
       topic: "ravi.watch.console.page.comment.created",
       replySession: "creator-main",
     });
-    expect(triggers[0]?.filter).toBe(pageCommentFilter({ pageId: "site_1", orgId: "org_1", projectId: "proj_real" }));
+    expect(triggers[0]?.filter).toBe(
+      pageCommentFilter({ pageId: "site_1", routePath: "/", orgId: "org_1", projectId: "proj_real" }),
+    );
   });
 
   it("ship with --execute creates the legacy host when an explicit slug is new", async () => {
@@ -2716,6 +2727,12 @@ describe("pages chat", () => {
         undefined,
         undefined,
         undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
         true,
       ),
     );
@@ -2752,6 +2769,12 @@ describe("pages chat", () => {
         undefined,
         undefined,
         instructions,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
         undefined,
         undefined,
         true,
@@ -2825,6 +2848,172 @@ describe("pages chat", () => {
       readCredentials: makeReadCredentials(),
     });
     await expectContractError(() => missing.show("ghost", "proj", undefined, true), "SITE_NOT_FOUND", 1);
+  });
+
+  type ChatSetFlags = {
+    enabled?: string;
+    instructions?: string;
+    text?: string;
+    replyPolicy?: string;
+    textModel?: string;
+    clearTextModel?: boolean;
+    raviAgent?: string;
+    clearRaviAgent?: boolean;
+    execute?: boolean;
+  };
+  const RAVI_AGENT = "11111111-1111-4111-8111-111111111111/finance";
+
+  /** `pages chat set <site> --project proj ... --json` with named flags. */
+  function setChat(command: PagesChatCommands, flags: ChatSetFlags) {
+    return command.set(
+      "acme-website",
+      "proj",
+      flags.enabled,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      flags.instructions,
+      undefined,
+      flags.text,
+      flags.replyPolicy,
+      flags.textModel,
+      flags.clearTextModel,
+      flags.raviAgent,
+      flags.clearRaviAgent,
+      undefined,
+      true,
+      flags.execute,
+    );
+  }
+
+  it("shows the text chat settings, with defaults for a Console that does not send them", async () => {
+    const withText = new PagesChatCommands({
+      client: makeClient(async () =>
+        chatResponse({
+          settings: {
+            enabled: false,
+            assistantName: "Lia",
+            voice: "tempo",
+            language: "pt-BR",
+            instructions: null,
+            text: true,
+            replyPolicy: "always",
+            textModel: "acme/chat-large-2.1",
+            raviAgent: { installationId: "11111111-1111-4111-8111-111111111111", agentId: "finance" },
+          },
+        }),
+      ),
+      readCredentials: makeReadCredentials(),
+    });
+    const { output } = await captureConsole(() => withText.show("acme-website", "proj"));
+    expect(output).toContain("Status       on");
+    expect(output).toContain("Voice chat   disabled");
+    expect(output).toContain("Text chat    enabled");
+    expect(output).toContain("Replies      always");
+    expect(output).toContain("Text model   acme/chat-large-2.1");
+    expect(output).toContain(`Ravi agent   ${RAVI_AGENT}`);
+
+    const older = new PagesChatCommands({
+      client: makeClient(async () => chatResponse()),
+      readCredentials: makeReadCredentials(),
+    });
+    const json = await captureConsole(() => older.show("acme-website", "proj", undefined, true));
+    expect(JSON.parse(json.output).settings).toMatchObject({
+      text: true,
+      replyPolicy: "mention",
+      textModel: null,
+      raviAgent: null,
+    });
+    const text = await captureConsole(() => older.show("acme-website", "proj"));
+    expect(text.output).toContain("Replies      mention");
+    expect(text.output).toContain("Text model   (platform default)");
+    expect(text.output).toContain("Ravi agent   (none)");
+  });
+
+  it("applies text chat changes that do not widen the agent at once", async () => {
+    const calls: Array<{ method: string; path: string; body: unknown }> = [];
+    const client = makeClient(async (method, path, body) => {
+      calls.push({ method, path, body });
+      return chatResponse();
+    });
+    const command = new PagesChatCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() =>
+      setChat(command, {
+        text: "false",
+        replyPolicy: "mention",
+        textModel: "Acme/chat-large-2.1",
+        clearRaviAgent: true,
+      }),
+    );
+    await captureConsole(() => setChat(command, { clearTextModel: true }));
+
+    expect(calls.map((call) => call.body)).toEqual([
+      { text: false, replyPolicy: "mention", textModel: "acme/chat-large-2.1", raviAgent: null },
+      { textModel: null },
+    ]);
+    expect(JSON.parse(output)).toMatchObject({ changed: ["text", "replyPolicy", "textModel", "raviAgent"] });
+  });
+
+  it("brakes --text true, --reply-policy always and --ravi-agent before Console", async () => {
+    const calls: Array<{ method: string; path: string; body: unknown }> = [];
+    const client = makeClient(async (method, path, body) => {
+      calls.push({ method, path, body });
+      return chatResponse();
+    });
+    const command = new PagesChatCommands({ client, readCredentials: makeReadCredentials() });
+
+    const text = await expectContractError(() => setChat(command, { text: "true" }), "WRITE_REQUIRES_EXECUTE", 3);
+    expect(text.details.plan).toMatchObject({ changes: { textChat: true } });
+    expect(String((text.details.plan as { effect?: unknown }).effect)).toContain("text chat");
+
+    const always = await expectContractError(
+      () => setChat(command, { replyPolicy: "always", text: "false" }),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+    expect(always.details.plan).toMatchObject({ changes: { replyPolicy: "always", textChat: false } });
+
+    const agent = await expectContractError(
+      () => setChat(command, { raviAgent: RAVI_AGENT }),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+    expect(agent.details.plan).toMatchObject({ changes: { raviAgent: RAVI_AGENT } });
+    expect(String((agent.details.plan as { effect?: unknown }).effect)).toContain(RAVI_AGENT);
+    expect(calls).toEqual([]);
+
+    await captureConsole(() =>
+      setChat(command, { text: "true", replyPolicy: "always", raviAgent: RAVI_AGENT, execute: true }),
+    );
+    expect(calls).toEqual([
+      {
+        method: "PATCH",
+        path: "/api/cli/projects/proj/pages/acme-website/chat",
+        body: {
+          text: true,
+          replyPolicy: "always",
+          raviAgent: { installationId: "11111111-1111-4111-8111-111111111111", agentId: "finance" },
+        },
+      },
+    ]);
+  });
+
+  it("rejects invalid text chat flags with exit 2 before the brake", async () => {
+    const client = makeClient(async () => {
+      throw new Error("console should not be called");
+    });
+    const command = new PagesChatCommands({ client, readCredentials: makeReadCredentials() });
+    const run = (flags: ChatSetFlags) => expectCloudError(() => runWithContext({}, () => setChat(command, flags)));
+
+    expect((await run({ text: "yes" })).message).toContain("--text must be true or false");
+    expect((await run({ replyPolicy: "sometimes" })).message).toContain("--reply-policy");
+    expect((await run({ textModel: "chat large" })).message).toContain("--text-model");
+    expect((await run({ raviAgent: "macbook-ana/finance" })).message).toContain("--ravi-agent");
+    expect((await run({ textModel: "a/b", clearTextModel: true })).message).toContain("Conflicting flags");
+    expect((await run({ raviAgent: RAVI_AGENT, clearRaviAgent: true })).message).toContain("Conflicting flags");
+    expect(client.requestJson).not.toHaveBeenCalled();
   });
 
   it("declares a conditional brake with --execute last", () => {

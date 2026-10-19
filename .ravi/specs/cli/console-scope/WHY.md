@@ -33,7 +33,7 @@ diagnostics.
 ### Keep `cloud scope set/clear` unbraked under the agent-first contract
 
 The Manual v2 migration braked the risky remote writes of neighboring domains
-(`cloud projects create`, `sync push|pull`, `bridges revoke`). Scope defaults
+(`projects create`, `sync push|pull`, `bridges revoke`). Scope defaults
 deliberately did not get the brake: `set` and `clear` are a same-cost
 reversible pair over non-secret LOCAL state, and `set` already validates the
 project against Console before saving. The danger a wrong default creates is

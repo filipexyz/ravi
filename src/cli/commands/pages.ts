@@ -53,7 +53,9 @@ import {
   PAGE_CHAT_DEFAULT_VOICE,
   PAGE_CHAT_FEATURE,
   PAGE_CHAT_INSTRUCTIONS_MAX,
+  PAGE_CHAT_REPLY_POLICIES,
   PAGE_CHAT_VOICES,
+  pageChatExpandingEffects,
   updatePageChatSettings,
   type PageChatResult,
   type PageChatUpdateResult,
@@ -117,6 +119,8 @@ import {
   validateShipSourceInput,
 } from "../../pages/ship.js";
 import { CONTRACT_EXIT_USAGE, ContractError, contractDryRun, contractFail, pickFields } from "../agent-contract.js";
+import { getContext } from "../context.js";
+import { plannedPageDomainDns, plannedPageDomainDnsLines } from "../../pages/domain-setup.js";
 import { jsonObjectSchema, jsonValueSchema, strictCliOffsetPaginationSchema } from "../return-schemas.js";
 import { readConfirmedSecret, type ConfirmedSecretInputOptions } from "../secret-input.js";
 import { artifactPublishReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
@@ -245,7 +249,8 @@ const ACCESS_WHO_ACTS_HELP = `Who acts:
   the ravi login user acts. When someone else wrote the chat message, Console
   acts for that person through their ravi link, and both they and the ravi
   login user must be allowed. A person without a link gets ACTOR_NOT_LINKED
-  (exit 3): run ravi link in their chat. A turn Ravi cannot attribute is
+  (exit 3) and Ravi starts their link: relay the error's chatLinePt (on
+  WhatsApp, "me chama na DM"). A turn Ravi cannot attribute is
   refused before any Console call (ACTOR_UNKNOWN, exit 3).`;
 
 const PAGES_SHARE_HELP = `
@@ -748,6 +753,7 @@ export class PagesCommands {
             publish: result,
             organizationId: stringValue(resolved.scope.organization?.id),
             projectId: stringValue(resolved.scope.project?.id),
+            route: resolvedRoute,
           },
           this.deps,
         );
@@ -1019,6 +1025,10 @@ export class PagesCommands {
     return runPagesCommand("pages domains", asJson, async () => {
       const parsed = parseDomainsArgs(args, projectOption);
       if (execute !== true) {
+        // The DNS to add is known before anything is written; show it up front.
+        if (!asJson && getContext({ localOnly: true })?.suppressCliOutput !== true) {
+          for (const line of plannedPageDomainDnsLines(parsed.hostnames)) console.log(line);
+        }
         contractDryRun(
           "pages domains",
           {
@@ -1026,6 +1036,7 @@ export class PagesCommands {
             site: parsed.site,
             hostnameCount: parsed.hostnames.length,
             readinessCheck: Boolean(check),
+            dnsSetup: plannedPageDomainDns(parsed.hostnames),
           },
           { asJson },
         );
@@ -1587,14 +1598,23 @@ Examples:
 
 <site> is the Pages host slug, site id or hostname.
 
-Page Chat is the voice agent inside a Ravi Page: a signed-in viewer taps
-"Falar" in the Pages bar and talks to an agent that operates the page for them.
-It shows only when the site setting and the org feature console.pages.chat are
-both on. featureEnabled reports the org feature; settings.enabled the site.
+Page Chat is the agent inside a Ravi Page. By voice, a signed-in viewer taps
+"Falar" in the Pages bar (settings.enabled). By text, the bar's "Fale com o
+Ravi" opens a chat panel, and a page can embed the chat with
+<ravi-chat></ravi-chat> (settings.text): one shared room per route plus a
+private room per person. Both show only when the org feature
+console.pages.chat is on too; featureEnabled reports it.
+
+settings.replyPolicy says when the agent answers in a shared room: "mention"
+(when called with @ravi or its name, or while only one person writes there)
+or "always". settings.textModel is the text chat's model (null: platform
+default). settings.raviAgent is the agent of a Ravi machine the text chat may
+ask ({installationId, agentId}, or null).
 
 JSON:
   { projectRef, siteRef, siteId, host, featureEnabled,
-    settings: { enabled, assistantName, voice, language, instructions }, voices }
+    settings: { enabled, assistantName, voice, language, instructions,
+                text, replyPolicy, textModel, raviAgent }, voices }
 `;
 
 const PAGES_CHAT_SET_HELP = `
@@ -1604,21 +1624,42 @@ Examples:
   ravi pages chat set acme-website --clear-name --clear-instructions
   ravi pages chat set acme-website --enabled false
   ravi pages chat set acme-website --enabled true --execute
+  ravi pages chat set acme-website --text true --execute
+  ravi pages chat set acme-website --text false
+  ravi pages chat set acme-website --reply-policy always --execute
+  ravi pages chat set acme-website --reply-policy mention
+  ravi pages chat set acme-website --text-model acme/chat-large-2.1
+  ravi pages chat set acme-website --clear-text-model
+  ravi pages chat set acme-website --ravi-agent 11111111-1111-4111-8111-111111111111/finance --execute
+  ravi pages chat set acme-website --clear-ravi-agent
 
-Only the flags you pass change. --clear-name and --clear-instructions reset
-those fields. Voices: ${PAGE_CHAT_VOICES.join(", ")} (default ${PAGE_CHAT_DEFAULT_VOICE}).
+Only the flags you pass change. --clear-name, --clear-instructions,
+--clear-text-model and --clear-ravi-agent reset those fields. Voices: ${PAGE_CHAT_VOICES.join(", ")} (default ${PAGE_CHAT_DEFAULT_VOICE}).
 Language is a BCP 47 tag (default ${PAGE_CHAT_DEFAULT_LANGUAGE}). --name takes at most
 ${PAGE_CHAT_ASSISTANT_NAME_MAX} characters, --instructions at most ${PAGE_CHAT_INSTRUCTIONS_MAX}.
 
+--text turns the text chat (the bar's chat panel and <ravi-chat>) on or off;
+--enabled stays the voice switch. --reply-policy is when the agent answers in
+a page's shared room: mention (default: when called with @ravi or its name,
+or while only one person writes there) or always. A private room is always
+answered. --text-model is an AI Gateway model id (<provider>/<model>).
+--ravi-agent <installationId>/<agentId> lets the text chat ask that agent of a
+Ravi machine (a Library request; the agent must take requests: ravi agents
+requests <agent> on --execute there). Copy the installation id from
+ravi agents directory --json.
+
 Write brake:
-  --enabled true turns the voice agent on for every signed-in viewer of the
-  site and starts metered voice usage, so it is a dry-run without --execute
-  (exit 3). Every other change, including --enabled false, applies at once.
+  --enabled true, --text true, --reply-policy always and --ravi-agent widen
+  what the Page agent does (a metered agent for every viewer the site lets
+  in, answers to every message, asks to a machine's agent), so they are a
+  dry-run without --execute (exit 3). Every other change, including
+  --enabled false, --text false, --reply-policy mention and the clear flags,
+  applies at once.
 `;
 
 @Group({
   name: "pages.chat",
-  description: "Read and change the Page Chat voice agent settings of a Pages site",
+  description: "Read and change the Page Chat settings (voice and text chat) of a Pages site",
   scope: "open",
 })
 export class PagesChatCommands {
@@ -1652,7 +1693,10 @@ export class PagesChatCommands {
     @Arg("site", { description: "Pages host slug, site id, or hostname" }) site: string,
     @Option({ flags: "--project <ref>", description: "Console project id or slug; overrides saved Console scope" })
     projectOption?: string,
-    @Option({ flags: "--enabled <bool>", description: "Turn Page Chat on (true) or off (false) for this site" })
+    @Option({
+      flags: "--enabled <bool>",
+      description: "Turn the Page Chat voice agent on (true) or off (false) for this site",
+    })
     enabled?: string,
     @Option({ flags: "--voice <voice>", description: `Voice: ${PAGE_CHAT_VOICES.join("|")}` }) voice?: string,
     @Option({
@@ -1670,11 +1714,33 @@ export class PagesChatCommands {
     instructions?: string,
     @Option({ flags: "--clear-instructions", description: "Remove the extra instructions" })
     clearInstructions?: boolean,
+    @Option({
+      flags: "--text <bool>",
+      description: "Turn the text chat (bar panel and <ravi-chat>) on (true) or off (false)",
+    })
+    text?: string,
+    @Option({
+      flags: "--reply-policy <policy>",
+      description: `When the agent answers in a shared room: ${PAGE_CHAT_REPLY_POLICIES.join("|")}`,
+    })
+    replyPolicy?: string,
+    @Option({ flags: "--text-model <id>", description: "Text chat model, an AI Gateway id such as <provider>/<model>" })
+    textModel?: string,
+    @Option({ flags: "--clear-text-model", description: "Use the platform default text chat model" })
+    clearTextModel?: boolean,
+    @Option({
+      flags: "--ravi-agent <installationId/agentId>",
+      description: "Agent of a Ravi machine the text chat may ask (installation id from ravi agents directory --json)",
+    })
+    raviAgent?: string,
+    @Option({ flags: "--clear-ravi-agent", description: "Stop the text chat from asking a Ravi machine's agent" })
+    clearRaviAgent?: boolean,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({
       flags: "--execute",
-      description: "Required with --enabled true; every other change applies immediately",
+      description:
+        "Required with --enabled true, --text true, --reply-policy always and --ravi-agent; every other change applies immediately",
     })
     execute?: boolean,
   ) {
@@ -1683,22 +1749,30 @@ export class PagesChatCommands {
       const body = buildPageChatPatchBody({
         clearInstructions,
         clearName,
+        clearRaviAgent,
+        clearTextModel,
         enabled,
         instructions,
         language,
         name,
+        raviAgent,
+        replyPolicy,
+        text,
+        textModel,
         voice,
       });
-      if (body.enabled === true && execute !== true) {
-        // Turning Page Chat on exposes a metered voice agent to every
-        // signed-in viewer of the site. Everything else, including turning it
-        // off, is a reversible settings change and applies immediately.
+      const effects = pageChatExpandingEffects(body);
+      if (effects.length > 0 && execute !== true) {
+        // Turning the voice or text chat on, answering every shared-room
+        // message and asking a machine's agent widen what the Page agent does
+        // for every viewer the site lets in. Everything else, including
+        // turning things off and clearing, applies immediately.
         contractDryRun(
           "pages chat set",
           {
             project: projectOption ?? "(Console scope default)",
             site: siteRef,
-            effect: "enable Page Chat for signed-in viewers of this site (metered voice usage)",
+            effect: effects.join("; "),
             changes: describePageChatPatch(body),
           },
           { asJson },
@@ -1728,7 +1802,7 @@ function requirePageChatSite(site: string | undefined, command: "set" | "show"):
 }
 
 function printPageChat(result: PageChatResult | PageChatUpdateResult, action: "set" | "show"): void {
-  const active = result.featureEnabled && result.settings.enabled;
+  const active = result.featureEnabled && (result.settings.enabled || result.settings.text);
   if (action === "set") {
     const changed = "changed" in result ? result.changed.join(", ") : "";
     console.log(`✓ Page Chat updated${changed ? ` (${changed})` : ""}`);
@@ -1736,15 +1810,22 @@ function printPageChat(result: PageChatResult | PageChatUpdateResult, action: "s
     console.log(`Page Chat for ${result.siteRef}`);
   }
   if (result.host) console.log(`  Host         ${result.host}`);
+  const raviAgent = result.settings.raviAgent;
   console.log(`  Status       ${active ? "on" : "off"}`);
-  console.log(`  Site         ${result.settings.enabled ? "enabled" : "disabled"}`);
+  console.log(`  Voice chat   ${result.settings.enabled ? "enabled" : "disabled"}`);
   console.log(`  Org feature  ${result.featureEnabled ? "on" : "off"} (${PAGE_CHAT_FEATURE})`);
+  console.log(`  Text chat    ${result.settings.text ? "enabled" : "disabled"}`);
+  console.log(
+    `  Replies      ${result.settings.replyPolicy === "always" ? "always (every shared-room message)" : "mention (when called, or one person in the room)"}`,
+  );
+  console.log(`  Text model   ${result.settings.textModel ?? "(platform default)"}`);
+  console.log(`  Ravi agent   ${raviAgent ? `${raviAgent.installationId}/${raviAgent.agentId}` : "(none)"}`);
   console.log(`  Assistant    ${result.settings.assistantName ?? "(default)"}`);
   console.log(`  Voice        ${result.settings.voice}`);
   console.log(`  Language     ${result.settings.language}`);
   console.log(`  Instructions ${result.settings.instructions ?? "(none)"}`);
   if (action === "show") console.log(`  Voices       ${result.voices.join(", ")}`);
-  if (result.settings.enabled && !result.featureEnabled) {
+  if ((result.settings.enabled || result.settings.text) && !result.featureEnabled) {
     console.log(
       `warning: the org feature ${PAGE_CHAT_FEATURE} is off, so viewers do not see Page Chat until it is turned on in Console.`,
     );
@@ -2060,7 +2141,11 @@ const pageCommentFollowReturnSchema = z.object({
   agentId: z.string().optional(),
   triggerId: z.string().optional(),
   reused: z.boolean().optional(),
+  rebound: z.boolean().optional(),
+  replySession: z.string().optional(),
+  replacedTriggerId: z.string().optional(),
   pageId: z.string().optional(),
+  routePath: z.string().optional(),
   orgId: z.string().nullable().optional(),
   projectId: z.string().nullable().optional(),
   warning: z.string().optional(),
@@ -2722,8 +2807,11 @@ function printAssertionAudienceMutation(result: PageAssertionAudienceMutationRes
 function printCommentFollow(follow: PageCommentFollowResult | undefined): void {
   if (!follow) return;
   if (follow.triggerId) {
-    const action = follow.reused ? "reused" : "created";
-    console.log(`  Comments   ${action} trigger ${follow.triggerId} for agent ${follow.agentId ?? "(unbound)"}`);
+    const action = follow.rebound ? "moved" : follow.reused ? "reused" : "created";
+    const target = follow.replySession ? `session ${follow.replySession}` : `agent ${follow.agentId ?? "(unbound)"}`;
+    console.log(
+      `  Comments   ${action} trigger ${follow.triggerId}: comments on ${follow.routePath ?? "/"} wake ${target}`,
+    );
     return;
   }
   if (follow.warning) console.log(`  Comments   ${follow.warning}`);

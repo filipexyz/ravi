@@ -7,8 +7,11 @@ import {
   describePageChatPatch,
   getPageChatSettings,
   normalizePageChatLanguage,
+  normalizePageChatRaviAgent,
+  normalizePageChatTextModel,
   PAGE_CHAT_VOICES,
   pageChatChangedFields,
+  pageChatExpandingEffects,
   pageChatPath,
   readPageChatPayload,
   updatePageChatSettings,
@@ -99,6 +102,73 @@ describe("buildPageChatPatchBody", () => {
   });
 });
 
+describe("text chat settings", () => {
+  const installationId = "11111111-1111-4111-8111-111111111111";
+
+  it("builds the text chat fields and clears with null", () => {
+    expect(
+      buildPageChatPatchBody({
+        text: "TRUE",
+        replyPolicy: " Always ",
+        textModel: "acme/chat-small:beta",
+        raviAgent: `${installationId.toUpperCase()}/finance`,
+      }),
+    ).toEqual({
+      text: true,
+      replyPolicy: "always",
+      textModel: "acme/chat-small:beta",
+      raviAgent: { installationId, agentId: "finance" },
+    });
+    const cleared = buildPageChatPatchBody({ clearTextModel: true, clearRaviAgent: true });
+    expect(cleared).toEqual({ textModel: null, raviAgent: null });
+    expect(pageChatChangedFields(cleared)).toEqual(["textModel", "raviAgent"]);
+  });
+
+  it("validates the model id and the agent target", () => {
+    expect(normalizePageChatTextModel("acme/chat-large-2.1")).toBe("acme/chat-large-2.1");
+    for (const bad of ["chat-large", "/model", "a/b c", `a/${"x".repeat(90)}`, " "]) {
+      expect(() => normalizePageChatTextModel(bad)).toThrow(/--text-model/);
+    }
+    for (const bad of [
+      "finance",
+      "macbook-ana/finance",
+      `${installationId}/`,
+      `${installationId}/a b`,
+      `${installationId}/a/b`,
+    ]) {
+      expect(() => normalizePageChatRaviAgent(bad)).toThrow(/--ravi-agent/);
+    }
+    expect(normalizePageChatRaviAgent(` ${installationId} / ops_bot `)).toEqual({ installationId, agentId: "ops_bot" });
+  });
+
+  it("names only the changes that widen what the agent does", () => {
+    expect(
+      pageChatExpandingEffects({ text: false, replyPolicy: "mention", textModel: "a/b", raviAgent: null }),
+    ).toEqual([]);
+    expect(pageChatExpandingEffects({ enabled: false, voice: "tempo" })).toEqual([]);
+    const effects = pageChatExpandingEffects({
+      enabled: true,
+      text: true,
+      replyPolicy: "always",
+      raviAgent: { installationId, agentId: "finance" },
+    });
+    expect(effects).toHaveLength(4);
+    expect(effects[3]).toContain(`${installationId}/finance`);
+  });
+
+  it("describes the text chat fields in a plan", () => {
+    expect(
+      describePageChatPatch({
+        text: true,
+        replyPolicy: "always",
+        textModel: null,
+        raviAgent: { installationId, agentId: "finance" },
+      }),
+    ).toEqual({ textChat: true, replyPolicy: "always", textModel: null, raviAgent: `${installationId}/finance` });
+    expect(describePageChatPatch({ raviAgent: null })).toEqual({ raviAgent: null });
+  });
+});
+
 describe("describePageChatPatch", () => {
   it("reports instructions by length only", () => {
     const plan = describePageChatPatch({ enabled: true, instructions: "segredo do prompt", voice: "tempo" });
@@ -125,6 +195,10 @@ describe("readPageChatPayload", () => {
           language: "pt-BR",
           instructions: null,
           apiKey: "sk-should-not-leak",
+          text: false,
+          replyPolicy: "always",
+          textModel: "acme/chat-large-2.1",
+          raviAgent: { installationId: "inst-1", agentId: "finance", token: "should-not-leak" },
         },
         voices: ["bossa", "tempo", "bossa", 3],
         openaiSecret: "should-not-leak",
@@ -138,7 +212,17 @@ describe("readPageChatPayload", () => {
       siteId: "site_1",
       host: "acme-website.ravi.page",
       featureEnabled: true,
-      settings: { enabled: true, assistantName: null, voice: "bossa", language: "pt-BR", instructions: null },
+      settings: {
+        enabled: true,
+        assistantName: null,
+        voice: "bossa",
+        language: "pt-BR",
+        instructions: null,
+        text: false,
+        replyPolicy: "always",
+        textModel: "acme/chat-large-2.1",
+        raviAgent: { installationId: "inst-1", agentId: "finance" },
+      },
       voices: ["bossa", "tempo"],
     });
     expect(JSON.stringify(result)).not.toContain("leak");
@@ -155,7 +239,17 @@ describe("readPageChatPayload", () => {
       siteId: null,
       host: null,
       featureEnabled: false,
-      settings: { enabled: false, assistantName: null, voice: "bossa", language: "pt-BR", instructions: null },
+      settings: {
+        enabled: false,
+        assistantName: null,
+        voice: "bossa",
+        language: "pt-BR",
+        instructions: null,
+        text: true,
+        replyPolicy: "mention",
+        textModel: null,
+        raviAgent: null,
+      },
     });
     expect(result.voices).toEqual([...PAGE_CHAT_VOICES]);
   });

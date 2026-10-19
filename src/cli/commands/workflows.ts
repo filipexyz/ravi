@@ -341,8 +341,8 @@ export class WorkflowRunCommands {
 
       if (execute !== true) {
         // Write brake (Manual v2 7.8): starting a run instantiates real node
-        // runs that gate coordinated work (same class as `projects workflows
-        // start`), so dry-run by default and exit 3 before any write.
+        // runs that gate coordinated work, so dry-run by default and exit 3
+        // before any write.
         contractDryRun(
           "workflows runs start",
           {

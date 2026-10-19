@@ -284,6 +284,8 @@ ravi sessions report "progresso, bloqueio ou decisão"
 ravi sessions close-thread [--return "resultado"]
 ```
 
+A raiz da thread aparece no canal como um card: a primeira linha da mensagem inicial é o título (escreva um título curto nela), o resto vira um resumo, e a mensagem inteira abre a thread quando não cabe no card. O card mostra quem pediu (quem escreveu o turno; nos turnos do operador, o contato dono) e o status, e muda sozinho com `report`, `close-thread` e quando `thread-send` reabre a thread.
+
 Progresso e resultado chegam na sessão do canal como `[System] Inform: Slack thread "<título>" (<sessão-da-thread>) ...`. `thread-send` reabre uma thread fechada; a filha responde dentro da thread.
 
 Uma mensagem no canal que continua o assunto de uma thread já aberta vai para essa thread com `thread-send`, sem abrir outra. Threads não falam entre si: quando uma precisa de algo de outra, ela pede com `report` e a sessão do canal repassa com `thread-send`.
