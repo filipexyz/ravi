@@ -214,6 +214,15 @@ function buildScaffoldManifest(input: {
         command: `${input.command} list {args} --json`,
         mutating: false,
         outputSchema: `schemas/${input.appSlug}-list.v1.json`,
+        help: {
+          usage: `ravi ${input.appSlug} list [--limit <n>]`,
+          summary: `Lists ${input.name} records.`,
+          options: [
+            { flag: "--limit <n>", description: "Maximum number of records to return." },
+            { flag: "--json", description: "Print the raw JSON result." },
+          ],
+          examples: [`ravi ${input.appSlug} list --json`],
+        },
       },
       [`${input.operationPrefix}.check`]: {
         interface: "builtin",
