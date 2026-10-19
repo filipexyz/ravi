@@ -2818,9 +2818,6 @@ export async function dispatchTask(
     taskDocPath,
     primaryArtifact,
   } = prepareTaskDispatchContext(dispatchSourceTask, resolvedInput, { materializeSession: true });
-  if (resumeResult.resumed) {
-    await emitTaskEvent(resumeResult.task, resumeResult.event);
-  }
   // Observed tasks use the checkpoint only as a silence window, so it defaults
   // far above the old worker-nudge cadence unless the caller set one.
   // A task created before it was observed carries the old 5 min default.
@@ -2882,6 +2879,11 @@ export async function dispatchTask(
     _agentId: agentId,
     taskBarrierTaskId: documentedTask.id,
   });
+  // Emit the resume only after the dispatch is recorded and published, so a
+  // failed event publish cannot leave a resumed task with no dispatch.
+  if (resumeResult.resumed) {
+    await emitTaskEvent(resumeResult.task, resumeResult.event);
+  }
 
   return {
     task: documentedTask,
