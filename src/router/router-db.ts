@@ -3175,7 +3175,7 @@ function getDb(): Database {
     log.info("Added on_error column to triggers table");
   }
   ensureColumn(db, "triggers", "filter_reject_count", "INTEGER DEFAULT 0");
-  ensureColumn(db, "triggers", "debounce_ms", "INTEGER DEFAULT 0");
+  migrateTriggerDebounce(db);
   ensureColumn(db, "triggers", "last_filter_reject_at", "INTEGER");
   migrateTriggerSessionCheck(db);
 
@@ -11293,6 +11293,14 @@ export function dbListAuditLog(entity?: string, limit = 100): AuditEntry[] {
     actor: r.actor,
     ts: r.ts,
   }));
+}
+
+/**
+ * Debounce window per trigger (ms; 0 = fire per event). Existing triggers get 0,
+ * so they keep firing exactly as before.
+ */
+export function migrateTriggerDebounce(database: Database): void {
+  ensureColumn(database, "triggers", "debounce_ms", "INTEGER DEFAULT 0");
 }
 
 const LEGACY_TRIGGER_SESSION_CHECK = /\s*CHECK\s*\(\s*session\s+IN\s*\(\s*'main'\s*,\s*'isolated'\s*\)\s*\)/;
