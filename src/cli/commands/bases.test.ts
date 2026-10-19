@@ -6,7 +6,10 @@ import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import { CloudAuthError } from "../../cloud-auth/errors.js";
 import type { CloudCredentials } from "../../cloud-auth/types.js";
 import type { ContextRecord } from "../../router/router-db.js";
-import type { BasesCommandDeps } from "./bases.js";
+import { runWithContext } from "../context.js";
+import { evaluateFilter } from "../../triggers/filter.js";
+import type { Trigger, TriggerInput } from "../../triggers/types.js";
+import type { BasesCommandDeps, BasesTriggerStore } from "./bases.js";
 
 // hasContext() true makes contract helpers throw ContractError instead of exiting.
 const actualContext = await import("../context.js");
@@ -18,9 +21,14 @@ mock.module("../context.js", () => ({
   },
 }));
 
-const { BasesCommands, BasesPropsCommands, BasesRowsCommands, BasesViewsCommands, BasesChartsCommands } = await import(
-  "./bases.js"
-);
+const {
+  BasesCommands,
+  BasesPropsCommands,
+  BasesRowsCommands,
+  BasesViewsCommands,
+  BasesChartsCommands,
+  subscriptionTriggerFilter,
+} = await import("./bases.js");
 const { ContractError } = await import("../agent-contract.js");
 const { getReturnsMetadata } = await import("../decorators.js");
 const { parseGroupByOption, parseSortOption } = await import("../../bases/input.js");
@@ -556,6 +564,7 @@ describe("ravi bases props", () => {
         undefined,
         undefined,
         undefined,
+        ...noTypedPropertyFlags(),
         undefined,
         "sales",
         undefined,
@@ -587,7 +596,9 @@ describe("ravi bases subscriptions and listings", () => {
     const calls: Call[] = [];
     const deps = makeDeps(calls, () => subscription());
 
-    const { result } = await captureConsole(() => new BasesCommands(deps).subscribe("crm", "sales", undefined, true));
+    const { result } = await captureConsole(() =>
+      new BasesCommands(deps).subscribe("crm", ...noSubscribeFilter(), "sales", undefined, true),
+    );
 
     expect(calls[0]).toMatchObject({ method: "POST", path: `${ROOT}/crm/subscriptions`, body: {} });
     expect(result).toMatchObject({ delivery: { natsSubject: "ravi.console.inbox.item", category: "bases" } });
@@ -864,6 +875,917 @@ describe("ravi bases through the daemon gateway", () => {
   });
 });
 
+describe("ravi bases subscribe filters and --trigger", () => {
+  function triggerStore(existing: Trigger[] = []) {
+    const created: TriggerInput[] = [];
+    let refreshes = 0;
+    const store: BasesTriggerStore = {
+      agentExists: (agentId) => agentId === "triagem",
+      list: () => existing,
+      create: (input) => {
+        created.push(input);
+        return {
+          id: "trg_1",
+          name: input.name,
+          agentId: input.agentId,
+          topic: input.topic,
+          message: input.message,
+          session: input.session ?? "main",
+          replySession: input.replySession,
+          enabled: input.enabled ?? true,
+          cooldownMs: input.cooldownMs ?? 5000,
+          filter: input.filter,
+          fireCount: 0,
+          createdAt: 0,
+          updatedAt: 0,
+        };
+      },
+      refresh: async () => {
+        refreshes += 1;
+      },
+    };
+    return { store, created, refreshes: () => refreshes };
+  }
+
+  function subscribeDeps(calls: Call[], inAgentSession: boolean, store: BasesTriggerStore) {
+    const deps = makeDeps(calls, () => ({
+      ...subscription(),
+      viewId: "view_1",
+      properties: ["status"],
+      events: ["row.created", "approval.requested"],
+    }));
+    return { ...deps, inAgentSession: () => inAgentSession, triggers: store };
+  }
+
+  it("sends the filter and, from the operator's terminal, creates an enabled trigger on the inbox subject", async () => {
+    const calls: Call[] = [];
+    const triggers = triggerStore();
+    const deps = subscribeDeps(calls, false, triggers.store);
+
+    const { result } = await captureConsole(() =>
+      runWithContext({}, () =>
+        new BasesCommands(deps).subscribe(
+          "crm",
+          "view_1",
+          "status",
+          "row.created,bases.approval.requested",
+          true,
+          "triagem",
+          "crm-fila",
+          undefined,
+          "sales",
+          undefined,
+          true,
+        ),
+      ),
+    );
+
+    expect(calls).toEqual([
+      {
+        method: "POST",
+        path: `${ROOT}/crm/subscriptions`,
+        body: { viewId: "view_1", properties: ["status"], events: ["row.created", "approval.requested"] },
+        headers: {},
+      },
+    ]);
+    expect(triggers.created).toHaveLength(1);
+    expect(triggers.created[0]).toMatchObject({
+      topic: "ravi.console.inbox.item",
+      agentId: "triagem",
+      session: "crm-fila",
+      enabled: true,
+      filter:
+        'data.category == "bases" && data.payload.baseId == "base_1" && data.payload.subscriptionId == "sub_1" && (data.eventType == "bases.row.created" || data.eventType == "bases.approval.requested")',
+    });
+    expect(triggers.refreshes()).toBe(1);
+    expect(result).toMatchObject({
+      filter: { viewId: "view_1", properties: ["status"], events: ["row.created", "approval.requested"] },
+      trigger: { id: "trg_1", enabled: true, created: true, draft: false, enableCommand: null },
+    });
+    expectReturnsMatch(BasesCommands, "subscribe", result);
+  });
+
+  it("creates a disabled draft from an agent session and says how the operator turns it on", async () => {
+    const triggers = triggerStore();
+    const deps = subscribeDeps([], true, triggers.store);
+
+    const { output, result } = await captureConsole(() =>
+      runWithContext({ transport: "tool", agentId: "triagem", sessionName: "triagem-main" }, () =>
+        new BasesCommands(deps).subscribe(
+          "crm",
+          undefined,
+          undefined,
+          "row.created",
+          true,
+          "triagem",
+          undefined,
+          "Drene a fila.",
+          "sales",
+          undefined,
+          undefined,
+        ),
+      ),
+    );
+
+    expect(triggers.created[0]).toMatchObject({
+      enabled: false,
+      session: "triagem-main",
+      replySession: "triagem-main",
+      message: "Drene a fila.",
+    });
+    expect(result).toMatchObject({
+      trigger: { id: "trg_1", enabled: false, draft: true, enableCommand: "ravi triggers enable trg_1" },
+    });
+    expect(output).toContain("ravi triggers enable trg_1");
+    expect(output).not.toContain("ids and counts only");
+  });
+
+  it("reuses the trigger of the same subscription instead of creating a second one", async () => {
+    const filter = subscriptionTriggerFilter({
+      baseId: "base_1",
+      subscriptionId: "sub_1",
+      filtered: true,
+      events: ["row.created"],
+    });
+    const existing = { ...triggerStore().store.create({ name: "x", topic: "ravi.console.inbox.item", message: "m" }) };
+    const triggers = triggerStore([{ ...existing, id: "trg_old", agentId: "triagem", filter, enabled: true }]);
+    const deps = subscribeDeps([], true, triggers.store);
+
+    const { result } = await captureConsole(() =>
+      runWithContext({}, () =>
+        new BasesCommands(deps).subscribe(
+          "crm",
+          undefined,
+          undefined,
+          "row.created",
+          true,
+          "triagem",
+          undefined,
+          undefined,
+          "sales",
+          undefined,
+          true,
+        ),
+      ),
+    );
+
+    expect(triggers.created).toEqual([]);
+    expect(triggers.refreshes()).toBe(0);
+    expect(result).toMatchObject({ trigger: { id: "trg_old", enabled: true, created: false, draft: false } });
+  });
+
+  it("keeps an unfiltered subscription's trigger off the items of filtered subscriptions", () => {
+    const unfiltered = subscriptionTriggerFilter({ baseId: "base_1", subscriptionId: "sub_all", filtered: false });
+    const filtered = subscriptionTriggerFilter({ baseId: "base_1", subscriptionId: "sub_f", filtered: true });
+    const item = (payload: Record<string, unknown>) => ({
+      category: "bases",
+      eventType: "bases.row.updated",
+      payload: { baseId: "base_1", rowId: "row_1", ...payload },
+    });
+
+    expect(evaluateFilter(unfiltered, item({}))).toBe(true);
+    expect(evaluateFilter(unfiltered, item({ subscriptionId: "sub_f" }))).toBe(false);
+    expect(evaluateFilter(filtered, item({ subscriptionId: "sub_f" }))).toBe(true);
+    expect(evaluateFilter(filtered, item({}))).toBe(false);
+    expect(evaluateFilter(filtered, item({ subscriptionId: "sub_f", baseId: "base_2" }))).toBe(false);
+  });
+
+  it("rejects bad filters and trigger flags before any Console call", async () => {
+    const calls: Call[] = [];
+    const deps = subscribeDeps(calls, false, triggerStore().store);
+    const attempts: Array<() => Promise<unknown>> = [
+      () =>
+        new BasesCommands(deps).subscribe(
+          "crm",
+          undefined,
+          undefined,
+          "row.deleted",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          "sales",
+          undefined,
+          true,
+        ),
+      () =>
+        new BasesCommands(deps).subscribe(
+          "crm",
+          undefined,
+          "a b",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          "sales",
+          undefined,
+          true,
+        ),
+      () =>
+        new BasesCommands(deps).subscribe(
+          "crm",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          "triagem",
+          undefined,
+          undefined,
+          "sales",
+          undefined,
+          true,
+        ),
+      () =>
+        new BasesCommands(deps).subscribe(
+          "crm",
+          undefined,
+          undefined,
+          undefined,
+          true,
+          undefined,
+          undefined,
+          undefined,
+          "sales",
+          undefined,
+          true,
+        ),
+      () =>
+        new BasesCommands(deps).subscribe(
+          "crm",
+          undefined,
+          undefined,
+          undefined,
+          true,
+          "ghost",
+          undefined,
+          undefined,
+          "sales",
+          undefined,
+          true,
+        ),
+    ];
+    const codes: string[] = [];
+    for (const attempt of attempts) {
+      const { error } = await captureFailure(attempt);
+      codes.push((error as { code: string }).code);
+    }
+    expect(codes).toEqual(["PAYLOAD_INVALID", "PAYLOAD_INVALID", "PAYLOAD_INVALID", "PAYLOAD_INVALID", "NOT_FOUND"]);
+    expect(calls).toEqual([]);
+  });
+});
+
+describe("ravi bases views share", () => {
+  const VIEW_PATH = `${ROOT}/crm/views/view_1`;
+
+  function managerView(access: Record<string, unknown>, version = 3) {
+    return {
+      id: "view_1",
+      baseId: "base_1",
+      name: "Pedidos",
+      description: null,
+      columns: ["titulo", "status", "total"],
+      query: { filter: null, sort: [] },
+      layout: { type: "table" },
+      access,
+      position: 0,
+      version,
+      status: "active",
+      valid: true,
+      invalidReason: null,
+      createdAt: "2026-10-01T00:00:00.000Z",
+      updatedAt: "2026-10-01T00:00:00.000Z",
+      capabilities: { read: true, aggregateOnly: false, writeColumns: [], create: true, archive: true, manage: true },
+    };
+  }
+
+  function shareDeps(calls: Call[], access: Record<string, unknown>, manager = true) {
+    return makeDeps(calls, (call) => {
+      if (call.method === "GET" && call.path === VIEW_PATH) {
+        const view = managerView(access);
+        return {
+          id: view.id,
+          baseId: view.baseId,
+          name: view.name,
+          description: null,
+          layout: view.layout,
+          version: view.version,
+          columns: [],
+          capabilities: view.capabilities,
+          valid: true,
+          ...(manager ? { view } : {}),
+        };
+      }
+      if (call.method === "GET" && call.path === "/api/cli/projects/sales/pages") {
+        return {
+          sites: [
+            { id: "site_1", slug: "acme-vendas", defaultHostname: "acme-vendas.ravi.page", isDefault: true },
+            { site: { id: "site_2", slug: "outro" } },
+          ],
+        };
+      }
+      const body = call.body as { access: Record<string, unknown> };
+      return managerView(body.access, 4);
+    });
+  }
+
+  it("adds a page_viewer for the site to read and write at the version it read, and discloses the host", async () => {
+    const calls: Call[] = [];
+    const access = {
+      read: [{ kind: "project_role", minRole: "viewer" }],
+      write: {
+        principals: [{ kind: "project_role", minRole: "developer" }],
+        columns: ["status"],
+        create: false,
+        archive: false,
+        set: {},
+      },
+    };
+    const deps = shareDeps(calls, access);
+
+    const { result } = await captureConsole(() =>
+      new BasesViewsCommands(deps).share(
+        "crm",
+        "view_1",
+        "acme-vendas",
+        "titulo",
+        true,
+        undefined,
+        undefined,
+        "sales",
+        undefined,
+        true,
+      ),
+    );
+
+    expect(calls.map((call) => `${call.method} ${call.path}`)).toEqual([
+      `GET ${VIEW_PATH}`,
+      "GET /api/cli/projects/sales/pages",
+      `PATCH ${VIEW_PATH}`,
+    ]);
+    expect(calls[2]?.body).toEqual({
+      access: {
+        read: [
+          { kind: "project_role", minRole: "viewer" },
+          { kind: "page_viewer", siteId: "site_1" },
+        ],
+        write: {
+          principals: [
+            { kind: "project_role", minRole: "developer" },
+            { kind: "page_viewer", siteId: "site_1" },
+          ],
+          columns: ["status", "titulo"],
+          create: true,
+          archive: false,
+          set: {},
+        },
+      },
+      expectedVersion: 3,
+    });
+    expect(result).toMatchObject({
+      changed: true,
+      site: { id: "site_1", hostname: "acme-vendas.ravi.page" },
+      grants: { read: true, writeColumns: ["status", "titulo"], create: true, archive: false },
+    });
+    const disclosure = (result as { disclosure: string[] }).disclosure.join("\n");
+    expect(disclosure).toContain("acme-vendas.ravi.page");
+    expect(disclosure).toContain('"Pedidos"');
+    expect(disclosure).toContain("other write principal");
+    expectReturnsMatch(BasesViewsCommands, "share", result);
+  });
+
+  it("grants a form site only the write side with --write-only", async () => {
+    const calls: Call[] = [];
+    const deps = shareDeps(calls, { read: [], write: { principals: [], columns: [], create: false, archive: false } });
+
+    const { result } = await captureConsole(() =>
+      new BasesViewsCommands(deps).share(
+        "crm",
+        "view_1",
+        "acme-vendas",
+        undefined,
+        true,
+        undefined,
+        true,
+        "sales",
+        undefined,
+        true,
+      ),
+    );
+
+    expect(calls[2]?.body).toEqual({
+      access: {
+        read: [],
+        write: {
+          principals: [{ kind: "page_viewer", siteId: "site_1" }],
+          columns: [],
+          create: true,
+          archive: false,
+        },
+      },
+      expectedVersion: 3,
+    });
+    expect(result).toMatchObject({ changed: true, grants: { read: false, create: true } });
+    expect((result as { disclosure: string[] }).disclosure[0]).toContain("without reading its rows");
+
+    const usage = await captureFailure(() =>
+      new BasesViewsCommands(shareDeps([], { read: [] })).share(
+        "crm",
+        "view_1",
+        "acme-vendas",
+        undefined,
+        undefined,
+        undefined,
+        true,
+        "sales",
+        undefined,
+        true,
+      ),
+    );
+    expect(usage.error).toMatchObject({ code: "PAYLOAD_INVALID" });
+  });
+
+  it("does not write when the site already reads the view", async () => {
+    const calls: Call[] = [];
+    const deps = shareDeps(calls, { read: [{ kind: "page_viewer", siteId: "site_2" }] });
+
+    const { result } = await captureConsole(() =>
+      new BasesViewsCommands(deps).share(
+        "crm",
+        "view_1",
+        "site_2",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "sales",
+        undefined,
+        true,
+      ),
+    );
+
+    expect(calls.map((call) => call.method)).toEqual(["GET", "GET"]);
+    expect(result).toMatchObject({ changed: false, grants: { read: true, writeColumns: [] } });
+  });
+
+  it("refuses an unknown site and a caller without manage", async () => {
+    const unknown = await captureFailure(() =>
+      new BasesViewsCommands(shareDeps([], { read: [] })).share(
+        "crm",
+        "view_1",
+        "nope",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "sales",
+        undefined,
+        true,
+      ),
+    );
+    expect(unknown.error).toMatchObject({ code: "NOT_FOUND" });
+
+    const calls: Call[] = [];
+    const denied = await captureFailure(() =>
+      new BasesViewsCommands(shareDeps(calls, { read: [] }, false)).share(
+        "crm",
+        "view_1",
+        "acme-vendas",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "sales",
+        undefined,
+        true,
+      ),
+    );
+    expect(denied.error).toMatchObject({ code: "PROJECT_ACCESS_DENIED" });
+    expect(calls.map((call) => call.method)).toEqual(["GET"]);
+  });
+});
+
+describe("ravi bases creates with idempotency keys", () => {
+  it("sends a generated key, or the caller's, in the header and the body of every create", async () => {
+    const calls: Call[] = [];
+    const deps = makeDeps(calls, (call) => {
+      if (call.path.endsWith("/properties"))
+        return { base: baseSummary(), property: property("ok", "approval"), report: null };
+      if (call.path.endsWith("/views")) return { id: "view_1" };
+      if (call.path.endsWith("/charts")) return { id: "chart_1" };
+      if (call.method === "GET") return baseDetail();
+      return baseDetail();
+    });
+
+    const created = await captureConsole(() =>
+      new BasesCommands(deps).create(
+        "CRM",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "sales",
+        undefined,
+        true,
+      ),
+    );
+    await captureConsole(() =>
+      new BasesViewsCommands(deps).create("crm", undefined, "Fila", "crm:view:fila", "sales", undefined, true),
+    );
+    await captureConsole(() =>
+      new BasesChartsCommands(deps).create(
+        "crm",
+        '{"mark":"bar","encoding":{}}',
+        "view_1",
+        "Por status",
+        "crm:chart:status",
+        "sales",
+        undefined,
+        true,
+      ),
+    );
+    await captureConsole(() =>
+      new BasesPropsCommands(deps).add(
+        "crm",
+        "Ok",
+        "approval",
+        "ok",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "role:developer,user:usr_9",
+        "total",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "crm:prop:ok",
+        "5",
+        "sales",
+        undefined,
+        true,
+      ),
+    );
+
+    const posts = calls.filter((call) => call.method === "POST");
+    expect(
+      posts.map((call) => [
+        call.path,
+        call.headers["Idempotency-Key"],
+        (call.body as { idempotencyKey: string }).idempotencyKey,
+      ]),
+    ).toEqual([
+      [ROOT, "ravi-cli:test-key-0001", "ravi-cli:test-key-0001"],
+      [`${ROOT}/crm/views`, "crm:view:fila", "crm:view:fila"],
+      [`${ROOT}/crm/charts`, "crm:chart:status", "crm:chart:status"],
+      [`${ROOT}/crm/properties`, "crm:prop:ok", "crm:prop:ok"],
+    ]);
+    expect(posts.every((call) => !("clientHint" in (call.body as object)))).toBe(true);
+    expect(posts[3]?.body).toMatchObject({
+      type: "approval",
+      config: {
+        approvers: [
+          { kind: "project_role", minRole: "developer" },
+          { kind: "user", userId: "usr_9" },
+        ],
+        resetOn: ["total"],
+      },
+      expectedSchemaVersion: 5,
+    });
+    expect(created.result).toMatchObject({ idempotencyKey: "ravi-cli:test-key-0001" });
+    expectReturnsMatch(BasesCommands, "create", created.result);
+  });
+});
+
+describe("ravi bases approval and agent columns", () => {
+  function propsAdd(
+    deps: BasesTestDeps,
+    type: string,
+    flags: Partial<
+      Record<"approvers" | "resetOn" | "instructions" | "inputs" | "output" | "agent" | "options", string>
+    >,
+  ) {
+    return new BasesPropsCommands(deps).add(
+      "crm",
+      "Coluna",
+      type,
+      undefined,
+      undefined,
+      flags.options,
+      undefined,
+      undefined,
+      undefined,
+      flags.approvers,
+      flags.resetOn,
+      flags.instructions,
+      flags.inputs,
+      flags.output,
+      flags.agent,
+      undefined,
+      "5",
+      "sales",
+      undefined,
+      true,
+    );
+  }
+
+  it("adds an agent column with its instructions, inputs, output and options", async () => {
+    const calls: Call[] = [];
+    const deps = makeDeps(calls, () => ({ base: baseSummary(), property: property("resumo", "agent"), report: null }));
+
+    await captureConsole(() =>
+      propsAdd(deps, "agent", {
+        instructions: "Classifique o pedido.",
+        inputs: "titulo,total",
+        output: "select",
+        options: "Alta,Baixa",
+        agent: "triagem",
+      }),
+    );
+
+    expect(calls[0]?.body).toMatchObject({
+      type: "agent",
+      config: {
+        instructions: "Classifique o pedido.",
+        inputs: ["titulo", "total"],
+        output: "select",
+        options: [{ name: "Alta" }, { name: "Baixa" }],
+        agent: "triagem",
+      },
+    });
+  });
+
+  it("rejects typed flags on the wrong type and incomplete configs before any Console call", async () => {
+    const calls: Call[] = [];
+    const deps = makeDeps(calls, () => ({}));
+    const attempts = [
+      () => propsAdd(deps, "text", { approvers: "role:viewer" }),
+      () => propsAdd(deps, "approval", {}),
+      () => propsAdd(deps, "approval", { approvers: "role:owner" }),
+      () => propsAdd(deps, "agent", { instructions: "x", inputs: "a" }),
+      () => propsAdd(deps, "agent", { instructions: "x", inputs: "a", output: "select" }),
+      () => propsAdd(deps, "select", { output: "text" }),
+    ];
+    for (const attempt of attempts) {
+      const { error } = await captureFailure(attempt);
+      expect(error).toMatchObject({ code: "PAYLOAD_INVALID", exitCode: 2 });
+    }
+    expect(calls).toEqual([]);
+  });
+
+  it("requests an approval at once, at the version it read, with a key", async () => {
+    const calls: Call[] = [];
+    const deps = makeDeps(calls, (call) =>
+      call.method === "GET" ? { row: row(6), users: {} } : { row: row(7), users: {}, idempotentReplay: false },
+    );
+
+    const { result } = await captureConsole(() =>
+      new BasesRowsCommands(deps).requestApproval(
+        "crm",
+        "row_1",
+        "ok",
+        "Conferir total",
+        undefined,
+        undefined,
+        undefined,
+        "sales",
+        undefined,
+        true,
+      ),
+    );
+
+    expect(calls).toEqual([
+      { method: "GET", path: `${ROOT}/crm/rows/row_1`, body: undefined, headers: {} },
+      {
+        method: "PATCH",
+        path: `${ROOT}/crm/rows/row_1`,
+        body: {
+          values: { ok: { state: "pending", note: "Conferir total" } },
+          expectedVersion: 6,
+          idempotencyKey: "ravi-cli:test-key-0001",
+        },
+        headers: { "Idempotency-Key": "ravi-cli:test-key-0001" },
+      },
+    ]);
+    expect(result).toMatchObject({ property: "ok", state: "pending", row: { version: 7 } });
+    expectReturnsMatch(BasesRowsCommands, "requestApproval", result);
+  });
+
+  it("dry-runs approve and reject without --execute, then decides through a view with --execute", async () => {
+    const calls: Call[] = [];
+    const deps = makeDeps(calls, () => ({ row: row(4), users: {}, idempotentReplay: false }));
+    const rows = new BasesRowsCommands(deps);
+
+    for (const attempt of [
+      () =>
+        rows.approve("crm", "row_1", "ok", undefined, undefined, "3", undefined, "sales", undefined, true, undefined),
+      () =>
+        rows.reject("crm", "row_1", "ok", "Falta nota", undefined, "3", undefined, "sales", undefined, true, undefined),
+    ]) {
+      const { error, output } = await captureFailure(attempt);
+      expect(error).toMatchObject({ code: "WRITE_REQUIRES_EXECUTE", exitCode: 3 });
+      expect(JSON.parse(output).error.plan).toMatchObject({ row: "row_1", property: "ok" });
+    }
+    expect(calls).toEqual([]);
+
+    const { result } = await captureConsole(() =>
+      rows.reject(
+        "crm",
+        "row_1",
+        "ok",
+        "Falta nota",
+        "view_1",
+        "3",
+        "crm:row_1:v3:reject",
+        "sales",
+        undefined,
+        true,
+        true,
+      ),
+    );
+    expect(calls).toEqual([
+      {
+        method: "PATCH",
+        path: `${ROOT}/crm/views/view_1/rows/row_1`,
+        body: {
+          values: { ok: { state: "rejected", note: "Falta nota" } },
+          expectedVersion: 3,
+          idempotencyKey: "crm:row_1:v3:reject",
+        },
+        headers: { "Idempotency-Key": "crm:row_1:v3:reject" },
+      },
+    ]);
+    expect(result).toMatchObject({ state: "rejected", viewId: "view_1" });
+  });
+
+  it("maps approval_forbidden to an access error that names the approvers", async () => {
+    const deps = makeDeps([], () => {
+      throw new CloudAuthError("PROJECT_ACCESS_DENIED", "Only approvers may decide.", {
+        status: 403,
+        details: { error: "approval_forbidden" },
+      });
+    });
+
+    const { error, output } = await captureFailure(() =>
+      new BasesRowsCommands(deps).approve(
+        "crm",
+        "row_1",
+        "ok",
+        undefined,
+        undefined,
+        "3",
+        undefined,
+        "sales",
+        undefined,
+        true,
+        true,
+      ),
+    );
+
+    expect(error).toMatchObject({ code: "PROJECT_ACCESS_DENIED" });
+    const envelope = JSON.parse(output);
+    expect(envelope.error.consoleError).toBe("approval_forbidden");
+    expect(envelope.error.suggestedAction).toContain("approver");
+  });
+
+  it("fills an agent cell with a keyed write and parses the value as JSON when it can", async () => {
+    const calls: Call[] = [];
+    const deps = makeDeps(calls, () => ({ row: row(9), users: {}, idempotentReplay: false }));
+    const rows = new BasesRowsCommands(deps);
+
+    const { result } = await captureConsole(() =>
+      rows.fill(
+        "crm",
+        "row_1",
+        "resumo",
+        "0123456789abcdef",
+        '["Alta"]',
+        undefined,
+        "crm:row_1:resumo:0123",
+        "sales",
+        undefined,
+        true,
+      ),
+    );
+    await captureConsole(() =>
+      rows.fill(
+        "crm",
+        "row_1",
+        "resumo",
+        "0123456789abcdef",
+        "texto livre",
+        undefined,
+        undefined,
+        "sales",
+        undefined,
+        true,
+      ),
+    );
+    await captureConsole(() =>
+      rows.fill(
+        "crm",
+        "row_1",
+        "resumo",
+        "0123456789abcdef",
+        undefined,
+        "Sem dados",
+        undefined,
+        "sales",
+        undefined,
+        true,
+      ),
+    );
+
+    expect(calls.map((call) => [call.method, call.path, call.body])).toEqual([
+      [
+        "POST",
+        `${ROOT}/crm/rows/row_1/agent/resumo`,
+        { inputsHash: "0123456789abcdef", value: ["Alta"], idempotencyKey: "crm:row_1:resumo:0123" },
+      ],
+      [
+        "POST",
+        `${ROOT}/crm/rows/row_1/agent/resumo`,
+        { inputsHash: "0123456789abcdef", value: "texto livre", idempotencyKey: "ravi-cli:test-key-0001" },
+      ],
+      [
+        "POST",
+        `${ROOT}/crm/rows/row_1/agent/resumo`,
+        { inputsHash: "0123456789abcdef", error: "Sem dados", idempotencyKey: "ravi-cli:test-key-0001" },
+      ],
+    ]);
+    expect(calls[0]?.headers).toEqual({ "Idempotency-Key": "crm:row_1:resumo:0123" });
+    expect(result).toMatchObject({ property: "resumo", row: { version: 9 } });
+    expectReturnsMatch(BasesRowsCommands, "fill", result);
+
+    for (const attempt of [
+      () => rows.fill("crm", "row_1", "resumo", "nothex", "1", undefined, undefined, "sales", undefined, true),
+      () => rows.fill("crm", "row_1", "resumo", "0123456789abcdef", "1", "x", undefined, "sales", undefined, true),
+      () =>
+        rows.fill(
+          "crm",
+          "row_1",
+          "resumo",
+          "0123456789abcdef",
+          undefined,
+          undefined,
+          undefined,
+          "sales",
+          undefined,
+          true,
+        ),
+    ]) {
+      expect((await captureFailure(attempt)).error).toMatchObject({ code: "PAYLOAD_INVALID" });
+    }
+    expect(calls).toHaveLength(3);
+  });
+
+  it("surfaces the current inputsHash on agent_stale", async () => {
+    const deps = makeDeps([], () => {
+      throw new CloudAuthError("CONFLICT", "The inputs changed.", {
+        status: 409,
+        details: { error: "agent_stale", inputsHash: "fedcba9876543210" },
+      });
+    });
+
+    const { error, output } = await captureFailure(() =>
+      new BasesRowsCommands(deps).fill(
+        "crm",
+        "row_1",
+        "resumo",
+        "0123456789abcdef",
+        "1",
+        undefined,
+        undefined,
+        "sales",
+        undefined,
+        true,
+      ),
+    );
+
+    expect(error).toMatchObject({ code: "CONFLICT", exitCode: 1 });
+    expect(JSON.parse(output).error).toMatchObject({ consoleError: "agent_stale", inputsHash: "fedcba9876543210" });
+    expect(JSON.parse(output).error.suggestedAction).toContain("--inputs-hash fedcba9876543210");
+  });
+
+  it("reruns an agent cell", async () => {
+    const calls: Call[] = [];
+    const deps = makeDeps(calls, () => ({ row: row(10), users: {}, idempotentReplay: false }));
+
+    const { result } = await captureConsole(() =>
+      new BasesRowsCommands(deps).rerun("crm", "row_1", "resumo", "sales", undefined, true),
+    );
+
+    expect(calls).toEqual([
+      { method: "POST", path: `${ROOT}/crm/rows/row_1/agent/resumo/rerun`, body: {}, headers: {} },
+    ]);
+    expectReturnsMatch(BasesRowsCommands, "rerun", result);
+  });
+});
+
 interface Call {
   method: string;
   path: string;
@@ -967,6 +1889,16 @@ async function captureConsole<T>(run: () => T | Promise<T>): Promise<{ output: s
     console.log = originalLog;
     console.error = originalError;
   }
+}
+
+/** `props add` flags --approvers .. --idempotency-key, all unset. */
+function noTypedPropertyFlags(): [undefined, undefined, undefined, undefined, undefined, undefined, undefined] {
+  return [undefined, undefined, undefined, undefined, undefined, undefined, undefined];
+}
+
+/** `subscribe` flags --view .. --message, all unset. */
+function noSubscribeFilter(): [undefined, undefined, undefined, undefined, undefined, undefined, undefined] {
+  return [undefined, undefined, undefined, undefined, undefined, undefined, undefined];
 }
 
 function row(version: number, rowId = "row_1") {

@@ -547,6 +547,26 @@ const executeInstructions = [
     path: "src/cli/commands/knowledge.ts",
     instruction: "ravi knowledge forget --about contact:<contact-id> --redact --execute",
   },
+  {
+    name: "Bases approve in the bases skill",
+    path: "src/plugins/internal/ravi-system/skills/bases/references/approvals-agent-columns.md",
+    instruction: 'ravi bases rows approve compras <row> aprovacao --note "Ok" --execute --json',
+  },
+  {
+    name: "Bases reject in the bases skill",
+    path: "src/plugins/internal/ravi-system/skills/bases/references/approvals-agent-columns.md",
+    instruction: 'ravi bases rows reject compras <row> aprovacao --note "Sem orçamento" --execute --json',
+  },
+  {
+    name: "Bases approve documentation",
+    path: "docs/console/bases.mdx",
+    instruction: 'ravi bases rows approve requests <rowId> approval --note "Ok" --execute --json',
+  },
+  {
+    name: "Bases reject documentation",
+    path: "docs/console/bases.mdx",
+    instruction: "ravi bases rows reject requests <rowId> approval --execute --json",
+  },
 ] as const;
 
 const obsoleteExecuteConsumers = [
@@ -833,6 +853,29 @@ const obsoleteExecuteConsumers = [
     path: "docs/console/widgets.mdx",
     obsolete: "ravi bases views bind requests <view id> none --execute",
     current: "ravi bases views bind requests <view id> none",
+  },
+  {
+    name: "views share in the bases skill: a view update applies at once",
+    path: "src/plugins/internal/ravi-system/skills/bases/references/views-access-forms.md",
+    obsolete:
+      "ravi bases views share <base> <view> --site <slug|id|host> [--write a,b] [--create] [--archive] [--write-only] --json --execute",
+    current:
+      "ravi bases views share <base> <view> --site <slug|id|host> [--write a,b] [--create] [--archive] [--write-only] --json",
+  },
+  {
+    name: "request-approval in the bases skill: asking applies at once",
+    path: "src/plugins/internal/ravi-system/skills/bases/references/approvals-agent-columns.md",
+    obsolete:
+      'ravi bases rows request-approval compras <row> aprovacao --note "Acima do teto" --idempotency-key compras:<row>:pedir --json --execute',
+    current:
+      'ravi bases rows request-approval compras <row> aprovacao --note "Acima do teto" --idempotency-key compras:<row>:pedir --json',
+  },
+  {
+    name: "rows fill in the bases skill: filling an agent cell applies at once",
+    path: "src/plugins/internal/ravi-system/skills/bases/references/approvals-agent-columns.md",
+    obsolete:
+      'ravi bases rows fill leads <row> resumo --inputs-hash <hash> --value "Quer migrar o ERP" --json --execute',
+    current: 'ravi bases rows fill leads <row> resumo --inputs-hash <hash> --value "Quer migrar o ERP" --json',
   },
   {
     name: "widgets check in the pages skill: a read",

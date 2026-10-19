@@ -283,6 +283,58 @@ describe("TriggerRunner filter reject diagnostics", () => {
   });
 });
 
+describe("Bases subscription triggers", () => {
+  it("wake only for their own subscription and events, and a draft never fires", async () => {
+    const { subscriptionTriggerFilter } = await import("../../cli/commands/bases.js");
+    const topic = "ravi.console.inbox.item";
+    const all = createTrigger({
+      name: "bases all",
+      topic,
+      filter: subscriptionTriggerFilter({ baseId: "base_1", subscriptionId: "sub_all", filtered: false }),
+    });
+    const decided = createTrigger({
+      name: "bases decided",
+      topic,
+      filter: subscriptionTriggerFilter({
+        baseId: "base_1",
+        subscriptionId: "sub_f",
+        filtered: true,
+        events: ["approval.decided"],
+      }),
+    });
+    const draft = createTrigger({
+      name: "bases draft",
+      topic,
+      filter: subscriptionTriggerFilter({ baseId: "base_1", subscriptionId: "sub_d", filtered: true }),
+    });
+    dbUpdateTrigger(draft.id, { enabled: false });
+
+    await startRunner();
+    const item = (eventId: string, eventType: string, payload: Record<string, unknown>) => ({
+      eventId,
+      eventType,
+      category: "bases",
+      payload: { baseId: "base_1", rowId: "row_1", ...payload },
+    });
+    emit(topic, item("evt-row", "bases.row.updated", {}));
+    emit(topic, item("evt-requested", "bases.approval.requested", { subscriptionId: "sub_f" }));
+    emit(topic, item("evt-decided", "bases.approval.decided", { subscriptionId: "sub_f" }));
+    emit(topic, item("evt-draft", "bases.row.created", { subscriptionId: "sub_d" }));
+    emit(topic, item("evt-other-base", "bases.row.updated", { baseId: "base_2" }));
+
+    await waitFor(() => publishCalls.length >= 2);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(
+      publishCalls.map((call) => [call.payload._triggerId, String(call.payload.prompt).match(/evt-[a-z-]+/)?.[0]]),
+    ).toEqual([
+      [all.id, "evt-row"],
+      [decided.id, "evt-decided"],
+    ]);
+    expect(dbGetTrigger(draft.id)?.fireCount).toBe(0);
+  });
+});
+
 describe("page comment wake", () => {
   it("wakes the bound creator and does not open a session for a deleted agent", async () => {
     const { ensurePageCommentTrigger, pageCommentFilter } = await import("../../pages/comment-follow.js");

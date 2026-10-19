@@ -95,7 +95,12 @@ function shouldMountBuildingSolutions(input: RuntimeSystemPromptInput): boolean 
 }
 
 function canRunBuildingSolutionsGroup(capabilities: readonly ContextCapability[]): boolean {
-  return canRunAnyGroup(capabilities, BUILDING_SOLUTIONS_GROUP_RULE_IDS);
+  // Reading Bases (in the bootstrap floor since B4) builds nothing: only a
+  // capability beyond `read:bases*` counts toward this section.
+  const building = capabilities.filter(
+    (cap) => !(cap.permission === "read" && (cap.objectType === "bases" || cap.objectType.startsWith("bases."))),
+  );
+  return canRunAnyGroup(building, BUILDING_SOLUTIONS_GROUP_RULE_IDS);
 }
 
 const PAGES_GROUP_RULE_IDS: ReadonlySet<string> = new Set(["pages"]);

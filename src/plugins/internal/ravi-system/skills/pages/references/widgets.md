@@ -118,9 +118,9 @@ O ship manda o HTML (de uma cópia, nunca da sua pasta) ao kit do Console:
   `rows.archive` com `archive` ou botão archive; `rows.get` em botão open sem
   link; `<ravi-form>` leva `describe` e `rows.create`.
 
-O `--uses` continua do host inteiro (regra 2 de `data-pages.md`): o ship soma
-só os ids das tags deste HTML. Ponha no `--uses` os das outras páginas de
-dados do host. Tag de dados em rota `public` cai na mesma recusa do
+O ship soma só os ids das tags deste HTML; o que o script da própria rota
+chama vai no `--uses`. As outras rotas do host continuam com os ids delas
+(regra 2 de `data-pages.md`). Tag de dados em rota `public` cai na mesma recusa do
 `ravi.bases.*` (exit 2, nada sobe).
 
 O JSON traz `kit: { status, changedFiles, warnings, theme, widgets }` e

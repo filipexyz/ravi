@@ -43,10 +43,27 @@ Restrição por pessoa é trabalho do filtro com `$viewer.*`.
 A view com `page_viewer` exige que o site já exista (senão: "Pages viewer
 principals must name a Ravi Pages site"). A ordem:
 
-1. ship de esqueleto: `ravi pages ship --project <p> --title "<título>" --route /<rota> --body "<p>Em construção</p>" --json` (num host que já tem página de dados, com `--uses` da união);
+1. ship de esqueleto: `ravi pages ship --project <p> --title "<título>" --route /<rota> --body "<p>Em construção</p>" --json` (sem `--uses`: não tira os ids das outras rotas);
 2. `ravi pages list --project <p> --json`: o `siteId` é o do site com `isDefault: true`;
 3. `ravi bases views create ...` com esse `siteId`;
 4. ship da página real com os ids da view.
+
+View que já existe ganha o site sem você montar o JSON:
+
+```bash
+ravi bases views share <base> <view> --site <slug|id|host> [--write a,b] [--create] [--archive] [--write-only] --json
+```
+
+O comando acha o site do projeto (id, slug ou hostname), soma o
+`page_viewer` em `access.read` (e em `access.write.principals` quando há
+`--write`, `--create` ou `--archive`), grava com o `expectedVersion` lido e
+imprime o aviso do host para repassar à pessoa. `--write` soma colunas a
+`write.columns`; ele nunca tira nada. O bloco `write` é um só para todos os
+princípios de escrita da view: o que você liberar para o site vale também para
+quem já escrevia (o aviso diz isso). Formulário puro (`access.read: []`):
+`--create --write-only` dá ao site só a criação, sem ler as linhas. Se o site
+já estava na view com esse acesso, nada é gravado (`changed: false`). Só quem
+gerencia a base compartilha.
 
 `access.write`:
 
@@ -99,6 +116,11 @@ mesma view serve a todos: a supervisora vê as dela e as que supervisiona.
 
 ## Aprovador
 
+Prefira a coluna `approval` (`approvals-agent-columns.md`): o Console guarda
+quem pediu e quem decidiu, e só aceita a decisão de um aprovador da lista
+(também pela página, com a coluna em `write.columns` da view). O padrão abaixo,
+com `person` e `select`, serve quando quem aprova muda de linha para linha.
+
 Aprovação dada na tela por um membro: coluna `aprovador` (person), coluna de
 decisão editável (`decisao`, select Aprovada/Devolvida) e uma view "Para eu
 aprovar" (`table`, com `page_viewer` em `read` e em `write.principals`). O
@@ -148,6 +170,6 @@ Quem envia não lê nada da base.
       "set": { "requester_email": "$viewer.email", "status": "Novo" }, "allowEscape": false } } }
 ```
 
-- Ship com `--uses ravi.bases.views.describe,ravi.bases.views.rows.create`, somado aos ids das outras páginas de dados do host.
+- Ship com `--uses ravi.bases.views.describe,ravi.bases.views.rows.create` (os ids desta rota; as outras rotas do host ficam com os delas).
 - Não há formulário público: quem envia é membro logado, em rota `private` ou `protected_link` (senha não serve). Gente de fora manda os dados pela conversa.
 - Vincular uma view a um site a expõe a todo o host, sem aviso do Console. Diga à pessoa: "o host `<host>` (todas as rotas) passa a ler a view `<nome>` [e a escrever as colunas X]".

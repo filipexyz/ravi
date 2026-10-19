@@ -14927,6 +14927,10 @@ export const BasesChartsCreateInputSchema = {
       "description": "Console base URL",
       "type": "string"
     },
+    "idempotencyKey": {
+      "description": "Idempotency key: a retry with the same key and request returns the created object (default: generated)",
+      "type": "string"
+    },
     "name": {
       "description": "Chart name (overrides spec.name)",
       "type": "string"
@@ -15058,6 +15062,9 @@ export const BasesChartsCreateReturnSchema = {
     "consoleUrl": {
       "type": "string"
     },
+    "idempotencyKey": {
+      "type": "string"
+    },
     "projectRef": {
       "type": "string"
     },
@@ -15071,7 +15078,8 @@ export const BasesChartsCreateReturnSchema = {
     "consoleUrl",
     "projectRef",
     "baseRef",
-    "chart"
+    "chart",
+    "idempotencyKey"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -15244,6 +15252,37 @@ export const BasesChartsDataReturnSchema = {
           "config": {
             "additionalProperties": false,
             "properties": {
+              "agent": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "approvers": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": {
+                      "type": "string"
+                    },
+                    "minRole": {
+                      "type": "string"
+                    },
+                    "userId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "currency": {
                 "type": "string"
               },
@@ -15252,6 +15291,15 @@ export const BasesChartsDataReturnSchema = {
               },
               "includeTime": {
                 "type": "boolean"
+              },
+              "inputs": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "instructions": {
+                "type": "string"
               },
               "options": {
                 "items": {
@@ -15282,8 +15330,17 @@ export const BasesChartsDataReturnSchema = {
                 },
                 "type": "array"
               },
+              "output": {
+                "type": "string"
+              },
               "precision": {
                 "type": "number"
+              },
+              "resetOn": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               }
             },
             "type": "object"
@@ -15979,6 +16036,10 @@ export const BasesCreateInputSchema = {
       "description": "Base icon (emoji or short name)",
       "type": "string"
     },
+    "idempotencyKey": {
+      "description": "Idempotency key: a retry with the same key and request returns the created object (default: generated)",
+      "type": "string"
+    },
     "name": {
       "description": "Base display name",
       "type": "string"
@@ -16213,6 +16274,37 @@ export const BasesCreateReturnSchema = {
               "config": {
                 "additionalProperties": false,
                 "properties": {
+                  "agent": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "approvers": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "kind": {
+                          "type": "string"
+                        },
+                        "minRole": {
+                          "type": "string"
+                        },
+                        "userId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
                   "currency": {
                     "type": "string"
                   },
@@ -16221,6 +16313,15 @@ export const BasesCreateReturnSchema = {
                   },
                   "includeTime": {
                     "type": "boolean"
+                  },
+                  "inputs": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "instructions": {
+                    "type": "string"
                   },
                   "options": {
                     "items": {
@@ -16251,8 +16352,17 @@ export const BasesCreateReturnSchema = {
                     },
                     "type": "array"
                   },
+                  "output": {
+                    "type": "string"
+                  },
                   "precision": {
                     "type": "number"
+                  },
+                  "resetOn": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
                   }
                 },
                 "type": "object"
@@ -16362,6 +16472,12 @@ export const BasesCreateReturnSchema = {
                     "properties": {
                       "aggregateOnly": {
                         "type": "boolean"
+                      },
+                      "approve": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
                       },
                       "archive": {
                         "type": "boolean"
@@ -16523,6 +16639,12 @@ export const BasesCreateReturnSchema = {
                       "aggregateOnly": {
                         "type": "boolean"
                       },
+                      "approve": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
                       "archive": {
                         "type": "boolean"
                       },
@@ -16559,6 +16681,37 @@ export const BasesCreateReturnSchema = {
                         "config": {
                           "additionalProperties": false,
                           "properties": {
+                            "agent": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "approvers": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "kind": {
+                                    "type": "string"
+                                  },
+                                  "minRole": {
+                                    "type": "string"
+                                  },
+                                  "userId": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "array"
+                            },
                             "currency": {
                               "type": "string"
                             },
@@ -16567,6 +16720,15 @@ export const BasesCreateReturnSchema = {
                             },
                             "includeTime": {
                               "type": "boolean"
+                            },
+                            "inputs": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "instructions": {
+                              "type": "string"
                             },
                             "options": {
                               "items": {
@@ -16597,8 +16759,17 @@ export const BasesCreateReturnSchema = {
                               },
                               "type": "array"
                             },
+                            "output": {
+                              "type": "string"
+                            },
                             "precision": {
                               "type": "number"
+                            },
+                            "resetOn": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
                             }
                           },
                           "type": "object"
@@ -16703,6 +16874,9 @@ export const BasesCreateReturnSchema = {
     "consoleUrl": {
       "type": "string"
     },
+    "idempotencyKey": {
+      "type": "string"
+    },
     "projectRef": {
       "type": "string"
     },
@@ -16715,7 +16889,8 @@ export const BasesCreateReturnSchema = {
     "success",
     "consoleUrl",
     "projectRef",
-    "base"
+    "base",
+    "idempotencyKey"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -17017,6 +17192,14 @@ export const BasesListReturnSchema = {
 export const BasesPropsAddInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "agent": {
+      "description": "Agent column: the agent that fills it (a label, max 64)",
+      "type": "string"
+    },
+    "approvers": {
+      "description": "Approval: who decides, comma-separated role:<viewer|developer|project_admin> or user:<userId> (1-20)",
+      "type": "string"
+    },
     "base": {
       "description": "Base id or slug",
       "type": "string"
@@ -17037,6 +17220,18 @@ export const BasesPropsAddInputSchema = {
       "description": "Schema version you read (default: read the current one first)",
       "type": "string"
     },
+    "idempotencyKey": {
+      "description": "Idempotency key: a retry with the same key and request returns the created object (default: generated)",
+      "type": "string"
+    },
+    "inputs": {
+      "description": "Agent column: property keys the agent reads (1-20)",
+      "type": "string"
+    },
+    "instructions": {
+      "description": "Agent column: what the agent fills (1-4000 chars)",
+      "type": "string"
+    },
     "key": {
       "description": "API key, ^[a-z][a-z0-9_]{0,62}$ (default: derived from the name)",
       "type": "string"
@@ -17046,7 +17241,11 @@ export const BasesPropsAddInputSchema = {
       "type": "string"
     },
     "options": {
-      "description": "Select/status options, comma-separated; status groups as Name:todo|in_progress|done",
+      "description": "Select/status options (or an agent column's select output), comma-separated; status groups as Name:todo|in_progress|done",
+      "type": "string"
+    },
+    "output": {
+      "description": "Agent column: value type text|number|checkbox|select|multi_select|url|date",
       "type": "string"
     },
     "position": {
@@ -17061,8 +17260,12 @@ export const BasesPropsAddInputSchema = {
       "description": "Require a value on create and on updates that touch it",
       "type": "boolean"
     },
+    "resetOn": {
+      "description": "Approval: property keys whose change sends a decided approval back to pending",
+      "type": "string"
+    },
     "type": {
-      "description": "text|number|checkbox|date|select|multi_select|status|url|email|phone|person|ref (default: text)",
+      "description": "text|number|checkbox|date|select|multi_select|status|url|email|phone|person|ref|approval|agent (default: text)",
       "type": "string"
     }
   },
@@ -17186,6 +17389,9 @@ export const BasesPropsAddReturnSchema = {
     "consoleUrl": {
       "type": "string"
     },
+    "idempotencyKey": {
+      "type": "string"
+    },
     "projectRef": {
       "type": "string"
     },
@@ -17195,6 +17401,37 @@ export const BasesPropsAddReturnSchema = {
         "config": {
           "additionalProperties": false,
           "properties": {
+            "agent": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "approvers": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "type": "string"
+                  },
+                  "minRole": {
+                    "type": "string"
+                  },
+                  "userId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
             "currency": {
               "type": "string"
             },
@@ -17203,6 +17440,15 @@ export const BasesPropsAddReturnSchema = {
             },
             "includeTime": {
               "type": "boolean"
+            },
+            "inputs": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "instructions": {
+              "type": "string"
             },
             "options": {
               "items": {
@@ -17233,8 +17479,17 @@ export const BasesPropsAddReturnSchema = {
               },
               "type": "array"
             },
+            "output": {
+              "type": "string"
+            },
             "precision": {
               "type": "number"
+            },
+            "resetOn": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           },
           "type": "object"
@@ -17386,7 +17641,8 @@ export const BasesPropsAddReturnSchema = {
     "projectRef",
     "base",
     "property",
-    "report"
+    "report",
+    "idempotencyKey"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -17549,6 +17805,37 @@ export const BasesPropsDeleteReturnSchema = {
         "config": {
           "additionalProperties": false,
           "properties": {
+            "agent": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "approvers": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "type": "string"
+                  },
+                  "minRole": {
+                    "type": "string"
+                  },
+                  "userId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
             "currency": {
               "type": "string"
             },
@@ -17557,6 +17844,15 @@ export const BasesPropsDeleteReturnSchema = {
             },
             "includeTime": {
               "type": "boolean"
+            },
+            "inputs": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "instructions": {
+              "type": "string"
             },
             "options": {
               "items": {
@@ -17587,8 +17883,17 @@ export const BasesPropsDeleteReturnSchema = {
               },
               "type": "array"
             },
+            "output": {
+              "type": "string"
+            },
             "precision": {
               "type": "number"
+            },
+            "resetOn": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           },
           "type": "object"
@@ -17801,6 +18106,37 @@ export const BasesPropsListReturnSchema = {
           "config": {
             "additionalProperties": false,
             "properties": {
+              "agent": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "approvers": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": {
+                      "type": "string"
+                    },
+                    "minRole": {
+                      "type": "string"
+                    },
+                    "userId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "currency": {
                 "type": "string"
               },
@@ -17809,6 +18145,15 @@ export const BasesPropsListReturnSchema = {
               },
               "includeTime": {
                 "type": "boolean"
+              },
+              "inputs": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "instructions": {
+                "type": "string"
               },
               "options": {
                 "items": {
@@ -17839,8 +18184,17 @@ export const BasesPropsListReturnSchema = {
                 },
                 "type": "array"
               },
+              "output": {
+                "type": "string"
+              },
               "precision": {
                 "type": "number"
+              },
+              "resetOn": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               }
             },
             "type": "object"
@@ -17945,6 +18299,37 @@ export const BasesPropsListReturnSchema = {
           "config": {
             "additionalProperties": false,
             "properties": {
+              "agent": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "approvers": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": {
+                      "type": "string"
+                    },
+                    "minRole": {
+                      "type": "string"
+                    },
+                    "userId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "currency": {
                 "type": "string"
               },
@@ -17953,6 +18338,15 @@ export const BasesPropsListReturnSchema = {
               },
               "includeTime": {
                 "type": "boolean"
+              },
+              "inputs": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "instructions": {
+                "type": "string"
               },
               "options": {
                 "items": {
@@ -17983,8 +18377,17 @@ export const BasesPropsListReturnSchema = {
                 },
                 "type": "array"
               },
+              "output": {
+                "type": "string"
+              },
               "precision": {
                 "type": "number"
+              },
+              "resetOn": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               }
             },
             "type": "object"
@@ -18211,6 +18614,37 @@ export const BasesPropsRestoreReturnSchema = {
         "config": {
           "additionalProperties": false,
           "properties": {
+            "agent": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "approvers": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "type": "string"
+                  },
+                  "minRole": {
+                    "type": "string"
+                  },
+                  "userId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
             "currency": {
               "type": "string"
             },
@@ -18219,6 +18653,15 @@ export const BasesPropsRestoreReturnSchema = {
             },
             "includeTime": {
               "type": "boolean"
+            },
+            "inputs": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "instructions": {
+              "type": "string"
             },
             "options": {
               "items": {
@@ -18249,8 +18692,17 @@ export const BasesPropsRestoreReturnSchema = {
               },
               "type": "array"
             },
+            "output": {
+              "type": "string"
+            },
             "precision": {
               "type": "number"
+            },
+            "resetOn": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           },
           "type": "object"
@@ -18597,6 +19049,37 @@ export const BasesPropsUpdateReturnSchema = {
         "config": {
           "additionalProperties": false,
           "properties": {
+            "agent": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "approvers": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "type": "string"
+                  },
+                  "minRole": {
+                    "type": "string"
+                  },
+                  "userId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
             "currency": {
               "type": "string"
             },
@@ -18605,6 +19088,15 @@ export const BasesPropsUpdateReturnSchema = {
             },
             "includeTime": {
               "type": "boolean"
+            },
+            "inputs": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "instructions": {
+              "type": "string"
             },
             "options": {
               "items": {
@@ -18635,8 +19127,17 @@ export const BasesPropsUpdateReturnSchema = {
               },
               "type": "array"
             },
+            "output": {
+              "type": "string"
+            },
             "precision": {
               "type": "number"
+            },
+            "resetOn": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           },
           "type": "object"
@@ -19181,6 +19682,243 @@ export const BasesRowsAddReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `bases.rows.approve`. */
+export const BasesRowsApproveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Actually record the approval; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
+    "expectedVersion": {
+      "description": "Row version you read (default: read the current one)",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Idempotency key for safe retries (default: generated per call)",
+      "type": "string"
+    },
+    "note": {
+      "description": "Note recorded with the decision (max 1000 chars)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "prop": {
+      "description": "Property key or id",
+      "type": "string"
+    },
+    "row": {
+      "description": "Row id",
+      "type": "string"
+    },
+    "view": {
+      "description": "Read or write through this view (its columns, filter, and access apply)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base",
+    "prop",
+    "row"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `bases.rows.approve`. */
+export const BasesRowsApproveReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "type": "string"
+    },
+    "idempotentReplay": {
+      "type": "boolean"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "property": {
+      "type": "string"
+    },
+    "row": {
+      "additionalProperties": false,
+      "properties": {
+        "archivedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "body": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rowId": {
+          "type": "string"
+        },
+        "values": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "rowId",
+        "version",
+        "values"
+      ],
+      "type": "object"
+    },
+    "state": {
+      "enum": [
+        "pending",
+        "approved",
+        "rejected"
+      ],
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "users": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "avatarUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "avatarUrl"
+        ],
+        "type": "object"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "viewId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "viewId",
+    "row",
+    "users",
+    "idempotentReplay",
+    "property",
+    "state",
+    "idempotencyKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `bases.rows.archive`. */
 export const BasesRowsArchiveInputSchema = {
   "additionalProperties": false,
@@ -19518,6 +20256,236 @@ export const BasesRowsExportReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `bases.rows.fill`. */
+export const BasesRowsFillInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "error": {
+      "description": "Why the agent could not fill it (max 1000 chars)",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Idempotency key for safe retries (default: generated per call)",
+      "type": "string"
+    },
+    "inputsHash": {
+      "description": "inputsHash of the cell you read; a changed one fails with CONFLICT (agent_stale)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "prop": {
+      "description": "Property key or id",
+      "type": "string"
+    },
+    "row": {
+      "description": "Row id",
+      "type": "string"
+    },
+    "value": {
+      "description": "The value: JSON when it parses (12, true, [\"a\",\"b\"], \"texto\"), otherwise the text as is",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base",
+    "prop",
+    "row"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `bases.rows.fill`. */
+export const BasesRowsFillReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "type": "string"
+    },
+    "idempotentReplay": {
+      "type": "boolean"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "property": {
+      "type": "string"
+    },
+    "row": {
+      "additionalProperties": false,
+      "properties": {
+        "archivedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "body": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rowId": {
+          "type": "string"
+        },
+        "values": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "rowId",
+        "version",
+        "values"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "users": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "avatarUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "avatarUrl"
+        ],
+        "type": "object"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "viewId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "viewId",
+    "row",
+    "users",
+    "idempotentReplay",
+    "idempotencyKey",
+    "property"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `bases.rows.get`. */
 export const BasesRowsGetInputSchema = {
   "additionalProperties": false,
@@ -19839,6 +20807,36 @@ export const BasesRowsHistoryReturnSchema = {
               "type": "string"
             },
             "type": "object"
+          },
+          "agent": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "installationId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "installationId"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "before": {
             "additionalProperties": {
@@ -20595,6 +21593,680 @@ export const BasesRowsQueryReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `bases.rows.reject`. */
+export const BasesRowsRejectInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Actually record the rejection; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
+    "expectedVersion": {
+      "description": "Row version you read (default: read the current one)",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Idempotency key for safe retries (default: generated per call)",
+      "type": "string"
+    },
+    "note": {
+      "description": "Note recorded with the decision (max 1000 chars)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "prop": {
+      "description": "Property key or id",
+      "type": "string"
+    },
+    "row": {
+      "description": "Row id",
+      "type": "string"
+    },
+    "view": {
+      "description": "Read or write through this view (its columns, filter, and access apply)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base",
+    "prop",
+    "row"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `bases.rows.reject`. */
+export const BasesRowsRejectReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "type": "string"
+    },
+    "idempotentReplay": {
+      "type": "boolean"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "property": {
+      "type": "string"
+    },
+    "row": {
+      "additionalProperties": false,
+      "properties": {
+        "archivedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "body": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rowId": {
+          "type": "string"
+        },
+        "values": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "rowId",
+        "version",
+        "values"
+      ],
+      "type": "object"
+    },
+    "state": {
+      "enum": [
+        "pending",
+        "approved",
+        "rejected"
+      ],
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "users": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "avatarUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "avatarUrl"
+        ],
+        "type": "object"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "viewId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "viewId",
+    "row",
+    "users",
+    "idempotentReplay",
+    "property",
+    "state",
+    "idempotencyKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `bases.rows.request-approval`. */
+export const BasesRowsRequestApprovalInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "expectedVersion": {
+      "description": "Row version you read (default: read the current one)",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Idempotency key for safe retries (default: generated per call)",
+      "type": "string"
+    },
+    "note": {
+      "description": "Note for the approvers (max 1000 chars)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "prop": {
+      "description": "Property key or id",
+      "type": "string"
+    },
+    "row": {
+      "description": "Row id",
+      "type": "string"
+    },
+    "view": {
+      "description": "Read or write through this view (its columns, filter, and access apply)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base",
+    "prop",
+    "row"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `bases.rows.request-approval`. */
+export const BasesRowsRequestApprovalReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "type": "string"
+    },
+    "idempotentReplay": {
+      "type": "boolean"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "property": {
+      "type": "string"
+    },
+    "row": {
+      "additionalProperties": false,
+      "properties": {
+        "archivedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "body": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rowId": {
+          "type": "string"
+        },
+        "values": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "rowId",
+        "version",
+        "values"
+      ],
+      "type": "object"
+    },
+    "state": {
+      "enum": [
+        "pending",
+        "approved",
+        "rejected"
+      ],
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "users": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "avatarUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "avatarUrl"
+        ],
+        "type": "object"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "viewId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "viewId",
+    "row",
+    "users",
+    "idempotentReplay",
+    "property",
+    "state",
+    "idempotencyKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `bases.rows.rerun`. */
+export const BasesRowsRerunInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "prop": {
+      "description": "Property key or id",
+      "type": "string"
+    },
+    "row": {
+      "description": "Row id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base",
+    "prop",
+    "row"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `bases.rows.rerun`. */
+export const BasesRowsRerunReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "idempotentReplay": {
+      "type": "boolean"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "property": {
+      "type": "string"
+    },
+    "row": {
+      "additionalProperties": false,
+      "properties": {
+        "archivedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "body": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rowId": {
+          "type": "string"
+        },
+        "values": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "rowId",
+        "version",
+        "values"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "users": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "avatarUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "avatarUrl"
+        ],
+        "type": "object"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "viewId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "viewId",
+    "row",
+    "users",
+    "idempotentReplay",
+    "property"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `bases.rows.restore`. */
 export const BasesRowsRestoreInputSchema = {
   "additionalProperties": false,
@@ -21268,6 +22940,37 @@ export const BasesShowReturnSchema = {
               "config": {
                 "additionalProperties": false,
                 "properties": {
+                  "agent": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "approvers": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "kind": {
+                          "type": "string"
+                        },
+                        "minRole": {
+                          "type": "string"
+                        },
+                        "userId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
                   "currency": {
                     "type": "string"
                   },
@@ -21276,6 +22979,15 @@ export const BasesShowReturnSchema = {
                   },
                   "includeTime": {
                     "type": "boolean"
+                  },
+                  "inputs": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "instructions": {
+                    "type": "string"
                   },
                   "options": {
                     "items": {
@@ -21306,8 +23018,17 @@ export const BasesShowReturnSchema = {
                     },
                     "type": "array"
                   },
+                  "output": {
+                    "type": "string"
+                  },
                   "precision": {
                     "type": "number"
+                  },
+                  "resetOn": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
                   }
                 },
                 "type": "object"
@@ -21417,6 +23138,12 @@ export const BasesShowReturnSchema = {
                     "properties": {
                       "aggregateOnly": {
                         "type": "boolean"
+                      },
+                      "approve": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
                       },
                       "archive": {
                         "type": "boolean"
@@ -21578,6 +23305,12 @@ export const BasesShowReturnSchema = {
                       "aggregateOnly": {
                         "type": "boolean"
                       },
+                      "approve": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
                       "archive": {
                         "type": "boolean"
                       },
@@ -21614,6 +23347,37 @@ export const BasesShowReturnSchema = {
                         "config": {
                           "additionalProperties": false,
                           "properties": {
+                            "agent": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "approvers": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "kind": {
+                                    "type": "string"
+                                  },
+                                  "minRole": {
+                                    "type": "string"
+                                  },
+                                  "userId": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "array"
+                            },
                             "currency": {
                               "type": "string"
                             },
@@ -21622,6 +23386,15 @@ export const BasesShowReturnSchema = {
                             },
                             "includeTime": {
                               "type": "boolean"
+                            },
+                            "inputs": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "instructions": {
+                              "type": "string"
                             },
                             "options": {
                               "items": {
@@ -21652,8 +23425,17 @@ export const BasesShowReturnSchema = {
                               },
                               "type": "array"
                             },
+                            "output": {
+                              "type": "string"
+                            },
                             "precision": {
                               "type": "number"
+                            },
+                            "resetOn": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
                             }
                           },
                           "type": "object"
@@ -21779,6 +23561,10 @@ export const BasesShowReturnSchema = {
 export const BasesSubscribeInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "agent": {
+      "description": "With --trigger: the agent the trigger wakes (required)",
+      "type": "string"
+    },
     "base": {
       "description": "Base id or slug",
       "type": "string"
@@ -21787,8 +23573,32 @@ export const BasesSubscribeInputSchema = {
       "description": "Console base URL",
       "type": "string"
     },
+    "events": {
+      "description": "Only these events, comma-separated: row.created, row.updated, row.archived, row.restored, approval.requested, approval.decided, agent.requested, agent.backfill",
+      "type": "string"
+    },
+    "message": {
+      "description": "With --trigger: prompt template ({{data.<path>}}); default: a short Bases event prompt",
+      "type": "string"
+    },
     "project": {
       "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "props": {
+      "description": "Only changes to these properties, comma-separated keys or ids (1-20)",
+      "type": "string"
+    },
+    "session": {
+      "description": "With --trigger: session to run in, by name or template (e.g. bases-{{data.payload.rowId}}); default: the current session, or the agent main session",
+      "type": "string"
+    },
+    "trigger": {
+      "description": "Also create a local trigger on ravi.console.inbox.item for these events; from an agent session it is a disabled draft",
+      "type": "boolean"
+    },
+    "view": {
+      "description": "Only rows that pass this view's filter, evaluated for you (after the write; before an archive)",
       "type": "string"
     }
   },
@@ -21821,6 +23631,39 @@ export const BasesSubscribeReturnSchema = {
       ],
       "type": "object"
     },
+    "filter": {
+      "additionalProperties": false,
+      "properties": {
+        "events": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "properties": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "viewId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "viewId",
+        "properties",
+        "events"
+      ],
+      "type": "object"
+    },
     "projectRef": {
       "type": "string"
     },
@@ -21832,6 +23675,12 @@ export const BasesSubscribeReturnSchema = {
         },
         "createdAt": {
           "type": "string"
+        },
+        "events": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "id": {
           "type": "string"
@@ -21849,6 +23698,12 @@ export const BasesSubscribeReturnSchema = {
         "localInstallationId": {
           "type": "string"
         },
+        "properties": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "revokedAt": {
           "anyOf": [
             {
@@ -21864,6 +23719,16 @@ export const BasesSubscribeReturnSchema = {
         },
         "userId": {
           "type": "string"
+        },
+        "viewId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -21881,6 +23746,61 @@ export const BasesSubscribeReturnSchema = {
     "success": {
       "const": true,
       "type": "boolean"
+    },
+    "trigger": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "created": {
+          "type": "boolean"
+        },
+        "draft": {
+          "type": "boolean"
+        },
+        "enableCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "filter": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "session": {
+          "type": "string"
+        },
+        "topic": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "enabled",
+        "created",
+        "draft",
+        "agentId",
+        "session",
+        "topic",
+        "filter",
+        "enableCommand"
+      ],
+      "type": "object"
     }
   },
   "required": [
@@ -21888,6 +23808,7 @@ export const BasesSubscribeReturnSchema = {
     "consoleUrl",
     "projectRef",
     "subscription",
+    "filter",
     "delivery"
   ],
   "type": "object"
@@ -21939,6 +23860,12 @@ export const BasesSubscriptionsReturnSchema = {
           "createdAt": {
             "type": "string"
           },
+          "events": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "id": {
             "type": "string"
           },
@@ -21955,6 +23882,12 @@ export const BasesSubscriptionsReturnSchema = {
           "localInstallationId": {
             "type": "string"
           },
+          "properties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "revokedAt": {
             "anyOf": [
               {
@@ -21970,6 +23903,16 @@ export const BasesSubscriptionsReturnSchema = {
           },
           "userId": {
             "type": "string"
+          },
+          "viewId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -22048,6 +23991,12 @@ export const BasesUnsubscribeReturnSchema = {
         "createdAt": {
           "type": "string"
         },
+        "events": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "id": {
           "type": "string"
         },
@@ -22064,6 +24013,12 @@ export const BasesUnsubscribeReturnSchema = {
         "localInstallationId": {
           "type": "string"
         },
+        "properties": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "revokedAt": {
           "anyOf": [
             {
@@ -22079,6 +24034,16 @@ export const BasesUnsubscribeReturnSchema = {
         },
         "userId": {
           "type": "string"
+        },
+        "viewId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -22395,6 +24360,12 @@ export const BasesViewsArchiveReturnSchema = {
             "aggregateOnly": {
               "type": "boolean"
             },
+            "approve": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
             "archive": {
               "type": "boolean"
             },
@@ -22673,6 +24644,12 @@ export const BasesViewsBindReturnSchema = {
             "aggregateOnly": {
               "type": "boolean"
             },
+            "approve": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
             "archive": {
               "type": "boolean"
             },
@@ -22861,6 +24838,10 @@ export const BasesViewsCreateInputSchema = {
       "description": "Console base URL",
       "type": "string"
     },
+    "idempotencyKey": {
+      "description": "Idempotency key: a retry with the same key and request returns the created object (default: generated)",
+      "type": "string"
+    },
     "name": {
       "description": "View name (overrides spec.name)",
       "type": "string"
@@ -22927,6 +24908,9 @@ export const BasesViewsCreateReturnSchema = {
     "consoleUrl": {
       "type": "string"
     },
+    "idempotencyKey": {
+      "type": "string"
+    },
     "projectRef": {
       "type": "string"
     },
@@ -22954,6 +24938,12 @@ export const BasesViewsCreateReturnSchema = {
           "properties": {
             "aggregateOnly": {
               "type": "boolean"
+            },
+            "approve": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             },
             "archive": {
               "type": "boolean"
@@ -23109,7 +25099,8 @@ export const BasesViewsCreateReturnSchema = {
     "consoleUrl",
     "projectRef",
     "baseRef",
-    "view"
+    "view",
+    "idempotencyKey"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -23219,6 +25210,12 @@ export const BasesViewsListReturnSchema = {
                 "properties": {
                   "aggregateOnly": {
                     "type": "boolean"
+                  },
+                  "approve": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
                   },
                   "archive": {
                     "type": "boolean"
@@ -23362,6 +25359,12 @@ export const BasesViewsListReturnSchema = {
                   "aggregateOnly": {
                     "type": "boolean"
                   },
+                  "approve": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
                   "archive": {
                     "type": "boolean"
                   },
@@ -23398,6 +25401,37 @@ export const BasesViewsListReturnSchema = {
                     "config": {
                       "additionalProperties": false,
                       "properties": {
+                        "agent": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "approvers": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "kind": {
+                                "type": "string"
+                              },
+                              "minRole": {
+                                "type": "string"
+                              },
+                              "userId": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "kind"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
                         "currency": {
                           "type": "string"
                         },
@@ -23406,6 +25440,15 @@ export const BasesViewsListReturnSchema = {
                         },
                         "includeTime": {
                           "type": "boolean"
+                        },
+                        "inputs": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "instructions": {
+                          "type": "string"
                         },
                         "options": {
                           "items": {
@@ -23436,8 +25479,17 @@ export const BasesViewsListReturnSchema = {
                           },
                           "type": "array"
                         },
+                        "output": {
+                          "type": "string"
+                        },
                         "precision": {
                           "type": "number"
+                        },
+                        "resetOn": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
                         }
                       },
                       "type": "object"
@@ -23585,6 +25637,12 @@ export const BasesViewsListReturnSchema = {
                   "aggregateOnly": {
                     "type": "boolean"
                   },
+                  "approve": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
                   "archive": {
                     "type": "boolean"
                   },
@@ -23727,6 +25785,12 @@ export const BasesViewsListReturnSchema = {
                   "aggregateOnly": {
                     "type": "boolean"
                   },
+                  "approve": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
                   "archive": {
                     "type": "boolean"
                   },
@@ -23763,6 +25827,37 @@ export const BasesViewsListReturnSchema = {
                     "config": {
                       "additionalProperties": false,
                       "properties": {
+                        "agent": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "approvers": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "kind": {
+                                "type": "string"
+                              },
+                              "minRole": {
+                                "type": "string"
+                              },
+                              "userId": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "kind"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
                         "currency": {
                           "type": "string"
                         },
@@ -23771,6 +25866,15 @@ export const BasesViewsListReturnSchema = {
                         },
                         "includeTime": {
                           "type": "boolean"
+                        },
+                        "inputs": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "instructions": {
+                          "type": "string"
                         },
                         "options": {
                           "items": {
@@ -23801,8 +25905,17 @@ export const BasesViewsListReturnSchema = {
                           },
                           "type": "array"
                         },
+                        "output": {
+                          "type": "string"
+                        },
                         "precision": {
                           "type": "number"
+                        },
+                        "resetOn": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
                         }
                       },
                       "type": "object"
@@ -24174,6 +26287,372 @@ export const BasesViewsQueryReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `bases.views.share`. */
+export const BasesViewsShareInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "archive": {
+      "description": "Also let the site archive rows through the view",
+      "type": "boolean"
+    },
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "create": {
+      "description": "Also let the site create rows through the view",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "site": {
+      "description": "Pages site (host) of this project: slug, id or hostname",
+      "type": "string"
+    },
+    "view": {
+      "description": "View id",
+      "type": "string"
+    },
+    "write": {
+      "description": "Also let the site write these columns (comma-separated; shared by every write principal)",
+      "type": "string"
+    },
+    "writeOnly": {
+      "description": "Grant only the write side, without reading rows (a form view with access.read: [])",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "base",
+    "view"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `bases.views.share`. */
+export const BasesViewsShareReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "disclosure": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "grants": {
+      "additionalProperties": false,
+      "properties": {
+        "archive": {
+          "type": "boolean"
+        },
+        "create": {
+          "type": "boolean"
+        },
+        "read": {
+          "type": "boolean"
+        },
+        "writeColumns": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "read",
+        "writeColumns",
+        "create",
+        "archive"
+      ],
+      "type": "object"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "site": {
+      "additionalProperties": false,
+      "properties": {
+        "hostname": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "isDefault": {
+          "type": "boolean"
+        },
+        "slug": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "slug",
+        "hostname",
+        "isDefault"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "view": {
+      "additionalProperties": false,
+      "properties": {
+        "access": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "baseId": {
+          "type": "string"
+        },
+        "capabilities": {
+          "additionalProperties": false,
+          "properties": {
+            "aggregateOnly": {
+              "type": "boolean"
+            },
+            "approve": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "archive": {
+              "type": "boolean"
+            },
+            "create": {
+              "type": "boolean"
+            },
+            "manage": {
+              "type": "boolean"
+            },
+            "read": {
+              "type": "boolean"
+            },
+            "writeColumns": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "read",
+            "aggregateOnly",
+            "writeColumns",
+            "create",
+            "archive",
+            "manage"
+          ],
+          "type": "object"
+        },
+        "columns": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "invalidReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "layout": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "position": {
+          "type": "number"
+        },
+        "query": {
+          "additionalProperties": false,
+          "properties": {
+            "filter": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/__schema0"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sort": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "dir": {
+                    "type": "string"
+                  },
+                  "prop": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "prop",
+                  "dir"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "filter",
+            "sort"
+          ],
+          "type": "object"
+        },
+        "status": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "valid": {
+          "type": "boolean"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "baseId",
+        "name",
+        "description",
+        "columns",
+        "query",
+        "layout",
+        "access",
+        "position",
+        "version",
+        "status",
+        "valid",
+        "invalidReason",
+        "createdAt",
+        "updatedAt",
+        "capabilities"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "view",
+    "site",
+    "changed",
+    "grants",
+    "disclosure"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `bases.views.show`. */
 export const BasesViewsShowInputSchema = {
   "additionalProperties": false,
@@ -24268,6 +26747,12 @@ export const BasesViewsShowReturnSchema = {
             "aggregateOnly": {
               "type": "boolean"
             },
+            "approve": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
             "archive": {
               "type": "boolean"
             },
@@ -24304,6 +26789,37 @@ export const BasesViewsShowReturnSchema = {
               "config": {
                 "additionalProperties": false,
                 "properties": {
+                  "agent": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "approvers": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "kind": {
+                          "type": "string"
+                        },
+                        "minRole": {
+                          "type": "string"
+                        },
+                        "userId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
                   "currency": {
                     "type": "string"
                   },
@@ -24312,6 +26828,15 @@ export const BasesViewsShowReturnSchema = {
                   },
                   "includeTime": {
                     "type": "boolean"
+                  },
+                  "inputs": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "instructions": {
+                    "type": "string"
                   },
                   "options": {
                     "items": {
@@ -24342,8 +26867,17 @@ export const BasesViewsShowReturnSchema = {
                     },
                     "type": "array"
                   },
+                  "output": {
+                    "type": "string"
+                  },
                   "precision": {
                     "type": "number"
+                  },
+                  "resetOn": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
                   }
                 },
                 "type": "object"
@@ -24423,6 +26957,12 @@ export const BasesViewsShowReturnSchema = {
               "properties": {
                 "aggregateOnly": {
                   "type": "boolean"
+                },
+                "approve": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 "archive": {
                   "type": "boolean"
@@ -24711,6 +27251,12 @@ export const BasesViewsUpdateReturnSchema = {
           "properties": {
             "aggregateOnly": {
               "type": "boolean"
+            },
+            "approve": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             },
             "archive": {
               "type": "boolean"

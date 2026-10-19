@@ -87,6 +87,7 @@ A `bootstrap` agent holds:
 
 - every tool the provider offers (`use:tool:*`, `use:toolgroup:*`), including file read and write tools;
 - the CLI groups `sessions`, `tasks`, `specs`, `skills`, `self` and `doctor`;
+- Bases reads through views and charts: `ravi bases list|show`, `ravi bases views list|show|query` and `ravi bases charts list|show|data` (`read:bases:list`, `read:bases.views:query`, `read:bases.charts:data` and the like). The Console still decides what each view shows. Direct row reads (`ravi bases rows query`, `ravi bases aggregate`) and every Bases write need an explicit capability, such as `mutate:bases.rows:add`; `ravi bases rows approve|reject` is in no default;
 - the executables `bun`, `cat`, `date`, `find`, `git`, `head`, `ls`, `nl`, `pwd`, `ravi`, `rg`, `sed`, `sort`, `tail`, `uniq`, `wc` and `xargs`;
 - `read_own_contacts:system:*`.
 

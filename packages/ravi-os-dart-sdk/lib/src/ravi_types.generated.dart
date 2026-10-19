@@ -3082,9 +3082,10 @@ class BasesChartsArchiveReturn {
 BasesChartsArchiveReturn basesChartsArchiveReturnFromJson(Object? json) => BasesChartsArchiveReturn.fromJsonValue(json);
 
 class BasesChartsCreateOptions {
-  const BasesChartsCreateOptions({this.console, this.name, this.project, this.spec, this.view});
+  const BasesChartsCreateOptions({this.console, this.idempotencyKey, this.name, this.project, this.spec, this.view});
 
   final String? console;
+  final String? idempotencyKey;
   final String? name;
   final String? project;
   final String? spec;
@@ -3093,6 +3094,9 @@ class BasesChartsCreateOptions {
   void encodeBody(Map<String, RaviJson> into) {
     if (console != null) {
       into["console"] = RaviJson.from(console);
+    }
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
     }
     if (name != null) {
       into["name"] = RaviJson.from(name);
@@ -3110,11 +3114,12 @@ class BasesChartsCreateOptions {
 }
 
 class BasesChartsCreateReturn {
-  const BasesChartsCreateReturn({required this.baseRef, required this.chart, required this.consoleUrl, required this.projectRef, required this.success});
+  const BasesChartsCreateReturn({required this.baseRef, required this.chart, required this.consoleUrl, required this.idempotencyKey, required this.projectRef, required this.success});
 
   final String baseRef;
   final RaviJson chart;
   final String consoleUrl;
+  final String idempotencyKey;
   final String projectRef;
   final bool success;
 
@@ -3123,6 +3128,7 @@ class BasesChartsCreateReturn {
       baseRef: raviJsonAsString(json["baseRef"]),
       chart: RaviJson.from(json["chart"]),
       consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      idempotencyKey: raviJsonAsString(json["idempotencyKey"]),
       projectRef: raviJsonAsString(json["projectRef"]),
       success: raviJsonAsBool(json["success"]),
     );
@@ -3342,11 +3348,12 @@ class BasesChartsUpdateReturn {
 BasesChartsUpdateReturn basesChartsUpdateReturnFromJson(Object? json) => BasesChartsUpdateReturn.fromJsonValue(json);
 
 class BasesCreateOptions {
-  const BasesCreateOptions({this.console, this.description, this.icon, this.project, this.schema, this.slug, this.timezone});
+  const BasesCreateOptions({this.console, this.description, this.icon, this.idempotencyKey, this.project, this.schema, this.slug, this.timezone});
 
   final String? console;
   final String? description;
   final String? icon;
+  final String? idempotencyKey;
   final String? project;
   final String? schema;
   final String? slug;
@@ -3361,6 +3368,9 @@ class BasesCreateOptions {
     }
     if (icon != null) {
       into["icon"] = RaviJson.from(icon);
+    }
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
     }
     if (project != null) {
       into["project"] = RaviJson.from(project);
@@ -3378,10 +3388,11 @@ class BasesCreateOptions {
 }
 
 class BasesCreateReturn {
-  const BasesCreateReturn({required this.base, required this.consoleUrl, required this.projectRef, required this.success});
+  const BasesCreateReturn({required this.base, required this.consoleUrl, required this.idempotencyKey, required this.projectRef, required this.success});
 
   final RaviJson base;
   final String consoleUrl;
+  final String idempotencyKey;
   final String projectRef;
   final bool success;
 
@@ -3389,6 +3400,7 @@ class BasesCreateReturn {
     return BasesCreateReturn(
       base: RaviJson.from(json["base"]),
       consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      idempotencyKey: raviJsonAsString(json["idempotencyKey"]),
       projectRef: raviJsonAsString(json["projectRef"]),
       success: raviJsonAsBool(json["success"]),
     );
@@ -3464,20 +3476,33 @@ class BasesListReturn {
 BasesListReturn basesListReturnFromJson(Object? json) => BasesListReturn.fromJsonValue(json);
 
 class BasesPropsAddOptions {
-  const BasesPropsAddOptions({this.config, this.console, this.description, this.expectedSchemaVersion, this.key, this.options, this.position, this.project, this.required_, this.type});
+  const BasesPropsAddOptions({this.agent, this.approvers, this.config, this.console, this.description, this.expectedSchemaVersion, this.idempotencyKey, this.inputs, this.instructions, this.key, this.options, this.output, this.position, this.project, this.required_, this.resetOn, this.type});
 
+  final String? agent;
+  final String? approvers;
   final String? config;
   final String? console;
   final String? description;
   final String? expectedSchemaVersion;
+  final String? idempotencyKey;
+  final String? inputs;
+  final String? instructions;
   final String? key;
   final String? options;
+  final String? output;
   final String? position;
   final String? project;
   final bool? required_;
+  final String? resetOn;
   final String? type;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (agent != null) {
+      into["agent"] = RaviJson.from(agent);
+    }
+    if (approvers != null) {
+      into["approvers"] = RaviJson.from(approvers);
+    }
     if (config != null) {
       into["config"] = RaviJson.from(config);
     }
@@ -3490,11 +3515,23 @@ class BasesPropsAddOptions {
     if (expectedSchemaVersion != null) {
       into["expectedSchemaVersion"] = RaviJson.from(expectedSchemaVersion);
     }
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
+    }
+    if (inputs != null) {
+      into["inputs"] = RaviJson.from(inputs);
+    }
+    if (instructions != null) {
+      into["instructions"] = RaviJson.from(instructions);
+    }
     if (key != null) {
       into["key"] = RaviJson.from(key);
     }
     if (options != null) {
       into["options"] = RaviJson.from(options);
+    }
+    if (output != null) {
+      into["output"] = RaviJson.from(output);
     }
     if (position != null) {
       into["position"] = RaviJson.from(position);
@@ -3505,6 +3542,9 @@ class BasesPropsAddOptions {
     if (required_ != null) {
       into["required"] = RaviJson.from(required_);
     }
+    if (resetOn != null) {
+      into["resetOn"] = RaviJson.from(resetOn);
+    }
     if (type != null) {
       into["type"] = RaviJson.from(type);
     }
@@ -3512,10 +3552,11 @@ class BasesPropsAddOptions {
 }
 
 class BasesPropsAddReturn {
-  const BasesPropsAddReturn({required this.base, required this.consoleUrl, required this.projectRef, required this.property, required this.report, required this.success});
+  const BasesPropsAddReturn({required this.base, required this.consoleUrl, required this.idempotencyKey, required this.projectRef, required this.property, required this.report, required this.success});
 
   final RaviJson base;
   final String consoleUrl;
+  final String idempotencyKey;
   final String projectRef;
   final RaviJson property;
   final RaviJson report;
@@ -3525,6 +3566,7 @@ class BasesPropsAddReturn {
     return BasesPropsAddReturn(
       base: RaviJson.from(json["base"]),
       consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      idempotencyKey: raviJsonAsString(json["idempotencyKey"]),
       projectRef: raviJsonAsString(json["projectRef"]),
       property: RaviJson.from(json["property"]),
       report: RaviJson.from(json["report"]),
@@ -3913,6 +3955,80 @@ class BasesRowsAddReturn {
 
 BasesRowsAddReturn basesRowsAddReturnFromJson(Object? json) => BasesRowsAddReturn.fromJsonValue(json);
 
+class BasesRowsApproveOptions {
+  const BasesRowsApproveOptions({this.console, this.execute, this.expectedVersion, this.idempotencyKey, this.note, this.project, this.view});
+
+  final String? console;
+  final bool? execute;
+  final String? expectedVersion;
+  final String? idempotencyKey;
+  final String? note;
+  final String? project;
+  final String? view;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (expectedVersion != null) {
+      into["expectedVersion"] = RaviJson.from(expectedVersion);
+    }
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
+    }
+    if (note != null) {
+      into["note"] = RaviJson.from(note);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (view != null) {
+      into["view"] = RaviJson.from(view);
+    }
+  }
+}
+
+class BasesRowsApproveReturn {
+  const BasesRowsApproveReturn({required this.baseRef, required this.consoleUrl, required this.idempotencyKey, required this.idempotentReplay, required this.projectRef, required this.property, required this.row, required this.state, required this.success, required this.users, required this.viewId});
+
+  final String baseRef;
+  final String consoleUrl;
+  final String idempotencyKey;
+  final bool idempotentReplay;
+  final String projectRef;
+  final String property;
+  final RaviJson row;
+  final String state;
+  final bool success;
+  final Map<String, RaviJson> users;
+  final RaviJson viewId;
+
+  factory BasesRowsApproveReturn.fromJson(Map<String, Object?> json) {
+    return BasesRowsApproveReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      idempotencyKey: raviJsonAsString(json["idempotencyKey"]),
+      idempotentReplay: raviJsonAsBool(json["idempotentReplay"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      property: raviJsonAsString(json["property"]),
+      row: RaviJson.from(json["row"]),
+      state: raviJsonAsString(json["state"]),
+      success: raviJsonAsBool(json["success"]),
+      users: raviJsonAsRaviJsonMap(json["users"]),
+      viewId: RaviJson.from(json["viewId"]),
+    );
+  }
+
+  static BasesRowsApproveReturn fromJsonValue(Object? json) {
+    return BasesRowsApproveReturn.fromJson(raviJsonObject(json, "BasesRowsApproveReturn"));
+  }
+}
+
+BasesRowsApproveReturn basesRowsApproveReturnFromJson(Object? json) => BasesRowsApproveReturn.fromJsonValue(json);
+
 class BasesRowsArchiveOptions {
   const BasesRowsArchiveOptions({this.console, this.expectedVersion, this.lastWriteWins, this.project, this.view});
 
@@ -4054,6 +4170,76 @@ class BasesRowsExportReturn {
 }
 
 BasesRowsExportReturn basesRowsExportReturnFromJson(Object? json) => BasesRowsExportReturn.fromJsonValue(json);
+
+class BasesRowsFillOptions {
+  const BasesRowsFillOptions({this.console, this.error, this.idempotencyKey, this.inputsHash, this.project, this.value});
+
+  final String? console;
+  final String? error;
+  final String? idempotencyKey;
+  final String? inputsHash;
+  final String? project;
+  final String? value;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (error != null) {
+      into["error"] = RaviJson.from(error);
+    }
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
+    }
+    if (inputsHash != null) {
+      into["inputsHash"] = RaviJson.from(inputsHash);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (value != null) {
+      into["value"] = RaviJson.from(value);
+    }
+  }
+}
+
+class BasesRowsFillReturn {
+  const BasesRowsFillReturn({required this.baseRef, required this.consoleUrl, required this.idempotencyKey, required this.idempotentReplay, required this.projectRef, required this.property, required this.row, required this.success, required this.users, required this.viewId, this.warnings});
+
+  final String baseRef;
+  final String consoleUrl;
+  final String idempotencyKey;
+  final bool idempotentReplay;
+  final String projectRef;
+  final String property;
+  final RaviJson row;
+  final bool success;
+  final Map<String, RaviJson> users;
+  final RaviJson viewId;
+  final List<String>? warnings;
+
+  factory BasesRowsFillReturn.fromJson(Map<String, Object?> json) {
+    return BasesRowsFillReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      idempotencyKey: raviJsonAsString(json["idempotencyKey"]),
+      idempotentReplay: raviJsonAsBool(json["idempotentReplay"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      property: raviJsonAsString(json["property"]),
+      row: RaviJson.from(json["row"]),
+      success: raviJsonAsBool(json["success"]),
+      users: raviJsonAsRaviJsonMap(json["users"]),
+      viewId: RaviJson.from(json["viewId"]),
+      warnings: json["warnings"] == null ? null : raviJsonAsList(json["warnings"], raviJsonAsString),
+    );
+  }
+
+  static BasesRowsFillReturn fromJsonValue(Object? json) {
+    return BasesRowsFillReturn.fromJson(raviJsonObject(json, "BasesRowsFillReturn"));
+  }
+}
+
+BasesRowsFillReturn basesRowsFillReturnFromJson(Object? json) => BasesRowsFillReturn.fromJsonValue(json);
 
 class BasesRowsGetOptions {
   const BasesRowsGetOptions({this.console, this.includeArchived, this.project, this.view});
@@ -4379,6 +4565,200 @@ class BasesRowsQueryReturn {
 
 BasesRowsQueryReturn basesRowsQueryReturnFromJson(Object? json) => BasesRowsQueryReturn.fromJsonValue(json);
 
+class BasesRowsRejectOptions {
+  const BasesRowsRejectOptions({this.console, this.execute, this.expectedVersion, this.idempotencyKey, this.note, this.project, this.view});
+
+  final String? console;
+  final bool? execute;
+  final String? expectedVersion;
+  final String? idempotencyKey;
+  final String? note;
+  final String? project;
+  final String? view;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (expectedVersion != null) {
+      into["expectedVersion"] = RaviJson.from(expectedVersion);
+    }
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
+    }
+    if (note != null) {
+      into["note"] = RaviJson.from(note);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (view != null) {
+      into["view"] = RaviJson.from(view);
+    }
+  }
+}
+
+class BasesRowsRejectReturn {
+  const BasesRowsRejectReturn({required this.baseRef, required this.consoleUrl, required this.idempotencyKey, required this.idempotentReplay, required this.projectRef, required this.property, required this.row, required this.state, required this.success, required this.users, required this.viewId});
+
+  final String baseRef;
+  final String consoleUrl;
+  final String idempotencyKey;
+  final bool idempotentReplay;
+  final String projectRef;
+  final String property;
+  final RaviJson row;
+  final String state;
+  final bool success;
+  final Map<String, RaviJson> users;
+  final RaviJson viewId;
+
+  factory BasesRowsRejectReturn.fromJson(Map<String, Object?> json) {
+    return BasesRowsRejectReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      idempotencyKey: raviJsonAsString(json["idempotencyKey"]),
+      idempotentReplay: raviJsonAsBool(json["idempotentReplay"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      property: raviJsonAsString(json["property"]),
+      row: RaviJson.from(json["row"]),
+      state: raviJsonAsString(json["state"]),
+      success: raviJsonAsBool(json["success"]),
+      users: raviJsonAsRaviJsonMap(json["users"]),
+      viewId: RaviJson.from(json["viewId"]),
+    );
+  }
+
+  static BasesRowsRejectReturn fromJsonValue(Object? json) {
+    return BasesRowsRejectReturn.fromJson(raviJsonObject(json, "BasesRowsRejectReturn"));
+  }
+}
+
+BasesRowsRejectReturn basesRowsRejectReturnFromJson(Object? json) => BasesRowsRejectReturn.fromJsonValue(json);
+
+class BasesRowsRequestApprovalOptions {
+  const BasesRowsRequestApprovalOptions({this.console, this.expectedVersion, this.idempotencyKey, this.note, this.project, this.view});
+
+  final String? console;
+  final String? expectedVersion;
+  final String? idempotencyKey;
+  final String? note;
+  final String? project;
+  final String? view;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (expectedVersion != null) {
+      into["expectedVersion"] = RaviJson.from(expectedVersion);
+    }
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
+    }
+    if (note != null) {
+      into["note"] = RaviJson.from(note);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (view != null) {
+      into["view"] = RaviJson.from(view);
+    }
+  }
+}
+
+class BasesRowsRequestApprovalReturn {
+  const BasesRowsRequestApprovalReturn({required this.baseRef, required this.consoleUrl, required this.idempotencyKey, required this.idempotentReplay, required this.projectRef, required this.property, required this.row, required this.state, required this.success, required this.users, required this.viewId});
+
+  final String baseRef;
+  final String consoleUrl;
+  final String idempotencyKey;
+  final bool idempotentReplay;
+  final String projectRef;
+  final String property;
+  final RaviJson row;
+  final String state;
+  final bool success;
+  final Map<String, RaviJson> users;
+  final RaviJson viewId;
+
+  factory BasesRowsRequestApprovalReturn.fromJson(Map<String, Object?> json) {
+    return BasesRowsRequestApprovalReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      idempotencyKey: raviJsonAsString(json["idempotencyKey"]),
+      idempotentReplay: raviJsonAsBool(json["idempotentReplay"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      property: raviJsonAsString(json["property"]),
+      row: RaviJson.from(json["row"]),
+      state: raviJsonAsString(json["state"]),
+      success: raviJsonAsBool(json["success"]),
+      users: raviJsonAsRaviJsonMap(json["users"]),
+      viewId: RaviJson.from(json["viewId"]),
+    );
+  }
+
+  static BasesRowsRequestApprovalReturn fromJsonValue(Object? json) {
+    return BasesRowsRequestApprovalReturn.fromJson(raviJsonObject(json, "BasesRowsRequestApprovalReturn"));
+  }
+}
+
+BasesRowsRequestApprovalReturn basesRowsRequestApprovalReturnFromJson(Object? json) => BasesRowsRequestApprovalReturn.fromJsonValue(json);
+
+class BasesRowsRerunOptions {
+  const BasesRowsRerunOptions({this.console, this.project});
+
+  final String? console;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class BasesRowsRerunReturn {
+  const BasesRowsRerunReturn({required this.baseRef, required this.consoleUrl, required this.idempotentReplay, required this.projectRef, required this.property, required this.row, required this.success, required this.users, required this.viewId});
+
+  final String baseRef;
+  final String consoleUrl;
+  final bool idempotentReplay;
+  final String projectRef;
+  final String property;
+  final RaviJson row;
+  final bool success;
+  final Map<String, RaviJson> users;
+  final RaviJson viewId;
+
+  factory BasesRowsRerunReturn.fromJson(Map<String, Object?> json) {
+    return BasesRowsRerunReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      idempotentReplay: raviJsonAsBool(json["idempotentReplay"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      property: raviJsonAsString(json["property"]),
+      row: RaviJson.from(json["row"]),
+      success: raviJsonAsBool(json["success"]),
+      users: raviJsonAsRaviJsonMap(json["users"]),
+      viewId: RaviJson.from(json["viewId"]),
+    );
+  }
+
+  static BasesRowsRerunReturn fromJsonValue(Object? json) {
+    return BasesRowsRerunReturn.fromJson(raviJsonObject(json, "BasesRowsRerunReturn"));
+  }
+}
+
+BasesRowsRerunReturn basesRowsRerunReturnFromJson(Object? json) => BasesRowsRerunReturn.fromJsonValue(json);
+
 class BasesRowsRestoreOptions {
   const BasesRowsRestoreOptions({this.console, this.expectedVersion, this.lastWriteWins, this.project});
 
@@ -4560,37 +4940,69 @@ class BasesShowReturn {
 BasesShowReturn basesShowReturnFromJson(Object? json) => BasesShowReturn.fromJsonValue(json);
 
 class BasesSubscribeOptions {
-  const BasesSubscribeOptions({this.console, this.project});
+  const BasesSubscribeOptions({this.agent, this.console, this.events, this.message, this.project, this.props, this.session, this.trigger, this.view});
 
+  final String? agent;
   final String? console;
+  final String? events;
+  final String? message;
   final String? project;
+  final String? props;
+  final String? session;
+  final bool? trigger;
+  final String? view;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (agent != null) {
+      into["agent"] = RaviJson.from(agent);
+    }
     if (console != null) {
       into["console"] = RaviJson.from(console);
     }
+    if (events != null) {
+      into["events"] = RaviJson.from(events);
+    }
+    if (message != null) {
+      into["message"] = RaviJson.from(message);
+    }
     if (project != null) {
       into["project"] = RaviJson.from(project);
+    }
+    if (props != null) {
+      into["props"] = RaviJson.from(props);
+    }
+    if (session != null) {
+      into["session"] = RaviJson.from(session);
+    }
+    if (trigger != null) {
+      into["trigger"] = RaviJson.from(trigger);
+    }
+    if (view != null) {
+      into["view"] = RaviJson.from(view);
     }
   }
 }
 
 class BasesSubscribeReturn {
-  const BasesSubscribeReturn({required this.consoleUrl, required this.delivery, required this.projectRef, required this.subscription, required this.success});
+  const BasesSubscribeReturn({required this.consoleUrl, required this.delivery, required this.filter, required this.projectRef, required this.subscription, required this.success, this.trigger});
 
   final String consoleUrl;
   final RaviJson delivery;
+  final RaviJson filter;
   final String projectRef;
   final RaviJson subscription;
   final bool success;
+  final RaviJson? trigger;
 
   factory BasesSubscribeReturn.fromJson(Map<String, Object?> json) {
     return BasesSubscribeReturn(
       consoleUrl: raviJsonAsString(json["consoleUrl"]),
       delivery: RaviJson.from(json["delivery"]),
+      filter: RaviJson.from(json["filter"]),
       projectRef: raviJsonAsString(json["projectRef"]),
       subscription: RaviJson.from(json["subscription"]),
       success: raviJsonAsBool(json["success"]),
+      trigger: json["trigger"] == null ? null : RaviJson.from(json["trigger"]),
     );
   }
 
@@ -4850,9 +5262,10 @@ class BasesViewsBindReturn {
 BasesViewsBindReturn basesViewsBindReturnFromJson(Object? json) => BasesViewsBindReturn.fromJsonValue(json);
 
 class BasesViewsCreateOptions {
-  const BasesViewsCreateOptions({this.console, this.name, this.project, this.spec});
+  const BasesViewsCreateOptions({this.console, this.idempotencyKey, this.name, this.project, this.spec});
 
   final String? console;
+  final String? idempotencyKey;
   final String? name;
   final String? project;
   final String? spec;
@@ -4860,6 +5273,9 @@ class BasesViewsCreateOptions {
   void encodeBody(Map<String, RaviJson> into) {
     if (console != null) {
       into["console"] = RaviJson.from(console);
+    }
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
     }
     if (name != null) {
       into["name"] = RaviJson.from(name);
@@ -4874,10 +5290,11 @@ class BasesViewsCreateOptions {
 }
 
 class BasesViewsCreateReturn {
-  const BasesViewsCreateReturn({required this.baseRef, required this.consoleUrl, required this.projectRef, required this.success, required this.view});
+  const BasesViewsCreateReturn({required this.baseRef, required this.consoleUrl, required this.idempotencyKey, required this.projectRef, required this.success, required this.view});
 
   final String baseRef;
   final String consoleUrl;
+  final String idempotencyKey;
   final String projectRef;
   final bool success;
   final RaviJson view;
@@ -4886,6 +5303,7 @@ class BasesViewsCreateReturn {
     return BasesViewsCreateReturn(
       baseRef: raviJsonAsString(json["baseRef"]),
       consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      idempotencyKey: raviJsonAsString(json["idempotencyKey"]),
       projectRef: raviJsonAsString(json["projectRef"]),
       success: raviJsonAsBool(json["success"]),
       view: RaviJson.from(json["view"]),
@@ -5044,6 +5462,76 @@ class BasesViewsQueryReturn {
 }
 
 BasesViewsQueryReturn basesViewsQueryReturnFromJson(Object? json) => BasesViewsQueryReturn.fromJsonValue(json);
+
+class BasesViewsShareOptions {
+  const BasesViewsShareOptions({this.archive, this.console, this.create, this.project, this.site, this.write, this.writeOnly});
+
+  final bool? archive;
+  final String? console;
+  final bool? create;
+  final String? project;
+  final String? site;
+  final String? write;
+  final bool? writeOnly;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (archive != null) {
+      into["archive"] = RaviJson.from(archive);
+    }
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (create != null) {
+      into["create"] = RaviJson.from(create);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (site != null) {
+      into["site"] = RaviJson.from(site);
+    }
+    if (write != null) {
+      into["write"] = RaviJson.from(write);
+    }
+    if (writeOnly != null) {
+      into["writeOnly"] = RaviJson.from(writeOnly);
+    }
+  }
+}
+
+class BasesViewsShareReturn {
+  const BasesViewsShareReturn({required this.baseRef, required this.changed, required this.consoleUrl, required this.disclosure, required this.grants, required this.projectRef, required this.site, required this.success, required this.view});
+
+  final String baseRef;
+  final bool changed;
+  final String consoleUrl;
+  final List<String> disclosure;
+  final RaviJson grants;
+  final String projectRef;
+  final RaviJson site;
+  final bool success;
+  final RaviJson view;
+
+  factory BasesViewsShareReturn.fromJson(Map<String, Object?> json) {
+    return BasesViewsShareReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      changed: raviJsonAsBool(json["changed"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      disclosure: raviJsonAsList(json["disclosure"], raviJsonAsString),
+      grants: RaviJson.from(json["grants"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      site: RaviJson.from(json["site"]),
+      success: raviJsonAsBool(json["success"]),
+      view: RaviJson.from(json["view"]),
+    );
+  }
+
+  static BasesViewsShareReturn fromJsonValue(Object? json) {
+    return BasesViewsShareReturn.fromJson(raviJsonObject(json, "BasesViewsShareReturn"));
+  }
+}
+
+BasesViewsShareReturn basesViewsShareReturnFromJson(Object? json) => BasesViewsShareReturn.fromJsonValue(json);
 
 class BasesViewsShowOptions {
   const BasesViewsShowOptions({this.console, this.project});

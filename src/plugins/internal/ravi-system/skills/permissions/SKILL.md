@@ -114,7 +114,11 @@ Regras:
   `explicit-only` (só as capabilities explícitas, sem piso bootstrap — para
   agentes que atendem público: `use:tool:Bash` + os grupos/ações necessários),
   `full-access` (break-glass), `none`/`clear`/`off` (apaga overlay e volta ao
-  piso bootstrap). `none` não é zero-authority.
+  piso bootstrap). `none` não é zero-authority. O piso bootstrap inclui
+  leitura de Bases por views e gráficos (`read:bases:list|show`,
+  `read:bases.views:list|show|query`, `read:bases.charts:list|show|data`);
+  `bases rows query`, `aggregate` e escritas seguem opt-in, e
+  `bases rows approve|reject` não entra em grant padrão.
 - `runtime-bootstrap`, `agent-default-capabilities`,
   `agent-identity-permissions` e `contact-policy-permissions` são os
   materializers padrão. `chat-only` e `explicit-only` suprimem a injeção de

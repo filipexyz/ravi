@@ -4,7 +4,7 @@
   e client.js (cópia de _client.js.txt). Ship:
     ravi pages ship --project <p> --title "<título>" --route /<rota> --dir <pasta> \
       --uses ravi.bases.views.describe,ravi.bases.views.query,ravi.bases.views.rows.update --json
-  Outras páginas de dados no host? O --uses leva a união dos ids de todas. Rota private (padrão).
+  O --uses leva só os ids desta rota; as outras páginas do host ficam com os delas. Rota private (padrão).
   Antes: <ravi-view view="<uuid>" layout="board"></ravi-view> já faz este board com o tema, teclado,
   "Mover para…" e o --uses derivado (references/widgets.md). Use este esqueleto só para o que a tag não faz.
   Cores, fontes e espaços: variáveis do tema com fallback (references/theme.md), nunca literais.

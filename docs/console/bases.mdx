@@ -22,13 +22,13 @@ Bases need `ravi.bot@next` (3.261009.2 or later): `bun add -g ravi.bot@next`, or
 |---|---|
 | Project | The Console project that holds your pages and bases. Commands take `--project <slug>` or use your [default project](/console/login#project-scope). |
 | Base | A typed table in a project. The Console has no screen for it: the screen is a page you publish. |
-| Property | A typed column: `text`, `number`, `checkbox`, `date`, `select`, `multi_select`, `status` (options grouped `todo`, `in_progress`, `done`), `url`, `email`, `phone`, `person`, `ref`. No file, formula or relation types. |
+| Property | A typed column: `text`, `number`, `checkbox`, `date`, `select`, `multi_select`, `status` (options grouped `todo`, `in_progress`, `done`), `url`, `email`, `phone`, `person`, `ref`, `approval` (a decision by listed approvers) and `agent` (a value an agent fills from other columns). No file, formula or relation types. |
 | Row | Values by property key, plus an optional markdown body. Every write bumps its `version`, so a write based on an old version fails instead of overwriting. |
 | View | The access contract: columns, a filter the Console applies on every call (`$viewer.raviUserId` or `$viewer.email` give "each person sees their own"), who reads, who writes which columns, and values set on create. |
 | Form | A view with `access.read: []` and `write.create: true`: people submit rows but read nothing. |
 | Chart | A Vega-Lite subset over a view, aggregated on the server. |
-| `--uses` | The actions a page calls, declared when you ship it. Undeclared actions are refused. |
-| Row event | Creating, changing, archiving or restoring a row creates an Agent Inbox item for each subscribed installation. Your daemon publishes it on `ravi.console.inbox.item`. |
+| `--uses` | The actions a route calls, declared when you ship it. The host allows the union of what its active routes declared; anything else is refused. |
+| Row event | Creating, changing, archiving or restoring a row, asking for or deciding an approval, and an agent column needing a value create an Agent Inbox item for each matching subscription. Your daemon publishes it on `ravi.console.inbox.item`. |
 
 ## Who can use a data page
 
@@ -46,7 +46,7 @@ Refusing to ship: this page calls ravi.bases.* and the route would be public. No
 
 `--members-best-effort` overrides it, only for pages whose readers are all members already signed in.
 
-People outside your organization reach the agent through a channel ([Slack](/channels/slack), [WhatsApp](/channels/whatsapp)): the agent writes the row and answers in the conversation. For a public view of the numbers, publish a static snapshot (data inside the HTML, no `ravi.bases.*` in `--uses`) from a separate project.
+People outside your organization reach the agent through a channel ([Slack](/channels/slack), [WhatsApp](/channels/whatsapp)): the agent writes the row and answers in the conversation. For a public view of the numbers, publish a static snapshot (data inside the HTML, no `ravi.bases.*` in `--uses`) on a public route or from a separate project.
 
 ## Before you start
 
@@ -78,7 +78,7 @@ You can also ask your agent to do each step; it follows the `bases` and `pages` 
     ravi pages ship --project <project> --title "Requests" --route /requests --body "<p>Coming soon</p>" --json
     ```
 
-    If other routes on this host are data pages, add their actions with `--uses` on this ship too (see step 5).
+    The placeholder needs no `--uses`. Shipping it never removes the actions other routes on this host declared.
   </Step>
   <Step title="Create the base">
     Save `requests.json`:
@@ -135,6 +135,7 @@ You can also ask your agent to do each step; it follows the `bases` and `pages` 
     - The filter keeps each viewer to the rows they created. The Console applies it on every call; the page cannot widen it.
     - `page_viewer` admits anyone who can open any route of this host, not one person. Per-person access is the filter's job, so project only columns every member may see.
     - The page can write only `request`. Every new row starts as `New` (`write.set`), and `reply` and `status` stay with the agent.
+    - To give the site access to a view that already exists, without editing its JSON: `ravi bases views share requests <VIEW_ID> --site <host> [--write a,b] [--create] [--archive] [--write-only]`. It adds the `page_viewer` principal, saves at the version it read and prints what the host can now read and write. The write settings are shared by every write principal of the view.
   </Step>
   <Step title="Write the page">
     Copy the client. It is the only helper: there is no `window.ravi` and no browser SDK.
@@ -217,7 +218,8 @@ You can also ask your agent to do each step; it follows the `bases` and `pages` 
     The JSON has `url`, `site`, `slug`, `route: "/requests"`, `visibility: "private"`, `artifactId` and `uses`.
 
     - Leave `--visibility` out: the route stays `private`.
-    - `--uses` lists every action the page calls. If other routes on this host are data pages, list their actions too, on every ship to this host. An action left out fails on the page with `connector_not_allowlisted`.
+    - `--uses` lists every action this page calls. Other data pages on the host keep the actions their own ships declared: the host allows the union over its active routes. An action no route declares fails on the page with `connector_not_allowlisted`.
+    - Ship data pages with `ship`. `ravi pages publish` and `artifacts publish` declare no actions, so a data route republished with them loses its own.
     - A `CONFLICT` error on a re-ship usually means an unread comment from someone else on this route. See [the operator bar and comments](/console/pages#the-operator-bar-and-comments).
   </Step>
   <Step title="Open it as a member">
@@ -236,7 +238,9 @@ You can also ask your agent to do each step; it follows the `bases` and `pages` 
 
     `ravi inbox status` must show `required scopes ok  : yes`; if it says `no`, run `ravi login` again. Polling is on by default; `ravi inbox enable` turns it back on if it was disabled.
 
-    The `subscribe` confirmation still says "ids and counts only". The event your trigger receives does include the row values, in `payload.row`.
+    The event your trigger receives carries the row's ids and its values, in `payload.row`.
+
+    To receive only some events, filter the subscription: `--events row.created,row.updated` (also `row.archived`, `row.restored`, `approval.requested`, `approval.decided`, `agent.requested`, `agent.backfill`), `--props a,b` (changes to those properties) and `--view <VIEW_ID>` (rows that pass that view's filter, evaluated for you). The same filter again returns the same subscription; a different filter is a second subscription, and its items carry `payload.subscriptionId`.
   </Step>
   <Step title="Create the trigger">
     ```bash
@@ -261,6 +265,7 @@ You can also ask your agent to do each step; it follows the `bases` and `pages` 
     - **The prompt drains the queue.** The cooldown drops events that arrive while it runs instead of queueing them, and the inbox delivers events in batches. Handling every `New` row means a dropped event is picked up by the next run. The cooldown starts only when an event passes the filter.
     - The idempotency key comes from the row and its version, so a repeated event cannot write twice. `@@SILENT@@` keeps the agent quiet when the queue is empty.
     - The answer lives in the row. To also get a message in a chat, add `--reply-session <session name>`; when you ask the agent to create the trigger from that chat, that is already the default.
+    - `ravi bases subscribe requests --events row.created --trigger --agent main --session requests-queue --message "$MSG"` subscribes and creates an equivalent trigger in one command (without the `surface` condition: add it with `ravi triggers set <id> filter '...'` if only the page counts). Run from your terminal, the trigger is enabled. Run by an agent in a conversation, it is created **disabled**, as a draft: the output gives the command to turn it on (`ravi triggers enable <id>`).
 
     <Warning>
     Everything a member types reaches the agent's prompt. The filter decides who wakes the agent, not what it does. If `main` runs with `full-access`, consider a dedicated agent whose explicit capabilities only cover `ravi bases rows` (`execute:group:bases_rows`). See [Permissions](/guides/permissions).
@@ -273,12 +278,61 @@ You can also ask your agent to do each step; it follows the `bases` and `pages` 
     ravi inbox items --json --limit 5                  # a bases.row.created item arrived
     ravi daemon logs -f                                # "Firing trigger" for "Requests queue"
     ravi bases rows query requests --json              # reply filled, status Done
-    ravi bases rows history requests <rowId> --json    # the page wrote as user, the agent as cli
+    ravi bases rows history requests <rowId> --json    # the page wrote as user, the agent as cli with "agent" set
     ```
 
     Within about a minute (the 15 s inbox poll, the agent's turn, the page's 30 s refresh) the page shows the reply and status `Done`. If not, see [Debugging](#debugging).
   </Step>
 </Steps>
+
+## Who the agent acts as
+
+The CLI talks to the Console with the operator's login. Inside a conversation turn, Ravi tells the Console who wrote the message:
+
+- **A person who linked their account** (`ravi link`) and is an active member: the agent's Bases reads and writes in that turn act as that person, with the smaller of their role and the operator's. A view filtered by `$viewer` shows that person's rows.
+- **A person who did not link**: reads use the operator's login; writes are refused with `ACTOR_NOT_LINKED` and Ravi starts the link.
+- **Other turns** (your terminal, cron, triggers): the operator.
+
+Every row write is recorded for the accountable person, as `cli`, with the agent next to it in `rows history`. The anti-loop filter `data.actor.type == "user"` keeps working.
+
+By default an agent can read Bases through views and charts: `ravi bases list|show`, `ravi bases views list|show|query`, `ravi bases charts list|show|data`. Direct `rows query`, `aggregate` and every write are granted explicitly (see [Permissions](/guides/permissions)).
+
+## Approvals
+
+An `approval` property holds one decision per row. Only the listed approvers can decide it, on any surface, and the Console records who asked and who decided.
+
+```bash
+ravi bases props add requests "Approval" --key approval --type approval \
+  --approvers role:project_admin,user:<USER_ID> --reset-on request --json
+ravi bases rows request-approval requests <rowId> approval --note "Over budget" --json
+ravi bases rows approve requests <rowId> approval --note "Ok" --execute --json
+ravi bases rows reject requests <rowId> approval --execute --json
+```
+
+- `--approvers` takes `role:<viewer|developer|project_admin>` (that project role or above) or `user:<id>`, 1 to 20. `--reset-on` lists properties whose change sends a decision back to `pending`.
+- The value reads as `{state, requestedBy, requestedAt, decidedBy, decidedAt, note}`, with `state` `pending`, `approved` or `rejected`.
+- `request-approval` needs write access to the column. `approve` and `reject` are dry runs without `--execute` (exit 3), and someone who is not an approver gets `PROJECT_ACCESS_DENIED` with `approval_forbidden`. No default grant lets an agent decide.
+- Events: `bases.approval.requested` and `bases.approval.decided`, with `payload.propertyId` and `payload.state` (never the note), in addition to `bases.row.updated`.
+- On a page, `describe` returns `capabilities.approve`, the approval columns the viewer can decide; the `<ravi-view>` tag shows the buttons only for those.
+
+## Agent columns
+
+An `agent` property is a value an agent fills for each row from other columns: a summary, a category, a score.
+
+```bash
+ravi bases props add requests "Topic" --key topic --type agent \
+  --instructions "Classify the request by topic." --inputs request \
+  --output select --options "Billing,Access,Other" --agent main --json
+ravi bases subscribe requests --events agent.requested,agent.backfill --props topic \
+  --trigger --agent main --session requests-topic --message "<drain prompt>" --json
+ravi bases rows fill requests <rowId> topic --inputs-hash <hash> --value '"Billing"' --json
+ravi bases rows rerun requests <rowId> topic --json
+```
+
+- When a row is created, or one of its inputs changes, the Console marks the cell `pending` with a new `inputsHash` and emits `bases.agent.requested`. Adding the column to a base that has rows emits one `bases.agent.backfill` with the row count.
+- The cell reads as `{state, value, error, inputsHash, updatedAt}`. Nobody writes it with `rows add`, `rows update` or a view.
+- `rows fill` stores the value (`--value`, JSON when it parses, otherwise text) or an error (`--error`) for the `inputsHash` the agent read. If the inputs changed since, it fails with `CONFLICT` (`agent_stale`) and the current hash: re-read the row and fill again.
+- A fill emits only `bases.row.updated`, so the filling agent does not wake itself on `agent.requested`.
 
 ## How the page talks to the base
 
@@ -291,6 +345,7 @@ Nothing is injected into your page except the operator bar. The page calls its o
 |---|---|
 | `ravi.bases.views.describe` | `{viewId}`: columns, option names, the viewer's capabilities |
 | `ravi.bases.views.query` | `{viewId, filter?, sort?, limit?, cursor?}` (limit 1-500) |
+| `ravi.bases.views.version` | `{viewId}`: a `fingerprint` that changes when a row the viewer sees through the view changes; poll it to know when to re-read |
 | `ravi.bases.views.rows.get` | `{viewId, rowId}` |
 | `ravi.bases.views.rows.create` | `{viewId, values, body?, idempotencyKey}` |
 | `ravi.bases.views.rows.update` | `{viewId, rowId, values, body?, expectedVersion, idempotencyKey}` |
@@ -305,10 +360,10 @@ Each viewer gets 120 calls per minute on a site (600 per site, 1,200 per organiz
 
 ## Limits worth knowing
 
-- **No push.** The page re-reads on a timer, and `poll` never goes below 30 s.
+- **No push.** The page re-reads on a timer, and `poll` never goes below 30 s. With `ravi.bases.views.version` in `--uses` it can check the fingerprint every few seconds and re-read only when it changes.
 - **The cooldown drops events.** When the last change matters, add a sweep with the same prompt: `ravi cron add "Requests sweep" --every 1h --agent main --isolated --message "$MSG"`.
 - **Option ids, not names.** `select` and `status` values arrive as option ids in row events and on the page, so `data.payload.row.values.status == "New"` never matches. Read the ids with `ravi bases show requests --json`. Filters compare text only (`==`, `!=`, `startsWith`, `endsWith`, `includes`), and a missing path is false, even with `!=`.
-- **Bulk changes.** A request that changes more than 50 rows sends one `bases.rows.bulk_changed` event, with no `rowId` and no values.
+- **Bulk changes.** A request that changes more than 50 rows sends one `bases.rows.bulk_changed` event, with no `rowId` and no values. A filtered subscription receives it without checking its view or properties.
 - **Comments do not wake the agent.** For feedback that must reach it, use a base with a form.
 - **Thumbnails** of data pages show an error: the capture session cannot call actions.
 - **Idempotency keys** are 8 to 128 characters from `A-Za-z0-9._:-`, start with a letter or digit, and last 24 hours. Reuse a key only to resend the same input; a changed input, including a new `expectedVersion` after a conflict, needs a new key. `rows.archive` takes none. An agent write without `--idempotency-key` succeeds with a warning, and a retry would write twice.
@@ -327,6 +382,6 @@ Each viewer gets 120 calls per minute on a site (600 per site, 1,200 per organiz
 | `ravi triggers test <id> --execute` | Fires with fake data, skipping the filter, to check the agent's permissions and prompt |
 | `ravi daemon logs -f` | `Firing trigger` lines |
 | `ravi bases views show requests <VIEW_ID> --json` | `valid: true` and the `page_viewer` site |
-| `ravi bases rows history requests <rowId> --json` | Who wrote each version (`user` from the page, `cli` from the agent) |
+| `ravi bases rows history requests <rowId> --json` | Who wrote each version (`user` from the page, `cli` from the agent) and, next to a CLI write, the agent |
 
 On the page, `client.js` adds the `x-request-id` to the error banner when the response has one; keep it when you ask for support. More in [Triggers](/guides/triggers) and [Publish pages](/console/pages).

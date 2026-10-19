@@ -30,6 +30,11 @@ applies_to:
   - src/plugins/internal/ravi-system/skills/bases/references/pages.md
   - src/plugins/internal/ravi-system/skills/pages/references/data-pages.md
   - src/plugins/internal/ravi-system/skills/solucoes/SKILL.md
+  - src/plugins/internal/ravi-system/skills/bases/references/approvals-agent-columns.md
+  - src/plugins/internal/ravi-system/skills/bases/references/events-triggers.md
+  - src/inbox/bases-enrichment.ts
+  - src/permissions/runtime-bootstrap-provider.ts
+  - src/triggers/topic-catalog.ts
 owners:
   - ravi-dev
 status: active
@@ -67,19 +72,30 @@ writes only through a view, via the `ravi.bases.*` Pages connector actions
 4. Project scope MUST resolve through the Console scope resolver:
    `--project` wins, then the saved Console scope. `--console` MUST match the
    stored credentials, otherwise the command fails with `AUTH_REQUIRED`.
-5. Row writes (`rows add`, `rows update`, batch import) MUST send an
+5. Row writes (`rows add`, `rows update`, batch import, `rows
+   request-approval|approve|reject`, `rows fill`) and the creates `bases
+   create`, `props add`, `views create` and `charts create` MUST send an
    idempotency key both as the `Idempotency-Key` header and as
    `idempotencyKey` in the body. The key is generated per call unless
    `--idempotency-key` overrides it. Keys MUST match
-   `^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$`.
+   `^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$`. The same key and request replay the
+   created object; a different request with the key is `CONFLICT`
+   (`idempotency_conflict`). Creates carry no `clientHint`.
    Inside an agent session, `rows add` and `rows update` without
    `--idempotency-key` still write, and MUST add `warnings: [string]` to the
    payload (a `warning:` line in human output): a retry would get a new
    generated key and could duplicate the write.
 6. Inside an agent session (runtime tool or gateway invocation), row writes
-   and row archive/restore MUST carry `clientHint {agentId?, sessionKey?, sdk}`.
-   The hint is untrusted ledger metadata and MUST NOT be sent outside an
+   row archive/restore, `rows fill` and `rows rerun` MUST carry
+   `clientHint {agentId?, sessionKey?, sdk}`. The hint is ledger metadata the
+   Console records next to the accountable person (`agent` on history
+   entries, asserted by the installation) and MUST NOT be sent outside an
    agent session.
+6a. Every Console call, reads included, MUST carry the turn's actor
+   (`x-ravi-actor-contact`) inside a runtime turn, so a linked person's reads
+   and writes act as that person and an unlinked person's reads use the
+   operator login (writes fail `ACTOR_NOT_LINKED`). Outside a turn no actor
+   header is sent.
 7. `rows update`, `rows archive`, and `rows restore` MUST require exactly one
    of `--expected-version <n>` or `--last-write-wins`, checked before any
    Console call.
@@ -110,18 +126,37 @@ writes only through a view, via the `ravi.bases.*` Pages connector actions
     same command replays finished batches instead of duplicating rows.
 14. CSV output (`--format csv`, `rows export`) MUST neutralize spreadsheet
     formulas in free-text cells with a leading `'`; import strips it again.
-15. `bases subscribe` creates a Console subscription for this installation.
-    Row events then arrive through the existing inbox bridge on
-    `ravi.console.inbox.item` with `category: "bases"`. The OSS runner MUST
-    forward the item unchanged and MUST NOT add a NATS subject for Bases.
+15. `bases subscribe` creates a Console subscription for this installation,
+    with the optional filter `--view`, `--props` (1-20) and `--events` (from
+    `row.created|updated|archived|restored`, `approval.requested|decided`,
+    `agent.requested|backfill`), checked locally before any call and sent as
+    `{viewId?, properties?, events?}`. Events then arrive through the existing
+    inbox bridge on `ravi.console.inbox.item` with `category: "bases"`. The OSS
+    runner MUST NOT add a NATS subject for Bases; it MAY only add
+    `payload.row` and `payload.rowEnrichment` (read with the installation
+    credential) to `bases.row.*`, `bases.approval.*` and
+    `bases.agent.requested` items, never to `bases.rows.bulk_changed` or
+    `bases.agent.backfill`.
+15a. `bases subscribe --trigger --agent <id> [--session] [--message]` MUST
+    check the agent and session before any Console call, then create (or
+    reuse, for the same topic, filter and agent) a local trigger on
+    `ravi.console.inbox.item` filtered on `data.category == "bases"`, the base
+    id, `data.payload.subscriptionId` for a filtered subscription (or the
+    absence of one for an unfiltered subscription, so one item wakes one
+    trigger) and the event types. From an agent turn
+    (`hasRuntimeInvocationContext`) the trigger MUST be created disabled and
+    the output MUST name `ravi triggers enable <id>`; from the operator's
+    terminal it is enabled. JSON output includes `trigger {id, enabled, draft,
+    filter, enableCommand}`.
 16. CLI output (help text, plan `effect`, `suggestedAction`, messages) and the
     `bases` skill MUST NOT send people to a Console UI for Bases. Destructive
     plans name the generated Pages and charts that stop working.
 17. The `bases` and `pages` skills MUST tell agents to ship generated pages with `--uses` listing
-    the union of the `ravi.bases.*` ids called by every page on the same host
-    (the allowlist is the host's active release, so each ship replaces it for
-    every route), and MUST NOT tell pages to embed row data, tokens, or
-    Console API calls. When an agent adds a `page_viewer` principal, the skill
+    the `ravi.bases.*` ids that page's own route calls (the host allows the
+    union of the `uses` of its active routes, so a ship of another route never
+    removes them), to ship data pages only with `pages ship` (`pages publish`
+    and `artifacts publish` declare no `uses` for that route), and MUST NOT
+    tell pages to embed row data, tokens, or Console API calls. When an agent adds a `page_viewer` principal, the skill
     MUST tell it to say which host gains which access to which view.
     The data-page guide lives in the `pages` skill
     (`ravi skills show pages --file references/data-pages.md`);
@@ -141,6 +176,39 @@ writes only through a view, via the `ravi.bases.*` Pages connector actions
     `--field`/`--variant` with `none`, fail before any Console call. The
     Console checks the widget, the mapped columns and the variant. Access is
     `mutate:bases.views:update`, like `views update`.
+20. `bases views share <base> <view> --site <slug|id|hostname> [--write a,b]
+    [--create] [--archive] [--write-only]` MUST read the full view (a caller
+    without manage fails `PROJECT_ACCESS_DENIED` without a write), resolve the
+    site from the project's Pages sites (unknown: `NOT_FOUND`), add
+    `{kind: "page_viewer", siteId}` to `access.read` (not with
+    `--write-only`, which needs a write grant) and, with a write grant, to
+    `access.write.principals`, merging columns and flags without removing any,
+    then PATCH `access` at the version it read. Nothing changed: no PATCH and
+    `changed: false`. The payload and human output MUST carry the disclosure:
+    which host gains which access to which view, and that the write block is
+    shared by every write principal. Access is `mutate:bases.views:update`.
+21. Approvals: `props add --type approval` takes `--approvers`
+    (`role:<viewer|developer|project_admin>` or `user:<id>`, 1-20) and
+    `--reset-on`. `rows request-approval` writes `"pending"`; `rows approve`
+    and `rows reject` write `{state, note?}` and MUST dry-run (exit 3) without
+    `--execute` (risk high, no default grant). All three take `--note` (at most
+    1000 chars), `--view` and `--expected-version` (default: read the row
+    first). The Console decides who may approve; `approval_forbidden` maps to
+    `PROJECT_ACCESS_DENIED` with that reason in the envelope.
+22. Agent columns: `props add --type agent` takes `--instructions` (1-4000),
+    `--inputs` (1-20 keys), `--output`
+    (`text|number|checkbox|select|multi_select|url|date`, select outputs need
+    `--options`) and `--agent` (a label). `rows fill <base> <row> <prop>
+    --inputs-hash <16 hex> (--value <v> | --error <msg>)` posts to
+    `.../rows/<row>/agent/<prop>` with an idempotency key; `--value` is JSON
+    when it parses, otherwise text. `agent_stale` maps to `CONFLICT` and
+    surfaces the current `inputsHash`. `rows rerun` posts to
+    `.../agent/<prop>/rerun`.
+23. The runtime bootstrap floor MUST grant exactly the Bases reads through
+    views and charts: `read:bases:list|show`,
+    `read:bases.views:list|show|query`, `read:bases.charts:list|show|data`.
+    Direct row reads (`bases.rows:query`, `bases:aggregate`) and every Bases
+    write stay opt-in.
 
 ## Write classification
 
@@ -153,14 +221,16 @@ writes only through a view, via the `ravi.bases.*` Pages connector actions
 | `bases props update` (type or includeTime change) | data migration | Console dry-run report; `--execute` sends `confirm: true` |
 | `bases props delete` | soft delete with dependents | Console dry-run report; `--execute` sends `confirm: true` |
 | `bases rows import` | bulk create | local plan after schema read; `--execute` |
-| `bases create/update`, `props add/restore`, `rows add/update/archive/restore`, `views create/update/bind`, `charts create/update`, `subscribe/unsubscribe` | reversible or versioned writes | none |
+| `bases rows approve`, `bases rows reject` | a decision others act on | local dry-run + `--execute` |
+| `bases subscribe --trigger` | local automation | none; from an agent turn the trigger is created disabled |
+| `bases create/update`, `props add/restore`, `rows add/update/archive/restore/request-approval/fill/rerun`, `views create/update/bind/share`, `charts create/update`, `subscribe/unsubscribe` | reversible or versioned writes | none |
 
 ## Commands
 
 - `ravi bases list|show|create|update|archive|restore|aggregate|subscribe|unsubscribe|subscriptions`
 - `ravi bases props list|add|update|delete|restore`
-- `ravi bases rows query|get|add|update|archive|restore|purge|history|import|export`
-- `ravi bases views list|show|create|update|bind|archive|query`
+- `ravi bases rows query|get|add|update|archive|restore|purge|history|import|export|request-approval|approve|reject|fill|rerun`
+- `ravi bases views list|show|create|update|bind|share|archive|query`
 - `ravi bases charts list|show|create|update|archive|data`
 
 `list` commands use offset pagination (`--limit`, `--offset`, `--fields`);
@@ -178,6 +248,7 @@ actions are revision 1, take strict input, and act through a view that grants
 |---|---|---|
 | `ravi.bases.views.describe` | `{viewId}` | `{id, baseId, name, description, layout, version, columns, capabilities, valid}` |
 | `ravi.bases.views.query` | `{viewId, filter?, sort?, limit?, cursor?}` | `{columns, rows, nextCursor, users}` |
+| `ravi.bases.views.version` | `{viewId}` | `{fingerprint}` |
 | `ravi.bases.views.rows.get` | `{viewId, rowId}` | `{rowId, version, values, body?, users}` |
 | `ravi.bases.views.rows.create` | `{viewId, values, body?, idempotencyKey}` | `{rowId, version}` |
 | `ravi.bases.views.rows.update` | `{viewId, rowId, values, body?, expectedVersion, idempotencyKey}` | row `{rowId, version, values, body?}` |
@@ -189,8 +260,8 @@ actions are revision 1, take strict input, and act through a view that grants
   may carry `fieldErrors`; `version_conflict` may carry `current`. A viewer
   the view admits only to write gets `{rowId, version, values: {}}` from
   `rows.update` and in `current`.
-- `ravi.bases.*` is never implicitly allowlisted: an id missing from `--uses`
-  fails with `connector_not_allowlisted`.
+- `ravi.bases.*` is never implicitly allowlisted: an id no active route of
+  the host declared fails with `connector_not_allowlisted`.
 - `charts.data` returns the groups as `groups`; the CLI `bases charts data`
   returns the same groups as `data`.
 - Pages callers never manage a base. `project_role` and `user` principals do
@@ -207,11 +278,14 @@ actions are revision 1, take strict input, and act through a view that grants
 | stale `--expected-version` | `VERSION_CONFLICT` + `current` | 1 |
 | slug/key taken, idempotency or schema-version conflict | `CONFLICT` + `consoleError` | 1 |
 | no Bases scope or no access | `PROJECT_ACCESS_DENIED` (+ `missingScopes`) | 1 |
+| decision by someone who is not an approver | `PROJECT_ACCESS_DENIED` + `consoleError: approval_forbidden` | 1 |
+| `rows fill` with a stale `--inputs-hash` | `CONFLICT` + `consoleError: agent_stale` + `inputsHash` | 1 |
 | no credentials or `--console` mismatch | `AUTH_REQUIRED` | 1 |
 
 ## Validation
 
 - `bun test src/bases/ src/cli/commands/bases.test.ts` green.
+- `bun test src/inbox/ src/permissions/runtime-bootstrap-provider.test.ts src/triggers/__tests__/topic-catalog.test.ts src/triggers/__tests__/runner-filter.test.ts` green.
 - `bun test src/cloud-auth/ src/cli/commands/link.test.ts` green (409 mapping).
 - `bun test src/cli/confirmation-policy.test.ts src/cli/commands/json-coverage.test.ts src/cli/commands/pagination-coverage.test.ts src/sdk/client-codegen/return-schema-coverage.test.ts` green.
 - `make quality` clean.
@@ -232,6 +306,13 @@ actions are revision 1, take strict input, and act through a view that grants
 - A generated page shows `not_found` while `views query` works from the CLI:
   the view does not grant `page_viewer` for that site (CLI callers are admitted
   by `project_role`/`user`, pages only by `page_viewer`).
-- The Pages `uses` allowlist is read from the host's active release, so a
-  later ship of another route on the same host without the union of ids
-  drops ids for every page on that host (`connector_not_allowlisted`).
+- Before Console #44 the Pages `uses` allowlist was the last ship's list for
+  the whole host, and skills taught shipping the union of every route's ids.
+  The host now allows the union over its active routes; a page republished
+  with `pages publish` loses only its own route's ids.
+- A `--trigger` created from an agent turn stays disabled until the operator
+  runs `ravi triggers enable <id>`; the subscription itself is active, so
+  items land in `ravi inbox items` meanwhile.
+- The trigger `--trigger` creates does not filter `data.actor.type`. An agent
+  that writes the same base must add that condition (`ravi triggers set <id>
+  filter ...`) or subscribe only to events its writes do not produce.
