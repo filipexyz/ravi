@@ -7,9 +7,11 @@ import { buildAuditContextProvenance } from "../permissions/audit-provenance.js"
 import { buildAuthorizationGuidance, formatCanonicalCapability } from "../permissions/authorization-guidance.js";
 import { dbUpdateContextCapabilities, type ContextCapability, type ContextRecord } from "../router/router-db.js";
 import { updateSlackText } from "../channels/slack/text-send.js";
+import { respondToSlackInteraction } from "../channels/slack/interactions.js";
 import { requestReply as runtimeRequestReply } from "../utils/request-reply.js";
 import { logger } from "../utils/logger.js";
 import { evaluateApprovalInboundEvent } from "./decision.js";
+import { listSlackApprovalGrantorUserIds } from "./grantor.js";
 import { buildSlackApprovalFinalMessage, buildSlackApprovalRequestMessage } from "./slack-blocks.js";
 import {
   attachApprovalRequestMessageId,
@@ -17,10 +19,13 @@ import {
   createApprovalRequest,
   expireApprovalRequest,
   getApprovalRequest,
+  listApprovalDeliveries,
+  recordApprovalDeliveries,
+  type ApprovalDeliveryKind,
   type ApprovalRequestRecord,
   type ApprovalRequestType,
 } from "./store.js";
-import { DEFAULT_APPROVAL_TIMEOUT_MS } from "./timeouts.js";
+import { DEFAULT_APPROVAL_DELIVERY_TIMEOUT_MS, DEFAULT_APPROVAL_TIMEOUT_MS } from "./timeouts.js";
 
 const log = logger.child("approval:service");
 export { DEFAULT_APPROVAL_TIMEOUT_MS };
@@ -33,11 +38,18 @@ export interface ApprovalFinalizeSlackInput {
   readonly blocks: readonly Record<string, unknown>[];
 }
 
+export interface ApprovalRespondSlackInput {
+  readonly responseUrlId: string;
+  readonly payload: Record<string, unknown>;
+}
+
 export interface ApprovalServiceDependencies {
   nats: Pick<typeof runtimeNats, "emit" | "subscribe">;
   requestReply: typeof runtimeRequestReply;
   now: () => number;
   finalizeSlackApproval: (input: ApprovalFinalizeSlackInput) => Promise<void>;
+  /** Answers one Slack click privately through its `response_url`. */
+  respondSlackInteraction: (input: ApprovalRespondSlackInput) => Promise<void>;
 }
 
 const defaultApprovalServiceDependencies: ApprovalServiceDependencies = {
@@ -52,6 +64,9 @@ const defaultApprovalServiceDependencies: ApprovalServiceDependencies = {
       text: input.text,
       blocks: input.blocks,
     });
+  },
+  respondSlackInteraction: async (input) => {
+    await respondToSlackInteraction(input);
   },
 };
 
@@ -141,6 +156,11 @@ export interface RequestApprovalOptions {
   delegated?: boolean;
 }
 
+interface ApprovalDeliveryReply {
+  messageId?: string;
+  deliveries?: Array<{ userId?: unknown; kind?: unknown; chatId?: unknown; messageId?: unknown }>;
+}
+
 export async function requestApproval(
   source: ApprovalTarget,
   text: string,
@@ -151,6 +171,31 @@ export async function requestApproval(
   const requestId = randomUUID();
   const type = options?.type ?? "permission";
   const slack = isSlackChannel(source.channel);
+
+  // Slack cards go privately to the people who can grant the request, and to
+  // nobody else. When nobody can, say so now instead of posting a card no one
+  // can use and holding the tool call for the whole approval window.
+  const grantors = slack
+    ? listSlackApprovalGrantorUserIds({
+        instanceId: source.instanceId ?? source.accountId,
+        permission: options?.permission,
+        objectType: options?.objectType,
+        objectId: options?.objectId,
+      })
+    : [];
+  if (slack && grantors.length === 0) {
+    const reason = buildNoSlackGrantorReason(type, options);
+    log.warn("No Slack grantor for approval request", {
+      channel: source.channel,
+      accountId: source.accountId,
+      sessionName: options?.sessionName,
+      permission: options?.permission,
+      objectType: options?.objectType,
+      objectId: options?.objectId,
+    });
+    return { approved: false, reason };
+  }
+
   const slackDelivery = slack
     ? buildSlackApprovalRequestMessage({
         requestId,
@@ -181,19 +226,19 @@ export async function requestApproval(
     expiresAt: now + timeoutMs,
   });
 
-  let sendResult: { messageId?: string };
+  let sendResult: ApprovalDeliveryReply;
   try {
-    sendResult = await approvalServiceDependencies.requestReply<{ messageId?: string }>(
+    sendResult = await approvalServiceDependencies.requestReply<ApprovalDeliveryReply>(
       "ravi.outbound.deliver",
       {
         channel: source.channel,
         accountId: source.accountId,
         to: source.chatId,
         text: deliveryText,
-        ...(slackDelivery ? { blocks: slackDelivery.blocks } : {}),
+        ...(slackDelivery ? { blocks: slackDelivery.blocks, privateTo: grantors } : {}),
         ...(source.threadId ? { threadId: source.threadId } : {}),
       },
-      timeoutMs,
+      Math.min(timeoutMs, DEFAULT_APPROVAL_DELIVERY_TIMEOUT_MS),
     );
   } catch (err) {
     expireApprovalRequest(requestId, approvalServiceDependencies.now());
@@ -201,21 +246,67 @@ export async function requestApproval(
     return { approved: false, reason: err instanceof Error ? err.message : String(err) };
   }
 
-  if (!sendResult.messageId) {
+  const deliveries = parseApprovalDeliveries(sendResult.deliveries, approvalServiceDependencies.now());
+  if (deliveries.length > 0) {
+    recordApprovalDeliveries(requestId, deliveries);
+  }
+  const messageId = sendResult.messageId ?? deliveries[0]?.messageId;
+  if (!messageId) {
     expireApprovalRequest(requestId, approvalServiceDependencies.now());
     log.warn("Approval request returned without messageId");
     return { approved: false, reason: "Falha ao enviar mensagem de aprovação." };
   }
 
-  const pending = attachApprovalRequestMessageId(requestId, sendResult.messageId) ?? getApprovalRequest(requestId);
+  const pending = attachApprovalRequestMessageId(requestId, messageId) ?? getApprovalRequest(requestId);
   if (!pending?.messageId) {
     expireApprovalRequest(requestId, approvalServiceDependencies.now());
     return { approved: false, reason: "Falha ao correlacionar pedido de aprovação." };
   }
 
-  log.info("Waiting for approval response", { requestId, messageId: sendResult.messageId, channel: source.channel });
+  log.info("Waiting for approval response", {
+    requestId,
+    messageId,
+    channel: source.channel,
+    privateCards: deliveries.length,
+  });
   const result = await waitForApprovalResponse(requestId, timeoutMs);
-  return { ...result, messageId: sendResult.messageId };
+  return { ...result, messageId };
+}
+
+function parseApprovalDeliveries(
+  value: ApprovalDeliveryReply["deliveries"],
+  now: number,
+): Array<{ userId: string; kind: ApprovalDeliveryKind; chatId: string; messageId: string; createdAt: number }> {
+  if (!Array.isArray(value)) return [];
+  const deliveries: Array<{
+    userId: string;
+    kind: ApprovalDeliveryKind;
+    chatId: string;
+    messageId: string;
+    createdAt: number;
+  }> = [];
+  for (const entry of value) {
+    const userId = typeof entry?.userId === "string" ? entry.userId.trim() : "";
+    const chatId = typeof entry?.chatId === "string" ? entry.chatId.trim() : "";
+    const messageId = typeof entry?.messageId === "string" ? entry.messageId.trim() : "";
+    const kind = entry?.kind === "dm" ? "dm" : entry?.kind === "ephemeral" ? "ephemeral" : null;
+    if (!userId || !chatId || !messageId || !kind) continue;
+    deliveries.push({ userId, kind, chatId, messageId, createdAt: now });
+  }
+  return deliveries;
+}
+
+function buildNoSlackGrantorReason(type: ApprovalRequestType, options: RequestApprovalOptions | undefined): string {
+  const asked =
+    options?.permission && options.objectType && options.objectId
+      ? formatCanonicalCapability({
+          permission: options.permission,
+          objectType: options.objectType,
+          objectId: options.objectId,
+        })
+      : "admin:system:*";
+  const what = type === "plan" ? "este plano" : type === "spec" ? "esta spec" : asked;
+  return `Ninguém neste Slack pode aprovar ${what}: nenhuma pessoa vinculada a um usuário do Slack tem a permissão ${asked}. Nenhum pedido foi enviado. Quem tem essa permissão precisa vincular o próprio usuário do Slack ao seu contato, ou conceder a permissão direto ao agente.`;
 }
 
 export async function requestPollAnswer(
@@ -527,7 +618,10 @@ async function waitForApprovalResponse(
             continue;
           }
 
-          await finalizeApprovalMessage(claimed, claimed.decision ?? evaluation.decision).catch((error) => {
+          await finalizeApprovalMessage(claimed, claimed.decision ?? evaluation.decision, {
+            actorId: evaluation.actorId,
+            responseUrlId: evaluation.responseUrlId,
+          }).catch((error) => {
             log.warn("Failed to finalize Slack approval message", { requestId, error });
           });
           finish({
@@ -543,23 +637,66 @@ async function waitForApprovalResponse(
   });
 }
 
+/**
+ * Takes the buttons away once a request is settled. Private cards: the clicker's
+ * own card is replaced through its `response_url`, DM cards are edited in place.
+ * Other people's ephemeral cards cannot be edited by the app; a later click on
+ * one is answered privately with the outcome (see slack-click-feedback).
+ */
 async function finalizeApprovalMessage(
   request: ApprovalRequestRecord,
   outcome: "approved" | "rejected" | "expired",
+  clicker?: { readonly actorId?: string; readonly responseUrlId?: string },
 ): Promise<void> {
   if (!isSlackChannel(request.channel) || !request.messageId) return;
   const message = buildSlackApprovalFinalMessage({
     type: request.type,
     outcome,
     reason: request.reason ?? undefined,
+    decidedBy: outcome === "expired" ? undefined : (request.decidedBy ?? undefined),
   });
-  await approvalServiceDependencies.finalizeSlackApproval({
-    accountId: request.accountId,
-    chatId: request.chatId,
-    messageId: request.messageId,
-    text: message.text,
-    blocks: message.blocks,
-  });
+  const deliveries = listApprovalDeliveries(request.id);
+  if (deliveries.length === 0) {
+    await approvalServiceDependencies.finalizeSlackApproval({
+      accountId: request.accountId,
+      chatId: request.chatId,
+      messageId: request.messageId,
+      text: message.text,
+      blocks: message.blocks,
+    });
+    return;
+  }
+
+  const clickerId = clicker?.actorId?.toUpperCase();
+  const updates: Array<Promise<void>> = [];
+  for (const delivery of deliveries) {
+    if (delivery.kind === "dm") {
+      updates.push(
+        approvalServiceDependencies.finalizeSlackApproval({
+          accountId: request.accountId,
+          chatId: delivery.chatId,
+          messageId: delivery.messageId,
+          text: message.text,
+          blocks: message.blocks,
+        }),
+      );
+      continue;
+    }
+    if (clicker?.responseUrlId && clickerId && delivery.userId.toUpperCase() === clickerId) {
+      updates.push(
+        approvalServiceDependencies.respondSlackInteraction({
+          responseUrlId: clicker.responseUrlId,
+          payload: { replace_original: true, text: message.text, blocks: message.blocks },
+        }),
+      );
+    }
+  }
+  const results = await Promise.allSettled(updates);
+  for (const result of results) {
+    if (result.status === "rejected") {
+      log.warn("Failed to update a private Slack approval card", { requestId: request.id, error: result.reason });
+    }
+  }
 }
 
 async function waitForPollAnswer(

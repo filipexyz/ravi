@@ -68,7 +68,7 @@ import { resolveOmniGroupMetadata } from "./omni/group-metadata-cache.js";
 import { buildRaviTtsRequest, handleRaviTtsRequest, RAVI_TTS_TOPIC, shouldAutoTtsForAgent } from "./audio/tts.js";
 import { handleSlackThreadCreationDelivery, reconcileSlackThreadLifecycle } from "./channels/slack/thread-lifecycle.js";
 import { sendSlackMedia } from "./channels/slack/media.js";
-import { sendSlackText } from "./channels/slack/text-send.js";
+import { sendSlackPrivateCards, sendSlackText } from "./channels/slack/text-send.js";
 import { SessionResponseQueue } from "./gateway-response-order.js";
 
 const log = logger.child("gateway");
@@ -354,6 +354,11 @@ type DirectSendRequest = {
   replyTopic?: string;
   threadId?: string;
   blocks?: readonly Record<string, unknown>[];
+  /**
+   * Slack only: send the card privately to these people (ephemeral in `to`, or
+   * their DM with the app when they are not in it) instead of posting it.
+   */
+  privateTo?: readonly string[];
 };
 
 type MediaSendRequest = {
@@ -1940,6 +1945,44 @@ export class Gateway {
     const text = data.text?.trim();
     if (!text) {
       await reply({ success: false, error: "Missing send text" });
+      return;
+    }
+
+    if (data.privateTo) {
+      try {
+        const result = await sendSlackPrivateCards({
+          accountId: resolved.accountId,
+          chatId: data.to,
+          text,
+          userIds: data.privateTo,
+          blocks: data.blocks ?? [],
+          ...(data.threadId ? { threadId: data.threadId } : {}),
+        });
+        log.info("Native private cards delivered", {
+          accountId: resolved.accountId,
+          delivered: result.deliveries.length,
+          failed: result.failures.length,
+        });
+        if (result.failures.length > 0) {
+          log.warn("Some private Slack cards were not delivered", { failures: result.failures });
+        }
+        if (result.deliveries.length === 0) {
+          await reply({
+            success: false,
+            error: result.failures[0]?.error ?? "No private card could be delivered",
+          });
+          return;
+        }
+        await reply({
+          success: true,
+          messageId: result.deliveries[0]?.messageId,
+          deliveries: result.deliveries,
+          failures: result.failures,
+        });
+      } catch (err) {
+        log.error("Failed to deliver native private cards", { accountId: resolved.accountId, error: err });
+        await reply({ success: false, error: err instanceof Error ? err.message : String(err) });
+      }
       return;
     }
 

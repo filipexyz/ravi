@@ -1,6 +1,13 @@
 import { resolveScopedSlackIdentity, resolveSlackInstanceAliases } from "../channels/slack/instance-alias.js";
 import { configStore } from "../config-store.js";
-import { getContact, getContactDetails, resolvePlatformIdentity, type PlatformIdentity } from "../contacts.js";
+import {
+  getContact,
+  getContactDetails,
+  isSlackHumanUserId,
+  listOwnedPlatformIdentities,
+  resolvePlatformIdentity,
+  type PlatformIdentity,
+} from "../contacts.js";
 import { canWithCapabilities } from "../permissions/capability-snapshot.js";
 import { materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
 
@@ -67,6 +74,57 @@ export function actorCanGrantRequestedPermission(input: ApprovalGrantorInput): A
     subjectType: identity.ownerType,
     subjectId: identity.ownerId,
   };
+}
+
+/** Upper bound on private approval cards sent for one request. */
+export const MAX_SLACK_APPROVAL_GRANTORS = 20;
+
+export interface SlackApprovalGrantorsInput {
+  readonly instanceId: string;
+  readonly permission?: string | null;
+  readonly objectType?: string | null;
+  readonly objectId?: string | null;
+}
+
+/**
+ * Slack people who could approve this request: every human Slack identity of
+ * the instance (its configured aliases plus the legacy empty scope) that is
+ * owned by a contact and passes the same gate a click goes through. The card is
+ * sent only to them, so nobody else sees a button they cannot use.
+ */
+export function listSlackApprovalGrantorUserIds(input: SlackApprovalGrantorsInput): string[] {
+  let config: GrantorRouterConfig = null;
+  try {
+    config = loadGrantorRouterConfig();
+  } catch {
+    // Without config the lookup stays on the received instance.
+  }
+  const aliases = resolveSlackInstanceAliases(config, input.instanceId);
+  const candidates = new Set<string>();
+  for (const identity of listOwnedPlatformIdentities({
+    channel: "slack",
+    instanceIds: [...aliases.scopedAliases, ""],
+  })) {
+    if (identity.ownerType !== "contact") continue;
+    if (!isSlackHumanUserId(identity.platformUserId)) continue;
+    candidates.add(identity.platformUserId.trim().toUpperCase());
+  }
+
+  const grantors: string[] = [];
+  for (const userId of [...candidates].sort()) {
+    const result = actorCanGrantRequestedPermission({
+      channel: "slack",
+      instanceId: input.instanceId,
+      senderId: userId,
+      permission: input.permission,
+      objectType: input.objectType,
+      objectId: input.objectId,
+    });
+    if (!result.allowed || result.subjectType !== "contact") continue;
+    grantors.push(userId);
+    if (grantors.length >= MAX_SLACK_APPROVAL_GRANTORS) break;
+  }
+  return grantors;
 }
 
 /**

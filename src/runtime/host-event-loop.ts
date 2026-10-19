@@ -130,6 +130,7 @@ import { TASK_OBSERVER_RULE_ID } from "../tasks/observer-contract.js";
 import { buildRuntimeToolPresentation } from "./tool-presentation.js";
 import type { ResponseContentPart, ResponseMediaAttachment } from "./message-types.js";
 import {
+  createApprovalWaitLeaseTracker,
   createToolLivenessLease,
   DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS,
   resolveToolInactivityTimeoutMs,
@@ -1545,6 +1546,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       });
     },
   });
+
+  const approvalWaits = createApprovalWaitLeaseTracker({
+    lease: toolLivenessLease,
+    currentTool: () =>
+      streaming.toolRunning && streaming.currentToolId
+        ? { id: streaming.currentToolId, name: streaming.currentToolName, input: streaming.currentToolInput }
+        : undefined,
+  });
+  streaming.externalApprovalWait = approvalWaits;
 
   /**
    * Destino do chat para saída do turno, conforme `.ravi/specs/sessions/attach/SPEC.md`.
@@ -3104,7 +3114,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         // Tools waiting on a human approval outlast the approval's own timeout.
         toolLivenessLease.start(
           event.toolUse.id,
-          resolveToolInactivityTimeoutMs(event.toolUse.name, event.toolUse.input),
+          approvalWaits.timeoutForStartingTool(resolveToolInactivityTimeoutMs(event.toolUse.name, event.toolUse.input)),
         );
         // O lease cuida da paciência; este aviso cuida do silêncio.
         armSlowToolNotice(event.toolUse.id, event.toolUse.name);

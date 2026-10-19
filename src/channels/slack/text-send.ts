@@ -106,6 +106,73 @@ export async function updateSlackText(
   };
 }
 
+export interface SlackPrivateCardInput {
+  readonly accountId: string;
+  readonly chatId: string;
+  readonly threadId?: string;
+  readonly userIds: readonly string[];
+  readonly text: string;
+  readonly blocks: readonly SlackBlockKitBlock[];
+}
+
+export interface SlackPrivateCardDelivery {
+  readonly userId: string;
+  /** `ephemeral`: only that person sees it, in `chatId`. `dm`: in their DM with the app. */
+  readonly kind: "ephemeral" | "dm";
+  readonly chatId: string;
+  readonly messageId: string;
+}
+
+export interface SlackPrivateCardResult {
+  readonly deliveries: SlackPrivateCardDelivery[];
+  readonly failures: Array<{ readonly userId: string; readonly error: string }>;
+}
+
+/**
+ * Sends one card privately to each person: an ephemeral message in the chat
+ * (thread included) when Slack accepts it, otherwise a message in their DM with
+ * the app. Nobody else sees the card.
+ */
+export async function sendSlackPrivateCards(
+  input: SlackPrivateCardInput,
+  dependencies: SlackTextSendDependencies = {},
+): Promise<SlackPrivateCardResult> {
+  const text = markdownToSlackMrkdwn(input.text).trim();
+  if (!text) {
+    throw new Error("Slack text is required");
+  }
+  const client = await createSlackTextClient(input.accountId, "chat.postEphemeral", dependencies);
+  const deliveries: SlackPrivateCardDelivery[] = [];
+  const failures: Array<{ userId: string; error: string }> = [];
+  for (const userId of input.userIds) {
+    let ephemeralError: string | undefined;
+    try {
+      const ephemeral = await client.postEphemeral({
+        channel: input.chatId,
+        user: userId,
+        text,
+        blocks: input.blocks,
+        ...(input.threadId ? { threadTs: input.threadId } : {}),
+      });
+      deliveries.push({ userId, kind: "ephemeral", chatId: input.chatId, messageId: ephemeral.messageId });
+      continue;
+    } catch (error) {
+      // Usually `user_not_in_channel` / `channel_not_found`: the person cannot
+      // see the chat. Any refusal still leaves their DM, which stays private.
+      ephemeralError = error instanceof Error ? error.message : String(error);
+    }
+    try {
+      // Posting to a user id lands in that person's DM with the app.
+      const direct = await client.postMessage({ channel: userId, text, blocks: input.blocks });
+      deliveries.push({ userId, kind: "dm", chatId: direct.channel, messageId: direct.messageId });
+    } catch (error) {
+      const dmError = error instanceof Error ? error.message : String(error);
+      failures.push({ userId, error: ephemeralError ? `${ephemeralError}; DM: ${dmError}` : dmError });
+    }
+  }
+  return { deliveries, failures };
+}
+
 /**
  * Email on the Slack profile of `userId`, or null when the app cannot read it
  * (no `users:read.email` scope, a bot, or a hidden email).
@@ -128,7 +195,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 async function createSlackTextClient(
   accountId: string,
-  action: "chat.postMessage" | "chat.update" | "users.info",
+  action: "chat.postMessage" | "chat.postEphemeral" | "chat.update" | "users.info",
   dependencies: SlackTextSendDependencies,
 ): Promise<SlackWebApiClient> {
   const channels = dependencies.channels ?? configStore.getConfig().channels ?? {};
