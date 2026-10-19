@@ -120,7 +120,13 @@ import {
 } from "../../pages/ship.js";
 import { CONTRACT_EXIT_USAGE, ContractError, contractDryRun, contractFail, pickFields } from "../agent-contract.js";
 import { getContext } from "../context.js";
-import { plannedPageDomainDns, plannedPageDomainDnsLines } from "../../pages/domain-setup.js";
+import {
+  type PageCustomDomain,
+  pageCustomDomainLines,
+  plannedPageDomainDns,
+  plannedPageDomainDnsLines,
+  projectPageCustomDomains,
+} from "../../pages/domain-setup.js";
 import { jsonObjectSchema, jsonValueSchema, strictCliOffsetPaginationSchema } from "../return-schemas.js";
 import { readConfirmedSecret, type ConfirmedSecretInputOptions } from "../secret-input.js";
 import { artifactPublishReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
@@ -2513,6 +2519,13 @@ function printSiteList(
   );
   for (const site of result.sites) {
     console.log(`  - ${siteLabel(site)}`);
+    const slug = stringValue(site.slug);
+    if (!slug) continue;
+    for (const line of pageCustomDomainLines(projectPageCustomDomains(site.customDomains), (hostname) =>
+      domainRecheckCommand(result.projectRef, slug, hostname),
+    )) {
+      console.log(`      ${line}`);
+    }
   }
   if (pagination?.nextCommand) {
     console.log("\nNext page:");
@@ -2538,6 +2551,22 @@ function printPublishedPageList(
     console.log(`  - ${publishedPageLabel(page)}`);
     for (const url of stringArrayValue(page.urls)) {
       console.log(`      ${url}`);
+    }
+  }
+  // A pending domain belongs to the host, not the route: list it once per host.
+  const pendingBySite = new Map<string, PageCustomDomain[]>();
+  for (const page of result.pages) {
+    const slug = stringValue(page.siteSlug);
+    if (!slug || pendingBySite.has(slug)) continue;
+    const pending = projectPageCustomDomains(page.customDomains).filter((domain) => domain.status === "pending");
+    if (pending.length > 0) pendingBySite.set(slug, pending);
+  }
+  for (const [slug, pending] of pendingBySite) {
+    console.log(`\nCustom domains of ${slug} not serving yet:`);
+    for (const line of pageCustomDomainLines(pending, (hostname) =>
+      domainRecheckCommand(result.projectRef, slug, hostname),
+    )) {
+      console.log(`  ${line}`);
     }
   }
   if (pagination?.nextCommand) {
@@ -2928,6 +2957,10 @@ function printPasswordResult(result: PagePasswordManageResult): void {
   console.log(`  Route      ${result.path}`);
   console.log(`  Visibility ${result.route.effectiveVisibility}`);
   if (result.policy) console.log(`  Policy     ${result.policy.status} · version ${result.policy.version}`);
+}
+
+function domainRecheckCommand(projectRef: string, site: string, hostname: string): string {
+  return `ravi pages domains ${site} ${hostname} --project ${projectRef} --check --execute`;
 }
 
 function siteLabel(site: PageSitePayload): string {
