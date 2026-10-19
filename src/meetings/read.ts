@@ -153,7 +153,7 @@ export function normalizeMeetingReadMaxChars(value: string | number | undefined)
   return parsed;
 }
 
-/** `ownerAsked`: a group turn where the operator is the one asking (the refusal sends them to their own chat). */
+/** `ownerAsked`: a refused group turn where the operator is the one asking (the refusal sends them to their own chat). */
 export interface MeetingReadTurnBlock {
   turn: PageReadTurnBlock;
   why: string;
@@ -179,22 +179,25 @@ export function meetingReadRefusalDetails(
 
 /**
  * Why this turn may not read a meeting, or null when it is the operator's own.
- * Uses the same classification as `pages read`, with one rule more: a group
- * is refused even when the operator asks there, because the answer would put
- * the transcript in front of everyone in it. A turn Ravi cannot classify is
+ * Uses the same classification as `pages read`: the operator asking in a
+ * group they chose may read there. `refuseGroup` (the calendar) refuses a
+ * group even when the operator asks there. A turn Ravi cannot classify is
  * refused (fail closed).
  */
-export function meetingReadTurnBlock(deps: MeetingReadDeps = {}): MeetingReadTurnBlock | null {
+export function meetingReadTurnBlock(
+  deps: MeetingReadDeps = {},
+  options: { refuseGroup?: boolean } = {},
+): MeetingReadTurnBlock | null {
   if (deps.operatorTurn !== undefined) {
     return deps.operatorTurn ? null : { turn: "not_owner", why: "a test marked this turn as someone else's" };
   }
   const turnDeps = { turn: deps.turn, readCredentials: deps.readCredentials };
   try {
     const result = resolveTurnForActiveLogin(turnDeps);
-    if (result.ok && result.turn.conversation === "group") {
+    if (options.refuseGroup && result.ok && result.turn.conversation === "group") {
       return {
         turn: "group",
-        why: "the answer would go to a group, where people outside the meeting would read the transcript",
+        why: "the answer would go to a group, where everyone in it would read it",
         ownerAsked: result.turn.speaker.kind === "owner",
       };
     }

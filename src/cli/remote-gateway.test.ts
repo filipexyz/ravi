@@ -1559,49 +1559,18 @@ describe("pages read refusals over the gateway", () => {
 });
 
 describe("operator-only refusals over the gateway", () => {
-  const chatLine = "Ask me in our private chat and I'll read it there.";
+  const chatLine = "Ask me in our private chat and I'll check the calendar there.";
 
-  it("keeps the meetings read refusal and the line that sends the operator to their own chat", async () => {
+  it("keeps the agenda refusal and the line that sends the operator to their own chat", async () => {
     const message =
-      "Meeting transcripts are read only on the operator's own turns (terminal, their direct chat, their routines). This turn is not the operator's own: the answer would go to a group, where people outside the meeting would read the transcript.";
-    const local = new ContractError("meetings read", "MEETING_ACCESS_DENIED", message, 3, {
+      "The calendar is used only on the operator's own turns (terminal, their direct chat, their routines). This turn is not the operator's own: the answer would go to a group, where everyone in it would read it.";
+    const local = new ContractError("agenda list", "CALENDAR_ACCESS_DENIED", message, 3, {
       refusal: "operator_only",
       turn: "group",
       suggestedAction: `The operator asked in a group. Reply here with the chat line: "${chatLine}"`,
       chatLine,
-      chatLinePt: "Me peça no nosso chat privado que eu leio lá.",
+      chatLinePt: "Me peça no nosso chat privado que eu vejo a agenda lá.",
       replyTo: "same_chat",
-    });
-    const response = contractErrorResponse(local);
-    const remote = remoteGatewayErrorToContractError(
-      "meetings read",
-      result({ status: response.status, body: await response.text() }),
-    );
-    expect(remote).toMatchObject({
-      code: "MEETING_ACCESS_DENIED",
-      exitCode: 3,
-      message,
-      details: {
-        refusal: "operator_only",
-        turn: "group",
-        suggestedAction: `The operator asked in a group. Reply here with the chat line: "${chatLine}"`,
-        chatLine,
-        chatLinePt: "Me peça no nosso chat privado que eu leio lá.",
-        replyTo: "same_chat",
-      },
-    });
-    expect(remoteNextStepLine(remote!)).toBe(
-      `Next: The operator asked in a group. Reply here with the chat line: "${chatLine}"`,
-    );
-  });
-
-  it("keeps the agenda refusal for someone else's turn", async () => {
-    const message =
-      "The calendar is used only on the operator's own turns (terminal, their direct chat, their routines). This turn is not the operator's own: someone other than the operator is asking.";
-    const local = new ContractError("agenda list", "CALENDAR_ACCESS_DENIED", message, 3, {
-      refusal: "operator_only",
-      turn: "not_owner",
-      suggestedAction: "Tell the person you cannot look at or change the operator's calendar here.",
     });
     const response = contractErrorResponse(local);
     const remote = remoteGatewayErrorToContractError(
@@ -1610,8 +1579,43 @@ describe("operator-only refusals over the gateway", () => {
     );
     expect(remote).toMatchObject({
       code: "CALENDAR_ACCESS_DENIED",
+      exitCode: 3,
       message,
-      details: { refusal: "operator_only", turn: "not_owner" },
+      details: {
+        refusal: "operator_only",
+        turn: "group",
+        suggestedAction: `The operator asked in a group. Reply here with the chat line: "${chatLine}"`,
+        chatLine,
+        chatLinePt: "Me peça no nosso chat privado que eu vejo a agenda lá.",
+        replyTo: "same_chat",
+      },
+    });
+    expect(remoteNextStepLine(remote!)).toBe(
+      `Next: The operator asked in a group. Reply here with the chat line: "${chatLine}"`,
+    );
+  });
+
+  it("keeps the meetings read refusal for someone else's turn", async () => {
+    const message =
+      "Meeting transcripts are read only on the operator's own turns (terminal, their direct chat, their routines). This turn is not the operator's own: this turn answers into a group or a chat that is not the owner's direct chat.";
+    const local = new ContractError("meetings read", "MEETING_ACCESS_DENIED", message, 3, {
+      refusal: "operator_only",
+      turn: "group",
+      suggestedAction: "Tell the person you cannot read meeting transcripts for other people.",
+    });
+    const response = contractErrorResponse(local);
+    const remote = remoteGatewayErrorToContractError(
+      "meetings read",
+      result({ status: response.status, body: await response.text() }),
+    );
+    expect(remote).toMatchObject({
+      code: "MEETING_ACCESS_DENIED",
+      message,
+      details: {
+        refusal: "operator_only",
+        turn: "group",
+        suggestedAction: "Tell the person you cannot read meeting transcripts for other people.",
+      },
     });
     expect(remote?.details.chatLine).toBeUndefined();
   });
