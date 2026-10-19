@@ -1,3 +1,5 @@
+import { isApprovalGatedTool } from "./tool-liveness.js";
+
 /**
  * Bounded task checkpoint for an inactivity recovery that cannot replay the
  * original turn. After tools have run, the fresh provider thread would
@@ -62,7 +64,13 @@ export function buildInactivityRecoveryCheckpoint(input: InactivityRecoveryCheck
   if (progress.length === 0) lines.push("- (no completed tool or assistant result recorded)");
   else for (const line of progress) lines.push(`- ${line}`);
   lines.push("", "Remaining work:", "- Continue the objective from the last verified step.");
-  for (const tool of openTools) lines.push(`- Finish or redo incomplete tool \`${tool}\`.`);
+  for (const tool of openTools) {
+    lines.push(
+      isApprovalGatedTool(tool)
+        ? `- \`${tool}\` was waiting for a human answer that never came. Do not call it again on your own: tell the user it is still waiting and stop.`
+        : `- Finish or redo incomplete tool \`${tool}\`.`,
+    );
+  }
   lines.push("", "Artifact hints:");
   if (artifacts.length === 0) lines.push("- (none recorded)");
   else for (const artifact of artifacts) lines.push(`- ${artifact}`);
