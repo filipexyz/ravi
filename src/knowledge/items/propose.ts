@@ -46,6 +46,11 @@ export interface ProposalPlanDeps {
   meetingsDir?: () => string;
 }
 
+/**
+ * Validates and normalizes a proposal without sending it to the Console.
+ * Local transcript/evidence reads supply the payload; hashing that complete
+ * payload gives stable retries while separating distinct approval requests.
+ */
 export function planKnowledgeProposal(
   input: {
     kind: KnowledgeProposalKind;

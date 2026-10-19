@@ -46,6 +46,7 @@ normative: false
 - `bun test src/knowledge/gaps/store.test.ts`: equal questions from different recipients keep separate rows; retries in one conversation deduplicate, and forgetting one contact preserves the other contact's wait.
 - `bun test src/knowledge/mirror/mirror.test.ts`: simulated Console deduplication links multiple recipients to one proposal; each marked recipient receives one answer, a failed recipient is retried independently, and another instance without the FAQ mark receives nothing.
 - `bun test src/knowledge/mirror/mirror.test.ts`: a later recipient whose upload deduplicates to an already approved answer is notified once through mirror sync, without replaying an answer event.
+- `bun test src/knowledge/gaps/store.test.ts src/knowledge/mirror/mirror.test.ts`: both archive and redact forget operations cancel approved answers waiting for a missing FAQ mirror; mirroring it later notifies only the other waiting contact, once. The store drops pending/uploaded/answered waits, preserves notified history and returns zero changes on a repeated forget.
 - After `forget --about`, a contact with a WhatsApp JID has zero index rows.
 - A `remember` from a channel turn whose text is only in a quote becomes a draft.
 - Guarded sessions rewrite unmarked Ravi links to `[link removido]` on every outbound path; a bare domain is caught whatever precedes it (not an email), with its port and path.

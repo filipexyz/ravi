@@ -410,6 +410,11 @@ export function deleteLocalRowsForChats(chatIds: readonly string[]): number {
 // Search and read
 // ---------------------------------------------------------------------------
 
+/**
+ * Searches indexed local history with folded speaker and metadata filters
+ * applied before candidate/result limits. FTS5 and LIKE both prefer matches
+ * containing every query term before filling the limit with OR matches.
+ */
 export function searchLocal(input: {
   query: string;
   about?: { chatIds: string[] } | null;

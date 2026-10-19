@@ -105,6 +105,11 @@ function instanceLabel(name: string, channel: string): string {
   return `${name} (${channel})`.slice(0, 80);
 }
 
+/**
+ * Uploads each recipient's pending wait with a stable per-gap request key.
+ * A deduplicated proposal that already has an approved answer queues that
+ * recipient for notification, still subject to their instance's FAQ mirror.
+ */
 async function uploadPendingGaps(
   client: KnowledgeClient,
   instances: Array<{ id: string; label: string; channel: string }>,

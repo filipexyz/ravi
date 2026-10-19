@@ -105,21 +105,26 @@ describe("knowledge gaps store", () => {
     expect(claimGapsForNotification("shared-proposal").map((gap) => gap.id)).toEqual([second.id]);
   });
 
-  it("drops a contact's pending and uploaded gaps", () => {
+  it("drops every undelivered gap on forget and preserves delivered history and other contacts", () => {
     const a = insertKnowledgeGap(gapInput("a?")).gap;
     const b = insertKnowledgeGap(gapInput("b?")).gap;
     const c = insertKnowledgeGap(gapInput("c?")).gap;
+    const delivered = insertKnowledgeGap(gapInput("already delivered?")).gap;
     const other = insertKnowledgeGap(gapInput("d?", { contactId: "contact-2" })).gap;
     updateGap(b.id, { status: "uploaded", proposalId: "p1" });
     updateGap(c.id, { status: "answered", proposalId: "p1" });
-    expect(dropGapsForContact("contact-1")).toBe(2);
+    updateGap(delivered.id, { status: "notified", proposalId: "p1", notifiedAt: 1 });
+    expect(dropGapsForContact("contact-1")).toBe(3);
     expect(
       listGapsByStatus("dropped", 10)
         .map((gap) => gap.id)
         .sort(),
-    ).toEqual([a.id, b.id].sort());
-    expect(listAnsweredGaps(10).map((gap) => gap.id)).toEqual([c.id]);
+    ).toEqual([a.id, b.id, c.id].sort());
+    expect(listAnsweredGaps(10)).toEqual([]);
+    expect(listGapsByStatus("notified", 10).map((gap) => gap.id)).toEqual([delivered.id]);
     expect(listGapsByStatus("pending", 10).map((gap) => gap.id)).toEqual([other.id]);
+    expect(dropGapsForContact("contact-1")).toBe(0);
+    expect(claimGapsForNotification("p1")).toEqual([]);
   });
 
   it("claims gaps for notification once, optionally by instance", () => {

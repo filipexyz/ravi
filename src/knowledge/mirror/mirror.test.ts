@@ -4,6 +4,7 @@ import type { InstanceConfig } from "../../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import type { KnowledgeClient } from "../client.js";
 import { getKnowledgeGap, insertKnowledgeGap, updateGap } from "../gaps/store.js";
+import { forgetKnowledge } from "../items/remember.js";
 import { getKnowledgeDb, setKnowledgeFts5ForcedOff } from "../store/db.js";
 import type { ConsoleMirror, ConsoleMirrorPage, ConsoleProposalCreate, ConsoleProposalView } from "../types.js";
 import {
@@ -116,6 +117,7 @@ function fakeClient(options: {
   return { client, state };
 }
 
+/** Creates a synthetic recipient wait in the current test's isolated store. */
 function gap(
   question = "Vocês dão desconto pra ONG?",
   instanceId = "wa-main",
@@ -373,6 +375,44 @@ describe("syncKnowledgeMirror", () => {
     expect((await syncKnowledgeMirror(options)).notified).toBe(0);
     expect(sent).toEqual([second.chatId]);
   });
+
+  for (const redact of [false, true]) {
+    it(`does not notify a forgotten recipient when an approved FAQ is mirrored later (redact=${redact})`, async () => {
+      const forgotten = gap();
+      const waiting = gap(undefined, "wa-main", { contactId: "contact-2", chatId: "chat-2" });
+      const { client } = fakeClient({ mirror: mirror([]) });
+      client.createProposal = async () => ({ proposal: proposalView(), deduped: true });
+      const sent: string[] = [];
+      const options = {
+        client,
+        now: NOW,
+        listInstances: () => [instance("wa-main")],
+        project: () => "acme",
+        deliver: async (payload: { to: string }) => {
+          sent.push(payload.to);
+        },
+      };
+
+      expect((await syncKnowledgeMirror(options)).notified).toBe(0);
+      for (const pending of [forgotten, waiting]) {
+        expect(getKnowledgeGap(pending.id)).toMatchObject({
+          status: "answered",
+          proposalId: "prop-1",
+          notifiedAt: null,
+        });
+      }
+      forgetKnowledge({ about: { kind: "contact", id: forgotten.contactId }, redact }, { chatIdsForContact: () => [] });
+      expect(getKnowledgeGap(forgotten.id)?.status).toBe("dropped");
+
+      const faqPage = page({ routeId: "route-faq", url: "https://acme.ravi.page/faq", path: "/faq", sections: [] });
+      const mirrored = fakeClient({ mirror: mirror([faqPage]) }).client;
+      expect((await syncKnowledgeMirror({ ...options, client: mirrored })).notified).toBe(1);
+      expect((await syncKnowledgeMirror({ ...options, client: mirrored })).notified).toBe(0);
+      expect(sent).toEqual([waiting.chatId]);
+      expect(getKnowledgeGap(forgotten.id)?.status).toBe("dropped");
+      expect(getKnowledgeGap(waiting.id)?.status).toBe("notified");
+    });
+  }
 
   it("truncates the question to 200 characters in the answer text", () => {
     const text = buildGapAnswerText({ question: "a".repeat(300), answer: "Sim.", link: "https://x.ravi.page/faq#a" });

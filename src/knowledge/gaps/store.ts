@@ -95,6 +95,11 @@ export function capUtf16(text: string, max: number): string {
   return last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut;
 }
 
+/**
+ * Records a recipient's question, reusing only their pending/uploaded wait in
+ * the same conversation. The shared question hash still deduplicates Console
+ * proposals; new waits count toward the contact's local daily cap.
+ */
 export function insertKnowledgeGap(
   input: {
     agentId: string;
@@ -263,8 +268,9 @@ export function claimGapsForNotification(
 }
 
 /**
- * Drops a contact's gaps that were not answered yet (`pending`, `uploaded`),
- * so a forgotten contact's question is never uploaded. Returns the count.
+ * Cancels a contact's outstanding uploads and answer deliveries, including
+ * approved answers waiting for their FAQ mirror. Already notified history
+ * and other contacts' waits are preserved. Returns the number cancelled.
  */
 export function dropGapsForContact(contactId: string): number {
   const id = contactId?.trim();
@@ -274,7 +280,7 @@ export function dropGapsForContact(contactId: string): number {
     (db) =>
       db
         .prepare(
-          "UPDATE knowledge_gaps SET status = 'dropped' WHERE contact_id = ? AND status IN ('pending','uploaded')",
+          "UPDATE knowledge_gaps SET status = 'dropped' WHERE contact_id = ? AND status IN ('pending','uploaded','answered')",
         )
         .run(id).changes,
     { label: "knowledge_gap_drop_contact" },
