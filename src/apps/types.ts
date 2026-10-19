@@ -89,6 +89,43 @@ export interface RaviAppOperationAuthorizationDeclaration {
   };
 }
 
+export interface RaviAppOperationHelpArgument {
+  name: string;
+  description?: string;
+  required?: boolean;
+}
+
+export interface RaviAppOperationHelpOption {
+  flag: string;
+  description?: string;
+  value?: string;
+  required?: boolean;
+  default?: string | number | boolean;
+}
+
+export interface RaviAppOperationHelpSection {
+  title: string;
+  body?: string;
+  lines?: string[];
+}
+
+/**
+ * Per-operation help an app may declare in its manifest. `ravi <app> help <op>`
+ * prints it. When an operation declares no help, the CLI says so and, for a CLI
+ * passthrough operation, points at the app command that owns the real flags —
+ * it never prints empty lists as if that were the help.
+ */
+export interface RaviAppOperationHelp {
+  usage?: string;
+  routedUsage?: string;
+  summary?: string;
+  arguments?: RaviAppOperationHelpArgument[];
+  options?: RaviAppOperationHelpOption[];
+  examples?: string[];
+  sections?: RaviAppOperationHelpSection[];
+  backingRequest?: string;
+}
+
 export interface RaviAppOperationDeclaration {
   interface: RaviAppOperationInterface;
   handler?: string;
@@ -105,6 +142,7 @@ export interface RaviAppOperationDeclaration {
   outputSchema?: unknown;
   authorization?: RaviAppOperationAuthorizationDeclaration;
   json?: boolean;
+  help?: RaviAppOperationHelp;
   [key: string]: unknown;
 }
 
