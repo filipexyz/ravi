@@ -415,6 +415,24 @@ describe("buildRuntimeSystemPrompt Building Solutions", () => {
     );
   });
 
+  it("does not count the bootstrap Bases reads as building, but still mounts for a Bases write group", async () => {
+    const skillsShow = { permission: "read", objectType: "skills", objectId: "show" };
+    const basesReads = [
+      { permission: "read", objectType: "bases", objectId: "list" },
+      { permission: "read", objectType: "bases.views", objectId: "query" },
+      { permission: "read", objectType: "bases.charts", objectId: "data" },
+    ];
+    expectMounted(await promptFor([...basesReads, skillsShow]), false);
+    expectMounted(
+      await promptFor([
+        ...basesReads,
+        skillsShow,
+        { permission: "execute", objectType: "group", objectId: "bases_rows" },
+      ]),
+      true,
+    );
+  });
+
   it("leaves it out when the context carries no capabilities at all", async () => {
     expectMounted(await promptFor([]), false);
     expectMounted(await promptFor(null), false);
