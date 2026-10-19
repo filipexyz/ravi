@@ -82,6 +82,7 @@ function createDispatchedTask(title: string): { taskId: string; sessionName: str
 describe("task comments steering", () => {
   it("steers the active assignee session when a new comment lands on an active task", async () => {
     const { taskId, sessionName } = createDispatchedTask("Comment steer smoke");
+    getOrCreateSession(sessionName, "dev", join(stateDir ?? "", "agent-dev"), { name: sessionName });
 
     const result = await commentTask(taskId, {
       author: "operator",
@@ -91,14 +92,13 @@ describe("task comments steering", () => {
     });
 
     expect(result.steeredSessionName).toBe(sessionName);
-    expect(result.steerWarning).toBeUndefined();
+    expect(result.steerSkippedReason).toBeUndefined();
     expect(publishCalls).toHaveLength(1);
     expect(publishCalls[0]).toEqual({
       sessionName,
       payload: expect.objectContaining({
         deliveryBarrier: "after_response",
         _agentId: "dev",
-        taskBarrierTaskId: taskId,
       }),
     });
     expect(String(publishCalls[0]?.payload.prompt)).toContain("New comment on task");
@@ -139,7 +139,7 @@ describe("task comments steering", () => {
 
     expect(result.comment.body).toBe("segue com a opção B");
     expect(result.steeredSessionName).toBeUndefined();
-    expect(result.steerWarning?.code).toBe(TASK_SESSION_OWNERSHIP_CONFLICT);
+    expect(result.steerSkippedReason).toContain("already belongs to agent other");
     expect(result.task.status).toBe("blocked");
     expect(dbGetTask(taskId)?.status).toBe("blocked");
     expect(publishCalls).toHaveLength(0);
@@ -156,7 +156,7 @@ describe("task comments steering", () => {
     });
 
     expect(result.steeredSessionName).toBeUndefined();
-    expect(result.steerWarning?.code).toBe("TASK_AGENT_NOT_FOUND");
+    expect(result.steerSkippedReason).toContain("Agent not found");
     expect(dbGetTask(taskId)?.status).toBe("blocked");
     expect(resolveSession(sessionName)).toBeNull();
     expect(publishCalls).toHaveLength(0);

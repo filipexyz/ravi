@@ -82,8 +82,8 @@ Tasks do not own:
 - Dispatch MUST resolve the effective session cwd from the assigned agent/session. Worktree metadata MAY add context but MUST NOT override cwd.
 - A task-linked runtime turn MAY receive `RAVI_TASK_*` environment only when the turn is explicitly bound to a dispatched or resumed task.
 - Turns without a task binding MUST NOT inherit stale `RAVI_TASK_*` state from earlier task work.
-- Prompts the task runtime sends to the assignee (dispatch, resume, comment steer, observer nudge, checkpoint reminder) MUST carry the assigned agent and the task id as their task binding, so the turn runs under the assignee's agent and the task's runtime options.
-- A comment that steers a dispatched, in-progress or blocked task MUST check or recreate the assignee's session under the assigned agent before it resumes the task. When that session belongs to another agent, the comment MUST be kept, the task MUST stay as it was, and the result MUST carry a typed "not steered" warning.
+- Prompts the task runtime sends to the assignee (dispatch, resume, comment steer, observer nudge, checkpoint reminder) MUST name the assigned agent, so a missing work session is never cold-started on the default agent. Dispatch, restart recovery and a recreated session's brief also carry the task id as their task binding.
+- A comment that steers a dispatched, in-progress or blocked task MUST check or recreate the assignee's session under the assigned agent before it resumes the task. When that session cannot be resolved for the assignee (it belongs to another agent, or the agent is gone), the comment MUST be kept, the task MUST stay as it was, and the result MUST carry the reason it was not steered.
 - Dispatch MUST refuse a session owned by another agent with a typed `TASK_SESSION_OWNERSHIP_CONFLICT` error before it auto-resumes a blocked task.
 - Task-level and dispatch-level runtime overrides MUST NOT be implemented by mutating session model or thinking preferences.
 - Reporting, blocking, completing, and failing a task MUST write through the task runtime so DB state and task events stay authoritative.

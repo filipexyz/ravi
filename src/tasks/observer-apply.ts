@@ -15,10 +15,18 @@ import {
   type TaskObserverVerdict,
 } from "./observer-contract.js";
 import { neutralizeSystemMarkers, normalizeTaskProgressMessage } from "./progress-contract.js";
-import { blockTask, completeTask, emitTaskEvent, failTask, reportTaskProgress, reportTaskStall } from "./service.js";
-import { publishTaskSessionPrompt } from "./session-publisher.js";
+import {
+  blockTask,
+  completeTask,
+  emitTaskEvent,
+  failTask,
+  publishTaskAssigneePrompt,
+  reportTaskProgress,
+  reportTaskStall,
+  resolveTaskAssigneeSession,
+} from "./service.js";
 import { dbAppendTaskEvent, dbGetActiveAssignment, dbGetTask, dbTouchTaskCheckpoint } from "./task-db.js";
-import type { TaskEvent, TaskRecord } from "./types.js";
+import type { TaskAssignment, TaskEvent, TaskRecord } from "./types.js";
 
 const log = logger.child("tasks:observer");
 
@@ -77,23 +85,25 @@ Keep working until it is done, or say plainly what blocks you.`;
 
 async function nudgeWorker(input: {
   task: TaskRecord;
-  workerSessionName: string;
-  workerAgentId: string;
+  assignment: TaskAssignment;
   missing: string;
   actor: { actor: string; agentId?: string; sessionName: string };
 }): Promise<void> {
+  const target = resolveTaskAssigneeSession(input.task, input.assignment);
+  if (!target.ok) {
+    log.warn("Task observer nudge not delivered to the assignee", { taskId: input.task.id, reason: target.reason });
+    return;
+  }
   const { event } = dbAppendTaskEvent(input.task.id, "task.nudged", {
     ...input.actor,
     message: neutralizeSystemMarkers(input.missing),
     progress: input.task.progress,
   });
   await emitTaskEvent(input.task, event);
-  await publishTaskSessionPrompt(input.workerSessionName, {
+  await publishTaskAssigneePrompt(input.task, target, {
     prompt: buildTaskObserverNudgePrompt(input.task, input.missing),
     deliveryBarrier: "after_response",
     deliveryBarrierSource: "default",
-    _agentId: input.workerAgentId,
-    taskBarrierTaskId: input.task.id,
     _taskRuntime: { taskId: input.task.id, kind: "nudge", event: "task.nudged" },
   });
 }
@@ -229,13 +239,7 @@ export async function applyTaskObserverTurn(input: {
       const missing =
         cleanMessage(verdict.missing) ?? message ?? "The task is not done and the last turn ended without a result.";
       if (next.nudgesSinceProgress < TASK_OBSERVER_MAX_NUDGES) {
-        await nudgeWorker({
-          task,
-          workerSessionName: assignment.sessionName,
-          workerAgentId: assignment.agentId,
-          missing,
-          actor,
-        });
+        await nudgeWorker({ task, assignment, missing, actor });
         next.nudgesSinceProgress += 1;
         action = "nudged";
       } else if (next.stalledAt === undefined) {
