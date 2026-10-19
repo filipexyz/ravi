@@ -51,7 +51,7 @@ principals must name a Ravi Pages site"). A ordem:
 View que já existe ganha o site sem você montar o JSON:
 
 ```bash
-ravi bases views share <base> <view> --site <slug|id|host> [--write a,b] [--create] [--archive] [--write-only] --json
+ravi bases views share <base> <view> --site <slug|id|host> [--write a,b] [--create] [--archive] [--write-only] --json --execute
 ```
 
 O comando acha o site do projeto (id, slug ou hostname), soma o
@@ -63,7 +63,9 @@ princípios de escrita da view: o que você liberar para o site vale também par
 quem já escrevia (o aviso diz isso). Formulário puro (`access.read: []`):
 `--create --write-only` dá ao site só a criação, sem ler as linhas. Se o site
 já estava na view com esse acesso, nada é gravado (`changed: false`). Só quem
-gerencia a base compartilha.
+gerencia a base compartilha. Ampliar o acesso é freio: sem `--execute` o
+comando lê a view e o site, mostra o plano (view, site, acessos e o aviso) e
+sai com exit 3; mostre o plano a quem pediu antes de repetir com `--execute`.
 
 `access.write`:
 

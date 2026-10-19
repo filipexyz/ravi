@@ -6680,15 +6680,17 @@ public struct BasesViewsShareOptions: Codable, Sendable {
   public var archive: Bool?
   public var console: String?
   public var create: Bool?
+  public var execute: Bool?
   public var project: String?
   public var site: String?
   public var write: String?
   public var writeOnly: Bool?
 
-  public init(archive: Bool? = nil, console: String? = nil, create: Bool? = nil, project: String? = nil, site: String? = nil, write: String? = nil, writeOnly: Bool? = nil) {
+  public init(archive: Bool? = nil, console: String? = nil, create: Bool? = nil, execute: Bool? = nil, project: String? = nil, site: String? = nil, write: String? = nil, writeOnly: Bool? = nil) {
     self.archive = archive
     self.console = console
     self.create = create
+    self.execute = execute
     self.project = project
     self.site = site
     self.write = write
@@ -6699,6 +6701,7 @@ public struct BasesViewsShareOptions: Codable, Sendable {
     case archive = "archive"
     case console = "console"
     case create = "create"
+    case execute = "execute"
     case project = "project"
     case site = "site"
     case write = "write"
@@ -6714,6 +6717,9 @@ public struct BasesViewsShareOptions: Codable, Sendable {
     }
     if let value = self.create {
       body["create"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.project {
       body["project"] = try RaviJSON.fromEncodable(value)

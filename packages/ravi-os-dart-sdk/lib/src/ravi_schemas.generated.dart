@@ -19854,7 +19854,7 @@ class RaviSchemas {
       "type": "boolean"
     },
     "expectedVersion": {
-      "description": "Row version you read (default: read the current one)",
+      "description": "Row version you read (default: none, the write applies to the current row)",
       "type": "string"
     },
     "idempotencyKey": {
@@ -21783,7 +21783,7 @@ class RaviSchemas {
       "type": "boolean"
     },
     "expectedVersion": {
-      "description": "Row version you read (default: read the current one)",
+      "description": "Row version you read (default: none, the write applies to the current row)",
       "type": "string"
     },
     "idempotencyKey": {
@@ -22018,7 +22018,7 @@ class RaviSchemas {
       "type": "string"
     },
     "expectedVersion": {
-      "description": "Row version you read (default: read the current one)",
+      "description": "Row version you read (default: none, the write applies to the current row)",
       "type": "string"
     },
     "idempotencyKey": {
@@ -26508,6 +26508,10 @@ class RaviSchemas {
     },
     "create": {
       "description": "Also let the site create rows through the view",
+      "type": "boolean"
+    },
+    "execute": {
+      "description": "Actually widen the view's access; default is a dry-run that only shows the plan (exit 3)",
       "type": "boolean"
     },
     "project": {

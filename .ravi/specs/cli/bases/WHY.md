@@ -44,4 +44,9 @@ honest about who decides access.
   and charts, where the Console already limits what each caller sees; direct
   row reads and writes remain an explicit choice of the operator.
 - The actor rides on reads too. A view filtered by `$viewer` must show the
-  linked person's rows in that person's turn, not the operator's.
+  linked person's rows in that person's turn, not the operator's, and an
+  unlinked person must not read through the operator's login at all: the
+  Console refuses those reads with `ACTOR_NOT_LINKED`, which starts the link.
+- Retries replay. A keyed write never carries a version the CLI read just
+  before, because the Console hashes it into the request and a retry after a
+  lost response would read a newer one and conflict instead of replaying.

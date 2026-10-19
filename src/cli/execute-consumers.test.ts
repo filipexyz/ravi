@@ -567,6 +567,18 @@ const executeInstructions = [
     path: "docs/console/bases.mdx",
     instruction: "ravi bases rows reject requests <rowId> approval --execute --json",
   },
+  {
+    name: "Bases views share in the bases skill",
+    path: "src/plugins/internal/ravi-system/skills/bases/references/views-access-forms.md",
+    instruction:
+      "ravi bases views share <base> <view> --site <slug|id|host> [--write a,b] [--create] [--archive] [--write-only] --json --execute",
+  },
+  {
+    name: "Bases views share documentation",
+    path: "docs/console/bases.mdx",
+    instruction:
+      "ravi bases views share requests <VIEW_ID> --site <host> [--write a,b] [--create] [--archive] [--write-only] --execute",
+  },
 ] as const;
 
 const obsoleteExecuteConsumers = [
@@ -855,20 +867,12 @@ const obsoleteExecuteConsumers = [
     current: "ravi bases views bind requests <view id> none",
   },
   {
-    name: "views share in the bases skill: a view update applies at once",
-    path: "src/plugins/internal/ravi-system/skills/bases/references/views-access-forms.md",
-    obsolete:
-      "ravi bases views share <base> <view> --site <slug|id|host> [--write a,b] [--create] [--archive] [--write-only] --json --execute",
-    current:
-      "ravi bases views share <base> <view> --site <slug|id|host> [--write a,b] [--create] [--archive] [--write-only] --json",
-  },
-  {
     name: "request-approval in the bases skill: asking applies at once",
     path: "src/plugins/internal/ravi-system/skills/bases/references/approvals-agent-columns.md",
     obsolete:
-      'ravi bases rows request-approval compras <row> aprovacao --note "Acima do teto" --idempotency-key compras:<row>:pedir --json --execute',
+      'ravi bases rows request-approval compras <row> aprovacao --note "Acima do teto" --idempotency-key compras:<row>:pedir:<id-do-pedido> --json --execute',
     current:
-      'ravi bases rows request-approval compras <row> aprovacao --note "Acima do teto" --idempotency-key compras:<row>:pedir --json',
+      'ravi bases rows request-approval compras <row> aprovacao --note "Acima do teto" --idempotency-key compras:<row>:pedir:<id-do-pedido> --json',
   },
   {
     name: "rows fill in the bases skill: filling an agent cell applies at once",

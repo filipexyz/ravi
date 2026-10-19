@@ -56,7 +56,7 @@
   the ids its own route calls, and the skills MUST say that the host allows
   the union over its active routes (no skill, reference, skeleton or doc may
   still teach "every ship lists the union of every page's ids":
-  `grep -rn "união do --uses\|união dos ids de todas\|union of the ids all" src/plugins docs AGENTS.md`
+  `grep -rn "união do --uses\|união dos ids de todas\|union of the ids all" src/plugins docs AGENTS.md src/prompt-builder.ts`
   finds nothing).
 - The skill MUST tell the agent, when it grants `page_viewer`, to tell the
   person which host (all routes) gains read or write access to which view.
@@ -76,12 +76,20 @@
   subscription again MUST reuse the trigger. The filter MUST match only its
   own subscription's items (`Bases subscription triggers` in
   `src/triggers/__tests__/runner-filter.test.ts`).
-- `bases views share` MUST PATCH `access` at the version read with the
-  `page_viewer` added, MUST NOT PATCH when nothing changes, MUST fail
+- Inside a runtime turn Ravi cannot attribute, every Bases command (reads
+  included) MUST fail `ACTOR_UNKNOWN` (exit 3) with no Console call
+  (`src/bases/client.test.ts`, `src/cloud-auth/turn-actor.test.ts`).
+- `bases views share` without `--execute` MUST exit 3 after reading the
+  view and site, with no PATCH; with it, it MUST PATCH `access` at the
+  version read with the `page_viewer` added, MUST NOT PATCH when nothing
+  changes, MUST fail
   `NOT_FOUND` for an unknown site and `PROJECT_ACCESS_DENIED` for a caller
   without manage, and MUST return the disclosure.
-- `bases rows approve|reject` without `--execute` MUST exit 3 without a
-  Console call; with it they MUST write `{state, note?}` (through the view
+- `bases rows approve|reject` without `--execute` MUST read the row and exit 3
+  without a write (an unknown row exits 1), with no note text in the plan;
+  `request-approval|approve|reject` without `--expected-version` MUST send
+  `lastWriteWins: true` and no read-derived `expectedVersion`, so the same
+  key retries as the same request; with `--execute` they MUST write `{state, note?}` (through the view
   with `--view`). `approval_forbidden` MUST surface as
   `PROJECT_ACCESS_DENIED` with `consoleError: approval_forbidden`.
 - `bases rows fill` MUST post `{inputsHash, value|error}` with an idempotency

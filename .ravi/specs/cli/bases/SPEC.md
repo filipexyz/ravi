@@ -80,7 +80,11 @@ writes only through a view, via the `ravi.bases.*` Pages connector actions
    `--idempotency-key` overrides it. Keys MUST match
    `^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$`. The same key and request replay the
    created object; a different request with the key is `CONFLICT`
-   (`idempotency_conflict`). Creates carry no `clientHint`.
+   (`idempotency_conflict`). Creates carry no `clientHint`. A keyed request
+   MUST NOT include a value the CLI read just before (the Console hashes the
+   whole request): `props add --idempotency-key` requires
+   `--expected-schema-version` (exit 2 before any call), and approval writes
+   follow invariant 21.
    Inside an agent session, `rows add` and `rows update` without
    `--idempotency-key` still write, and MUST add `warnings: [string]` to the
    payload (a `warning:` line in human output): a retry would get a new
@@ -93,8 +97,14 @@ writes only through a view, via the `ravi.bases.*` Pages connector actions
    agent session.
 6a. Every Console call, reads included, MUST carry the turn's actor
    (`x-ravi-actor-contact`) inside a runtime turn, so a linked person's reads
-   and writes act as that person and an unlinked person's reads use the
-   operator login (writes fail `ACTOR_NOT_LINKED`). Outside a turn no actor
+   and writes act as that person. The Console refuses an unlinked person's
+   reads and writes with `ACTOR_NOT_LINKED` (403, which starts the link
+   flow); the CLI never retries them as the operator. Inside a runtime turn
+   that `resolveAccessActor` refuses (another agent's turn, an unresolved
+   speaker) or cannot classify, `openBasesClient` MUST fail `ACTOR_UNKNOWN`
+   (exit 3, policy) before any Console call, reads included, instead of
+   sending no actor (which the Console would serve as the operator). Operator
+   turns, owner relays and owner-owned routines act as the operator. Outside a turn no actor
    header is sent.
 7. `rows update`, `rows archive`, and `rows restore` MUST require exactly one
    of `--expected-version <n>` or `--last-write-wins`, checked before any
@@ -143,7 +153,11 @@ writes only through a view, via the `ravi.bases.*` Pages connector actions
     `ravi.console.inbox.item` filtered on `data.category == "bases"`, the base
     id, `data.payload.subscriptionId` for a filtered subscription (or the
     absence of one for an unfiltered subscription, so one item wakes one
-    trigger) and the event types. From an agent turn
+    trigger) and the event types, sorted (the Console sorts a filter's
+    events, so any `--events` order reuses the same trigger). With a `row.*`
+    event the types also include `bases.rows.bulk_changed`, and with
+    `agent.requested` also `bases.agent.backfill`, because a bulk write sends
+    those to such a subscription instead of per-row items. From an agent turn
     (`hasRuntimeInvocationContext`) the trigger MUST be created disabled and
     the output MUST name `ravi triggers enable <id>`; from the operator's
     terminal it is enabled. JSON output includes `trigger {id, enabled, draft,
@@ -183,17 +197,28 @@ writes only through a view, via the `ravi.bases.*` Pages connector actions
     `{kind: "page_viewer", siteId}` to `access.read` (not with
     `--write-only`, which needs a write grant) and, with a write grant, to
     `access.write.principals`, merging columns and flags without removing any,
-    then PATCH `access` at the version it read. Nothing changed: no PATCH and
+    then PATCH `access` at the version it read. Widening access is an
+    authority escalation: without `--execute` it MUST dry-run (exit 3) with a
+    plan of the view, the site (id and host), the grants and the disclosure,
+    after reading the view and site (so an unknown site or a caller without
+    manage still fails with exit 1). Nothing changed: no PATCH, no brake and
     `changed: false`. The payload and human output MUST carry the disclosure:
     which host gains which access to which view, and that the write block is
-    shared by every write principal. Access is `mutate:bases.views:update`.
+    shared by every write principal. Access is `mutate:bases.views:update`
+    (risk high, confirmation required).
 21. Approvals: `props add --type approval` takes `--approvers`
     (`role:<viewer|developer|project_admin>` or `user:<id>`, 1-20) and
     `--reset-on`. `rows request-approval` writes `"pending"`; `rows approve`
     and `rows reject` write `{state, note?}` and MUST dry-run (exit 3) without
     `--execute` (risk high, no default grant). All three take `--note` (at most
-    1000 chars), `--view` and `--expected-version` (default: read the row
-    first). The Console decides who may approve; `approval_forbidden` maps to
+    1000 chars), `--view` and `--expected-version`. Without
+    `--expected-version` the write sends `lastWriteWins: true` and MUST NOT
+    send a version it read: the Console hashes `expectedVersion` into the
+    keyed request, so a read-derived version would turn a retry after a lost
+    response into `idempotency_conflict` instead of a replay. The approve and
+    reject dry-runs MUST read the row first (an unknown row fails with exit 1,
+    not 3) and plan its current version; the plan MUST NOT copy the note
+    (only `{present, length}`). The Console decides who may approve; `approval_forbidden` maps to
     `PROJECT_ACCESS_DENIED` with that reason in the envelope.
 22. Agent columns: `props add --type agent` takes `--instructions` (1-4000),
     `--inputs` (1-20 keys), `--output`
@@ -202,7 +227,9 @@ writes only through a view, via the `ravi.bases.*` Pages connector actions
     --inputs-hash <16 hex> (--value <v> | --error <msg>)` posts to
     `.../rows/<row>/agent/<prop>` with an idempotency key; `--value` is JSON
     when it parses, otherwise text. `agent_stale` maps to `CONFLICT` and
-    surfaces the current `inputsHash`. `rows rerun` posts to
+    surfaces the current `inputsHash`; its `suggestedAction` MUST say to
+    re-read the row, recompute from its current inputs and fill with the hash
+    read, never to store the old result under the new hash. `rows rerun` posts to
     `.../agent/<prop>/rerun`.
 23. The runtime bootstrap floor MUST grant exactly the Bases reads through
     views and charts: `read:bases:list|show`,
@@ -222,8 +249,9 @@ writes only through a view, via the `ravi.bases.*` Pages connector actions
 | `bases props delete` | soft delete with dependents | Console dry-run report; `--execute` sends `confirm: true` |
 | `bases rows import` | bulk create | local plan after schema read; `--execute` |
 | `bases rows approve`, `bases rows reject` | a decision others act on | local dry-run + `--execute` |
+| `bases views share` (when it changes access) | a Pages host gains read or write access to the view | local dry-run + `--execute` |
 | `bases subscribe --trigger` | local automation | none; from an agent turn the trigger is created disabled |
-| `bases create/update`, `props add/restore`, `rows add/update/archive/restore/request-approval/fill/rerun`, `views create/update/bind/share`, `charts create/update`, `subscribe/unsubscribe` | reversible or versioned writes | none |
+| `bases create/update`, `props add/restore`, `rows add/update/archive/restore/request-approval/fill/rerun`, `views create/update/bind`, `charts create/update`, `subscribe/unsubscribe` | reversible or versioned writes | none |
 
 ## Commands
 

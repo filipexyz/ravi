@@ -95,7 +95,10 @@ filtro) e, nos eventos de uma linha, os valores lidos na entrega
 assina e cria o trigger num comando, com o filtro da assinatura pronto. Num
 turno de agente o trigger nasce desligado: o operador liga com
 `ravi triggers enable <id>`. Ele não filtra o `actor`; se o agente escreve na
-mesma base, some a regra 6 com `ravi triggers set <id> filter '…'`.
+mesma base, some a regra 6 ao filtro gerado (`trigger.filter` no JSON):
+`ravi triggers set <id> filter '<filtro gerado> && data.actor.type == "user"'`.
+O `set` troca o filtro inteiro; só a condição do `actor` perderia base,
+assinatura e eventos.
 
 ```bash
 ravi triggers add "tarefas · fila" --topic "ravi.console.inbox.item" \

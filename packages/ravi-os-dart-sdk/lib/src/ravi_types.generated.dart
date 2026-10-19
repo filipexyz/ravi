@@ -5464,11 +5464,12 @@ class BasesViewsQueryReturn {
 BasesViewsQueryReturn basesViewsQueryReturnFromJson(Object? json) => BasesViewsQueryReturn.fromJsonValue(json);
 
 class BasesViewsShareOptions {
-  const BasesViewsShareOptions({this.archive, this.console, this.create, this.project, this.site, this.write, this.writeOnly});
+  const BasesViewsShareOptions({this.archive, this.console, this.create, this.execute, this.project, this.site, this.write, this.writeOnly});
 
   final bool? archive;
   final String? console;
   final bool? create;
+  final bool? execute;
   final String? project;
   final String? site;
   final String? write;
@@ -5483,6 +5484,9 @@ class BasesViewsShareOptions {
     }
     if (create != null) {
       into["create"] = RaviJson.from(create);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
     }
     if (project != null) {
       into["project"] = RaviJson.from(project);

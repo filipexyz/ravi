@@ -157,6 +157,12 @@ const EXPECTED_VERSION_OPTION = {
   flags: "--expected-version <n>",
   description: "Version you read; the write fails with VERSION_CONFLICT if it changed",
 };
+// Without a version an approval write is last-write-wins, so its request (and a
+// retry with the same --idempotency-key) never depends on a version read first.
+const APPROVAL_EXPECTED_VERSION_OPTION = {
+  flags: "--expected-version <n>",
+  description: "Row version you read (default: none, the write applies to the current row)",
+};
 const LAST_WRITE_WINS_OPTION = {
   flags: "--last-write-wins",
   description: "Overwrite concurrent changes instead of passing --expected-version (recorded in the ledger)",
@@ -725,6 +731,13 @@ export class BasesPropsCommands {
         position: parseIntegerOption(position, "--position", { min: 0 }),
       });
       const schemaVersion = parseIntegerOption(expectedSchemaVersion, "--expected-schema-version", { min: 1 });
+      // The Console hashes expectedSchemaVersion into the keyed request: a version read here would
+      // differ on a retry after the create landed, and the retry would conflict instead of replaying.
+      if (idempotencyKey !== undefined && schemaVersion === undefined) {
+        throw invalidInput(
+          "--idempotency-key needs --expected-schema-version (the schemaVersion from 'ravi bases show'), so a retry sends the same request.",
+        );
+      }
       const client = await openBasesClient({ project, console: consoleUrl }, this.deps);
       const { response: result, idempotencyKey: usedKey } = await client.createProperty(
         base,
@@ -1093,8 +1106,7 @@ export class BasesRowsCommands {
     @Arg("prop", ROW_PROP_ARG) prop: string,
     @Option({ flags: "--note <text>", description: "Note for the approvers (max 1000 chars)" }) note?: string,
     @Option(VIEW_OPTION) view?: string,
-    @Option({ flags: "--expected-version <n>", description: "Row version you read (default: read the current one)" })
-    expectedVersion?: string,
+    @Option(APPROVAL_EXPECTED_VERSION_OPTION) expectedVersion?: string,
     @Option(IDEMPOTENCY_OPTION) idempotencyKey?: string,
     @Option(PROJECT_OPTION) project?: string,
     @Option(CONSOLE_OPTION) consoleUrl?: string,
@@ -1133,8 +1145,7 @@ export class BasesRowsCommands {
     @Arg("prop", ROW_PROP_ARG) prop: string,
     @Option({ flags: "--note <text>", description: "Note recorded with the decision (max 1000 chars)" }) note?: string,
     @Option(VIEW_OPTION) view?: string,
-    @Option({ flags: "--expected-version <n>", description: "Row version you read (default: read the current one)" })
-    expectedVersion?: string,
+    @Option(APPROVAL_EXPECTED_VERSION_OPTION) expectedVersion?: string,
     @Option(IDEMPOTENCY_OPTION) idempotencyKey?: string,
     @Option(PROJECT_OPTION) project?: string,
     @Option(CONSOLE_OPTION) consoleUrl?: string,
@@ -1179,8 +1190,7 @@ export class BasesRowsCommands {
     @Arg("prop", ROW_PROP_ARG) prop: string,
     @Option({ flags: "--note <text>", description: "Note recorded with the decision (max 1000 chars)" }) note?: string,
     @Option(VIEW_OPTION) view?: string,
-    @Option({ flags: "--expected-version <n>", description: "Row version you read (default: read the current one)" })
-    expectedVersion?: string,
+    @Option(APPROVAL_EXPECTED_VERSION_OPTION) expectedVersion?: string,
     @Option(IDEMPOTENCY_OPTION) idempotencyKey?: string,
     @Option(PROJECT_OPTION) project?: string,
     @Option(CONSOLE_OPTION) consoleUrl?: string,
@@ -1797,7 +1807,13 @@ export class BasesViewsCommands {
     name: "share",
     description: "Give a Ravi Pages site (every route of its host) read, and optionally write, access to a view",
   })
-  @CommandAccess({ kind: "mutate", resource: "bases.views", action: "update", risk: "medium" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "bases.views",
+    action: "update",
+    risk: "high",
+    requiresConfirmation: true,
+  })
   async share(
     @Arg("base", { description: "Base id or slug" }) base: string,
     @Arg("view", { description: "View id" }) view: string,
@@ -1818,6 +1834,11 @@ export class BasesViewsCommands {
     @Option(PROJECT_OPTION) project?: string,
     @Option(CONSOLE_OPTION) consoleUrl?: string,
     @Option(JSON_OPTION) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually widen the view's access; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     return runBasesCommand("bases views share", asJson, this.deps, async () => {
       const siteRef = requireText(site, "--site");
@@ -1843,6 +1864,27 @@ export class BasesViewsCommands {
         write: grantsWrite,
         read: writeOnly !== true,
       });
+      // Widening who reads or writes the view is an authority escalation: plan first.
+      if (shared.changed && execute !== true) {
+        contractDryRun(
+          "bases views share",
+          {
+            project: client.projectRef,
+            base,
+            view: { id: full.id, name: full.name, version: full.version },
+            site: { id: target.id, host: target.hostname ?? target.slug ?? target.id },
+            grants: {
+              read: shared.read,
+              writeColumns: shared.writeColumns,
+              create: shared.create,
+              archive: shared.archive,
+            },
+            disclosure: shareDisclosure(target, full, shared),
+            effect: "every route of the host gains this access to the view",
+          },
+          { asJson },
+        );
+      }
       const updated = shared.changed
         ? await client.updateView(base, view, { access: shared.access, expectedVersion: full.version })
         : full;
@@ -2317,30 +2359,35 @@ async function writeApproval(deps: BasesCommandDeps, input: ApprovalWriteInput) 
   if (note !== undefined && note.length > NOTE_MAX)
     throw invalidInput(`--note must have at most ${NOTE_MAX} characters.`);
   const version = parseIntegerOption(input.expectedVersion, "--expected-version", { min: 1 });
+  const client = await openBasesClient({ project: input.project, console: input.consoleUrl }, deps);
   if (input.state !== "pending" && input.execute !== true) {
+    // Resolve the row first so an unknown row fails (exit 1) instead of planning.
+    const current = input.view
+      ? (await client.getViewRow(input.base, input.view, input.row)).row
+      : (await client.getRow(input.base, input.row)).row;
     contractDryRun(
       input.op,
       {
-        project: input.project ?? "(Console scope default)",
+        project: client.projectRef,
         base: input.base,
-        row: input.row,
+        ...(input.view ? { view: input.view } : {}),
+        row: current.rowId,
+        rowVersion: current.version,
         property,
         decision: input.state,
-        ...(note ? { note } : {}),
-        expectedVersion: version ?? "current",
+        ...(note ? { note: { present: true, length: note.length } } : {}),
+        expectedVersion: version ?? "none (last write wins)",
         effect: "records your decision on the row; only an approver of this property may decide",
       },
       { asJson: input.asJson },
     );
   }
   const value = note ? { state: input.state, note } : input.state === "pending" ? "pending" : { state: input.state };
-  const client = await openBasesClient({ project: input.project, console: input.consoleUrl }, deps);
-  const current =
-    version ??
-    (input.view
-      ? (await client.getViewRow(input.base, input.view, input.row)).row.version
-      : (await client.getRow(input.base, input.row)).row.version);
-  const body = { values: { [property]: value }, expectedVersion: current };
+  // Never a read-derived version: a retry after a lost response must send the same request to replay.
+  const body = {
+    values: { [property]: value },
+    ...(version === undefined ? { lastWriteWins: true } : { expectedVersion: version }),
+  };
   const result = input.view
     ? await client.updateViewRow(input.base, input.view, input.row, body, { idempotencyKey: input.idempotencyKey })
     : await client.updateRow(input.base, input.row, body, { idempotencyKey: input.idempotencyKey });
@@ -2476,10 +2523,23 @@ export function subscriptionTriggerFilter(input: {
       ? `data.payload.subscriptionId == ${JSON.stringify(input.subscriptionId)}`
       : '!(data.payload.subscriptionId != "")',
   );
-  const eventTypes = (input.events ?? []).map((event) => JSON.stringify(`bases.${event}`));
+  const eventTypes = subscriptionEventTypes(input.events ?? []).map((type) => JSON.stringify(type));
   if (eventTypes.length === 1) conditions.push(`data.eventType == ${eventTypes[0]}`);
   if (eventTypes.length > 1) conditions.push(`(${eventTypes.map((type) => `data.eventType == ${type}`).join(" || ")})`);
   return conditions.join(" && ");
+}
+
+/**
+ * Event types a subscription with these events can deliver, sorted (the
+ * Console sorts the events, so the same subscription gives the same filter).
+ * A bulk write sends `bases.rows.bulk_changed` instead of per-row items when a
+ * `row.*` verb is subscribed, and `bases.agent.backfill` when `agent.requested` is.
+ */
+export function subscriptionEventTypes(events: readonly string[]): string[] {
+  const types = new Set(events.map((event) => `bases.${event}`));
+  if (events.some((event) => event.startsWith("row."))) types.add("bases.rows.bulk_changed");
+  if (events.includes("agent.requested")) types.add("bases.agent.backfill");
+  return [...types].sort();
 }
 
 async function createSubscriptionTrigger(
@@ -2505,7 +2565,7 @@ async function createSubscriptionTrigger(
   const trigger =
     existing ??
     store.create({
-      name: `bases ${input.base} · ${input.filter.events?.join(",") ?? "all"} (${input.subscription.id})`,
+      name: `bases ${input.base} · ${input.filter.events ? [...input.filter.events].sort().join(",") : "all"} (${input.subscription.id})`,
       topic: INBOX_NATS_SUBJECT,
       message: plan.message ?? DEFAULT_SUBSCRIPTION_TRIGGER_MESSAGE,
       messageSource: "manual",
@@ -3072,8 +3132,8 @@ function basesSuggestedAction(
       return "fix the values listed in error.issues and retry; agent columns are written only with 'ravi bases rows fill'";
     case "agent_stale":
       return details.inputsHash
-        ? `the inputs changed (current inputsHash ${details.inputsHash}); a new request is on its way, or read the row again and fill with --inputs-hash ${details.inputsHash}`
-        : "the inputs changed; read the row again and fill with its current inputsHash";
+        ? `the inputs changed (current inputsHash ${details.inputsHash}) and a new request is on its way; never store the value computed from the old inputs. Re-read the row with 'ravi bases rows get', recompute from its current inputs, then fill with the inputsHash you read`
+        : "the inputs changed; never store the value computed from the old inputs. Re-read the row with 'ravi bases rows get', recompute from its current inputs, then fill with the inputsHash you read";
     default:
       return undefined;
   }

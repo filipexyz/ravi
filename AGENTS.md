@@ -168,7 +168,7 @@ To show a private page to one person, share it by email; never make it public or
 add a password for that. To bring someone into the organization, invite them. When
 a page is denied, ask its managers (the printed approval link may be forwarded;
 only the page's managers approve). Chat turns from someone else act for that
-person through their `ravi link`. Without one, writes fail with `ACTOR_NOT_LINKED`
+person through their `ravi link`. Without one, writes (and Bases reads) fail with `ACTOR_NOT_LINKED`
 and Ravi starts the link itself: relay the error's `chatLinePt` (on WhatsApp,
 "me chama na DM"; Ravi answers their private message with the approval link).
 
@@ -225,7 +225,7 @@ ravi skills show pages      # ship, per-route --uses, data pages
 - Live data pages are for signed-in org members, on `private` or `protected_link` routes. Outsiders use a channel and get messages or snapshots. `ravi pages ship` refuses `ravi.bases.*` in `--uses` on a public route unless `--members-best-effort` is passed on purpose.
 - Each ship declares in `--uses` the ids its own route calls; the host allows the union over its active routes, so shipping one route never removes another route's ids.
 - Base events (rows, approvals, agent columns) arrive as `ravi.console.inbox.item` (`category: "bases"`) after `ravi bases subscribe <base>`; `--events`, `--props` and `--view` filter them, and `--trigger --agent <id>` also creates the trigger (a disabled draft when run from an agent turn). A trigger whose agent writes the same base filters `data.actor.type == "user"`.
-- Agents read Bases through views and charts by default (`bases list|show`, `bases views list|show|query`, `bases charts list|show|data`); writes, `rows query` and `aggregate` stay opt-in. In a linked person's turn, Bases reads and writes act as that person.
+- Agents read Bases through views and charts by default (`bases list|show`, `bases views list|show|query`, `bases charts list|show|data`); writes, `rows query` and `aggregate` stay opt-in. In a linked person's turn, Bases reads and writes act as that person; in an unlinked person's turn both fail with `ACTOR_NOT_LINKED` (relay `chatLinePt`), and a turn Ravi cannot attribute (another agent's turn, an unknown speaker) is refused locally with `ACTOR_UNKNOWN` (exit 3); neither falls back to the operator.
 - Org themes and widgets are Library items (`ravi themes`, `ravi widgets`); `pages ship` applies the active theme and turns `<ravi-view>`, `<ravi-widget>` and `<ravi-form>` tags into pages. Agents read `ravi skills show pages --file references/widgets.md` and `--file references/theme.md`, propose (`ravi widgets propose <dir> --scope org --execute`) and never publish or run `themes use`.
 
 ## Cloud Sandbox Tasks (E2B)

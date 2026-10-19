@@ -1454,6 +1454,7 @@ export class RaviClient {
         archive?: boolean;
         console?: string;
         create?: boolean;
+        execute?: boolean;
         project?: string;
         site?: string;
         write?: string;

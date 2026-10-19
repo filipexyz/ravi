@@ -135,7 +135,7 @@ You can also ask your agent to do each step; it follows the `bases` and `pages` 
     - The filter keeps each viewer to the rows they created. The Console applies it on every call; the page cannot widen it.
     - `page_viewer` admits anyone who can open any route of this host, not one person. Per-person access is the filter's job, so project only columns every member may see.
     - The page can write only `request`. Every new row starts as `New` (`write.set`), and `reply` and `status` stay with the agent.
-    - To give the site access to a view that already exists, without editing its JSON: `ravi bases views share requests <VIEW_ID> --site <host> [--write a,b] [--create] [--archive] [--write-only]`. It adds the `page_viewer` principal, saves at the version it read and prints what the host can now read and write. The write settings are shared by every write principal of the view.
+    - To give the site access to a view that already exists, without editing its JSON: `ravi bases views share requests <VIEW_ID> --site <host> [--write a,b] [--create] [--archive] [--write-only] --execute`. It adds the `page_viewer` principal, saves at the version it read and prints what the host can now read and write. Without `--execute` it only prints the plan (the view, the site, the access it would gain and the disclosure) and exits 3, because it widens who can reach the view; when the site already has that access, nothing is written. The write settings are shared by every write principal of the view.
   </Step>
   <Step title="Write the page">
     Copy the client. It is the only helper: there is no `window.ravi` and no browser SDK.
@@ -290,8 +290,9 @@ You can also ask your agent to do each step; it follows the `bases` and `pages` 
 The CLI talks to the Console with the operator's login. Inside a conversation turn, Ravi tells the Console who wrote the message:
 
 - **A person who linked their account** (`ravi link`) and is an active member: the agent's Bases reads and writes in that turn act as that person, with the smaller of their role and the operator's. A view filtered by `$viewer` shows that person's rows.
-- **A person who did not link**: reads use the operator's login; writes are refused with `ACTOR_NOT_LINKED` and Ravi starts the link.
-- **Other turns** (your terminal, cron, triggers): the operator.
+- **A person who did not link**: Bases reads and writes are both refused with `ACTOR_NOT_LINKED` (exit 3), and Ravi starts the link: relay the error's `chatLinePt` (on WhatsApp, "me chama na DM"). The agent never reads as the operator for them.
+- **A turn Ravi cannot attribute** (another agent's turn, a speaker it cannot identify): refused before any Console call with `ACTOR_UNKNOWN` (exit 3), reads included.
+- **Your own turns** (your terminal, your DM, cron, triggers): the operator.
 
 Every row write is recorded for the accountable person, as `cli`, with the agent next to it in `rows history`. The anti-loop filter `data.actor.type == "user"` keeps working.
 
@@ -312,7 +313,8 @@ ravi bases rows reject requests <rowId> approval --execute --json
 - `--approvers` takes `role:<viewer|developer|project_admin>` (that project role or above) or `user:<id>`, 1 to 20. `--reset-on` lists properties whose change sends a decision back to `pending`.
 - The value reads as `{state, requestedBy, requestedAt, decidedBy, decidedAt, note}`, with `state` `pending`, `approved` or `rejected`.
 - `request-approval` needs write access to the column. `approve` and `reject` are dry runs without `--execute` (exit 3), and someone who is not an approver gets `PROJECT_ACCESS_DENIED` with `approval_forbidden`. No default grant lets an agent decide.
-- Events: `bases.approval.requested` and `bases.approval.decided`, with `payload.propertyId` and `payload.state` (never the note), in addition to `bases.row.updated`.
+- All three take `--view` and `--expected-version`. Without a version the write applies to the current row (last write wins), so a retry with the same `--idempotency-key` replays instead of conflicting. Keys last 24 hours: use a new one for each request and repeat it only on retries of that request. The dry run of `approve` and `reject` reads the row first, so an unknown row fails with exit 1.
+- Events: `bases.approval.requested` and `bases.approval.decided`, with `payload.propertyId` and `payload.state`, in addition to `bases.row.updated`. The Console payload carries no note; the local runner adds the row read at delivery, so the note is in `payload.row.values.<key>.note`.
 - On a page, `describe` returns `capabilities.approve`, the approval columns the viewer can decide; the `<ravi-view>` tag shows the buttons only for those.
 
 ## Agent columns
@@ -331,7 +333,7 @@ ravi bases rows rerun requests <rowId> topic --json
 
 - When a row is created, or one of its inputs changes, the Console marks the cell `pending` with a new `inputsHash` and emits `bases.agent.requested`. Adding the column to a base that has rows emits one `bases.agent.backfill` with the row count.
 - The cell reads as `{state, value, error, inputsHash, updatedAt}`. Nobody writes it with `rows add`, `rows update` or a view.
-- `rows fill` stores the value (`--value`, JSON when it parses, otherwise text) or an error (`--error`) for the `inputsHash` the agent read. If the inputs changed since, it fails with `CONFLICT` (`agent_stale`) and the current hash: re-read the row and fill again.
+- `rows fill` stores the value (`--value`, JSON when it parses, otherwise text) or an error (`--error`) for the `inputsHash` the agent read. If the inputs changed since, it fails with `CONFLICT` (`agent_stale`) and the current hash: re-read the row, compute the value again from its current inputs, then fill with the hash you read. Never store the old result under the new hash.
 - A fill emits only `bases.row.updated`, so the filling agent does not wake itself on `agent.requested`.
 
 ## How the page talks to the base

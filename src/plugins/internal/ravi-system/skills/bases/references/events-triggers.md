@@ -45,7 +45,9 @@ ravi bases subscribe tarefas --events approval.requested --props aprovacao \
 Cria (ou reaproveita) um trigger em `ravi.console.inbox.item` com o filtro
 `data.category == "bases"`, o id da base, a assinatura (`data.payload.subscriptionId`
 quando há filtro; sem filtro, só itens sem `subscriptionId`, para não acordar
-duas vezes) e os eventos. Cooldown de 5 s. Sem `--session`, a sessão atual (ou
+duas vezes) e os eventos (mais `bases.rows.bulk_changed` quando você assina um
+`row.*`, e `bases.agent.backfill` quando assina `agent.requested`: uma escrita
+em massa manda esses no lugar dos itens por linha). Cooldown de 5 s. Sem `--session`, a sessão atual (ou
 a `main` do agente); sem `--message`, um prompt curto em PT-BR que manda reler o
 estado. O JSON traz `trigger: { id, enabled, draft, filter, enableCommand }`.
 
@@ -54,17 +56,19 @@ estado. O JSON traz `trigger: { id, enabled, draft, filter, enableCommand }`.
   automação. Diga ao operador o `enableCommand` (`ravi triggers enable <id>`)
   e o que o trigger vai fazer; não ligue você.
 - O trigger não filtra o `actor`. Se o agente escreve na base que o acorda
-  (regra 6), acrescente `&& data.actor.type == "user"` ao filtro com
-  `ravi triggers set <id> filter '<filtro>'`, ou assine só eventos que a escrita
-  dele não gera.
+  (regra 6), copie o filtro gerado (`trigger.filter` no JSON) e grave de novo
+  com a condição no fim: `ravi triggers set <id> filter '<filtro gerado> &&
+  data.actor.type == "user"'`. O `set` troca o filtro inteiro: gravar só a
+  condição do `actor` perde base, assinatura e eventos. Ou assine só eventos
+  que a escrita dele não gera.
 
 ## O item
 
 | campo | valor |
 |---|---|
 | `eventType` | `bases.row.created`, `.updated`, `.archived`, `.restored`; `bases.rows.bulk_changed` (mais de 50 linhas num request); `bases.approval.requested`, `bases.approval.decided`; `bases.agent.requested`, `bases.agent.backfill` |
-| `payload` | `{ baseId, baseSlug, projectId, rowId, version, schemaVersion, changedPropertyCount, surface }`; bulk sem `rowId`. `approval.*` somam `propertyId` e `state` (nunca a nota); `agent.requested` soma `propertyId` e `inputsHash`; `agent.backfill` é `{ baseId, baseSlug, projectId, propertyId, rowCount, schemaVersion }`. Assinatura filtrada soma `subscriptionId` |
-| `actor` | `{ type, id }`: `user` (pessoa no Console ou na página) ou `cli` (todo CLI e agente desta instalação). O `id` é a pessoa responsável: no turno de quem fez `ravi link`, essa pessoa; nos outros, o operador logado. O agente fica registrado ao lado, no `rows history` |
+| `payload` | `{ baseId, baseSlug, projectId, rowId, version, schemaVersion, changedPropertyCount, surface }`; bulk sem `rowId`. `approval.*` somam `propertyId` e `state` (a nota não; ela chega em `payload.row`, abaixo); `agent.requested` soma `propertyId` e `inputsHash`; `agent.backfill` é `{ baseId, baseSlug, projectId, propertyId, rowCount, schemaVersion }`. Assinatura filtrada soma `subscriptionId` |
+| `actor` | `{ type, id }`: `user` (pessoa no Console ou na página) ou `cli` (todo CLI e agente desta instalação). O `id` é a pessoa responsável: no turno de quem fez `ravi link`, essa pessoa; no turno do operador, o operador logado (sem link, nada é lido nem gravado: `ACTOR_NOT_LINKED`). O agente fica registrado ao lado, no `rows history` |
 | `dedupeKey` | `bases:row:<rowId>:v<version>:<verbo>:<instalação>` (filtrada: mais `:<subscriptionId>`) |
 
 `surface` é `console`, `cli`, `page` ou `system`. O item do Console nunca traz

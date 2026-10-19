@@ -168,6 +168,35 @@ describe("Bases reads in a delegated turn", () => {
     for (const call of calls) expect(call.headers["x-ravi-actor-contact"]).toBe("c_ana");
   });
 
+  it("refuses a turn Ravi cannot attribute before any Console call, reads included", async () => {
+    let consoleCalls = 0;
+    const client = {
+      requestJson: async () => {
+        consoleCalls += 1;
+        return {};
+      },
+    } as unknown as ConsoleApiClient;
+    await expect(
+      openBasesClient(
+        { project: "sales" },
+        { client, readCredentials: () => makeCredentials(), unattributedTurn: () => true, env: {} },
+      ),
+    ).rejects.toMatchObject({ code: "ACTOR_UNKNOWN" });
+    expect(consoleCalls).toBe(0);
+
+    const attributed = await openBasesClient(
+      { project: "sales" },
+      {
+        client,
+        readCredentials: () => makeCredentials(),
+        unattributedTurn: () => false,
+        getContext: () => undefined,
+        env: {},
+      },
+    );
+    expect(attributed.projectRef).toBe("sales");
+  });
+
   it("sends no contact outside a delegated turn", async () => {
     const calls: FetchCall[] = [];
     const respond = fetchReturning(calls, () => jsonResponse({ columns: [], rows: [], nextCursor: null, users: {} }));

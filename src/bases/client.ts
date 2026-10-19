@@ -71,6 +71,8 @@ export interface BasesClientDeps extends ConsoleScopeResolverDeps {
   deleteCredentials?: typeof deleteCloudCredentials;
   newIdempotencyKey?: () => string;
   clientHint?: () => BasesClientHint | null;
+  /** Whether a runtime turn runs this and Ravi cannot say who asked (default: `isUnattributedTurn`). */
+  unattributedTurn?: () => boolean | Promise<boolean>;
 }
 
 export interface BasesClientOptions {
@@ -511,6 +513,14 @@ export async function openBasesClient(
 ): Promise<RaviBasesClient> {
   const readCredentials = deps.readCredentials ?? readCloudCredentials;
   const credentials = requireStoredCredentials(readCredentials(), options.console);
+  // Every Bases call (reads included) acts as the person of the turn. A turn Ravi
+  // cannot attribute would go out as the operator, so it stops here instead.
+  if (await (deps.unattributedTurn ?? defaultUnattributedTurn)()) {
+    throw new CloudAuthError(
+      "ACTOR_UNKNOWN",
+      "Ravi could not tell who is asking in this turn, so it will not read or write Bases for anyone, not even as the operator. Ask the person to send the request from their own chat, or the operator to run it in the terminal.",
+    );
+  }
   const { projectRef } = await resolveConsoleProjectRef(
     { consoleUrl: options.console, explicitProject: options.project ?? null },
     { ...deps, readCredentials },
@@ -524,6 +534,12 @@ export async function openBasesClient(
     newIdempotencyKey: deps.newIdempotencyKey ?? newBasesIdempotencyKey,
     clientHint: deps.clientHint ?? currentBasesClientHint,
   });
+}
+
+async function defaultUnattributedTurn(): Promise<boolean> {
+  // Loaded lazily, like the client's own actor lookup, to keep the turn classifier out of import cycles.
+  const { isUnattributedTurn } = await import("../cloud-auth/turn-actor.js");
+  return isUnattributedTurn();
 }
 
 function requireStoredCredentials(credentials: CloudCredentials | null, consoleUrl?: string): CloudCredentials {

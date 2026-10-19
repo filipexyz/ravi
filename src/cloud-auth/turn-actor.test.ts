@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { runWithContext } from "../cli/context.js";
-import { inRuntimeTurn, turnActorContactId } from "./turn-actor.js";
+import { inRuntimeTurn, isUnattributedTurn, turnActorContactId } from "./turn-actor.js";
 
 describe("turnActorContactId", () => {
   it("is null outside a runtime turn, without classifying anything", () => {
@@ -26,6 +26,28 @@ describe("turnActorContactId", () => {
       },
     };
     expect(turnActorContactId(env, throwing)).toBeNull();
+  });
+});
+
+describe("isUnattributedTurn", () => {
+  const refused = { kind: "refused" as const, message: "unknown speaker", actorPrincipal: "agent:x" };
+
+  it("is true only for a runtime turn Ravi cannot attribute, or cannot classify", () => {
+    const env = { RAVI_CONTEXT_KEY: "ctx_1" };
+    expect(isUnattributedTurn(env, { actor: refused })).toBe(true);
+    expect(isUnattributedTurn(env, { actor: { kind: "operator" } })).toBe(false);
+    expect(isUnattributedTurn(env, { actor: { kind: "contact", contactId: "c_ana" } })).toBe(false);
+    const throwing = {
+      readCredentials: () => {
+        throw new Error("credentials unreadable");
+      },
+    };
+    expect(isUnattributedTurn(env, throwing)).toBe(true);
+  });
+
+  it("is false outside a runtime turn (the terminal, the daemon's own calls)", () => {
+    expect(isUnattributedTurn({})).toBe(false);
+    expect(runWithContext({}, () => isUnattributedTurn({}))).toBe(false);
   });
 });
 

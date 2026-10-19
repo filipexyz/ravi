@@ -5047,6 +5047,7 @@ export type BasesViewsShareInput = {
   base: string;
   console?: string;
   create?: boolean;
+  execute?: boolean;
   project?: string;
   site?: string;
   view: string;

@@ -146,7 +146,7 @@ ravi access status <request-id>
 
 Quem age: no turno do próprio operador (terminal, a DM dele, as rotinas dele) age o usuário do `ravi login`. Quando outra pessoa escreveu a mensagem, o Console age por ELA, pelo `ravi link` dela. Para compartilhar ou convidar, ela e o operador precisam ter o papel; para pedir acesso, basta ser ela. Sem link sai `ACTOR_NOT_LINKED` (exit 3) e o Ravi já começou o vínculo dela: repasse o `chatLinePt` do erro (no WhatsApp, num grupo, "me chama na DM"; o Ravi responde a DM dela com o link) e só tente de novo quando ela pedir. Turno que o Ravi não consegue atribuir é recusado antes de qualquer chamada (`ACTOR_UNKNOWN`, exit 3). `invites list` só roda no turno do operador.
 
-Autoria do resto (`ship`, `publish`, Bases, comentários): num turno que outra pessoa escreveu, o Console grava a escrita no nome dela quando ela fez `ravi link` e é membro ativo da org, com o menor papel entre ela e o operador, e registra os dois na auditoria (o agente fica anotado ao lado). Sem link a escrita é recusada com `ACTOR_NOT_LINKED`, como acima. Leituras de Bases no turno de quem fez `ravi link` são dela (o `$viewer` da view é ela); sem link, seguem com o login do operador. Se o papel dela não permitir, a escrita também é recusada: diga isso a ela e não contorne.
+Autoria do resto (`ship`, `publish`, Bases, comentários): num turno que outra pessoa escreveu, o Console grava a escrita no nome dela quando ela fez `ravi link` e é membro ativo da org, com o menor papel entre ela e o operador, e registra os dois na auditoria (o agente fica anotado ao lado). Sem link a escrita é recusada com `ACTOR_NOT_LINKED`, como acima. Leituras de Bases no turno de quem fez `ravi link` também são dela (o `$viewer` da view é ela); sem link, a leitura de Bases também é recusada com `ACTOR_NOT_LINKED` (nunca lê pelo operador). Se o papel dela não permitir, a escrita também é recusada: diga isso a ela e não contorne.
 
 ## Página de dados
 
@@ -171,7 +171,7 @@ Ordem num projeto novo (a view com `page_viewer` exige um site que já existe):
 ```bash
 ravi pages ship --project <p> --title "Pautas" --route /pautas --body "<p>Em construção</p>" --json
 ravi pages list --project <p> --json                     # siteId: id do site com isDefault: true
-ravi bases views create <base> --spec @view.json --json  # ou views share <base> <view> --site <host>
+ravi bases views create <base> --spec @view.json --json  # ou views share <base> <view> --site <host> --execute
 ravi pages ship --project <p> --title "Pautas" --route /pautas --dir ./pautas \
   --uses ravi.bases.views.describe,ravi.bases.views.query,ravi.bases.views.rows.update --json
 ```

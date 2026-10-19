@@ -24,21 +24,31 @@ Valor lido: `{ state, requestedBy, requestedAt, decidedBy, decidedAt, note }`,
 ids de pessoa vêm no mapa `users`.
 
 ```bash
-ravi bases rows request-approval compras <row> aprovacao --note "Acima do teto" --idempotency-key compras:<row>:pedir --json
+ravi bases rows request-approval compras <row> aprovacao --note "Acima do teto" --idempotency-key compras:<row>:pedir:<id-do-pedido> --json
 ravi bases rows approve compras <row> aprovacao --note "Ok" --execute --json
 ravi bases rows reject compras <row> aprovacao --note "Sem orçamento" --execute --json
 ```
 
 - `request-approval` pede (estado `pending`, limpa a decisão). Basta poder
-  escrever a coluna. Nota até 1000 caracteres; ela nunca vai no evento.
+  escrever a coluna. Nota até 1000 caracteres. O payload do Console não traz a
+  nota, mas o runner local soma a linha lida na entrega: ela aparece em
+  `payload.row.values.aprovacao.note` (quem assina a base lê a nota).
+- A chave de idempotência vale 24 h: use uma nova a cada pedido (por exemplo,
+  com o id da mensagem ou do evento que motivou o pedido) e repita a mesma só
+  no retry desse pedido. Uma chave fixa por linha faria um novo pedido no mesmo
+  dia devolver o antigo ou falhar com `idempotency_conflict`.
 - `approve` e `reject` decidem. Sem `--execute` mostram o plano e saem com
-  exit 3. Decidir exige uma pessoa que seja aprovadora: no turno de quem fez
-  `ravi link`, essa pessoa; nos outros, o operador logado. Fora da lista:
+  exit 3. Decidir exige uma pessoa que seja aprovadora: no turno de outra
+  pessoa, ela, pelo `ravi link` dela (sem link: `ACTOR_NOT_LINKED`, repasse o
+  `chatLinePt`); no turno do operador, o operador logado. Fora da lista:
   `PROJECT_ACCESS_DENIED` com `approval_forbidden` nos detalhes. Não há grant
   padrão para decidir: o operador libera, se quiser, e um agente não decide por
   conta própria o que foi pedido a uma pessoa.
 - Os três aceitam `--view <id>` (a coluna tem de estar em `write.columns` da
-  view) e `--expected-version`; sem ele, o CLI lê a versão atual antes.
+  view) e `--expected-version`; sem ele, a escrita vale para a linha atual
+  (`lastWriteWins`) e o retry com a mesma chave repete o mesmo pedido. O
+  dry-run de `approve`/`reject` lê a linha (linha inexistente: exit 1) e mostra
+  a versão atual no plano.
 - Filtros: `state_in` (um estado ou lista), `is_empty`, `is_not_empty`. Não
   ordena; `groupBy` agrupa por estado.
 - Eventos, além do `bases.row.updated`: `bases.approval.requested` ao entrar em

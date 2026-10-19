@@ -182,6 +182,8 @@ function publicMessage(code: CloudAuthError["code"], sourceMessage: string): str
       return "Only the owner of this connection can do that.";
     case "ACTOR_NOT_LINKED":
       return "The person asking is not linked to a Console user on this Ravi.";
+    case "ACTOR_UNKNOWN":
+      return "Ravi could not tell who is asking in this turn, so it will not act on anyone's behalf.";
     case "KNOWLEDGE_TURN_NOT_OPERATOR":
       return "Knowledge answers only the operator's own turns.";
     case "KNOWLEDGE_DISABLED":
@@ -302,6 +304,8 @@ function suggestedAction(code: CloudAuthError["code"]): string {
       return "ask the connection's owner to make this change";
     case "ACTOR_NOT_LINKED":
       return "run `ravi link` from the person's own chat turn; Ravi sends them a private approval link";
+    case "ACTOR_UNKNOWN":
+      return "do not retry from this turn; the person can ask from their own chat, or the operator can run the command in the terminal";
   }
 }
 

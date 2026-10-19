@@ -27,6 +27,7 @@ const {
   BasesRowsCommands,
   BasesViewsCommands,
   BasesChartsCommands,
+  subscriptionEventTypes,
   subscriptionTriggerFilter,
 } = await import("./bases.js");
 const { ContractError } = await import("../agent-contract.js");
@@ -955,7 +956,7 @@ describe("ravi bases subscribe filters and --trigger", () => {
       session: "crm-fila",
       enabled: true,
       filter:
-        'data.category == "bases" && data.payload.baseId == "base_1" && data.payload.subscriptionId == "sub_1" && (data.eventType == "bases.row.created" || data.eventType == "bases.approval.requested")',
+        'data.category == "bases" && data.payload.baseId == "base_1" && data.payload.subscriptionId == "sub_1" && (data.eventType == "bases.approval.requested" || data.eventType == "bases.row.created" || data.eventType == "bases.rows.bulk_changed")',
     });
     expect(triggers.refreshes()).toBe(1);
     expect(result).toMatchObject({
@@ -1032,6 +1033,81 @@ describe("ravi bases subscribe filters and --trigger", () => {
     expect(triggers.created).toEqual([]);
     expect(triggers.refreshes()).toBe(0);
     expect(result).toMatchObject({ trigger: { id: "trg_old", enabled: true, created: false, draft: false } });
+  });
+
+  it("lets the trigger through the bulk and backfill items its events can bring", () => {
+    const rowFilter = subscriptionTriggerFilter({
+      baseId: "base_1",
+      subscriptionId: "sub_f",
+      filtered: true,
+      events: ["row.updated"],
+    });
+    const agentFilter = subscriptionTriggerFilter({
+      baseId: "base_1",
+      subscriptionId: "sub_f",
+      filtered: true,
+      events: ["agent.requested"],
+    });
+    const approvalFilter = subscriptionTriggerFilter({
+      baseId: "base_1",
+      subscriptionId: "sub_f",
+      filtered: true,
+      events: ["approval.decided"],
+    });
+    const item = (eventType: string) => ({
+      category: "bases",
+      eventType,
+      payload: { baseId: "base_1", subscriptionId: "sub_f" },
+    });
+
+    expect(evaluateFilter(rowFilter, item("bases.rows.bulk_changed"))).toBe(true);
+    expect(evaluateFilter(rowFilter, item("bases.agent.backfill"))).toBe(false);
+    expect(evaluateFilter(agentFilter, item("bases.agent.backfill"))).toBe(true);
+    expect(evaluateFilter(agentFilter, item("bases.agent.requested"))).toBe(true);
+    expect(evaluateFilter(agentFilter, item("bases.rows.bulk_changed"))).toBe(false);
+    expect(evaluateFilter(approvalFilter, item("bases.rows.bulk_changed"))).toBe(false);
+    expect(subscriptionEventTypes(["agent.backfill", "agent.requested"])).toEqual([
+      "bases.agent.backfill",
+      "bases.agent.requested",
+    ]);
+  });
+
+  it("reuses the trigger whatever the order of --events", async () => {
+    const existing: Trigger[] = [];
+    const triggers = triggerStore(existing);
+    const create = triggers.store.create;
+    triggers.store.create = (input) => {
+      const trigger = create(input);
+      existing.push(trigger);
+      return trigger;
+    };
+    const deps = subscribeDeps([], false, triggers.store);
+    const subscribe = (events: string) =>
+      captureConsole(() =>
+        runWithContext({}, () =>
+          new BasesCommands(deps).subscribe(
+            "crm",
+            "view_1",
+            "status",
+            events,
+            true,
+            "triagem",
+            undefined,
+            undefined,
+            "sales",
+            undefined,
+            true,
+          ),
+        ),
+      );
+
+    const first = await subscribe("row.created,approval.requested");
+    const second = await subscribe("approval.requested,row.created");
+
+    expect(triggers.created).toHaveLength(1);
+    expect(second.result).toMatchObject({
+      trigger: { id: (first.result as { trigger: { id: string } }).trigger.id, created: false },
+    });
   });
 
   it("keeps an unfiltered subscription's trigger off the items of filtered subscriptions", () => {
@@ -1215,6 +1291,7 @@ describe("ravi bases views share", () => {
         "sales",
         undefined,
         true,
+        true,
       ),
     );
 
@@ -1254,6 +1331,36 @@ describe("ravi bases views share", () => {
     expectReturnsMatch(BasesViewsCommands, "share", result);
   });
 
+  it("dry-runs a widening share without --execute and plans it after resolving the view and site", async () => {
+    const calls: Call[] = [];
+    const deps = shareDeps(calls, { read: [{ kind: "project_role", minRole: "viewer" }] });
+
+    const { error, output } = await captureFailure(() =>
+      new BasesViewsCommands(deps).share(
+        "crm",
+        "view_1",
+        "acme-vendas",
+        "titulo",
+        undefined,
+        undefined,
+        undefined,
+        "sales",
+        undefined,
+        true,
+      ),
+    );
+
+    expect(error).toMatchObject({ code: "WRITE_REQUIRES_EXECUTE", exitCode: 3 });
+    expect(calls.map((call) => call.method)).toEqual(["GET", "GET"]);
+    const plan = JSON.parse(output).error.plan;
+    expect(plan).toMatchObject({
+      view: { id: "view_1", name: "Pedidos", version: 3 },
+      site: { id: "site_1", host: "acme-vendas.ravi.page" },
+      grants: { read: true, writeColumns: ["titulo"] },
+    });
+    expect(plan.disclosure.join("\n")).toContain("acme-vendas.ravi.page");
+  });
+
   it("grants a form site only the write side with --write-only", async () => {
     const calls: Call[] = [];
     const deps = shareDeps(calls, { read: [], write: { principals: [], columns: [], create: false, archive: false } });
@@ -1269,6 +1376,7 @@ describe("ravi bases views share", () => {
         true,
         "sales",
         undefined,
+        true,
         true,
       ),
     );
@@ -1461,6 +1569,57 @@ describe("ravi bases creates with idempotency keys", () => {
   });
 });
 
+describe("ravi bases in a turn Ravi cannot attribute", () => {
+  it("blocks reads with ACTOR_UNKNOWN (exit 3) before any Console call", async () => {
+    const calls: Call[] = [];
+    const deps = { ...makeDeps(calls, () => ({ bases: [] })), unattributedTurn: () => true };
+
+    const { error, output } = await captureFailure(() =>
+      new BasesCommands(deps).list(undefined, undefined, undefined, undefined, "sales", undefined, true),
+    );
+
+    expect(error).toMatchObject({ code: "ACTOR_UNKNOWN", exitCode: 3 });
+    expect(JSON.parse(output).error.suggestedAction).toContain("own chat");
+    expect(calls).toEqual([]);
+  });
+});
+
+describe("ravi bases props add with an idempotency key", () => {
+  it("needs --expected-schema-version so a retry is the same request, before any Console call", async () => {
+    const calls: Call[] = [];
+    const deps = makeDeps(calls, () => baseDetail());
+
+    const { error } = await captureFailure(() =>
+      new BasesPropsCommands(deps).add(
+        "crm",
+        "Notas",
+        "text",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "crm:prop:notas",
+        undefined,
+        "sales",
+        undefined,
+        true,
+      ),
+    );
+
+    expect(error).toMatchObject({ code: "PAYLOAD_INVALID", exitCode: 2 });
+    expect((error as Error).message).toContain("--expected-schema-version");
+    expect(calls).toEqual([]);
+  });
+});
+
 describe("ravi bases approval and agent columns", () => {
   function propsAdd(
     deps: BasesTestDeps,
@@ -1537,7 +1696,7 @@ describe("ravi bases approval and agent columns", () => {
     expect(calls).toEqual([]);
   });
 
-  it("requests an approval at once, at the version it read, with a key", async () => {
+  it("requests an approval at once, last-write-wins without a version read, with a key", async () => {
     const calls: Call[] = [];
     const deps = makeDeps(calls, (call) =>
       call.method === "GET" ? { row: row(6), users: {} } : { row: row(7), users: {}, idempotentReplay: false },
@@ -1558,14 +1717,14 @@ describe("ravi bases approval and agent columns", () => {
       ),
     );
 
+    // No read-derived version: a retry with the same key sends the same request and replays.
     expect(calls).toEqual([
-      { method: "GET", path: `${ROOT}/crm/rows/row_1`, body: undefined, headers: {} },
       {
         method: "PATCH",
         path: `${ROOT}/crm/rows/row_1`,
         body: {
           values: { ok: { state: "pending", note: "Conferir total" } },
-          expectedVersion: 6,
+          lastWriteWins: true,
           idempotencyKey: "ravi-cli:test-key-0001",
         },
         headers: { "Idempotency-Key": "ravi-cli:test-key-0001" },
@@ -1588,9 +1747,16 @@ describe("ravi bases approval and agent columns", () => {
     ]) {
       const { error, output } = await captureFailure(attempt);
       expect(error).toMatchObject({ code: "WRITE_REQUIRES_EXECUTE", exitCode: 3 });
-      expect(JSON.parse(output).error.plan).toMatchObject({ row: "row_1", property: "ok" });
+      const plan = JSON.parse(output).error.plan;
+      expect(plan).toMatchObject({ row: "row_1", rowVersion: 4, property: "ok", expectedVersion: 3 });
+      expect(JSON.stringify(plan)).not.toContain("Falta nota");
     }
-    expect(calls).toEqual([]);
+    // The dry-run resolves the row first (an unknown row exits 1, not 3) and writes nothing.
+    expect(calls.map((call) => `${call.method} ${call.path}`)).toEqual([
+      `GET ${ROOT}/crm/rows/row_1`,
+      `GET ${ROOT}/crm/rows/row_1`,
+    ]);
+    calls.length = 0;
 
     const { result } = await captureConsole(() =>
       rows.reject(
@@ -1650,6 +1816,62 @@ describe("ravi bases approval and agent columns", () => {
     const envelope = JSON.parse(output);
     expect(envelope.error.consoleError).toBe("approval_forbidden");
     expect(envelope.error.suggestedAction).toContain("approver");
+  });
+
+  it("decides with --execute and no --expected-version as the same request on every retry", async () => {
+    const calls: Call[] = [];
+    const deps = makeDeps(calls, () => ({ row: row(8), users: {}, idempotentReplay: true }));
+    const approve = () =>
+      captureConsole(() =>
+        new BasesRowsCommands(deps).approve(
+          "crm",
+          "row_1",
+          "ok",
+          undefined,
+          undefined,
+          undefined,
+          "crm:row_1:aprovar",
+          "sales",
+          undefined,
+          true,
+          true,
+        ),
+      );
+
+    await approve();
+    await approve();
+
+    expect(calls.map((call) => call.method)).toEqual(["PATCH", "PATCH"]);
+    expect(calls[0]?.body).toEqual({
+      values: { ok: { state: "approved" } },
+      lastWriteWins: true,
+      idempotencyKey: "crm:row_1:aprovar",
+    });
+    expect(calls[1]?.body).toEqual(calls[0]?.body);
+  });
+
+  it("fails a dry-run decision on an unknown row with exit 1, not the brake", async () => {
+    const deps = makeDeps([], () => {
+      throw new CloudAuthError("NOT_FOUND", "Row not found.", { status: 404 });
+    });
+
+    const { error } = await captureFailure(() =>
+      new BasesRowsCommands(deps).reject(
+        "crm",
+        "row_x",
+        "ok",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "sales",
+        undefined,
+        true,
+        undefined,
+      ),
+    );
+
+    expect(error).toMatchObject({ code: "NOT_FOUND", exitCode: 1 });
   });
 
   it("fills an agent cell with a keyed write and parses the value as JSON when it can", async () => {
@@ -1768,7 +1990,10 @@ describe("ravi bases approval and agent columns", () => {
 
     expect(error).toMatchObject({ code: "CONFLICT", exitCode: 1 });
     expect(JSON.parse(output).error).toMatchObject({ consoleError: "agent_stale", inputsHash: "fedcba9876543210" });
-    expect(JSON.parse(output).error.suggestedAction).toContain("--inputs-hash fedcba9876543210");
+    const suggestedAction = JSON.parse(output).error.suggestedAction;
+    expect(suggestedAction).toContain("fedcba9876543210");
+    expect(suggestedAction).toContain("recompute from its current inputs, then fill with the inputsHash you read");
+    expect(suggestedAction).not.toContain("--inputs-hash fedcba9876543210");
   });
 
   it("reruns an agent cell", async () => {
@@ -1849,6 +2074,8 @@ function makeDeps(
     readCredentials: () => ({ ...makeCredentials(), ...credentialOverrides }),
     newIdempotencyKey: () => "ravi-cli:test-key-0001",
     clientHint: () => null,
+    // A turn the tests run in is attributed; the refusal has its own test.
+    unattributedTurn: () => false,
     getContext: () => undefined,
     env: {},
   };
