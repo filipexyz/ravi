@@ -145,6 +145,35 @@ describe("task comments steering", () => {
     expect(publishCalls).toHaveLength(0);
   });
 
+  it("keeps a blocked task blocked when its assigned agent no longer exists", async () => {
+    const { taskId, sessionName } = createDispatchedTask("Deleted assignee comment steer");
+    dbBlockTask(taskId, { actor: "test", sessionName, message: "waiting on input" });
+    dbDeleteAgent("dev");
+
+    const result = await commentTask(taskId, {
+      author: "operator",
+      body: "segue com a opção B",
+    });
+
+    expect(result.steeredSessionName).toBeUndefined();
+    expect(result.steerWarning?.code).toBe("TASK_AGENT_NOT_FOUND");
+    expect(dbGetTask(taskId)?.status).toBe("blocked");
+    expect(resolveSession(sessionName)).toBeNull();
+    expect(publishCalls).toHaveLength(0);
+  });
+
+  it("dispatches with the assigned agent and the task binding", async () => {
+    const created = createTask({ title: "Dispatch binding", instructions: "Bind the agent", createdBy: "test" });
+    createdTaskIds.push(created.task.id);
+
+    await dispatchTask(created.task.id, { agentId: "dev", sessionName: `${created.task.id}-work`, assignedBy: "test" });
+
+    expect(publishCalls).toHaveLength(1);
+    expect(publishCalls[0]?.payload).toEqual(
+      expect.objectContaining({ _agentId: "dev", taskBarrierTaskId: created.task.id }),
+    );
+  });
+
   it("refuses a redispatch into another agent's session without resuming the blocked task", async () => {
     const { taskId, sessionName } = createDispatchedTask("Conflicted redispatch");
     dbBlockTask(taskId, { actor: "test", sessionName, message: "waiting on input" });

@@ -2779,6 +2779,7 @@ export async function dispatchTask(
   await publishTaskSessionPrompt(sessionName, {
     prompt,
     deliveryBarrier: "after_task",
+    _agentId: agentId,
     taskBarrierTaskId: documentedTask.id,
   });
 
@@ -2855,6 +2856,7 @@ export async function recoverActiveTasksAfterRestart(): Promise<TaskRecoveryResu
         await publishTaskSessionPrompt(sessionName, {
           prompt,
           deliveryBarrier: "after_task",
+          _agentId: assignment.agentId,
           taskBarrierTaskId: documentedTask.id,
         });
         recoveredTaskIds.push(documentedTask.id);
@@ -3049,7 +3051,9 @@ export async function commentTask(
     }
   }
 
-  const resumeResult = steerWarning
+  // Resume only when the steer can reach the assignee; otherwise the task
+  // would leave blocked with nobody working on it.
+  const resumeResult = !steerTarget
     ? { task: updatedTask, resumed: false as const }
     : dbAutoResumeBlockedTask(taskId, "comment_steer", {
         actor: input.author,
