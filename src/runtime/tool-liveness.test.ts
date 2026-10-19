@@ -1,9 +1,12 @@
 import { describe, expect, it } from "bun:test";
+import { DEFAULT_APPROVAL_TIMEOUT_MS } from "../approval/timeouts.js";
 import {
+  APPROVAL_GATED_TOOL_TIMEOUT_MS,
   createToolLivenessLease,
   DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS,
   MAX_DECLARED_TOOL_TIMEOUT_MS,
   resolveDeclaredToolTimeoutMs,
+  resolveToolInactivityTimeoutMs,
   type ToolLivenessSchedule,
 } from "./tool-liveness.js";
 
@@ -150,5 +153,52 @@ describe("tool liveness lease", () => {
     clock.advance(100);
 
     expect(inactive).toEqual([]);
+  });
+});
+
+describe("approval-gated tools", () => {
+  it("keeps the generic window for ordinary tools", () => {
+    expect(resolveToolInactivityTimeoutMs("Bash", {})).toBe(DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS);
+    expect(resolveToolInactivityTimeoutMs("Bash", { timeout: 600 })).toBe(750_000);
+    expect(resolveToolInactivityTimeoutMs(undefined, {})).toBe(DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS);
+  });
+
+  it("outlasts the approval's delivery and answer timeouts", () => {
+    expect(APPROVAL_GATED_TOOL_TIMEOUT_MS).toBeGreaterThan(2 * DEFAULT_APPROVAL_TIMEOUT_MS);
+    for (const tool of ["ExitPlanMode", "AskUserQuestion", "mcp__spec__exit_spec_mode"]) {
+      expect(resolveToolInactivityTimeoutMs(tool, {})).toBe(APPROVAL_GATED_TOOL_TIMEOUT_MS);
+    }
+  });
+
+  it("lets an unanswered plan approval time out in the hook before the lease recovers the turn", () => {
+    const clock = createManualScheduler();
+    const inactive: string[] = [];
+    const lease = createToolLivenessLease({
+      onInactive: (toolUseId) => inactive.push(toolUseId),
+      schedule: clock.schedule,
+    });
+
+    lease.start("plan-1", resolveToolInactivityTimeoutMs("ExitPlanMode", { plan: "do it" }));
+    // Worst case: delivery takes its whole window, then nobody answers.
+    clock.advance(2 * DEFAULT_APPROVAL_TIMEOUT_MS);
+    expect(inactive).toEqual([]);
+
+    // The hook has denied with "Plano rejeitado: Timeout" by now; tool.ended clears the lease.
+    lease.clear();
+    clock.advance(APPROVAL_GATED_TOOL_TIMEOUT_MS);
+    expect(inactive).toEqual([]);
+  });
+
+  it("still recovers a gated tool that never returns", () => {
+    const clock = createManualScheduler();
+    const inactive: string[] = [];
+    const lease = createToolLivenessLease({
+      onInactive: (toolUseId) => inactive.push(toolUseId),
+      schedule: clock.schedule,
+    });
+
+    lease.start("plan-1", resolveToolInactivityTimeoutMs("ExitPlanMode", {}));
+    clock.advance(APPROVAL_GATED_TOOL_TIMEOUT_MS);
+    expect(inactive).toEqual(["plan-1"]);
   });
 });

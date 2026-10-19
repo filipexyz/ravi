@@ -402,6 +402,25 @@ describe("remote gateway exit taxonomy", () => {
     expect(JSON.stringify(error?.envelope())).not.toContain("Remote gateway rejected the command input");
   });
 
+  it("shows which task profile inputs are missing instead of the generic rejection", () => {
+    const message = "Missing required input(s) for task profile input-contract: goal. Pass them with --input goal=...";
+    const error = remoteGatewayErrorToContractError(
+      "tasks create",
+      result({
+        status: 400,
+        body: JSON.stringify({
+          success: false,
+          op: "tasks create",
+          exitCode: 2,
+          outcome: "usage_error",
+          error: { code: "USAGE_ERROR", message, retryable: false },
+        }),
+      }),
+    );
+
+    expect(error).toMatchObject({ op: "tasks create", code: "USAGE_ERROR", exitCode: 2, message });
+  });
+
   it("projects 400 validation issues into a usage error", () => {
     const error = remoteGatewayErrorToContractError(
       "tasks create",
@@ -1536,5 +1555,77 @@ describe("pages read refusals over the gateway", () => {
     // The relay sanitizes the message again (the URL reads as a path); the rule that decided stays.
     expect(remote?.message).toContain("This turn is not the operator's own: the owner's direct chat runs in a session");
     expect(remote?.message).not.toBe("Remote command was blocked by policy.");
+  });
+});
+
+describe("operator-only refusals over the gateway", () => {
+  const chatLine = "Ask me in our private chat and I'll read it there.";
+
+  it("keeps the meetings read refusal and the line that sends the operator to their own chat", async () => {
+    const message =
+      "Meeting transcripts are read only on the operator's own turns (terminal, their direct chat, their routines). This turn is not the operator's own: the answer would go to a group, where people outside the meeting would read the transcript.";
+    const local = new ContractError("meetings read", "MEETING_ACCESS_DENIED", message, 3, {
+      refusal: "operator_only",
+      turn: "group",
+      suggestedAction: `The operator asked in a group. Reply here with the chat line: "${chatLine}"`,
+      chatLine,
+      chatLinePt: "Me peça no nosso chat privado que eu leio lá.",
+      replyTo: "same_chat",
+    });
+    const response = contractErrorResponse(local);
+    const remote = remoteGatewayErrorToContractError(
+      "meetings read",
+      result({ status: response.status, body: await response.text() }),
+    );
+    expect(remote).toMatchObject({
+      code: "MEETING_ACCESS_DENIED",
+      exitCode: 3,
+      message,
+      details: {
+        refusal: "operator_only",
+        turn: "group",
+        suggestedAction: `The operator asked in a group. Reply here with the chat line: "${chatLine}"`,
+        chatLine,
+        chatLinePt: "Me peça no nosso chat privado que eu leio lá.",
+        replyTo: "same_chat",
+      },
+    });
+    expect(remoteNextStepLine(remote!)).toBe(
+      `Next: The operator asked in a group. Reply here with the chat line: "${chatLine}"`,
+    );
+  });
+
+  it("keeps the agenda refusal for someone else's turn", async () => {
+    const message =
+      "The calendar is used only on the operator's own turns (terminal, their direct chat, their routines). This turn is not the operator's own: someone other than the operator is asking.";
+    const local = new ContractError("agenda list", "CALENDAR_ACCESS_DENIED", message, 3, {
+      refusal: "operator_only",
+      turn: "not_owner",
+      suggestedAction: "Tell the person you cannot look at or change the operator's calendar here.",
+    });
+    const response = contractErrorResponse(local);
+    const remote = remoteGatewayErrorToContractError(
+      "agenda list",
+      result({ status: response.status, body: await response.text() }),
+    );
+    expect(remote).toMatchObject({
+      code: "CALENDAR_ACCESS_DENIED",
+      message,
+      details: { refusal: "operator_only", turn: "not_owner" },
+    });
+    expect(remote?.details.chatLine).toBeUndefined();
+  });
+
+  it("does not relay the refusal copy for the same code on another command", async () => {
+    const local = new ContractError("transcribe file", "MEETING_ACCESS_DENIED", "PRIVATE_MESSAGE_8K2R", 3, {
+      suggestedAction: "PRIVATE_ACTION",
+    });
+    const response = contractErrorResponse(local);
+    const remote = remoteGatewayErrorToContractError(
+      "transcribe file",
+      result({ status: response.status, body: await response.text() }),
+    );
+    expect(remote?.message).toBe("Remote command was blocked by policy.");
+    expect(JSON.stringify(remote?.envelope())).not.toContain("PRIVATE");
   });
 });

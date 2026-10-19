@@ -20,9 +20,10 @@ import {
   type ApprovalRequestRecord,
   type ApprovalRequestType,
 } from "./store.js";
+import { DEFAULT_APPROVAL_TIMEOUT_MS } from "./timeouts.js";
 
 const log = logger.child("approval:service");
-export const DEFAULT_APPROVAL_TIMEOUT_MS = 5 * 60 * 1000;
+export { DEFAULT_APPROVAL_TIMEOUT_MS };
 
 export interface ApprovalFinalizeSlackInput {
   readonly accountId: string;

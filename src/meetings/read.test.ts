@@ -7,6 +7,7 @@ import {
   describeMeetingReadFailure,
   formatMeetingRead,
   formatOffset,
+  meetingReadRefusalDetails,
   meetingReadTurnBlock,
   MEETINGS_READ_PATH,
   normalizeMeetingReadMaxChars,
@@ -103,7 +104,36 @@ describe("meetingReadTurnBlock", () => {
     };
     // `pages read` lets the owner read in a group they chose; a meeting read does not.
     expect(pageReadTurnBlock({ readCredentials: () => makeCredentials(), turn })).toBeNull();
-    expect(meetingReadTurnBlock({ readCredentials: () => makeCredentials(), turn })).toMatchObject({ turn: "group" });
+    expect(meetingReadTurnBlock({ readCredentials: () => makeCredentials(), turn })).toMatchObject({
+      turn: "group",
+      ownerAsked: true,
+    });
+  });
+});
+
+describe("meetingReadRefusalDetails", () => {
+  const copy = {
+    otherPerson: "Tell the person you cannot read meeting transcripts for other people.",
+    chatLine: "Ask me in our private chat and I'll read it there.",
+    chatLinePt: "Me peça no nosso chat privado que eu leio lá.",
+  };
+
+  it("sends the operator who asked in a group to their own chat", () => {
+    expect(meetingReadRefusalDetails({ turn: "group", why: "group", ownerAsked: true }, copy)).toEqual({
+      suggestedAction: `The operator asked in a group. Reply here with the chat line: "${copy.chatLine}"`,
+      chatLine: copy.chatLine,
+      chatLinePt: copy.chatLinePt,
+      replyTo: "same_chat",
+    });
+  });
+
+  it("tells anyone else the transcript is not for them", () => {
+    expect(meetingReadRefusalDetails({ turn: "group", why: "group", ownerAsked: false }, copy)).toEqual({
+      suggestedAction: copy.otherPerson,
+    });
+    expect(meetingReadRefusalDetails({ turn: "not_owner", why: "someone else" }, copy)).toEqual({
+      suggestedAction: copy.otherPerson,
+    });
   });
 });
 

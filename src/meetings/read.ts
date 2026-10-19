@@ -153,6 +153,30 @@ export function normalizeMeetingReadMaxChars(value: string | number | undefined)
   return parsed;
 }
 
+/** `ownerAsked`: a group turn where the operator is the one asking (the refusal sends them to their own chat). */
+export interface MeetingReadTurnBlock {
+  turn: PageReadTurnBlock;
+  why: string;
+  ownerAsked?: boolean;
+}
+
+/**
+ * What the agent tells the person after a refusal. The operator asking in a
+ * group is sent to their own chat; anyone else hears that it is not for them.
+ */
+export function meetingReadRefusalDetails(
+  block: MeetingReadTurnBlock,
+  copy: { otherPerson: string; chatLine: string; chatLinePt: string },
+): { suggestedAction: string; chatLine?: string; chatLinePt?: string; replyTo?: "same_chat" } {
+  if (block.turn !== "group" || !block.ownerAsked) return { suggestedAction: copy.otherPerson };
+  return {
+    suggestedAction: `The operator asked in a group. Reply here with the chat line: "${copy.chatLine}"`,
+    chatLine: copy.chatLine,
+    chatLinePt: copy.chatLinePt,
+    replyTo: "same_chat",
+  };
+}
+
 /**
  * Why this turn may not read a meeting, or null when it is the operator's own.
  * Uses the same classification as `pages read`, with one rule more: a group
@@ -160,7 +184,7 @@ export function normalizeMeetingReadMaxChars(value: string | number | undefined)
  * the transcript in front of everyone in it. A turn Ravi cannot classify is
  * refused (fail closed).
  */
-export function meetingReadTurnBlock(deps: MeetingReadDeps = {}): { turn: PageReadTurnBlock; why: string } | null {
+export function meetingReadTurnBlock(deps: MeetingReadDeps = {}): MeetingReadTurnBlock | null {
   if (deps.operatorTurn !== undefined) {
     return deps.operatorTurn ? null : { turn: "not_owner", why: "a test marked this turn as someone else's" };
   }
@@ -171,6 +195,7 @@ export function meetingReadTurnBlock(deps: MeetingReadDeps = {}): { turn: PageRe
       return {
         turn: "group",
         why: "the answer would go to a group, where people outside the meeting would read the transcript",
+        ownerAsked: result.turn.speaker.kind === "owner",
       };
     }
   } catch {

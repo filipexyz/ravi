@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { file as bunFile } from "bun";
 import { ConsoleApiClient, getMeWithAutoRefresh, normalizeConsoleUrl } from "../cloud-auth/client.js";
 import { CloudAuthError, classifyConsoleNetworkError } from "../cloud-auth/errors.js";
+import { sanitizePayloadInvalidMessage } from "../cli/payload-error-message.js";
 import { inspectExecutionPlane } from "../isolation/execution-plane.js";
 import { deleteCloudCredentials, readCloudCredentials, writeCloudCredentials } from "../cloud-auth/storage.js";
 import type { CloudCredentials } from "../cloud-auth/types.js";
@@ -356,18 +357,19 @@ export async function activateArtifactReleaseInConsole(
   return result;
 }
 
-export async function buildArtifactPackageManifest(
-  target: string,
-  options: Pick<ArtifactPublishOptions, "entrypoint" | "artifactVersion" | "basePath" | "assetBase"> = {},
-): Promise<BuiltPackageManifest> {
+interface PublishSourceEntries {
+  rootRealPath: string;
+  isDirectory: boolean;
+  entries: Array<{ absolutePath: string; packagePath: string }>;
+}
+
+/** Lists the files a local publish source would upload, without reading their bytes. */
+async function listPublishSourceEntries(target: string): Promise<PublishSourceEntries> {
   const rootPath = resolve(target);
   let originalStat: Awaited<ReturnType<typeof lstat>>;
   try {
     originalStat = await lstat(rootPath);
   } catch (error) {
-    if (isLocalArtifactId(target) && isNotFoundError(error)) {
-      return buildLocalArtifactPackageManifest(target, options);
-    }
     throw new CloudAuthError("PAYLOAD_INVALID", `Artifact package target not found: ${target}`, { cause: error });
   }
   if (originalStat.isSymbolicLink()) {
@@ -375,14 +377,76 @@ export async function buildArtifactPackageManifest(
   }
   const rootRealPath = await realpath(rootPath);
   const rootStat = await lstat(rootRealPath);
-
-  const entries = rootStat.isDirectory()
+  const isDirectory = rootStat.isDirectory();
+  const entries = isDirectory
     ? await collectDirectoryFiles(rootRealPath)
     : [{ absolutePath: rootRealPath, packagePath: basename(rootRealPath) }];
-
   if (entries.length === 0) {
     throw new CloudAuthError("PAYLOAD_INVALID", "Artifact package is empty.");
   }
+  return { rootRealPath, isDirectory, entries };
+}
+
+function resolvePublishEntrypoint(
+  files: Array<{ path: string }>,
+  isDirectory: boolean,
+  entrypoint: string | undefined,
+): string {
+  const resolved = entrypoint ? normalizePackagePath(entrypoint) : inferEntrypoint(files, isDirectory);
+  if (!files.some((file) => file.path === resolved)) {
+    throw new CloudAuthError("PAYLOAD_INVALID", `Package entrypoint is not included in files: ${resolved}`);
+  }
+  return resolved;
+}
+
+/**
+ * Side-effect-free check of a publish source, for dry-runs: the path exists,
+ * is not a symlink, has files, and contains the entrypoint. Local `art_*` ids
+ * are left to the publish itself, since resolving them opens the artifact store.
+ */
+export async function validateArtifactPublishSource(
+  target: string,
+  options: Pick<ArtifactPublishOptions, "entrypoint"> = {},
+): Promise<void> {
+  if (isLocalArtifactId(target)) return;
+  let source: PublishSourceEntries;
+  try {
+    source = await listPublishSourceEntries(target);
+  } catch (error) {
+    throw withPayloadIssueField(error, "source");
+  }
+  const files = source.entries.map((entry) => ({ path: normalizePackagePath(entry.packagePath) }));
+  try {
+    resolvePublishEntrypoint(files, source.isDirectory, options.entrypoint);
+  } catch (error) {
+    throw withPayloadIssueField(error, "entrypoint");
+  }
+}
+
+function withPayloadIssueField(error: unknown, field: string): unknown {
+  if (!(error instanceof CloudAuthError) || error.code !== "PAYLOAD_INVALID" || error.issues?.length) return error;
+  const message = sanitizePayloadInvalidMessage(error.message);
+  if (!message) return error;
+  return new CloudAuthError("PAYLOAD_INVALID", error.message, {
+    cause: error.cause,
+    issues: [{ path: [field], code: "invalid", message }],
+  });
+}
+
+export async function buildArtifactPackageManifest(
+  target: string,
+  options: Pick<ArtifactPublishOptions, "entrypoint" | "artifactVersion" | "basePath" | "assetBase"> = {},
+): Promise<BuiltPackageManifest> {
+  let source: PublishSourceEntries;
+  try {
+    source = await listPublishSourceEntries(target);
+  } catch (error) {
+    if (isLocalArtifactId(target) && isNotFoundError(error instanceof CloudAuthError ? error.cause : error)) {
+      return buildLocalArtifactPackageManifest(target, options);
+    }
+    throw error;
+  }
+  const { rootRealPath, isDirectory, entries } = source;
 
   const files = await Promise.all(
     entries.map(async (entry) => {
@@ -398,18 +462,13 @@ export async function buildArtifactPackageManifest(
     }),
   );
   files.sort((left, right) => left.path.localeCompare(right.path));
-  const entrypoint = options.entrypoint
-    ? normalizePackagePath(options.entrypoint)
-    : inferEntrypoint(files, rootStat.isDirectory());
-  if (!files.some((file) => file.path === entrypoint)) {
-    throw new CloudAuthError("PAYLOAD_INVALID", `Package entrypoint is not included in files: ${entrypoint}`);
-  }
+  const entrypoint = resolvePublishEntrypoint(files, isDirectory, options.entrypoint);
 
   return {
     rootPath: rootRealPath,
-    isDirectory: rootStat.isDirectory(),
+    isDirectory,
     files,
-    source: { target: rootStat.isDirectory() ? "directory" : "file" },
+    source: { target: isDirectory ? "directory" : "file" },
     artifactDefaults: {
       name: defaultArtifactName(target),
       description: null,

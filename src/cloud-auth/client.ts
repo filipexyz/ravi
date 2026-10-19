@@ -633,7 +633,11 @@ function mapConsoleError(status: number, payload: unknown, headers: Headers | un
       ? "LINK_REQUESTS_UNAVAILABLE"
       : status === 404 && !hasConsoleErrorCode(data, nested) && isConsoleKnowledgePath(path)
         ? "KNOWLEDGE_UNAVAILABLE"
-        : statusToErrorCode(status, { authFlow: isConsoleAuthPath(path) });
+        : // A Console from before bug comments answers the route with a bare 404;
+          // its own 404 (unknown bug) carries `error.code`.
+          status === 404 && !hasConsoleErrorCode(data, nested) && isConsoleBugCommentsPath(path)
+          ? "SERVER_UNAVAILABLE"
+          : statusToErrorCode(status, { authFlow: isConsoleAuthPath(path) });
   const code = normalizeCloudAuthErrorCode(rawCode, fallback, { linkAliases: isConsoleLinkPath(path) });
   const message =
     stringValue(data?.message) ??
@@ -674,6 +678,10 @@ const KNOWLEDGE_PATH = "/api/cli/knowledge";
 
 function isConsoleKnowledgePath(path: string): boolean {
   return path === KNOWLEDGE_PATH || path.startsWith(`${KNOWLEDGE_PATH}/`) || path.startsWith(`${KNOWLEDGE_PATH}?`);
+}
+
+function isConsoleBugCommentsPath(path: string): boolean {
+  return /^\/api\/cli\/bugs\/[^/?]+\/comments(?:[/?]|$)/.test(path);
 }
 
 /** A string `code` in the body or in the CLI envelope's `error`. */

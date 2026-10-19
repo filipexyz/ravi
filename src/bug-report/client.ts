@@ -418,10 +418,21 @@ export function asUuid(value: string | undefined): string | undefined {
   return text.toLowerCase();
 }
 
-function requireBugId(value: string): string {
+/**
+ * Console addresses bug reports by their full UUID and rejects anything else
+ * before it reads the body, with a bare "invalid input". Check it here so the
+ * caller learns that the id, not the payload, is wrong.
+ */
+export function requireBugId(value: string): string {
   const id = value.trim();
   if (!id) throw new CloudAuthError("PAYLOAD_INVALID", "Missing bug id.");
-  return id;
+  if (!UUID_PATTERN.test(id)) {
+    throw new CloudAuthError(
+      "PAYLOAD_INVALID",
+      `Invalid bug id "${id}": use the full UUID shown by \`ravi bug list\`.`,
+    );
+  }
+  return id.toLowerCase();
 }
 
 function extractBugList(payload: unknown): Record<string, unknown>[] {
@@ -478,7 +489,9 @@ function normalizeBugReportError(error: unknown): CloudAuthError {
 }
 
 function normalizeBugCommentError(error: unknown, path: string): CloudAuthError {
-  if (error instanceof CloudAuthError && error.status === 404) {
+  // Only a 404 without a Console error code means the route is missing; a coded
+  // 404 (such as an unknown bug id) keeps its own message.
+  if (error instanceof CloudAuthError && error.status === 404 && error.code === "SERVER_UNAVAILABLE") {
     return new CloudAuthError(
       "SERVER_UNAVAILABLE",
       `Console has no comment route yet. Expected POST ${path}. Keep this bug id and retry after Console deploys the append API; do not file a second report.`,

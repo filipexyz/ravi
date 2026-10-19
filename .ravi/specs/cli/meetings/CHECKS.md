@@ -38,3 +38,5 @@
 - `meetings read` MUST map Console `ORG_ACCESS_DENIED` and
   `PROJECT_ACCESS_DENIED` to exit 3, `NOT_FOUND` and `CONFLICT` to exit 1.
 - `meetings read` refuses the operator's own turn in a group (`turn: group`), which `pages read` allows (`src/meetings/read.test.ts`).
+- That refusal carries `ownerAsked`, and its next step sends the operator to their private chat with `chatLine`/`chatLinePt`; anyone else gets the "other people" step (`src/meetings/read.test.ts`).
+- Over the remote gateway, `MEETING_ACCESS_DENIED` (`meetings read`) and `CALENDAR_ACCESS_DENIED` (`agenda *`) keep the daemon's message, next step, `refusal`, `turn` and chat lines, never "Remote command was blocked by policy." (`src/cli/remote-gateway.test.ts`).

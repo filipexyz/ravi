@@ -4,12 +4,15 @@ import { dbCreateAgent, dbCreateContext, dbDeleteContext, dbGetContext, dbUpdate
 import { getOrCreateSession } from "../router/sessions.js";
 import {
   authorizeRuntimeContext,
+  DEFAULT_APPROVAL_TIMEOUT_MS,
   emitApprovalResponseOnce,
   setApprovalServiceDependenciesForTest,
   type ApprovalFinalizeSlackInput,
   type ApprovalServiceDependencies,
 } from "./service.js";
 import { setApprovalGrantorRouterConfigForTest } from "./grantor.js";
+import { DEFAULT_APPROVAL_TIMEOUT_MS as APPROVAL_TIMEOUT_FROM_TIMEOUTS } from "./timeouts.js";
+import { APPROVAL_GATED_TOOL_TIMEOUT_MS } from "../runtime/tool-liveness.js";
 import { SLACK_APPROVAL_ACTION_APPROVE, SLACK_APPROVAL_ACTION_REJECT } from "./slack-blocks.js";
 import {
   flushPermissionAuditEvents,
@@ -154,6 +157,12 @@ describe("approval service", () => {
     createdContextIds.clear();
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+  });
+
+  it("keeps the approval timeout inside the lease of tools that wait on it", () => {
+    expect(DEFAULT_APPROVAL_TIMEOUT_MS).toBe(APPROVAL_TIMEOUT_FROM_TIMEOUTS);
+    // requestApproval waits up to the timeout to deliver, then up to the timeout for the answer.
+    expect(APPROVAL_GATED_TOOL_TIMEOUT_MS).toBeGreaterThan(2 * DEFAULT_APPROVAL_TIMEOUT_MS);
   });
 
   it("returns inherited access when the context already has the capability", async () => {
