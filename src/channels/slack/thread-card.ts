@@ -3,9 +3,11 @@
  * (`ravi sessions create-thread`).
  *
  * The thread's initial message is the child session's whole brief. Posted as
- * plain text it fills the channel, so the root shows a card instead: the
- * first line as the title, a short summary of the rest, and the thread's
- * status. When the summary leaves part of the brief out, the full brief goes
+ * plain text it fills the channel, so the root is a Slack `card` block
+ * instead: the first line as the title, the latest progress or result as the
+ * subtitle, a short summary of the rest as the body, and a status line (status,
+ * who asked, when) as the subtext. Slack rejecting `card` falls back to the
+ * same content as classic blocks. When the summary leaves part of the brief out, the full brief goes
  * as the first reply inside the thread. Report, close and reopen re-render the
  * card in place (`chat.update`) with the new status and the latest progress or
  * result.
@@ -33,14 +35,19 @@ export interface SlackThreadCardState {
 export interface SlackThreadCardMessage {
   /** Notification and fallback text. */
   readonly text: string;
+  /** One Slack `card` block: title, latest note, summary and the status line. */
   readonly blocks: readonly SlackBlockKitBlock[];
+  /** The same content as classic blocks, for a workspace or client that rejects `card`. */
+  readonly fallbackBlocks: readonly SlackBlockKitBlock[];
   /** The whole brief, to post inside the thread when the card summary leaves part of it out. */
   readonly fullBrief?: string;
 }
 
-const HEADER_MAX_LENGTH = 150;
-const SUMMARY_MAX_LENGTH = 300;
-const NOTE_MAX_LENGTH = 500;
+// Slack card block limits: title and subtitle 150, body and subtext 200.
+const TITLE_MAX_LENGTH = 150;
+const SUBTITLE_MAX_LENGTH = 150;
+const BODY_MAX_LENGTH = 200;
+const SUBTEXT_MAX_LENGTH = 200;
 
 const STATUS_LABELS: Record<SlackThreadCardStatus, string> = {
   open: ":large_green_circle: *Em andamento*",
@@ -56,49 +63,81 @@ const NOTE_LABELS: Record<SlackThreadCardStatus, string> = {
 
 export function buildSlackThreadCard(brief: string, state: SlackThreadCardState): SlackThreadCardMessage {
   const { title, body } = splitSlackThreadBrief(brief);
-  const summary = body ? truncateAtBoundary(body, SUMMARY_MAX_LENGTH) : undefined;
-  const truncated = summary !== undefined && summary !== body;
-  const blocks: SlackBlockKitBlock[] = [
-    {
-      type: "header",
-      block_id: "ravi_thread_title",
-      text: { type: "plain_text", text: title, emoji: true },
-    },
-  ];
-  if (summary) {
-    blocks.push({
-      type: "section",
-      block_id: "ravi_thread_summary",
-      text: { type: "mrkdwn", text: markdownToSlackMrkdwn(summary) },
-    });
-  }
+  const summary = body ? fitMrkdwn(body, BODY_MAX_LENGTH) : undefined;
+  const truncated = summary !== undefined && summary.cut;
   const note = state.note?.trim();
-  if (note) {
-    blocks.push({
-      type: "section",
-      block_id: "ravi_thread_note",
-      text: {
-        type: "mrkdwn",
-        text: `*${NOTE_LABELS[state.status]}*\n${markdownToSlackMrkdwn(truncateAtBoundary(note, NOTE_MAX_LENGTH))}`,
-      },
-    });
-  }
-  const context = [STATUS_LABELS[state.status]];
+  const noteLabel = `*${NOTE_LABELS[state.status]}:* `;
+  const noteText = note ? fitMrkdwn(note, SUBTITLE_MAX_LENGTH - noteLabel.length) : undefined;
+
+  const status = [STATUS_LABELS[state.status]];
   const requestedBy = state.requestedBy?.trim();
-  if (requestedBy) context.push(`pedido por ${escapeSlackText(requestedBy)}`);
-  if (state.updatedAt !== undefined) context.push(slackLocalTime(state.updatedAt));
-  if (truncated) context.push("instruções completas na thread");
-  blocks.push({
-    type: "context",
-    block_id: "ravi_thread_status",
-    elements: [{ type: "mrkdwn", text: context.join("  ·  ") }],
-  });
+  if (requestedBy) status.push(`pedido por ${escapeSlackText(requestedBy)}`);
+  if (state.updatedAt !== undefined) status.push(slackLocalTime(state.updatedAt));
+  if (truncated) status.push("instruções completas na thread");
+  const statusLine = joinWithin(status, SUBTEXT_MAX_LENGTH);
+
+  const card: SlackBlockKitBlock = {
+    type: "card",
+    block_id: "ravi_thread_card",
+    title: { type: "mrkdwn", text: escapeSlackText(title).slice(0, TITLE_MAX_LENGTH), verbatim: false },
+    ...(noteText ? { subtitle: { type: "mrkdwn", text: `${noteLabel}${noteText.text}`, verbatim: false } } : {}),
+    ...(summary ? { body: { type: "mrkdwn", text: summary.text, verbatim: false } } : {}),
+    subtext: { type: "mrkdwn", text: statusLine, verbatim: false },
+  };
+
+  const fallbackBlocks: SlackBlockKitBlock[] = [
+    { type: "header", block_id: "ravi_thread_title", text: { type: "plain_text", text: title, emoji: true } },
+    ...(summary
+      ? [{ type: "section", block_id: "ravi_thread_summary", text: { type: "mrkdwn", text: summary.text } }]
+      : []),
+    ...(noteText
+      ? [
+          {
+            type: "section",
+            block_id: "ravi_thread_note",
+            text: { type: "mrkdwn", text: `${noteLabel}${noteText.text}` },
+          },
+        ]
+      : []),
+    { type: "context", block_id: "ravi_thread_status", elements: [{ type: "mrkdwn", text: statusLine }] },
+  ];
 
   return {
     text: title,
-    blocks,
+    blocks: [card],
+    fallbackBlocks,
     ...(truncated ? { fullBrief: `*Instruções completas*\n${markdownToSlackMrkdwn(brief.trim())}` } : {}),
   };
+}
+
+/** True when Slack refused the blocks themselves (a block type it does not know, a bad field). */
+export function isSlackInvalidBlocksError(error: unknown): boolean {
+  const slackError = (error as { slackError?: unknown } | null)?.slackError;
+  return typeof slackError === "string" && slackError.startsWith("invalid_blocks");
+}
+
+/** Markdown cut to fit `maxLength` once converted to mrkdwn (links grow when converted). */
+function fitMrkdwn(source: string, maxLength: number): { text: string; cut: boolean } {
+  const whole = source.trim();
+  let limit = maxLength;
+  while (limit > 20) {
+    const cutSource = truncateAtBoundary(whole, limit);
+    const text = markdownToSlackMrkdwn(cutSource);
+    if (text.length <= maxLength) return { text, cut: cutSource !== whole };
+    limit = Math.floor(limit * 0.8);
+  }
+  return { text: `${escapeSlackText(whole).slice(0, maxLength - 1)}…`, cut: true };
+}
+
+/** Join parts with " · ", dropping trailing parts that would pass `maxLength`. */
+function joinWithin(parts: string[], maxLength: number): string {
+  let line = parts[0] ?? "";
+  for (const part of parts.slice(1)) {
+    const next = `${line}  ·  ${part}`;
+    if (next.length > maxLength) break;
+    line = next;
+  }
+  return line;
 }
 
 /**
@@ -116,16 +155,16 @@ export function splitSlackThreadBrief(brief: string): { title: string; body?: st
     .join("\n")
     .trim();
   const title = plainTitle(firstLine);
-  if (title.length <= HEADER_MAX_LENGTH) return { title: title || "Thread", ...(rest ? { body: rest } : {}) };
+  if (title.length <= TITLE_MAX_LENGTH) return { title: title || "Thread", ...(rest ? { body: rest } : {}) };
 
   const sentence = /^(.+?[.!?])\s+(.+)$/s.exec(firstLine);
   const sentenceTitle = sentence ? plainTitle(sentence[1] ?? "") : "";
-  if (sentence && sentenceTitle && sentenceTitle.length <= HEADER_MAX_LENGTH) {
+  if (sentence && sentenceTitle && sentenceTitle.length <= TITLE_MAX_LENGTH) {
     const body = [sentence[2]?.trim(), rest].filter(Boolean).join("\n");
     return { title: sentenceTitle, ...(body ? { body } : {}) };
   }
   return {
-    title: `${title.slice(0, HEADER_MAX_LENGTH - 1).trimEnd()}…`,
+    title: `${title.slice(0, TITLE_MAX_LENGTH - 1).trimEnd()}…`,
     body: [firstLine, rest].filter(Boolean).join("\n"),
   };
 }

@@ -85,7 +85,7 @@ import {
   type SlackInboundEnvelopeRecord,
 } from "./inbound-inbox.js";
 import { registerSlackThreadInboundLifecycle } from "./thread-lifecycle.js";
-import { buildSlackThreadCard } from "./thread-card.js";
+import { buildSlackThreadCard, isSlackInvalidBlocksError, type SlackThreadCardMessage } from "./thread-card.js";
 import {
   cleanSlackId,
   envelopeEvent,
@@ -347,12 +347,14 @@ export class SlackChatActionDelivery implements NativeChatActionDelivery {
         status: "open",
         ...(action.requestedBy ? { requestedBy: action.requestedBy } : {}),
       });
-      const result = await this.webClient.postMessage({
-        channel,
-        text: card.text,
-        blocks: card.blocks,
-        clientMsgId: slackClientMessageId(request.idempotencyKey),
-      });
+      const result = await withThreadCardFallback(card, (blocks) =>
+        this.webClient.postMessage({
+          channel,
+          text: card.text,
+          blocks,
+          clientMsgId: slackClientMessageId(request.idempotencyKey),
+        }),
+      );
       if (card.fullBrief) {
         // The card shows a summary; the whole brief opens the thread. The root is
         // already posted, so a failure here is logged and the thread still opens.
@@ -383,11 +385,11 @@ export class SlackChatActionDelivery implements NativeChatActionDelivery {
     if (action.actionId === "message.edit") {
       const ts = resolveSlackApiTimestamp(action.providerMessageId);
       const card = action.threadCard ? buildSlackThreadCard(action.text, action.threadCard) : undefined;
-      const result = await this.webClient.updateMessage({
-        channel,
-        ts,
-        ...(card ? { text: card.text, blocks: card.blocks } : { text: markdownToSlackMrkdwn(action.text) }),
-      });
+      const result = card
+        ? await withThreadCardFallback(card, (blocks) =>
+            this.webClient.updateMessage({ channel, ts, text: card.text, blocks }),
+          )
+        : await this.webClient.updateMessage({ channel, ts, text: markdownToSlackMrkdwn(action.text) });
       return {
         provider: "slack",
         messageId: result.messageId,
@@ -434,6 +436,22 @@ export class SlackChatActionDelivery implements NativeChatActionDelivery {
       providerTimestamp: slackTsToMs(timestamp),
       raw,
     };
+  }
+}
+
+/** Send a thread root card, or its classic-block version when Slack rejects the `card` block. */
+async function withThreadCardFallback<T>(
+  card: SlackThreadCardMessage,
+  send: (blocks: SlackThreadCardMessage["blocks"]) => Promise<T>,
+): Promise<T> {
+  try {
+    return await send(card.blocks);
+  } catch (error) {
+    if (!isSlackInvalidBlocksError(error)) throw error;
+    log.warn("Slack rejected the thread card block; sending classic blocks", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return send(card.fallbackBlocks);
   }
 }
 
