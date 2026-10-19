@@ -105,6 +105,11 @@ function instanceLabel(name: string, channel: string): string {
   return `${name} (${channel})`.slice(0, 80);
 }
 
+/**
+ * Uploads each recipient's pending wait with a stable per-gap request key.
+ * A deduplicated proposal that already has an approved answer queues that
+ * recipient for notification, still subject to their instance's FAQ mirror.
+ */
 async function uploadPendingGaps(
   client: KnowledgeClient,
   instances: Array<{ id: string; label: string; channel: string }>,
@@ -147,7 +152,11 @@ async function uploadPendingGaps(
         },
         DAEMON_KNOWLEDGE_TURN,
       );
-      updateGap(gap.id, { status: "uploaded", proposalId: proposal.id, uploadedAt: now });
+      // A later recipient may join a proposal after its answer event was
+      // already handled. Make it eligible for this sync's notification step
+      // instead of waiting for an event the Console need not send again.
+      const answered = proposal.status === "approved" && Boolean(proposal.answer?.trim()) && Boolean(proposal.faq);
+      updateGap(gap.id, { status: answered ? "answered" : "uploaded", proposalId: proposal.id, uploadedAt: now });
       uploaded += 1;
     } catch (error) {
       const code = errorCode(error);

@@ -95,6 +95,11 @@ export function capUtf16(text: string, max: number): string {
   return last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut;
 }
 
+/**
+ * Records a recipient's question, reusing only their pending/uploaded wait in
+ * the same conversation. The shared question hash still deduplicates Console
+ * proposals; new waits count toward the contact's local daily cap.
+ */
 export function insertKnowledgeGap(
   input: {
     agentId: string;
@@ -116,10 +121,21 @@ export function insertKnowledgeGap(
     (db) => {
       const existing = db
         .prepare(
-          `SELECT * FROM knowledge_gaps WHERE question_hash = ? AND status IN ('pending','uploaded')
+          `SELECT * FROM knowledge_gaps WHERE question_hash = ? AND instance_id = ?
+           AND contact_id = ? AND channel = ? AND account_id = ? AND chat_id = ?
+           AND status IN ('pending','uploaded')
            ORDER BY created_at DESC LIMIT 1`,
         )
-        .get(questionHash) as GapRow | null;
+        // Keep a wait per recipient. The Console still deduplicates the
+        // question via question_hash, linking these rows to one proposal.
+        .get(
+          questionHash,
+          input.instanceId,
+          input.contactId,
+          input.channel,
+          input.accountId,
+          input.chatId,
+        ) as GapRow | null;
       if (existing) return { gap: rowToGap(existing), created: false, capped: false };
 
       const gap: KnowledgeGap = {
@@ -252,8 +268,9 @@ export function claimGapsForNotification(
 }
 
 /**
- * Drops a contact's gaps that were not answered yet (`pending`, `uploaded`),
- * so a forgotten contact's question is never uploaded. Returns the count.
+ * Cancels a contact's outstanding uploads and answer deliveries, including
+ * approved answers waiting for their FAQ mirror. Already notified history
+ * and other contacts' waits are preserved. Returns the number cancelled.
  */
 export function dropGapsForContact(contactId: string): number {
   const id = contactId?.trim();
@@ -263,7 +280,7 @@ export function dropGapsForContact(contactId: string): number {
     (db) =>
       db
         .prepare(
-          "UPDATE knowledge_gaps SET status = 'dropped' WHERE contact_id = ? AND status IN ('pending','uploaded')",
+          "UPDATE knowledge_gaps SET status = 'dropped' WHERE contact_id = ? AND status IN ('pending','uploaded','answered')",
         )
         .run(id).changes,
     { label: "knowledge_gap_drop_contact" },
