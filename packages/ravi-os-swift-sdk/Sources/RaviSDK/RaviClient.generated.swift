@@ -1065,6 +1065,15 @@ public struct BasesRowsNamespace: Sendable {
     return try await transport.call(groupSegments: ["bases","rows"], command: "add", body: requestBody, as: BasesRowsAddReturn.self)
   }
 
+  public func approve(_ base: String, _ row: String, _ prop: String, _ options: BasesRowsApproveOptions = .init()) async throws -> BasesRowsApproveReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["base"] = try RaviJSON.fromEncodable(base)
+    requestBody["row"] = try RaviJSON.fromEncodable(row)
+    requestBody["prop"] = try RaviJSON.fromEncodable(prop)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["bases","rows"], command: "approve", body: requestBody, as: BasesRowsApproveReturn.self)
+  }
+
   public func archive(_ base: String, _ row: String, _ options: BasesRowsArchiveOptions = .init()) async throws -> BasesRowsArchiveReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["base"] = try RaviJSON.fromEncodable(base)
@@ -1078,6 +1087,15 @@ public struct BasesRowsNamespace: Sendable {
     requestBody["base"] = try RaviJSON.fromEncodable(base)
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["bases","rows"], command: "export", body: requestBody, as: BasesRowsExportReturn.self)
+  }
+
+  public func fill(_ base: String, _ row: String, _ prop: String, _ options: BasesRowsFillOptions = .init()) async throws -> BasesRowsFillReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["base"] = try RaviJSON.fromEncodable(base)
+    requestBody["row"] = try RaviJSON.fromEncodable(row)
+    requestBody["prop"] = try RaviJSON.fromEncodable(prop)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["bases","rows"], command: "fill", body: requestBody, as: BasesRowsFillReturn.self)
   }
 
   public func get(_ base: String, _ row: String, _ options: BasesRowsGetOptions = .init()) async throws -> BasesRowsGetReturn {
@@ -1117,6 +1135,33 @@ public struct BasesRowsNamespace: Sendable {
     requestBody["base"] = try RaviJSON.fromEncodable(base)
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["bases","rows"], command: "query", body: requestBody, as: BasesRowsQueryReturn.self)
+  }
+
+  public func reject(_ base: String, _ row: String, _ prop: String, _ options: BasesRowsRejectOptions = .init()) async throws -> BasesRowsRejectReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["base"] = try RaviJSON.fromEncodable(base)
+    requestBody["row"] = try RaviJSON.fromEncodable(row)
+    requestBody["prop"] = try RaviJSON.fromEncodable(prop)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["bases","rows"], command: "reject", body: requestBody, as: BasesRowsRejectReturn.self)
+  }
+
+  public func requestApproval(_ base: String, _ row: String, _ prop: String, _ options: BasesRowsRequestApprovalOptions = .init()) async throws -> BasesRowsRequestApprovalReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["base"] = try RaviJSON.fromEncodable(base)
+    requestBody["row"] = try RaviJSON.fromEncodable(row)
+    requestBody["prop"] = try RaviJSON.fromEncodable(prop)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["bases","rows"], command: "request-approval", body: requestBody, as: BasesRowsRequestApprovalReturn.self)
+  }
+
+  public func rerun(_ base: String, _ row: String, _ prop: String, _ options: BasesRowsRerunOptions = .init()) async throws -> BasesRowsRerunReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["base"] = try RaviJSON.fromEncodable(base)
+    requestBody["row"] = try RaviJSON.fromEncodable(row)
+    requestBody["prop"] = try RaviJSON.fromEncodable(prop)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["bases","rows"], command: "rerun", body: requestBody, as: BasesRowsRerunReturn.self)
   }
 
   public func restore(_ base: String, _ row: String, _ options: BasesRowsRestoreOptions = .init()) async throws -> BasesRowsRestoreReturn {
@@ -1180,6 +1225,14 @@ public struct BasesViewsNamespace: Sendable {
     requestBody["view"] = try RaviJSON.fromEncodable(view)
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["bases","views"], command: "query", body: requestBody, as: BasesViewsQueryReturn.self)
+  }
+
+  public func share(_ base: String, _ view: String, _ options: BasesViewsShareOptions = .init()) async throws -> BasesViewsShareReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["base"] = try RaviJSON.fromEncodable(base)
+    requestBody["view"] = try RaviJSON.fromEncodable(view)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["bases","views"], command: "share", body: requestBody, as: BasesViewsShareReturn.self)
   }
 
   public func show(_ base: String, _ view: String, _ options: BasesViewsShowOptions = .init()) async throws -> BasesViewsShowReturn {

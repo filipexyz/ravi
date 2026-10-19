@@ -4,7 +4,7 @@ description: |
   Publica páginas como rotas no host default do projeto com `ravi pages ship`, estáticas ou de dados. É o verbo MOSTRAR das soluções. Use quando precisar:
   - publicar uma página, landing, relatório ou snapshot e obter a URL
   - ler o conteúdo de um link de Page (`ravi pages read <url>`) em vez de abrir no navegador
-  - publicar uma página de dados sobre uma view de Bases (`--uses ravi.bases.*`, lista que vale para o host inteiro)
+  - publicar uma página de dados sobre uma view de Bases (`--uses ravi.bases.*` com os ids que a própria rota chama)
   - mudar visibilidade, senha ou domínio de uma rota sem reenviar arquivos
   - mostrar uma página privada a uma pessoa (`ravi pages share`), trazer alguém para a org (`ravi invites create`) ou pedir acesso a uma página negada (`ravi access request`)
   - dar à página a asserção do viewer para chamar a sua própria API
@@ -48,7 +48,7 @@ Checklist:
 - Listei as rotas antes de escolher `--route`?
 - Usei só `ravi pages ship` para obter a URL, sem `create` + `publish`?
 - Se a rota `/` ficou private explícita, usei `pages visibility <host> public --route / --execute` em vez de re-ship?
-- Página de dados: rota private ou protected_link, e `--uses` com a união do host?
+- Página de dados: rota private ou protected_link, e `--uses` com todo id `ravi.bases.*` que essa rota chama?
 
 ## Caminho padrão: projeto → host → rota
 
@@ -75,7 +75,7 @@ Prefixos reservados de host: `ravi` e `ravi-*`. O CLI não cria esses slugs.
 
 ## Tema e widgets
 
-O ship aplica o tema ativo (do projeto, senão da org) a todo HTML e transforma as tags `<ravi-view>`, `<ravi-widget>` e `<ravi-form>` em telas prontas, com os widgets da Biblioteca e o `--uses` que elas pedem. `--theme <ref>` troca o tema desse ship; `--theme none` tira. Erro de tag sai com exit 2, uma linha `arquivo:linha:coluna` por problema, e nada sobe.
+O ship aplica o tema ativo (do projeto, senão da org) a todo HTML e transforma as tags `<ravi-view>`, `<ravi-widget>`, `<ravi-form>` e `<ravi-chart>` em telas prontas, com os widgets da Biblioteca e o `--uses` que elas pedem. `--theme <ref>` troca o tema desse ship; `--theme none` tira. Erro de tag sai com exit 2, uma linha `arquivo:linha:coluna` por problema, e nada sobe.
 
 - HTML escrito à mão: cor, fonte e espaço por variável do tema com fallback (`var(--color-text-primary, #17202a)`), nunca literais. `references/theme.md`.
 - Tela sobre uma view: tag antes de cliente à mão; `ravi widgets search` antes de criar widget. `references/widgets.md`.
@@ -146,39 +146,39 @@ ravi access status <request-id>
 
 Quem age: no turno do próprio operador (terminal, a DM dele, as rotinas dele) age o usuário do `ravi login`. Quando outra pessoa escreveu a mensagem, o Console age por ELA, pelo `ravi link` dela. Para compartilhar ou convidar, ela e o operador precisam ter o papel; para pedir acesso, basta ser ela. Sem link sai `ACTOR_NOT_LINKED` (exit 3) e o Ravi já começou o vínculo dela: repasse o `chatLinePt` do erro (no WhatsApp, num grupo, "me chama na DM"; o Ravi responde a DM dela com o link) e só tente de novo quando ela pedir. Turno que o Ravi não consegue atribuir é recusado antes de qualquer chamada (`ACTOR_UNKNOWN`, exit 3). `invites list` só roda no turno do operador.
 
-Autoria do resto (`ship`, `publish`, Bases, comentários): num turno que outra pessoa escreveu, o Console grava a escrita no nome dela quando ela fez `ravi link` e é membro ativo da org, com o menor papel entre ela e o operador, e registra os dois na auditoria. Sem link a escrita é recusada com `ACTOR_NOT_LINKED`, como acima; leituras seguem com o operador. Se o papel dela não permitir, a escrita também é recusada: diga isso a ela e não contorne.
+Autoria do resto (`ship`, `publish`, Bases, comentários): num turno que outra pessoa escreveu, o Console grava a escrita no nome dela quando ela fez `ravi link` e é membro ativo da org, com o menor papel entre ela e o operador, e registra os dois na auditoria (o agente fica anotado ao lado). Sem link a escrita é recusada com `ACTOR_NOT_LINKED`, como acima. Leituras de Bases no turno de quem fez `ravi link` também são dela (o `$viewer` da view é ela); sem link, a leitura de Bases também é recusada com `ACTOR_NOT_LINKED` (nunca lê pelo operador). Se o papel dela não permitir, a escrita também é recusada: diga isso a ela e não contorne.
 
 ## Página de dados
 
 Lê e grava uma base pelos connectors `ravi.bases.*`, sempre através de uma view, que é o contrato de acesso (skill bases). Três regras:
 
 1. Página de dados só para membro logado da org. Gente de fora entra por canal e recebe mensagem ou snapshot. Na dúvida, é de fora. (Sem sessão de membro, nada responde.)
-2. `--uses` é do host inteiro e o último ship manda: todo ship nesse host leva a união dos ids de todas as páginas de dados. `pages publish` e `artifacts publish` apagam a lista. (O Console lê o `uses` da release ativa.)
+2. Cada ship declara no `--uses` os ids que a própria rota chama. O host libera a união do `uses` de todas as rotas ativas: o ship de outra rota, com outra lista ou sem nenhuma, não tira o id de quem ainda o usa. Um id sai quando nenhuma rota ativa o declara mais (rota removida ou re-ship sem ele).
 3. Página de dados mora em rota `private` (padrão do ship) ou `protected_link`; nunca `public` nem `password`. (Só nelas o Pages pede login.)
 
-O ship cobra as regras 1 e 3: com `ravi.bases.*` no `--uses` e a rota `public`, ele recusa e não publica nada. Membros: tire o `--visibility` (private é o padrão). Gente de fora: snapshot, com os números no HTML e sem `ravi.bases.*` no `--uses`. `--members-best-effort` passa por cima de propósito, só quando todo leitor é membro da org já logado. Página pública estática não vai num host com página de dados: o `--uses` desse host leva `ravi.bases.*` (o ship recusa) e, sem `--uses`, o allowlist do host some. Publique noutro projeto, com `ravi pages ship --project <outro> ...`.
+O ship cobra as regras 1 e 3: com `ravi.bases.*` no `--uses` e a rota `public`, ele recusa e não publica nada. Membros: tire o `--visibility` (private é o padrão). Gente de fora: snapshot, com os números no HTML e sem `ravi.bases.*` no `--uses`. `--members-best-effort` passa por cima de propósito, só quando todo leitor é membro da org já logado. Uma página pública estática pode morar no mesmo host das páginas de dados: o ship dela vai sem `ravi.bases.*` e não tira os ids das outras rotas (quem abre a rota pública não tem sessão de membro, então os ids do host não lhe dão dado nenhum).
 
-| ids (11, sempre completos no `--uses`) | |
+| ids (12, sempre completos no `--uses`) | |
 |---|---|
-| Bases | `ravi.bases.views.describe`, `ravi.bases.views.query`, `ravi.bases.views.rows.get`, `ravi.bases.views.rows.create`, `ravi.bases.views.rows.update`, `ravi.bases.views.rows.archive`, `ravi.bases.charts.data` |
+| Bases | `ravi.bases.views.describe`, `ravi.bases.views.query`, `ravi.bases.views.version`, `ravi.bases.views.rows.get`, `ravi.bases.views.rows.create`, `ravi.bases.views.rows.update`, `ravi.bases.views.rows.archive`, `ravi.bases.charts.data` |
 | projeto | `ravi.projects.list`, `ravi.pages.sites.list`, `ravi.pages.published.list` |
 | identidade | `ravi.identity.assertion` |
 
-Sem `--uses`, o host libera só as três de projeto. Declarar `--uses` tira as três: ponha na união as que alguma página chama. Por isso até o ship de esqueleto, num host de dados, leva a união.
+Enquanto nenhuma rota ativa declarou `uses`, o host libera só as três de projeto. Depois que alguma declarou, valem só os ids declarados: a rota que chama uma das três declara no próprio ship. Um ship de esqueleto vai sem `--uses`. `ravi.bases.views.version` devolve só uma impressão digital das linhas que a view mostra, para a página saber quando reler (as tags já pedem esse id sozinhas).
 
 Ordem num projeto novo (a view com `page_viewer` exige um site que já existe):
 
 ```bash
 ravi pages ship --project <p> --title "Pautas" --route /pautas --body "<p>Em construção</p>" --json
 ravi pages list --project <p> --json                     # siteId: id do site com isDefault: true
-ravi bases views create <base> --spec @view.json --json  # page_viewer com esse siteId
+ravi bases views create <base> --spec @view.json --json  # ou views share <base> <view> --site <host> --execute
 ravi pages ship --project <p> --title "Pautas" --route /pautas --dir ./pautas \
   --uses ravi.bases.views.describe,ravi.bases.views.query,ravi.bases.views.rows.update --json
 ```
 
 `CONFLICT` (409, "Read unread Ravi Pages comments before publishing."): comentário não lido de outra pessoa trava o ship da rota, e o CLI ainda não lê comentários. Peça à pessoa logada neste Ravi (o CLI publica em nome dela) que leia na barra do operador da página, ou publique noutra rota.
 
-Lista, board, tabela, galeria ou formulário: use `<ravi-view>` ou `<ravi-form>` (`references/widgets.md`). O que a tag não cobre: comece por `references/esqueletos/` (board ou formulário, mais `_client.js.txt` como `client.js`). Fluxo, erros e checklist: `references/data-pages.md`.
+Lista, board, tabela, galeria, calendário, formulário ou gráfico: use `<ravi-view>`, `<ravi-form>` ou `<ravi-chart>` (`references/widgets.md`). O que a tag não cobre: comece por `references/esqueletos/` (board ou formulário, mais `_client.js.txt` como `client.js`). Fluxo, erros e checklist: `references/data-pages.md`.
 
 ## Senha, visibilidade e domínio
 
@@ -221,7 +221,7 @@ ravi pages assertion audiences remove --site <host> --aud <aud> --execute
 
 `--site` é o slug do host, o id do site ou o hostname. `--origin` pode repetir; `set` substitui a lista daquele `aud`.
 
-O ship da page leva `ravi.identity.assertion` no `--uses` (mais a união, se o host tiver páginas de dados):
+O ship da page leva `ravi.identity.assertion` no `--uses` (mais os `ravi.bases.*` que ela mesma chamar):
 
 ```bash
 ravi pages ship --project <projeto> --title "App" --route /app --dir ./site --uses ravi.identity.assertion --json
@@ -301,7 +301,7 @@ ravi pages chat set <host> --clear-ravi-agent
 
 Abra só o que precisar com `ravi skills show pages --file references/<arquivo>`.
 
-- `widgets.md`: tags `<ravi-view>`, `<ravi-widget>` e `<ravi-form>`, busca de widget, o que o ship faz, criar e propor widget, acessibilidade.
+- `widgets.md`: tags `<ravi-view>`, `<ravi-widget>`, `<ravi-form>` e `<ravi-chart>`, busca de widget, o que o ship faz, criar e propor widget, acessibilidade.
 - `chat.md`: chat de texto, blocos `ravi.ui/v1` das respostas, o que o autor da página controla.
 - `theme.md`: tema ativo, `--theme`, variáveis CSS, claro e escuro, contraste.
 - `data-pages.md`: site → view → ship, `--uses`, quem passa, connectors, erros, valores, segurança.
@@ -318,7 +318,7 @@ Não é o caminho padrão. Um argumento posicional de slug cria ou reusa um host
 ravi pages ship <slug-legado> --title "Página antiga" --route / --body "<h1>OK</h1>" --json
 ```
 
-`create` só cria o registro do host. `publish` sobe bytes num host já existente, ou publica um `art_*` que já está no ledger local. Prefira `ship` salvo o HTML já ser um `art_*`. Num host com páginas de dados, `publish` apaga o `--uses` (regra 2): use `ship`.
+`create` só cria o registro do host. `publish` sobe bytes num host já existente, ou publica um `art_*` que já está no ledger local. Prefira `ship` salvo o HTML já ser um `art_*`. `publish` não grava `uses`: na rota de uma página de dados, a página perde os ids dela (as outras rotas ficam como estavam). Para página de dados, use `ship`.
 
 ```bash
 ravi pages create <slug> --json

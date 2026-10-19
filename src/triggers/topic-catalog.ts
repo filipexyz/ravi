@@ -723,22 +723,73 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
     category: "watch",
     pattern: "ravi.console.inbox.item",
     title: "Console inbox item",
-    description: "Delivered Console inbox item, including watch events.",
-    payload: "{ eventId, eventType, source, payload, links, occurredAt, createdAt, ... }",
+    description: "Delivered Console inbox item, including watch events and Bases events (category bases).",
+    payload: "{ eventId, eventType, category, actor, source, payload, links, occurredAt, createdAt, ... }",
     schema: {
       version: 1,
       fields: [
         { path: "eventId", type: "string", required: true, description: "Console event id." },
         { path: "eventType", type: "string", required: true, description: "Console event type." },
+        { path: "category", type: "string", description: "Console category, e.g. bases." },
+        {
+          path: "actor",
+          type: "object",
+          description: "Who caused the event: { type, id } (Bases: user, cli, system).",
+        },
         { path: "source", type: "object", description: "Console source metadata." },
         { path: "payload", type: "object", description: "Console-delivered payload." },
+        {
+          path: "payload.baseId",
+          type: "string",
+          description: "Bases: base id (also baseSlug, projectId, rowId, version, surface).",
+        },
+        {
+          path: "payload.propertyId",
+          type: "string",
+          description: "Bases approval.* and agent.*: the approval or agent property.",
+        },
+        {
+          path: "payload.state",
+          type: "string",
+          description: "Bases approval.*: pending, approved or rejected (never the note).",
+        },
+        { path: "payload.inputsHash", type: "string", description: "Bases agent.requested: hash of the agent inputs." },
+        {
+          path: "payload.subscriptionId",
+          type: "string",
+          description: "Bases: present only for a filtered subscription (bases subscribe --view/--props/--events).",
+        },
+        {
+          path: "payload.row",
+          type: "object",
+          description:
+            "Bases items about one row: { rowId, version, values, archivedAt } read locally at delivery (no body).",
+        },
+        {
+          path: "payload.rowEnrichment",
+          type: "object",
+          description: "Bases: { status: ok } or { status: failed, code } when the local row read failed.",
+        },
         { path: "links", type: "object", description: "Console link metadata." },
         { path: "occurredAt", type: "string", description: "ISO occurrence timestamp." },
         { path: "createdAt", type: "string", description: "ISO creation timestamp." },
       ],
     },
-    examples: ['ravi triggers add "Console watch item" --topic "ravi.console.inbox.item" --message "..."'],
-    notes: ["For local email, listen to ravi.inbox.mail.received instead."],
+    examples: [
+      'ravi triggers add "Console watch item" --topic "ravi.console.inbox.item" --message "..."',
+      "ravi bases subscribe <base> --events approval.requested --trigger --agent <agentId> --session <name>",
+    ],
+    filters: [
+      'data.category == "bases" && data.payload.baseSlug == "<base>" && data.actor.type == "user"',
+      'data.category == "bases" && data.eventType == "bases.approval.decided"',
+      'data.category == "bases" && data.eventType == "bases.agent.requested" && data.payload.subscriptionId == "<subscription>"',
+    ],
+    notes: [
+      "For local email, listen to ravi.inbox.mail.received instead.",
+      "Bases event types: bases.row.created, bases.row.updated, bases.row.archived, bases.row.restored, bases.rows.bulk_changed, bases.approval.requested, bases.approval.decided, bases.agent.requested, bases.agent.backfill.",
+      "Bases items about one row (row.*, approval.*, agent.requested) carry payload.row; bulk_changed and agent.backfill name no row.",
+      "Turn delivery on per base with ravi bases subscribe; --trigger also creates this trigger (a disabled draft from an agent session).",
+    ],
   },
   {
     id: "watch.console.bug.status",

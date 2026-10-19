@@ -312,7 +312,7 @@ ravi agents permissions <id> chat-only
 # Agente público com escopo: só o que for listado (sem tool:*, sem bun/cat/xargs do bootstrap)
 ravi agents permissions <id> explicit-only --capabilities use:tool:Bash,use:tool:Skill,read:crypto:*,mutate:crypto:deposit --execute
 
-# Resetar overlay para o piso bootstrap (~27 caps). Não é zero-authority.
+# Resetar overlay para o piso bootstrap (~35 caps). Não é zero-authority.
 ravi agents permissions <id> none
 
 # Capability explícita de bootstrap quando ainda não existe profile agent-only

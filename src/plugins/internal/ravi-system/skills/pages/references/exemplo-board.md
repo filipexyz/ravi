@@ -2,7 +2,7 @@
 
 > Este exemplo traz o cliente inline (`exec`, `showError` dentro do HTML). Em página nova, use `client.js`, cópia de `esqueletos/_client.js.txt`, e não duplique o cliente.
 > Apesar do nome do arquivo, é uma tabela com formulário e edição em linha; o board pronto está em `esqueletos/board.html.txt`.
-> A "tabela acima" citada no código é a de "Valores", em `data-pages.md`. Antes do ship, confira o `--uses` com a união do host (`data-pages.md`, "Ship").
+> A "tabela acima" citada no código é a de "Valores", em `data-pages.md`. Antes do ship, confira o `--uses` com os ids que esta página chama (`data-pages.md`, "Ship").
 > Tabela simples? `<ravi-view view="<uuid>" layout="table"></ravi-view>` já faz (`widgets.md`). Cores e fontes vêm do tema (`theme.md`).
 
 ## Exemplo completo

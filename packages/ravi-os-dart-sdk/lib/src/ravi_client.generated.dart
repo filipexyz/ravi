@@ -1230,6 +1230,20 @@ class BasesRowsNamespace {
     );
   }
 
+  Future<BasesRowsApproveReturn> approve(String base, String row, String prop, [BasesRowsApproveOptions options = const BasesRowsApproveOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["row"] = RaviJson.from(row);
+    requestBody["prop"] = RaviJson.from(prop);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "rows"],
+      command: "approve",
+      body: requestBody,
+      decode: basesRowsApproveReturnFromJson,
+    );
+  }
+
   Future<BasesRowsArchiveReturn> archive(String base, String row, [BasesRowsArchiveOptions options = const BasesRowsArchiveOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["base"] = RaviJson.from(base);
@@ -1252,6 +1266,20 @@ class BasesRowsNamespace {
       command: "export",
       body: requestBody,
       decode: basesRowsExportReturnFromJson,
+    );
+  }
+
+  Future<BasesRowsFillReturn> fill(String base, String row, String prop, [BasesRowsFillOptions options = const BasesRowsFillOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["row"] = RaviJson.from(row);
+    requestBody["prop"] = RaviJson.from(prop);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "rows"],
+      command: "fill",
+      body: requestBody,
+      decode: basesRowsFillReturnFromJson,
     );
   }
 
@@ -1316,6 +1344,48 @@ class BasesRowsNamespace {
       command: "query",
       body: requestBody,
       decode: basesRowsQueryReturnFromJson,
+    );
+  }
+
+  Future<BasesRowsRejectReturn> reject(String base, String row, String prop, [BasesRowsRejectOptions options = const BasesRowsRejectOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["row"] = RaviJson.from(row);
+    requestBody["prop"] = RaviJson.from(prop);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "rows"],
+      command: "reject",
+      body: requestBody,
+      decode: basesRowsRejectReturnFromJson,
+    );
+  }
+
+  Future<BasesRowsRequestApprovalReturn> requestApproval(String base, String row, String prop, [BasesRowsRequestApprovalOptions options = const BasesRowsRequestApprovalOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["row"] = RaviJson.from(row);
+    requestBody["prop"] = RaviJson.from(prop);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "rows"],
+      command: "request-approval",
+      body: requestBody,
+      decode: basesRowsRequestApprovalReturnFromJson,
+    );
+  }
+
+  Future<BasesRowsRerunReturn> rerun(String base, String row, String prop, [BasesRowsRerunOptions options = const BasesRowsRerunOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["row"] = RaviJson.from(row);
+    requestBody["prop"] = RaviJson.from(prop);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "rows"],
+      command: "rerun",
+      body: requestBody,
+      decode: basesRowsRerunReturnFromJson,
     );
   }
 
@@ -1412,6 +1482,19 @@ class BasesViewsNamespace {
       command: "query",
       body: requestBody,
       decode: basesViewsQueryReturnFromJson,
+    );
+  }
+
+  Future<BasesViewsShareReturn> share(String base, String view, [BasesViewsShareOptions options = const BasesViewsShareOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["view"] = RaviJson.from(view);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "views"],
+      command: "share",
+      body: requestBody,
+      decode: basesViewsShareReturnFromJson,
     );
   }
 

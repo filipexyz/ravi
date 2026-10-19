@@ -31,6 +31,30 @@ export const BASES_READ_SCOPE = "console.bases.read";
 export const BASES_WRITE_SCOPE = "console.bases.write";
 export const BASES_IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/;
 
+/**
+ * Events a filtered subscription may name. The inbox item's `eventType` is the
+ * same name under `bases.` (`row.created` arrives as `bases.row.created`).
+ */
+export const BASE_SUBSCRIPTION_EVENTS = [
+  "row.created",
+  "row.updated",
+  "row.archived",
+  "row.restored",
+  "approval.requested",
+  "approval.decided",
+  "agent.requested",
+  "agent.backfill",
+] as const;
+
+export type BaseSubscriptionEvent = (typeof BASE_SUBSCRIPTION_EVENTS)[number];
+
+/** Body of a subscription create. Empty means every row event of the base. */
+export interface BasesSubscriptionFilter {
+  viewId?: string;
+  properties?: string[];
+  events?: BaseSubscriptionEvent[];
+}
+
 export type BasesJsonObject = Record<string, unknown>;
 
 /** Untrusted metadata stored in the row ledger. Never used for authorization. */
@@ -47,6 +71,8 @@ export interface BasesClientDeps extends ConsoleScopeResolverDeps {
   deleteCredentials?: typeof deleteCloudCredentials;
   newIdempotencyKey?: () => string;
   clientHint?: () => BasesClientHint | null;
+  /** Whether a runtime turn runs this and Ravi cannot say who asked (default: `isUnattributedTurn`). */
+  unattributedTurn?: () => boolean | Promise<boolean>;
 }
 
 export interface BasesClientOptions {
@@ -151,8 +177,8 @@ export class RaviBasesClient {
     return { bases: Array.isArray(payload.bases) ? payload.bases : [] };
   }
 
-  createBase(input: BasesJsonObject): Promise<BaseDetail> {
-    return this.request("POST", "", input);
+  createBase(input: BasesJsonObject, options: BasesWriteOptions = {}): Promise<BasesWriteResult<BaseDetail>> {
+    return this.idempotentWrite("POST", "", input, options, { hint: false });
   }
 
   getBase(baseRef: string): Promise<BaseDetail> {
@@ -169,8 +195,12 @@ export class RaviBasesClient {
 
   // Properties
 
-  createProperty(baseRef: string, input: BasesJsonObject): Promise<BasePropertyMutationResponse> {
-    return this.request("POST", `${basePath(baseRef)}/properties`, input);
+  createProperty(
+    baseRef: string,
+    input: BasesJsonObject,
+    options: BasesWriteOptions = {},
+  ): Promise<BasesWriteResult<BasePropertyMutationResponse>> {
+    return this.idempotentWrite("POST", `${basePath(baseRef)}/properties`, input, options, { hint: false });
   }
 
   updateProperty(baseRef: string, propRef: string, input: BasesJsonObject): Promise<BasePropertyMutationResponse> {
@@ -252,6 +282,24 @@ export class RaviBasesClient {
     return this.request("GET", withQuery(`${rowPath(baseRef, rowId)}/history`, pageQuery(page)));
   }
 
+  // Agent cells
+
+  /** Store the agent's value (or error) for the inputs it read; a stale hash is `agent_stale`. */
+  fillAgentCell(
+    baseRef: string,
+    rowId: string,
+    propRef: string,
+    input: { inputsHash: string; value: unknown } | { inputsHash: string; error: string },
+    options: BasesWriteOptions = {},
+  ): Promise<BasesWriteResult<BaseRowWriteResponse>> {
+    return this.idempotentWrite("POST", agentCellPath(baseRef, rowId, propRef), input, options);
+  }
+
+  /** Put an agent cell back to pending, which asks its agent again. */
+  rerunAgentCell(baseRef: string, rowId: string, propRef: string): Promise<BaseRowWriteResponse> {
+    return this.request("POST", `${agentCellPath(baseRef, rowId, propRef)}/rerun`, this.withHint({}));
+  }
+
   // Views
 
   async listViews(baseRef: string): Promise<{ views: BaseAnyView[] }> {
@@ -259,8 +307,12 @@ export class RaviBasesClient {
     return { views: Array.isArray(payload.views) ? payload.views : [] };
   }
 
-  createView(baseRef: string, input: BasesJsonObject): Promise<BaseView> {
-    return this.request("POST", `${basePath(baseRef)}/views`, input);
+  createView(
+    baseRef: string,
+    input: BasesJsonObject,
+    options: BasesWriteOptions = {},
+  ): Promise<BasesWriteResult<BaseView>> {
+    return this.idempotentWrite("POST", `${basePath(baseRef)}/views`, input, options, { hint: false });
   }
 
   getView(baseRef: string, viewId: string): Promise<BaseViewDescribe> {
@@ -327,8 +379,12 @@ export class RaviBasesClient {
     return { charts: Array.isArray(payload.charts) ? payload.charts : [] };
   }
 
-  createChart(baseRef: string, input: BasesJsonObject): Promise<BaseChart> {
-    return this.request("POST", `${basePath(baseRef)}/charts`, input);
+  createChart(
+    baseRef: string,
+    input: BasesJsonObject,
+    options: BasesWriteOptions = {},
+  ): Promise<BasesWriteResult<BaseChart>> {
+    return this.idempotentWrite("POST", `${basePath(baseRef)}/charts`, input, options, { hint: false });
   }
 
   getChart(baseRef: string, chartId: string): Promise<BaseChart> {
@@ -357,26 +413,46 @@ export class RaviBasesClient {
     return { subscriptions: Array.isArray(payload.subscriptions) ? payload.subscriptions : [] };
   }
 
-  subscribe(baseRef: string): Promise<BaseSubscription> {
-    return this.request("POST", `${basePath(baseRef)}/subscriptions`, {});
+  subscribe(baseRef: string, filter: BasesSubscriptionFilter = {}): Promise<BaseSubscription> {
+    return this.request("POST", `${basePath(baseRef)}/subscriptions`, filter);
   }
 
   unsubscribe(baseRef: string, subscriptionId: string): Promise<BaseSubscription> {
     return this.request("POST", `${basePath(baseRef)}/subscriptions/${encodeURIComponent(subscriptionId)}/revoke`, {});
   }
 
+  // Pages sites of the project (for `page_viewer` principals)
+
+  async listPagesSites(): Promise<BasesPagesSite[]> {
+    const payload = await this.request<unknown>(
+      "GET",
+      "",
+      undefined,
+      {},
+      `/api/cli/projects/${encodeURIComponent(this.session.projectRef)}/pages`,
+    );
+    return pagesSitesFromPayload(payload);
+  }
+
   // Transport
 
+  /**
+   * Writes that carry an idempotency key in the `Idempotency-Key` header and as
+   * `idempotencyKey` in the body. Row writes also carry the client hint; schema
+   * creates (`hint: false`) do not.
+   */
   private async idempotentWrite<T>(
     method: string,
     path: string,
     body: BasesJsonObject,
     options: BasesWriteOptions,
+    { hint = true }: { hint?: boolean } = {},
   ): Promise<BasesWriteResult<T>> {
     const idempotencyKey = options.idempotencyKey
       ? assertBasesIdempotencyKey(options.idempotencyKey)
       : this.session.newIdempotencyKey();
-    const response = await this.request<T>(method, path, this.withHint({ ...body, idempotencyKey }), {
+    const keyed = { ...body, idempotencyKey };
+    const response = await this.request<T>(method, path, hint ? this.withHint(keyed) : keyed, {
       "Idempotency-Key": idempotencyKey,
     });
     return { response, idempotencyKey };
@@ -392,8 +468,9 @@ export class RaviBasesClient {
     relativePath: string,
     body?: unknown,
     headers: Record<string, string> = {},
+    absolutePath?: string,
   ): Promise<T> {
-    const path = `${basesApiRoot(this.session.projectRef)}${relativePath}`;
+    const path = absolutePath ?? `${basesApiRoot(this.session.projectRef)}${relativePath}`;
     try {
       return await this.session.client.requestJson<T>(method, path, body, this.credentials.accessToken, headers);
     } catch (error) {
@@ -416,6 +493,14 @@ export type BasesRowUpdateInput = {
   lastWriteWins?: boolean;
 };
 
+/** A Ravi Pages site (host) of the project, as `views share` needs it. */
+export interface BasesPagesSite {
+  id: string;
+  slug: string | null;
+  hostname: string | null;
+  isDefault: boolean;
+}
+
 export type BasesRowLifecycleInput = {
   expectedVersion?: number;
   lastWriteWins?: boolean;
@@ -428,6 +513,14 @@ export async function openBasesClient(
 ): Promise<RaviBasesClient> {
   const readCredentials = deps.readCredentials ?? readCloudCredentials;
   const credentials = requireStoredCredentials(readCredentials(), options.console);
+  // Every Bases call (reads included) acts as the person of the turn. A turn Ravi
+  // cannot attribute would go out as the operator, so it stops here instead.
+  if (await (deps.unattributedTurn ?? defaultUnattributedTurn)()) {
+    throw new CloudAuthError(
+      "ACTOR_UNKNOWN",
+      "Ravi could not tell who is asking in this turn, so it will not read or write Bases for anyone, not even as the operator. Ask the person to send the request from their own chat, or the operator to run it in the terminal.",
+    );
+  }
   const { projectRef } = await resolveConsoleProjectRef(
     { consoleUrl: options.console, explicitProject: options.project ?? null },
     { ...deps, readCredentials },
@@ -441,6 +534,12 @@ export async function openBasesClient(
     newIdempotencyKey: deps.newIdempotencyKey ?? newBasesIdempotencyKey,
     clientHint: deps.clientHint ?? currentBasesClientHint,
   });
+}
+
+async function defaultUnattributedTurn(): Promise<boolean> {
+  // Loaded lazily, like the client's own actor lookup, to keep the turn classifier out of import cycles.
+  const { isUnattributedTurn } = await import("../cloud-auth/turn-actor.js");
+  return isUnattributedTurn();
 }
 
 function requireStoredCredentials(credentials: CloudCredentials | null, consoleUrl?: string): CloudCredentials {
@@ -477,6 +576,10 @@ function viewRowPath(baseRef: string, viewId: string, rowId: string): string {
   return `${viewPath(baseRef, viewId)}/rows/${encodeURIComponent(requireRef(rowId, "row"))}`;
 }
 
+function agentCellPath(baseRef: string, rowId: string, propRef: string): string {
+  return `${rowPath(baseRef, rowId)}/agent/${encodeURIComponent(requireRef(propRef, "property"))}`;
+}
+
 function chartPath(baseRef: string, chartId: string): string {
   return `${basePath(baseRef)}/charts/${encodeURIComponent(requireRef(chartId, "chart"))}`;
 }
@@ -501,6 +604,35 @@ function withQuery(path: string, query: Record<string, string | undefined>): str
   }
   const suffix = params.toString();
   return suffix ? `${path}?${suffix}` : path;
+}
+
+/** The Pages site list answers an array, `{sites}`, or `{items}`, each item maybe nested under `site`. */
+function pagesSitesFromPayload(payload: unknown): BasesPagesSite[] {
+  const record = isRecord(payload) ? payload : null;
+  const list = Array.isArray(payload)
+    ? payload
+    : Array.isArray(record?.sites)
+      ? record.sites
+      : Array.isArray(record?.items)
+        ? record.items
+        : [];
+  const sites: BasesPagesSite[] = [];
+  for (const item of list) {
+    const site = isRecord(item) && isRecord(item.site) ? item.site : isRecord(item) ? item : null;
+    const id = text(site?.id);
+    if (!site || !id) continue;
+    sites.push({
+      id,
+      slug: text(site.slug),
+      hostname: text(site.defaultHostname) ?? text(site.hostname),
+      isDefault: site.isDefault === true,
+    });
+  }
+  return sites;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function text(value: unknown): string | null {

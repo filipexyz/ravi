@@ -1,17 +1,22 @@
-// Local enrichment of Console `bases.row.*` inbox items. Console payloads
-// carry ids only (no values); the local runner reads the row through the Bases
-// CLI API with the installation's own credentials, so triggers can filter and
-// key sessions on row values (e.g. a forum comment's `topic_id`). Transport
-// only: Console authorization decides what the read returns.
+// Local enrichment of Console Bases inbox items about one row (`bases.row.*`,
+// `bases.approval.*`, `bases.agent.requested`). Console payloads carry ids only
+// (no values); the local runner reads the row through the Bases CLI API with
+// the installation's own credentials, so triggers can filter and key sessions
+// on row values (e.g. a forum comment's `topic_id`). Transport only: Console
+// authorization decides what the read returns.
 
 import type { BaseRowWriteResponse } from "../bases/schemas.js";
 import type { InboxNatsPayload } from "./types.js";
 
+// `bases.rows.bulk_changed` and `bases.agent.backfill` name no row and stay as delivered.
 const BASES_ROW_EVENT_TYPES = new Set([
   "bases.row.created",
   "bases.row.updated",
   "bases.row.restored",
   "bases.row.archived",
+  "bases.approval.requested",
+  "bases.approval.decided",
+  "bases.agent.requested",
 ]);
 
 export type BasesRowReader = (input: {
@@ -26,8 +31,8 @@ export function isBasesRowInboxEvent(eventType: string): boolean {
 }
 
 /**
- * Adds `payload.row = { rowId, version, values, archivedAt }` (no body) to a
- * `bases.row.*` item. When the read fails the item keeps its metadata-only
+ * Adds `payload.row = { rowId, version, values, archivedAt }` (no body) to an
+ * item about one row. When the read fails the item keeps its metadata-only
  * payload plus `payload.rowEnrichment = { status: "failed", code }`.
  */
 export async function enrichBasesRowPayload(
