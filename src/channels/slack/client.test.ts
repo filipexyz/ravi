@@ -249,6 +249,24 @@ describe("Slack Web API client", () => {
     });
   });
 
+  it("returns Slack's invalid_message and invalid_view answers from blocks.validate instead of throwing", async () => {
+    const errors = [{ message: "unsupported block type", pointer: "/blocks/0/type" }];
+    const fetchImpl = mock(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = String(init?.body ?? "");
+      return jsonResponse({ ok: false, error: body.startsWith("view=") ? "invalid_view" : "invalid_message", errors });
+    }) as unknown as typeof fetch;
+    const client = new SlackWebApiClient({ appToken: "xapp-secret", botToken: "xoxb-secret", fetchImpl });
+
+    await expect(
+      client.blocksValidate({ message: { text: "Fallback", blocks: [{ type: "card" }] } }),
+    ).resolves.toMatchObject({ ok: false, error: "invalid_message", errors });
+    await expect(client.blocksValidate({ view: { type: "modal", blocks: [] } })).resolves.toMatchObject({
+      ok: false,
+      error: "invalid_view",
+      errors,
+    });
+  });
+
   it("raises Slack API failures as structured SLACK_<ERROR> errors, not unhandled ones", async () => {
     const fetchImpl = mock(async () =>
       jsonResponse({ ok: false, error: "channel_not_found" }),
