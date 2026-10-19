@@ -93,6 +93,7 @@ function startObservedTask(profileId?: string) {
     ...(profileId ? { profileId } : {}),
   });
   const sessionName = `${created.task.id}-work`;
+  getOrCreateSession(`agent:worker:${sessionName}`, "worker", "/tmp/worker", { name: sessionName });
   dbDispatchTask(created.task.id, {
     agentId: "worker",
     sessionName,

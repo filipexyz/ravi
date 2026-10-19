@@ -2,7 +2,13 @@ import { getContext } from "../cli/context.js";
 import { nats } from "../nats.js";
 import { getAgent } from "../router/config.js";
 import { expandHome } from "../router/resolver.js";
-import { findSessionByChatId, getOrCreateSession, getSessionByName, resolveSession } from "../router/sessions.js";
+import {
+  deleteSessionByName,
+  findSessionByChatId,
+  getOrCreateSession,
+  getSessionByName,
+  resolveSession,
+} from "../router/sessions.js";
 import { logger } from "../utils/logger.js";
 import { resolveRuntimeDefaults } from "../runtime/runtime-defaults.js";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
@@ -1331,6 +1337,99 @@ export function resolveTaskSessionContext(
     sessionCwd,
     ...(worktree ? { worktree } : {}),
   };
+}
+
+export type TaskAssigneeSessionTarget =
+  | {
+      ok: true;
+      agentId: string;
+      sessionName: string;
+      sessionCwd: string;
+      worktree?: TaskWorktreeConfig;
+      /**
+       * Set when the session record was gone (an expired TTL) and was created again for the assignee:
+       * the new session has no context, so it gets the task brief before the prompt.
+       */
+      briefPrompt?: string;
+    }
+  | { ok: false; reason: string };
+
+/**
+ * Resolves the assignee's work session before Ravi prompts it. A task session can expire while the
+ * assignment still points at it, and a prompt published to the bare name cold-starts it on the
+ * default agent. So the session is created again for assignment.agentId, as dispatch does, or the
+ * caller gets a reason not to prompt it.
+ */
+export function resolveTaskAssigneeSession(
+  task: TaskRecord,
+  assignment?: Pick<TaskAssignment, "agentId" | "sessionName" | "worktree"> | null,
+): TaskAssigneeSessionTarget {
+  const activeAssignment = assignment === undefined ? dbGetActiveAssignment(task.id) : assignment;
+  const agentId = activeAssignment?.agentId ?? task.assigneeAgentId;
+  const sessionName = activeAssignment?.sessionName ?? task.assigneeSessionName;
+  if (!agentId || !sessionName) {
+    return { ok: false, reason: `Task ${task.id} has no assigned agent and session.` };
+  }
+
+  try {
+    const profile = resolveTaskProfileForTask(task);
+    const worktreeInput = activeAssignment?.worktree ?? task.worktree;
+    if (resolveSession(sessionName)) {
+      return { ok: true, ...resolveTaskSessionContext(task, profile, agentId, sessionName, worktreeInput) };
+    }
+    // Build the brief before the session exists: a failure must not leave an empty session that
+    // the next prompt would treat as live.
+    const agent = requireTaskRuntimeAgent(agentId);
+    const worktree = resolveTaskWorktreeContext(agent.cwd, task, profile, worktreeInput);
+    const { taskDocPath, primaryArtifact } = validateTaskProfileRuntimeOrThrow(task, profile, {
+      stage: "task.dispatch",
+      effectiveCwd: agent.cwd,
+      ...(worktree ? { worktree } : {}),
+      agentId: agent.id,
+      sessionName,
+      validateDispatch: true,
+    });
+    const briefPrompt = buildTaskDispatchPrompt(task, agent.id, sessionName, {
+      sessionCwd: agent.cwd,
+      ...(worktree ? { worktree } : {}),
+      taskDocPath,
+      taskProfile: profile,
+      primaryArtifact,
+    });
+    const context = resolveTaskSessionContext(task, profile, agentId, sessionName, worktreeInput);
+    return { ok: true, ...context, briefPrompt };
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/**
+ * Publishes a prompt to a session resolved by resolveTaskAssigneeSession. The prompt names the
+ * assignee agent, so the runtime never cold-starts it on the default agent, and a recreated
+ * session is gated on the task like a dispatch.
+ */
+export async function publishTaskAssigneePrompt(
+  task: TaskRecord,
+  target: Extract<TaskAssigneeSessionTarget, { ok: true }>,
+  payload: Record<string, unknown> & { prompt: string },
+): Promise<void> {
+  try {
+    await publishTaskSessionPrompt(target.sessionName, {
+      ...payload,
+      ...(target.briefPrompt
+        ? {
+            prompt: `${target.briefPrompt}\n\n${payload.prompt}`,
+            deliveryBarrier: "after_task",
+            taskBarrierTaskId: task.id,
+          }
+        : {}),
+      _agentId: target.agentId,
+    });
+  } catch (error) {
+    // A recreated session that never got its brief is dropped, so the next prompt recreates it again.
+    if (target.briefPrompt) deleteSessionByName(target.sessionName);
+    throw error;
+  }
 }
 
 function assertTaskStartAllowed(task: TaskRecord, action: "dispatch" | "arm a launch plan"): void {
@@ -2900,11 +2999,30 @@ export async function recoverActiveTasksAfterRestart(): Promise<TaskRecoveryResu
   return { recoveredTaskIds, skipped };
 }
 
+/**
+ * The assignment's session speaks for the task only while it runs as the assigned agent. A session
+ * recreated under another agent with the same name must not report progress or finish the task.
+ */
+function assertTaskActorMatchesAssignment(
+  taskId: string,
+  input: { agentId?: string; sessionName?: string },
+  action: string,
+): void {
+  if (!input.agentId || !input.sessionName) return;
+  const assignment = dbGetActiveAssignment(taskId);
+  if (!assignment || assignment.sessionName !== input.sessionName || assignment.agentId === input.agentId) return;
+  throw new Error(
+    `Cannot ${action} task ${taskId} from session ${input.sessionName}: it runs as agent ${input.agentId}, ` +
+      `but the task is assigned to ${assignment.agentId}. Re-dispatch the task to its assignee.`,
+  );
+}
+
 export function reportTaskProgress(taskId: string, input: TaskProgressInput): { task: TaskRecord; event: TaskEvent } {
   const existingTask = dbGetTask(taskId);
   if (!existingTask) {
     throw new Error(`Task not found: ${taskId}`);
   }
+  assertTaskActorMatchesAssignment(taskId, input, "report progress on");
   ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
   return dbReportTaskProgress(taskId, {
     ...input,
@@ -2984,6 +3102,7 @@ export async function commentTask(
   comment: TaskComment;
   event: TaskEvent;
   steeredSessionName?: string;
+  steerSkippedReason?: string;
 }> {
   const task = dbGetTask(taskId);
   if (!task) {
@@ -2995,6 +3114,7 @@ export async function commentTask(
   });
   const documentedTask = ensureTaskWorkspaceBootstrap(profiledTask, taskProfile);
   assertTaskDocumentInvariant(documentedTask, taskProfile, "task.comment");
+  const steerTarget = shouldSteerTaskComment(documentedTask) ? resolveTaskAssigneeSession(documentedTask) : null;
   const comment = dbAddTaskComment(taskId, input);
   const eventResult = dbAppendTaskEvent(
     taskId,
@@ -3013,23 +3133,29 @@ export async function commentTask(
     initializeSection: buildTaskMaterializedDocSection(eventResult.task),
   });
 
-  const resumeResult = dbAutoResumeBlockedTask(taskId, "comment_steer", {
-    actor: input.author,
-    agentId: input.authorAgentId,
-    sessionName: input.authorSessionName,
-  });
+  // A blocked task stays blocked when the comment cannot reach its assignee.
+  const resumeResult =
+    steerTarget && !steerTarget.ok
+      ? { task: updatedTask, resumed: false as const }
+      : dbAutoResumeBlockedTask(taskId, "comment_steer", {
+          actor: input.author,
+          agentId: input.authorAgentId,
+          sessionName: input.authorSessionName,
+        });
   const taskAfterResume = resumeResult.resumed ? resumeResult.task : updatedTask;
   if (resumeResult.resumed) {
     await emitTaskEvent(resumeResult.task, resumeResult.event);
   }
 
   let steeredSessionName: string | undefined;
-  if (shouldSteerTaskComment(taskAfterResume) && taskAfterResume.assigneeSessionName) {
-    await publishTaskSessionPrompt(taskAfterResume.assigneeSessionName, {
+  if (steerTarget?.ok && shouldSteerTaskComment(taskAfterResume)) {
+    await publishTaskAssigneePrompt(taskAfterResume, steerTarget, {
       prompt: buildTaskCommentSteerPrompt(taskAfterResume, comment),
       deliveryBarrier: "after_response",
     });
-    steeredSessionName = taskAfterResume.assigneeSessionName;
+    steeredSessionName = steerTarget.sessionName;
+  } else if (steerTarget && !steerTarget.ok) {
+    log.warn("Task comment not steered to the assignee", { taskId, reason: steerTarget.reason });
   }
 
   return {
@@ -3037,6 +3163,7 @@ export async function commentTask(
     comment,
     event: eventResult.event,
     ...(steeredSessionName ? { steeredSessionName } : {}),
+    ...(steerTarget && !steerTarget.ok ? { steerSkippedReason: steerTarget.reason } : {}),
   };
 }
 
@@ -3105,6 +3232,7 @@ export async function completeTask(
   if (!existingTask) {
     throw new Error(`Task not found: ${taskId}`);
   }
+  assertTaskActorMatchesAssignment(taskId, input, "complete");
   const { profile } = ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
   const result = dbCompleteTask(taskId, input);
   const documentedTask = result.wasNoop

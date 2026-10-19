@@ -1701,6 +1701,9 @@ export class TaskCommands {
       if (result.steeredSessionName) {
         console.log(`  Steer: ${result.steeredSessionName}`);
       }
+      if (result.steerSkippedReason) {
+        console.log(`  Not steered: ${result.steerSkippedReason}`);
+      }
     }
     return result;
   }

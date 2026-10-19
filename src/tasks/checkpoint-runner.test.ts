@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { readFileSync, writeFileSync } from "node:fs";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 
 afterAll(() => mock.restore());
@@ -40,7 +41,9 @@ const {
   dbListTaskEvents,
   dbMarkTaskAcceptedForSession,
 } = await import("./index.js");
-const { getOrCreateSession } = await import("../router/sessions.js");
+const { getOrCreateSession, getSessionByName } = await import("../router/sessions.js");
+const { dbCreateAgent } = await import("../router/router-db.js");
+const { initTaskProfileScaffold, invalidateTaskProfileCatalogCache } = await import("./profiles.js");
 const { setTaskSessionPromptPublisherForTests } = await import("./session-publisher.js");
 
 const createdTaskIds: string[] = [];
@@ -142,6 +145,81 @@ describe("observed task silence detector", () => {
     const types = dbListTaskEvents(created.task.id).map((event) => event.type);
     expect(types.filter((type) => type === "task.stalled")).toHaveLength(1);
     expect(types.filter((type) => type === "task.checkpoint.missed")).toHaveLength(2);
+  });
+});
+
+describe("checkpoint reminder for a work session that expired", () => {
+  // Only a profile with the task observer turned off reminds the worker.
+  beforeEach(() => {
+    const { manifestPath } = initTaskProfileScaffold("checkpoint-reminder", "runtime-only", { sourceKind: "user" });
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    writeFileSync(manifestPath, JSON.stringify({ ...manifest, observer: { enabled: false } }));
+    invalidateTaskProfileCatalogCache();
+  });
+
+  it("recreates the session for the assignee instead of the default agent", async () => {
+    dbCreateAgent({ id: "worker", cwd: "/tmp/ravi-worker-agent" });
+    const created = createTask({
+      title: "Checkpoint after session expiry",
+      instructions: "Remind the assignee, never the default agent.",
+      createdBy: "test",
+      checkpointIntervalMs: 5000,
+      profileId: "checkpoint-reminder",
+    });
+    createdTaskIds.push(created.task.id);
+    const sessionName = `${created.task.id}-work`;
+    dbDispatchTask(created.task.id, { agentId: "worker", sessionName, assignedBy: "test" });
+    dbMarkTaskAcceptedForSession(sessionName, created.task.id);
+    const dueAt = dbGetActiveAssignment(created.task.id)!.checkpointDueAt!;
+    expect(dueAt).toBeGreaterThan(0);
+    // The worker's session expired after it accepted the task.
+    expect(getSessionByName(sessionName)).toBeNull();
+
+    const runner = new TaskCheckpointRunner();
+    await runner.start();
+    try {
+      expect(await runner.sweep(dueAt + 1)).toBe(1);
+    } finally {
+      await runner.stop();
+    }
+
+    expect(getSessionByName(sessionName)).toMatchObject({ agentId: "worker", agentCwd: "/tmp/ravi-worker-agent" });
+    const taskPublishes = publishCalls.filter((call) => call.sessionName === sessionName);
+    expect(taskPublishes).toHaveLength(1);
+    expect(taskPublishes[0]!.payload).toMatchObject({
+      _agentId: "worker",
+      deliveryBarrier: "after_task",
+      taskBarrierTaskId: created.task.id,
+    });
+    expect(String(taskPublishes[0]!.payload.prompt)).toContain("Checkpoint overdue on task");
+  });
+
+  it("does not remind anyone when the assignee agent no longer exists", async () => {
+    const created = createTask({
+      title: "Checkpoint for a removed agent",
+      instructions: "Do not fall back to the default agent.",
+      createdBy: "test",
+      checkpointIntervalMs: 5000,
+      profileId: "checkpoint-reminder",
+    });
+    createdTaskIds.push(created.task.id);
+    const sessionName = `${created.task.id}-work`;
+    dbDispatchTask(created.task.id, { agentId: "gone", sessionName, assignedBy: "test" });
+    dbMarkTaskAcceptedForSession(sessionName, created.task.id);
+    const dueAt = dbGetActiveAssignment(created.task.id)!.checkpointDueAt!;
+    expect(dueAt).toBeGreaterThan(0);
+
+    const runner = new TaskCheckpointRunner();
+    await runner.start();
+    try {
+      expect(await runner.sweep(dueAt + 1)).toBe(0);
+    } finally {
+      await runner.stop();
+    }
+
+    expect(dbListTaskEvents(created.task.id).map((event) => event.type)).toContain("task.checkpoint.missed");
+    expect(publishCalls.filter((call) => call.sessionName === sessionName)).toHaveLength(0);
+    expect(getSessionByName(sessionName)).toBeNull();
   });
 });
 
