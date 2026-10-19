@@ -12,14 +12,16 @@ código, no fim). Você não escreve o cartão: escolhe um widget numa tag e o
 
 | tela | use |
 |---|---|
-| lista, board, tabela ou galeria sobre uma view | `<ravi-view>` |
-| formulário que cria linha | `<ravi-form>` |
+| lista, board, tabela, galeria ou calendário sobre uma view | `<ravi-view>` |
+| formulário que cria linha (com `body`) | `<ravi-form>` |
+| gráfico ou número de um gráfico do Bases | `<ravi-chart>` |
 | cartão com números fixos (KPI, snapshot) | `<ravi-widget data>` |
-| calendário, gráfico, detalhe próprio, filtro na tela, campo `body` no formulário | esqueleto + `client.js` (`layouts.md`) |
+| detalhe em página própria, arrastar no calendário, gráfico com desenho ou interação própria, `person` ou `ref` no formulário | esqueleto + `client.js` (`layouts.md`) |
 
-A tag já sai com o tema, campos por tipo, teclado, leitor de tela e
-mensagens de erro, e o ship deriva o `--uses` dela. Pode misturar tags e HTML
-seu na mesma página.
+A tag já sai com o tema, campos por tipo, edição no lugar, teclado, leitor de
+tela e mensagens de erro, e o ship deriva o `--uses` dela. Pode misturar tags
+e HTML seu na mesma página: um dashboard é o seu HTML (grade, títulos, texto)
+com várias `<ravi-chart>` e `<ravi-view>`.
 
 ## 1. Procure um widget
 
@@ -42,8 +44,10 @@ dentro da outra. O id da view sai de `ravi bases views list <base> --json`.
 ```html
 <ravi-view view="<uuid da view>" layout="board" widget="org/pedido-card" variant="compact"></ravi-view>
 <ravi-view view="<uuid da view>" layout="list" widget="org/pedido-card" fields="titulo:nome_cliente,valor:total"></ravi-view>
-<ravi-view view="<uuid da view>" layout="table" columns="titulo,status,valor" sort="-valor" where="status=@in_progress"></ravi-view>
+<ravi-view view="<uuid da view>" layout="table" columns="titulo,status,valor" sort="-valor" where="status=@in_progress;valor>=1000" searchable></ravi-view>
+<ravi-view view="<uuid da view>" layout="calendar"></ravi-view>
 <ravi-form view="<uuid da view>" fields="titulo,prazo,valor" submit-label="Enviar pedido" success="Pedido recebido."></ravi-form>
+<ravi-chart chart="<uuid do gráfico>"></ravi-chart>
 <ravi-widget use="org/kpi-mes" data='{"titulo": "Vendas de outubro", "valor": 1200}'></ravi-widget>
 ```
 
@@ -52,7 +56,7 @@ dentro da outra. O id da view sai de `ravi bases views list <base> --json`.
 | atributo | valor |
 |---|---|
 | `view` | uuid da view (obrigatório) |
-| `layout` | `list`, `board`, `table` ou `gallery`; padrão: o da view. Outro valor vira `list`; board sem coluna select/status vira `list` |
+| `layout` | `list`, `board`, `table`, `gallery`, `calendar` ou `form`; padrão: o da view. Outro valor (`chart` inclusive) vira `list`; board sem coluna select/status e calendário sem coluna de data viram `list` |
 | `widget` | ref do widget. Sem ele: o widget da view (`ravi bases views bind`), senão o cartão padrão |
 | `fields` | `campoDoWidget:coluna,...` quando o nome não casa sozinho |
 | `variant` | `compact`, `default` ou `detail`, só as que o widget lista (outra vira `default`, com aviso) |
@@ -60,12 +64,39 @@ dentro da outra. O id da view sai de `ravi bases views list <base> --json`.
 | `card-title`, `card-fields` | só no cartão padrão: coluna do título; colunas mostradas (padrão: as 4 seguintes) |
 | `columns` | colunas da tabela, na ordem (a tabela ignora o widget) |
 | `sort` | `chave,-chave2` (menos = decrescente), até 3 |
-| `where` | `chave=valor;...` somado ao filtro da view: igualdade; `@me`, `@today`, `@now`, `@todo`/`@in_progress`/`@done`; `chave=` = vazio |
+| `where` | `chave<op>valor;...`, somado ao filtro da view. `=` igual (multi_select e person: contém; approval e agent: estado); `!=` diferente; `>` `>=` `<` `<=` em número e data (data: depois/antes); `~` contém (text, url, email, phone, multi_select, person). Valores: `@me`, `@today`, `@now`, `@todo`/`@in_progress`/`@done`. `chave=` = vazio, `chave!=` = não vazio. Chave ou operador que a coluna não aceita aparece na tag (`invalid_filter`) |
+| `search` | busca da consulta (até 200 caracteres) |
+| `searchable` | caixa "Buscar" antes da coleção; refaz a consulta enquanto a pessoa digita |
 | `create` | botão "Novo item" (se a view deixa criar) |
 | `archive` | botão de arquivar no cartão padrão; com widget, vale o botão do widget |
 | `readonly` | nenhuma escrita, nem editor nem arrastar |
-| `heading-level` | nível dos títulos da view (padrão 2): colunas do board nesse nível e cartões no seguinte; na lista, os cartões nesse nível |
+| `heading-level` | nível dos títulos da view (padrão 2): colunas do board, mês do calendário e título do formulário nesse nível; cartões no seguinte no board, nesse nível no resto |
 | `page-size` | linhas por consulta (padrão 50, até 200) |
+
+Mudar `where`, `search` ou `sort` da tag pelo seu JS
+(`tag.setAttribute("where", "status=@done")`) refaz a consulta: é o filtro
+próprio na tela, sem `client.js`.
+
+Calendário: grade do mês sobre o `dateProp` da view (senão a primeira coluna
+date, created_time ou updated_time); consulta só o mês visível, marca hoje,
+põe cada linha no dia de início como botão que abre o registro, e troca de
+mês por "Mês anterior"/"Próximo mês". Formulário (`layout="form"`): o
+formulário de criação das colunas graváveis, com título,
+descrição, `submitLabel` e `successMessage` do layout da view; não lê linhas.
+
+Na tela, sem `readonly` e só nas colunas que quem vê pode escrever: o cartão
+edita select, status, checkbox e approval no lugar; a tabela edita todo tipo
+menos person e ref (data com intervalo, não). "Abrir" (cartão padrão e linha
+da tabela, quando a view projeta o `body` ou uma coluna que o cartão não
+edita; `open` sem `href` num widget; item do calendário) abre o registro:
+lê com `rows.get`, mostra o que a pessoa não edita e um formulário com as
+colunas graváveis e o `body`, que manda só o que mudou. Célula approval:
+o estado em texto ("Pendente", "Aprovado", "Recusado"); quem aprova a coluna
+vê "Aprovar"/"Recusar" com observação opcional; quem escreve vê "Pedir
+aprovação" com a célula vazia ou recusada. Célula agent: o valor com o selo
+"Preenchendo…" ou "Erro"; nunca editável. A tag relê sozinha quando as linhas
+mudam: confere `ravi.bases.views.version` a cada 5 s com a página visível
+(sem esse id, relê a cada 30 s) e para com a página oculta.
 
 Casamento de campos, nesta ordem: o `fields` da tag (por cima do mapa da
 view), a coluna com a mesma chave, a coluna cujo nome (minúsculo, sem acento,
@@ -95,9 +126,23 @@ privada ou tire esses valores de `data`.
 
 `view` (obrigatório), `fields` (chaves de coluna, na ordem; padrão: as que a
 view deixa escrever), `submit-label` e `success`. Desenha text, number, date,
-checkbox, select, status, multi_select, url, email e phone; `person`, `ref` e
-`body` ficam de fora (dono vem do `write.set` da view; `body` pede o
-esqueleto). O erro de cada campo aparece sob ele.
+checkbox, select, status, multi_select, url, email e phone, e o `body` (caixa
+de texto) quando a view deixa escrevê-lo; `person`, `ref`, approval e agent
+ficam de fora (dono vem do `write.set` da view). O erro de cada campo aparece
+sob ele.
+
+### `<ravi-chart>`
+
+`chart` (obrigatório): o uuid do gráfico (`ravi bases charts list <base>`).
+Desenha um gráfico do Bases como quem vê: barras (empilhadas,
+100% ou lado a lado, conforme o `stack`), linha, área, pontos, pizza ou
+donut, mapa de calor (`rect`) e número único (`text`), com legenda a partir
+de duas séries, uma tabela oculta para leitor de tela e o aviso de grupos
+ocultos (menos de 5 linhas). Relê a cada 60 s com a página visível. Uma view
+`chart` aponta o gráfico em `layout.chartId`: use esse id aqui (`<ravi-view>`
+nela desenha uma lista). No JS da página, `ravi.bases.chart("<uuid>")`
+devolve `{ id, data() }`, uma leitura de `charts.data`, só para um gráfico
+com tag na página.
 
 ## 3. Ship
 
@@ -111,12 +156,17 @@ O ship manda o HTML (de uma cópia, nunca da sua pasta) ao kit do Console:
 - fixa na página a versão publicada de cada widget e do `ravi.js`: versão
   nova só entra com outro ship;
 - confere os campos contra a view, lida como você (quem roda o ship);
-- desenha `<ravi-widget data>` no HTML e põe "Carregando…" em `<ravi-view>`;
-- soma ao `--uses` os ids que as tags pedem: `describe` e `query` sempre;
-  `rows.update` em board sem `readonly`, botão update ou campo editável
-  (select, status, checkbox); `rows.create` com `create` ou botão create;
-  `rows.archive` com `archive` ou botão archive; `rows.get` em botão open sem
-  link; `<ravi-form>` leva `describe` e `rows.create`.
+- desenha `<ravi-widget data>` no HTML e põe "Carregando…" em `<ravi-view>`
+  e `<ravi-chart>`;
+- soma ao `--uses` os ids que as tags pedem. `<ravi-view>`: `describe`,
+  `query` e `version` sempre; `rows.update` em board sem `readonly`, botão
+  update ou campo editável (campo do widget ou, sem widget, coluna da view de
+  tipo text, number, date, url, email, phone, select, multi_select, status,
+  checkbox, approval ou body; nada disso com `readonly`); `rows.get` no
+  calendário, em botão open sem link e junto com todo `rows.update` (o diálogo
+  do registro); `rows.create` com `create`, botão create ou `layout="form"`; `rows.archive` com
+  `archive` ou botão archive. `<ravi-form>`: `describe` e `rows.create`.
+  `<ravi-chart>`: `charts.data`.
 
 O ship soma só os ids das tags deste HTML; o que o script da própria rota
 chama vai no `--uses`. As outras rotas do host continuam com os ids delas
@@ -142,6 +192,7 @@ código mensagem`), e nada sobe:
 | `KIT_WIDGET_NOT_FOUND`, `KIT_WIDGET_OUT_OF_SCOPE`, `KIT_WIDGET_UNPUBLISHED` | ref errado, de outro projeto ou sem versão publicada: `ravi widgets search` |
 | `KIT_DATA_INVALID` | `data` precisa ser um objeto JSON |
 | `KIT_FORM_FIELD_MISSING` | `fields` do formulário com coluna que a view não projeta |
+| `KIT_CHART_REQUIRED`, `KIT_CHART_INVALID` | `chart="<uuid>"` (`ravi bases charts list`) |
 | `KIT_THEME_*` | `--theme` com ref errado (`theme.md`) |
 | `KIT_TOO_LARGE` | o HTML montado (com tema e `ravi.js`) passou do limite do Console: divida em mais rotas |
 | `KIT_WIDGET_UNAUDITED` | widget com código sem auditoria aprovada: um owner ou admin da org abre a URL do `suggestedAction` no Console e roda a auditoria; depois, o mesmo ship |
@@ -154,7 +205,9 @@ inválido ou `page-size` acima de 200, que vira 200 (`KIT_ATTRIBUTE_INVALID`),
 nome, e-mail ou telefone em `data` numa rota pública
 (`KIT_PERSONAL_DATA_PUBLIC`), tema mudado desde o último publish da rota,
 página sem tema ativo que sai com o tema padrão do Ravi (`KIT_THEME_DEFAULT`),
-widget com ações fora de uma `<ravi-view>` (`KIT_ACTIONS_NEED_VIEW`). Cada
+widget com ações fora de uma `<ravi-view>` (`KIT_ACTIONS_NEED_VIEW`),
+gráfico que você não lê (`KIT_CHART_UNAVAILABLE`: sobe e aparece para quem a
+view do gráfico admite). Cada
 aviso sai como `warning: arquivo:linha:coluna severidade código mensagem` no
 texto e em `warnings` no JSON, inclusive códigos que este CLI ainda não
 conhece: leia a mensagem e corrija se fizer sentido; o ship já subiu.
@@ -217,7 +270,8 @@ ravi widgets propose ./pedido-card --scope org --note "cartão de pedido" --exec
 
 ## Widget com código
 
-Só para o desenho que o template não faz: gráfico, mapa. O `widget.html`
+Só para o desenho que o template não faz: gráfico dentro do cartão (gráfico
+do Bases é `<ravi-chart>`), mapa. O `widget.html`
 continua obrigatório: é o que o ship desenha no HTML e o que agentes e quem
 lê sem JS recebem. O `widget.js` só melhora o cartão por cima.
 

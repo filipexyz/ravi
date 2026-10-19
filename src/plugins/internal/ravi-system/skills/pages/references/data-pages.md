@@ -28,11 +28,11 @@ Regras 1 a 3 da skill solucoes, detalhadas em "Ship" e "Quem passa":
    site".
 2. **Gráficos.** Se a tela tem gráficos, crie-os sobre uma view (skill bases,
    `charts.md`).
-3. **Página.** Lista, board, tabela, galeria ou formulário: escreva a tag
-   (`<ravi-view>`, `<ravi-form>`; `widgets.md`). O que a tag não cobre:
-   parta de um esqueleto (`esqueletos/board.html.txt` ou
-   `formulario.html.txt`, mais `_client.js.txt` como `client.js`), com as
-   cores do tema (`theme.md`). Ids de view e gráfico entram como atributo ou
+3. **Página.** Lista, board, tabela, galeria, calendário, formulário ou
+   gráfico: escreva a tag (`<ravi-view>`, `<ravi-form>`, `<ravi-chart>`;
+   `widgets.md`). O que a tag não cobre: parta de um esqueleto
+   (`esqueletos/board.html.txt` ou `formulario.html.txt`, mais
+   `_client.js.txt` como `client.js`), com as cores do tema (`theme.md`). Ids de view e gráfico entram como atributo ou
    constante.
    Dados nunca entram no HTML: a página busca tudo na hora, como quem vê.
 4. **Ship.** `ravi pages ship ... --uses <ids>` com os `ravi.bases.*` que
@@ -68,6 +68,9 @@ Uma view por tela (ou por conjunto de permissões):
 ```bash
 ravi bases views create <base> --spec @view.json --json    # guarde o id
 ```
+
+Com tag, o ship soma esses ids sozinho (`widgets.md`); a tabela é o
+`--uses` do HTML à mão.
 
 | tela | layout | `--uses` (sem o prefixo `ravi.bases.`) |
 |---|---|---|

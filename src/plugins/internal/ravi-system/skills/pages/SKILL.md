@@ -75,7 +75,7 @@ Prefixos reservados de host: `ravi` e `ravi-*`. O CLI não cria esses slugs.
 
 ## Tema e widgets
 
-O ship aplica o tema ativo (do projeto, senão da org) a todo HTML e transforma as tags `<ravi-view>`, `<ravi-widget>` e `<ravi-form>` em telas prontas, com os widgets da Biblioteca e o `--uses` que elas pedem. `--theme <ref>` troca o tema desse ship; `--theme none` tira. Erro de tag sai com exit 2, uma linha `arquivo:linha:coluna` por problema, e nada sobe.
+O ship aplica o tema ativo (do projeto, senão da org) a todo HTML e transforma as tags `<ravi-view>`, `<ravi-widget>`, `<ravi-form>` e `<ravi-chart>` em telas prontas, com os widgets da Biblioteca e o `--uses` que elas pedem. `--theme <ref>` troca o tema desse ship; `--theme none` tira. Erro de tag sai com exit 2, uma linha `arquivo:linha:coluna` por problema, e nada sobe.
 
 - HTML escrito à mão: cor, fonte e espaço por variável do tema com fallback (`var(--color-text-primary, #17202a)`), nunca literais. `references/theme.md`.
 - Tela sobre uma view: tag antes de cliente à mão; `ravi widgets search` antes de criar widget. `references/widgets.md`.
@@ -178,7 +178,7 @@ ravi pages ship --project <p> --title "Pautas" --route /pautas --dir ./pautas \
 
 `CONFLICT` (409, "Read unread Ravi Pages comments before publishing."): comentário não lido de outra pessoa trava o ship da rota, e o CLI ainda não lê comentários. Peça à pessoa logada neste Ravi (o CLI publica em nome dela) que leia na barra do operador da página, ou publique noutra rota.
 
-Lista, board, tabela, galeria ou formulário: use `<ravi-view>` ou `<ravi-form>` (`references/widgets.md`). O que a tag não cobre: comece por `references/esqueletos/` (board ou formulário, mais `_client.js.txt` como `client.js`). Fluxo, erros e checklist: `references/data-pages.md`.
+Lista, board, tabela, galeria, calendário, formulário ou gráfico: use `<ravi-view>`, `<ravi-form>` ou `<ravi-chart>` (`references/widgets.md`). O que a tag não cobre: comece por `references/esqueletos/` (board ou formulário, mais `_client.js.txt` como `client.js`). Fluxo, erros e checklist: `references/data-pages.md`.
 
 ## Senha, visibilidade e domínio
 
@@ -301,7 +301,7 @@ ravi pages chat set <host> --clear-ravi-agent
 
 Abra só o que precisar com `ravi skills show pages --file references/<arquivo>`.
 
-- `widgets.md`: tags `<ravi-view>`, `<ravi-widget>` e `<ravi-form>`, busca de widget, o que o ship faz, criar e propor widget, acessibilidade.
+- `widgets.md`: tags `<ravi-view>`, `<ravi-widget>`, `<ravi-form>` e `<ravi-chart>`, busca de widget, o que o ship faz, criar e propor widget, acessibilidade.
 - `chat.md`: chat de texto, blocos `ravi.ui/v1` das respostas, o que o autor da página controla.
 - `theme.md`: tema ativo, `--theme`, variáveis CSS, claro e escuro, contraste.
 - `data-pages.md`: site → view → ship, `--uses`, quem passa, connectors, erros, valores, segurança.
