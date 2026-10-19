@@ -74,7 +74,13 @@ export interface Trigger {
   /** Frozen outbound source captured from the creator's runtime context */
   replySource?: TriggerReplySource;
   enabled: boolean;
+  /** Minimum gap between fires; events inside it are dropped. 0 disables it. */
   cooldownMs: number;
+  /**
+   * Quiet window that batches a burst of events into one fire, after the last
+   * event, carrying every event of the burst. Absent or 0 fires per event.
+   */
+  debounceMs?: number;
   /** Optional filter expression. If set, trigger only fires when event data matches. */
   filter?: string;
 
@@ -111,6 +117,7 @@ export interface TriggerInput {
   replySource?: TriggerReplySource;
   enabled?: boolean;
   cooldownMs?: number;
+  debounceMs?: number;
   /** Optional filter expression. If set, trigger only fires when event data matches. */
   filter?: string;
 }

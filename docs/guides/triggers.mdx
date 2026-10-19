@@ -1,6 +1,6 @@
 ---
 title: Triggers
-description: Wake an agent or run a script when an event arrives on the Ravi event bus, with filters, cooldowns and per-event sessions.
+description: Wake an agent or run a script when an event arrives on the Ravi event bus, with filters, cooldowns, debounce and per-event sessions.
 icon: zap
 ---
 
@@ -16,10 +16,10 @@ Ravi publishes events on its event bus (NATS, `nats://127.0.0.1:4222` by default
 
 1. skips events produced by trigger turns (see [Anti-loop](#anti-loop));
 2. resolves the session name, if it is a template;
-3. checks the cooldown, and drops the event if the trigger is cooling down;
+3. checks the cooldown, and drops the event if the trigger is cooling down (skipped when the cooldown is `off` or the trigger is debounced);
 4. evaluates the filter, and drops the event if it does not match;
 5. drops an exact repeat of an event it already handled in the last 60 seconds;
-6. fires: sends a prompt to an agent session (`--message`) or runs a command (`--shell`).
+6. fires: sends a prompt to an agent session (`--message`) or runs a command (`--shell`). A debounced trigger instead adds the event to the current burst and fires once when the burst goes quiet (see [Debounce](#debounce)).
 
 ## Create a trigger
 
@@ -65,7 +65,8 @@ Ravi publishes events on its event bus (NATS, `nats://127.0.0.1:4222` by default
 | `--session <name>` | Session to run in. See [Sessions](#sessions). |
 | `--reply-session <name>` | Session whose chat receives the answer. See [Where the answer goes](#where-the-answer-goes). |
 | `--filter <expression>` | Only fire when the event matches. See [Filters](#filters). |
-| `--cooldown <duration>` | Minimum time between fires. Default `5s`. See [Cooldown](#cooldown). |
+| `--cooldown <duration>` | Minimum time between fires; events inside it are dropped. Default `5s`; `off` disables it. See [Cooldown](#cooldown). |
+| `--debounce <duration>` | Batch a burst of events into one fire, this long after the last event, carrying every event. Default off. See [Debounce](#debounce). |
 | `--account <name>` | Account set on the reply source, when you have more than one. It does not route the answer to another chat. |
 | `--timeout`, `--env-file`, `--on-error` | Shell triggers only. |
 | `--json` | Machine-readable output. |
@@ -191,13 +192,30 @@ Change the reply session with `ravi triggers set <id> replySession <name>` (`-` 
 
 ## Cooldown
 
-- Default `5s`. The value is a positive integer and a unit: `s`, `m`, `h` or `d`. `0s` is rejected, so the minimum is `1s`.
+- Default `5s`. The value is a positive integer and a unit: `s`, `m`, `h` or `d`. `off` (or `0s`) disables the cooldown: every event that passes the filter fires.
 - The cooldown is checked before the filter. An event that arrives during the cooldown is **dropped**, not queued.
 - The clock starts only when an event passes the filter. Events the filter rejects do not use up the cooldown.
 - With a named or templated session, the cooldown counts per resolved session. With `main` or `isolated`, it counts for the whole trigger.
 - Separately, Ravi fires a trigger at most once for the same event within 60 seconds (same `dedupeKey`, `eventId` or message id, or an identical payload).
 
-Because events can be dropped, write the prompt to handle everything that is pending ("process every row whose status is New"), not just the event that woke it. If missing an event is costly, add a [cron job](/guides/cron-jobs) that runs the same prompt as a sweep.
+Because events can be dropped, write the prompt to handle everything that is pending ("process every row whose status is New"), not just the event that woke it. If missing an event is costly, turn the cooldown `off`, use [debounce](#debounce) to absorb bursts without dropping anything, or add a [cron job](/guides/cron-jobs) that runs the same prompt as a sweep.
+
+## Debounce
+
+`--debounce <duration>` turns a burst of events into one fire. Each event that passes the filter joins the burst and restarts the quiet window; the trigger fires once the window passes with no new event.
+
+```bash
+ravi triggers add "inbox batch" --topic ravi.inbox.mail.received \
+  --debounce 30s --cooldown off --agent main --message "Triage the new mail."
+```
+
+- The fire carries **every** event of the burst, oldest first. An agent trigger gets them in the prompt (`Batch: N events…` and an `Events:` list); a shell trigger gets them in `$RAVI_TRIGGER_EVENTS_FILE`, with the count in `$RAVI_TRIGGER_EVENT_COUNT`. The message template and `$RAVI_TRIGGER_DATA_FILE` use the burst's last event.
+- A constant stream still fires: a burst fires at most 10× the window after its first event.
+- A burst keeps its last 200 events; older ones are counted as omitted.
+- With a named or templated session, each resolved session has its own burst.
+- The cooldown, if set, applies between fires: a burst that is due while the trigger is cooling down waits for it instead of being dropped.
+- Bursts live in the daemon's memory. Events still waiting when the daemon stops are lost (logged at `warn`).
+- `ravi triggers set <id> debounce <duration|off>` changes it.
 
 ## Shell triggers
 
@@ -218,6 +236,8 @@ The command gets these environment variables:
 |---|---|
 | `RAVI_TRIGGER_DATA_FILE` | Path to a JSON file with the event data |
 | `RAVI_TRIGGER_EVENT_FILE` | Path to a JSON file with `{ trigger, event, source }` |
+| `RAVI_TRIGGER_EVENTS_FILE` | Path to a JSON array of every event this fire carries (`{ topic, data }`): one, or the whole [debounced](#debounce) burst |
+| `RAVI_TRIGGER_EVENT_COUNT` | How many events this fire carries |
 | `RAVI_TRIGGER_ID`, `RAVI_TRIGGER_NAME`, `RAVI_TRIGGER_TOPIC` | The trigger and the topic |
 | `RAVI_TRIGGER_SOURCE_CHANNEL`, `RAVI_TRIGGER_SOURCE_ACCOUNT_ID`, `RAVI_TRIGGER_SOURCE_CHAT_ID` | The reply chat, when there is one |
 | `RAVI_TRIGGER_PROVIDER`, `RAVI_TRIGGER_INTERACTION_TYPE`, `RAVI_TRIGGER_ACTION_ID`, `RAVI_TRIGGER_BLOCK_ID`, `RAVI_TRIGGER_VALUE`, `RAVI_TRIGGER_USER_ID`, `RAVI_TRIGGER_CHANNEL_ID`, `RAVI_TRIGGER_MESSAGE_TS`, `RAVI_TRIGGER_THREAD_TS`, `RAVI_TRIGGER_RESPONSE_URL_ID` | Copied from the matching top-level event fields (`provider`, `interactionType`, `actionId`, ...), empty when absent |
@@ -317,7 +337,7 @@ ravi triggers rm <id> --execute
 | `blocked_topic` | Subscribes to an internal `ravi.session.*` topic, which the daemon skips |
 | `unbound_agent` | The trigger's agent no longer exists |
 
-`ravi triggers set <id> <key> <value>` accepts: `name`, `message`, `shell`, `exec`, `timeout`, `env-file`, `on-error`, `topic`, `agent`, `account`, `session`, `cooldown`, `filter`, `replySession`. For `filter`, `agent`, `account`, `replySession`, `timeout`, `env-file` and `on-error`, pass `-` to clear the value.
+`ravi triggers set <id> <key> <value>` accepts: `name`, `message`, `shell`, `exec`, `timeout`, `env-file`, `on-error`, `topic`, `agent`, `account`, `session`, `cooldown`, `debounce`, `filter`, `replySession`. For `filter`, `agent`, `account`, `replySession`, `timeout`, `env-file` and `on-error`, pass `-` to clear the value.
 
 ## Debug a trigger
 

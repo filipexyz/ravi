@@ -29426,11 +29426,12 @@ class TranscribeFileReturn {
 TranscribeFileReturn transcribeFileReturnFromJson(Object? json) => TranscribeFileReturn.fromJsonValue(json);
 
 class TriggersAddOptions {
-  const TriggersAddOptions({this.account, this.agent, this.cooldown, this.envFile, this.exec, this.filter, this.message, this.onError, this.replySession, this.session, this.shell, this.timeout, this.topic});
+  const TriggersAddOptions({this.account, this.agent, this.cooldown, this.debounce, this.envFile, this.exec, this.filter, this.message, this.onError, this.replySession, this.session, this.shell, this.timeout, this.topic});
 
   final String? account;
   final String? agent;
   final String? cooldown;
+  final String? debounce;
   final String? envFile;
   final String? exec;
   final String? filter;
@@ -29451,6 +29452,9 @@ class TriggersAddOptions {
     }
     if (cooldown != null) {
       into["cooldown"] = RaviJson.from(cooldown);
+    }
+    if (debounce != null) {
+      into["debounce"] = RaviJson.from(debounce);
     }
     if (envFile != null) {
       into["envFile"] = RaviJson.from(envFile);

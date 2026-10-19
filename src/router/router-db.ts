@@ -3175,6 +3175,7 @@ function getDb(): Database {
     log.info("Added on_error column to triggers table");
   }
   ensureColumn(db, "triggers", "filter_reject_count", "INTEGER DEFAULT 0");
+  ensureColumn(db, "triggers", "debounce_ms", "INTEGER DEFAULT 0");
   ensureColumn(db, "triggers", "last_filter_reject_at", "INTEGER");
   migrateTriggerSessionCheck(db);
 
