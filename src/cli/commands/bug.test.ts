@@ -93,13 +93,13 @@ describe("bug CLI commands", () => {
     const client = makeClient(async (method, path, body, accessToken) => {
       calls.push({ method, path, body, accessToken });
       if (path.endsWith("/subscribe")) {
-        return { ok: true, bugId: "bug_1" };
+        return { ok: true, bugId: "b1b1b1b1-1111-4111-8111-111111111111" };
       }
       return {
-        id: "bug_1",
+        id: "b1b1b1b1-1111-4111-8111-111111111111",
         title: VALID_DOSSIER.title,
         severity: "high",
-        url: "https://console.example/bugs/bug_1",
+        url: "https://console.example/bugs/b1b1b1b1-1111-4111-8111-111111111111",
       };
     });
     const command = new BugCommands({ client, readCredentials: makeReadCredentials(), ...follow });
@@ -138,7 +138,7 @@ describe("bug CLI commands", () => {
       },
       {
         method: "POST",
-        path: "/api/cli/bugs/bug_1/subscribe",
+        path: "/api/cli/bugs/b1b1b1b1-1111-4111-8111-111111111111/subscribe",
         accessToken: "access-secret",
         body: { installationId: "ins_123" },
       },
@@ -148,26 +148,28 @@ describe("bug CLI commands", () => {
     expect(calls[0]?.body).not.toHaveProperty("projectId");
     expect(follow.createdTriggers).toHaveLength(1);
     expect(follow.createdTriggers[0]).toMatchObject({
-      name: "bug-follow:bug_1",
+      name: "bug-follow:b1b1b1b1-1111-4111-8111-111111111111",
       topic: BUG_STATUS_WATCH_TOPIC,
       session: "main",
       replySession: "agent:main:main",
       cooldownMs: 30_000,
-      filter: bugFollowFilter("bug_1"),
+      filter: bugFollowFilter("b1b1b1b1-1111-4111-8111-111111111111"),
     });
-    expect(follow.createdTriggers[0]?.filter).toBe('data.payload.bugId == "bug_1" || data.bugId == "bug_1"');
+    expect(follow.createdTriggers[0]?.filter).toBe(
+      'data.payload.bugId == "b1b1b1b1-1111-4111-8111-111111111111" || data.bugId == "b1b1b1b1-1111-4111-8111-111111111111"',
+    );
     expect(payload).toMatchObject({
       success: true,
       consoleUrl: "https://console.example",
-      id: "bug_1",
-      url: "https://console.example/bugs/bug_1",
-      bug: { id: "bug_1", severity: "high" },
+      id: "b1b1b1b1-1111-4111-8111-111111111111",
+      url: "https://console.example/bugs/b1b1b1b1-1111-4111-8111-111111111111",
+      bug: { id: "b1b1b1b1-1111-4111-8111-111111111111", severity: "high" },
       follow: {
         ok: true,
         subscribed: true,
         triggerId: "trg_follow",
         topic: BUG_STATUS_WATCH_TOPIC,
-        filter: bugFollowFilter("bug_1"),
+        filter: bugFollowFilter("b1b1b1b1-1111-4111-8111-111111111111"),
         session: "main",
       },
     });
@@ -183,7 +185,10 @@ describe("bug CLI commands", () => {
       if (path.endsWith("/subscribe")) {
         throw new Error("subscribe route missing");
       }
-      return { id: "bug_9", url: "https://console.example/bugs/bug_9" };
+      return {
+        id: "b9b9b9b9-9999-4999-8999-999999999999",
+        url: "https://console.example/bugs/b9b9b9b9-9999-4999-8999-999999999999",
+      };
     });
     const command = new BugCommands({ client, readCredentials: makeReadCredentials(), ...follow });
 
@@ -203,7 +208,7 @@ describe("bug CLI commands", () => {
     const payload = JSON.parse(output);
     expect(payload).toMatchObject({
       success: true,
-      id: "bug_9",
+      id: "b9b9b9b9-9999-4999-8999-999999999999",
       follow: {
         ok: false,
         subscribed: false,
@@ -211,7 +216,7 @@ describe("bug CLI commands", () => {
     });
     expect(payload.follow.warning).toContain("subscribe route missing");
     expect(payload.follow.warning).toContain("sqlite locked");
-    expect(payload.follow.filter).toBe(bugFollowFilter("bug_9"));
+    expect(payload.follow.filter).toBe(bugFollowFilter("b9b9b9b9-9999-4999-8999-999999999999"));
 
     const human = await captureConsole(() =>
       command.report(
@@ -226,7 +231,7 @@ describe("bug CLI commands", () => {
         true,
       ),
     );
-    expect(human.output).toContain("Bug reported: bug_9");
+    expect(human.output).toContain("Bug reported: b9b9b9b9-9999-4999-8999-999999999999");
     expect(human.output).toContain("auto-follow failed");
   });
 
@@ -234,19 +239,23 @@ describe("bug CLI commands", () => {
     const calls: Array<{ method: string; path: string; body: unknown }> = [];
     const client = makeClient(async (method, path, body) => {
       calls.push({ method, path, body });
-      return { id: "bug_9", status: "open", title: "Crash" };
+      return { id: "b9b9b9b9-9999-4999-8999-999999999999", status: "open", title: "Crash" };
     });
     const command = new BugCommands({
       client,
       readCredentials: makeReadCredentials(),
       ...makeFollowDeps(),
     });
-    const { output } = await captureConsole(() => command.status("bug_9", undefined, true));
-    expect(calls).toEqual([{ method: "GET", path: "/api/cli/bugs/bug_9", body: undefined }]);
+    const { output } = await captureConsole(() =>
+      command.status("b9b9b9b9-9999-4999-8999-999999999999", undefined, true),
+    );
+    expect(calls).toEqual([
+      { method: "GET", path: "/api/cli/bugs/b9b9b9b9-9999-4999-8999-999999999999", body: undefined },
+    ]);
     expect(JSON.parse(output)).toMatchObject({
       success: true,
-      id: "bug_9",
-      url: "https://console.example/bugs/bug_9",
+      id: "b9b9b9b9-9999-4999-8999-999999999999",
+      url: "https://console.example/bugs/b9b9b9b9-9999-4999-8999-999999999999",
       bug: { status: "open" },
     });
   });
@@ -257,7 +266,7 @@ describe("bug CLI commands", () => {
       calls.push({ method, path });
       return {
         items: [
-          { id: "bug_1", title: "One", severity: "low" },
+          { id: "b1b1b1b1-1111-4111-8111-111111111111", title: "One", severity: "low" },
           { id: "bug_2", title: "Two", severity: "high" },
         ],
       };
@@ -271,7 +280,7 @@ describe("bug CLI commands", () => {
     expect(calls[0]).toEqual({ method: "GET", path: "/api/cli/bugs?limit=1&offset=0" });
     const payload = JSON.parse(output);
     expect(payload.total).toBe(2);
-    expect(payload.items).toEqual([{ id: "bug_1", title: "One", severity: "low" }]);
+    expect(payload.items).toEqual([{ id: "b1b1b1b1-1111-4111-8111-111111111111", title: "One", severity: "low" }]);
     expect(payload.pagination.nextCommand).toContain("ravi bug list --json --limit 1 --offset 1");
   });
 });
@@ -446,7 +455,7 @@ describe("bug agent-first contract", () => {
     const command = new BugCommands({
       client: makeClient(async (_method, path, body) => {
         calls.push({ path, body });
-        return { id: "bug_file" };
+        return { id: "bfbfbfbf-ffff-4fff-8fff-ffffffffffff" };
       }),
       readCredentials: makeReadCredentials(),
       ...follow,
@@ -461,9 +470,11 @@ describe("bug agent-first contract", () => {
       payload: { title: VALID_DOSSIER.title, source: "cli" },
     });
     expect(calls[0]?.body).not.toHaveProperty("source");
-    expect(JSON.parse(output).id).toBe("bug_file");
-    expect(calls.some((call) => call.path === "/api/cli/bugs/bug_file/subscribe")).toBe(true);
-    expect(follow.createdTriggers[0]?.filter).toBe(bugFollowFilter("bug_file"));
+    expect(JSON.parse(output).id).toBe("bfbfbfbf-ffff-4fff-8fff-ffffffffffff");
+    expect(calls.some((call) => call.path === "/api/cli/bugs/bfbfbfbf-ffff-4fff-8fff-ffffffffffff/subscribe")).toBe(
+      true,
+    );
+    expect(follow.createdTriggers[0]?.filter).toBe(bugFollowFilter("bfbfbfbf-ffff-4fff-8fff-ffffffffffff"));
   });
 });
 
@@ -475,8 +486,8 @@ describe("bug comment", () => {
         calls.push({ method, path, body, accessToken });
         return {
           id: "cmt_1",
-          bugId: "bug_1",
-          url: "https://console.example/bugs/bug_1",
+          bugId: "b1b1b1b1-1111-4111-8111-111111111111",
+          url: "https://console.example/bugs/b1b1b1b1-1111-4111-8111-111111111111",
         };
       }),
       readCredentials: makeReadCredentials(),
@@ -484,7 +495,7 @@ describe("bug comment", () => {
 
     const { output } = await captureConsole(() =>
       command.comment(
-        "bug_1",
+        "b1b1b1b1-1111-4111-8111-111111111111",
         "Root cause is idle stdin.",
         undefined,
         undefined,
@@ -499,7 +510,7 @@ describe("bug comment", () => {
     expect(calls).toEqual([
       {
         method: "POST",
-        path: "/api/cli/bugs/bug_1/comments",
+        path: "/api/cli/bugs/b1b1b1b1-1111-4111-8111-111111111111/comments",
         accessToken: "access-secret",
         body: {
           schemaVersion: BUG_COMMENT_SCHEMA_ID,
@@ -509,7 +520,7 @@ describe("bug comment", () => {
             text: "Root cause is idle stdin.",
             source: "cli",
           },
-          idempotencyKey: bugCommentIdempotencyKey("bug_1", {
+          idempotencyKey: bugCommentIdempotencyKey("b1b1b1b1-1111-4111-8111-111111111111", {
             schemaVersion: BUG_COMMENT_SCHEMA_ID,
             text: "Root cause is idle stdin.",
           }),
@@ -519,8 +530,8 @@ describe("bug comment", () => {
     expect(payload).toMatchObject({
       success: true,
       id: "cmt_1",
-      bugId: "bug_1",
-      url: "https://console.example/bugs/bug_1",
+      bugId: "b1b1b1b1-1111-4111-8111-111111111111",
+      url: "https://console.example/bugs/b1b1b1b1-1111-4111-8111-111111111111",
       reused: false,
     });
     expect(payload.idempotencyKey).toMatch(/^sha256:[a-f0-9]{64}$/);
@@ -534,14 +545,14 @@ describe("bug comment", () => {
     const command = new BugCommands({
       client: makeClient(async (_method, _path, body) => {
         calls.push({ body });
-        return { id: "cmt_2", bugId: "bug_9" };
+        return { id: "cmt_2", bugId: "b9b9b9b9-9999-4999-8999-999999999999" };
       }),
       readCredentials: makeReadCredentials(),
     });
 
     await captureConsole(() =>
       command.comment(
-        "bug_9",
+        "b9b9b9b9-9999-4999-8999-999999999999",
         "Found OPENAI_API_KEY=sk-ant-leakedvalue12",
         file,
         undefined,
@@ -565,16 +576,36 @@ describe("bug comment", () => {
     const command = new BugCommands({
       client: makeClient(async (_method, _path, body) => {
         keys.push(String((body as { idempotencyKey?: string }).idempotencyKey));
-        return { id: "cmt_same", bugId: "bug_1", reused: keys.length > 1 };
+        return { id: "cmt_same", bugId: "b1b1b1b1-1111-4111-8111-111111111111", reused: keys.length > 1 };
       }),
       readCredentials: makeReadCredentials(),
     });
 
     const first = await captureConsole(() =>
-      command.comment("bug_1", "Same follow-up", undefined, undefined, undefined, undefined, undefined, true, true),
+      command.comment(
+        "b1b1b1b1-1111-4111-8111-111111111111",
+        "Same follow-up",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        true,
+      ),
     );
     const retry = await captureConsole(() =>
-      command.comment("bug_1", "Same follow-up", undefined, undefined, undefined, undefined, undefined, true, true),
+      command.comment(
+        "b1b1b1b1-1111-4111-8111-111111111111",
+        "Same follow-up",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        true,
+      ),
     );
     expect(keys).toHaveLength(2);
     expect(keys[0]).toBe(keys[1]);
@@ -582,17 +613,57 @@ describe("bug comment", () => {
     expect(JSON.parse(retry.output).reused).toBe(true);
   });
 
+  it("rejects the short id prefix in the dry-run, before credentials or any POST", async () => {
+    let credentialReads = 0;
+    const calls: string[] = [];
+    const command = new BugCommands({
+      client: makeClient(async (_method, path) => {
+        calls.push(path);
+        return {};
+      }),
+      readCredentials: () => {
+        credentialReads += 1;
+        return makeCredentials();
+      },
+    });
+
+    let thrown: unknown;
+    try {
+      await captureConsole(() =>
+        command.comment("b1b1b1b1", "Follow-up", undefined, undefined, undefined, undefined, undefined, true),
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).not.toBeInstanceOf(ContractError);
+    expect((thrown as { code?: string }).code).toBe("PAYLOAD_INVALID");
+    expect((thrown as Error).message).toContain('Invalid bug id "b1b1b1b1"');
+    expect(calls).toHaveLength(0);
+    expect(credentialReads).toBe(0);
+  });
+
   it("honors an explicit --idempotency-key", async () => {
     const calls: Array<{ body: unknown }> = [];
     const command = new BugCommands({
       client: makeClient(async (_method, _path, body) => {
         calls.push({ body });
-        return { id: "cmt_explicit", bugId: "bug_1" };
+        return { id: "cmt_explicit", bugId: "b1b1b1b1-1111-4111-8111-111111111111" };
       }),
       readCredentials: makeReadCredentials(),
     });
     await captureConsole(() =>
-      command.comment("bug_1", "Follow-up", undefined, undefined, undefined, "idem_custom", undefined, true, true),
+      command.comment(
+        "b1b1b1b1-1111-4111-8111-111111111111",
+        "Follow-up",
+        undefined,
+        undefined,
+        undefined,
+        "idem_custom",
+        undefined,
+        true,
+        true,
+      ),
     );
     const posted = calls[0]?.body as { idempotencyKey?: string } | undefined;
     expect(posted?.idempotencyKey).toBe("idem_custom");
@@ -617,7 +688,7 @@ describe("bug comment agent-first contract", () => {
 
     const { output, error: thrown } = await captureConsoleAllowThrow(() =>
       command.comment(
-        "bug_1",
+        "b1b1b1b1-1111-4111-8111-111111111111",
         secret,
         undefined,
         undefined,
@@ -667,7 +738,16 @@ describe("bug comment agent-first contract", () => {
     });
 
     const { output, error: thrown } = await captureConsoleAllowThrow(() =>
-      command.comment("bug_1", undefined, undefined, undefined, undefined, undefined, undefined, false),
+      command.comment(
+        "b1b1b1b1-1111-4111-8111-111111111111",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        false,
+      ),
     );
 
     expect(thrown).toBeInstanceOf(ContractError);
@@ -685,7 +765,17 @@ describe("bug comment agent-first contract", () => {
     let thrown: unknown;
     try {
       await captureConsole(() =>
-        command.comment("bug_1", undefined, undefined, undefined, undefined, undefined, undefined, true, true),
+        command.comment(
+          "b1b1b1b1-1111-4111-8111-111111111111",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+          true,
+        ),
       );
     } catch (error) {
       thrown = error;
@@ -702,7 +792,7 @@ describe("bug comment agent-first contract", () => {
     try {
       await captureConsole(() =>
         command.comment(
-          "bug_1",
+          "b1b1b1b1-1111-4111-8111-111111111111",
           undefined,
           undefined,
           JSON.stringify(VALID_DOSSIER),
@@ -726,15 +816,25 @@ describe("bug comment agent-first contract", () => {
     const command = new BugCommands({
       client: makeClient(async (_method, path, body) => {
         calls.push({ path, body });
-        return { id: "cmt_file", bugId: "bug_file" };
+        return { id: "cmt_file", bugId: "bfbfbfbf-ffff-4fff-8fff-ffffffffffff" };
       }),
       readCredentials: makeReadCredentials(),
     });
 
     const { output } = await captureConsole(() =>
-      command.comment("bug_file", undefined, file, undefined, undefined, undefined, undefined, true, true),
+      command.comment(
+        "bfbfbfbf-ffff-4fff-8fff-ffffffffffff",
+        undefined,
+        file,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        true,
+      ),
     );
-    expect(calls[0]?.path).toBe("/api/cli/bugs/bug_file/comments");
+    expect(calls[0]?.path).toBe("/api/cli/bugs/bfbfbfbf-ffff-4fff-8fff-ffffffffffff/comments");
     expect(calls[0]?.body).toMatchObject({
       payload: {
         evidence: { notes: ["stack frame at idleStdinProbe"] },
