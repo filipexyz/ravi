@@ -35,8 +35,10 @@ const {
   dbListTaskEvents,
   dbMarkTaskAcceptedForSession,
   dispatchTask,
+  reportTaskProgress,
 } = await import("./index.js");
-import { dbCreateAgent, dbDeleteAgent } from "../router/router-db.js";
+import { dbCreateAgent, dbDeleteAgent, dbGetAgent } from "../router/router-db.js";
+import { deleteSession, getOrCreateSession, getSessionByName } from "../router/sessions.js";
 
 const createdTaskIds: string[] = [];
 const createdAgentIds: string[] = [];
@@ -68,7 +70,14 @@ afterEach(async () => {
   stateDir = null;
 });
 
+function ensureAgent(id: string) {
+  if (dbGetAgent(id)) return;
+  createdAgentIds.push(id);
+  dbCreateAgent({ id, cwd: `/tmp/ravi-${id}-agent` });
+}
+
 function createBlockedTask(title = "Auto-resume test") {
+  ensureAgent("dev");
   const created = dbCreateTask({
     title,
     instructions: `Test auto-resume: ${title}`,
@@ -76,6 +85,9 @@ function createBlockedTask(title = "Auto-resume test") {
   });
   createdTaskIds.push(created.task.id);
 
+  getOrCreateSession(`agent:dev:${created.task.id}-work`, "dev", "/tmp/ravi-dev-agent", {
+    name: `${created.task.id}-work`,
+  });
   dbDispatchTask(created.task.id, {
     agentId: "dev",
     sessionName: `${created.task.id}-work`,
@@ -183,11 +195,104 @@ describe("auto-resume blocked tasks", () => {
     });
   });
 
+  describe("comment on a task whose work session is gone", () => {
+    it("recreates the expired work session for the assignee, never the default agent", async () => {
+      const task = createBlockedTask("expired work session");
+      const sessionName = `${task.id}-work`;
+      deleteSession(getSessionByName(sessionName)!.sessionKey);
+
+      const result = await commentTask(task.id, {
+        author: "nba-admin",
+        authorAgentId: "main",
+        authorSessionName: "lead",
+        body: "pick this back up",
+      });
+
+      expect(result.task.status).toBe("in_progress");
+      expect(result.steeredSessionName).toBe(sessionName);
+      expect(getSessionByName(sessionName)).toMatchObject({ agentId: "dev", agentCwd: "/tmp/ravi-dev-agent" });
+
+      expect(publishCalls).toHaveLength(1);
+      const { payload } = publishCalls[0]!;
+      expect(payload).toMatchObject({
+        _agentId: "dev",
+        deliveryBarrier: "after_task",
+        taskBarrierTaskId: task.id,
+      });
+      // The new session has no context: it gets the task brief, then the comment.
+      const prompt = String(payload.prompt);
+      expect(prompt).toContain(`You are now responsible for Ravi task ${task.id}`);
+      expect(prompt.indexOf("New comment on task")).toBeGreaterThan(prompt.indexOf("You are now responsible"));
+      expect(prompt).toContain("pick this back up");
+    });
+
+    it("names the assignee agent when the work session still exists", async () => {
+      const task = createBlockedTask("live work session");
+
+      await commentTask(task.id, { author: "operator", body: "try X" });
+
+      expect(publishCalls).toHaveLength(1);
+      expect(publishCalls[0]!.payload).toMatchObject({ _agentId: "dev", deliveryBarrier: "after_response" });
+      expect(publishCalls[0]!.payload.taskBarrierTaskId).toBeUndefined();
+      expect(String(publishCalls[0]!.payload.prompt)).toStartWith("[System] Inform: New comment on task");
+    });
+
+    it("keeps the task blocked and records the comment when the assignee agent is gone", async () => {
+      const task = createBlockedTask("assignee agent removed");
+      deleteSession(getSessionByName(`${task.id}-work`)!.sessionKey);
+      dbDeleteAgent("dev");
+
+      const result = await commentTask(task.id, { author: "operator", body: "are you there?" });
+
+      expect(result.task.status).toBe("blocked");
+      expect(result.steeredSessionName).toBeUndefined();
+      expect(result.steerSkippedReason).toContain("Agent not found");
+      expect(result.comment.body).toBe("are you there?");
+      expect(publishCalls).toHaveLength(0);
+      expect(getSessionByName(`${task.id}-work`)).toBeNull();
+      expect(dbListTaskEvents(task.id).some((event) => event.type === "task.resumed")).toBe(false);
+    });
+
+    it("does not steer a work session that another agent now owns", async () => {
+      ensureAgent("main");
+      const task = createBlockedTask("session taken by main");
+      const sessionName = `${task.id}-work`;
+      deleteSession(getSessionByName(sessionName)!.sessionKey);
+      getOrCreateSession(sessionName, "main", "/tmp/ravi-main-agent", { name: sessionName });
+
+      const result = await commentTask(task.id, { author: "operator", body: "go" });
+
+      expect(result.task.status).toBe("blocked");
+      expect(result.steerSkippedReason).toContain("already belongs to agent main");
+      expect(publishCalls).toHaveLength(0);
+    });
+
+    it("refuses progress from the assignment session when it runs as another agent", () => {
+      const task = createBlockedTask("wrong agent report");
+
+      expect(() =>
+        reportTaskProgress(task.id, {
+          actor: `${task.id}-work`,
+          agentId: "main",
+          sessionName: `${task.id}-work`,
+          message: "progress from the wrong agent",
+          progress: 10,
+        }),
+      ).toThrow("the task is assigned to dev");
+      expect(() =>
+        reportTaskProgress(task.id, {
+          actor: `${task.id}-work`,
+          agentId: "dev",
+          sessionName: `${task.id}-work`,
+          message: "progress from the assignee",
+          progress: 10,
+        }),
+      ).not.toThrow();
+    });
+  });
+
   describe("signal: dispatch", () => {
     it("auto-resumes blocked task before re-dispatch", async () => {
-      createdAgentIds.push("dev");
-      dbCreateAgent({ id: "dev", cwd: "/tmp/ravi-dev-agent" });
-
       const task = createBlockedTask("dispatch resume");
 
       await dispatchTask(task.id, {
