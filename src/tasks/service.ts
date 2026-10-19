@@ -2804,11 +2804,10 @@ export async function dispatchTask(
     sessionName: input.assignedBySessionName,
   });
   const dispatchSourceTask = resumeResult.resumed ? resumeResult.task : existingTask;
-  if (resumeResult.resumed) {
-    await emitTaskEvent(resumeResult.task, resumeResult.event);
-  }
 
   const resolvedInput = resolveDispatchTaskReportTarget(input);
+  // Materialize the session for the assignee before the first await, so no
+  // prompt can claim the session name between the ownership check and here.
   const {
     task: bootstrappedTask,
     profile,
@@ -2819,6 +2818,9 @@ export async function dispatchTask(
     taskDocPath,
     primaryArtifact,
   } = prepareTaskDispatchContext(dispatchSourceTask, resolvedInput, { materializeSession: true });
+  if (resumeResult.resumed) {
+    await emitTaskEvent(resumeResult.task, resumeResult.event);
+  }
   // Observed tasks use the checkpoint only as a silence window, so it defaults
   // far above the old worker-nudge cadence unless the caller set one.
   // A task created before it was observed carries the old 5 min default.
