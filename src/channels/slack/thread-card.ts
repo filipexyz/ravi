@@ -7,8 +7,8 @@
  * instead: the first line as the title, the latest progress or result as the
  * subtitle, a short summary of the rest as the body, and a status line (status,
  * who asked, when) as the subtext. Slack rejecting `card` falls back to the
- * same content as classic blocks. When the summary leaves part of the brief out, the full brief goes
- * as the first reply inside the thread. Report, close and reopen re-render the
+ * same content as classic blocks. When the summary leaves part of the brief
+ * out, the full brief goes as the first reply inside the thread. Report, close and reopen re-render the
  * card in place (`chat.update`) with the new status and the latest progress or
  * result.
  *
@@ -79,7 +79,7 @@ export function buildSlackThreadCard(brief: string, state: SlackThreadCardState)
   const card: SlackBlockKitBlock = {
     type: "card",
     block_id: "ravi_thread_card",
-    title: { type: "mrkdwn", text: escapeSlackText(title).slice(0, TITLE_MAX_LENGTH), verbatim: false },
+    title: { type: "mrkdwn", text: escapedWithin(title, TITLE_MAX_LENGTH), verbatim: false },
     ...(noteText ? { subtitle: { type: "mrkdwn", text: `${noteLabel}${noteText.text}`, verbatim: false } } : {}),
     ...(summary ? { body: { type: "mrkdwn", text: summary.text, verbatim: false } } : {}),
     subtext: { type: "mrkdwn", text: statusLine, verbatim: false },
@@ -194,6 +194,17 @@ function truncateAtBoundary(text: string, maxLength: number): string {
   const wordEnd = window.lastIndexOf(" ");
   const cut = wordEnd >= maxLength * 0.5 ? window.slice(0, wordEnd) : window.slice(0, maxLength - 1);
   return `${cut.trimEnd()}…`;
+}
+
+/** Escaped text within `maxLength`, cut before escaping so no entity is split. */
+function escapedWithin(text: string, maxLength: number): string {
+  let cut = text;
+  let escaped = escapeSlackText(cut);
+  while (escaped.length > maxLength && cut.length > 1) {
+    cut = `${cut.slice(0, Math.max(1, cut.length - (escaped.length - maxLength) - 1)).trimEnd()}…`;
+    escaped = escapeSlackText(cut);
+  }
+  return escaped;
 }
 
 function escapeSlackText(text: string): string {

@@ -125,6 +125,9 @@ describe("Slack thread card", () => {
     const texts = cardTexts(card.blocks);
 
     expect(texts.title?.length).toBeLessThanOrEqual(150);
+    const ampersands = cardTexts(buildSlackThreadCard("&".repeat(140), { status: "open" }).blocks).title ?? "";
+    expect(ampersands.length).toBeLessThanOrEqual(150);
+    expect(ampersands).toMatch(/^(&amp;)+…$/);
     expect(texts.subtitle?.length).toBeLessThanOrEqual(150);
     expect(texts.body?.length).toBeLessThanOrEqual(200);
     expect(texts.subtext?.length).toBeLessThanOrEqual(200);
