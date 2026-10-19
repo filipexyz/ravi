@@ -203,6 +203,7 @@ ravi pages domains <host> docs.example.com --execute
 - Posse: um TXT `_ravi-verify.<domínio>`, uma vez por domínio da organização. Vem junto com o CNAME na primeira resposta.
 - Host global: `*.<domínio>` CNAME `cname.ravi.page`, criado uma vez. Depois, cada subdomínio novo só precisa de `ravi pages domains <host> <sub>.<domínio> --execute`, sem DNS. Subdomínio que nunca passou pelo comando responde 522 do Cloudflare, não 404.
 - Domínio principal (`exemplo.com`): serve o host direto, se o DNS aceitar CNAME na raiz (CNAME flattening no Cloudflare, ALIAS/ANAME nos outros). Registro A não serve.
+- Estado: `ravi pages list` mostra os domínios de cada host. Um domínio pendente diz por que ainda não serve, o DNS que falta e o comando para checar de novo; `ravi pages published` lista os pendentes abaixo das páginas. Só domínio `ready` entra em `urls`: se o domínio não aparece lá, ele não serve o host, mesmo que responda 200 (pode ser outro servidor).
 
 `password set` sem `--execute` nem pede a senha. Automação: `--stdin` com input redirecionado. Nunca coloque a senha em argumento, env, log ou JSON.
 

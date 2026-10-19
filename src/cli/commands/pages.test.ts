@@ -188,6 +188,72 @@ describe("pages CLI commands", () => {
     });
   });
 
+  it("shows a host's pending custom domain with the DNS still missing", async () => {
+    const client = makeClient(async () => [
+      {
+        id: "site_1",
+        slug: "demo",
+        defaultHostname: "demo.ravi.page",
+        defaultVisibility: "public",
+        status: "active",
+        customDomains: [
+          { hostname: "docs.example.com", status: "ready" },
+          {
+            hostname: "example.com",
+            status: "pending",
+            apex: true,
+            nextAction: {
+              code: "configure_pages_dns",
+              message: "Add or keep these records in the hostname's authoritative DNS.",
+              dnsRecords: [{ name: "example.com", type: "CNAME", value: "cname.ravi.page" }],
+            },
+          },
+        ],
+      },
+    ]);
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() => command.list("proj"));
+
+    expect(output).toContain("custom domain docs.example.com  ready");
+    expect(output).toContain("custom domain example.com  not serving yet: the DNS below is missing");
+    expect(output).toContain("CNAME example.com = cname.ravi.page");
+    expect(output).toContain("a plain A record does not reach Pages");
+    expect(output).toContain("Check again: ravi pages domains demo example.com --project proj --check --execute");
+  });
+
+  it("lists a host's pending custom domains once below its published Pages", async () => {
+    const pending = {
+      hostname: "www.example.com",
+      status: "pending",
+      nextAction: {
+        code: "wait_for_pages",
+        message: "Ravi Pages is still provisioning this hostname.",
+        dnsRecords: [],
+      },
+    };
+    const client = makeClient(async () => ({
+      pages: ["/", "/docs"].map((path) => ({
+        id: `release_route${path}`,
+        title: path,
+        path,
+        siteSlug: "demo",
+        defaultHostname: "demo.ravi.page",
+        urls: [`https://demo.ravi.page${path}`],
+        customDomains: [pending],
+      })),
+      total: 2,
+    }));
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() => command.published("proj"));
+
+    expect(output).toContain("Custom domains of demo not serving yet");
+    expect(output.match(/custom domain www\.example\.com/g)).toHaveLength(1);
+    expect(output).toContain("Ravi Pages is still provisioning it");
+    expect(output).not.toContain("https://www.example.com");
+  });
+
   it("lists published Pages through the versioned Console CLI API", async () => {
     const calls: Array<{ method: string; path: string; body: unknown; accessToken: string }> = [];
     const client = makeClient(async (method, path, body, accessToken) => {
