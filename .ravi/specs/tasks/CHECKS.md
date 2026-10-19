@@ -12,6 +12,10 @@
   task artifacts.
 - `report`, `done`, `block`, and `fail` MUST update durable task state and task
   events through the task runtime.
+- A comment on a blocked task whose session is gone MUST recreate the session
+  under the assigned agent and steer it with that agent and the task binding; a
+  session owned by another agent MUST leave the task blocked and return a
+  `TASK_SESSION_OWNERSHIP_CONFLICT` warning (`src/tasks/comment-steer.test.ts`).
 
 ## Commands
 

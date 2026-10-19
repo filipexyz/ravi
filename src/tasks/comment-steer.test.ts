@@ -1,24 +1,52 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { join } from "node:path";
+import { CliExpectedError } from "../cli/expected-error.js";
+import { dbCreateAgent, dbDeleteAgent } from "../router/router-db.js";
+import { getOrCreateSession, resolveSession } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 
 afterAll(() => mock.restore());
 
 const publishCalls: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
 
-mock.module("../omni/session-stream.js", () => ({
-  publishSessionPrompt: mock(async (sessionName: string, payload: Record<string, unknown>) => {
-    publishCalls.push({ sessionName, payload });
-  }),
+mock.module("../nats.js", () => ({
+  closeNats: mock(async () => {}),
+  connectNats: mock(async () => {}),
+  ensureConnected: mock(async () => ({})),
+  getNats: mock(() => ({})),
+  isExplicitConnect: mock(() => false),
+  publish: mock(async () => {}),
+  subscribe: async function* () {},
+  nats: { emit: mock(async () => {}) },
 }));
 
-const { commentTask, createTask, dbDeleteTask, dbDispatchTask } = await import("./index.js");
+const { setTaskSessionPromptPublisherForTests } = await import("./session-publisher.js");
+
+const {
+  commentTask,
+  createTask,
+  dbBlockTask,
+  dbDeleteTask,
+  dbDispatchTask,
+  dbGetTask,
+  dispatchTask,
+  TASK_SESSION_OWNERSHIP_CONFLICT,
+} = await import("./index.js");
 
 const createdTaskIds: string[] = [];
+const createdAgentIds: string[] = [];
 let stateDir: string | null = null;
 
 beforeEach(async () => {
   stateDir = await createIsolatedRaviState("ravi-task-comment-steer-test-");
   publishCalls.length = 0;
+  setTaskSessionPromptPublisherForTests(async (sessionName, payload) => {
+    publishCalls.push({ sessionName, payload });
+  });
+  for (const id of ["dev", "other"]) {
+    dbCreateAgent({ id, cwd: join(stateDir, `agent-${id}`) });
+    createdAgentIds.push(id);
+  }
 });
 
 afterEach(async () => {
@@ -26,68 +54,112 @@ afterEach(async () => {
     const id = createdTaskIds.pop();
     if (id) dbDeleteTask(id);
   }
+  while (createdAgentIds.length > 0) {
+    const id = createdAgentIds.pop();
+    if (id) dbDeleteAgent(id);
+  }
+  setTaskSessionPromptPublisherForTests(undefined);
   await cleanupIsolatedRaviState(stateDir);
   stateDir = null;
 });
 
-describe.skip("task comments steering", () => {
+function createDispatchedTask(title: string): { taskId: string; sessionName: string } {
+  const created = createTask({
+    title,
+    instructions: "Use comments to steer active work",
+    createdBy: "test",
+  });
+  createdTaskIds.push(created.task.id);
+  const sessionName = `${created.task.id}-work`;
+  dbDispatchTask(created.task.id, {
+    agentId: "dev",
+    sessionName,
+    assignedBy: "test",
+  });
+  return { taskId: created.task.id, sessionName };
+}
+
+describe("task comments steering", () => {
   it("steers the active assignee session when a new comment lands on an active task", async () => {
-    const created = createTask({
-      title: "Comment steer smoke",
-      instructions: "Use comments to steer active work",
-      createdBy: "test",
-    });
-    createdTaskIds.push(created.task.id);
+    const { taskId, sessionName } = createDispatchedTask("Comment steer smoke");
 
-    dbDispatchTask(created.task.id, {
-      agentId: "dev",
-      sessionName: `${created.task.id}-work`,
-      assignedBy: "test",
-    });
-
-    const result = await commentTask(created.task.id, {
+    const result = await commentTask(taskId, {
       author: "operator",
       authorAgentId: "main",
       authorSessionName: "dev",
       body: "ajusta a direção do patch antes de continuar",
     });
 
-    expect(result.steeredSessionName).toBe(`${created.task.id}-work`);
+    expect(result.steeredSessionName).toBe(sessionName);
+    expect(result.steerWarning).toBeUndefined();
     expect(publishCalls).toHaveLength(1);
     expect(publishCalls[0]).toEqual({
-      sessionName: `${created.task.id}-work`,
+      sessionName,
       payload: expect.objectContaining({
         deliveryBarrier: "after_response",
+        _agentId: "dev",
+        taskBarrierTaskId: taskId,
       }),
     });
     expect(String(publishCalls[0]?.payload.prompt)).toContain("New comment on task");
     expect(String(publishCalls[0]?.payload.prompt)).toContain("ajusta a direção do patch antes de continuar");
   });
 
-  it("keeps comment steering profile-first for runtime-only tasks", async () => {
-    const created = createTask({
-      title: "Runtime-only comment steer",
-      instructions: "Do not leak TASK.md into the steer prompt",
-      createdBy: "test",
-      profileId: "task-doc-none",
-    });
-    createdTaskIds.push(created.task.id);
+  it("recreates a reaped session under the assigned agent before resuming a blocked task", async () => {
+    const { taskId, sessionName } = createDispatchedTask("Blocked comment steer");
+    dbBlockTask(taskId, { actor: "test", sessionName, message: "waiting on input" });
+    expect(resolveSession(sessionName)).toBeNull();
 
-    dbDispatchTask(created.task.id, {
-      agentId: "dev",
-      sessionName: `${created.task.id}-work`,
-      assignedBy: "test",
-    });
-
-    await commentTask(created.task.id, {
+    const result = await commentTask(taskId, {
       author: "operator",
-      authorAgentId: "main",
-      authorSessionName: "dev",
-      body: "sincroniza pelo runtime sem cair no legado doc-first",
+      body: "segue com a opção B",
     });
 
+    expect(result.task.status).toBe("in_progress");
+    expect(result.steeredSessionName).toBe(sessionName);
+    expect(resolveSession(sessionName)?.agentId).toBe("dev");
     expect(publishCalls).toHaveLength(1);
-    expect(String(publishCalls[0]?.payload.prompt)).toContain("Profile: task-doc-none");
-    expect(String(publishCalls[0]?.payload.prompt)).not.toContain("TASK.md");
+    expect(publishCalls[0]?.payload).toEqual(
+      expect.objectContaining({
+        _agentId: "dev",
+        taskBarrierTaskId: taskId,
+      }),
+    );
+  });
+
+  it("keeps the comment and the block when the session belongs to another agent", async () => {
+    const { taskId, sessionName } = createDispatchedTask("Conflicted comment steer");
+    dbBlockTask(taskId, { actor: "test", sessionName, message: "waiting on input" });
+    getOrCreateSession(sessionName, "other", join(stateDir ?? "", "agent-other"), { name: sessionName });
+
+    const result = await commentTask(taskId, {
+      author: "operator",
+      body: "segue com a opção B",
+    });
+
+    expect(result.comment.body).toBe("segue com a opção B");
+    expect(result.steeredSessionName).toBeUndefined();
+    expect(result.steerWarning?.code).toBe(TASK_SESSION_OWNERSHIP_CONFLICT);
+    expect(result.task.status).toBe("blocked");
+    expect(dbGetTask(taskId)?.status).toBe("blocked");
+    expect(publishCalls).toHaveLength(0);
+  });
+
+  it("refuses a redispatch into another agent's session without resuming the blocked task", async () => {
+    const { taskId, sessionName } = createDispatchedTask("Conflicted redispatch");
+    dbBlockTask(taskId, { actor: "test", sessionName, message: "waiting on input" });
+    getOrCreateSession(sessionName, "other", join(stateDir ?? "", "agent-other"), { name: sessionName });
+
+    let error: unknown;
+    try {
+      await dispatchTask(taskId, { agentId: "dev", sessionName, assignedBy: "test" });
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeInstanceOf(CliExpectedError);
+    expect((error as CliExpectedError).code).toBe(TASK_SESSION_OWNERSHIP_CONFLICT);
+    expect(dbGetTask(taskId)?.status).toBe("blocked");
+    expect(publishCalls).toHaveLength(0);
   });
 });

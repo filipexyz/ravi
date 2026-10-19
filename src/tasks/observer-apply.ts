@@ -78,6 +78,7 @@ Keep working until it is done, or say plainly what blocks you.`;
 async function nudgeWorker(input: {
   task: TaskRecord;
   workerSessionName: string;
+  workerAgentId: string;
   missing: string;
   actor: { actor: string; agentId?: string; sessionName: string };
 }): Promise<void> {
@@ -91,6 +92,8 @@ async function nudgeWorker(input: {
     prompt: buildTaskObserverNudgePrompt(input.task, input.missing),
     deliveryBarrier: "after_response",
     deliveryBarrierSource: "default",
+    _agentId: input.workerAgentId,
+    taskBarrierTaskId: input.task.id,
     _taskRuntime: { taskId: input.task.id, kind: "nudge", event: "task.nudged" },
   });
 }
@@ -226,7 +229,13 @@ export async function applyTaskObserverTurn(input: {
       const missing =
         cleanMessage(verdict.missing) ?? message ?? "The task is not done and the last turn ended without a result.";
       if (next.nudgesSinceProgress < TASK_OBSERVER_MAX_NUDGES) {
-        await nudgeWorker({ task, workerSessionName: assignment.sessionName, missing, actor });
+        await nudgeWorker({
+          task,
+          workerSessionName: assignment.sessionName,
+          workerAgentId: assignment.agentId,
+          missing,
+          actor,
+        });
         next.nudgesSinceProgress += 1;
         action = "nudged";
       } else if (next.stalledAt === undefined) {

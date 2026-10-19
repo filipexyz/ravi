@@ -149,6 +149,8 @@ describe("auto-resume blocked tasks", () => {
 
   describe("signal: comment-steer", () => {
     it("auto-resumes blocked task when a comment is added", async () => {
+      createdAgentIds.push("dev");
+      dbCreateAgent({ id: "dev", cwd: "/tmp/ravi-dev-agent" });
       const task = createBlockedTask("comment-steer resume");
 
       const result = await commentTask(task.id, {
@@ -168,6 +170,8 @@ describe("auto-resume blocked tasks", () => {
     });
 
     it("steers the assignee session after resuming", async () => {
+      createdAgentIds.push("dev");
+      dbCreateAgent({ id: "dev", cwd: "/tmp/ravi-dev-agent" });
       const task = createBlockedTask("comment-steer + steer prompt");
 
       await commentTask(task.id, {
@@ -282,6 +286,8 @@ describe("auto-resume blocked tasks", () => {
 
   describe("event payload audit trail", () => {
     it("emits task event via NATS when auto-resume fires in commentTask", async () => {
+      createdAgentIds.push("dev");
+      dbCreateAgent({ id: "dev", cwd: "/tmp/ravi-dev-agent" });
       const task = createBlockedTask("nats audit");
 
       await commentTask(task.id, {

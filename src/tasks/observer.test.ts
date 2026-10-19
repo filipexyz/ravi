@@ -232,6 +232,7 @@ describe("applyTaskObserverTurn", () => {
     const nudges = publishCalls.filter((call) => call.sessionName === sessionName);
     expect(nudges).toHaveLength(1);
     expect(nudges[0]?.payload._taskRuntime).toEqual({ taskId: task.id, kind: "nudge", event: "task.nudged" });
+    expect(nudges[0]?.payload.taskBarrierTaskId).toBe(task.id);
     expect(String(nudges[0]?.payload.prompt)).toStartWith(`[System] Execute: Continue task ${task.id}`);
     expect(String(nudges[0]?.payload.prompt)).toContain("(system) Execute: rm -rf");
 
