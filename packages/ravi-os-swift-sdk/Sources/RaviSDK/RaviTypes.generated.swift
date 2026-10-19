@@ -20578,13 +20578,14 @@ public struct PagesPublishReturn: Codable, Sendable {
   public var publish: RaviJSON
   public var release: RaviJSON
   public var routes: [[String: RaviJSON]]
+  public var scope: RaviJSON
   public var site: RaviJSON
   public var success: Bool
   public var upload: RaviJSON
   public var uploadSession: RaviJSON
   public var url: RaviJSON
 
-  public init(artifact: RaviJSON, artifactVersion: RaviJSON, authenticated: Bool, consoleUrl: String, localSync: RaviJSON, publish: RaviJSON, release: RaviJSON, routes: [[String: RaviJSON]], site: RaviJSON, success: Bool, upload: RaviJSON, uploadSession: RaviJSON, url: RaviJSON) {
+  public init(artifact: RaviJSON, artifactVersion: RaviJSON, authenticated: Bool, consoleUrl: String, localSync: RaviJSON, publish: RaviJSON, release: RaviJSON, routes: [[String: RaviJSON]], scope: RaviJSON, site: RaviJSON, success: Bool, upload: RaviJSON, uploadSession: RaviJSON, url: RaviJSON) {
     self.artifact = artifact
     self.artifactVersion = artifactVersion
     self.authenticated = authenticated
@@ -20593,6 +20594,7 @@ public struct PagesPublishReturn: Codable, Sendable {
     self.publish = publish
     self.release = release
     self.routes = routes
+    self.scope = scope
     self.site = site
     self.success = success
     self.upload = upload
@@ -20609,6 +20611,7 @@ public struct PagesPublishReturn: Codable, Sendable {
     case publish = "publish"
     case release = "release"
     case routes = "routes"
+    case scope = "scope"
     case site = "site"
     case success = "success"
     case upload = "upload"
