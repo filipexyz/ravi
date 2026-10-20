@@ -28,6 +28,7 @@ const actualGetSession = actualRouterSessionsModule.getSession;
 const actualUpdateProviderSession = actualRouterSessionsModule.updateProviderSession;
 
 const promptCalls: Array<[string, Record<string, unknown>]> = [];
+let publishSessionPromptError: Error | null = null;
 const chatMessageCalls: Array<Parameters<typeof actualDbUpsertChatMessage>[0]> = [];
 const chatParticipantCalls: Array<Parameters<typeof actualDbUpsertChatParticipant>[0]> = [];
 const sessionParticipantCalls: Array<Parameters<typeof actualDbUpsertSessionParticipant>[0]> = [];
@@ -96,6 +97,7 @@ mock.module("../nats.js", () => ({
 mock.module("./session-stream.js", () => ({
   ...actualSessionStreamModule,
   publishSessionPrompt: mock(async (sessionName: string, payload: Record<string, unknown>) => {
+    if (publishSessionPromptError) throw publishSessionPromptError;
     promptCalls.push([sessionName, payload]);
   }),
 }));
@@ -329,6 +331,7 @@ describe("OmniConsumer channel context", () => {
     commitMatchedRouteCalls.length = 0;
     actualGetOrCreateSession("agent:main:whatsapp:main:group:120363424772797713", "main", agentCwd);
     promptCalls.length = 0;
+    publishSessionPromptError = null;
     chatMessageCalls.length = 0;
     chatParticipantCalls.length = 0;
     sessionParticipantCalls.length = 0;
@@ -986,6 +989,9 @@ describe("OmniConsumer channel context", () => {
     expect(promptCalls).toHaveLength(0);
     expect(ensureContactFromInboundCalls).toHaveLength(0);
     expect(chatMessageCalls[0]).toMatchObject({ actorType: "agent", contactId: null });
+    const key = "instance-1:120363424772797713@g.us:msg-self-fromme";
+    expect(consumer["processedInboundMessages"].has(key)).toBe(true);
+    expect(consumer["inboundMessagesInFlight"].has(key)).toBe(false);
   });
 
   it("suppresses a provider-flagged own LID message without a turn", async () => {
@@ -1083,6 +1089,51 @@ describe("OmniConsumer channel context", () => {
     await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", event);
 
     expect(promptCalls).toHaveLength(1);
+  });
+
+  it("releases the inbound dedup key when prompt publication fails so a retry can dispatch", async () => {
+    platformIdentityByUser.set("5511947879044", {
+      id: "pi_luis_human",
+      ownerType: "contact",
+      ownerId: "contact_luis",
+      channel: "whatsapp",
+      platformUserId: "5511947879044",
+      confidence: 1,
+    });
+    contactByRef.set("contact_luis", { id: "contact_luis", status: "allowed", name: "Luis" });
+    const consumer = new OmniConsumer(
+      { send: mock(async () => {}), sendTyping: mock(async () => {}), markRead: mock(async () => {}) } as never,
+      "http://omni.local",
+      "test-key",
+      { resolveGroupMetadata: async () => null },
+    );
+    const event = {
+      id: "evt-publish-fail",
+      type: "message.received" as const,
+      payload: {
+        externalId: "msg-publish-fail",
+        chatId: "120363424772797713@g.us",
+        from: "5511947879044@s.whatsapp.net",
+        content: { type: "text", text: "oi" },
+        rawPayload: { pushName: "Luis", resolvedSenderPhone: "5511947879044", isGroup: true },
+      },
+      metadata: { instanceId: "instance-1", channelType: "whatsapp-baileys", ingestMode: "realtime" as const },
+      timestamp: Date.now(),
+    };
+    const key = "instance-1:120363424772797713@g.us:msg-publish-fail";
+
+    publishSessionPromptError = new Error("nats unavailable");
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", event);
+
+    expect(promptCalls).toHaveLength(0);
+    expect(consumer["inboundMessagesInFlight"].has(key)).toBe(false);
+    expect(consumer["processedInboundMessages"].has(key)).toBe(false);
+
+    publishSessionPromptError = null;
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", event);
+
+    expect(promptCalls).toHaveLength(1);
+    expect(consumer["processedInboundMessages"].has(key)).toBe(true);
   });
 
   it("routes WhatsApp LID DMs through the resolved sender phone", async () => {

@@ -643,7 +643,7 @@ describe("remote gateway exit taxonomy", () => {
         status: 403,
         authorizationDecision: "denied",
         capability: "read:pages:list",
-        denialStage: "command_access",
+        stage: "command_access",
         denialId: 42,
       },
     });

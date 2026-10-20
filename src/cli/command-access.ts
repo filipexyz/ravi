@@ -31,11 +31,19 @@ export interface CliCommandAccessInput {
   source: CliCommandAccessSource;
 }
 
+export interface CliCommandAccessDenialDetails {
+  stage: "command_access";
+  capability?: string;
+  [key: string]: unknown;
+}
+
 export interface CliCommandAccessResult {
   allowed: boolean;
   errorMessage: string;
   decision?: PermissionProviderDecision;
   attempted: PermissionProviderDecision[];
+  /** Structured denial details shared by CLI, tool and gateway surfaces. */
+  denialDetails?: CliCommandAccessDenialDetails;
 }
 
 export interface CliCommandAuthorizationInput extends CliCommandAccessInput {
@@ -68,6 +76,7 @@ export function enforceCliCommandAuthorization(input: CliCommandAuthorizationInp
     errorMessage: boundary.errorMessage,
     decision: accessResult.decision,
     attempted: accessResult.attempted,
+    denialDetails: commandAccessDenialDetails(input),
   };
 }
 
@@ -77,6 +86,7 @@ export function enforceCliCommandAccess(input: CliCommandAccessInput): CliComman
       allowed: false,
       errorMessage: `Permission denied: command ${formatCommand(input)} is missing @CommandAccess metadata`,
       attempted: [],
+      denialDetails: commandAccessDenialDetails(input),
     };
   }
   const inputWithAccess: CliCommandAccessInput & { access: CommandAccessOptions } = { ...input, access: input.access };
@@ -87,6 +97,7 @@ export function enforceCliCommandAccess(input: CliCommandAccessInput): CliComman
       allowed: false,
       errorMessage: authority.errorMessage,
       attempted: [],
+      denialDetails: commandAccessDenialDetails(input),
     };
   }
 
@@ -129,6 +140,21 @@ export function enforceCliCommandAccess(input: CliCommandAccessInput): CliComman
     errorMessage,
     decision: last,
     attempted,
+    denialDetails: commandAccessDenialDetails(input),
+  };
+}
+
+/** Structured denial shared by every surface so `details` stays identical. */
+function commandAccessDenialDetails(input: CliCommandAccessInput): CliCommandAccessDenialDetails {
+  if (!input.access) return { stage: "command_access" };
+  return {
+    stage: "command_access",
+    capability: canonicalCommandAccessCapability({
+      group: input.group,
+      command: input.command,
+      access: input.access,
+      input: input.input,
+    }),
   };
 }
 

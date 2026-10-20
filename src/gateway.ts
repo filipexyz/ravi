@@ -1195,7 +1195,7 @@ export class Gateway {
     }
 
     const deliverableParts = parts.filter(
-      (part) => part.type === "media" || (part.text.trim() && !isExactSilentTokenText(part.text)),
+      (part) => part.type === "media" || (!joinedPartsSilent && part.text.trim() && !isExactSilentTokenText(part.text)),
     );
     if (deliverableParts.length === 0) {
       await emitDelivery({ status: "dropped", reason: "empty_response", target });

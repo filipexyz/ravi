@@ -423,6 +423,9 @@ export class OmniConsumer {
   /** Separate bounded set for inbound message redelivery (kept apart from reaction dedup). */
   private readonly processedInboundMessages = new Set<string>();
   private readonly INBOUND_DEDUP_MAX = 2_000;
+  /** In-flight inbound keys: claimed before post-ledger dispatch, completed only on success/final no-turn. */
+  private readonly inboundMessagesInFlight = new Map<string, number>();
+  private readonly INBOUND_IN_FLIGHT_TTL_MS = 600_000;
 
   constructor(
     private sender: OmniSender,
@@ -671,6 +674,34 @@ export class OmniConsumer {
       if (first === undefined) break;
       this.processedInboundMessages.delete(first);
     }
+  }
+
+  /**
+   * Claim an inbound key before post-ledger work. Completed keys stay claimed;
+   * concurrent copies see the in-flight entry; stale entries expire so an
+   * interrupted handler never blocks a legitimate retry forever.
+   */
+  private claimInboundMessage(key: string): boolean {
+    const now = Date.now();
+    for (const [candidate, claimedAt] of this.inboundMessagesInFlight) {
+      if (now - claimedAt > this.INBOUND_IN_FLIGHT_TTL_MS) this.inboundMessagesInFlight.delete(candidate);
+    }
+    if (this.processedInboundMessages.has(key) || this.inboundMessagesInFlight.has(key)) return false;
+    this.inboundMessagesInFlight.set(key, now);
+    return true;
+  }
+
+  /** The inbound reached a terminal outcome (a turn or an intentional no-turn). */
+  private completeInboundMessage(key: string | undefined): void {
+    if (!key) return;
+    this.inboundMessagesInFlight.delete(key);
+    this.rememberProcessedInboundMessage(key);
+  }
+
+  /** The inbound did not reach a terminal outcome: allow a retry. */
+  private releaseInboundMessage(key: string | undefined): void {
+    if (!key) return;
+    this.inboundMessagesInFlight.delete(key);
   }
 
   /**
@@ -1122,7 +1153,7 @@ export class OmniConsumer {
     // bypass this guard.
     const dedupKey = !editInfo && payload.externalId ? `${instanceId}:${chatJid}:${payload.externalId}` : undefined;
     if (dedupKey) {
-      if (this.processedInboundMessages.has(dedupKey)) {
+      if (!this.claimInboundMessage(dedupKey)) {
         log.debug("Inbound message already dispatched; skipping duplicate turn", {
           instanceId,
           accountId: effectiveAccountId,
@@ -1132,7 +1163,6 @@ export class OmniConsumer {
         });
         return;
       }
-      this.rememberProcessedInboundMessage(dedupKey);
     }
 
     // A person asked to link their Console account writes here in private:
@@ -1162,6 +1192,7 @@ export class OmniConsumer {
           accountId: effectiveAccountId,
           canonicalChatId: canonicalChat.id,
         });
+        this.completeInboundMessage(dedupKey);
         return;
       }
     }
@@ -1203,6 +1234,7 @@ export class OmniConsumer {
           isGroup,
         });
       }
+      this.completeInboundMessage(dedupKey);
       return;
     }
 
@@ -1373,6 +1405,7 @@ export class OmniConsumer {
         providerSelfEcho,
         routeSessionKey: matched.sessionKey,
       });
+      this.completeInboundMessage(dedupKey);
       return;
     }
 
@@ -1403,6 +1436,7 @@ export class OmniConsumer {
       if (groupPolicy === "closed") {
         log.info("Group rejected by policy (closed)", { chatJid, accountId: effectiveAccountId });
         rejectRoute("group_closed", { groupPolicy, chatJid, accountId: effectiveAccountId });
+        this.completeInboundMessage(dedupKey);
         return;
       }
       if (groupPolicy === "allowlist") {
@@ -1435,6 +1469,7 @@ export class OmniConsumer {
             accountId: effectiveAccountId,
             contactStatus: contact?.status ?? null,
           });
+          this.completeInboundMessage(dedupKey);
           return;
         }
       }
@@ -1447,6 +1482,7 @@ export class OmniConsumer {
       if (dmPolicy === "closed") {
         log.info("DM rejected by policy (closed)", { senderPhone, accountId: effectiveAccountId });
         rejectRoute("dm_closed", { dmPolicy, senderPhone, accountId: effectiveAccountId });
+        this.completeInboundMessage(dedupKey);
         return;
       }
       if (dmPolicy === "pairing") {
@@ -1478,6 +1514,7 @@ export class OmniConsumer {
             accountId: effectiveAccountId,
             contactStatus: contact?.status ?? null,
           });
+          this.completeInboundMessage(dedupKey);
           return;
         }
       }
@@ -1491,6 +1528,7 @@ export class OmniConsumer {
       if (!isContactAllowedForAgent(checkId, matched.agent.id)) {
         log.info("Contact not allowed for agent", { checkId, agentId: matched.agent.id });
         rejectRoute("agent_contact_scope_denied", { checkId, agentId: matched.agent.id, isGroup });
+        this.completeInboundMessage(dedupKey);
         return;
       }
     }
@@ -1625,11 +1663,16 @@ export class OmniConsumer {
     const agentCwd = expandHome(agent.cwd);
     const mediaResult = await this.processMedia(payload, agentCwd, instanceId);
 
-    saveInboundMessageMeta({
-      transcription: mediaResult?.transcript,
-      mediaPath: mediaResult?.localPath,
-      mediaType: mediaResult?.transcript || mediaResult?.localPath ? payload.content.type : undefined,
-    });
+    try {
+      saveInboundMessageMeta({
+        transcription: mediaResult?.transcript,
+        mediaPath: mediaResult?.localPath,
+        mediaType: mediaResult?.transcript || mediaResult?.localPath ? payload.content.type : undefined,
+      });
+    } catch (error) {
+      this.releaseInboundMessage(dedupKey);
+      throw error;
+    }
 
     // Extract reply/quoted message context (works across all channels)
     const replyContext = this.extractReplyContext(payload.replyToId, rawPayload);
@@ -1709,6 +1752,7 @@ export class OmniConsumer {
         replyMediaPath,
       );
       // Sentinel: observe silently, no typing indicator, no source
+      let sentinelPublished = false;
       try {
         const sentinelPrompt = `${sentinelEnvelope}\n(sentinel — observe, use whatsapp dm send --execute to reply if instructed)`;
         await publishSessionPrompt(sessionName, {
@@ -1717,9 +1761,12 @@ export class OmniConsumer {
           context,
           ...prefixDelivery,
         });
+        sentinelPublished = true;
       } catch (err) {
         log.error("Failed to publish sentinel prompt", err);
       }
+      if (sentinelPublished) this.completeInboundMessage(dedupKey);
+      else this.releaseInboundMessage(dedupKey);
       return;
     }
 
@@ -1738,7 +1785,10 @@ export class OmniConsumer {
           await this.sender.send(instanceId, cId, text);
         },
       });
-      if (handled) return;
+      if (handled) {
+        this.completeInboundMessage(dedupKey);
+        return;
+      }
     }
 
     // Active mode: send typing indicator, emit prompt with source
@@ -1762,6 +1812,7 @@ export class OmniConsumer {
       context,
     });
     if (commandExpansion.status === "failed") {
+      this.releaseInboundMessage(dedupKey);
       return;
     }
 
@@ -1843,11 +1894,13 @@ export class OmniConsumer {
         context,
         ...prefixDelivery,
       });
+      this.completeInboundMessage(dedupKey);
     } catch (err) {
       log.error("Failed to publish prompt", err);
       if (!skipTurn) {
         await this.clearActiveTarget(sessionName);
       }
+      this.releaseInboundMessage(dedupKey);
     }
   }
 

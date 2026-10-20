@@ -828,7 +828,7 @@ function projectRemoteDenial(body: CompleteContractErrorBody): ContractErrorDeta
   const capability = remoteCapability(remote);
   if (capability) details.capability = capability;
   const stage = boundedRemoteField(remote, ["stage", "denialStage", "denial_stage"], REMOTE_DENIAL_STAGE_PATTERN);
-  if (stage) details.denialStage = stage;
+  if (stage) details.stage = stage;
   const denialId = remoteDenialId(remote);
   if (denialId !== undefined) details.denialId = denialId;
   return details;
