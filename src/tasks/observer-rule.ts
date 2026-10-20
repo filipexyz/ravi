@@ -2,6 +2,7 @@ import type { AgentConfig } from "../router/index.js";
 import {
   dbDisableObserverBindingsForRule,
   dbGetObserverRule,
+  dbListObserverRules,
   dbSetObserverRuleEnabled,
   dbUpsertObserverRule,
   explainObserverRulesForSession,
@@ -96,10 +97,35 @@ function sessionHasUserReportObserver(sessionName: string, ownRuleId: string): b
     const explanation = explainObserverRulesForSession(sessionName);
     return explanation.rules.some(
       (entry) =>
-        entry.matched && entry.rule.enabled && entry.rule.observerMode === "report" && entry.rule.id !== ownRuleId,
+        entry.matched &&
+        entry.rule.enabled &&
+        entry.rule.observerMode === "report" &&
+        entry.rule.id !== ownRuleId &&
+        // Only a user-owned observer may claim the session. Another task's
+        // observer is not user intent: counting it here would leave this task
+        // unobserved while the stale rule keeps closing the wrong task.
+        !isTaskObserverRuleId(entry.rule.id),
     );
   } catch {
     return false;
+  }
+}
+
+/**
+ * A worker session runs one task at a time, so only that task's observer may
+ * stay bound to it. Any other task-observer rule pointing at the same session
+ * is stale: it would receive this session's turns and its terminal grants could
+ * mark the previous task done/failed using another task's evidence.
+ */
+function disableStaleTaskObserverRules(sessionName: string, keepRuleId: string): void {
+  for (const rule of dbListObserverRules()) {
+    if (!isTaskObserverRuleId(rule.id) || rule.id === keepRuleId) continue;
+    if (rule.sourceSession !== sessionName) continue;
+    const taskId =
+      typeof rule.metadata?.taskId === "string"
+        ? rule.metadata.taskId
+        : rule.id.slice(TASK_OBSERVER_RULE_ID_PREFIX.length);
+    disableTaskObserverRule(taskId);
   }
 }
 
@@ -109,6 +135,9 @@ function sessionHasUserReportObserver(sessionName: string, ownRuleId: string): b
  */
 export function ensureTaskObserverRuleForDispatch(input: EnsureTaskObserverRuleInput): void {
   const ruleId = taskObserverRuleId(input.task.id);
+  // Retire the previous task's observer before deciding anything about this
+  // one, so a disabled policy also stops the stale observer.
+  disableStaleTaskObserverRules(input.sessionName, ruleId);
   const policy = resolveTaskObserverPolicy(input.task, input.agent);
   if (!policy.enabled) {
     disableTaskObserverRule(input.task.id);

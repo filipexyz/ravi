@@ -31,12 +31,15 @@ mock.module("../omni/session-stream.js", () => ({
 
 const { createTask, dispatchTask, dbGetTask, dbListTaskEvents } = await import("./index.js");
 const { dbGetTaskObserverState, TASK_OBSERVER_MAX_CHECKLIST_ITEMS } = await import("./observer-contract.js");
-const { TASK_OBSERVER_PERMISSION_GRANTS, buildTaskObserverInstructions, taskObserverRuleId } = await import(
-  "./observer-rule.js"
-);
+const {
+  TASK_OBSERVER_PERMISSION_GRANTS,
+  buildTaskObserverInstructions,
+  ensureTaskObserverRuleForDispatch,
+  taskObserverRuleId,
+} = await import("./observer-rule.js");
 const { setTaskSessionPromptPublisherForTests } = await import("./session-publisher.js");
 const { TaskCommands } = await import("../cli/commands/tasks.js");
-const { dbCreateAgent, dbUpdateAgent } = await import("../router/router-db.js");
+const { dbCreateAgent, dbGetAgent, dbUpdateAgent } = await import("../router/router-db.js");
 const { getOrCreateSession, getSessionByName } = await import("../router/index.js");
 const {
   createObservationEvent,
@@ -44,6 +47,7 @@ const {
   dbListObserverBindings,
   deliverObservationEvents,
   setObservationPromptPublisherForTests,
+  dbUpsertObserverRule,
 } = await import("../runtime/observation-plane.js");
 const { buildRuntimeRequestContext } = await import("../runtime/runtime-request-context.js");
 const { classifyTurnProvenance } = await import("../runtime/turn-provenance.js");
@@ -137,6 +141,54 @@ describe("tool-first task observer", () => {
     });
     expect(bindings[0]?.permissionGrants).not.toContain("none");
     expect(bindings[0]?.permissionGrants).not.toContain("use:tool:*");
+  });
+
+  it("replaces the previous task's observer when a new task lands on the same session", async () => {
+    const { task: first, session, sessionName } = await startObservedTask("First task");
+    const second = createTask({
+      title: "Second task",
+      instructions: "Write the second deliverable and validate it.",
+      createdBy: "test",
+    });
+
+    ensureTaskObserverRuleForDispatch({
+      task: dbGetTask(second.task.id)!,
+      sessionName,
+      agent: dbGetAgent("worker")!,
+    });
+
+    const secondRuleId = taskObserverRuleId(second.task.id);
+    expect(dbGetObserverRule(secondRuleId)?.enabled).toBe(true);
+    // The stale rule used to stay enabled with terminal grants and could close
+    // the previous task using this task's evidence.
+    expect(dbGetObserverRule(taskObserverRuleId(first.id))?.enabled).toBe(false);
+    expect(dbListObserverBindings({ sourceSessionKey: session.sessionKey, enabled: true })).toEqual([]);
+  });
+
+  it("still lets a user report observer own the session", async () => {
+    const created = createTask({
+      title: "Observed by the user",
+      instructions: "Do the work while the user observer reads the session.",
+      createdBy: "test",
+    });
+    const sessionName = "user-report-work";
+    getOrCreateSession(`agent:worker:${sessionName}`, "worker", "/tmp/worker", { name: sessionName });
+    dbUpsertObserverRule({
+      id: "user-report-rule",
+      enabled: true,
+      scope: "session",
+      observerAgentId: "worker",
+      observerMode: "report",
+      sourceSession: sessionName,
+    });
+
+    ensureTaskObserverRuleForDispatch({
+      task: dbGetTask(created.task.id)!,
+      sessionName,
+      agent: dbGetAgent("worker")!,
+    });
+
+    expect(dbGetObserverRule(taskObserverRuleId(created.task.id))).toBeNull();
   });
 
   it("renders a generic prompt with the task id, tool protocol and delivery id but no verdict token", async () => {

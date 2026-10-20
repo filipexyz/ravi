@@ -2044,12 +2044,14 @@ export class TaskCommands {
     }
     const checklistItems = checklistInput === undefined ? undefined : normalizeTaskObserverChecklist(checklistInput);
 
+    // Write the checklist before the progress mutation: if the checklist save
+    // throws, no progress event exists yet and a retry cannot duplicate it.
+    if (checklistItems) saveTaskObserverChecklist(taskId, checklistItems);
     const result = reportTaskProgress(taskId, {
       ...actor,
       message: finalMessage,
       ...(Number.isFinite(progressValue) ? { progress: progressValue } : {}),
     });
-    if (checklistItems) saveTaskObserverChecklist(taskId, checklistItems);
     rememberTaskMutation(taskId, idempotencyKey, result);
     await emitMutationEvents(result);
 
