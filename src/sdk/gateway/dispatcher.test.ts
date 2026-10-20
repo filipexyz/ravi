@@ -888,14 +888,14 @@ describe("dispatch — scope and superadmin gating", () => {
         op: string;
         exitCode: number;
         outcome: string;
-        error: { code: string; message: string };
+        error: { code: string; message: string; capability?: string; stage?: string };
       };
       expect(body).toMatchObject({
         success: false,
         op: "gated ping",
         exitCode: 1,
         outcome: "denied",
-        error: { code: "PERMISSION_DENIED" },
+        error: { code: "PERMISSION_DENIED", capability: "read:gated:ping", stage: "command_access" },
       });
       expect(body.error.message).toContain("cannot execute");
       expect(audits.events).toHaveLength(1);

@@ -61,6 +61,14 @@ const REMOTE_CONTRACT_CODE_PATTERN = /^[A-Z][A-Z0-9_]{0,63}$/;
 const REMOTE_FLAG_PATTERN = /^--[a-z0-9][a-z0-9-]{0,63}$/;
 const REMOTE_POSITIONAL_PATTERN = /^(?:<[a-z][A-Za-z0-9_-]{0,63}(?:\.\.\.)?>|\[[a-z][A-Za-z0-9_-]{0,63}(?:\.\.\.)?\])$/;
 const REMOTE_SUGGESTION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+// Canonical capability (`read:pages:list`, `admin:system:*`) and denial
+// metadata from the gateway envelope. Bounded so a hostile message cannot
+// smuggle free-form content through the denial projection.
+const REMOTE_CAPABILITY_PATTERN = /^[a-z][a-z0-9_-]*(?::[A-Za-z0-9*_.-]+){1,3}$/;
+const REMOTE_CAPABILITY_MAX = 160;
+const REMOTE_DENIAL_STAGE_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
+const REMOTE_DENIAL_ID_PATTERN = /^\d{1,19}$/;
+const MISSING_CAPABILITY_LINE_PATTERN = /^Missing capability:\s*([A-Za-z0-9*_.:-]+)\s*$/im;
 const REMOTE_PLAN_KEY_PATTERN = /^[a-z][A-Za-z0-9]{0,63}$/;
 const REMOTE_PLAN_BLOCKED_STRING_KEY_SEGMENTS = new Set([
   "body",
@@ -813,6 +821,60 @@ function boundedStringList(value: unknown, pattern: RegExp): string[] | undefine
   return items.length > 0 ? items : undefined;
 }
 
+function projectRemoteDenial(body: CompleteContractErrorBody): ContractErrorDetails | undefined {
+  if (body.outcome !== "denied") return undefined;
+  const remote = body.error;
+  const details: ContractErrorDetails = { authorizationDecision: "denied" };
+  const capability = remoteCapability(remote);
+  if (capability) details.capability = capability;
+  const stage = boundedRemoteField(remote, ["stage", "denialStage", "denial_stage"], REMOTE_DENIAL_STAGE_PATTERN);
+  if (stage) details.denialStage = stage;
+  const denialId = remoteDenialId(remote);
+  if (denialId !== undefined) details.denialId = denialId;
+  return details;
+}
+
+/** Canonical capability from a structured field or from the server's `Missing capability:` line. */
+function remoteCapability(remote: Record<string, unknown>): string | undefined {
+  const structured = boundedRemoteField(
+    remote,
+    ["capability", "requiredCapability", "missingCapability"],
+    REMOTE_CAPABILITY_PATTERN,
+    REMOTE_CAPABILITY_MAX,
+  );
+  if (structured) return structured;
+  if (typeof remote.message !== "string") return undefined;
+  const match = remote.message.match(MISSING_CAPABILITY_LINE_PATTERN);
+  const candidate = match?.[1]?.trim();
+  if (!candidate || candidate.length > REMOTE_CAPABILITY_MAX) return undefined;
+  return REMOTE_CAPABILITY_PATTERN.test(candidate) ? candidate : undefined;
+}
+
+function boundedRemoteField(
+  record: Record<string, unknown>,
+  keys: string[],
+  pattern: RegExp,
+  max = 64,
+): string | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.length <= max && pattern.test(value)) return value;
+  }
+  return undefined;
+}
+
+function remoteDenialId(remote: Record<string, unknown>): number | undefined {
+  for (const key of ["denialId", "denial_id"]) {
+    const value = remote[key];
+    if (typeof value === "number" && Number.isSafeInteger(value) && value > 0) return value;
+    if (typeof value === "string" && REMOTE_DENIAL_ID_PATTERN.test(value)) {
+      const parsed = Number(value);
+      if (Number.isSafeInteger(parsed) && parsed > 0) return parsed;
+    }
+  }
+  return undefined;
+}
+
 function projectRemoteContractDetails(
   op: string,
   body: CompleteContractErrorBody,
@@ -820,6 +882,8 @@ function projectRemoteContractDetails(
 ): ContractErrorDetails {
   const remote = body.error;
   const details: ContractErrorDetails = { retryable: remote.retryable, status };
+  const denial = projectRemoteDenial(body);
+  if (denial) Object.assign(details, denial);
   const mediaCatalog = op === "media send" ? localMediaSendCatalogCopy(remote.code) : undefined;
   const identityCatalog = IDENTITY_LINK_OPS.has(op) ? cloudContractCatalogCopy(remote.code) : undefined;
   const connectorCatalog =

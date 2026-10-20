@@ -9,7 +9,7 @@ import { backfillProviderSessionId, getRecentHistory, saveMessage } from "../db.
 import { HEARTBEAT_OK } from "../heartbeat/index.js";
 import { getToolSafety } from "../hooks/tool-safety.js";
 import { nats } from "../nats.js";
-import { SILENT_TOKEN } from "../prompt-builder.js";
+import { isSilentTokenText, stripLeadingSilentMarker } from "../silent-token.js";
 import {
   dbInsertCostEvent,
   deleteSession,
@@ -3182,10 +3182,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           observerTurnText = appendAssistantResponse(observerTurnText, event.text);
         }
         if (messageText) {
-          // Strip @@SILENT@@ from anywhere in the text and trim
-          messageText = messageText
-            .replace(new RegExp(SILENT_TOKEN.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"), "")
-            .trim();
+          // Silence is a delivery state: a whole-message marker (exact,
+          // spaced, truncated, or split across fragments) is suppressed. A
+          // leading marker used as a control prefix is removed; a marker cited
+          // inside prose is kept verbatim.
+          messageText = isSilentTokenText(messageText) ? "" : stripLeadingSilentMarker(messageText);
           log.info("Assistant message", {
             runId,
             interrupted: streaming.interrupted,
@@ -3200,7 +3201,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               textLen: messageText.length,
             });
           } else if (!messageText) {
-            // After stripping SILENT_TOKEN, nothing left
+            // The whole message was the silence marker after classification
             suppressProviderRawForCurrentTurn = true;
             log.info("Silent response (stripped)", { sessionName });
             await emitLegacyProviderEvent({ type: "silent" });

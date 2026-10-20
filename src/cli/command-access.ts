@@ -169,6 +169,17 @@ export function listCliCommandAccessCandidates(
   return commandAccessCandidates(input);
 }
 
+/** Canonical capability the command access check asks for (the same one the denial message names). */
+export function canonicalCommandAccessCapability(input: {
+  group: string;
+  command: string;
+  access: CommandAccessOptions;
+  input?: Record<string, unknown>;
+}): string {
+  const capability = commandAccessCapability(input);
+  return `${capability.permission}:${capability.objectType}:${capability.objectId}`;
+}
+
 export function buildCliCommandOperation(input: CliCommandAccessInput): PermissionProviderCliCommandOperation {
   if (!input.access) {
     throw new Error(`Command ${formatCommand(input)} is missing @CommandAccess metadata`);
@@ -271,9 +282,10 @@ function commandAccessCandidates(input: CliCommandAccessInput & { access: Comman
   return dedupeCandidates([...semanticCandidates, ...concreteResourceCandidates, ...legacyCandidates]);
 }
 
-function commandAccessConcreteResourceCandidates(
-  input: CliCommandAccessInput & { access: CommandAccessOptions },
-): Array<{
+function commandAccessConcreteResourceCandidates(input: {
+  access: CommandAccessOptions;
+  input?: Record<string, unknown>;
+}): Array<{
   permission: string;
   objectType: string;
   objectId: string;
@@ -429,9 +441,12 @@ function buildCommandAccessGuidance(
   });
 }
 
-function commandAccessCapability(
-  input: CliCommandAccessInput & { access: CommandAccessOptions },
-): AuthorizationCapability {
+function commandAccessCapability(input: {
+  group: string;
+  command: string;
+  access: CommandAccessOptions;
+  input?: Record<string, unknown>;
+}): AuthorizationCapability {
   if (input.access.requireConcreteResource) {
     const [concrete] = commandAccessConcreteResourceCandidates(input);
     if (concrete) return concrete;

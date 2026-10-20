@@ -24,7 +24,11 @@
 import { ZodError, type ZodTypeAny, type ZodIssue } from "zod";
 import type { CommandRegistryEntry } from "../../cli/registry-snapshot.js";
 import { runWithContext, type ToolContext } from "../../cli/context.js";
-import { enforceCliCommandAuthorization, redactCommandAccessInput } from "../../cli/command-access.js";
+import {
+  enforceCliCommandAuthorization,
+  canonicalCommandAccessCapability,
+  redactCommandAccessInput,
+} from "../../cli/command-access.js";
 import { emitCliAuditEvent, sanitizeCliAuditValue, type CliAuditOutcome } from "../../cli/audit.js";
 import type { ScopeContext } from "../../permissions/scope.js";
 import type { ContextRecord } from "../../router/router-db.js";
@@ -108,6 +112,7 @@ export async function dispatch(
     const error = permissionDeniedToContractError(
       commandOperation(group, cmd.command),
       "Gateway access to this command was denied.",
+      { stage: "command_access" },
     );
     const response = contractErrorResponse(error, 403, "denied");
     const audit = buildAuditEvent(cmd, tool, {}, "denied", startedAt, lineage, 1, "PERMISSION_DENIED");
@@ -143,7 +148,22 @@ export async function dispatch(
     }),
   );
   if (!accessResult.allowed) {
-    const error = permissionDeniedToContractError(commandOperation(group, cmd.command), accessResult.errorMessage);
+    // Structured denial for the CLI: the canonical capability, the stage and
+    // the HTTP decision travel in details so they are not lost behind a
+    // generic "denied" line. No permission decision changes here.
+    const error = permissionDeniedToContractError(commandOperation(group, cmd.command), accessResult.errorMessage, {
+      stage: "command_access",
+      ...(cmd.access
+        ? {
+            capability: canonicalCommandAccessCapability({
+              group,
+              command: cmd.command,
+              access: cmd.access,
+              input: validation.inputForAudit,
+            }),
+          }
+        : {}),
+    });
     const response = contractErrorResponse(error, 403, "denied");
     const audit = buildAuditEvent(cmd, tool, auditInput, "denied", startedAt, lineage, 1, "PERMISSION_DENIED");
     const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);

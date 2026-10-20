@@ -73,7 +73,7 @@ import {
 } from "../session-trace/channel-trace.js";
 import { recordRuntimeTraceEvent } from "../session-trace/runtime-trace.js";
 import { logger } from "../utils/logger.js";
-import { canonicalizeRouteIdentity, isBroadcastJid, normalizePhone } from "../utils/phone.js";
+import { canonicalizeRouteIdentity, isBroadcastJid, normalizePhone, parseJid } from "../utils/phone.js";
 import type {
   MessageActorMetadata,
   MessageContext,
@@ -230,12 +230,48 @@ interface ReactionReceivedPayload {
 /**
  * Strip @-suffix from JID to get the phone/id portion.
  * "5511999999999@s.whatsapp.net" → "5511999999999"
+ * "5511999999999:12@s.whatsapp.net" → "5511999999999" (device is transport)
  * "120363xxx@g.us" → "120363xxx"
  * "5511999999999" → "5511999999999"
  */
 function stripJid(jid: string): string {
-  const atIdx = jid.indexOf("@");
-  return atIdx !== -1 ? jid.slice(0, atIdx) : jid;
+  const trimmed = jid.trim();
+  const parsed = parseJid(trimmed);
+  // parseJid removes the WhatsApp device suffix (`:12`), which is not part of
+  // the identity: the same number must resolve whether the provider includes
+  // it or not. LIDs/groups keep their own canonicalization downstream.
+  if (parsed && !parsed.isLid && !parsed.isGroup) return parsed.user;
+  const atIdx = trimmed.indexOf("@");
+  const bare = atIdx !== -1 ? trimmed.slice(0, atIdx) : trimmed;
+  // Only WhatsApp-shaped ids own a device suffix; other channels may use a
+  // colon inside their own opaque ids and must not be truncated.
+  const whatsappJid = /@(?:s\.whatsapp\.net|lid|g\.us)$/i.test(trimmed);
+  const barePhoneWithDevice = /^\d+:\d+$/.test(trimmed);
+  if (whatsappJid || barePhoneWithDevice) {
+    const deviceIdx = bare.indexOf(":");
+    if (deviceIdx !== -1) return bare.slice(0, deviceIdx);
+  }
+  return bare;
+}
+
+/**
+ * Provider metadata that says the linked account itself sent this message.
+ * It is a strong echo signal: keep the ledger row, never open a turn.
+ */
+function isProviderSelfEcho(rawPayload: Record<string, unknown> | undefined): boolean {
+  if (!rawPayload) return false;
+  const asRecord = (value: unknown): Record<string, unknown> | undefined =>
+    value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+  const key = asRecord(rawPayload.key);
+  const messageKey = asRecord(asRecord(rawPayload.message)?.key);
+  return [
+    rawPayload.fromMe,
+    rawPayload.isFromMe,
+    key?.fromMe,
+    key?.isFromMe,
+    messageKey?.fromMe,
+    messageKey?.isFromMe,
+  ].some((value) => value === true);
 }
 
 function isUrgentInboundText(text: string): boolean {
@@ -384,6 +420,9 @@ export class OmniConsumer {
   /** Dedup set for recently processed event IDs (prevents double-processing) */
   private readonly processedEvents = new Set<string>();
   private readonly DEDUP_MAX = 500;
+  /** Separate bounded set for inbound message redelivery (kept apart from reaction dedup). */
+  private readonly processedInboundMessages = new Set<string>();
+  private readonly INBOUND_DEDUP_MAX = 2_000;
 
   constructor(
     private sender: OmniSender,
@@ -614,6 +653,26 @@ export class OmniConsumer {
     return message.includes("stream not found") || message.includes("consumer not found");
   }
 
+  /** Remember a processed event key with bounded retention. */
+  private rememberProcessedEvent(key: string): void {
+    this.processedEvents.add(key);
+    while (this.processedEvents.size > this.DEDUP_MAX) {
+      const first = this.processedEvents.values().next().value;
+      if (first === undefined) break;
+      this.processedEvents.delete(first);
+    }
+  }
+
+  /** Remember an already-dispatched inbound message with bounded retention. */
+  private rememberProcessedInboundMessage(key: string): void {
+    this.processedInboundMessages.add(key);
+    while (this.processedInboundMessages.size > this.INBOUND_DEDUP_MAX) {
+      const first = this.processedInboundMessages.values().next().value;
+      if (first === undefined) break;
+      this.processedInboundMessages.delete(first);
+    }
+  }
+
   /**
    * Handle message.received event from omni.
    */
@@ -673,6 +732,9 @@ export class OmniConsumer {
 
     // Derive phone and group status from JIDs
     const rawPayload = payload.rawPayload as Record<string, unknown> | undefined;
+    // The provider telling us the linked account sent this is a strong echo
+    // signal. It must not depend on us resolving the agent identity first.
+    const providerSelfEcho = isProviderSelfEcho(rawPayload);
     let editInfo = this.extractMessageEditInfo(payload, rawPayload);
     const normalizedMentionText = normalizeInboundMentionText({
       text: editInfo?.newText ?? payload.content?.text,
@@ -849,6 +911,7 @@ export class OmniConsumer {
       explicitResolvedWhatsAppPhone(explicitResolvedSender) !== null &&
       senderPlatformIdentity?.ownerType !== "agent";
     const shouldRunContactIntake =
+      !providerSelfEcho &&
       senderPlatformIdentity?.ownerType !== "agent" &&
       ((intakeMode !== "off" && (!isGroup || Boolean(explicitResolvedSender))) || linkResolvedLidToExistingContact);
 
@@ -912,7 +975,13 @@ export class OmniConsumer {
       }
     }
 
-    const actorType = senderPlatformIdentity?.ownerType === "agent" ? "agent" : senderContact ? "contact" : "unknown";
+    const actorType = providerSelfEcho
+      ? "agent"
+      : senderPlatformIdentity?.ownerType === "agent"
+        ? "agent"
+        : senderContact
+          ? "contact"
+          : "unknown";
     const actorAgentId =
       senderPlatformIdentity?.ownerType === "agent" ? (senderPlatformIdentity.ownerId ?? undefined) : undefined;
     const sourceActorMetadata: MessageActorMetadata = {
@@ -1045,6 +1114,25 @@ export class OmniConsumer {
         ingestMode: event.metadata?.ingestMode ?? null,
       });
       return;
+    }
+
+    // Provider redelivery (JetStream retry on a producer, or the same provider
+    // message id arriving twice) must not open a second turn. The ledger above
+    // is idempotent on `providerMessageId`; edits keep their own event ids and
+    // bypass this guard.
+    const dedupKey = !editInfo && payload.externalId ? `${instanceId}:${chatJid}:${payload.externalId}` : undefined;
+    if (dedupKey) {
+      if (this.processedInboundMessages.has(dedupKey)) {
+        log.debug("Inbound message already dispatched; skipping duplicate turn", {
+          instanceId,
+          accountId: effectiveAccountId,
+          chatId: chatJid,
+          externalId: payload.externalId,
+          canonicalChatId: canonicalChat.id,
+        });
+        return;
+      }
+      this.rememberProcessedInboundMessage(dedupKey);
     }
 
     // A person asked to link their Console account writes here in private:
@@ -1267,10 +1355,10 @@ export class OmniConsumer {
       }),
     );
 
-    if (effectiveActorType === "agent") {
+    if (effectiveActorType === "agent" || providerSelfEcho) {
       saveInboundMessageMeta();
       rejectRoute("agent_actor_observed", {
-        reason: "agent_actor_observed",
+        reason: providerSelfEcho && effectiveActorType !== "agent" ? "provider_self_echo" : "agent_actor_observed",
         actorAgentId: effectiveActorAgentId ?? null,
         platformIdentityId: effectivePlatformIdentityId ?? null,
         routeSessionKey: matched.sessionKey,
@@ -1282,6 +1370,7 @@ export class OmniConsumer {
         chatId: chatJid,
         senderId: senderPhone,
         actorAgentId: effectiveActorAgentId,
+        providerSelfEcho,
         routeSessionKey: matched.sessionKey,
       });
       return;
@@ -2188,11 +2277,7 @@ export class OmniConsumer {
     // Dedup: omni publishes duplicate events with different IDs for the same reaction
     const dedupKey = `${payload.messageId}:${payload.emoji}:${senderId}`;
     if (this.processedEvents.has(dedupKey)) return;
-    this.processedEvents.add(dedupKey);
-    if (this.processedEvents.size > this.DEDUP_MAX) {
-      const first = this.processedEvents.values().next().value;
-      if (first) this.processedEvents.delete(first);
-    }
+    this.rememberProcessedEvent(dedupKey);
 
     log.info("Reaction received", {
       messageId: payload.messageId,
