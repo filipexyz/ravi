@@ -264,6 +264,7 @@ describe("channel runner native delivery registry", () => {
           content: {
             type: "text",
             text: "done",
+            format: "markdown",
           },
           target: expect.objectContaining({
             chatId: "C123",
@@ -318,6 +319,7 @@ describe("channel runner native delivery registry", () => {
           content: {
             type: "text",
             text: "Checking the current state.",
+            format: "markdown",
           },
           target: expect.objectContaining({
             chatId: "C123",
@@ -397,6 +399,7 @@ describe("channel runner native delivery registry", () => {
           content: {
             type: "text",
             text: "The agent could not complete this request because of an internal error.",
+            format: "markdown",
           },
         }),
       }),

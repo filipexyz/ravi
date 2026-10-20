@@ -61,7 +61,8 @@ import {
 } from "./chat-action-target.js";
 import { SlackWebApiClient } from "./client.js";
 import { resolveSlackCredentialConfigFromEnv, type SlackCredentialResolver } from "./credentials.js";
-import { markdownToSlackMrkdwn } from "./mrkdwn.js";
+import { slackClientMessageId } from "./client-message-id.js";
+import { postSlackMarkdown, postSlackMrkdwn, updateSlackMarkdown } from "./markdown-delivery.js";
 import { SlackGatewayModeService } from "./gateway-mode.js";
 import {
   buildSlackInstanceProvenance,
@@ -310,19 +311,33 @@ export class SlackTextDelivery implements NativeTextDelivery {
     } catch {
       guarded = false;
     }
-    const result = await this.webClient.postMessage({
+    const destination = {
       channel: request.target.chatId,
-      text: request.text,
-      clientMsgId: slackClientMessageId(request.idempotencyKey),
+      idempotencyKey: request.idempotencyKey,
       ...(threadTs ? { threadTs } : {}),
-      ...(guarded ? { unfurlLinks: false, unfurlMedia: false } : {}),
-    });
+      ...(guarded ? { unfurlLinks: false } : {}),
+    };
+    // Guarded chats keep everything in the conversation: no canvas or file to outlive it.
+    const posted =
+      request.format === "markdown"
+        ? await postSlackMarkdown(this.webClient, {
+            ...destination,
+            markdown: request.text,
+            allowDocuments: !guarded,
+          })
+        : await postSlackMrkdwn(this.webClient, { ...destination, text: request.text });
+    const result = posted.first;
+    const parts = posted.messages.slice(1).map((message) => message.ts);
     return {
       provider: "slack",
       messageId: result.messageId,
       platformMessageId: result.ts,
       providerTimestamp: slackTsToMs(result.ts),
-      raw: result.raw,
+      raw: {
+        ...result.raw,
+        ...(parts.length > 0 ? { ravi_additional_ts: parts } : {}),
+        ...(posted.documents.length > 0 ? { ravi_documents: posted.documents } : {}),
+      },
     };
   }
 }
@@ -358,20 +373,19 @@ export class SlackChatActionDelivery implements NativeChatActionDelivery {
       if (card.fullBrief) {
         // The card shows a summary; the whole brief opens the thread. The root is
         // already posted, so a failure here is logged and the thread still opens.
-        await this.webClient
-          .postMessage({
+        await postSlackMarkdown(this.webClient, {
+          channel,
+          markdown: card.fullBrief,
+          threadTs: result.ts,
+          idempotencyKey: `${request.idempotencyKey}:brief`,
+          allowDocuments: false,
+        }).catch((error) => {
+          log.warn("Failed to post the full thread brief", {
             channel,
-            text: card.fullBrief,
             threadTs: result.ts,
-            clientMsgId: slackClientMessageId(`${request.idempotencyKey}:brief`),
-          })
-          .catch((error) => {
-            log.warn("Failed to post the full thread brief", {
-              channel,
-              threadTs: result.ts,
-              error: error instanceof Error ? error.message : String(error),
-            });
+            error: error instanceof Error ? error.message : String(error),
           });
+        });
       }
       return {
         provider: "slack",
@@ -389,7 +403,7 @@ export class SlackChatActionDelivery implements NativeChatActionDelivery {
         ? await withThreadCardFallback(card, (blocks) =>
             this.webClient.updateMessage({ channel, ts, text: card.text, blocks }),
           )
-        : await this.webClient.updateMessage({ channel, ts, text: markdownToSlackMrkdwn(action.text) });
+        : await updateSlackMarkdown(this.webClient, { channel, ts, markdown: action.text });
       return {
         provider: "slack",
         messageId: result.messageId,
@@ -463,16 +477,7 @@ function assertSlackReactionAccepted(raw: Record<string, unknown>, operation: "a
   throw new Error(`Slack reaction was not accepted: ${error ?? "unknown"}`);
 }
 
-/** Stable UUID token for Slack's client_msg_id duplicate-suppression support. */
-export function slackClientMessageId(idempotencyKey: string): string {
-  const namespace = Buffer.from("6ba7b8119dad11d180b400c04fd430c8", "hex");
-  const digest = createHash("sha1").update(namespace).update(`ravi:${idempotencyKey}`, "utf8").digest();
-  const bytes = Buffer.from(digest.subarray(0, 16));
-  bytes[6] = (bytes[6] & 0x0f) | 0x50;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-  const hex = bytes.toString("hex");
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-}
+export { slackClientMessageId } from "./client-message-id.js";
 
 export class SlackAssistantThreadPresence implements NativePresenceDelivery {
   readonly channelId = "slack";

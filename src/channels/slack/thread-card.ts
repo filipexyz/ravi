@@ -39,7 +39,7 @@ export interface SlackThreadCardMessage {
   readonly blocks: readonly SlackBlockKitBlock[];
   /** The same content as classic blocks, for a workspace or client that rejects `card`. */
   readonly fallbackBlocks: readonly SlackBlockKitBlock[];
-  /** The whole brief, to post inside the thread when the card summary leaves part of it out. */
+  /** The whole brief as Markdown, to post inside the thread when the card summary leaves part of it out. */
   readonly fullBrief?: string;
 }
 
@@ -106,7 +106,7 @@ export function buildSlackThreadCard(brief: string, state: SlackThreadCardState)
     text: title,
     blocks: [card],
     fallbackBlocks,
-    ...(truncated ? { fullBrief: `*Instruções completas*\n${markdownToSlackMrkdwn(brief.trim())}` } : {}),
+    ...(truncated ? { fullBrief: `**Instruções completas**\n\n${brief.trim()}` } : {}),
   };
 }
 

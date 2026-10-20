@@ -451,6 +451,16 @@ describe("Slack output formatting", () => {
     expect(formatting).toContain("with text you choose from the context");
   });
 
+  it("asks for standard Markdown, with long documents in their own markdown block", () => {
+    const sections = buildSystemPromptSections("main", { channelId: "slack", channelName: "Slack", isGroup: false });
+    const formatting = sections.find((section) => section.id === "channel.output_formatting")?.content ?? "";
+
+    expect(formatting).toContain("Write standard Markdown");
+    expect(formatting).toContain("never redraw a table in ASCII");
+    expect(formatting).toContain("goes in its own ```markdown block");
+    expect(formatting).not.toContain("ASCII para tabelas");
+  });
+
   it("leaves other channels without the Slack link rule", () => {
     const prompt = buildSystemPrompt("main", { channelId: "matrix", channelName: "Matrix", isGroup: false });
     expect(prompt).not.toContain("slack://");

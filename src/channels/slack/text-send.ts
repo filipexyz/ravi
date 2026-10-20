@@ -4,6 +4,7 @@ import { findNativeChannelAccount } from "../account-resolution.js";
 import type { SlackBlockKitBlock } from "./block-kit.js";
 import { SlackWebApiClient } from "./client.js";
 import { resolveSlackCredentialConfigFromEnv, type SlackCredentialResolver } from "./credentials.js";
+import { postSlackMarkdown, updateSlackMarkdown } from "./markdown-delivery.js";
 import { markdownToSlackMrkdwn } from "./mrkdwn.js";
 
 export interface SlackTextSendInput {
@@ -51,19 +52,31 @@ export async function sendSlackText(
   input: SlackTextSendInput,
   dependencies: SlackTextSendDependencies = {},
 ): Promise<SlackNativeTextDelivery> {
-  const text = markdownToSlackMrkdwn(input.text).trim();
-  if (!text) {
+  if (!input.text.trim()) {
     throw new Error("Slack text is required");
   }
 
   const client = await createSlackTextClient(input.accountId, "chat.postMessage", dependencies);
-  const result = await client.postMessage({
+  const destination = {
     channel: input.chatId,
-    text,
     ...(input.threadId ? { threadTs: input.threadId } : {}),
-    ...(input.blocks ? { blocks: input.blocks } : {}),
-    ...(input.unfurlLinks === false ? { unfurlLinks: false, unfurlMedia: false } : {}),
-  });
+    ...(input.unfurlLinks === false ? { unfurlLinks: false } : {}),
+  };
+  // Caller-built blocks go as they are; plain Markdown is laid out as Block Kit.
+  const result = input.blocks
+    ? await client.postMessage({
+        ...destination,
+        text: markdownToSlackMrkdwn(input.text).trim(),
+        blocks: input.blocks,
+        ...(input.unfurlLinks === false ? { unfurlMedia: false } : {}),
+      })
+    : (
+        await postSlackMarkdown(client, {
+          ...destination,
+          markdown: input.text,
+          allowDocuments: input.unfurlLinks !== false,
+        })
+      ).first;
 
   return {
     transport: "slack-native",
@@ -79,8 +92,7 @@ export async function updateSlackText(
   input: SlackTextUpdateInput,
   dependencies: SlackTextSendDependencies = {},
 ): Promise<SlackNativeTextDelivery> {
-  const text = markdownToSlackMrkdwn(input.text).trim();
-  if (!text) {
+  if (!input.text.trim()) {
     throw new Error("Slack text is required");
   }
   const messageId = input.messageId.trim();
@@ -89,12 +101,14 @@ export async function updateSlackText(
   }
 
   const client = await createSlackTextClient(input.accountId, "chat.update", dependencies);
-  const result = await client.updateMessage({
-    channel: input.chatId,
-    ts: messageId,
-    text,
-    ...(input.blocks ? { blocks: input.blocks } : {}),
-  });
+  const result = input.blocks
+    ? await client.updateMessage({
+        channel: input.chatId,
+        ts: messageId,
+        text: markdownToSlackMrkdwn(input.text).trim(),
+        blocks: input.blocks,
+      })
+    : await updateSlackMarkdown(client, { channel: input.chatId, ts: messageId, markdown: input.text });
 
   return {
     transport: "slack-native",

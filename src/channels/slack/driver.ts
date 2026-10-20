@@ -12,7 +12,6 @@ import {
   type NativeChannelDriver,
   type NativeChannelRuntimeHealth,
 } from "../native/driver.js";
-import { markdownToSlackMrkdwn } from "./mrkdwn.js";
 import {
   createSlackNativeRuntimeFromEnv,
   decodeSlackBackendConversationId,
@@ -109,6 +108,7 @@ export function createSlackNativeChannelDriver(
                   canonicalChatId: envelope.binding.chatId,
                 },
                 text: renderSlackBackendOutput(envelope),
+                format: "markdown",
                 responsePhase: envelope.kind === "assistant_message" ? "final_answer" : "safe_error",
                 ...(canonicalMessageId ? { canonicalMessageId } : {}),
                 ...(options.now ? { now: options.now() } : {}),
@@ -144,6 +144,7 @@ export function createSlackNativeChannelDriver(
                   canonicalChatId: event.correlation.binding.chatId,
                 },
                 text: renderSlackContent(event.payload.content),
+                format: "markdown",
                 responsePhase: "commentary",
                 ...(options.now ? { now: options.now() } : {}),
               }),
@@ -208,8 +209,9 @@ export function renderSlackSafeError(error: ChannelSafeError | undefined): strin
   return `${message}${retryHint}`;
 }
 
+/** The reply as Markdown; Slack delivery renders it as Block Kit. */
 export function renderSlackContent(content: NonNullable<ChannelOutputEnvelope["content"]>): string {
-  const joined = content
+  return content
     .map((block) =>
       block.type === "text"
         ? block.text
@@ -218,7 +220,6 @@ export function renderSlackContent(content: NonNullable<ChannelOutputEnvelope["c
           : `[Attachment: ${block.artifactId}]`,
     )
     .join("\n");
-  return markdownToSlackMrkdwn(joined);
 }
 
 export function slackNativeRuntimeHealth(status: SlackSocketModeStatus): NativeChannelRuntimeHealth {
