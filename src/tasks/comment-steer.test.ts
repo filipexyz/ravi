@@ -191,4 +191,21 @@ describe("task comments steering", () => {
     expect(dbGetTask(taskId)?.status).toBe("blocked");
     expect(publishCalls).toHaveLength(0);
   });
+
+  it("refuses a redispatch with an unknown report target without resuming the blocked task", async () => {
+    const { taskId, sessionName } = createDispatchedTask("Unknown report target");
+    dbBlockTask(taskId, { actor: "test", sessionName, message: "waiting on input" });
+
+    await expect(
+      dispatchTask(taskId, {
+        agentId: "dev",
+        sessionName,
+        assignedBy: "test",
+        reportToSessionName: "missing-report-session",
+      }),
+    ).rejects.toThrow();
+
+    expect(dbGetTask(taskId)?.status).toBe("blocked");
+    expect(publishCalls).toHaveLength(0);
+  });
 });

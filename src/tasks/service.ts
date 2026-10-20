@@ -2795,9 +2795,10 @@ export async function dispatchTask(
       `Task ${taskId} is waiting on ${dependencySurface.readiness.unsatisfiedDependencyCount} dependencies. Arm a launch plan instead of dispatching it early.`,
     );
   }
-  // Check the target session before auto-resuming, so a refused dispatch
-  // leaves a blocked task blocked.
+  // Check the target session and the report target before auto-resuming, so a
+  // refused dispatch leaves a blocked task blocked.
   assertTaskSessionOwnership(input.sessionName, requireTaskRuntimeAgent(input.agentId).id);
+  const resolvedInput = resolveDispatchTaskReportTarget(input);
   const resumeResult = dbAutoResumeBlockedTask(taskId, "dispatch", {
     actor: input.assignedBy,
     agentId: input.assignedByAgentId,
@@ -2805,7 +2806,6 @@ export async function dispatchTask(
   });
   const dispatchSourceTask = resumeResult.resumed ? resumeResult.task : existingTask;
 
-  const resolvedInput = resolveDispatchTaskReportTarget(input);
   // Materialize the session for the assignee before the first await, so no
   // prompt can claim the session name between the ownership check and here.
   const {
@@ -3162,9 +3162,6 @@ export async function commentTask(
         sessionName: input.authorSessionName,
       });
   const taskAfterResume = resumeResult.resumed ? resumeResult.task : updatedTask;
-  if (resumeResult.resumed) {
-    await emitTaskEvent(resumeResult.task, resumeResult.event);
-  }
 
   let steeredSessionName: string | undefined;
   if (steerTarget?.ok && shouldSteerTaskComment(taskAfterResume)) {
@@ -3175,6 +3172,11 @@ export async function commentTask(
     steeredSessionName = steerTarget.sessionName;
   } else if (steerTarget && !steerTarget.ok) {
     log.warn("Task comment not steered to the assignee", { taskId, reason: steerTarget.reason });
+  }
+  // Emit the resume after the prompt, so a failed event publish cannot leave a
+  // resumed task with no prompt.
+  if (resumeResult.resumed) {
+    await emitTaskEvent(resumeResult.task, resumeResult.event);
   }
 
   return {
