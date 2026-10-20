@@ -1,10 +1,10 @@
 ---
 title: Use the Console over MCP
-description: Connect an MCP client such as a desktop assistant or an IDE to the Ravi Console, and read and change your projects, Pages and Bases as yourself.
+description: Connect an MCP client such as a desktop assistant or an IDE to the Ravi Console, and work with your projects, Pages, Bases, meetings and cloud agents as yourself.
 icon: server
 ---
 
-At the end of this page an MCP client is connected to your organization's Console. It can list your projects and pages, read pages and Bases views, and add or change rows, always as you and only after you agree to each change.
+At the end of this page an MCP client is connected to your organization's Console. It can read your projects, pages, Bases, meetings and cloud agent runs, publish a page, build a Base and add or change rows, always as you and only after you agree to each change.
 
 You need a Console login (see [Log in to the Console](/console/login)).
 
@@ -36,13 +36,24 @@ The tools are the Console operations, named after the operation id with `_` inst
 
 | You can | Kind |
 |---|---|
-| list projects, Pages sites and published pages | read |
-| read a page's text | read |
-| read a project's Pages theme | read |
+| list projects, Pages sites and published pages; read a page's text, its comments and the project's theme | read |
+| publish a page on a route of the project's host (private by default) | write |
+| mark a page's comments as read | write |
+| list Bases, read a Base's columns, its views, charts and a row's history | read |
 | describe and query a Bases view, read a row, read chart data | read |
-| add a row to a Base, change a row | write |
+| add a row, change a row, archive a row through a view that allows it | write |
+| create a Base; add or change a column; create or change a view or a chart (Bases managers) | write |
+| search the project's Knowledge with sources, list its sources | read |
+| list meetings, read a meeting and its transcript | read |
+| list and read your own calendar events | read |
+| list cloud agents, their runs, a run's events and the schedules | read |
+| start a cloud agent run; send it a message, answer its approval, stop it | write |
+| search and read the Library; propose a new item or version | read / write |
+| list and read your bug reports; open a bug, comment on it, send feedback | read / write |
 
-Reads run at once. There is a limit of 120 calls per minute for each person.
+Reads run at once. There is a limit of 120 calls per minute for each person. Text other people wrote (transcripts, comments, run events, Library items) comes marked as untrusted, so the client should not follow instructions inside it.
+
+A cloud agent run reaches only the tools that stay inside its own project. It cannot read your calendar, open bugs, use the Library, or message, approve or stop runs. You see only the runs that act for you, unless you are an organization owner or admin.
 
 ## Changes take two steps
 
@@ -56,4 +67,4 @@ A client should never confirm for you. If it does, revoke its bridge.
 
 ## What is not available
 
-Publishing pages, changing visibility or passwords, inviting people, sharing pages and deleting anything are not tools here. Use the Console or the `ravi pages` and `ravi invites` commands for those, where they keep their own confirmation.
+Changing a page's visibility or password, inviting people, sharing pages and deleting or archiving anything other than a Bases row are not tools here. Neither are mail, sending the recording bot to a meeting, Bases agent columns, deploying cloud agents, publishing in the Library or changing the active theme. A column type change that rewrites every row only returns its report here. Use the Console or the `ravi` commands for those, where they keep their own confirmation.
