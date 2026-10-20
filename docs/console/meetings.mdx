@@ -15,7 +15,7 @@ The text output starts with the title, organization, project, date, duration and
 
 ## Who can read a meeting
 
-- **Only you.** The read uses your `ravi login`, so the agent reads meetings only on your own turns: the terminal, your direct chat with the agent and your routines. It refuses a group even when you ask there, since everyone in it would read the answer, and tells you to ask in your private chat instead. When anyone else sends the agent a meeting link, the command exits 3 and the agent tells them it cannot read meeting transcripts for other people.
+- **Only you.** The read uses your `ravi login`, so the agent reads meetings only on your own turns: the terminal, your direct chat with the agent, your routines, and a group when you are the one asking there (everyone in it reads the answer). When anyone else sends the agent a meeting link, the command exits 3 and the agent tells them it cannot read meeting transcripts for other people.
 - **The Console decides access.** Your login's user must be a member of the meeting's organization with read access to its project, or the meeting must have been shared with your email.
 - **Other organizations.** A meeting recorded in another organization you belong to, such as your company's, is readable from your personal Ravi only after an admin of that organization allows agents from other organizations to read meetings in its Console settings. It is off by default. Each such read is recorded in that organization's audit log.
 

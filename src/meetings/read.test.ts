@@ -79,7 +79,7 @@ describe("meetingReadTurnBlock", () => {
     ).toMatchObject({ turn: "unknown" });
   });
 
-  it("refuses the operator in a group, where everyone in it would read the transcript", () => {
+  it("lets the operator read in a group they chose, and the calendar still refuses it", () => {
     const record = {
       contextId: "ctx_group",
       contextKey: "rctx_group",
@@ -102,20 +102,20 @@ describe("meetingReadTurnBlock", () => {
       getContextById: () => null,
       env: {},
     };
-    // `pages read` lets the owner read in a group they chose; a meeting read does not.
+    // Like `pages read`, the owner may read a meeting in a group they chose; the calendar refuses it.
     expect(pageReadTurnBlock({ readCredentials: () => makeCredentials(), turn })).toBeNull();
-    expect(meetingReadTurnBlock({ readCredentials: () => makeCredentials(), turn })).toMatchObject({
-      turn: "group",
-      ownerAsked: true,
-    });
+    expect(meetingReadTurnBlock({ readCredentials: () => makeCredentials(), turn })).toBeNull();
+    expect(
+      meetingReadTurnBlock({ readCredentials: () => makeCredentials(), turn }, { refuseGroup: true }),
+    ).toMatchObject({ turn: "group", ownerAsked: true });
   });
 });
 
 describe("meetingReadRefusalDetails", () => {
   const copy = {
-    otherPerson: "Tell the person you cannot read meeting transcripts for other people.",
-    chatLine: "Ask me in our private chat and I'll read it there.",
-    chatLinePt: "Me peça no nosso chat privado que eu leio lá.",
+    otherPerson: "Tell the person you cannot look at the operator's calendar here.",
+    chatLine: "Ask me in our private chat and I'll check the calendar there.",
+    chatLinePt: "Me peça no nosso chat privado que eu vejo a agenda lá.",
   };
 
   it("sends the operator who asked in a group to their own chat", () => {

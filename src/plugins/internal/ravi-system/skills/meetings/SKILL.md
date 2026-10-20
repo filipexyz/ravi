@@ -137,12 +137,11 @@ ravi meetings read <meeting-id> --json
   outra organizacao da qual ele faz parte (ex.: a empresa dele), se o Console
   deixar.
 - So nos turnos do proprio operador (terminal, a conversa direta dele, as
-  rotinas dele). Num grupo, mesmo quando e ele quem pede, e recusado: todos
-  ali leriam a transcricao. Em qualquer outro turno sai com exit 3
+  rotinas dele). Num grupo, le quando e ele quem pede (como `pages read`):
+  todos ali leem a resposta, entao responda so o que ele pediu, sem colar a
+  transcricao. Em qualquer outro turno sai com exit 3
   `MEETING_ACCESS_DENIED`, sem chamar o Console: diga a pessoa que voce nao le
-  transcricoes de reuniao para outras pessoas. Se foi o operador quem pediu no
-  grupo, o erro traz `chatLinePt` ("Me peça no nosso chat privado que eu leio
-  lá."): responda com ela no mesmo chat.
+  transcricoes de reuniao para outras pessoas.
 - Uso tipico: dar feedback ao operador sobre como ele se comunicou (clareza,
   quanto falou, como respondeu, perguntas que ficaram sem resposta).
 - Nunca salve a transcricao (nem trechos) em arquivo, memoria, knowledge ou

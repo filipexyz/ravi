@@ -54,7 +54,6 @@ import {
   MEETING_READ_DEFAULT_CHARS,
   MEETING_READ_MAX_CHARS,
   MEETING_READ_MIN_CHARS,
-  meetingReadRefusalDetails,
   meetingReadTurnBlock,
   normalizeMeetingReadMaxChars,
   parseMeetingReadTarget,
@@ -1609,12 +1608,8 @@ export class MeetingsCommands {
             details: {
               refusal: "operator_only",
               turn: block.turn,
-              ...meetingReadRefusalDetails(block, {
-                otherPerson:
-                  "Tell the person you cannot read meeting transcripts for other people; the operator can ask for it in their own chat.",
-                chatLine: "Ask me in our private chat and I'll read it there.",
-                chatLinePt: "Me peça no nosso chat privado que eu leio lá.",
-              }),
+              suggestedAction:
+                "Tell the person you cannot read meeting transcripts for other people; the operator can ask for it in their own chat.",
             },
           },
         );

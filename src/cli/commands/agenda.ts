@@ -427,11 +427,10 @@ export class AgendaCommands {
     run: (client: CalendarConsoleClient) => Promise<T>,
   ): Promise<T> {
     const deps = this.deps.calendar ?? {};
-    const block = meetingReadTurnBlock({
-      turn: deps.turn,
-      readCredentials: deps.readCredentials,
-      operatorTurn: deps.operatorTurn,
-    });
+    const block = meetingReadTurnBlock(
+      { turn: deps.turn, readCredentials: deps.readCredentials, operatorTurn: deps.operatorTurn },
+      { refuseGroup: true },
+    );
     if (block) {
       contractFail(
         op,
