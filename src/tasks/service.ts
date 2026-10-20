@@ -80,6 +80,13 @@ import {
 import { publishTaskSessionPrompt } from "./session-publisher.js";
 import { neutralizeSystemMarkers, requireTaskProgressMessage } from "./progress-contract.js";
 import {
+  dbGetTaskObserverState,
+  dbSaveTaskObserverChecklist,
+  type TaskObserverChecklistItem,
+} from "./observer-contract.js";
+import { disableTaskObserverRule, ensureTaskObserverRuleForDispatch } from "./observer-rule.js";
+import { reconcileObserverBindingsForSession } from "../runtime/observation-plane.js";
+import {
   DEFAULT_TASK_CHECKPOINT_INTERVAL_MS,
   DEFAULT_TASK_OBSERVER_STALL_INTERVAL_MS,
   resolveTaskCheckpointIntervalMs,
@@ -2855,6 +2862,28 @@ export async function dispatchTask(
     : ensureTaskWorkspaceBootstrap(task, taskProfile);
   const documentedTaskDocPath = resolveTaskDocumentPathForProfile(documentedTask, taskProfile);
 
+  // The observer is a real, stored rule matching this worker session; it is
+  // created here, at dispatch, and never synthesized by the observation plane.
+  if (taskProfileUsesObserver(taskProfile)) {
+    const observerAgent = getAgent(agentId);
+    if (observerAgent) {
+      ensureTaskObserverRuleForDispatch({ task: documentedTask, sessionName, agent: observerAgent });
+      const workerSession = getSessionByName(sessionName);
+      if (workerSession) {
+        try {
+          reconcileObserverBindingsForSession({
+            sessionName,
+            session: workerSession,
+            agent: observerAgent,
+            mode: "refresh-profile",
+          });
+        } catch (error) {
+          log.warn("Failed to attach the task observer binding", { taskId, sessionName, error });
+        }
+      }
+    }
+  }
+
   const prompt = buildTaskDispatchPrompt(documentedTask, agentId, sessionName, {
     sessionCwd,
     worktree,
@@ -3043,6 +3072,21 @@ export function reportTaskProgress(taskId: string, input: TaskProgressInput): { 
   });
 }
 
+/** Persist the observer checklist written by `tasks report --checklist`. */
+export function saveTaskObserverChecklist(
+  taskId: string,
+  checklist: TaskObserverChecklistItem[],
+): ReturnType<typeof dbSaveTaskObserverChecklist> {
+  if (!dbGetTask(taskId)) {
+    throw new Error(`Task not found: ${taskId}`);
+  }
+  return dbSaveTaskObserverChecklist(taskId, checklist);
+}
+
+export function getTaskObserverChecklist(taskId: string): TaskObserverChecklistItem[] {
+  return dbGetTaskObserverState(taskId)?.checklist ?? [];
+}
+
 export function archiveTask(
   taskId: string,
   input: TaskArchiveInput,
@@ -3060,6 +3104,7 @@ export function archiveTask(
   const documentedTask = result.wasNoop
     ? result.task
     : syncRequiredTaskDocumentAfterRuntimeEvent(result.task, profile, result.event);
+  if (!result.wasNoop) disableTaskObserverRule(taskId);
   return { ...result, task: documentedTask };
 }
 
@@ -3222,6 +3267,7 @@ export function failTask(
   const documentedTask = result.wasNoop
     ? result.task
     : syncRequiredTaskDocumentAfterRuntimeEvent(result.task, profile, result.event);
+  if (!result.wasNoop) disableTaskObserverRule(taskId);
   syncWorkflowNodeRunForTask(taskId);
   return {
     ...result,
@@ -3249,6 +3295,7 @@ export async function completeTask(
   const documentedTask = result.wasNoop
     ? result.task
     : syncRequiredTaskDocumentAfterRuntimeEvent(result.task, profile, result.event);
+  if (!result.wasNoop) disableTaskObserverRule(taskId);
   syncWorkflowNodeRunForTask(taskId);
   const dependencyRelatedEvents = result.wasNoop
     ? []
