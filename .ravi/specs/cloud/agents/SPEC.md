@@ -127,7 +127,10 @@ use the Console scope of the cwd (`CLOUD_PROJECT_REQUIRED`, exit 2, when none).
   own (`CLOUD_APPROVAL_NOT_OPERATOR`, exit 3); a missing approval is
   `CLOUD_APPROVAL_NOT_FOUND` and a decided one `CLOUD_APPROVAL_NOT_PENDING`.
 - `runs outputs --download` MUST keep every file inside the folder and MUST
-  refuse to overwrite an existing file (`CLOUD_OUTPUT_EXISTS`).
+  refuse to overwrite an existing file (`CLOUD_OUTPUT_EXISTS`). Before writing
+  anything it MUST refuse unsafe names and two outputs on one path, compared
+  case-insensitively, or a file where another output needs a folder
+  (`CLOUD_OUTPUT_NAME_CONFLICT`); files are created exclusively (`wx`).
 - The `agent` sent to the Console is the Library slug (`org/x` and
   `clinica/x` become `x`), or the deployed agent's Library slug.
 
@@ -168,7 +171,9 @@ optional:
   refuse an invalid one with `CLOUD_AGENT_DEFINITION_INVALID` (exit 2) and its
   issues; a valid block goes into the published `agent.json`.
 - `ravi agents install` MUST write the block to the new agent's `agent.json`,
-  so publishing it again keeps the block. An invalid published block is left
+  so publishing it again keeps the block. Like `AGENTS.md`, an existing
+  `agent.json` in the target folder is never replaced: install MUST refuse it
+  (`AGENT_CWD_IN_USE`). An invalid published block is left
   out (the Console refuses it on deploy).
 
 ## Task Dispatch
@@ -183,15 +188,23 @@ runs a task as a cloud run of the local agent's Library definition.
   project, budget, the session that gets the result, and `promptChars`.
 - `--execute` starts the run with trigger `task`, origin
   `{ kind:"task", sessionName, taskId }` (the Console adds the installation of
-  the `ravi login` session) and an idempotency key, records it in `ravi.db` (`cloud_agent_task_runs`) and marks the task
+  the `ravi login` session) and an idempotency key, records it in `ravi.db`
+  (`cloud_agent_task_runs`, with the login's installation and organization) and marks the task
   `in_progress` with a progress message. No local assignment is created, so
   restart recovery and checkpoints never prompt a local session for it.
+- The idempotency key is claimed in `ravi.db` (`cloud_agent_task_dispatches`)
+  before the Console is called. While the claim is pending (the start got no
+  answer), a retry or a concurrent `--execute` MUST send the same key, so the
+  Console replays the same run; an HTTP error releases it, and the next
+  dispatch gets a new key.
 - The session that gets the result is `--report-to`, else the dispatching
-  session. The Console requires one: without it dispatch MUST fail with
+  session. `--report-to` MUST resolve to an existing session (name, key or
+  chat id) before the brake, or dispatch fails with `REPORT_TARGET_NOT_FOUND`. The Console requires one: without it dispatch MUST fail with
   `CLOUD_TASK_SESSION_REQUIRED` (exit 2) before anything is sent.
 - A task that is done or failed (`CLOUD_TASK_FINISHED`) or already has an open
   cloud run (`CLOUD_TASK_RUN_ACTIVE`) MUST be refused.
-- `--budget` and `--project` without `--cloud` are a usage error.
+- `--budget` and `--project` without `--cloud`, and the local-only flags with
+  `--cloud`, are a usage error (`USAGE_ERROR`, exit 2).
 
 ## Watcher
 
@@ -211,7 +224,17 @@ For each open run it reads `runs/<id>`, then:
    neutralized; cut at 12,000 characters).
 3. Then it calls `runs/<id>/delivered`. A failed task update or inform reopens
    the claim for the next tick; a failed acknowledgement is retried without
-   delivering again. A run the Console no longer knows fails the task.
+   delivering again. A run the Console no longer knows (404 for the login
+   that started it) fails the task.
+
+- A row started by another login (installation or organization) MUST be
+  skipped, never polled or failed: the Console answers 404 for runs that login
+  cannot see. A row without a recorded login only keeps the 404 as its error.
+- For each pending dispatch claim the watcher reads
+  `runs?origin=installation` and adopts the run with the claim's task id that
+  it does not know yet; a claim with no run after 15 minutes is abandoned.
+- Error text and file names from the run MUST be collapsed to one line and
+  quoted inside `<result>` with the result.
 
 A result MUST be delivered at most once, also across overlapping ticks.
 

@@ -42,6 +42,8 @@ export interface FakeCloudConsole {
   outputs: Map<string, Uint8Array>;
   schedules: Json[];
   failures: FakeCloudFailure[];
+  /** Requests the fake handles but whose answer is lost (the client sees a network error). */
+  lostResponses: Array<{ method: string; path: string; times: number }>;
   /** Requests other than reads (`GET`). */
   writes(): FakeCloudRequest[];
   /** Access token the fake accepts (others get AUTH_EXPIRED); null accepts any. */
@@ -162,10 +164,12 @@ export function createFakeCloudConsole(
     outputs: new Map(),
     schedules: input.schedules ?? [],
     failures: [],
+    lostResponses: [],
     writes: () => state.requests.filter((request) => request.method !== "GET"),
     validToken: null,
   };
   let runSeq = state.runs.size;
+  const runsByKey = new Map<string, Json>();
   let scheduleSeq = state.schedules.length;
 
   const handle = (request: FakeCloudRequest): Response => {
@@ -238,6 +242,9 @@ export function createFakeCloudConsole(
         ) {
           return json(400, { error: { code: "validation_failed", message: "Send { project, agent, prompt, ... }." } });
         }
+        const key = typeof body?.idempotencyKey === "string" ? body.idempotencyKey : null;
+        const replay = key ? runsByKey.get(key) : undefined;
+        if (replay) return json(201, { run: replay });
         runSeq += 1;
         const agent = state.agents.find((entry) => (entry.library as Json).slug === body?.agent);
         const run = fakeCloudRun({
@@ -250,6 +257,8 @@ export function createFakeCloudConsole(
           budgetUsd: body?.budgetUsd ?? 5,
           costUsd: 0,
           runningSeconds: 0,
+          // Like the Console: a new run starts now.
+          startedAt: new Date().toISOString(),
           origin:
             trigger === "task"
               ? {
@@ -263,6 +272,7 @@ export function createFakeCloudConsole(
           url: `/acme/p/p-clinica/cloud/runs/run_${runSeq}`,
         });
         state.runs.set(String(run.id), run);
+        if (key) runsByKey.set(key, run);
         return json(201, { run });
       }
       if (method === "GET" && parts.length === 1) {
@@ -373,7 +383,13 @@ export function createFakeCloudConsole(
       if (failure.times !== undefined) failure.times -= 1;
       return json(failure.status, failure.body);
     }
-    return handle(request);
+    const answer = handle(request);
+    const lost = state.lostResponses.find((entry) => entry.method === method && entry.path === path && entry.times > 0);
+    if (lost) {
+      lost.times -= 1;
+      throw new TypeError("fetch failed");
+    }
+    return answer;
   }) as typeof globalThis.fetch;
 
   return state;
@@ -396,7 +412,12 @@ export function fakeCloudClient(
 /** `openSession` for commands, the watcher and dispatch: the fake, with `defaultProject` when none is given. */
 export function fakeCloudSessionOpener(
   fake: FakeCloudConsole,
-  input: { defaultProject?: string | null; loggedIn?: boolean; installationId?: string } = {},
+  input: {
+    defaultProject?: string | null;
+    loggedIn?: boolean;
+    installationId?: string;
+    organizationId?: string;
+  } = {},
 ): ((options: CloudAgentsSessionOptions) => Promise<CloudAgentsSession | null>) & {
   calls: CloudAgentsSessionOptions[];
 } {
@@ -415,6 +436,7 @@ export function fakeCloudSessionOpener(
       project,
       projectSource: explicit ? "explicit" : project ? "cwd" : null,
       organization: "acme",
+      organizationId: input.organizationId ?? "org-1",
     };
   };
   return Object.assign(open, { calls });

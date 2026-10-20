@@ -337,6 +337,8 @@ export interface CloudAgentsSession {
   project: string | null;
   projectSource: string | null;
   organization: string | null;
+  /** The organization id of the login (a task run is only watched by the same login). */
+  organizationId: string | null;
 }
 
 /** A client bound to the `ravi login` session, or null when there is none. */
@@ -381,6 +383,7 @@ export async function openCloudAgentsSession(
     installationId: credentials.installationId,
     project,
     projectSource,
+    organizationId: credentials.organization?.id?.trim() || null,
     organization:
       credentials.organization?.slug?.trim() ||
       credentials.organization?.name?.trim() ||

@@ -391,6 +391,46 @@ describe("ravi cloud runs", () => {
     expect(readFileSync(join(dir, "report.md"), "utf8")).toBe("mine");
   });
 
+  it("outputs refuse names that would land on one path, and write nothing", async () => {
+    const cases: Array<Array<{ id: string; name: string; size: number }>> = [
+      [
+        { id: "out_1", name: "report.md", size: 1 },
+        { id: "out_2", name: "report.md", size: 1 },
+      ],
+      [
+        { id: "out_1", name: "Report.md", size: 1 },
+        { id: "out_2", name: "report.MD", size: 1 },
+      ],
+      [
+        { id: "out_1", name: "a", size: 1 },
+        { id: "out_2", name: "a/b", size: 1 },
+      ],
+    ];
+    for (const outputs of cases) {
+      const fake = createFakeCloudConsole({ runs: [fakeCloudRun({ outputs })] });
+      for (const output of outputs) fake.outputs.set(`run_1/${output.id}`, new TextEncoder().encode("x"));
+      const dir = mkdtempSync(join(tmpdir(), "ravi-cloud-outputs-"));
+      tempDirs.push(dir);
+      const outcome = await capture(() => new CloudRunsCommands(deps(fake)).outputs("run_1", join(dir, "out"), true));
+      expect(outcome.error).toMatchObject({ code: "CLOUD_OUTPUT_NAME_CONFLICT", exitCode: 1 });
+      expect(existsSync(join(dir, "out"))).toBe(false);
+      expect(fake.requests.some((request) => request.path.startsWith("/runs/run_1/outputs"))).toBe(false);
+    }
+  });
+
+  it("outputs map a folder in the way to CLOUD_OUTPUT_EXISTS", async () => {
+    const fake = createFakeCloudConsole({
+      runs: [fakeCloudRun({ outputs: [{ id: "out_1", name: "a/b.txt", size: 1 }] })],
+    });
+    fake.outputs.set("run_1/out_1", new TextEncoder().encode("x"));
+    const dir = mkdtempSync(join(tmpdir(), "ravi-cloud-outputs-"));
+    tempDirs.push(dir);
+    writeFileSync(join(dir, "a"), "a file where a folder is needed");
+    const outcome = await capture(() => new CloudRunsCommands(deps(fake)).outputs("run_1", dir, true));
+    expect(outcome.error).toMatchObject({ code: "CLOUD_OUTPUT_EXISTS", exitCode: 1 });
+    expect(readFileSync(join(dir, "a"), "utf8")).toBe("a file where a folder is needed");
+  });
+
   it("outputs keep downloads inside the folder", async () => {
     const fake = createFakeCloudConsole({
       runs: [fakeCloudRun({ outputs: [{ id: "out_1", name: "../escape.txt", size: 1 }] })],

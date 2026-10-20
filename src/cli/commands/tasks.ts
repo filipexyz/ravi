@@ -46,6 +46,7 @@ import {
   readTaskDocFrontmatter,
   resolveTaskProfile,
   resolveTaskProfileForTask,
+  resolveTaskReportToSessionName,
   resolveTaskRuntimeForRead,
   reportTaskProgress,
   blockTask,
@@ -1816,23 +1817,46 @@ export class TaskCommands {
 
     if (cloud === true) {
       if (sessionName || checkpoint || reportEvents || model || effort || thinking) {
-        fail("--session, --checkpoint, --report-events, --model, --effort and --thinking do not apply with --cloud");
+        contractFail(
+          "tasks dispatch",
+          "USAGE_ERROR",
+          "--session, --checkpoint, --report-events, --model, --effort and --thinking do not apply with --cloud",
+          { asJson, exitCode: 2 },
+        );
       }
       // The result comes back as a [System] Inform to the reporting session, or the dispatching one.
       const actor = resolveDispatchActor(actorSessionName);
+      // Same resolution as a local dispatch, but before the brake: a wrong --report-to never starts a paid run.
+      let reportTo: string | undefined;
+      try {
+        reportTo = resolveTaskReportToSessionName(reportToSessionName, { callerSessionName: actor.sessionName });
+      } catch (error) {
+        contractFail(
+          "tasks dispatch",
+          "REPORT_TARGET_NOT_FOUND",
+          error instanceof Error ? error.message : String(error),
+          {
+            asJson,
+            details: { suggestedAction: "Pass an existing session name, session key or chat id: ravi sessions list" },
+          },
+        );
+      }
       return runCloudTaskDispatch({
         task: details.task,
         agentId: normalizedAgentId,
         ...(project?.trim() ? { project: project.trim() } : {}),
         ...(budget !== undefined ? { budget } : {}),
-        informSession: reportToSessionName?.trim() || actor.sessionName || null,
+        informSession: reportTo || actor.sessionName || null,
         actor: actor.actor,
         execute: execute === true,
         asJson,
       });
     }
     if (budget !== undefined || project !== undefined) {
-      fail("--budget and --project apply only with --cloud");
+      contractFail("tasks dispatch", "USAGE_ERROR", "--budget and --project apply only with --cloud", {
+        asJson,
+        exitCode: 2,
+      });
     }
 
     const resolvedSessionName = sessionName?.trim() || getDefaultTaskSessionNameForTask(details.task);

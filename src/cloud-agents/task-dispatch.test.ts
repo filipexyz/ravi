@@ -5,8 +5,19 @@ import { dbSetLibraryAgentOrigin } from "../library/agents-db.js";
 import { completeTask, createTask, failTask, getTaskDetails, reportTaskProgress } from "../tasks/service.js";
 import type { TaskRecord } from "../tasks/types.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { buildCloudTaskPrompt, CLOUD_AGENT_NOT_PUBLISHED, CLOUD_TASK_RUN_ACTIVE } from "./task-dispatch.js";
-import { dbGetActiveCloudTaskRunForTask, dbGetCloudTaskRun } from "./task-runs-db.js";
+import {
+  buildCloudTaskPrompt,
+  CLOUD_AGENT_NOT_PUBLISHED,
+  CLOUD_TASK_RUN_ACTIVE,
+  executeCloudTaskDispatch,
+  prepareCloudTaskDispatch,
+} from "./task-dispatch.js";
+import {
+  dbClaimCloudTaskDispatch,
+  dbGetActiveCloudTaskRunForTask,
+  dbGetCloudTaskDispatch,
+  dbGetCloudTaskRun,
+} from "./task-runs-db.js";
 import { CloudTaskWatcher } from "./task-watcher.js";
 import { createFakeCloudConsole, type FakeCloudConsole, fakeCloudSessionOpener } from "./test-fixtures.js";
 
@@ -41,12 +52,12 @@ function newTask(): TaskRecord {
   return createTask({ title: "Triage the inbox", instructions: "Label every open ticket.", priority: "normal" }).task;
 }
 
-function deps(fake: FakeCloudConsole, found: boolean | "installed" = true) {
+function deps(fake: FakeCloudConsole, found: boolean | "installed" = true, newIdempotencyKey?: () => string) {
   return {
     openSession: fakeCloudSessionOpener(fake),
     findLibraryAgent: async () =>
       found === true ? { ref: "clinica/triage", slug: "triage", project: "clinica", source: "library" as const } : null,
-    newIdempotencyKey: () => "ravi-task:fixed-key",
+    newIdempotencyKey: newIdempotencyKey ?? (() => "ravi-task:fixed-key"),
     // Task progress without emitting on NATS.
     markInProgress: async (input: { taskId: string; actor: string; message: string }) =>
       reportTaskProgress(input.taskId, { actor: input.actor, message: input.message }),
@@ -57,7 +68,7 @@ function dispatch(
   fake: FakeCloudConsole,
   task: TaskRecord,
   execute: boolean,
-  options: { budget?: string; found?: boolean; informSession?: string | null } = {},
+  options: { budget?: string; found?: boolean; informSession?: string | null; newKey?: () => string } = {},
 ) {
   return capture(() =>
     runCloudTaskDispatch(
@@ -70,7 +81,7 @@ function dispatch(
         execute,
         asJson: true,
       },
-      deps(fake, options.found ?? true),
+      deps(fake, options.found ?? true, options.newKey),
     ),
   );
 }
@@ -187,5 +198,110 @@ describe("tasks dispatch --cloud", () => {
     expect(finished.summary).toContain("12 tickets labeled.");
     expect(informs).toHaveLength(1);
     expect(fake.runs.get("run_1")!.origin).toMatchObject({ deliveredAt: expect.any(String) });
+  });
+});
+
+describe("tasks dispatch --cloud: one paid run per dispatch", () => {
+  function keys() {
+    let n = 0;
+    return () => {
+      n += 1;
+      return `key-${n}`;
+    };
+  }
+  const startKeys = (fake: FakeCloudConsole) =>
+    fake
+      .writes()
+      .filter((request) => request.path === "/runs")
+      .map((request) => request.body?.idempotencyKey);
+
+  it("a retry after a lost response sends the same key and gets the same run", async () => {
+    const fake = createFakeCloudConsole();
+    fake.lostResponses.push({ method: "POST", path: "/runs", times: 1 });
+    const task = newTask();
+    const newKey = keys();
+    const lost = await dispatch(fake, task, true, { newKey });
+    expect(lost.error).toBeDefined();
+    expect(dbGetCloudTaskDispatch(task.id)).toMatchObject({ state: "pending", idempotencyKey: "key-1" });
+
+    const retry = await dispatch(fake, task, true, { newKey });
+    expect(retry.error).toBeUndefined();
+    expect(retry.result).toMatchObject({ cloudRun: { id: "run_1" } });
+    expect(startKeys(fake)).toEqual(["key-1", "key-1"]);
+    expect(fake.runs.size).toBe(1);
+    expect(dbGetCloudTaskDispatch(task.id)).toMatchObject({ state: "started", runId: "run_1" });
+  });
+
+  it("two concurrent executes start one run", async () => {
+    const fake = createFakeCloudConsole();
+    const task = newTask();
+    const d = deps(fake, true, keys());
+    const input = { task, agentId: "triage", informSession: "dev-main" };
+    const [a, b] = await Promise.all([prepareCloudTaskDispatch(input, d), prepareCloudTaskDispatch(input, d)]);
+    const runs = await Promise.all([executeCloudTaskDispatch(a), executeCloudTaskDispatch(b)]);
+    expect(runs.map((run) => run.id)).toEqual(["run_1", "run_1"]);
+    expect(startKeys(fake)).toEqual(["key-1", "key-1"]);
+    expect(fake.runs.size).toBe(1);
+  });
+
+  it("a start the Console refused releases the key", async () => {
+    const fake = createFakeCloudConsole();
+    fake.failures.push({
+      method: "POST",
+      path: "/runs",
+      status: 503,
+      body: { error: { code: "provider_error" } },
+      times: 1,
+    });
+    const task = newTask();
+    const newKey = keys();
+    expect((await dispatch(fake, task, true, { newKey })).error).toBeDefined();
+    expect(dbGetCloudTaskDispatch(task.id)?.state).toBe("failed");
+    expect((await dispatch(fake, task, true, { newKey })).error).toBeUndefined();
+    expect(startKeys(fake)).toEqual(["key-1", "key-2"]);
+  });
+
+  it("the watcher adopts the run of a lost start, and a later dispatch is refused", async () => {
+    const fake = createFakeCloudConsole();
+    fake.lostResponses.push({ method: "POST", path: "/runs", times: 1 });
+    const task = newTask();
+    await dispatch(fake, task, true, { newKey: keys() });
+    expect(dbGetCloudTaskRun("run_1")).toBeNull();
+
+    const watcher = new CloudTaskWatcher({ openSession: fakeCloudSessionOpener(fake), informSession: async () => {} });
+    expect(await watcher.tickOnce()).toMatchObject({ adopted: 1 });
+    const list = fake.requests.find((request) => request.method === "GET" && request.path === "/runs");
+    expect(list?.query.get("origin")).toBe("installation");
+    expect(dbGetCloudTaskRun("run_1")).toMatchObject({
+      taskId: task.id,
+      sessionName: "dev-main",
+      installationId: "inst-1",
+      organizationId: "org-1",
+      state: "active",
+    });
+    expect(dbGetCloudTaskDispatch(task.id)).toMatchObject({ state: "started", runId: "run_1" });
+    expect((await dispatch(fake, task, true)).error).toMatchObject({ code: CLOUD_TASK_RUN_ACTIVE });
+    expect(fake.runs.size).toBe(1);
+  });
+
+  it("the watcher abandons a claim whose run never showed up", async () => {
+    const fake = createFakeCloudConsole();
+    const task = newTask();
+    dbClaimCloudTaskDispatch(
+      {
+        taskId: task.id,
+        agentId: "triage",
+        sessionName: "dev-main",
+        project: "clinica",
+        installationId: "inst-1",
+        organizationId: "org-1",
+      },
+      { newKey: () => "old-key", now: Date.now() - 20 * 60_000 },
+    );
+    const watcher = new CloudTaskWatcher({ openSession: fakeCloudSessionOpener(fake) });
+    expect(await watcher.tickOnce()).toMatchObject({ adopted: 0, errors: 0 });
+    expect(dbGetCloudTaskDispatch(task.id)?.state).toBe("abandoned");
+    await dispatch(fake, task, true, { newKey: () => "new-key" });
+    expect(startKeys(fake)).toEqual(["new-key"]);
   });
 });

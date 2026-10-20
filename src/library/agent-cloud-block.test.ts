@@ -123,6 +123,18 @@ describe("library agents: cloud block", () => {
     expect(again.plan.cloud).toEqual(CLOUD);
   });
 
+  it("install refuses a folder that already has an agent.json", async () => {
+    const cwd = join(home, "taken");
+    mkdirSync(cwd, { recursive: true });
+    writeFileSync(join(cwd, "agent.json"), '{"provider":"codex"}');
+    await expect(
+      prepareLibraryAgentInstall({ ref: parseLibraryRef("org/cloudy")!, cwd }, deps()),
+    ).rejects.toMatchObject({
+      code: "AGENT_CWD_IN_USE",
+    });
+    expect(readFileSync(join(cwd, "agent.json"), "utf8")).toBe('{"provider":"codex"}');
+  });
+
   it("install leaves an invalid published block out", async () => {
     const prepared = await prepareLibraryAgentInstall({ ref: parseLibraryRef("org/broken")! }, deps());
     const result = executeLibraryAgentInstall(prepared);

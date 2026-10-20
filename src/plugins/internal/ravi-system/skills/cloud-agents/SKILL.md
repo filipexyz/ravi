@@ -106,7 +106,9 @@ ravi cloud runs outputs <run> --download ./saida
 ```
 
 Os arquivos vêm pelo Console. O download nunca sobrescreve um arquivo
-existente (`CLOUD_OUTPUT_EXISTS`): use uma pasta vazia.
+existente (`CLOUD_OUTPUT_EXISTS`): use uma pasta vazia. Dois arquivos no mesmo
+caminho (inclusive só com maiúsculas diferentes) são recusados antes de
+gravar qualquer coisa (`CLOUD_OUTPUT_NAME_CONFLICT`): baixe-os pelo Console.
 
 ## Schedules
 

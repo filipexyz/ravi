@@ -476,6 +476,12 @@ export async function prepareLibraryAgentInstall(
   const session = await openSession({ resolveProject: false }, deps);
   if (!session) throw libraryLoginRequiredError();
   const definition = await fetchDefinition(session, input.ref, deps, { allowCache: false });
+  // Like AGENTS.md: install never replaces a file the folder already has.
+  if (definition.cloud && existsSync(join(cwd, AGENT_MANIFEST_FILE))) {
+    throw new LibraryCommandError("AGENT_CWD_IN_USE", `${join(cwd, AGENT_MANIFEST_FILE)} already exists.`, 1, {
+      suggestedAction: "Pick an empty folder with --cwd <dir>",
+    });
+  }
   const profile = planProfile(definition.agent.profile, null);
   const skills = await planSkills(session, definition.agent.skills, null);
   const grants = skills.filter((skill) => skill.status === "grant");
@@ -537,6 +543,7 @@ export function executeLibraryAgentInstall(prepared: PreparedLibraryAgentInstall
     writeFileSync(
       join(plan.agent.cwd, AGENT_MANIFEST_FILE),
       `${JSON.stringify({ cloud: definition.cloud }, null, 2)}\n`,
+      { flag: "wx" },
     );
   }
   createAgent({

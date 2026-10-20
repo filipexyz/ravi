@@ -10,8 +10,7 @@
  * task in progress.
  */
 
-import { randomUUID } from "node:crypto";
-
+import { isCloudAuthError } from "../cloud-auth/errors.js";
 import { dbGetLibraryAgentState } from "../library/agents-db.js";
 import { isLibraryNotFoundError, openLibrarySession } from "../library/client.js";
 import { parseLibraryRef } from "../library/refs.js";
@@ -23,7 +22,15 @@ import {
   type CloudAgentsSession,
   type CloudAgentsSessionOptions,
 } from "./client.js";
-import { dbGetActiveCloudTaskRunForTask, dbRecordCloudTaskRun } from "./task-runs-db.js";
+import {
+  CloudTaskDispatchActiveError,
+  dbClaimCloudTaskDispatch,
+  dbGetActiveCloudTaskRunForTask,
+  dbMarkCloudTaskDispatchFailed,
+  dbMarkCloudTaskDispatchStarted,
+  dbRecordCloudTaskRun,
+  type CloudTaskDispatch,
+} from "./task-runs-db.js";
 import type { CloudRun, CloudRunStartBody } from "./types.js";
 
 export const CLOUD_AGENT_NOT_PUBLISHED = "CLOUD_AGENT_NOT_PUBLISHED";
@@ -63,8 +70,10 @@ export interface CloudTaskDispatchPlan {
 
 export interface PreparedCloudTaskDispatch {
   plan: CloudTaskDispatchPlan;
-  body: CloudRunStartBody;
+  /** The start body without its idempotency key: `execute` takes the key from the dispatch claim. */
+  body: Omit<CloudRunStartBody, "idempotencyKey">;
   session: CloudAgentsSession;
+  newIdempotencyKey?: () => string;
 }
 
 /** The prompt a cloud run gets for a task: the task itself and what its last message is for. */
@@ -109,14 +118,7 @@ export async function prepareCloudTaskDispatch(
     );
   }
   const active = dbGetActiveCloudTaskRunForTask(task.id);
-  if (active) {
-    throw new LibraryCommandError(
-      CLOUD_TASK_RUN_ACTIVE,
-      `Task ${task.id} already runs in the cloud (run ${active.runId}).`,
-      1,
-      { suggestedAction: `Follow it with: ravi cloud runs follow ${active.runId}`, runId: active.runId },
-    );
-  }
+  if (active) throw taskRunActiveError(task.id, active.runId);
 
   const open = deps.openSession ?? ((options: CloudAgentsSessionOptions) => openCloudAgentsSession(options));
   const explicitProject = input.project?.trim() || null;
@@ -132,20 +134,20 @@ export async function prepareCloudTaskDispatch(
   }
 
   const prompt = buildCloudTaskPrompt(task);
-  const body: CloudRunStartBody = {
+  const body: Omit<CloudRunStartBody, "idempotencyKey"> = {
     project,
     agent: library.slug,
     prompt,
     trigger: "task",
     // The Console takes the installation from the login session, not from the body.
     origin: { kind: "task", sessionName: informSession, taskId: task.id },
-    idempotencyKey: (deps.newIdempotencyKey ?? (() => `ravi-task:${task.id}:${randomUUID()}`))(),
     ...(input.budgetUsd !== undefined ? { budgetUsd: input.budgetUsd } : {}),
     ...(input.repositories ? { repositories: input.repositories } : {}),
   };
   return {
     session,
     body,
+    ...(deps.newIdempotencyKey ? { newIdempotencyKey: deps.newIdempotencyKey } : {}),
     plan: {
       taskId: task.id,
       agentId,
@@ -162,17 +164,60 @@ export async function prepareCloudTaskDispatch(
   };
 }
 
+/**
+ * Claim the dispatch (and its idempotency key) before calling the Console,
+ * start the run with that key, then record it. A start that got no answer
+ * keeps the claim pending: a retry sends the same key and gets the same run,
+ * and the watcher adopts the run if nobody retries.
+ */
 export async function executeCloudTaskDispatch(prepared: PreparedCloudTaskDispatch): Promise<CloudRun> {
-  const run = await prepared.session.client.startRun(prepared.body);
+  const { plan, session } = prepared;
+  let claim: CloudTaskDispatch;
+  try {
+    claim = dbClaimCloudTaskDispatch(
+      {
+        taskId: plan.taskId,
+        agentId: plan.agentId,
+        sessionName: plan.informSession,
+        project: plan.project,
+        installationId: session.installationId,
+        organizationId: session.organizationId,
+      },
+      prepared.newIdempotencyKey ? { newKey: prepared.newIdempotencyKey } : {},
+    );
+  } catch (error) {
+    if (error instanceof CloudTaskDispatchActiveError) throw taskRunActiveError(plan.taskId, error.runId);
+    throw error;
+  }
+  let run: CloudRun;
+  try {
+    run = await session.client.startRun({ ...prepared.body, idempotencyKey: claim.idempotencyKey });
+  } catch (error) {
+    // An HTTP answer means the Console decided: the next dispatch may use a new key.
+    if (isCloudAuthError(error) && error.status !== undefined) {
+      dbMarkCloudTaskDispatchFailed(plan.taskId, claim.idempotencyKey);
+    }
+    throw error;
+  }
   dbRecordCloudTaskRun({
     runId: run.id,
-    taskId: prepared.plan.taskId,
-    agentId: prepared.plan.agentId,
-    sessionName: prepared.plan.informSession,
-    project: prepared.plan.project,
+    taskId: plan.taskId,
+    agentId: plan.agentId,
+    sessionName: plan.informSession,
+    project: plan.project,
     status: run.status,
+    installationId: session.installationId,
+    organizationId: session.organizationId,
   });
+  dbMarkCloudTaskDispatchStarted(plan.taskId, claim.idempotencyKey, run.id);
   return run;
+}
+
+function taskRunActiveError(taskId: string, runId: string): LibraryCommandError {
+  return new LibraryCommandError(CLOUD_TASK_RUN_ACTIVE, `Task ${taskId} already runs in the cloud (run ${runId}).`, 1, {
+    suggestedAction: `Follow it with: ravi cloud runs follow ${runId}`,
+    runId,
+  });
 }
 
 /**

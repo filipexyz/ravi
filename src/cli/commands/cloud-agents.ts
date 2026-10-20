@@ -1061,21 +1061,65 @@ export class CloudRunsCommands {
         let directory: string | null = null;
         if (download?.trim()) {
           directory = resolve(download.trim());
-          const targets = run.outputs.map((output) => ({
-            output,
-            path: join(directory!, safeRelativePath(output.name)),
-          }));
+          const folder = directory;
+          const targets = run.outputs.map((output) => {
+            let relative: string;
+            try {
+              relative = safeRelativePath(output.name);
+            } catch {
+              contractFail(op, "CLOUD_OUTPUT_NAME_CONFLICT", `Output ${output.id} has an unsafe file name.`, {
+                asJson,
+                details: { suggestedAction: `Download it in the Console: ravi cloud runs show ${run.id}` },
+              });
+            }
+            return { output, relative, key: relative.toLowerCase(), path: join(folder, relative) };
+          });
+          // Two outputs on one path (also when only the case differs), or a file where another needs a folder.
+          const clash = targets.find(
+            (target, index) =>
+              targets.findIndex((other) => other.key === target.key) !== index ||
+              targets.some((other) => other.key.startsWith(`${target.key}/`)),
+          );
+          if (clash) {
+            contractFail(
+              op,
+              "CLOUD_OUTPUT_NAME_CONFLICT",
+              `Two outputs of run ${run.id} would be written to ${clash.relative.slice(0, 200)}.`,
+              {
+                asJson,
+                details: { suggestedAction: `Download them one by one in the Console: ravi cloud runs show ${run.id}` },
+              },
+            );
+          }
           const existing = targets.find((target) => existsSync(target.path));
           if (existing) {
-            contractFail(op, "CLOUD_OUTPUT_EXISTS", `${existing.output.name} already exists in ${directory}.`, {
+            contractFail(op, "CLOUD_OUTPUT_EXISTS", `${existing.relative.slice(0, 200)} already exists in ${folder}.`, {
               asJson,
               details: { suggestedAction: "Download into an empty folder: --download <new-dir>" },
             });
           }
           for (const target of targets) {
             const file = await session.client.downloadOutput(run.id, target.output.id);
-            mkdirSync(dirname(target.path), { recursive: true });
-            writeFileSync(target.path, file.bytes);
+            try {
+              mkdirSync(dirname(target.path), { recursive: true });
+              // `wx`: never replace a file, also one that appeared since the check above.
+              writeFileSync(target.path, file.bytes, { flag: "wx" });
+            } catch (error) {
+              const code = (error as NodeJS.ErrnoException).code;
+              if (code !== "EEXIST" && code !== "ENOTDIR" && code !== "EISDIR") throw error;
+              contractFail(
+                op,
+                "CLOUD_OUTPUT_EXISTS",
+                `${target.relative.slice(0, 200)} cannot be written in ${folder}: something is already there.`,
+                {
+                  asJson,
+                  details: {
+                    suggestedAction: "Download into an empty folder: --download <new-dir>",
+                    written: downloaded.map((entry) => entry.path),
+                  },
+                },
+              );
+            }
             downloaded.push({
               id: target.output.id,
               name: target.output.name,
