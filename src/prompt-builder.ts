@@ -361,7 +361,7 @@ Regras:
   }
 
   if (channelName === "Slack") {
-    return `Use formatação ASCII para tabelas e listas.
+    return `Write standard Markdown: headings, lists, tables, task lists, quotes and code blocks with a language render natively in Slack, so never redraw a table in ASCII or nest code fences to get around Slack. A long document (a draft, a spec, a SKILL.md) goes in its own \`\`\`markdown block with a short summary around it: Slack delivery publishes it as a canvas, or a file, and leaves a link in the message. An image alone on its line, \`![description](https://...)\`, shows as an image.
 
 Links to a Slack channel, DM or thread use the Slack app link, \`slack://channel?team=<team-id>&id=<channel-id>\`, adding \`&thread_ts=<thread-ts>\` for a thread; \`https://app.slack.com\` links always open the browser. Write the link as markdown, \`[text](slack://...)\`, with text you choose from the context that says what the person will find there, never the bare URL.`;
   }

@@ -50,7 +50,7 @@ describe("Slack thread card", () => {
     expect(texts.body).not.toContain("close-thread");
     expect(texts.subtext).toBe(":large_green_circle: *Em andamento*  ·  instruções completas na thread");
     expect(card.fullBrief).toContain("close-thread --return");
-    expect(card.fullBrief).toStartWith("*Instruções completas*\nEstudo do Ravi Knowledge para o Luis.");
+    expect(card.fullBrief).toStartWith("**Instruções completas**\n\nEstudo do Ravi Knowledge para o Luis.");
   });
 
   it("keeps the same content as classic blocks for a Slack that rejects card", () => {

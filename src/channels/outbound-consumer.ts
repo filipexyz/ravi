@@ -650,6 +650,7 @@ async function executeNativeOutbound(
     return adapter.deliverText({
       ...baseRequest,
       text: job.request.content.text,
+      ...(job.request.content.format ? { format: job.request.content.format } : {}),
     });
   }
   if (!("executeChatAction" in adapter)) {

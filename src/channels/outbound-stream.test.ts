@@ -77,7 +77,7 @@ describe("channel outbound jobs", () => {
     );
   });
 
-  it("converts Slack runtime response markdown to mrkdwn and leaves other channels unchanged", () => {
+  it("marks Slack runtime response text as Markdown for delivery and leaves other channels unchanged", () => {
     const slack = buildChannelOutboundJobFromResponse("ravi-channels", {
       response: "See the **guide** at [docs](https://example.com)",
       _emitId: "emit_md",
@@ -91,7 +91,8 @@ describe("channel outbound jobs", () => {
     if (!slack.ok) throw new Error(slack.reason);
     expect(slack.job.request.content).toEqual({
       type: "text",
-      text: "See the *guide* at <https://example.com|docs>",
+      text: "See the **guide** at [docs](https://example.com)",
+      format: "markdown",
     });
 
     const whatsapp = buildChannelOutboundJobFromResponse("ravi-channels", {

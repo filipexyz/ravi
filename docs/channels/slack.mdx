@@ -47,7 +47,7 @@ At [api.slack.com/apps](https://api.slack.com/apps), choose **Create New App > F
 | `reactions:write` | The hourglass "working" reaction |
 | `files:read`, `files:write` | Files in both directions |
 
-Optional: `reactions:read` (reaction events), `canvases:read`/`canvases:write` (`ravi slack canvas-*`), `channels:manage`/`groups:write` (`ravi slack channels-create`), `links:read`/`links:write` (unfurls), `assistant:write` ([Working indicator](#working-indicator)).
+Optional: `reactions:read` (reaction events), `canvases:read`/`canvases:write` (`ravi slack canvas-*`, and long replies as canvases), `channels:manage`/`groups:write` (`ravi slack channels-create`), `links:read`/`links:write` (unfurls), `assistant:write` ([Working indicator](#working-indicator)).
 
 After changing scopes or events, reinstall the app, store the bot token again if it changed, and run `ravi channels restart`.
 
@@ -193,6 +193,14 @@ Do not use `ravi instances pending approve` with Slack IDs. For a channel it sto
 <Note>
 Questions with options (polls, the agent's `AskUserQuestion`) do not work on Slack: Ravi cannot post a poll there (`Polls are not supported on Slack`), so the agent gets an error instead of your answer. Ask the agent to ask in plain text.
 </Note>
+
+### How replies look
+
+The agent writes Markdown and Ravi sends it as Block Kit, so headings, lists, tables, task lists, quotes and code with syntax highlighting show as Slack draws them. An image alone on its line becomes an image.
+
+- A long reply is split only between blocks (paragraphs, tables, code), never inside one.
+- A long document in a reply (a `markdown` or `text` code block of 40 lines or more), or a reply too long for one message, becomes a canvas the conversation can read, and the message keeps a link to it. Without `canvases:write`, on a free workspace or in a DM, it is sent as a file in the same thread instead. Knowledge-guarded conversations never get a canvas or a file.
+- If Slack refuses the blocks, the reply goes out as plain Slack text, split the same way.
 
 ### Working indicator
 

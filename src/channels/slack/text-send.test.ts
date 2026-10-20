@@ -68,7 +68,7 @@ describe("sendSlackText", () => {
     expect(body.get("thread_ts")).toBe("1783999999.000099");
   });
 
-  it("converts CommonMark agent text to mrkdwn before chat.postMessage", async () => {
+  it("posts agent Markdown as a markdown block with a short mrkdwn fallback text", async () => {
     const requests: Array<{ url: string; init?: RequestInit }> = [];
     const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
       requests.push({ url: String(url), init });
@@ -92,7 +92,10 @@ describe("sendSlackText", () => {
     );
 
     const body = new URLSearchParams(String(requests[0]?.init?.body));
-    expect(body.get("text")).toBe("*Status*\nUse *bold* and <https://example.com|docs>.");
+    expect(body.get("text")).toBe("Status");
+    expect(JSON.parse(body.get("blocks") ?? "[]")).toEqual([
+      { type: "markdown", text: "# Status\nUse **bold** and [docs](https://example.com)." },
+    ]);
   });
 
   it("posts Block Kit blocks on chat.postMessage", async () => {
