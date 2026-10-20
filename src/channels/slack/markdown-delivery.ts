@@ -84,7 +84,8 @@ export async function postSlackMarkdown(
     outcomes.push({ title: document.title, delivery: "inline" });
   }
 
-  const rendered = renderSlackMarkdownMessages(body);
+  const images = input.unfurlLinks !== false;
+  const rendered = renderSlackMarkdownMessages(body, { images });
   if (rendered.length === 0) throw new Error("Slack text is required");
   const messages: SlackPostMessageResult[] = [];
   for (const [index, message] of rendered.entries()) {
@@ -106,7 +107,7 @@ export async function postSlackMarkdown(
         channel: input.channel,
         error: errorMessage(error),
       });
-      for (const [index, message] of renderSlackMarkdownMessages(document.inline).entries()) {
+      for (const [index, message] of renderSlackMarkdownMessages(document.inline, { images }).entries()) {
         const key = partKey(input.idempotencyKey, `doc:${document.filename}:${index}`);
         messages.push(...(await postRenderedMessage(client, input, message, key)));
       }

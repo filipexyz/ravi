@@ -34,7 +34,6 @@ const MARKDOWN_FENCE_LANGUAGES = new Set(["markdown", "md"]);
 const FENCE_OPEN_RE = /^( {0,3})(`{3,}|~{3,})(.*)$/;
 const HEADING_RE = /^ {0,3}#{1,6}(?:\s|$)/;
 const STANDALONE_IMAGE_RE = /^\s*!\[([^\]]*)\]\(\s*<?(https?:\/\/[^>\s)]+)>?(?:\s+"[^"]*")?\s*\)\s*$/;
-const PLACEHOLDER_RE = /^RAVIDOC(\d+)$/;
 
 export type SlackMarkdownUnit =
   | { readonly kind: "markdown"; readonly text: string; readonly heading: boolean }
@@ -183,10 +182,14 @@ export function planSlackMessageLayout(
   };
 }
 
-/** Block Kit messages for `markdown`, split only between top-level blocks. */
+/**
+ * Block Kit messages for `markdown`, split only between top-level blocks.
+ * `images: false` keeps standalone images as links, so Slack fetches nothing
+ * (as with unfurling off).
+ */
 export function renderSlackMarkdownMessages(
   markdown: string,
-  options: { readonly limit?: number } = {},
+  options: { readonly limit?: number; readonly images?: boolean } = {},
 ): SlackRenderedMessage[] {
   const limit = options.limit ?? SLACK_MESSAGE_MARKDOWN_LIMIT;
   const messages: SlackRenderedMessage[] = [];
@@ -203,7 +206,10 @@ export function renderSlackMarkdownMessages(
     images = 0;
   };
 
-  const units = splitSlackMarkdownUnits(markdown);
+  const units = splitSlackMarkdownUnits(markdown).map(
+    (unit): SlackMarkdownUnit =>
+      unit.kind === "image" && options.images === false ? { kind: "markdown", text: unit.text, heading: false } : unit,
+  );
   // One message with no image: the Markdown goes exactly as written.
   if (markdown.length <= limit && !units.some((unit) => unit.kind === "image")) {
     const whole = markdown.trim();
@@ -261,10 +267,6 @@ export function slackDocumentLinkLine(document: SlackLayoutDocument, url: string
 /** The line a document sent as a file leaves in the message. */
 export function slackDocumentFileLine(document: SlackLayoutDocument): string {
   return `📎 **${document.title}**`;
-}
-
-export function isSlackDocumentPlaceholder(line: string): boolean {
-  return PLACEHOLDER_RE.test(line.trim());
 }
 
 function isFenceClose(line: string, marker: string): boolean {

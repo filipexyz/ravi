@@ -111,6 +111,20 @@ describe("postSlackMarkdown", () => {
     expect(posted.blocks[0]?.text).toBe(REPLY);
   });
 
+  it("keeps images as links when unfurling is off", async () => {
+    const client = fakeClient();
+    const markdown = "Chart:\n\n![Usage](https://example.com/usage.png)";
+    await postSlackMarkdown(client as never, { channel: "C123", markdown, unfurlLinks: false });
+
+    expect(client.postMessage).toHaveBeenCalledWith({
+      channel: "C123",
+      text: "Chart:",
+      blocks: [{ type: "markdown", text: markdown }],
+      unfurlLinks: false,
+      unfurlMedia: false,
+    });
+  });
+
   it("falls back to mrkdwn when Slack refuses the blocks", async () => {
     const calls: Array<Record<string, unknown>> = [];
     const client = fakeClient({
