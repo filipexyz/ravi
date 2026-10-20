@@ -2795,29 +2795,19 @@ export async function dispatchTask(
       `Task ${taskId} is waiting on ${dependencySurface.readiness.unsatisfiedDependencyCount} dependencies. Arm a launch plan instead of dispatching it early.`,
     );
   }
-  // Check the target session and the report target before auto-resuming, so a
-  // refused dispatch leaves a blocked task blocked.
-  assertTaskSessionOwnership(input.sessionName, requireTaskRuntimeAgent(input.agentId).id);
+  // Validate the whole dispatch (report target, session ownership, profile)
+  // and materialize the assignee's session before auto-resuming, so a refused
+  // dispatch leaves a blocked task blocked. All of it runs before the first
+  // await, so no prompt can claim the session name in between.
   const resolvedInput = resolveDispatchTaskReportTarget(input);
+  const prepared = prepareTaskDispatchContext(existingTask, resolvedInput, { materializeSession: true });
   const resumeResult = dbAutoResumeBlockedTask(taskId, "dispatch", {
     actor: input.assignedBy,
     agentId: input.assignedByAgentId,
     sessionName: input.assignedBySessionName,
   });
-  const dispatchSourceTask = resumeResult.resumed ? resumeResult.task : existingTask;
-
-  // Materialize the session for the assignee before the first await, so no
-  // prompt can claim the session name between the ownership check and here.
-  const {
-    task: bootstrappedTask,
-    profile,
-    agentId,
-    sessionName,
-    sessionCwd,
-    worktree,
-    taskDocPath,
-    primaryArtifact,
-  } = prepareTaskDispatchContext(dispatchSourceTask, resolvedInput, { materializeSession: true });
+  const bootstrappedTask = resumeResult.resumed ? resumeResult.task : prepared.task;
+  const { profile, agentId, sessionName, sessionCwd, worktree, taskDocPath, primaryArtifact } = prepared;
   // Observed tasks use the checkpoint only as a silence window, so it defaults
   // far above the old worker-nudge cadence unless the caller set one.
   // A task created before it was observed carries the old 5 min default.

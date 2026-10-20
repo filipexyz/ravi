@@ -32,6 +32,7 @@ const {
   dispatchTask,
   TASK_SESSION_OWNERSHIP_CONFLICT,
 } = await import("./index.js");
+const { dbArchiveTask } = await import("./task-db.js");
 
 const createdTaskIds: string[] = [];
 const createdAgentIds: string[] = [];
@@ -188,6 +189,19 @@ describe("task comments steering", () => {
 
     expect(error).toBeInstanceOf(CliExpectedError);
     expect((error as CliExpectedError).code).toBe(TASK_SESSION_OWNERSHIP_CONFLICT);
+    expect(dbGetTask(taskId)?.status).toBe("blocked");
+    expect(publishCalls).toHaveLength(0);
+  });
+
+  it("refuses a redispatch that fails dispatch validation without resuming the blocked task", async () => {
+    const { taskId, sessionName } = createDispatchedTask("Archived redispatch");
+    dbBlockTask(taskId, { actor: "test", sessionName, message: "waiting on input" });
+    dbArchiveTask(taskId, { actor: "test", reason: "parked" });
+
+    await expect(dispatchTask(taskId, { agentId: "dev", sessionName, assignedBy: "test" })).rejects.toThrow(
+      "is archived",
+    );
+
     expect(dbGetTask(taskId)?.status).toBe("blocked");
     expect(publishCalls).toHaveLength(0);
   });
