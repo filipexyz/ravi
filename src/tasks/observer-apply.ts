@@ -1,6 +1,7 @@
 import type { ObservationPromptMetadata } from "../runtime/message-types.js";
 import { logger } from "../utils/logger.js";
 import {
+  boundTaskObserverValue,
   dbClaimTaskObserverDelivery,
   dbGetTaskObserverState,
   dbSaveTaskObserverState,
@@ -13,6 +14,7 @@ import {
   type TaskObserverChecklistItem,
   type TaskObserverState,
   type TaskObserverVerdict,
+  type TaskObserverVerdictParseResult,
 } from "./observer-contract.js";
 import { neutralizeSystemMarkers, normalizeTaskProgressMessage } from "./progress-contract.js";
 import {
@@ -53,7 +55,47 @@ function resolveObservedProgress(
   const derived = checklist.length > 0 ? (countDone(checklist) / checklist.length) * 100 : undefined;
   const value = verdict.progress ?? derived ?? task.progress;
   // Only a done verdict closes the task, so an observed progress never reads 100%.
-  return Math.max(0, Math.min(99, Math.round(value)));
+  const bounded = Math.max(0, Math.min(99, Math.round(value)));
+  // Observed progress is monotonic: a new checklist or a stale verdict cannot make it regress.
+  return Math.max(bounded, Math.min(99, task.progress));
+}
+
+/**
+ * A rejected verdict must never be silent. Emit one structured log line and one
+ * visible task event per delivery (a redelivery must not spam the timeline), with
+ * the offending path and a bounded, sanitized value. The task stays active, so
+ * the normal checkpoint/stall path still applies if the observer keeps failing.
+ */
+async function recordObserverRejection(input: {
+  task: TaskRecord;
+  parsed: Extract<TaskObserverVerdictParseResult, { ok: false }>;
+  deliveryId: string;
+  observerSessionName: string;
+  now: number;
+}): Promise<void> {
+  const rejection = input.parsed.rejection;
+  const path = rejection?.path ?? "json";
+  const value = rejection?.value ? boundTaskObserverValue(rejection.value) : undefined;
+  log.warn("Task observer verdict rejected", {
+    taskId: input.task.id,
+    deliveryId: input.deliveryId,
+    observerSessionName: input.observerSessionName,
+    reason: input.parsed.reason,
+    path,
+    ...(value ? { value } : {}),
+    error: input.parsed.error,
+  });
+  if (!dbClaimTaskObserverDelivery(`rejected:${input.deliveryId}`, input.task.id, input.now)) return;
+  const detail = boundTaskObserverValue(
+    `${path}${value ? ` (${value})` : ""}: ${rejection?.message ?? input.parsed.error ?? input.parsed.reason}`,
+    300,
+  );
+  const { task, event } = dbAppendTaskEvent(input.task.id, "task.comment", {
+    actor: TASK_OBSERVER_ACTOR,
+    sessionName: input.observerSessionName,
+    message: `Task observer verdict rejected: ${detail}`,
+  });
+  await emitTaskEvent(task, event);
 }
 
 function cleanMessage(value: string | undefined): string | undefined {
@@ -138,6 +180,8 @@ export async function recordTaskStall(
 export async function applyTaskObserverTurn(input: {
   observation: ObservationPromptMetadata;
   text: string;
+  /** Raw assistant fragments of the observer turn, when the accumulator split it. */
+  fragments?: string[];
   observerSessionName: string;
   observerAgentId?: string;
   now?: number;
@@ -159,24 +203,30 @@ export async function applyTaskObserverTurn(input: {
   }
   const now = input.now ?? Date.now();
   const deliveryId = observation.deliveryId ?? `${observation.bindingId}:${observation.eventIds.join(",")}`;
-  if (!dbClaimTaskObserverDelivery(deliveryId, taskId, now)) {
-    return { applied: false, reason: "duplicate_delivery", taskId };
-  }
 
   // Reading the worker at all proves it is alive: the silence detector restarts.
   if (task.status !== "blocked") dbTouchTaskCheckpoint(taskId, now);
 
-  const parsed = parseTaskObserverVerdict(input.text);
+  // Parse before claiming: an unusable verdict must stay inspectable (and
+  // retryable) instead of burning its delivery id and disappearing.
+  const parsed = parseTaskObserverVerdict(
+    input.text,
+    input.fragments && input.fragments.length > 1 ? { fragments: input.fragments } : {},
+  );
   if (!parsed.ok) {
-    log.warn("Task observer reply has no valid verdict", {
-      taskId,
-      observerSessionName: input.observerSessionName,
-      reason: parsed.reason,
-      error: parsed.ok ? undefined : parsed.error,
-    });
+    await recordObserverRejection({ task, parsed, deliveryId, observerSessionName: input.observerSessionName, now });
     return { applied: false, reason: `verdict_${parsed.reason}`, taskId };
   }
-
+  if (parsed.warnings && parsed.warnings.length > 0) {
+    log.warn("Task observer verdict normalized", {
+      taskId,
+      deliveryId,
+      warnings: parsed.warnings.slice(0, 10),
+    });
+  }
+  if (!dbClaimTaskObserverDelivery(deliveryId, taskId, now)) {
+    return { applied: false, reason: "duplicate_delivery", taskId };
+  }
   const verdict = parsed.verdict;
   const previous = dbGetTaskObserverState(taskId) ?? emptyTaskObserverState(taskId, now);
   const checklist = verdict.checklist ?? previous.checklist;

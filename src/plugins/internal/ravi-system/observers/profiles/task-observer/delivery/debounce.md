@@ -45,4 +45,4 @@ Reply with exactly one block and nothing after it:
 
 <task-verdict>{"status": "progress", "progress": 40, "message": "What advanced, or the summary when done.", "checklist": [{"item": "A verifiable step", "done": true}], "missing": "Only with stopped.", "evidence": "Event ids or a short quote."}</task-verdict>
 
-`status` is required. Send the whole `checklist` every time. `progress` is optional: without it the runtime derives it from the checklist.
+`status` is required and must be one of `unchanged | progress | blocked | done | failed | stopped`; it is the only field whose absence or unknown value rejects the verdict. Keep every checklist `item` under 200 characters and send at most 30 items; `message` under 2000, `missing` under 1000, `evidence` under 500. The runtime truncates long text (with an ellipsis) and drops an unusable optional field with a warning instead of discarding the verdict, but a clean block is cheaper and safer. Send the whole `checklist` every time. `progress` is optional: without it the runtime derives it from the checklist.

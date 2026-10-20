@@ -1109,6 +1109,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   // Raw text of an observer session's turn: the verdict is read from it whatever the
   // visibility filters decide to persist or emit.
   let observerTurnText = "";
+  // The same turn, fragment by fragment: a verdict split across assistant messages
+  // must be rejoinable without the separator the prose accumulator inserts.
+  let observerTurnFragments: string[] = [];
+  const resetObserverTurnText = () => {
+    observerTurnText = "";
+    observerTurnFragments = [];
+  };
   let pulseObservationTimer: ReturnType<typeof setInterval> | undefined;
   let pulseCheckedTurnId: string | undefined;
   const clearObservationPulse = () => {
@@ -1270,11 +1277,18 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   const applyObserverTurnVerdict = () => {
     const observation = streaming.currentObservation;
     const text = observerTurnText;
-    observerTurnText = "";
+    const fragments = observerTurnFragments;
+    resetObserverTurnText();
     if (!observation || observation.ruleId !== TASK_OBSERVER_RULE_ID) return;
     void import("../tasks/observer-apply.js")
       .then(({ applyTaskObserverTurn }) =>
-        applyTaskObserverTurn({ observation, text, observerSessionName: sessionName, observerAgentId: agent.id }),
+        applyTaskObserverTurn({
+          observation,
+          text,
+          ...(fragments.length > 1 ? { fragments } : {}),
+          observerSessionName: sessionName,
+          observerAgentId: agent.id,
+        }),
       )
       .then((result) => {
         if (!result.applied) log.debug("Task observer verdict not applied", { sessionName, ...result });
@@ -2783,7 +2797,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         const error = streaming._providerAuthFailure ?? responseText.trim();
         streaming._providerAuthFailure = undefined;
         responseText = "";
-        observerTurnText = "";
+        resetObserverTurnText();
         channelResponseText = "";
         deliveredVisibleThisTurn.length = 0;
         event = {
@@ -3179,6 +3193,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.lastToolFailure = undefined;
         let messageText = event.text;
         if (streaming.currentObservation && !streaming.interrupted && event.text) {
+          observerTurnFragments.push(event.text);
           observerTurnText = appendAssistantResponse(observerTurnText, event.text);
         }
         if (messageText) {
@@ -3753,7 +3768,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         // Visible assistant rows are INSERTed per assistant.message. turn.complete
         // only closes the in-memory buffer so the next turn cannot mash into it.
         responseText = "";
-        observerTurnText = "";
+        resetObserverTurnText();
         channelResponseText = "";
         deliveredVisibleThisTurn.length = 0;
         clearPendingGeneratedMedia();
@@ -3869,7 +3884,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           }
         }
         responseText = "";
-        observerTurnText = "";
+        resetObserverTurnText();
         channelResponseText = "";
         deliveredVisibleThisTurn.length = 0;
         clearPendingGeneratedMedia();
@@ -3961,7 +3976,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
         responseText = "";
 
-        observerTurnText = "";
+        resetObserverTurnText();
         channelResponseText = "";
         deliveredVisibleThisTurn.length = 0;
         clearPendingGeneratedMedia();
