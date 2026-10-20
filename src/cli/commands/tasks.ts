@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import { runCloudTaskDispatch } from "../cloud-task-dispatch.js";
 import { fail, getContext } from "../context.js";
 import {
   decodeListCursor,
@@ -45,6 +46,7 @@ import {
   readTaskDocFrontmatter,
   resolveTaskProfile,
   resolveTaskProfileForTask,
+  resolveTaskReportToSessionName,
   resolveTaskRuntimeForRead,
   reportTaskProgress,
   blockTask,
@@ -1787,6 +1789,15 @@ export class TaskCommands {
     })
     actorSessionName?: string,
     @Option({
+      flags: "--cloud",
+      description: "Run it as a paid cloud run of the agent's Library definition instead of a local session",
+    })
+    cloud?: boolean,
+    @Option({ flags: "--budget <usd>", description: "With --cloud: budget of the cloud run in US dollars (0.5-200)" })
+    budget?: string,
+    @Option({ flags: "--project <project>", description: "With --cloud: Console project of the run" })
+    project?: string,
+    @Option({
       flags: "--execute",
       description: "Actually dispatch the task; default is a dry-run that only shows the plan (exit 3)",
     })
@@ -1803,6 +1814,50 @@ export class TaskCommands {
     }
 
     const details = getTaskDetailsForContract("tasks dispatch", taskId, asJson);
+
+    if (cloud === true) {
+      if (sessionName || checkpoint || reportEvents || model || effort || thinking) {
+        contractFail(
+          "tasks dispatch",
+          "USAGE_ERROR",
+          "--session, --checkpoint, --report-events, --model, --effort and --thinking do not apply with --cloud",
+          { asJson, exitCode: 2 },
+        );
+      }
+      // The result comes back as a [System] Inform to the reporting session, or the dispatching one.
+      const actor = resolveDispatchActor(actorSessionName);
+      // Same resolution as a local dispatch, but before the brake: a wrong --report-to never starts a paid run.
+      let reportTo: string | undefined;
+      try {
+        reportTo = resolveTaskReportToSessionName(reportToSessionName, { callerSessionName: actor.sessionName });
+      } catch (error) {
+        contractFail(
+          "tasks dispatch",
+          "REPORT_TARGET_NOT_FOUND",
+          error instanceof Error ? error.message : String(error),
+          {
+            asJson,
+            details: { suggestedAction: "Pass an existing session name, session key or chat id: ravi sessions list" },
+          },
+        );
+      }
+      return runCloudTaskDispatch({
+        task: details.task,
+        agentId: normalizedAgentId,
+        ...(project?.trim() ? { project: project.trim() } : {}),
+        ...(budget !== undefined ? { budget } : {}),
+        informSession: reportTo || actor.sessionName || null,
+        actor: actor.actor,
+        execute: execute === true,
+        asJson,
+      });
+    }
+    if (budget !== undefined || project !== undefined) {
+      contractFail("tasks dispatch", "USAGE_ERROR", "--budget and --project apply only with --cloud", {
+        asJson,
+        exitCode: 2,
+      });
+    }
 
     const resolvedSessionName = sessionName?.trim() || getDefaultTaskSessionNameForTask(details.task);
     if (execute !== true) {

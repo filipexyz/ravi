@@ -173,6 +173,10 @@ organization (--scope org) or one Console project, or proposes it for review
 (--propose). The package is the agent's AGENTS.md, its HEARTBEAT.md when there
 is one, and an agent.json with its provider, model and permission profile as
 suggestions and the Library skills it is granted that the scope can see.
+A "cloud" block in the agent's own agent.json (how it runs as a cloud agent:
+model, budget, environment, MCP servers, repositories, schedule) is validated
+and published with it; a block with credentials is refused
+(CLOUD_AGENT_DEFINITION_INVALID, exit 2).
 
 NEVER PUBLISHED
   Routes, instances, contacts, sessions, local paths, credentials, and skills
@@ -507,6 +511,7 @@ export class AgentsLibraryCommands {
             item: null,
             proposal: result.proposal,
             manifest: plan.manifest,
+            cloud: plan.cloud,
             leftOut: plan.leftOut,
             next: result.proposal.reviewUrl,
           }
@@ -520,6 +525,7 @@ export class AgentsLibraryCommands {
             item: result.item,
             proposal: null,
             manifest: plan.manifest,
+            cloud: plan.cloud,
             leftOut: plan.leftOut,
             next: `ravi agents install ${result.ref}`,
           };

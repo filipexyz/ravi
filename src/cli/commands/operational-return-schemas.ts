@@ -3600,6 +3600,40 @@ export const agentsUpdateReturnSchema = z
   })
   .strict();
 
+/** The `cloud` block of `agent.json`, as `ravi agents publish` reports it. */
+const cloudAgentBlockReturnSchema = z
+  .object({
+    model: z.string().optional(),
+    effort: z.string().optional(),
+    budgetUsd: z.number().optional(),
+    environment: z
+      .object({
+        networking: z.string().optional(),
+        allowedHosts: z.array(z.string()).optional(),
+        packages: z
+          .object({
+            apt: z.array(z.string()).optional(),
+            pip: z.array(z.string()).optional(),
+            npm: z.array(z.string()).optional(),
+          })
+          .strict()
+          .optional(),
+      })
+      .strict()
+      .optional(),
+    mcp: z
+      .object({
+        ravi: z.boolean().optional(),
+        servers: z.array(z.object({ name: z.string(), url: z.string() }).strict()).optional(),
+      })
+      .strict()
+      .optional(),
+    tools: z.object({ webSearch: z.boolean().optional(), writes: z.string().optional() }).strict().optional(),
+    repositories: z.array(z.object({ repo: z.string(), branch: z.string().optional() }).strict()).optional(),
+    schedule: z.object({ cron: z.string(), timezone: z.string().optional() }).strict().optional(),
+  })
+  .strict();
+
 export const agentsPublishReturnSchema = z
   .object({
     success: z.literal(true),
@@ -3611,6 +3645,7 @@ export const agentsPublishReturnSchema = z
     item: libraryItemReturnSchema.nullable(),
     proposal: libraryProposalReturnSchema.nullable(),
     manifest: libraryAgentManifestReturnSchema,
+    cloud: cloudAgentBlockReturnSchema.nullable(),
     leftOut: z.array(z.object({ skill: z.string(), reason: z.string() }).strict()),
     next: z.string().nullable(),
   })

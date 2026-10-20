@@ -1288,6 +1288,9 @@ describe("TaskCommands create", () => {
         undefined,
         undefined,
         undefined,
+        undefined,
+        undefined,
+        undefined,
         true,
       );
     } finally {
@@ -1364,6 +1367,9 @@ describe("TaskCommands create", () => {
         undefined,
         undefined,
         undefined,
+        undefined,
+        undefined,
+        undefined,
         true,
       );
     } finally {
@@ -1430,6 +1436,9 @@ describe("TaskCommands create", () => {
       await commands.dispatch(
         "task-cli-1",
         "dev",
+        undefined,
+        undefined,
+        undefined,
         undefined,
         undefined,
         undefined,
@@ -2738,6 +2747,87 @@ describe("tasks agent-first contract", () => {
     });
     expect(JSON.stringify(envelope.error.plan)).not.toContain("5m");
     expect(JSON.stringify(envelope.error.plan)).not.toContain("progress,done");
+    expect(dispatchCalls).toHaveLength(0);
+  });
+
+  async function dispatchError(call: (commands: InstanceType<typeof TaskCommands>) => Promise<unknown>) {
+    taskDetailsMock = { task: { id: "task-cli-1", status: "open" }, events: [], comments: [] };
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      await call(new TaskCommands());
+    } catch (error) {
+      return error as InstanceType<typeof ContractError>;
+    } finally {
+      console.log = originalLog;
+    }
+    throw new Error("dispatch did not fail");
+  }
+
+  it("refuses tasks dispatch --cloud to an unknown --report-to before the brake", async () => {
+    const thrown = await dispatchError((commands) =>
+      commands.dispatch(
+        "task-cli-1",
+        "dev",
+        undefined,
+        undefined,
+        "no-such-session-for-cloud-test",
+        undefined,
+        true,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        undefined,
+        undefined,
+        true,
+      ),
+    );
+    expect(thrown).toBeInstanceOf(ContractError);
+    expect(thrown.exitCode).toBe(1);
+    expect(thrown.envelope().error.code).toBe("REPORT_TARGET_NOT_FOUND");
+    expect(dispatchCalls).toHaveLength(0);
+  });
+
+  it("makes flag combinations of tasks dispatch usage errors (exit 2)", async () => {
+    const withLocalFlag = await dispatchError((commands) =>
+      commands.dispatch(
+        "task-cli-1",
+        "dev",
+        "task-cli-work",
+        undefined,
+        undefined,
+        undefined,
+        true,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      ),
+    );
+    expect(withLocalFlag.exitCode).toBe(2);
+    expect(withLocalFlag.envelope().error.code).toBe("USAGE_ERROR");
+    const budgetWithoutCloud = await dispatchError((commands) =>
+      commands.dispatch(
+        "task-cli-1",
+        "dev",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "3",
+      ),
+    );
+    expect(budgetWithoutCloud.exitCode).toBe(2);
+    expect(budgetWithoutCloud.envelope().error.code).toBe("USAGE_ERROR");
     expect(dispatchCalls).toHaveLength(0);
   });
 
