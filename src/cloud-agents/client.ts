@@ -255,7 +255,8 @@ export class CloudAgentsClient {
     return run ? requireRun(run, this.consoleUrl) : null;
   }
 
-  private request<T>(method: string, relativePath: string, body?: unknown): Promise<T> {
+  /** One call under `/api/cli/cloud-agents`; the product clients (`client-product.ts`) use it too. */
+  request<T>(method: string, relativePath: string, body?: unknown): Promise<T> {
     const path = `${CLOUD_AGENTS_PATH}${relativePath}`;
     return this.withAuth((token) => this.session.client.requestJson<T>(method, path, body, token));
   }
@@ -561,7 +562,7 @@ function requireSchedule(value: unknown): CloudSchedule {
   };
 }
 
-function userRef(value: unknown): CloudUserRef | null {
+export function userRef(value: unknown): CloudUserRef | null {
   if (typeof value === "string" && value) return { id: "", name: value };
   const user = objectValue(value);
   if (!user || (typeof user.id !== "string" && typeof user.name !== "string")) return null;
@@ -569,7 +570,7 @@ function userRef(value: unknown): CloudUserRef | null {
 }
 
 /** A Console page link: a same-origin path or URL, never another origin. */
-function consoleLink(consoleUrl: string, value: unknown): string | null {
+export function consoleLink(consoleUrl: string, value: unknown): string | null {
   if (typeof value !== "string" || !value) return null;
   try {
     const base = new URL(consoleUrl);
@@ -581,7 +582,7 @@ function consoleLink(consoleUrl: string, value: unknown): string | null {
   }
 }
 
-function query(params: Record<string, string | undefined>): string {
+export function query(params: Record<string, string | undefined>): string {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined && value !== "") search.set(key, value);
@@ -590,34 +591,34 @@ function query(params: Record<string, string | undefined>): string {
   return encoded ? `?${encoded}` : "";
 }
 
-function segment(value: string): string {
+export function segment(value: string): string {
   return encodeURIComponent(value.trim());
 }
 
-function unexpected(what: string): CloudAuthError {
+export function unexpected(what: string): CloudAuthError {
   return new CloudAuthError("SERVER_UNAVAILABLE", `The Console returned an unexpected ${what}.`);
 }
 
-function stringArray(value: unknown): string[] {
+export function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
 }
 
-function numberOr(value: unknown, fallback: number): number {
+export function numberOr(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
-function numberOrNull(value: unknown): number | null {
+export function numberOrNull(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function stringOr(value: unknown, fallback: string): string {
+export function stringOr(value: unknown, fallback: string): string {
   return typeof value === "string" ? value : fallback;
 }
 
-function stringOrNull(value: unknown): string | null {
+export function stringOrNull(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
 
-function objectValue(value: unknown): Record<string, unknown> | null {
+export function objectValue(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
