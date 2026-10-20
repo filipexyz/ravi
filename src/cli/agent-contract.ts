@@ -146,9 +146,14 @@ export function mapExecutionErrorToContractError(op: string, error: unknown): Co
   );
 }
 
-export function permissionDeniedToContractError(op: string, reason: string): ContractError {
+export function permissionDeniedToContractError(
+  op: string,
+  reason: string,
+  details: ContractErrorDetails = {},
+): ContractError {
   return new ContractError(op, "PERMISSION_DENIED", reason, CONTRACT_EXIT_ERROR, {
     suggestedAction: "Request the required provider-owned permission and retry",
+    ...details,
   });
 }
 

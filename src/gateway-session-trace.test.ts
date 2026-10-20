@@ -1675,6 +1675,54 @@ describe("Gateway session trace instrumentation", () => {
     ]);
   });
 
+  it("drops spaced and truncated silence markers at the delivery boundary", async () => {
+    const { sessionName } = seedSession();
+    for (const marker of ["@@ SILENT @@", "@@SILEN", " @@SILENT@@ "]) {
+      const send = mock(async () => ({ messageId: "outbound-1" }));
+      const gateway = makeGateway(send);
+      await handleResponse(gateway, sessionName, makeResponse({ response: marker }));
+
+      expect(send).not.toHaveBeenCalled();
+    }
+  });
+
+  it("drops a silence marker split across content parts", async () => {
+    const { sessionName } = seedSession();
+    const send = mock(async () => ({ messageId: "outbound-1" }));
+    const gateway = makeGateway(send);
+
+    await handleResponse(
+      gateway,
+      sessionName,
+      makeResponse({
+        response: "",
+        content: [
+          { type: "text", text: "@@SIL" },
+          { type: "text", text: "ENT@@" },
+        ],
+      }),
+    );
+
+    expect(send).not.toHaveBeenCalled();
+    expect(emitted).toContainEqual([
+      `ravi.session.${sessionName}.delivery`,
+      expect.objectContaining({ status: "dropped", reason: "silent" }),
+    ]);
+  });
+
+  it("delivers text that cites the silence marker instead of deleting it", async () => {
+    const { sessionName } = seedSession();
+    const send = mock(async () => ({ messageId: "outbound-1" }));
+    const gateway = makeGateway(send);
+    const cited = "Para silenciar, responda @@SILENT@@ no fim da mensagem.";
+
+    await handleResponse(gateway, sessionName, makeResponse({ response: cited }));
+
+    expect(send).toHaveBeenCalledTimes(1);
+    const [, , text] = send.mock.calls[0] as unknown as Parameters<GatewaySend>;
+    expect(text).toBe(cited);
+  });
+
   it("does not reactivate presence from late activity after a terminal runtime event", async () => {
     const { sessionName } = seedSession();
     const sendTyping = mock(async () => {});

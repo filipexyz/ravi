@@ -3956,6 +3956,31 @@ describe("runtime session trace instrumentation", () => {
     expect(getRecentHistory(SESSION_NAME).filter(({ role }) => role === "assistant")).toEqual([]);
   });
 
+  it("suppresses a truncated silence marker and keeps prose that cites the marker", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-silent-truncated-citation");
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "assistant.message", text: "@@SILEN" },
+        { type: "assistant.message", text: "Para silenciar, responda @@SILENT@@ no fim." },
+        { type: "assistant.message", text: "@@SILENT@@ Checking the current state." },
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-after",
+          usage: { inputTokens: 1, outputTokens: 0 },
+        },
+      ]),
+    );
+
+    expect(
+      getRecentHistory(SESSION_NAME)
+        .filter(({ role }) => role === "assistant")
+        .map(({ content }) => content),
+    ).toEqual(["Para silenciar, responda @@SILENT@@ no fim.", "Checking the current state."]);
+  });
+
   it("does not persist prompt-too-long assistant text as a durable row", async () => {
     const streaming = makeStreamingSession();
     seedAdapterTrace(streaming, "turn-prompt-too-long-no-row");

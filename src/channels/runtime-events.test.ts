@@ -766,6 +766,54 @@ describe("channel runtime event projection", () => {
     expect(readback.terminalEvent).toBeUndefined();
   });
 
+  it("suppresses a truncated silence marker but delivers commentary that cites the marker", async () => {
+    const metadata = await acceptedMetadata();
+    const events: KnownChannelRuntimeEvent[] = [];
+    const outputs: ChannelOutputEnvelope[] = [];
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async () => {});
+    unregisterRuntimeEvents = channelRuntimeEventSinks.register(metadata.target, {
+      async emit(event) {
+        events.push(event);
+      },
+    });
+    unregisterOutput = channelOutputSinks.register(metadata.target, {
+      async emit(output) {
+        outputs.push(output);
+      },
+    });
+
+    try {
+      await runAcceptedHostRuntime(metadata, [
+        {
+          type: "assistant.message",
+          text: "@@SILEN",
+          metadata: { item: { id: "truncated-silent", phase: "commentary" } },
+        },
+        {
+          type: "assistant.message",
+          text: "Para silenciar, responda @@SILENT@@ no fim.",
+          metadata: { item: { id: "cited-marker", phase: "commentary" } },
+        },
+        {
+          type: "turn.complete",
+          usage: { inputTokens: 2, outputTokens: 1 },
+        },
+      ]);
+    } finally {
+      emitSpy.mockRestore();
+    }
+
+    expect(events.filter((event) => event.kind === "turn.assistant_message")).toEqual([
+      expect.objectContaining({
+        payload: {
+          phase: "commentary",
+          content: [{ type: "text", text: "Para silenciar, responda @@SILENT@@ no fim." }],
+        },
+      }),
+    ]);
+    expect(outputs).toHaveLength(0);
+  });
+
   it("keeps suppressed non-commentary outcomes off the channel and off durable chat.db rows", async () => {
     const metadata = await acceptedMetadata();
     const events: KnownChannelRuntimeEvent[] = [];

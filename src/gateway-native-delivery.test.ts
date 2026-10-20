@@ -334,6 +334,45 @@ describe("Gateway native channel outbound queue", () => {
     });
   });
 
+  it("delivers media without leaking silent text parts split across content parts", async () => {
+    dbUpsertInstance({
+      name: "main",
+      instanceId: "11111111-1111-1111-1111-111111111111",
+      channel: "whatsapp",
+    });
+    configStore.refresh();
+    const { gateway, emitted, omniSend, omniSendMedia } = await createGateway();
+
+    await handleResponse(gateway, "main-whatsapp-silent-media", {
+      _emitId: "emit-silent-media",
+      response: "",
+      content: [
+        {
+          type: "media",
+          media: {
+            type: "image",
+            filePath: "/tmp/generated.png",
+            filename: "generated.png",
+            mimeType: "image/png",
+            idempotencyKey: "media-key-silent",
+          },
+        },
+        { type: "text", text: "@@SIL" },
+        { type: "text", text: "ENT@@" },
+      ],
+      target: {
+        channel: "whatsapp",
+        accountId: "main",
+        instanceId: "11111111-1111-1111-1111-111111111111",
+        chatId: "group:120363407390920496",
+      },
+    });
+
+    expect(omniSendMedia).toHaveBeenCalledTimes(1);
+    expect(omniSend).not.toHaveBeenCalled();
+    expect(emitted.map((entry) => entry[1].contentType)).toEqual(["media"]);
+  });
+
   it("delivers response media to the Slack target natively and queues the Slack text part", async () => {
     const { gateway, emitted, omniSend, omniSendMedia } = await createGateway();
 
