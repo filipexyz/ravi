@@ -1,4 +1,5 @@
 import { getContext } from "../cli/context.js";
+import { CliExpectedError } from "../cli/expected-error.js";
 import { nats } from "../nats.js";
 import { getAgent } from "../router/config.js";
 import { expandHome } from "../router/resolver.js";
@@ -1308,6 +1309,26 @@ export function resolveTaskWorktreeContext(
   return undefined;
 }
 
+export const TASK_SESSION_OWNERSHIP_CONFLICT = "TASK_SESSION_OWNERSHIP_CONFLICT";
+
+/**
+ * A task session must run under the task's agent. A session of the same name
+ * owned by another agent (for example one the router created under the
+ * default agent) is a conflict the caller has to resolve, not a crash.
+ */
+function assertTaskSessionOwnership(sessionName: string, agentId: string): ReturnType<typeof resolveSession> {
+  const existingSession = resolveSession(sessionName);
+  if (existingSession && existingSession.agentId !== agentId) {
+    throw new CliExpectedError(
+      `Session ${sessionName} already belongs to agent ${existingSession.agentId}, not ${agentId}.`,
+      TASK_SESSION_OWNERSHIP_CONFLICT,
+      1,
+      `Dispatch with another --session, or delete session ${sessionName} so it can be recreated for agent ${agentId}`,
+    );
+  }
+  return existingSession;
+}
+
 export function resolveTaskSessionContext(
   task: TaskRecord,
   profile: ResolvedTaskProfile,
@@ -1318,12 +1339,7 @@ export function resolveTaskSessionContext(
   const resolvedAgent = requireTaskRuntimeAgent(agentId);
   const sessionCwd = resolvedAgent.cwd;
   const worktree = resolveTaskWorktreeContext(sessionCwd, task, profile, worktreeInput ?? task.worktree);
-  const existingSession = resolveSession(sessionName);
-  if (existingSession && existingSession.agentId !== resolvedAgent.id) {
-    throw new Error(
-      `Session ${sessionName} already belongs to agent ${existingSession.agentId}, not ${resolvedAgent.id}.`,
-    );
-  }
+  const existingSession = assertTaskSessionOwnership(sessionName, resolvedAgent.id);
 
   const sessionKey = existingSession?.sessionKey ?? sessionName;
   const session = getOrCreateSession(sessionKey, resolvedAgent.id, sessionCwd, {
@@ -1466,12 +1482,7 @@ function prepareTaskDispatchContext(
     profile,
     input.worktree ?? bootstrappedTask.worktree,
   );
-  const existingSession = resolveSession(input.sessionName);
-  if (existingSession && existingSession.agentId !== resolvedAgent.id) {
-    throw new Error(
-      `Session ${input.sessionName} already belongs to agent ${existingSession.agentId}, not ${resolvedAgent.id}.`,
-    );
-  }
+  const existingSession = assertTaskSessionOwnership(input.sessionName, resolvedAgent.id);
 
   let sessionName = existingSession?.name ?? input.sessionName;
   if (options.materializeSession) {
@@ -1752,7 +1763,7 @@ export function requireTaskRuntimeAgent(agentId: string): { id: string; cwd: str
   const normalizedAgentId = agentId.trim();
   const agent = getAgent(normalizedAgentId);
   if (!agent) {
-    throw new Error(`Agent not found in runtime config: ${normalizedAgentId}`);
+    throw new CliExpectedError(`Agent not found in runtime config: ${normalizedAgentId}`, "TASK_AGENT_NOT_FOUND");
   }
 
   return {
@@ -2784,27 +2795,19 @@ export async function dispatchTask(
       `Task ${taskId} is waiting on ${dependencySurface.readiness.unsatisfiedDependencyCount} dependencies. Arm a launch plan instead of dispatching it early.`,
     );
   }
+  // Validate the whole dispatch (report target, session ownership, profile)
+  // and materialize the assignee's session before auto-resuming, so a refused
+  // dispatch leaves a blocked task blocked. All of it runs before the first
+  // await, so no prompt can claim the session name in between.
+  const resolvedInput = resolveDispatchTaskReportTarget(input);
+  const prepared = prepareTaskDispatchContext(existingTask, resolvedInput, { materializeSession: true });
   const resumeResult = dbAutoResumeBlockedTask(taskId, "dispatch", {
     actor: input.assignedBy,
     agentId: input.assignedByAgentId,
     sessionName: input.assignedBySessionName,
   });
-  const dispatchSourceTask = resumeResult.resumed ? resumeResult.task : existingTask;
-  if (resumeResult.resumed) {
-    await emitTaskEvent(resumeResult.task, resumeResult.event);
-  }
-
-  const resolvedInput = resolveDispatchTaskReportTarget(input);
-  const {
-    task: bootstrappedTask,
-    profile,
-    agentId,
-    sessionName,
-    sessionCwd,
-    worktree,
-    taskDocPath,
-    primaryArtifact,
-  } = prepareTaskDispatchContext(dispatchSourceTask, resolvedInput, { materializeSession: true });
+  const bootstrappedTask = resumeResult.resumed ? resumeResult.task : prepared.task;
+  const { profile, agentId, sessionName, sessionCwd, worktree, taskDocPath, primaryArtifact } = prepared;
   // Observed tasks use the checkpoint only as a silence window, so it defaults
   // far above the old worker-nudge cadence unless the caller set one.
   // A task created before it was observed carries the old 5 min default.
@@ -2863,8 +2866,14 @@ export async function dispatchTask(
   await publishTaskSessionPrompt(sessionName, {
     prompt,
     deliveryBarrier: "after_task",
+    _agentId: agentId,
     taskBarrierTaskId: documentedTask.id,
   });
+  // Emit the resume only after the dispatch is recorded and published, so a
+  // failed event publish cannot leave a resumed task with no dispatch.
+  if (resumeResult.resumed) {
+    await emitTaskEvent(resumeResult.task, resumeResult.event);
+  }
 
   return {
     task: documentedTask,
@@ -2939,6 +2948,7 @@ export async function recoverActiveTasksAfterRestart(): Promise<TaskRecoveryResu
         await publishTaskSessionPrompt(sessionName, {
           prompt,
           deliveryBarrier: "after_task",
+          _agentId: assignment.agentId,
           taskBarrierTaskId: documentedTask.id,
         });
         recoveredTaskIds.push(documentedTask.id);
@@ -3134,18 +3144,14 @@ export async function commentTask(
   });
 
   // A blocked task stays blocked when the comment cannot reach its assignee.
-  const resumeResult =
-    steerTarget && !steerTarget.ok
-      ? { task: updatedTask, resumed: false as const }
-      : dbAutoResumeBlockedTask(taskId, "comment_steer", {
-          actor: input.author,
-          agentId: input.authorAgentId,
-          sessionName: input.authorSessionName,
-        });
+  const resumeResult = !steerTarget?.ok
+    ? { task: updatedTask, resumed: false as const }
+    : dbAutoResumeBlockedTask(taskId, "comment_steer", {
+        actor: input.author,
+        agentId: input.authorAgentId,
+        sessionName: input.authorSessionName,
+      });
   const taskAfterResume = resumeResult.resumed ? resumeResult.task : updatedTask;
-  if (resumeResult.resumed) {
-    await emitTaskEvent(resumeResult.task, resumeResult.event);
-  }
 
   let steeredSessionName: string | undefined;
   if (steerTarget?.ok && shouldSteerTaskComment(taskAfterResume)) {
@@ -3156,6 +3162,11 @@ export async function commentTask(
     steeredSessionName = steerTarget.sessionName;
   } else if (steerTarget && !steerTarget.ok) {
     log.warn("Task comment not steered to the assignee", { taskId, reason: steerTarget.reason });
+  }
+  // Emit the resume after the prompt, so a failed event publish cannot leave a
+  // resumed task with no prompt.
+  if (resumeResult.resumed) {
+    await emitTaskEvent(resumeResult.task, resumeResult.event);
   }
 
   return {
