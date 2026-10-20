@@ -80,7 +80,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "974aebaaf457a15f"
+    "version": "e1d3979a960e0a25"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -125119,6 +125119,10 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "idempotencyKey": {
+                    "description": "Apply this mutation once per key; a replay returns the previous result",
+                    "type": "string"
+                  },
                   "reason": {
                     "description": "Concrete blocker reason",
                     "type": "string"
@@ -125190,6 +125194,10 @@
                 "properties": {
                   "body": {
                     "description": "Comment body",
+                    "type": "string"
+                  },
+                  "idempotencyKey": {
+                    "description": "Apply this mutation once per key; a replay returns the previous result",
                     "type": "string"
                   },
                   "taskId": {
@@ -125914,6 +125922,10 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "idempotencyKey": {
+                    "description": "Apply this mutation once per key; a replay returns the previous result",
+                    "type": "string"
+                  },
                   "summary": {
                     "description": "Completion summary",
                     "type": "string"
@@ -125983,6 +125995,10 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "idempotencyKey": {
+                    "description": "Apply this mutation once per key; a replay returns the previous result",
+                    "type": "string"
+                  },
                   "reason": {
                     "description": "Failure reason",
                     "type": "string"
@@ -126645,6 +126661,14 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "checklist": {
+                    "description": "Observer checklist as a JSON array of {\"item\": string, \"done\": boolean}",
+                    "type": "string"
+                  },
+                  "idempotencyKey": {
+                    "description": "Apply this mutation once per key; a replay returns the previous result",
+                    "type": "string"
+                  },
                   "message": {
                     "description": "Progress update message",
                     "type": "string"

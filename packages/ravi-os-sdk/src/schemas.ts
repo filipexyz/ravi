@@ -108601,6 +108601,10 @@ export const TasksAutomationsShowReturnSchema = {
 export const TasksBlockInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "idempotencyKey": {
+      "description": "Apply this mutation once per key; a replay returns the previous result",
+      "type": "string"
+    },
     "reason": {
       "description": "Concrete blocker reason",
       "type": "string"
@@ -108644,6 +108648,10 @@ export const TasksCommentInputSchema = {
   "properties": {
     "body": {
       "description": "Comment body",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Apply this mutation once per key; a replay returns the previous result",
       "type": "string"
     },
     "taskId": {
@@ -109200,6 +109208,10 @@ export const TasksDispatchReturnSchema = {
 export const TasksDoneInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "idempotencyKey": {
+      "description": "Apply this mutation once per key; a replay returns the previous result",
+      "type": "string"
+    },
     "summary": {
       "description": "Completion summary",
       "type": "string"
@@ -109241,6 +109253,10 @@ export const TasksDoneReturnSchema = {
 export const TasksFailInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "idempotencyKey": {
+      "description": "Apply this mutation once per key; a replay returns the previous result",
+      "type": "string"
+    },
     "reason": {
       "description": "Failure reason",
       "type": "string"
@@ -109707,6 +109723,14 @@ export const TasksProfilesValidateReturnSchema = {
 export const TasksReportInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "checklist": {
+      "description": "Observer checklist as a JSON array of {\"item\": string, \"done\": boolean}",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Apply this mutation once per key; a replay returns the previous result",
+      "type": "string"
+    },
     "message": {
       "description": "Progress update message",
       "type": "string"
