@@ -3,7 +3,7 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-
 import { getOrCreateSession, updateSessionName } from "../router/sessions.js";
 import { dbUpsertChat } from "../router/router-db.js";
 import { attachChatToSession } from "../router/sessions.js";
-import { listSessionEvents } from "./session-trace-db.js";
+import { listSessionEventsForTest } from "../test/session-trace-events.js";
 import {
   normalizeSessionTraceSource,
   recordChannelMessageReceivedTrace,
@@ -121,7 +121,7 @@ describe("channel session trace", () => {
       },
     });
 
-    const events = listSessionEvents(sessionKey);
+    const events = listSessionEventsForTest(sessionKey);
     expect(events.map((event) => event.eventType)).toEqual([
       "channel.message.received",
       "route.resolved",
@@ -204,7 +204,7 @@ describe("channel session trace", () => {
       timestamp: 20,
     });
 
-    const event = listSessionEvents(sessionKey)[0];
+    const event = listSessionEventsForTest(sessionKey)[0];
     expect(event).toMatchObject({
       eventType: "response.emitted",
       sourceChatId: "5511999999999@s.whatsapp.net",

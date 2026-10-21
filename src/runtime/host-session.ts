@@ -193,6 +193,12 @@ export interface RuntimeHostStreamingSession {
   currentTraceSystemPromptSha256?: string;
   currentTraceRequestBlobSha256?: string;
   currentTraceTurnTerminalRecorded?: boolean;
+  /**
+   * Last `runtime.status` value already written to the trace for the current
+   * trace turn (`<turnId>\u0000<status>`). Providers repeat an identical status
+   * on every internal step; only transitions are persisted.
+   */
+  currentTraceStatusRecorded?: string;
   /** Whether this physical turn already published a runtime SSE terminal. */
   runtimeTerminalSseEmitted?: boolean;
   /** Durable crash-recovery attempt currently owning the provider turn. */

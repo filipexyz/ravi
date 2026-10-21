@@ -22,7 +22,7 @@ import {
   type AgentConfig,
   type SessionEntry,
 } from "../router/index.js";
-import { getSessionTraceBlob, getSessionTurn, listSessionEvents } from "../session-trace/session-trace-db.js";
+import { getSessionTraceBlob, getSessionTurn, listSessionEventsByTurn } from "../session-trace/session-trace-db.js";
 import { recordRuntimeTraceEvent, recordTerminalTurnTrace } from "../session-trace/runtime-trace.js";
 import { applyTaskSessionTtlForAgent, shouldRefreshTaskSessionTtlOnTurnComplete } from "../tasks/session-retention.js";
 import { logger } from "../utils/logger.js";
@@ -1067,6 +1067,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     streaming.currentTraceSystemPromptSha256 = undefined;
     streaming.currentTraceRequestBlobSha256 = undefined;
     streaming.currentTraceTurnTerminalRecorded = false;
+    streaming.currentTraceStatusRecorded = undefined;
   };
   const markCurrentTurnAttemptSafety = (input: { startedTool?: true; materializedOutput?: true }) => {
     const attemptId = streaming.currentCrashRecoveryAttemptId;
@@ -1326,7 +1327,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     try {
       const turn = getSessionTurn(turnId);
       const objective = turn?.userPromptSha256 ? getSessionTraceBlob(turn.userPromptSha256)?.contentText : undefined;
-      const events = listSessionEvents(session.sessionKey).filter((event) => event.turnId === turnId);
+      const events = listSessionEventsByTurn(turnId);
       return (
         buildInactivityRecoveryCheckpoint({
           objective,
@@ -3019,22 +3020,33 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             compacting: streaming.compacting,
           });
         }
-        recordTraceEvent({
-          turnId: streaming.currentTraceTurnId,
-          provider: runtimeSession.provider,
-          model,
-          eventType: "runtime.status",
-          eventGroup: "runtime",
-          status,
-          payloadJson: {
+        // Persist status transitions, not repeats. Providers emit a `status`
+        // event on every internal step: measured ~2.7k identical `thinking`
+        // events per turn, 97% of the whole session_events ledger. Each one was
+        // a real INSERT across every index on the table, inside the turn's hot
+        // loop, so the ledger grew to millions of rows that carried no signal
+        // and made every session-scoped read slower. The transition is the
+        // observability; the repeat is write amplification.
+        const statusTraceKey = `${streaming.currentTraceTurnId ?? ""}\u0000${status}`;
+        if (streaming.currentTraceStatusRecorded !== statusTraceKey) {
+          streaming.currentTraceStatusRecorded = statusTraceKey;
+          recordTraceEvent({
+            turnId: streaming.currentTraceTurnId,
+            provider: runtimeSession.provider,
+            model,
+            eventType: "runtime.status",
+            eventGroup: "runtime",
             status,
-            wasCompacting,
-            compacting: streaming.compacting,
-            externalAnnouncementsAllowed: compactionAnnouncement.externalAnnouncementsAllowed,
-            announcementOrigin: compactionAnnouncement.origin,
-            metadata: event.metadata,
-          },
-        });
+            payloadJson: {
+              status,
+              wasCompacting,
+              compacting: streaming.compacting,
+              externalAnnouncementsAllowed: compactionAnnouncement.externalAnnouncementsAllowed,
+              announcementOrigin: compactionAnnouncement.origin,
+              metadata: event.metadata,
+            },
+          });
+        }
         let statusSkillVisibility: RuntimeSkillVisibilitySnapshot | undefined;
         if (streaming.compacting && !wasCompacting) {
           // Re-read runtimeSessionParams from DB before compaction reset so any skill gate marks

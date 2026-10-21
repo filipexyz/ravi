@@ -2079,8 +2079,6 @@ function getDb(): Database {
       created_at INTEGER NOT NULL
     );
 
-    CREATE INDEX IF NOT EXISTS idx_session_events_key_time
-      ON session_events(session_key, timestamp);
     CREATE INDEX IF NOT EXISTS idx_session_events_key_time_seq_id
       ON session_events(session_key, timestamp, seq, id);
     CREATE INDEX IF NOT EXISTS idx_session_events_visible_key_time_seq_id
@@ -2092,8 +2090,6 @@ function getDb(): Database {
           OR event_type LIKE '%.delta'
           OR event_type LIKE '%provider_event%'
         );
-    CREATE INDEX IF NOT EXISTS idx_session_events_name_time
-      ON session_events(session_name, timestamp);
     CREATE INDEX IF NOT EXISTS idx_session_events_run_seq
       ON session_events(run_id, seq);
     -- Hot path: SELECT COALESCE(MAX(seq), 0) + 1 FROM session_events WHERE session_key = ?
@@ -2108,19 +2104,12 @@ function getDb(): Database {
       ON session_events(timestamp);
     CREATE INDEX IF NOT EXISTS idx_session_events_turn_seq
       ON session_events(turn_id, seq);
-    CREATE INDEX IF NOT EXISTS idx_session_events_type_time
-      ON session_events(event_type, timestamp);
-    CREATE INDEX IF NOT EXISTS idx_session_events_rollup_turns
-      ON session_events(timestamp, agent_id, model, event_type)
-      WHERE event_type IN ('turn.complete', 'turn.failed', 'turn.interrupted');
     CREATE INDEX IF NOT EXISTS idx_session_events_rollup_turns_cover
       ON session_events(timestamp, agent_id, model, event_type, duration_ms)
       WHERE event_type IN ('turn.complete', 'turn.failed', 'turn.interrupted');
     CREATE INDEX IF NOT EXISTS idx_session_events_rollup_tools
       ON session_events(timestamp, agent_id, event_type, status)
       WHERE event_type IN ('tool.start', 'tool.end');
-    CREATE INDEX IF NOT EXISTS idx_session_events_chat_time
-      ON session_events(source_chat_id, timestamp);
     CREATE INDEX IF NOT EXISTS idx_session_events_contact_time
       ON session_events(contact_id, timestamp);
 
@@ -3412,6 +3401,7 @@ function getDb(): Database {
   ensureColumn(db, "daemon_restart_resume_deliveries", "delivery_kind", "TEXT NOT NULL DEFAULT 'resume'");
   ensureColumn(db, "daemon_restart_resume_deliveries", "decision_reason", "TEXT");
   ensureIdentityChatMigrations(db);
+  dropRedundantSessionEventIndexes(db);
   ensureAgentVisibilityMigration(db);
   ensureLibraryAgentListedMigration(db);
   ensureCliCommandAccessKindGrantMigration(db);
@@ -3963,6 +3953,42 @@ function normalizeAgentDefaultsCapability(value: unknown): {
   };
 }
 
+/**
+ * Drop session_events indexes that stopped paying for themselves.
+ *
+ * Every index on this table is maintained on each event INSERT, and this is the
+ * hottest write path in the daemon, so a redundant index costs twice: disk and
+ * a B-tree write per event. These six were an exact prefix of a wider index, a
+ * subset of a wider partial index, or only served a one-time backfill:
+ *
+ * - idx_session_events_key_time: exact prefix of idx_session_events_key_time_seq_id.
+ * - idx_session_events_name_time: nothing filters session_name on this table
+ *   except the legacy OR fallback in session-trace/query.ts.
+ * - idx_session_events_type_time: every event_type query also carries
+ *   session_key, which idx_session_events_key_type_id already covers.
+ * - idx_session_events_chat_time: only served backfillChatModel, which is
+ *   guarded by a router_meta marker and never re-runs.
+ * - idx_session_events_rollup_turns: same WHERE as ..._cover, which also carries
+ *   duration_ms; the rollup queries use ..._cover by name.
+ * - idx_session_events_canonical_chat: only served the rare chat-merge UPDATE.
+ *
+ * Together they were ~360MB of the 1.3GB index footprint (audit 2026-10-20).
+ * Dropping is idempotent and safe to repeat on every boot.
+ */
+function dropRedundantSessionEventIndexes(database: Database): void {
+  const redundant = [
+    "idx_session_events_key_time",
+    "idx_session_events_name_time",
+    "idx_session_events_type_time",
+    "idx_session_events_chat_time",
+    "idx_session_events_rollup_turns",
+    "idx_session_events_canonical_chat",
+  ];
+  for (const name of redundant) {
+    database.exec(`DROP INDEX IF EXISTS ${name}`);
+  }
+}
+
 function ensureIdentityChatMigrations(database: Database): void {
   ensureColumn(database, "message_metadata", "canonical_chat_id", "TEXT");
   ensureColumn(database, "message_metadata", "actor_type", "TEXT");
@@ -3996,7 +4022,6 @@ function ensureIdentityChatMigrations(database: Database): void {
   database.exec(
     "CREATE INDEX IF NOT EXISTS idx_message_metadata_canonical_chat ON message_metadata(canonical_chat_id)",
   );
-  database.exec("CREATE INDEX IF NOT EXISTS idx_session_events_canonical_chat ON session_events(canonical_chat_id)");
   database.exec(
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_chats_actor_agent ON chats(actor_id, agent_id) WHERE actor_id IS NOT NULL AND agent_id IS NOT NULL",
   );

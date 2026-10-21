@@ -17,7 +17,8 @@ import {
 import { getSessionTurnUsageSummary } from "../router/sessions.js";
 import { dbSetSetting, dbUpsertChat, getDb } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { getSessionTraceBlob, getSessionTurn, listSessionEvents } from "../session-trace/session-trace-db.js";
+import { listSessionEventsForTest } from "../test/session-trace-events.js";
+import { getSessionTraceBlob, getSessionTurn } from "../session-trace/session-trace-db.js";
 import { recordAdapterRequestTrace } from "../session-trace/runtime-trace.js";
 import {
   bindRuntimeCredentialAttemptTurn,
@@ -624,7 +625,7 @@ describe("runtime session trace instrumentation", () => {
       startedTool: false,
       materializedOutput: false,
     });
-    const events = listSessionEvents(SESSION_KEY);
+    const events = listSessionEventsForTest(SESSION_KEY);
     const adapterRequest = events.find((event) => event.eventType === "adapter.request");
     expect(adapterRequest?.messageId).toBe("wamid-1");
     expect(adapterRequest).toMatchObject({
@@ -1014,9 +1015,9 @@ describe("runtime session trace instrumentation", () => {
     expect(toolStatesWhenQueued).toEqual([true]);
     expect(toolBarrierReleaseCalls).toBe(1);
     expect(interruptCalls).toBe(0);
-    expect(listSessionEvents(SESSION_KEY).filter((event) => event.eventType === "dispatch.queued_busy")).toHaveLength(
-      2,
-    );
+    expect(
+      listSessionEventsForTest(SESSION_KEY).filter((event) => event.eventType === "dispatch.queued_busy"),
+    ).toHaveLength(2);
     expect(providerTurns).toEqual([
       {
         prompt: "long WhatsApp turn",
@@ -1245,7 +1246,7 @@ describe("runtime session trace instrumentation", () => {
         expect(queuedDuringInFlight).toBe(true);
         expect(interruptCalls).toBe(0);
         expect(
-          listSessionEvents(SESSION_KEY).filter((event) => event.eventType === "dispatch.queued_busy"),
+          listSessionEventsForTest(SESSION_KEY).filter((event) => event.eventType === "dispatch.queued_busy"),
         ).toHaveLength(1);
 
         yield { type: "assistant.message", text: "first reply" } satisfies RuntimeEvent;
@@ -1307,7 +1308,9 @@ describe("runtime session trace instrumentation", () => {
     const lastTurn = getSessionTurnUsageSummary(SESSION_KEY).lastTurn;
     expect(lastTurn?.status).toBe("complete");
     expect(lastTurn?.completedAt).toBeGreaterThan(0);
-    expect(listSessionEvents(SESSION_KEY).filter((event) => event.eventType === "turn.complete")).toHaveLength(2);
+    expect(listSessionEventsForTest(SESSION_KEY).filter((event) => event.eventType === "turn.complete")).toHaveLength(
+      2,
+    );
   });
 
   it("restarts with the queued send when the runtime loop fails between turns", async () => {
@@ -2008,7 +2011,9 @@ describe("runtime session trace instrumentation", () => {
       expect(attemptRow?.turn_id).toBe(streaming.currentTraceTurnId);
       expect(attemptRow?.status).toBe("started");
 
-      const adapterRequest = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "adapter.request");
+      const adapterRequest = listSessionEventsForTest(SESSION_KEY).find(
+        (event) => event.eventType === "adapter.request",
+      );
       expect(adapterRequest?.payloadJson).toMatchObject({
         runtime_credential: "[REDACTED]",
       });
@@ -2065,7 +2070,7 @@ describe("runtime session trace instrumentation", () => {
       },
     );
 
-    const events = listSessionEvents(SESSION_KEY);
+    const events = listSessionEventsForTest(SESSION_KEY);
     // The provider reported `trace-skill` as loaded for the first time on this
     // terminal, so the vector mutation gets its own telemetry row before the
     // terminal is recorded.
@@ -2279,7 +2284,7 @@ describe("runtime session trace instrumentation", () => {
       ]),
     );
 
-    const statusEvents = listSessionEvents(SESSION_KEY).filter((event) => event.eventType === "runtime.status");
+    const statusEvents = listSessionEventsForTest(SESSION_KEY).filter((event) => event.eventType === "runtime.status");
     const compactingValues = statusEvents.map((event) => {
       const payload = event.payloadJson;
       if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined;
@@ -2288,6 +2293,33 @@ describe("runtime session trace instrumentation", () => {
     expect(compactingValues).toEqual([true, false]);
     expect(streaming.compacting).toBe(false);
     expect(streaming.turnActive).toBe(false);
+  });
+
+  it("persists one runtime.status per transition instead of every provider tick", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming);
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "status", status: "thinking" },
+        { type: "status", status: "thinking" },
+        { type: "status", status: "thinking" },
+        { type: "status", status: "compacting" },
+        { type: "status", status: "compacting" },
+        { type: "status", status: "thinking" },
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-after",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        },
+      ]),
+    );
+
+    const statuses = listSessionEventsForTest(SESSION_KEY)
+      .filter((event) => event.eventType === "runtime.status")
+      .map((event) => event.status);
+    expect(statuses).toEqual(["thinking", "compacting", "thinking"]);
   });
 
   it("clears live busy state when the provider emits idle status", async () => {
@@ -2394,7 +2426,7 @@ describe("runtime session trace instrumentation", () => {
   });
 
   function collectRuntimeStatusCompacting(): Array<unknown> {
-    return listSessionEvents(SESSION_KEY)
+    return listSessionEventsForTest(SESSION_KEY)
       .filter((event) => event.eventType === "runtime.status")
       .map((event) => {
         const payload = event.payloadJson;
@@ -2526,7 +2558,7 @@ describe("runtime session trace instrumentation", () => {
       expect(readFileSync(generatedFilePath!).subarray(0, 8)).toEqual(
         Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
       );
-      expect(JSON.stringify({ emitted, trace: listSessionEvents(SESSION_KEY) })).not.toContain(imageBase64);
+      expect(JSON.stringify({ emitted, trace: listSessionEventsForTest(SESSION_KEY) })).not.toContain(imageBase64);
     } finally {
       emitSpy.mockRestore();
       if (generatedFilePath) rmSync(generatedFilePath, { force: true });
@@ -2712,7 +2744,9 @@ describe("runtime session trace instrumentation", () => {
       expect(responses.some((text) => text.includes("Compactando") || text.includes("compactada"))).toBe(false);
       // Internal observability MUST be preserved for automation origins.
       expect(collectRuntimeStatusCompacting()).toEqual([true, false]);
-      const statusEvents = listSessionEvents(SESSION_KEY).filter((event) => event.eventType === "runtime.status");
+      const statusEvents = listSessionEventsForTest(SESSION_KEY).filter(
+        (event) => event.eventType === "runtime.status",
+      );
       expect(
         statusEvents.every((event) => {
           const payload = event.payloadJson;
@@ -2792,7 +2826,7 @@ describe("runtime session trace instrumentation", () => {
     ]);
     expect(getRuntimeLiveStateForSession(makeSession())?.loadedSkills).toEqual(["ravi-system-tasks"]);
     expect(emitted.some((event) => event.data.type === "skill.visibility.loaded")).toBe(true);
-    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.complete");
+    const terminal = listSessionEventsForTest(SESSION_KEY).find((event) => event.eventType === "turn.complete");
     const terminalPayload = terminal?.payloadJson as
       | { session?: { params?: { skillVisibility?: RuntimeSkillVisibilitySnapshot } } }
       | undefined;
@@ -2921,7 +2955,9 @@ describe("runtime session trace instrumentation", () => {
       true,
     );
     // Nothing re-announced the load, so no duplicate telemetry rows either.
-    expect(listSessionEvents(SESSION_KEY).filter((event) => event.eventType === "skill.visibility.loaded")).toEqual([]);
+    expect(
+      listSessionEventsForTest(SESSION_KEY).filter((event) => event.eventType === "skill.visibility.loaded"),
+    ).toEqual([]);
   }
 
   it("keeps the gate-marked short id loaded across later turns when Claude re-announces its catalog", async () => {
@@ -2976,7 +3012,7 @@ describe("runtime session trace instrumentation", () => {
       },
     });
 
-    const loadedEvents = listSessionEvents(SESSION_KEY).filter(
+    const loadedEvents = listSessionEventsForTest(SESSION_KEY).filter(
       (event) => event.eventType === "skill.visibility.loaded",
     );
     expect(loadedEvents).toHaveLength(1);
@@ -3066,7 +3102,7 @@ describe("runtime session trace instrumentation", () => {
       ]),
     );
 
-    expect(listSessionEvents(SESSION_KEY).map((event) => event.eventType)).toEqual([
+    expect(listSessionEventsForTest(SESSION_KEY).map((event) => event.eventType)).toEqual([
       "adapter.request",
       "assistant.message",
       "turn.complete",
@@ -3636,7 +3672,7 @@ describe("runtime session trace instrumentation", () => {
 
     expect(abortedDuringCompaction).toBe(false);
     expect(emitted.some((event) => event.data.type === "provider.inactive")).toBe(hangsAfterCompaction);
-    const terminals = listSessionEvents(SESSION_KEY).filter((event) =>
+    const terminals = listSessionEventsForTest(SESSION_KEY).filter((event) =>
       ["turn.complete", "turn.failed", "turn.interrupted"].includes(event.eventType),
     );
     expect(terminals).toHaveLength(1);
@@ -3763,14 +3799,14 @@ describe("runtime session trace instrumentation", () => {
     expect(lastTurn?.status).toBe("interrupted");
     expect(lastTurn?.completedAt).toBeGreaterThan(0);
     expect(getSessionTurn("turn-mid-then-tool-hang")?.status).toBe("interrupted");
-    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
+    const terminal = listSessionEventsForTest(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
     expect(terminal?.payloadJson).toMatchObject({
       abort_reason: "provider_inactive",
       autoRecovered: true,
     });
     // Nothing about this turn is recorded as a failure: it was interrupted and
     // the session continues with a notice.
-    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "turn.failed")).toBe(false);
+    expect(listSessionEventsForTest(SESSION_KEY).some((event) => event.eventType === "turn.failed")).toBe(false);
   });
 
   it("stops retrying and says so once inactivity recovery is exhausted", async () => {
@@ -3908,7 +3944,7 @@ describe("runtime session trace instrumentation", () => {
       await runTraceLoop(streaming, hang(), { stashedMessages: new Map() });
     };
     const attempts = () =>
-      listSessionEvents(SESSION_KEY)
+      listSessionEventsForTest(SESSION_KEY)
         .filter((event) => event.eventType === "turn.interrupted")
         .map((event) => {
           const payload = event.payloadJson;
@@ -4233,7 +4269,7 @@ describe("runtime session trace instrumentation", () => {
     expect(persisted?.runtimeProvider).toBe("codex");
     expect(persisted?.providerSessionId).toBe("codex-thread");
 
-    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.failed");
+    const terminal = listSessionEventsForTest(SESSION_KEY).find((event) => event.eventType === "turn.failed");
     expect(terminal?.status).toBe("failed");
     expect(getSessionTurn("turn-login-stub")?.status).toBe("failed");
   });
@@ -4244,7 +4280,7 @@ describe("runtime session trace instrumentation", () => {
 
     await runTraceLoop(streaming, makeRuntimeSession([{ type: "turn.interrupted" }]));
 
-    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
+    const terminal = listSessionEventsForTest(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
     expect(terminal?.status).toBe("interrupted");
     expect(terminal?.payloadJson).toMatchObject({ abort_reason: "provider_interrupted" });
     expect(getSessionTurn("turn-interrupted")?.status).toBe("interrupted");
@@ -4370,7 +4406,7 @@ describe("runtime session trace instrumentation", () => {
     );
     expect(responses).toEqual([]);
     expect(streaming.pendingMessages.map((message) => message.pendingId)).toContain(successor.pendingId);
-    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "turn.interrupted")).toBe(true);
+    expect(listSessionEventsForTest(SESSION_KEY).some((event) => event.eventType === "turn.interrupted")).toBe(true);
   });
 
   it("refuses Grok turn.complete on the 15:52 open-Bash timeline", async () => {
@@ -4427,8 +4463,8 @@ describe("runtime session trace instrumentation", () => {
       },
     );
 
-    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "turn.complete")).toBe(false);
-    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
+    expect(listSessionEventsForTest(SESSION_KEY).some((event) => event.eventType === "turn.complete")).toBe(false);
+    const terminal = listSessionEventsForTest(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
     expect(terminal?.status).toBe("interrupted");
     expect(terminal?.payloadJson).toMatchObject({
       recoverable: true,
@@ -4497,14 +4533,14 @@ describe("runtime session trace instrumentation", () => {
       },
     );
 
-    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
+    const terminal = listSessionEventsForTest(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
     expect(terminal?.status).toBe("interrupted");
     expect(terminal?.payloadJson).toMatchObject({
       recoverable: true,
       suppressedRecoverable: true,
       abort_reason: "recoverable_interrupt_failure",
     });
-    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "turn.complete")).toBe(false);
+    expect(listSessionEventsForTest(SESSION_KEY).some((event) => event.eventType === "turn.complete")).toBe(false);
     expect(responses.some((entry) => entry.response === "Vou inspecionar o ambiente.")).toBe(true);
     expect(responses.some((entry) => (entry.response ?? "").includes(providerError))).toBe(false);
     expect(responses.some((entry) => (entry.response ?? "").startsWith("Error:"))).toBe(false);
@@ -4554,7 +4590,7 @@ describe("runtime session trace instrumentation", () => {
       provider: "grok",
     });
 
-    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "turn.complete")).toBe(false);
+    expect(listSessionEventsForTest(SESSION_KEY).some((event) => event.eventType === "turn.complete")).toBe(false);
     expect(
       responses.some(
         (entry) => entry.response === formatUserFacingTurnFailure(PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE),
@@ -4717,7 +4753,7 @@ describe("runtime session trace instrumentation", () => {
     ]);
     expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason: "runtime_event_loop_closed" }]);
 
-    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
+    const terminal = listSessionEventsForTest(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
     expect(terminal?.status).toBe("aborted");
     expect(terminal?.payloadJson).toMatchObject({
       abort_reason: "runtime_event_loop_closed",
@@ -4861,7 +4897,7 @@ describe("runtime session trace instrumentation", () => {
       markerSpy.mockRestore();
     }
 
-    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "assistant.message")).toBe(false);
+    expect(listSessionEventsForTest(SESSION_KEY).some((event) => event.eventType === "assistant.message")).toBe(false);
     expect(emitted.some((entry) => entry.data.type === "assistant.message")).toBe(false);
   });
 
@@ -4981,7 +5017,7 @@ describe("runtime session trace instrumentation", () => {
       status: "running",
       completedAt: null,
     });
-    expect(listSessionEvents(SESSION_KEY).map((event) => event.eventType)).toEqual(["adapter.request"]);
+    expect(listSessionEventsForTest(SESSION_KEY).map((event) => event.eventType)).toEqual(["adapter.request"]);
   });
 
   it("does not replay a turn after durable tool authorization without a provider tool event", async () => {
@@ -5159,7 +5195,7 @@ describe("runtime session trace instrumentation", () => {
       emitSpy.mockRestore();
     }
 
-    const suppression = listSessionEvents(SESSION_KEY).find(
+    const suppression = listSessionEventsForTest(SESSION_KEY).find(
       (event) => event.eventType === "dispatch.restart_suppressed",
     );
     expect(starts).toBe(2);
@@ -5251,7 +5287,7 @@ describe("runtime session trace instrumentation", () => {
     expect(stashedMessages.get(SESSION_NAME)).toBeUndefined();
     expect(restartRequests).toEqual([]);
 
-    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
+    const terminal = listSessionEventsForTest(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
     expect(terminal?.payloadJson).toMatchObject({
       abort_reason: "runtime_event_loop_closed",
       autoRecovered: false,
@@ -5368,7 +5404,7 @@ describe("runtime session trace instrumentation", () => {
     expect(emitted.some((event) => event.data.type === "turn.failed")).toBe(true);
     expect(providerLifecycle).toContain("close");
 
-    const events = listSessionEvents(SESSION_KEY);
+    const events = listSessionEventsForTest(SESSION_KEY);
     expect(events.some((event) => event.eventType === "session.fatal_tool")).toBe(true);
     const terminal = events.find((event) => event.eventType === "turn.failed");
     expect(terminal?.status).toBe("failed");
@@ -5429,7 +5465,7 @@ describe("runtime session trace instrumentation", () => {
 
     expect(outcome).toBe("open");
     expect(restartRequests).toEqual([]);
-    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "session.fatal_tool")).toBe(false);
+    expect(listSessionEventsForTest(SESSION_KEY).some((event) => event.eventType === "session.fatal_tool")).toBe(false);
   });
 
   it("records failed turns with error details", async () => {
@@ -5448,7 +5484,7 @@ describe("runtime session trace instrumentation", () => {
       ]),
     );
 
-    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.failed");
+    const terminal = listSessionEventsForTest(SESSION_KEY).find((event) => event.eventType === "turn.failed");
     expect(terminal?.status).toBe("failed");
     expect(terminal?.error).toBe("model unavailable");
     expect(terminal?.payloadJson).toMatchObject({
@@ -5495,7 +5531,7 @@ describe("runtime session trace instrumentation", () => {
       "The agent could not complete this request because of an internal runtime error. Please try again.",
     );
 
-    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.failed");
+    const terminal = listSessionEventsForTest(SESSION_KEY).find((event) => event.eventType === "turn.failed");
     expect(terminal?.error).toBe(rawError);
   });
 
@@ -5593,7 +5629,7 @@ describe("runtime session trace instrumentation", () => {
     expect(emitted.some((event) => event.data.type === "provider.inactive")).toBe(true);
     expect(emitted.some((event) => event.data.type === "turn.failed")).toBe(true);
 
-    const events = listSessionEvents(SESSION_KEY);
+    const events = listSessionEventsForTest(SESSION_KEY);
     expect(events.some((event) => event.eventType === "session.timeout" && event.status === "timeout")).toBe(true);
     const terminal = events.find((event) => event.eventType === "turn.failed");
     expect(terminal?.status).toBe("timeout");
@@ -5645,7 +5681,7 @@ describe("runtime session trace instrumentation", () => {
       status: "timeout",
       materializedOutput: true,
     });
-    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.failed");
+    const terminal = listSessionEventsForTest(SESSION_KEY).find((event) => event.eventType === "turn.failed");
     expect(terminal?.payloadJson).toMatchObject({ autoRecovered: false });
   });
 
@@ -5697,7 +5733,7 @@ describe("runtime session trace instrumentation", () => {
     );
 
     expect(emitted.map((event) => event.data.type)).not.toContain("turn.failed");
-    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.failed");
+    const terminal = listSessionEventsForTest(SESSION_KEY).find((event) => event.eventType === "turn.failed");
     expect(terminal).toMatchObject({
       status: "failed",
       payloadJson: expect.objectContaining({
@@ -5859,7 +5895,7 @@ describe("runtime session trace instrumentation", () => {
     expect(persisted?.runtimeProvider).toBeUndefined();
     expect(persisted?.runtimeSessionParams).toBeUndefined();
 
-    const eventTypes = listSessionEvents(SESSION_KEY).map((event) => event.eventType);
+    const eventTypes = listSessionEventsForTest(SESSION_KEY).map((event) => event.eventType);
     expect(eventTypes).toContain("turn.failed");
     expect(eventTypes).toContain("session.context_window_exhausted");
     expect(getSessionTurn("turn-context-limit")?.status).toBe("failed");
@@ -5954,7 +5990,7 @@ describe("runtime session trace instrumentation", () => {
     expect(persisted?.runtimeProvider).toBeUndefined();
     expect(persisted?.runtimeSessionParams).toBeUndefined();
 
-    const events = listSessionEvents(SESSION_KEY);
+    const events = listSessionEventsForTest(SESSION_KEY);
     const eventTypes = events.map((event) => event.eventType);
     expect(eventTypes).toContain("session.provider_session_missing");
     expect(eventTypes).not.toContain("session.context_window_exhausted");
@@ -6003,7 +6039,7 @@ describe("runtime session trace instrumentation", () => {
     expect(restartRequests).toEqual([]);
     expect(stashedMessages.get(SESSION_NAME)).toBeUndefined();
     expect(emitted.map((event) => event.data.type)).toContain("turn.failed");
-    expect(listSessionEvents(SESSION_KEY).map((event) => event.eventType)).not.toContain(
+    expect(listSessionEventsForTest(SESSION_KEY).map((event) => event.eventType)).not.toContain(
       "session.provider_session_missing",
     );
   });
