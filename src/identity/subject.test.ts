@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { dbUpsertChat, dbUpsertChatParticipant } from "../router/router-db.js";
 import { dbCreateTask } from "../tasks/task-db.js";
-import { isEmptySubject, readSubjectFromEnv, resolveSubjectForChat } from "./subject.js";
+import { isEmptySubject, readSubjectFromEnv, resolveSubject, resolveSubjectForChat } from "./subject.js";
 
 let stateDir: string | null = null;
 
@@ -114,6 +114,69 @@ describe("resolveSubjectForChat", () => {
 
   it("returns unknown for a chat it has never seen", () => {
     expect(resolveSubjectForChat("chat-missing")).toEqual({ kind: "unknown" });
+  });
+});
+
+describe("resolveSubject", () => {
+  function seedChatWithHuman(platformChatId: string): string {
+    const chat = dbUpsertChat({
+      channel: "slack",
+      instanceId: "ravi-slack",
+      platformChatId,
+      chatType: "thread",
+    });
+    dbUpsertChatParticipant({
+      chatId: chat.id,
+      contactId: "contact-1",
+      platformIdentityId: "pi-1",
+      rawPlatformUserId: "U123",
+      role: "member",
+      source: "inbound_message",
+    });
+    return chat.id;
+  }
+
+  it("prefers the turn actor when the turn is turn-scoped", () => {
+    const chatId = seedChatWithHuman("D-actor");
+
+    const subject = resolveSubject({
+      env: { RAVI_CONTEXT_KEY: "ctx_1", RAVI_ACTOR_TYPE: "contact", RAVI_CONTACT_ID: "contact-turn" },
+      chatIds: [chatId],
+    });
+
+    expect(subject?.contactId).toBe("contact-turn");
+  });
+
+  it("falls back to the chat for a relayed turn with an agent actor", () => {
+    const chatId = seedChatWithHuman("D-relay");
+
+    // A relay has no actor contact and no context source: only the chat knows.
+    const subject = resolveSubject({ env: {}, chatIds: [chatId] });
+
+    expect(subject).toEqual({ kind: "contact", contactId: "contact-1", identityId: "pi-1", rawId: "U123" });
+  });
+
+  it("does not stop at provenance-only attribution", () => {
+    const chatId = seedChatWithHuman("D-provenance");
+
+    const subject = resolveSubject({
+      env: { RAVI_CONTEXT_KEY: "ctx_1", RAVI_ACTOR_TYPE: "unknown", RAVI_RAW_SENDER_ID: "U999" },
+      chatIds: [chatId],
+    });
+
+    expect(subject?.contactId).toBe("contact-1");
+  });
+
+  it("skips chat ids it cannot resolve and keeps looking", () => {
+    const chatId = seedChatWithHuman("D-second");
+
+    const subject = resolveSubject({ env: {}, chatIds: ["chat-missing", chatId] });
+
+    expect(subject?.contactId).toBe("contact-1");
+  });
+
+  it("returns undefined when nothing resolves", () => {
+    expect(resolveSubject({ env: {}, chatIds: ["chat-missing"] })).toBeUndefined();
   });
 });
 

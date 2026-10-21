@@ -136,6 +136,52 @@ export function isEmptySubject(subject: SubjectRef | null | undefined): boolean 
   return subject.kind === "unknown" && !subject.contactId && !subject.identityId && !subject.agentId;
 }
 
+/**
+ * True when the subject actually names who the work is for. Provenance alone
+ * (a raw sender id, a channel) does not count: a subject made only of provenance
+ * must not stop a later resolution step from finding the human.
+ */
+export function hasResolvedSubject(subject: SubjectRef | null | undefined): boolean {
+  if (!subject) return false;
+  if (subject.kind === "contact") return !!subject.contactId;
+  if (subject.kind === "agent") return !!subject.agentId;
+  return !!subject.contactId || !!subject.identityId;
+}
+
+export interface ResolveSubjectInput {
+  /** Environment of the command that is creating the record, if it is turn-scoped. */
+  env?: EnvLike;
+  /** Chats to fall back to, most specific first. */
+  chatIds?: Array<string | null | undefined>;
+}
+
+/**
+ * Resolve the subject for a new durable record.
+ *
+ * Order: the turn's own actor bundle, then the chats the turn is attached to.
+ * A relayed turn has no actor contact (the actor is the relaying agent) and no
+ * `source` on the context record, so the chat is the only thing that can name
+ * the human the work is for.
+ */
+export function resolveSubject(input: ResolveSubjectInput = {}): SubjectRef | undefined {
+  const env = input.env ?? {};
+  if (env.RAVI_CONTEXT_KEY || env.RAVI_SESSION_KEY) {
+    const fromTurn = readSubjectFromEnv(env);
+    if (hasResolvedSubject(fromTurn)) return fromTurn;
+  }
+
+  const seen = new Set<string>();
+  for (const candidate of input.chatIds ?? []) {
+    const chatId = clean(candidate);
+    if (!chatId || seen.has(chatId)) continue;
+    seen.add(chatId);
+    const fromChat = resolveSubjectForChat(chatId);
+    if (hasResolvedSubject(fromChat)) return fromChat;
+  }
+
+  return undefined;
+}
+
 export interface SubjectColumns {
   subjectKind: string;
   subjectContactId: string | null;

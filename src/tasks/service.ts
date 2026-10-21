@@ -1,5 +1,5 @@
 import { getContext } from "../cli/context.js";
-import { isEmptySubject, readSubjectFromEnv, resolveSubjectForChat, type SubjectRef } from "../identity/subject.js";
+import { resolveSubject, type SubjectRef } from "../identity/subject.js";
 import { CliExpectedError } from "../cli/expected-error.js";
 import { nats } from "../nats.js";
 import { getAgent } from "../router/config.js";
@@ -2259,17 +2259,22 @@ export function buildTaskResumePrompt(
 }
 
 function resolveTaskSubjectFromRuntime(): SubjectRef | undefined {
-  // A CLI subprocess inherits the turn's actor bundle; the daemon itself does not.
-  if (process.env.RAVI_CONTEXT_KEY || process.env.RAVI_SESSION_KEY) {
-    const fromTurn = readSubjectFromEnv(process.env);
-    if (!isEmptySubject(fromTurn)) return fromTurn;
-  }
-  const chatId = getContext()?.source?.chatId;
-  if (chatId) {
-    const fromChat = resolveSubjectForChat(chatId);
-    if (!isEmptySubject(fromChat)) return fromChat;
-  }
-  return undefined;
+  const ctx = getContext();
+  const target = ctx?.context?.metadata?.turnReplyTarget as { chatId?: string; canonicalChatId?: string } | undefined;
+
+  // A relayed turn carries an agent actor and no context `source`; the reply
+  // target is the only place that still knows which conversation asked.
+  return resolveSubject({
+    env: process.env,
+    chatIds: [
+      ctx?.source?.chatId,
+      ctx?.source?.canonicalChatId,
+      target?.chatId,
+      target?.canonicalChatId,
+      process.env.RAVI_CHAT_ID,
+      process.env.RAVI_CANONICAL_CHAT_ID,
+    ],
+  });
 }
 
 export function createTask(input: CreateTaskInput): {
