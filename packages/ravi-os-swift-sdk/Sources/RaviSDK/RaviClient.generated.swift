@@ -2063,6 +2063,13 @@ public struct ContactsNamespace: Sendable {
     return try await transport.call(groupSegments: ["contacts"], command: "link", body: requestBody, as: ContactsLinkReturn.self)
   }
 
+  public func linkAgent(_ agent: String, _ options: ContactsLinkAgentOptions = .init()) async throws -> ContactsLinkAgentReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["agent"] = try RaviJSON.fromEncodable(agent)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["contacts"], command: "link-agent", body: requestBody, as: ContactsLinkAgentReturn.self)
+  }
+
   public func list(_ options: ContactsListOptions = .init()) async throws -> ContactsListReturn {
     var requestBody: [String: RaviJSON] = [:]
     try options.encodeBody(into: &requestBody)

@@ -10754,6 +10754,66 @@ public struct ContactsLinkOptions: Codable, Sendable {
 
 public typealias ContactsLinkReturn = [String: RaviJSON]
 
+public struct ContactsLinkAgentOptions: Codable, Sendable {
+  public var channel: String?
+  public var id: String?
+  public var instance: String?
+  public var name: String?
+  public var reason: String?
+
+  public init(channel: String? = nil, id: String? = nil, instance: String? = nil, name: String? = nil, reason: String? = nil) {
+    self.channel = channel
+    self.id = id
+    self.instance = instance
+    self.name = name
+    self.reason = reason
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case channel = "channel"
+    case id = "id"
+    case instance = "instance"
+    case name = "name"
+    case reason = "reason"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.channel {
+      body["channel"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.id {
+      body["id"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.instance {
+      body["instance"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.name {
+      body["name"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.reason {
+      body["reason"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct ContactsLinkAgentReturn: Codable, Sendable {
+  public var agent: String
+  public var identity: RaviJSON
+  public var status: String
+
+  public init(agent: String, identity: RaviJSON, status: String) {
+    self.agent = agent
+    self.identity = identity
+    self.status = status
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agent = "agent"
+    case identity = "identity"
+    case status = "status"
+  }
+}
+
 public struct ContactsListOptions: Codable, Sendable {
   public var fields: String?
   public var limit: String?

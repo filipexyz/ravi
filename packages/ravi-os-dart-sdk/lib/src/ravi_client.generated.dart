@@ -2722,6 +2722,18 @@ class ContactsNamespace {
     );
   }
 
+  Future<ContactsLinkAgentReturn> linkAgent(String agent, [ContactsLinkAgentOptions options = const ContactsLinkAgentOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["agent"] = RaviJson.from(agent);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["contacts"],
+      command: "link-agent",
+      body: requestBody,
+      decode: contactsLinkAgentReturnFromJson,
+    );
+  }
+
   Future<ContactsListReturn> list([ContactsListOptions options = const ContactsListOptions()]) async {
     final requestBody = <String, RaviJson>{};
     options.encodeBody(requestBody);

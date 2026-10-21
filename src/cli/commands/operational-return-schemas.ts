@@ -49,6 +49,23 @@ export const changedEntityReturnSchema = z
 
 export const commandEnvelopeReturnSchema = looseObjectSchema;
 
+export const platformIdentityLinkReturnSchema = z
+  .object({
+    status: z.literal("linked"),
+    agent: z.string(),
+    identity: z
+      .object({
+        id: z.string(),
+        channel: z.string(),
+        instanceId: z.string(),
+        platformUserId: z.string(),
+        ownerType: z.string().nullable(),
+        ownerId: z.string().nullable(),
+      })
+      .strict(),
+  })
+  .strict();
+
 const contextCapabilityReturnSchema = z
   .object({
     permission: z.string(),

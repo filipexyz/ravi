@@ -8811,6 +8811,30 @@ export type ContactsLinkInput = {
 /** Return shape for `contacts.link`. */
 export type ContactsLinkReturn = Record<string, unknown>;
 
+/** Input shape for `contacts.link-agent`. */
+export type ContactsLinkAgentInput = {
+  agent: string;
+  channel?: string;
+  id?: string;
+  instance?: string;
+  name?: string;
+  reason?: string;
+};
+
+/** Return shape for `contacts.link-agent`. */
+export type ContactsLinkAgentReturn = {
+  agent: string;
+  identity: {
+    channel: string;
+    id: string;
+    instanceId: string;
+    ownerId: string | null;
+    ownerType: string | null;
+    platformUserId: string;
+  };
+  status: "linked";
+};
+
 /** Input shape for `contacts.list`. */
 export type ContactsListInput = {
   fields?: string;
