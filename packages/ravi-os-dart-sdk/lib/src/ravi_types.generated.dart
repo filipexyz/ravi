@@ -8965,6 +8965,56 @@ typedef ContactsLinkReturn = Map<String, RaviJson>;
 
 ContactsLinkReturn contactsLinkReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
 
+class ContactsLinkAgentOptions {
+  const ContactsLinkAgentOptions({this.channel, this.id, this.instance, this.name, this.reason});
+
+  final String? channel;
+  final String? id;
+  final String? instance;
+  final String? name;
+  final String? reason;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (channel != null) {
+      into["channel"] = RaviJson.from(channel);
+    }
+    if (id != null) {
+      into["id"] = RaviJson.from(id);
+    }
+    if (instance != null) {
+      into["instance"] = RaviJson.from(instance);
+    }
+    if (name != null) {
+      into["name"] = RaviJson.from(name);
+    }
+    if (reason != null) {
+      into["reason"] = RaviJson.from(reason);
+    }
+  }
+}
+
+class ContactsLinkAgentReturn {
+  const ContactsLinkAgentReturn({required this.agent, required this.identity, required this.status});
+
+  final String agent;
+  final RaviJson identity;
+  final String status;
+
+  factory ContactsLinkAgentReturn.fromJson(Map<String, Object?> json) {
+    return ContactsLinkAgentReturn(
+      agent: raviJsonAsString(json["agent"]),
+      identity: RaviJson.from(json["identity"]),
+      status: raviJsonAsString(json["status"]),
+    );
+  }
+
+  static ContactsLinkAgentReturn fromJsonValue(Object? json) {
+    return ContactsLinkAgentReturn.fromJson(raviJsonObject(json, "ContactsLinkAgentReturn"));
+  }
+}
+
+ContactsLinkAgentReturn contactsLinkAgentReturnFromJson(Object? json) => ContactsLinkAgentReturn.fromJsonValue(json);
+
 class ContactsListOptions {
   const ContactsListOptions({this.fields, this.limit, this.offset, this.status});
 

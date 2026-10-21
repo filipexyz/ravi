@@ -47550,6 +47550,109 @@ class RaviSchemas {
 }
 ''';
 
+  static const contactsLinkAgentInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent ID that owns the platform identity",
+      "type": "string"
+    },
+    "channel": {
+      "description": "Channel, e.g. slack, telegram, discord",
+      "type": "string"
+    },
+    "id": {
+      "description": "Platform user ID",
+      "type": "string"
+    },
+    "instance": {
+      "description": "Channel instance ID",
+      "type": "string"
+    },
+    "name": {
+      "description": "Platform display name",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Reason for the link audit event",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent"
+  ],
+  "type": "object"
+}
+''';
+
+  static const contactsLinkAgentReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "type": "string"
+    },
+    "identity": {
+      "additionalProperties": false,
+      "properties": {
+        "channel": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "instanceId": {
+          "type": "string"
+        },
+        "ownerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ownerType": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "platformUserId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "channel",
+        "instanceId",
+        "platformUserId",
+        "ownerType",
+        "ownerId"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "const": "linked",
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "agent",
+    "identity"
+  ],
+  "type": "object"
+}
+''';
+
   static const contactsListInputSchema = r'''
 {
   "additionalProperties": false,
