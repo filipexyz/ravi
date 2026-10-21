@@ -84,7 +84,13 @@ describe("resolveSubjectForChat", () => {
 
     const subject = resolveSubjectForChat(chatId);
 
-    expect(subject).toEqual({ kind: "contact", contactId: "contact-1", identityId: "pi-1", rawId: "U123" });
+    expect(subject).toEqual({
+      kind: "contact",
+      contactId: "contact-1",
+      identityId: "pi-1",
+      rawId: "U123",
+      channel: "slack",
+    });
   });
 
   it("does not guess in a shared chat with several humans", () => {
@@ -153,7 +159,13 @@ describe("resolveSubject", () => {
     // A relay has no actor contact and no context source: only the chat knows.
     const subject = resolveSubject({ env: {}, chatIds: [chatId] });
 
-    expect(subject).toEqual({ kind: "contact", contactId: "contact-1", identityId: "pi-1", rawId: "U123" });
+    expect(subject).toEqual({
+      kind: "contact",
+      contactId: "contact-1",
+      identityId: "pi-1",
+      rawId: "U123",
+      channel: "slack",
+    });
   });
 
   it("does not stop at provenance-only attribution", () => {

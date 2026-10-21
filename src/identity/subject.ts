@@ -102,6 +102,8 @@ export function resolveSubjectForChat(chatId: string | null | undefined): Subjec
   const identityIds = [
     ...new Set(rows.map((row) => clean(row.platform_identity_id)).filter((id): id is string => !!id)),
   ];
+  const channel = channelForChat(normalizedChatId);
+  const provenance = { ...(channel ? { channel } : {}) };
 
   if (contactIds.length === 1) {
     const contactId = contactIds[0]!;
@@ -112,22 +114,39 @@ export function resolveSubjectForChat(chatId: string | null | undefined): Subjec
       contactId,
       ...(clean(ownerRow?.platform_identity_id) ? { identityId: clean(ownerRow?.platform_identity_id) } : {}),
       ...(rawId ? { rawId } : {}),
+      ...provenance,
     };
   }
 
   // Two or more humans: the chat cannot tell us who the work is for.
   if (contactIds.length > 1) {
-    return { kind: "unknown", ...(identityIds.length === 1 ? { identityId: identityIds[0] } : {}) };
+    return {
+      kind: "unknown",
+      ...(identityIds.length === 1 ? { identityId: identityIds[0] } : {}),
+      ...provenance,
+    };
   }
 
   if (identityIds.length === 1) {
     const identityId = identityIds[0]!;
     const identityRow = rows.find((row) => clean(row.platform_identity_id) === identityId);
     const rawId = clean(identityRow?.raw_platform_user_id);
-    return { kind: "unknown", identityId, ...(rawId ? { rawId } : {}) };
+    return { kind: "unknown", identityId, ...(rawId ? { rawId } : {}), ...provenance };
   }
 
-  return { kind: "unknown" };
+  return { kind: "unknown", ...provenance };
+}
+
+/** The provider channel a chat belongs to (slack, whatsapp, ...), when known. */
+function channelForChat(chatId: string): string | undefined {
+  try {
+    const row = getDb().prepare("SELECT channel FROM chats WHERE id = ?").get(chatId) as
+      | { channel: string | null }
+      | undefined;
+    return clean(row?.channel);
+  } catch {
+    return undefined;
+  }
 }
 
 /** True when the subject carries no usable attribution at all. */
