@@ -13,6 +13,7 @@ import type {
   RuntimeApprovalQuestion,
   RuntimeApprovalRequest,
   RuntimeApprovalResult,
+  RuntimeDynamicToolCallResult,
   RuntimeHostServices,
   RuntimeToolPermissionHandler,
 } from "./types.js";
@@ -40,6 +41,8 @@ export class PiPermissionBridgeError extends Error {
   }
 }
 
+export const PI_DYNAMIC_TOOL_UI_TITLE = "ravi_dynamic_tool";
+
 export const PI_RAVI_PERMISSION_EXTENSION_SOURCE = `/**
  * Ravi-owned Pi permission bridge.
  *
@@ -59,6 +62,29 @@ const ALLOW = ${JSON.stringify(PI_PERMISSION_ALLOW_TOKEN)};
 const MISSING = ${JSON.stringify(PI_PERMISSION_MISSING_DECISION_REASON)};
 const UNREADABLE = ${JSON.stringify(PI_PERMISSION_UNREADABLE_DECISION_REASON)};
 const FAILED = ${JSON.stringify(PI_PERMISSION_UI_FAILED_REASON)};
+const DYNAMIC_TITLE = ${JSON.stringify(PI_DYNAMIC_TOOL_UI_TITLE)};
+const DYNAMIC_TOOLS = readDynamicTools();
+
+function readDynamicTools() {
+  try {
+    const raw = process.env.RAVI_PI_DYNAMIC_TOOLS;
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((tool) => tool && typeof tool.name === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseDynamicToolResult(value) {
+  if (typeof value !== "string" || !value.trim()) return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
 
 function parseDecision(value) {
   if (value === true || value === ALLOW) return { allowed: true };
@@ -134,6 +160,43 @@ export default function (pi) {
 
   // Observational afterToolCall equivalent. Authorization happens in tool_call.
   pi.on("tool_result", async () => {});
+
+  for (const dynamicTool of DYNAMIC_TOOLS) {
+    pi.registerTool({
+      name: dynamicTool.name,
+      label: dynamicTool.label || dynamicTool.name,
+      description: dynamicTool.description || dynamicTool.name,
+      parameters: dynamicTool.parameters || { type: "object", properties: {}, additionalProperties: true },
+      async execute(toolCallId, params, _signal, _onUpdate, ctx) {
+        if (!ctx.ui || !ctx.ui.input) {
+          throw new Error("Ravi dynamic tool bridge UI input is unavailable");
+        }
+        const payload = JSON.stringify({
+          version: 1,
+          toolName: dynamicTool.name,
+          toolCallId: toolCallId,
+          arguments: params || {},
+        });
+        const parsed = parseDynamicToolResult(await ctx.ui.input(DYNAMIC_TITLE, payload));
+        if (!parsed) {
+          throw new Error("Ravi dynamic tool bridge returned an unreadable result");
+        }
+        if (!parsed.success) {
+          throw new Error(
+            typeof parsed.reason === "string" && parsed.reason ? parsed.reason : "Ravi host tool failed",
+          );
+        }
+        const items = Array.isArray(parsed.contentItems) ? parsed.contentItems : [];
+        const content = items
+          .filter((item) => item && typeof item.text === "string")
+          .map((item) => ({ type: "text", text: item.text }));
+        return {
+          content: content.length > 0 ? content : [{ type: "text", text: "ok" }],
+          details: {},
+        };
+      },
+    });
+  }
 }
 `;
 
@@ -438,6 +501,54 @@ export function buildPiPermissionUiResponse(
     return { type: "extension_ui_response", id, confirmed: normalized.allowed === true, value };
   }
   return { type: "extension_ui_response", id, value };
+}
+
+export interface PiDynamicToolUiRequest {
+  id: string;
+  toolName: string;
+  toolCallId?: string;
+  arguments: Record<string, unknown>;
+}
+
+/** Detect the extension-UI call the Pi bridge makes to execute a host tool. */
+export function parsePiDynamicToolUiRequest(event: Record<string, unknown>): PiDynamicToolUiRequest | null {
+  const title = typeof event.title === "string" ? event.title : "";
+  if (title !== PI_DYNAMIC_TOOL_UI_TITLE) {
+    return null;
+  }
+  const id = typeof event.id === "string" ? event.id : undefined;
+  if (!id) {
+    return null;
+  }
+  const message = typeof event.message === "string" ? event.message : "";
+  const payload = parseJsonRecord(message);
+  const toolName = firstString(payload?.toolName);
+  if (!toolName) {
+    return null;
+  }
+  const toolCallId = firstString(payload?.toolCallId);
+  return {
+    id,
+    toolName,
+    ...(toolCallId ? { toolCallId } : {}),
+    arguments: asRecord(payload?.arguments) ?? {},
+  };
+}
+
+/** Encode a host tool result as the extension-UI value the Pi bridge parses. */
+export function formatPiDynamicToolUiResponse(
+  request: PiDynamicToolUiRequest,
+  result: RuntimeDynamicToolCallResult,
+): Record<string, unknown> {
+  return {
+    type: "extension_ui_response",
+    id: request.id,
+    value: JSON.stringify({
+      success: result.success,
+      contentItems: result.contentItems,
+      ...(result.reason ? { reason: result.reason } : {}),
+    }),
+  };
 }
 
 export function createPiApprovalHandler(hostServices: RuntimeHostServices): RuntimeApprovalHandler {

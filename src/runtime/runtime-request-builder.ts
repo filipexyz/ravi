@@ -76,6 +76,7 @@ import type {
   RuntimeCapabilities,
   RuntimeHostServices,
   RuntimeProviderId,
+  RuntimeDynamicToolCallRequest,
   RuntimeStartRequest,
   SessionRuntimeProvider,
 } from "./types.js";
@@ -574,6 +575,7 @@ async function buildRuntimeStartRequestInternal(
     resolvedAllowedSkills.hasConfiguration && resolvedAllowedSkills.allowlist.length > 0
       ? resolvedAllowedSkills.allowlist
       : undefined;
+  const hostDynamicTools = runtimeCapabilities.dynamicTools.mode === "host" ? hostServices.listDynamicTools() : [];
   const canResumeSkillSession = isStoredSkillVisibilityCompatible(
     storedRuntimeSessionParams,
     allowedSkills,
@@ -950,6 +952,12 @@ async function buildRuntimeStartRequestInternal(
         : {}),
       ...(forkFromProviderSessionId ? { forkSession: true } : {}),
       abortController: streamingSession.abortController,
+      ...(hostDynamicTools.length > 0
+        ? {
+            dynamicTools: hostDynamicTools,
+            handleRuntimeToolCall: (request: RuntimeDynamicToolCallRequest) => hostServices.executeDynamicTool(request),
+          }
+        : {}),
       permissionOptions: {
         permissionMode: "bypassPermissions",
       },
