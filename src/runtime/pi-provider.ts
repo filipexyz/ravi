@@ -1,5 +1,8 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { basename, dirname } from "node:path";
+import { createHash } from "node:crypto";
+import { mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { basename, dirname, join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { logger } from "../utils/logger.js";
 import type {
@@ -573,6 +576,7 @@ export function createPiRpcSubprocessTransport(options: CreatePiRpcSubprocessTra
       }
 
       const args = buildPiRpcProcessArgs(input, commandArgs);
+      const releaseSpilledPrompt = spillPiSystemPromptAppend(args);
       stderr = "";
       closeFailure = null;
       closed = false;
@@ -591,11 +595,13 @@ export function createPiRpcSubprocessTransport(options: CreatePiRpcSubprocessTra
       child.once("error", (error) => {
         closed = true;
         closeFailure = error;
+        releaseSpilledPrompt();
         queue.fail(error);
         failPending(error);
       });
       child.once("close", (code, signal) => {
         closed = true;
+        releaseSpilledPrompt();
         if (intentionalClose) {
           queue.end();
           failPending(new Error("Pi RPC process closed"));
@@ -694,9 +700,65 @@ function resolvePiRpcProcessEnv(input: RuntimeStartRequest): NodeJS.ProcessEnv {
   });
   const dynamicToolsEnv = buildPiDynamicToolsEnv(input.dynamicTools);
   if (dynamicToolsEnv) {
-    env.RAVI_PI_DYNAMIC_TOOLS = dynamicToolsEnv;
+    const spilledPath = spillPiDynamicToolsToFile(dynamicToolsEnv);
+    if (spilledPath) {
+      env.RAVI_PI_DYNAMIC_TOOLS_FILE = spilledPath;
+      delete env.RAVI_PI_DYNAMIC_TOOLS;
+    } else {
+      env.RAVI_PI_DYNAMIC_TOOLS = dynamicToolsEnv;
+    }
   }
   return env;
+}
+
+/**
+ * The host tool catalog is a single JSON env var. Linux caps one argv/env string
+ * at 128 KiB, so a large catalog (the full CLI surface is >500 KiB) makes
+ * posix_spawn fail with E2BIG. Above the inline budget we write the catalog to a
+ * content-addressed file and let the permission extension read it from disk.
+ */
+export const PI_DYNAMIC_TOOLS_INLINE_BYTE_LIMIT = 60_000;
+const PI_DYNAMIC_TOOLS_FILE_TTL_MS = 3 * 24 * 60 * 60 * 1000;
+
+export function spillPiDynamicToolsToFile(
+  payload: string,
+  options: { limit?: number; dir?: string } = {},
+): string | null {
+  const limit = options.limit ?? PI_DYNAMIC_TOOLS_INLINE_BYTE_LIMIT;
+  if (Buffer.byteLength(payload, "utf8") <= limit) return null;
+
+  try {
+    const dir = options.dir ?? join(homedir(), ".ravi", "pi-tools");
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const digest = createHash("sha256").update(payload).digest("hex").slice(0, 16);
+    const path = join(dir, `tools-${digest}.json`);
+    writeFileSync(path, payload, { encoding: "utf8", mode: 0o600 });
+    prunePiDynamicToolFiles(dir);
+    return path;
+  } catch (error) {
+    log.warn("Pi dynamic tools catalog too large for env and could not be spilled to disk", {
+      error: error instanceof Error ? error.message : error,
+      bytes: Buffer.byteLength(payload, "utf8"),
+    });
+    return null;
+  }
+}
+
+function prunePiDynamicToolFiles(dir: string): void {
+  try {
+    const cutoff = Date.now() - PI_DYNAMIC_TOOLS_FILE_TTL_MS;
+    for (const entry of readdirSync(dir)) {
+      if (!entry.startsWith("tools-") || !entry.endsWith(".json")) continue;
+      const path = join(dir, entry);
+      try {
+        if (statSync(path).mtimeMs < cutoff) unlinkSync(path);
+      } catch {
+        // Another process may have pruned it already.
+      }
+    }
+  } catch {
+    // Pruning is best-effort.
+  }
 }
 
 /** Serialize the host tool catalog the Pi bridge registers as custom tools. */
@@ -1805,6 +1867,47 @@ async function safePiCommand(transport: PiRpcTransport, command: PiRpcCommand): 
   } catch {
     // Interrupt paths must be best-effort. The stream terminality layer handles
     // subprocess exit or missing terminal events.
+  }
+}
+
+/**
+ * Linux caps a single argv/env string at 128 KiB (MAX_ARG_STRLEN) and the whole
+ * argv+env block at 128 KiB (MAX_ARG_PAGES). A large system-prompt append — the
+ * tool catalog advertised on CLI turns can push it past half a megabyte — makes
+ * posix_spawn fail with E2BIG before Pi ever starts. Pi accepts a path for
+ * --append-system-prompt and reads the file contents, so above this budget we
+ * spill the append to disk and keep only the path in argv.
+ */
+export const PI_INLINE_PROMPT_BYTE_LIMIT = 60_000;
+
+export function spillPiSystemPromptAppend(args: string[], options: { limit?: number; dir?: string } = {}): () => void {
+  const noop = () => undefined;
+  const limit = options.limit ?? PI_INLINE_PROMPT_BYTE_LIMIT;
+  const index = args.indexOf("--append-system-prompt");
+  if (index < 0 || index + 1 >= args.length) return noop;
+  const prompt = args[index + 1] ?? "";
+  if (Buffer.byteLength(prompt, "utf8") <= limit) return noop;
+
+  try {
+    const dir = options.dir ?? join(homedir(), ".ravi", "pi-prompts");
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const digest = createHash("sha256").update(prompt).digest("hex").slice(0, 16);
+    const path = join(dir, `prompt-${digest}.md`);
+    writeFileSync(path, prompt, { encoding: "utf8", mode: 0o600 });
+    args[index + 1] = path;
+    return () => {
+      try {
+        unlinkSync(path);
+      } catch {
+        // The prompt file is ephemeral; a missing file is not an error.
+      }
+    };
+  } catch (error) {
+    log.warn("Pi system prompt append too large for argv and could not be spilled to disk", {
+      error: error instanceof Error ? error.message : error,
+      bytes: Buffer.byteLength(prompt, "utf8"),
+    });
+    return noop;
   }
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -11,6 +11,10 @@ import {
   createPiRpcSubprocessTransport,
   createPiRuntimeProvider,
   listPiManagedRuntimeEnvKeys,
+  PI_DYNAMIC_TOOLS_INLINE_BYTE_LIMIT,
+  PI_INLINE_PROMPT_BYTE_LIMIT,
+  spillPiDynamicToolsToFile,
+  spillPiSystemPromptAppend,
   type PiRpcCommand,
   type PiRpcEvent,
   type PiRpcResponse,
@@ -386,6 +390,51 @@ describe("Pi runtime provider", () => {
     expect(buildPiRpcProcessArgs(transport.starts[0]!)).toEqual(
       expect.arrayContaining(["--mode", "rpc", "--extension", extensionPath]),
     );
+  });
+
+  it("spills an oversized system prompt append to a file so argv stays under the Linux limit", () => {
+    const args = ["--mode", "rpc", "--append-system-prompt", "x".repeat(PI_INLINE_PROMPT_BYTE_LIMIT + 1)];
+    const release = spillPiSystemPromptAppend(args);
+    const path = args[args.indexOf("--append-system-prompt") + 1] ?? "";
+
+    expect(path).not.toContain("xxxx");
+    expect(path).toMatch(/pi-prompts\/prompt-[0-9a-f]{16}\.md$/);
+    expect(statSync(path).size).toBe(PI_INLINE_PROMPT_BYTE_LIMIT + 1);
+
+    release();
+    expect(existsSync(path)).toBe(false);
+  });
+
+  it("keeps a small system prompt append inline", () => {
+    const args = ["--mode", "rpc", "--append-system-prompt", "prompt curto"];
+    const release = spillPiSystemPromptAppend(args);
+
+    expect(args[3]).toBe("prompt curto");
+    release();
+  });
+
+  it("spills an oversized dynamic tools catalog to a file instead of one giant env var", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ravi-pi-tools-"));
+    const payload = JSON.stringify([{ name: "big", description: "y".repeat(PI_DYNAMIC_TOOLS_INLINE_BYTE_LIMIT) }]);
+
+    const path = spillPiDynamicToolsToFile(payload, { dir });
+    expect(path).toBeTruthy();
+    expect(path).toMatch(/tools-[0-9a-f]{16}\.json$/);
+    expect(readFileSync(path!, "utf8")).toBe(payload);
+
+    // Same payload reuses the content-addressed file.
+    expect(spillPiDynamicToolsToFile(payload, { dir })).toBe(path);
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("keeps a small dynamic tools catalog inline", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ravi-pi-tools-small-"));
+    const payload = JSON.stringify([{ name: "small", description: "ok" }]);
+
+    expect(spillPiDynamicToolsToFile(payload, { dir })).toBeNull();
+
+    rmSync(dir, { recursive: true, force: true });
   });
 
   it("disables Pi native skill discovery only when a skill allowlist is enforced", async () => {

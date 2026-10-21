@@ -745,6 +745,7 @@ describe("pi dynamic tool bridge", () => {
   it("registers host tools from the RAVI_PI_DYNAMIC_TOOLS env", () => {
     expect(PI_RAVI_PERMISSION_EXTENSION_SOURCE).toContain("pi.registerTool(");
     expect(PI_RAVI_PERMISSION_EXTENSION_SOURCE).toContain("RAVI_PI_DYNAMIC_TOOLS");
+    expect(PI_RAVI_PERMISSION_EXTENSION_SOURCE).toContain("RAVI_PI_DYNAMIC_TOOLS_FILE");
     expect(PI_RAVI_PERMISSION_EXTENSION_SOURCE).toContain(PI_DYNAMIC_TOOL_UI_TITLE);
   });
 

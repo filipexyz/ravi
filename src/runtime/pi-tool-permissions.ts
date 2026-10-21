@@ -67,7 +67,12 @@ const DYNAMIC_TOOLS = readDynamicTools();
 
 function readDynamicTools() {
   try {
-    const raw = process.env.RAVI_PI_DYNAMIC_TOOLS;
+    const file = process.env.RAVI_PI_DYNAMIC_TOOLS_FILE;
+    let raw = process.env.RAVI_PI_DYNAMIC_TOOLS;
+    if (file) {
+      const fs = typeof process.getBuiltinModule === "function" ? process.getBuiltinModule("node:fs") : null;
+      if (fs) raw = fs.readFileSync(file, "utf8");
+    }
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed.filter((tool) => tool && typeof tool.name === "string") : [];
