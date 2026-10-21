@@ -45,6 +45,25 @@ const OBSERVER_TAG_TARGET_TYPES = new Set<ObserverTagTargetType>([
 const DEFAULT_EVENT_TYPES = ["message.user", "message.assistant", "turn.complete", "turn.failed", "turn.interrupt"];
 const DEFAULT_DEBOUNCE_MS = 1000;
 
+/**
+ * Hard tool allowlist for one observation turn.
+ *
+ * Observer rules grant exact tools (`use:tool:tasks_show`, ...). The capability
+ * gate alone is not enough: a provider with native tools (Pi: bash/edit) can
+ * still call them when the agent ceiling allows it, which is how the task
+ * observer ended up shelling out instead of calling its granted tools.
+ * Returning the granted tool names lets the provider narrow its catalog.
+ */
+export function resolveObservationAllowedTools(permissionGrants: readonly string[] | undefined): string[] | undefined {
+  const tools = (permissionGrants ?? [])
+    .map((grant) => grant.trim())
+    .filter((grant) => grant.startsWith("use:tool:"))
+    .map((grant) => grant.slice("use:tool:".length).trim())
+    .filter((tool) => tool.length > 0 && !tool.includes("*"));
+  if (tools.length === 0) return undefined;
+  return [...new Set(tools)].sort();
+}
+
 export interface ObserverRule {
   id: string;
   enabled: boolean;

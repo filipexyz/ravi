@@ -479,6 +479,13 @@ export interface RuntimeStartRequest {
    */
   allowedSkills?: string[];
   /**
+   * Hard tool allowlist for this turn. Providers that can narrow their tool
+   * catalog expose only these names. Observation turns use it so an observer
+   * grant cannot be bypassed with a native tool (bash/edit) from the agent
+   * ceiling.
+   */
+  allowedTools?: string[];
+  /**
    * Skills a provider with one shared skills directory (Codex) must disable
    * for this session even without an allowlist: pinned Library skills that
    * are not this agent's, or not for this turn (spec skills/library).

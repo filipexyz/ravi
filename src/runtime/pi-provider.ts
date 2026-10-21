@@ -143,6 +143,8 @@ export interface PiRpcStartInput {
    * never told about skills the permission gate would deny.
    */
   disableNativeSkillDiscovery?: boolean;
+  /** Hard allowlist of tool names for this turn (Pi `--tools`). */
+  allowedTools?: string[];
 }
 
 export interface PiRpcCommand extends Record<string, unknown> {
@@ -724,6 +726,7 @@ async function* runPiTurns(
     systemPromptAppend: input.systemPromptAppend,
     extensionPath: materializePiPermissionExtensionFile(),
     ...(input.allowedSkills && input.allowedSkills.length > 0 ? { disableNativeSkillDiscovery: true } : {}),
+    ...(input.allowedTools && input.allowedTools.length > 0 ? { allowedTools: input.allowedTools } : {}),
   };
   refreshPiStartInputModel(startInput, state.requestedModel ?? input.model, input.modelBroker);
   let transport = state.transport ?? createTransport();
@@ -1802,6 +1805,9 @@ export function buildPiRpcProcessArgs(input: PiRpcStartInput, commandArgs: strin
   }
   if (input.disableNativeSkillDiscovery) {
     args.push("--no-skills");
+  }
+  if (input.allowedTools && input.allowedTools.length > 0) {
+    args.push("--tools", input.allowedTools.join(","));
   }
 
   return args;

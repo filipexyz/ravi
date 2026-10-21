@@ -15,6 +15,7 @@ import {
   explainObserverRulesForSession,
   getObservationDebounceMs,
   migrateObservationCommandAccessGrants,
+  resolveObservationAllowedTools,
   reconcileObserverBindingsForSession,
   setObservationPromptPublisherForTests,
   validateObserverRules,
@@ -931,5 +932,25 @@ rendererHints:
     }
 
     expect(existsSync(join(import.meta.dir, "..", "tasks", "observer-apply.ts"))).toBe(false);
+  });
+});
+
+describe("resolveObservationAllowedTools", () => {
+  it("keeps only the granted tool names, sorted and deduped", () => {
+    expect(
+      resolveObservationAllowedTools([
+        "use:tool:tasks_show",
+        "read:tasks:show",
+        "mutate:tasks:report",
+        "use:tool:tasks_report",
+        "use:tool:tasks_show",
+      ]),
+    ).toEqual(["tasks_report", "tasks_show"]);
+  });
+
+  it("returns undefined when the grants carry no tool allowlist", () => {
+    expect(resolveObservationAllowedTools(undefined)).toBeUndefined();
+    expect(resolveObservationAllowedTools([])).toBeUndefined();
+    expect(resolveObservationAllowedTools(["read:tasks:show", "mutate:tasks:done"])).toBeUndefined();
   });
 });
