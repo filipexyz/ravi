@@ -720,6 +720,15 @@ describe("contacts agent-first contract", () => {
     });
   });
 
+  it("refuses to link an identity to an agent that does not exist", () => {
+    const error = expectContractError(() =>
+      new ContactsCommands().linkAgent("ghost-agent", "slack", "U0C847U9BNZ", undefined, undefined, undefined, true),
+    );
+
+    expect(error.code).toBe("AGENT_NOT_FOUND");
+    expect(agentIdentityLinks).toHaveLength(0);
+  });
+
   function expectContractError(run: () => unknown): InstanceType<typeof ContractError> {
     const originalLog = console.log;
     console.log = () => {};

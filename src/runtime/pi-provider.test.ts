@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -13,6 +13,7 @@ import {
   listPiManagedRuntimeEnvKeys,
   PI_DYNAMIC_TOOLS_INLINE_BYTE_LIMIT,
   PI_INLINE_PROMPT_BYTE_LIMIT,
+  applyPiDynamicToolsEnv,
   spillPiDynamicToolsToFile,
   spillPiSystemPromptAppend,
   type PiRpcCommand,
@@ -392,17 +393,43 @@ describe("Pi runtime provider", () => {
     );
   });
 
-  it("spills an oversized system prompt append to a file so argv stays under the Linux limit", () => {
+  it("spills an oversized system prompt append to a shared, atomically published file", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ravi-pi-prompt-"));
     const args = ["--mode", "rpc", "--append-system-prompt", "x".repeat(PI_INLINE_PROMPT_BYTE_LIMIT + 1)];
-    const release = spillPiSystemPromptAppend(args);
+    const release = spillPiSystemPromptAppend(args, { dir });
     const path = args[args.indexOf("--append-system-prompt") + 1] ?? "";
 
-    expect(path).not.toContain("xxxx");
-    expect(path).toMatch(/pi-prompts\/prompt-[0-9a-f]{16}\.md$/);
-    expect(statSync(path).size).toBe(PI_INLINE_PROMPT_BYTE_LIMIT + 1);
+    expect(path.startsWith(dir)).toBe(true);
+    expect(path).toMatch(/prompt-[0-9a-f]{16}\.md$/);
+    expect(readFileSync(path, "utf8").length).toBe(PI_INLINE_PROMPT_BYTE_LIMIT + 1);
+    expect(readdirSync(dir).filter((entry) => entry.endsWith(".tmp"))).toEqual([]);
 
     release();
-    expect(existsSync(path)).toBe(false);
+    // Another transport may still be starting with the same path; the file is
+    // reclaimed by the age-based prune, not by the first transport that closes.
+    expect(existsSync(path)).toBe(true);
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("points the pi process at exactly one dynamic tools source", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ravi-pi-tools-env-"));
+    const env: NodeJS.ProcessEnv = { RAVI_PI_DYNAMIC_TOOLS_FILE: "/stale/catalog.json" };
+
+    applyPiDynamicToolsEnv(env, JSON.stringify([{ name: "small" }]), { dir });
+    expect(env.RAVI_PI_DYNAMIC_TOOLS).toBeTruthy();
+    expect(env.RAVI_PI_DYNAMIC_TOOLS_FILE).toBeUndefined();
+
+    const big = JSON.stringify([{ name: "big", description: "y".repeat(PI_DYNAMIC_TOOLS_INLINE_BYTE_LIMIT) }]);
+    applyPiDynamicToolsEnv(env, big, { dir });
+    expect(env.RAVI_PI_DYNAMIC_TOOLS).toBeUndefined();
+    expect(env.RAVI_PI_DYNAMIC_TOOLS_FILE).toMatch(/tools-[0-9a-f]{16}\.json$/);
+
+    applyPiDynamicToolsEnv(env, undefined, { dir });
+    expect(env.RAVI_PI_DYNAMIC_TOOLS).toBeUndefined();
+    expect(env.RAVI_PI_DYNAMIC_TOOLS_FILE).toBeUndefined();
+
+    rmSync(dir, { recursive: true, force: true });
   });
 
   it("keeps a small system prompt append inline", () => {

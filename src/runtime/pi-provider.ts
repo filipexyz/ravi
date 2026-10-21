@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
@@ -699,16 +699,33 @@ function resolvePiRpcProcessEnv(input: RuntimeStartRequest): NodeJS.ProcessEnv {
     env: input.modelBroker ? (input.env ?? {}) : (input.env ?? process.env),
   });
   const dynamicToolsEnv = buildPiDynamicToolsEnv(input.dynamicTools);
-  if (dynamicToolsEnv) {
-    const spilledPath = spillPiDynamicToolsToFile(dynamicToolsEnv);
-    if (spilledPath) {
-      env.RAVI_PI_DYNAMIC_TOOLS_FILE = spilledPath;
-      delete env.RAVI_PI_DYNAMIC_TOOLS;
-    } else {
-      env.RAVI_PI_DYNAMIC_TOOLS = dynamicToolsEnv;
-    }
-  }
+  applyPiDynamicToolsEnv(env, dynamicToolsEnv);
   return env;
+}
+
+/**
+ * Point the Pi process at exactly one catalog source. Never leave both selectors
+ * set: the extension prefers the file, so an inherited RAVI_PI_DYNAMIC_TOOLS_FILE
+ * from the parent env would silently win over this turn's inline catalog.
+ */
+export function applyPiDynamicToolsEnv(
+  env: NodeJS.ProcessEnv,
+  dynamicToolsEnv: string | undefined,
+  options: { limit?: number; dir?: string } = {},
+): void {
+  if (!dynamicToolsEnv) {
+    delete env.RAVI_PI_DYNAMIC_TOOLS;
+    delete env.RAVI_PI_DYNAMIC_TOOLS_FILE;
+    return;
+  }
+  const spilledPath = spillPiDynamicToolsToFile(dynamicToolsEnv, options);
+  if (spilledPath) {
+    env.RAVI_PI_DYNAMIC_TOOLS_FILE = spilledPath;
+    delete env.RAVI_PI_DYNAMIC_TOOLS;
+  } else {
+    env.RAVI_PI_DYNAMIC_TOOLS = dynamicToolsEnv;
+    delete env.RAVI_PI_DYNAMIC_TOOLS_FILE;
+  }
 }
 
 /**
@@ -718,7 +735,35 @@ function resolvePiRpcProcessEnv(input: RuntimeStartRequest): NodeJS.ProcessEnv {
  * content-addressed file and let the permission extension read it from disk.
  */
 export const PI_DYNAMIC_TOOLS_INLINE_BYTE_LIMIT = 60_000;
-const PI_DYNAMIC_TOOLS_FILE_TTL_MS = 3 * 24 * 60 * 60 * 1000;
+const PI_SPILL_FILE_TTL_MS = 3 * 24 * 60 * 60 * 1000;
+
+/**
+ * Publish a spill file atomically: write a restrictive temp file in the same
+ * directory, then rename it over the destination. Readers either see the whole
+ * previous file or the whole new one, never a truncated catalog.
+ */
+function publishSpillFile(path: string, contents: string): void {
+  const tmp = join(dirname(path), `.${basename(path)}.${process.pid}.${Date.now()}.tmp`);
+  writeFileSync(tmp, contents, { encoding: "utf8", mode: 0o600 });
+  renameSync(tmp, path);
+}
+
+function pruneSpillFiles(dir: string, prefix: string, suffix: string): void {
+  try {
+    const cutoff = Date.now() - PI_SPILL_FILE_TTL_MS;
+    for (const entry of readdirSync(dir)) {
+      if (!entry.startsWith(prefix) || !entry.endsWith(suffix)) continue;
+      const path = join(dir, entry);
+      try {
+        if (statSync(path).mtimeMs < cutoff) unlinkSync(path);
+      } catch {
+        // Another process may have pruned it already.
+      }
+    }
+  } catch {
+    // Pruning is best-effort.
+  }
+}
 
 export function spillPiDynamicToolsToFile(
   payload: string,
@@ -732,8 +777,8 @@ export function spillPiDynamicToolsToFile(
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     const digest = createHash("sha256").update(payload).digest("hex").slice(0, 16);
     const path = join(dir, `tools-${digest}.json`);
-    writeFileSync(path, payload, { encoding: "utf8", mode: 0o600 });
-    prunePiDynamicToolFiles(dir);
+    publishSpillFile(path, payload);
+    pruneSpillFiles(dir, "tools-", ".json");
     return path;
   } catch (error) {
     log.warn("Pi dynamic tools catalog too large for env and could not be spilled to disk", {
@@ -743,24 +788,6 @@ export function spillPiDynamicToolsToFile(
     return null;
   }
 }
-
-function prunePiDynamicToolFiles(dir: string): void {
-  try {
-    const cutoff = Date.now() - PI_DYNAMIC_TOOLS_FILE_TTL_MS;
-    for (const entry of readdirSync(dir)) {
-      if (!entry.startsWith("tools-") || !entry.endsWith(".json")) continue;
-      const path = join(dir, entry);
-      try {
-        if (statSync(path).mtimeMs < cutoff) unlinkSync(path);
-      } catch {
-        // Another process may have pruned it already.
-      }
-    }
-  } catch {
-    // Pruning is best-effort.
-  }
-}
-
 /** Serialize the host tool catalog the Pi bridge registers as custom tools. */
 export function buildPiDynamicToolsEnv(
   dynamicTools: RuntimeStartRequest["dynamicTools"] | undefined,
@@ -1893,15 +1920,12 @@ export function spillPiSystemPromptAppend(args: string[], options: { limit?: num
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     const digest = createHash("sha256").update(prompt).digest("hex").slice(0, 16);
     const path = join(dir, `prompt-${digest}.md`);
-    writeFileSync(path, prompt, { encoding: "utf8", mode: 0o600 });
+    publishSpillFile(path, prompt);
+    pruneSpillFiles(dir, "prompt-", ".md");
     args[index + 1] = path;
-    return () => {
-      try {
-        unlinkSync(path);
-      } catch {
-        // The prompt file is ephemeral; a missing file is not an error.
-      }
-    };
+    // Content-addressed: another transport may be spawning with the same path,
+    // so the file is kept until the age-based prune reclaims it.
+    return noop;
   } catch (error) {
     log.warn("Pi system prompt append too large for argv and could not be spilled to disk", {
       error: error instanceof Error ? error.message : error,

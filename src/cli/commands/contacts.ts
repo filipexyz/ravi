@@ -65,8 +65,10 @@ import {
   listAccountPendingChats,
 } from "../../contacts.js";
 import {
+  dbGetAgent,
   dbGetInstance,
   dbGetInstanceByInstanceId,
+  dbListAgents,
   dbListMessageMetaByContactId,
   dbListRoutes,
   type MessageMetadata,
@@ -1753,14 +1755,26 @@ export class ContactsCommands {
     @Arg("agent", { description: "Agent ID that owns the platform identity" }) agentId: string,
     @Option({ flags: "--channel <channel>", description: "Channel, e.g. slack, telegram, discord" })
     channel?: string,
-    @Option({ flags: "--id <platformUserId>", description: "Platform user ID" }) platformUserId?: string,
+    @Option({ flags: "--id <platformUserId>", description: "Platform user ID" })
+    platformUserId?: string,
     @Option({ flags: "--instance <id>", description: "Channel instance ID" }) instanceId?: string,
     @Option({ flags: "--name <text>", description: "Platform display name" }) platformDisplayName?: string,
     @Option({ flags: "--reason <text>", description: "Reason for the link audit event" }) reason?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    if (!channel) fail("--channel is required");
-    if (!platformUserId) fail("--id is required");
+    if (!channel) {
+      contractFail("contacts link-agent", "USAGE_ERROR", "--channel is required", { asJson, exitCode: 2 });
+    }
+    if (!platformUserId) {
+      contractFail("contacts link-agent", "USAGE_ERROR", "--id is required", { asJson, exitCode: 2 });
+    }
+    if (!dbGetAgent(agentId)) {
+      const candidates = dbListAgents().flatMap((agent) => [agent.id, agent.name]);
+      contractFail("contacts link-agent", "AGENT_NOT_FOUND", `Agent not found: ${agentId}`, {
+        asJson,
+        details: { suggestions: suggestSimilar(agentId, candidates, 3) },
+      });
+    }
 
     try {
       const identity = upsertAgentPlatformIdentity({
