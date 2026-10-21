@@ -6519,10 +6519,11 @@ public struct TasksNamespace: Sendable {
     return try await transport.call(groupSegments: ["tasks"], command: "block", body: requestBody, as: TasksBlockReturn.self)
   }
 
-  public func comment(_ taskId: String, _ body: String) async throws -> TasksCommentReturn {
+  public func comment(_ taskId: String, _ body: String, _ options: TasksCommentOptions = .init()) async throws -> TasksCommentReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["taskId"] = try RaviJSON.fromEncodable(taskId)
     requestBody["body"] = try RaviJSON.fromEncodable(body)
+    try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["tasks"], command: "comment", body: requestBody, as: TasksCommentReturn.self)
   }
 

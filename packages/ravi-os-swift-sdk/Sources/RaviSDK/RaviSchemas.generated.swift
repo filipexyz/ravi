@@ -110010,6 +110010,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "idempotencyKey": {
+        "description": "Apply this mutation once per key; a replay returns the previous result",
+        "type": "string"
+      },
       "reason": {
         "description": "Concrete blocker reason",
         "type": "string"
@@ -110055,6 +110059,10 @@ public enum RaviSchemas {
     "properties": {
       "body": {
         "description": "Comment body",
+        "type": "string"
+      },
+      "idempotencyKey": {
+        "description": "Apply this mutation once per key; a replay returns the previous result",
         "type": "string"
       },
       "taskId": {
@@ -110623,6 +110631,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "idempotencyKey": {
+        "description": "Apply this mutation once per key; a replay returns the previous result",
+        "type": "string"
+      },
       "summary": {
         "description": "Completion summary",
         "type": "string"
@@ -110666,6 +110678,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "idempotencyKey": {
+        "description": "Apply this mutation once per key; a replay returns the previous result",
+        "type": "string"
+      },
       "reason": {
         "description": "Failure reason",
         "type": "string"
@@ -111146,6 +111162,14 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "checklist": {
+        "description": "Observer checklist as a JSON array of {\"item\": string, \"done\": boolean}",
+        "type": "string"
+      },
+      "idempotencyKey": {
+        "description": "Apply this mutation once per key; a replay returns the previous result",
+        "type": "string"
+      },
       "message": {
         "description": "Progress update message",
         "type": "string"

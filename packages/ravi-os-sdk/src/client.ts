@@ -8887,6 +8887,7 @@ export class RaviClient {
     },
     /** Mark a task as blocked */
     block: async (taskId: string, options?: {
+      idempotencyKey?: string;
       reason?: string;
     }): Promise<TasksBlockReturn> => {
       return this.transport.call({
@@ -8896,11 +8897,13 @@ export class RaviClient {
       });
     },
     /** Add a comment to a task and steer the assignee if it is active */
-    comment: async (taskId: string, body: string): Promise<TasksCommentReturn> => {
+    comment: async (taskId: string, body: string, options?: {
+      idempotencyKey?: string;
+    }): Promise<TasksCommentReturn> => {
       return this.transport.call({
         groupSegments: ["tasks"],
         command: "comment",
-        body: { taskId, body },
+        body: { taskId, body, ...(options ?? {}) },
       });
     },
     /** Create a tracked task; unresolved dependencies arm launch plans instead of dispatching early */
@@ -8986,6 +8989,7 @@ export class RaviClient {
     },
     /** Mark a task as done */
     done: async (taskId: string, options?: {
+      idempotencyKey?: string;
       summary?: string;
     }): Promise<TasksDoneReturn> => {
       return this.transport.call({
@@ -8996,6 +9000,7 @@ export class RaviClient {
     },
     /** Mark a task as failed */
     fail: async (taskId: string, options?: {
+      idempotencyKey?: string;
       reason?: string;
     }): Promise<TasksFailReturn> => {
       return this.transport.call({
@@ -9093,6 +9098,8 @@ export class RaviClient {
     },
     /** Report task progress from a CLI or agent session */
     report: async (taskId: string, options?: {
+      checklist?: string;
+      idempotencyKey?: string;
       message?: string;
       progress?: string;
     }): Promise<TasksReportReturn> => {

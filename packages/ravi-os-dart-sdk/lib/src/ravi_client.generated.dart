@@ -9391,10 +9391,11 @@ class TasksNamespace {
     );
   }
 
-  Future<TasksCommentReturn> comment(String taskId, String body) async {
+  Future<TasksCommentReturn> comment(String taskId, String body, [TasksCommentOptions options = const TasksCommentOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["taskId"] = RaviJson.from(taskId);
     requestBody["body"] = RaviJson.from(body);
+    options.encodeBody(requestBody);
     return _transport.callJson(
       groupSegments: const ["tasks"],
       command: "comment",

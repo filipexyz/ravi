@@ -126,7 +126,6 @@ import type {
   RuntimeSkillVisibilitySnapshot,
 } from "./types.js";
 import { classifyTurnProvenance, isObserverOriginated } from "./turn-provenance.js";
-import { TASK_OBSERVER_RULE_ID } from "../tasks/observer-contract.js";
 import { buildRuntimeToolPresentation } from "./tool-presentation.js";
 import type { ResponseContentPart, ResponseMediaAttachment } from "./message-types.js";
 import {
@@ -1107,9 +1106,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   let debounceObservationTimer: ReturnType<typeof setTimeout> | undefined;
   const truncateObservationPreview = (value: string, maxLength = 500): string =>
     value.length > maxLength ? `${value.slice(0, maxLength - 15)}... [truncated]` : value;
-  // Raw text of an observer session's turn: the verdict is read from it whatever the
-  // visibility filters decide to persist or emit.
-  let observerTurnText = "";
   let pulseObservationTimer: ReturnType<typeof setInterval> | undefined;
   let pulseCheckedTurnId: string | undefined;
   const clearObservationPulse = () => {
@@ -1266,21 +1262,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     clearObservationPulse();
     const batch = observationEvents.splice(0, observationEvents.length);
     deliverObservationBatch(batch, ["end_of_turn"], "end_of_turn");
-  };
-  /** Hand a built-in task observer's finished turn to the runtime that applies its verdict. */
-  const applyObserverTurnVerdict = () => {
-    const observation = streaming.currentObservation;
-    const text = observerTurnText;
-    observerTurnText = "";
-    if (!observation || observation.ruleId !== TASK_OBSERVER_RULE_ID) return;
-    void import("../tasks/observer-apply.js")
-      .then(({ applyTaskObserverTurn }) =>
-        applyTaskObserverTurn({ observation, text, observerSessionName: sessionName, observerAgentId: agent.id }),
-      )
-      .then((result) => {
-        if (!result.applied) log.debug("Task observer verdict not applied", { sessionName, ...result });
-      })
-      .catch((error) => log.warn("Failed to apply task observer verdict", { sessionName, error }));
   };
   // Seed the live view from the persisted vector merged with the provider's
   // start-up catalog. The provider snapshot alone carries an empty
@@ -2784,7 +2765,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         const error = streaming._providerAuthFailure ?? responseText.trim();
         streaming._providerAuthFailure = undefined;
         responseText = "";
-        observerTurnText = "";
         channelResponseText = "";
         deliveredVisibleThisTurn.length = 0;
         event = {
@@ -3190,9 +3170,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       if (event.type === "assistant.message") {
         streaming.lastToolFailure = undefined;
         let messageText = event.text;
-        if (streaming.currentObservation && !streaming.interrupted && event.text) {
-          observerTurnText = appendAssistantResponse(observerTurnText, event.text);
-        }
         if (messageText) {
           // Silence is a delivery state: a whole-message marker (exact,
           // spaced, truncated, or split across fragments) is suppressed. A
@@ -3710,7 +3687,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             promptTooLongReset: streaming._promptTooLong ?? false,
           },
         });
-        applyObserverTurnVerdict();
         flushObservationEvents("turn.complete", {
           provider: runtimeSession.provider,
           usage: event.usage,
@@ -3766,7 +3742,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         // Visible assistant rows are INSERTed per assistant.message. turn.complete
         // only closes the in-memory buffer so the next turn cannot mash into it.
         responseText = "";
-        observerTurnText = "";
         channelResponseText = "";
         deliveredVisibleThisTurn.length = 0;
         clearPendingGeneratedMedia();
@@ -3882,7 +3857,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           }
         }
         responseText = "";
-        observerTurnText = "";
         channelResponseText = "";
         deliveredVisibleThisTurn.length = 0;
         clearPendingGeneratedMedia();
@@ -3974,7 +3948,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
         responseText = "";
 
-        observerTurnText = "";
         channelResponseText = "";
         deliveredVisibleThisTurn.length = 0;
         clearPendingGeneratedMedia();

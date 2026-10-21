@@ -21492,6 +21492,7 @@ export type TasksAutomationsShowReturn = {
 
 /** Input shape for `tasks.block`. */
 export type TasksBlockInput = {
+  idempotencyKey?: string;
   reason?: string;
   taskId: string;
 };
@@ -21506,6 +21507,7 @@ export type TasksBlockReturn = {
 /** Input shape for `tasks.comment`. */
 export type TasksCommentInput = {
   body: string;
+  idempotencyKey?: string;
   taskId: string;
 };
 
@@ -21640,6 +21642,7 @@ export type TasksDispatchReturn = {
 
 /** Input shape for `tasks.done`. */
 export type TasksDoneInput = {
+  idempotencyKey?: string;
   summary?: string;
   taskId: string;
 };
@@ -21653,6 +21656,7 @@ export type TasksDoneReturn = {
 
 /** Input shape for `tasks.fail`. */
 export type TasksFailInput = {
+  idempotencyKey?: string;
   reason?: string;
   taskId: string;
 };
@@ -21782,6 +21786,8 @@ export type TasksProfilesValidateReturn = {
 
 /** Input shape for `tasks.report`. */
 export type TasksReportInput = {
+  checklist?: string;
+  idempotencyKey?: string;
   message?: string;
   progress?: string;
   taskId: string;

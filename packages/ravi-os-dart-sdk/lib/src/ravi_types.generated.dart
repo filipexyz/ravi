@@ -28722,11 +28722,15 @@ class TasksAutomationsShowReturn {
 TasksAutomationsShowReturn tasksAutomationsShowReturnFromJson(Object? json) => TasksAutomationsShowReturn.fromJsonValue(json);
 
 class TasksBlockOptions {
-  const TasksBlockOptions({this.reason});
+  const TasksBlockOptions({this.idempotencyKey, this.reason});
 
+  final String? idempotencyKey;
   final String? reason;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
+    }
     if (reason != null) {
       into["reason"] = RaviJson.from(reason);
     }
@@ -28752,6 +28756,18 @@ class TasksBlockReturn {
 }
 
 TasksBlockReturn tasksBlockReturnFromJson(Object? json) => TasksBlockReturn.fromJsonValue(json);
+
+class TasksCommentOptions {
+  const TasksCommentOptions({this.idempotencyKey});
+
+  final String? idempotencyKey;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
+    }
+  }
+}
 
 class TasksCommentReturn {
   const TasksCommentReturn({required this.comment, required this.event, required this.task});
@@ -29078,11 +29094,15 @@ class TasksDispatchReturn {
 TasksDispatchReturn tasksDispatchReturnFromJson(Object? json) => TasksDispatchReturn.fromJsonValue(json);
 
 class TasksDoneOptions {
-  const TasksDoneOptions({this.summary});
+  const TasksDoneOptions({this.idempotencyKey, this.summary});
 
+  final String? idempotencyKey;
   final String? summary;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
+    }
     if (summary != null) {
       into["summary"] = RaviJson.from(summary);
     }
@@ -29110,11 +29130,15 @@ class TasksDoneReturn {
 TasksDoneReturn tasksDoneReturnFromJson(Object? json) => TasksDoneReturn.fromJsonValue(json);
 
 class TasksFailOptions {
-  const TasksFailOptions({this.reason});
+  const TasksFailOptions({this.idempotencyKey, this.reason});
 
+  final String? idempotencyKey;
   final String? reason;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
+    }
     if (reason != null) {
       into["reason"] = RaviJson.from(reason);
     }
@@ -29426,12 +29450,20 @@ class TasksProfilesValidateReturn {
 TasksProfilesValidateReturn tasksProfilesValidateReturnFromJson(Object? json) => TasksProfilesValidateReturn.fromJsonValue(json);
 
 class TasksReportOptions {
-  const TasksReportOptions({this.message, this.progress});
+  const TasksReportOptions({this.checklist, this.idempotencyKey, this.message, this.progress});
 
+  final String? checklist;
+  final String? idempotencyKey;
   final String? message;
   final String? progress;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (checklist != null) {
+      into["checklist"] = RaviJson.from(checklist);
+    }
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
+    }
     if (message != null) {
       into["message"] = RaviJson.from(message);
     }
