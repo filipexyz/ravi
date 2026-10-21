@@ -228,16 +228,30 @@ async function shutdown(signal: string, exitCode = 0) {
   }, 15_000);
 
   try {
-    const restartInfo = readRestartReasonInfo({ ensureEpoch: true });
-    if (restartInfo) {
-      dbUpsertDaemonRestartEpoch({
-        restartEpoch: restartInfo.restartEpoch,
-        reason: restartInfo.reason,
-        callerSessionName: restartInfo.sessionName,
-        createdAt: restartInfo.createdAt,
-        updatedAt: Date.now(),
-      });
-    }
+    // A restart must always be immediate: never drain in-flight turns. What we
+    // do instead is leave a restart intent behind so the next boot can tell the
+    // interrupted sessions to continue. When nothing wrote a reason file (plain
+    // `pm2 restart`, deploy, supervised bounce), synthesize one here and pass it
+    // to bot.stop so the per-session snapshots are recorded.
+    const restartInfo =
+      readRestartReasonInfo({ ensureEpoch: true }) ??
+      (() => {
+        const info: RestartReasonInfo = {
+          reason: "supervised_restart",
+          restartEpoch: newRestartEpoch(),
+          createdAt: Date.now(),
+        };
+        writeRestartReasonInfo(info);
+        return info;
+      })();
+
+    dbUpsertDaemonRestartEpoch({
+      restartEpoch: restartInfo.restartEpoch,
+      reason: restartInfo.reason,
+      callerSessionName: restartInfo.sessionName,
+      createdAt: restartInfo.createdAt,
+      updatedAt: Date.now(),
+    });
 
     // Stop bot FIRST to abort SDK subprocesses
     if (bot) {
@@ -563,12 +577,19 @@ function createStubSender(): OmniSender {
 
 /**
  * Check if there's a restart reason file and notify the originating session.
+ *
+ * A plain `pm2 restart` (deploy, supervised bounce, crash) never writes
+ * `restart-reason.txt`, so this used to return early and the sessions were
+ * never told the daemon had restarted. Synthesize a boot reason instead and
+ * let the notice path run: without a snapshot the delivery fences into a
+ * `Daemon reiniciou` notice, which is exactly what the operator needs to see.
  */
 async function notifyRestartReason() {
-  const restartInfo = readRestartReasonInfo({ consume: true });
-  if (!restartInfo) {
-    return;
-  }
+  const restartInfo = readRestartReasonInfo({ consume: true }) ?? {
+    reason: "supervised_restart",
+    restartEpoch: newRestartEpoch(),
+    createdAt: Date.now(),
+  };
 
   dbUpsertDaemonRestartEpoch({
     restartEpoch: restartInfo.restartEpoch,
