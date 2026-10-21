@@ -744,8 +744,19 @@ const PI_SPILL_FILE_TTL_MS = 3 * 24 * 60 * 60 * 1000;
  */
 function publishSpillFile(path: string, contents: string): void {
   const tmp = join(dirname(path), `.${basename(path)}.${process.pid}.${Date.now()}.tmp`);
-  writeFileSync(tmp, contents, { encoding: "utf8", mode: 0o600 });
-  renameSync(tmp, path);
+  try {
+    writeFileSync(tmp, contents, { encoding: "utf8", mode: 0o600 });
+    renameSync(tmp, path);
+  } catch (error) {
+    // The prune only matches published names, so a failed write must not leave
+    // partial prompt or catalog content lying around.
+    try {
+      unlinkSync(tmp);
+    } catch {
+      // Nothing was written.
+    }
+    throw error;
+  }
 }
 
 function pruneSpillFiles(dir: string, prefix: string, suffix: string): void {

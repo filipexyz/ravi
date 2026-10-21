@@ -80,7 +80,14 @@ import {
   type ContactSessionSummary,
 } from "../../session-trace/session-trace-db.js";
 import type { SessionEventRecord } from "../../session-trace/types.js";
-import { getScopeContext, isScopeEnforced, canAccessContact, canWriteContacts } from "../../permissions/scope.js";
+import {
+  getScopeContext,
+  isScopeEnforced,
+  canAccessContact,
+  canViewAgent,
+  canWriteContacts,
+  filterVisibleAgents,
+} from "../../permissions/scope.js";
 import { printInspectionBlock, printInspectionField } from "../inspection-output.js";
 
 const CONTACT_DB_META = { source: "contact-db", freshness: "persisted" } as const;
@@ -1768,8 +1775,13 @@ export class ContactsCommands {
     if (!platformUserId) {
       contractFail("contacts link-agent", "USAGE_ERROR", "--id is required", { asJson, exitCode: 2 });
     }
-    if (!dbGetAgent(agentId)) {
-      const candidates = dbListAgents().flatMap((agent) => [agent.id, agent.name]);
+    const scopeCtx = getScopeContext();
+    const targetAgent = dbGetAgent(agentId);
+    // A caller scoped to one agent must not link an identity to an agent it
+    // cannot see, nor learn about agents outside its scope through suggestions.
+    const targetVisible = Boolean(targetAgent) && (!isScopeEnforced(scopeCtx) || canViewAgent(scopeCtx, agentId));
+    if (!targetVisible) {
+      const candidates = filterVisibleAgents(scopeCtx, dbListAgents()).flatMap((agent) => [agent.id, agent.name]);
       contractFail("contacts link-agent", "AGENT_NOT_FOUND", `Agent not found: ${agentId}`, {
         asJson,
         details: { suggestions: suggestSimilar(agentId, candidates, 3) },
