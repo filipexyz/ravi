@@ -220,6 +220,12 @@ describe("tool-first task observer", () => {
     const instructions = buildTaskObserverInstructions(task);
     expect(instructions).toContain(task.id);
     expect(instructions).not.toContain("task-verdict");
+    // The delivery is only valid with a tool call; models otherwise answer with
+    // the worker's own text ("OK") and leave the task untouched.
+    expect(instructions).toContain("MANDATORY first step: call tasks_show");
+    expect(instructions).toContain("delivery with no tool call is invalid");
+    // The skill gate delivers the task skill on first use and asks for a retry.
+    expect(instructions).toContain("RAVI_SKILL_REQUIRED");
   });
 
   it("gives the observer tasks_done but not Bash or generic tool access", async () => {
