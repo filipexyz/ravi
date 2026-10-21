@@ -3975,7 +3975,7 @@ function normalizeAgentDefaultsCapability(value: unknown): {
  * Together they were ~360MB of the 1.3GB index footprint (audit 2026-10-20).
  * Dropping is idempotent and safe to repeat on every boot.
  */
-function dropRedundantSessionEventIndexes(database: Database): void {
+export function dropRedundantSessionEventIndexes(database: Database): void {
   const redundant = [
     "idx_session_events_key_time",
     "idx_session_events_name_time",
