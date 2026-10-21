@@ -35,6 +35,20 @@ export async function recordTaskStall(
   return event;
 }
 
+/**
+ * Tasks the checkpoint sweep may look at.
+ *
+ * Archived tasks keep their pre-archive status (the archive is a flag, not a
+ * status): without the explicit exclude an archived-but-in_progress task keeps
+ * being swept and reports checkpoint.missed/task.stalled forever.
+ */
+export function listTaskCheckpointSweepTasks(): TaskRecord[] {
+  return [
+    ...dbListTasks({ status: "dispatched", archiveMode: "exclude" }),
+    ...dbListTasks({ status: "in_progress", archiveMode: "exclude" }),
+  ];
+}
+
 export interface TaskCheckpointRunnerOptions {
   canPublishSessionPrompt?(sessionName: string): boolean;
 }
@@ -86,7 +100,7 @@ export class TaskCheckpointRunner {
     let stalls = 0;
 
     try {
-      const tasks = [...dbListTasks({ status: "dispatched" }), ...dbListTasks({ status: "in_progress" })];
+      const tasks = listTaskCheckpointSweepTasks();
 
       for (const task of tasks) {
         if (!this.running) break;
