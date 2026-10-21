@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
-import { migrateTriggerSessionCheck } from "./router-db.js";
+import { migrateTriggerDebounce, migrateTriggerSessionCheck } from "./router-db.js";
 
 describe("migrateTriggerSessionCheck", () => {
   it("drops the legacy main|isolated CHECK and keeps existing rows", () => {
@@ -42,6 +42,24 @@ describe("migrateTriggerSessionCheck", () => {
     const before = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'triggers'").get();
     migrateTriggerSessionCheck(db);
     expect(db.prepare("SELECT sql FROM sqlite_master WHERE name = 'triggers'").get()).toEqual(before);
+    db.close();
+  });
+});
+
+describe("migrateTriggerDebounce", () => {
+  it("adds debounce_ms defaulting to 0 to an existing triggers table, idempotently", () => {
+    const db = new Database(":memory:");
+    db.exec("CREATE TABLE triggers (id TEXT PRIMARY KEY, cooldown_ms INTEGER DEFAULT 5000)");
+    db.exec("INSERT INTO triggers (id) VALUES ('old')");
+
+    migrateTriggerDebounce(db);
+    migrateTriggerDebounce(db); // idempotent
+
+    db.exec("INSERT INTO triggers (id, debounce_ms) VALUES ('new', 2000)");
+    expect(db.prepare("SELECT id, cooldown_ms, debounce_ms FROM triggers ORDER BY id").all()).toEqual([
+      { id: "new", cooldown_ms: 5000, debounce_ms: 2000 },
+      { id: "old", cooldown_ms: 5000, debounce_ms: 0 },
+    ]);
     db.close();
   });
 });

@@ -36078,6 +36078,7 @@ public struct TriggersAddOptions: Codable, Sendable {
   public var account: String?
   public var agent: String?
   public var cooldown: String?
+  public var debounce: String?
   public var envFile: String?
   public var exec: String?
   public var filter: String?
@@ -36089,10 +36090,11 @@ public struct TriggersAddOptions: Codable, Sendable {
   public var timeout: String?
   public var topic: String?
 
-  public init(account: String? = nil, agent: String? = nil, cooldown: String? = nil, envFile: String? = nil, exec: String? = nil, filter: String? = nil, message: String? = nil, onError: String? = nil, replySession: String? = nil, session: String? = nil, shell: String? = nil, timeout: String? = nil, topic: String? = nil) {
+  public init(account: String? = nil, agent: String? = nil, cooldown: String? = nil, debounce: String? = nil, envFile: String? = nil, exec: String? = nil, filter: String? = nil, message: String? = nil, onError: String? = nil, replySession: String? = nil, session: String? = nil, shell: String? = nil, timeout: String? = nil, topic: String? = nil) {
     self.account = account
     self.agent = agent
     self.cooldown = cooldown
+    self.debounce = debounce
     self.envFile = envFile
     self.exec = exec
     self.filter = filter
@@ -36109,6 +36111,7 @@ public struct TriggersAddOptions: Codable, Sendable {
     case account = "account"
     case agent = "agent"
     case cooldown = "cooldown"
+    case debounce = "debounce"
     case envFile = "envFile"
     case exec = "exec"
     case filter = "filter"
@@ -36130,6 +36133,9 @@ public struct TriggersAddOptions: Codable, Sendable {
     }
     if let value = self.cooldown {
       body["cooldown"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.debounce {
+      body["debounce"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.envFile {
       body["envFile"] = try RaviJSON.fromEncodable(value)

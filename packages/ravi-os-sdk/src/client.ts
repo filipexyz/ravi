@@ -9440,6 +9440,7 @@ export class RaviClient {
       account?: string;
       agent?: string;
       cooldown?: string;
+      debounce?: string;
       envFile?: string;
       exec?: string;
       filter?: string;

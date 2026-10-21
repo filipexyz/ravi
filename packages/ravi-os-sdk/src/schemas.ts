@@ -114341,7 +114341,11 @@ export const TriggersAddInputSchema = {
       "type": "string"
     },
     "cooldown": {
-      "description": "Cooldown between fires (e.g., 5s, 30s, 1m)",
+      "description": "Minimum gap between fires; events inside it are dropped (e.g., 30s, 1m; off to disable). Default: 5s",
+      "type": "string"
+    },
+    "debounce": {
+      "description": "Batch a burst of events into one fire, this long after the last event, carrying every event (e.g., 2s, 1m). Default: off",
       "type": "string"
     },
     "envFile": {
@@ -114736,7 +114740,7 @@ export const TriggersSetInputSchema = {
       "type": "string"
     },
     "key": {
-      "description": "Property: name, message, shell, exec, timeout, env-file, on-error, topic, agent, account, session, cooldown, filter, replySession",
+      "description": "Property: name, message, shell, exec, timeout, env-file, on-error, topic, agent, account, session, cooldown, debounce, filter, replySession",
       "type": "string"
     },
     "value": {

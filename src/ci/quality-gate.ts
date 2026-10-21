@@ -167,6 +167,9 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/triggers/__tests__/runner-delete.test.ts",
     // Named/templated trigger sessions: one session per resolved name, skip, per-session cooldown.
     "src/triggers/__tests__/runner-named-session.test.ts",
+    // Cooldown off and debounce: bursts batched into one fire, held (not dropped) during cooldown.
+    "src/triggers/__tests__/runner-debounce.test.ts",
+    "src/triggers/__tests__/debounce.test.ts",
     "src/triggers/__tests__/session-target.test.ts",
   ],
   "src/approval/": ["src/approval/service.test.ts", "src/approval/grantor.test.ts", "src/approval/decision.test.ts"],

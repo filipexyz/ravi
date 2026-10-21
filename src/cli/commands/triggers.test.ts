@@ -1015,3 +1015,53 @@ describe("triggers invalid filter visibility", () => {
     expect(emitMock).toHaveBeenCalledWith("ravi.triggers.refresh", {});
   });
 });
+
+// parseDurationMs is mocked to 5000 in this file; real parsing (and rejection of
+// bad values) is covered by src/triggers/__tests__/debounce.test.ts.
+describe("triggers cooldown and debounce flags", () => {
+  beforeEach(() => {
+    createdTriggers.length = 0;
+    updatedTriggers.length = 0;
+    triggerRecord = buildTriggerRecord();
+  });
+
+  // add(name, topic, message, agent, account, cooldown, session, filter, replySession, json,
+  //     shell, exec, timeout, envFile, onError, debounce)
+  const addWith = (cooldown?: string, debounce?: string) =>
+    new TriggersCommands().add(
+      "bus",
+      "ravi.inbound.reaction",
+      "hello",
+      undefined,
+      undefined,
+      cooldown,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      debounce,
+    );
+
+  it("keeps the 5s cooldown default and no debounce", async () => {
+    await addWith();
+    expect(createdTriggers).toContainEqual(expect.objectContaining({ cooldownMs: 5000, debounceMs: 0 }));
+  });
+
+  it("accepts off to disable cooldown and a debounce window", async () => {
+    await addWith("off", "2s");
+    expect(createdTriggers).toContainEqual(expect.objectContaining({ cooldownMs: 0, debounceMs: 5000 }));
+  });
+
+  it("sets debounce and turns cooldown off on an existing trigger", async () => {
+    const commands = new TriggersCommands();
+    await commands.set("trg_1", "debounce", "1m");
+    await commands.set("trg_1", "cooldown", "off");
+    expect(updatedTriggers).toContainEqual({ id: "trg_1", patch: { debounceMs: 5000 } });
+    expect(updatedTriggers).toContainEqual({ id: "trg_1", patch: { cooldownMs: 0 } });
+  });
+});

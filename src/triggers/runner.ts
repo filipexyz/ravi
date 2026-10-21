@@ -32,6 +32,7 @@ import { isLegacySessionTarget, isSessionNameTemplate, type Trigger } from "./ty
 import { resolveTemplate, resolveTemplateStrict } from "./template.js";
 import { resolveTriggerActivation } from "./activation.js";
 import { buildTriggerPrompt } from "./prompt.js";
+import { TriggerDebouncer, type TriggerBatch } from "./debounce.js";
 import { DEFAULT_CRON_SHELL_TIMEOUT_MS, runShellCronCommand, type ShellCronRunResult } from "../cron/shell-executor.js";
 
 const log = logger.child("triggers:runner");
@@ -132,6 +133,8 @@ export class TriggerRunner {
   private filterRejectFlushTimer: ReturnType<typeof setTimeout> | null = null;
   /** Last topic+filter logged at info per trigger, so each filter logs its first reject once. */
   private loggedFilterRejects = new Map<string, string>();
+  /** Pending bursts of debounced triggers, keyed like the cooldown (trigger or trigger+session). */
+  private debouncer = new TriggerDebouncer((batch) => this.flushDebounced(batch));
 
   /**
    * Start the trigger runner.
@@ -160,6 +163,10 @@ export class TriggerRunner {
 
     this.teardownSubscriptions();
     this.flushFilterRejects();
+    const pendingDebounced = this.debouncer.clear();
+    if (pendingDebounced > 0) {
+      log.warn("Dropped debounced trigger events pending at stop", { events: pendingDebounced });
+    }
 
     log.info("Trigger runner stopped");
   }
@@ -335,11 +342,14 @@ export class TriggerRunner {
               }
               keyedCooldownKey = keyedCooldownId(trigger, targetName);
             }
+            const debounceMs = trigger.debounceMs ?? 0;
+            const debounced = debounceMs > 0;
             const lastFiredAt = keyedCooldownKey
               ? this.keyedLastFiredAt.get(keyedCooldownKey)?.at
               : trigger.lastFiredAt;
-            // Cooldown check
-            if (lastFiredAt && Date.now() - lastFiredAt < trigger.cooldownMs) {
+            // Cooldown check. A debounced trigger checks it when the burst
+            // fires instead, and waits it out rather than dropping events.
+            if (!debounced && lastFiredAt && Date.now() - lastFiredAt < trigger.cooldownMs) {
               log.debug("Trigger cooldown active, skipping", {
                 triggerId: trigger.id,
                 triggerName: trigger.name,
@@ -360,6 +370,11 @@ export class TriggerRunner {
                 triggerName: trigger.name,
                 topic: event.topic,
               });
+              continue;
+            }
+
+            if (debounced) {
+              this.debouncer.add(keyedCooldownKey ?? trigger.id, trigger.id, debounceMs, event);
               continue;
             }
 
@@ -413,6 +428,52 @@ export class TriggerRunner {
     return false;
   }
 
+  /**
+   * A debounced burst is due. It fires with its last event and the whole batch,
+   * using the trigger as currently configured; a cooldown still running delays
+   * the burst instead of dropping it.
+   */
+  private flushDebounced(batch: TriggerBatch): void {
+    const trigger = this.findLiveTrigger(batch.triggerId);
+    if (!trigger || !this.running) {
+      log.info("Dropping debounced burst; trigger is gone or disabled", {
+        triggerId: batch.triggerId,
+        events: batch.events.length,
+      });
+      return;
+    }
+    const keyed = batch.key !== trigger.id;
+    const lastFiredAt = keyed ? this.keyedLastFiredAt.get(batch.key)?.at : trigger.lastFiredAt;
+    const remaining = lastFiredAt ? trigger.cooldownMs - (Date.now() - lastFiredAt) : 0;
+    if (remaining > 0) {
+      log.debug("Debounced burst waiting for cooldown", { triggerId: trigger.id, remainingMs: remaining });
+      this.debouncer.requeue(batch, remaining);
+      return;
+    }
+    if (keyed) this.markKeyedFire(batch.key, trigger.cooldownMs);
+    else trigger.lastFiredAt = Date.now();
+
+    const last = batch.events[batch.events.length - 1];
+    if (!last) return;
+    log.info("Firing debounced trigger", {
+      triggerId: trigger.id,
+      triggerName: trigger.name,
+      events: batch.events.length,
+      omitted: batch.omitted,
+    });
+    this.fireTrigger(trigger, last, { batch }).catch((err) => {
+      log.error("Error firing trigger", { triggerId: trigger.id, error: err });
+    });
+  }
+
+  private findLiveTrigger(id: string): Trigger | null {
+    for (const subscription of this.topicSubs.values()) {
+      const prepared = subscription.triggers.find((item) => item.trigger.id === id);
+      if (prepared) return prepared.trigger.enabled ? prepared.trigger : null;
+    }
+    return null;
+  }
+
   private markKeyedFire(key: string, cooldownMs: number): void {
     const now = Date.now();
     this.keyedLastFiredAt.set(key, { at: now, cooldownMs });
@@ -431,7 +492,7 @@ export class TriggerRunner {
   private async fireTrigger(
     trigger: Trigger,
     event: { topic: string; data: unknown },
-    opts: { test?: boolean } = {},
+    opts: { test?: boolean; batch?: TriggerBatch } = {},
   ): Promise<void> {
     const agentId = trigger.agentId ?? getDefaultAgentId();
     const agent = getAgent(agentId);
@@ -565,11 +626,11 @@ export class TriggerRunner {
     }
 
     if ((trigger.executionType ?? "agent") === "shell") {
-      await this.fireShellTrigger(trigger, event, source);
+      await this.fireShellTrigger(trigger, event, source, opts.batch);
       return;
     }
 
-    const prompt = buildTriggerPrompt(trigger, event);
+    const prompt = buildTriggerPrompt(trigger, event, opts.batch);
 
     log.info("Firing trigger", {
       triggerId: trigger.id,
@@ -781,6 +842,7 @@ export class TriggerRunner {
     trigger: Trigger,
     event: { topic: string; data: unknown },
     source: { channel: string; accountId: string; chatId: string } | undefined,
+    batch?: TriggerBatch,
   ): Promise<void> {
     if (!trigger.shellCommand?.trim()) {
       throw new Error("Shell trigger is missing shellCommand");
@@ -790,6 +852,9 @@ export class TriggerRunner {
     const tempDir = await mkdtemp(join(tmpdir(), "ravi-trigger-shell-"));
     const eventFile = join(tempDir, "event.json");
     const dataFile = join(tempDir, "data.json");
+    // Every event this fire carries: one, or the whole debounced burst (oldest first).
+    const eventsFile = join(tempDir, "events.json");
+    const events = batch?.events ?? [event];
 
     try {
       await writeFile(
@@ -810,6 +875,7 @@ export class TriggerRunner {
         "utf8",
       );
       await writeFile(dataFile, JSON.stringify(event.data ?? null, null, 2), "utf8");
+      await writeFile(eventsFile, JSON.stringify(events, null, 2), "utf8");
 
       log.info("Firing shell trigger", {
         triggerId: trigger.id,
@@ -821,7 +887,11 @@ export class TriggerRunner {
       const result = await runShellCronCommand(trigger.shellCommand, {
         timeoutMs: trigger.shellTimeoutMs ?? DEFAULT_CRON_SHELL_TIMEOUT_MS,
         envFile: trigger.shellEnvFile,
-        env: this.buildShellEnv(trigger, event, source, eventFile, dataFile),
+        env: {
+          ...this.buildShellEnv(trigger, event, source, eventFile, dataFile),
+          RAVI_TRIGGER_EVENTS_FILE: eventsFile,
+          RAVI_TRIGGER_EVENT_COUNT: String(events.length + (batch?.omitted ?? 0)),
+        },
       });
 
       if (result.stdout.trim()) {
