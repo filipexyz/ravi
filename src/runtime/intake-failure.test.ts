@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:te
 import { configStore } from "../config-store.js";
 import { nats } from "../nats.js";
 import { getOrCreateSession } from "../router/sessions.js";
-import { listSessionEvents } from "../session-trace/session-trace-db.js";
+import { listSessionEventsForTest } from "../test/session-trace-events.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { RUNTIME_PROMPT_INTAKE_FAILED_USER_MESSAGE } from "./intake-failure.js";
@@ -41,7 +41,7 @@ function createDispatcher() {
 }
 
 function intakeFailures() {
-  return listSessionEvents(SESSION_KEY).filter((event) => event.eventType === "dispatch.intake_failed");
+  return listSessionEventsForTest(SESSION_KEY).filter((event) => event.eventType === "dispatch.intake_failed");
 }
 
 beforeEach(async () => {

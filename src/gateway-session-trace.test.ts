@@ -13,7 +13,7 @@ import {
 } from "./router/router-db.js";
 import { attachChatToSession, getOrCreateSession, updateSessionName } from "./router/sessions.js";
 import { recordDeliveryTrace } from "./session-trace/channel-trace.js";
-import { listSessionEvents } from "./session-trace/session-trace-db.js";
+import { listSessionEventsForTest } from "./test/session-trace-events.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "./test/ravi-state.js";
 import type { ResponseMessage } from "./runtime/message-types.js";
 import { upsertOmniGroupMetadata } from "./omni/group-metadata-cache.js";
@@ -232,7 +232,7 @@ describe("Gateway session trace instrumentation", () => {
       expect.objectContaining({ status: "delivered", messageId: "outbound-1", emitId: "emit-1" }),
     ]);
 
-    const events = listSessionEvents(sessionKey);
+    const events = listSessionEventsForTest(sessionKey);
     expect(events.map((event) => event.eventType)).toEqual(["response.emitted", "delivery.delivered"]);
     expect(events[0]?.messageId).toBe("inbound-1");
     expect(events[1]?.messageId).toBe("inbound-1");
@@ -275,7 +275,7 @@ describe("Gateway session trace instrumentation", () => {
 
     await handleResponse(gateway, sessionName, makeResponse());
 
-    const events = listSessionEvents(sessionKey);
+    const events = listSessionEventsForTest(sessionKey);
     expect(events.map((event) => event.eventType)).toEqual(["response.emitted", "delivery.delivered"]);
     for (const event of events) {
       expect(event.sourceChatId).toBe("5511999999999@s.whatsapp.net");
@@ -1546,7 +1546,7 @@ describe("Gateway session trace instrumentation", () => {
 
     await handleRuntimePresence(gateway, sessionName, { type: "stream.chunk", _source: makeResponse().target });
 
-    const presenceEvents = listSessionEvents(sessionKey).filter((event) => event.eventGroup === "presence");
+    const presenceEvents = listSessionEventsForTest(sessionKey).filter((event) => event.eventGroup === "presence");
     expect(presenceEvents).toHaveLength(1);
     expect(presenceEvents[0]).toMatchObject({
       eventType: "presence.typing",
@@ -1615,7 +1615,7 @@ describe("Gateway session trace instrumentation", () => {
 
     await handleRuntimePresence(gateway, sessionName, { type: "turn.complete", _source: target });
 
-    const presenceEvents = listSessionEvents(sessionKey).filter((event) => event.eventGroup === "presence");
+    const presenceEvents = listSessionEventsForTest(sessionKey).filter((event) => event.eventGroup === "presence");
     expect(clearActiveTarget).toHaveBeenCalledTimes(1);
     expect(presenceEvents).toHaveLength(1);
     expect(presenceEvents[0]).toMatchObject({
@@ -1816,7 +1816,7 @@ describe("Gateway session trace instrumentation", () => {
       `ravi.session.${sessionName}.delivery`,
       expect.objectContaining({ status: "dropped", reason: "missing_target" }),
     ]);
-    expect(listSessionEvents(sessionKey).map((event) => event.eventType)).toEqual([
+    expect(listSessionEventsForTest(sessionKey).map((event) => event.eventType)).toEqual([
       "response.emitted",
       "delivery.dropped",
     ]);
@@ -1836,7 +1836,7 @@ describe("Gateway session trace instrumentation", () => {
       expect.objectContaining({ status: "failed", reason: "send_error", error: "send exploded" }),
     ]);
 
-    const events = listSessionEvents(sessionKey);
+    const events = listSessionEventsForTest(sessionKey);
     expect(events.map((event) => event.eventType)).toEqual(["response.emitted", "delivery.failed"]);
     expect(events[1]?.messageId).toBe("inbound-1");
     expect(events[1]?.error).toBe("send exploded");
