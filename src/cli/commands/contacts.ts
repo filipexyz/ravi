@@ -36,6 +36,7 @@ import {
   setOptOut,
   linkContactIdentity,
   unlinkContactIdentity,
+  upsertAgentPlatformIdentity,
   mergeContacts,
   getContactDetails,
   listContactEvents,
@@ -1735,6 +1736,60 @@ export class ContactsCommands {
       return payload;
     } catch (err: any) {
       rethrowContactCommandError("contacts link", contactRef, err, asJson);
+    }
+  }
+
+  @Scope("writeContacts")
+  @Command({
+    name: "link-agent",
+    description: "Link a platform identity to an agent (bot senders resolve to an agent actor)",
+  })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "link-agent", risk: "medium" })
+  linkAgent(
+    @Arg("agent", { description: "Agent ID that owns the platform identity" }) agentId: string,
+    @Option({ flags: "--channel <channel>", description: "Channel, e.g. slack, telegram, discord" })
+    channel?: string,
+    @Option({ flags: "--id <platformUserId>", description: "Platform user ID" }) platformUserId?: string,
+    @Option({ flags: "--instance <id>", description: "Channel instance ID" }) instanceId?: string,
+    @Option({ flags: "--name <text>", description: "Platform display name" }) platformDisplayName?: string,
+    @Option({ flags: "--reason <text>", description: "Reason for the link audit event" }) reason?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    if (!channel) fail("--channel is required");
+    if (!platformUserId) fail("--id is required");
+
+    try {
+      const identity = upsertAgentPlatformIdentity({
+        agentId,
+        channel,
+        instanceId: instanceId ?? null,
+        platformUserId,
+        platformDisplayName: platformDisplayName ?? null,
+        linkedBy: "cli",
+        linkReason: reason ?? "cli_link_agent",
+      });
+      const payload = {
+        status: "linked" as const,
+        agent: agentId,
+        identity: {
+          id: identity.id,
+          channel: identity.channel,
+          instanceId: identity.instanceId,
+          platformUserId: identity.platformUserId,
+          ownerType: identity.ownerType,
+          ownerId: identity.ownerId,
+        },
+      };
+      if (asJson) {
+        printJson(payload);
+      } else {
+        console.log(
+          `✓ Identity linked to agent ${agentId}: ${platformIcon(channel)} ${platformUserId} (${identity.id})`,
+        );
+      }
+      return payload;
+    } catch (err: any) {
+      fail(err instanceof Error ? err.message : String(err));
     }
   }
 

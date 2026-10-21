@@ -23,6 +23,7 @@ const deleteContactCalls: string[] = [];
 const blockContactCalls: string[] = [];
 const upsertContactCalls: Array<{ phone: string; name?: string | null }> = [];
 const platformIdentityAdds: Array<Record<string, unknown>> = [];
+const agentIdentityLinks: Array<Record<string, unknown>> = [];
 
 function pageRecords<T>(
   records: T[],
@@ -234,6 +235,35 @@ mock.module("../../contacts.js", () => ({
         pendingKind: "chat",
         chatType: "group",
       })),
+  upsertAgentPlatformIdentity: (input: {
+    agentId: string;
+    channel: string;
+    instanceId?: string | null;
+    platformUserId: string;
+    platformDisplayName?: string | null;
+  }) => {
+    agentIdentityLinks.push(input);
+    return {
+      id: "pi-agent",
+      ownerType: "agent",
+      ownerId: input.agentId,
+      channel: input.channel,
+      instanceId: input.instanceId ?? "",
+      platformUserId: input.platformUserId,
+      normalizedPlatformUserId: input.platformUserId,
+      platformDisplayName: input.platformDisplayName ?? null,
+      avatarUrl: null,
+      profileData: null,
+      isPrimary: false,
+      confidence: 1,
+      linkedBy: "cli",
+      linkReason: "cli_link_agent",
+      firstSeenAt: null,
+      lastSeenAt: null,
+      createdAt: "",
+      updatedAt: "",
+    };
+  },
 }));
 
 mock.module("../../router/router-db.js", () => ({
@@ -663,6 +693,31 @@ describe("contacts agent-first contract", () => {
     routeRecords = [];
     upsertContactCalls.length = 0;
     platformIdentityAdds.length = 0;
+    agentIdentityLinks.length = 0;
+  });
+
+  it("links a platform identity to an agent so bot senders resolve to an agent actor", () => {
+    const payload = new ContactsCommands().linkAgent(
+      "main",
+      "slack",
+      "U0C847U9BNZ",
+      "hana",
+      "ravi-main",
+      "bench",
+      true,
+    );
+
+    expect(agentIdentityLinks[0]).toMatchObject({
+      agentId: "main",
+      channel: "slack",
+      instanceId: "hana",
+      platformUserId: "U0C847U9BNZ",
+    });
+    expect(payload).toMatchObject({
+      status: "linked",
+      agent: "main",
+      identity: { channel: "slack", instanceId: "hana", platformUserId: "U0C847U9BNZ", ownerType: "agent" },
+    });
   });
 
   function expectContractError(run: () => unknown): InstanceType<typeof ContractError> {
