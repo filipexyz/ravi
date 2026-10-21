@@ -47196,6 +47196,72 @@ export const ContactsLinkAgentInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `contacts.link-agent`. */
+export const ContactsLinkAgentReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "type": "string"
+    },
+    "identity": {
+      "additionalProperties": false,
+      "properties": {
+        "channel": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "instanceId": {
+          "type": "string"
+        },
+        "ownerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ownerType": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "platformUserId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "channel",
+        "instanceId",
+        "platformUserId",
+        "ownerType",
+        "ownerId"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "const": "linked",
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "agent",
+    "identity"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `contacts.list`. */
 export const ContactsListInputSchema = {
   "additionalProperties": false,

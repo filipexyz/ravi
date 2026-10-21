@@ -8821,8 +8821,19 @@ export type ContactsLinkAgentInput = {
   reason?: string;
 };
 
-/** Return shape for `contacts.link-agent`. (no @Returns declared) */
-export type ContactsLinkAgentReturn = unknown;
+/** Return shape for `contacts.link-agent`. */
+export type ContactsLinkAgentReturn = {
+  agent: string;
+  identity: {
+    channel: string;
+    id: string;
+    instanceId: string;
+    ownerId: string | null;
+    ownerType: string | null;
+    platformUserId: string;
+  };
+  status: "linked";
+};
 
 /** Input shape for `contacts.list`. */
 export type ContactsListInput = {

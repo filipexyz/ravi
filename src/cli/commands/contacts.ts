@@ -7,7 +7,11 @@ import { Group, Command, CommandAccess, Scope, Arg, Option } from "../decorators
 import { fail } from "../context.js";
 import { ContractError, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { buildCliOffsetPagination, paginateCliItems, parseCliListLimit, parseCliListOffset } from "../pagination.js";
-import { commandEnvelopeReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
+import {
+  commandEnvelopeReturnSchema,
+  declareCommandReturns,
+  platformIdentityLinkReturnSchema,
+} from "./operational-return-schemas.js";
 import { nats } from "../../nats.js";
 
 /** Notify gateway that config changed */
@@ -2073,6 +2077,7 @@ declareCommandReturns(ContactsCommands, {
   get: commandEnvelopeReturnSchema,
   info: commandEnvelopeReturnSchema,
   link: commandEnvelopeReturnSchema,
+  linkAgent: platformIdentityLinkReturnSchema,
   list: commandEnvelopeReturnSchema,
   merge: commandEnvelopeReturnSchema,
   messages: commandEnvelopeReturnSchema,
