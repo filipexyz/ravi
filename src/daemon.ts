@@ -563,12 +563,19 @@ function createStubSender(): OmniSender {
 
 /**
  * Check if there's a restart reason file and notify the originating session.
+ *
+ * A plain `pm2 restart` (deploy, supervised bounce, crash) never writes
+ * `restart-reason.txt`, so this used to return early and the sessions were
+ * never told the daemon had restarted. Synthesize a boot reason instead and
+ * let the notice path run: without a snapshot the delivery fences into a
+ * `Daemon reiniciou` notice, which is exactly what the operator needs to see.
  */
 async function notifyRestartReason() {
-  const restartInfo = readRestartReasonInfo({ consume: true });
-  if (!restartInfo) {
-    return;
-  }
+  const restartInfo = readRestartReasonInfo({ consume: true }) ?? {
+    reason: "supervised_restart",
+    restartEpoch: newRestartEpoch(),
+    createdAt: Date.now(),
+  };
 
   dbUpsertDaemonRestartEpoch({
     restartEpoch: restartInfo.restartEpoch,
