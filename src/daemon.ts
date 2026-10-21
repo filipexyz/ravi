@@ -228,16 +228,30 @@ async function shutdown(signal: string, exitCode = 0) {
   }, 15_000);
 
   try {
-    const restartInfo = readRestartReasonInfo({ ensureEpoch: true });
-    if (restartInfo) {
-      dbUpsertDaemonRestartEpoch({
-        restartEpoch: restartInfo.restartEpoch,
-        reason: restartInfo.reason,
-        callerSessionName: restartInfo.sessionName,
-        createdAt: restartInfo.createdAt,
-        updatedAt: Date.now(),
-      });
-    }
+    // A restart must always be immediate: never drain in-flight turns. What we
+    // do instead is leave a restart intent behind so the next boot can tell the
+    // interrupted sessions to continue. When nothing wrote a reason file (plain
+    // `pm2 restart`, deploy, supervised bounce), synthesize one here and pass it
+    // to bot.stop so the per-session snapshots are recorded.
+    const restartInfo =
+      readRestartReasonInfo({ ensureEpoch: true }) ??
+      (() => {
+        const info: RestartReasonInfo = {
+          reason: "supervised_restart",
+          restartEpoch: newRestartEpoch(),
+          createdAt: Date.now(),
+        };
+        writeRestartReasonInfo(info);
+        return info;
+      })();
+
+    dbUpsertDaemonRestartEpoch({
+      restartEpoch: restartInfo.restartEpoch,
+      reason: restartInfo.reason,
+      callerSessionName: restartInfo.sessionName,
+      createdAt: restartInfo.createdAt,
+      updatedAt: Date.now(),
+    });
 
     // Stop bot FIRST to abort SDK subprocesses
     if (bot) {
