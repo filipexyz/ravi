@@ -13,7 +13,7 @@ import {
 } from "./router/router-db.js";
 import { attachChatToSession, getOrCreateSession, updateSessionName } from "./router/sessions.js";
 import { recordDeliveryTrace } from "./session-trace/channel-trace.js";
-import { listSessionEvents } from "./session-trace/session-trace-db.js";
+import { listSessionEventsForTest } from "./test/session-trace-events.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "./test/ravi-state.js";
 import type { ResponseMessage } from "./runtime/message-types.js";
 import { upsertOmniGroupMetadata } from "./omni/group-metadata-cache.js";
@@ -232,7 +232,7 @@ describe("Gateway session trace instrumentation", () => {
       expect.objectContaining({ status: "delivered", messageId: "outbound-1", emitId: "emit-1" }),
     ]);
 
-    const events = listSessionEvents(sessionKey);
+    const events = listSessionEventsForTest(sessionKey);
     expect(events.map((event) => event.eventType)).toEqual(["response.emitted", "delivery.delivered"]);
     expect(events[0]?.messageId).toBe("inbound-1");
     expect(events[1]?.messageId).toBe("inbound-1");
@@ -275,7 +275,7 @@ describe("Gateway session trace instrumentation", () => {
 
     await handleResponse(gateway, sessionName, makeResponse());
 
-    const events = listSessionEvents(sessionKey);
+    const events = listSessionEventsForTest(sessionKey);
     expect(events.map((event) => event.eventType)).toEqual(["response.emitted", "delivery.delivered"]);
     for (const event of events) {
       expect(event.sourceChatId).toBe("5511999999999@s.whatsapp.net");
@@ -1546,7 +1546,7 @@ describe("Gateway session trace instrumentation", () => {
 
     await handleRuntimePresence(gateway, sessionName, { type: "stream.chunk", _source: makeResponse().target });
 
-    const presenceEvents = listSessionEvents(sessionKey).filter((event) => event.eventGroup === "presence");
+    const presenceEvents = listSessionEventsForTest(sessionKey).filter((event) => event.eventGroup === "presence");
     expect(presenceEvents).toHaveLength(1);
     expect(presenceEvents[0]).toMatchObject({
       eventType: "presence.typing",
@@ -1615,7 +1615,7 @@ describe("Gateway session trace instrumentation", () => {
 
     await handleRuntimePresence(gateway, sessionName, { type: "turn.complete", _source: target });
 
-    const presenceEvents = listSessionEvents(sessionKey).filter((event) => event.eventGroup === "presence");
+    const presenceEvents = listSessionEventsForTest(sessionKey).filter((event) => event.eventGroup === "presence");
     expect(clearActiveTarget).toHaveBeenCalledTimes(1);
     expect(presenceEvents).toHaveLength(1);
     expect(presenceEvents[0]).toMatchObject({
@@ -1673,6 +1673,54 @@ describe("Gateway session trace instrumentation", () => {
       `ravi.session.${sessionName}.delivery`,
       expect.objectContaining({ status: "dropped", reason: "silent" }),
     ]);
+  });
+
+  it("drops spaced and truncated silence markers at the delivery boundary", async () => {
+    const { sessionName } = seedSession();
+    for (const marker of ["@@ SILENT @@", "@@SILEN", " @@SILENT@@ "]) {
+      const send = mock(async () => ({ messageId: "outbound-1" }));
+      const gateway = makeGateway(send);
+      await handleResponse(gateway, sessionName, makeResponse({ response: marker }));
+
+      expect(send).not.toHaveBeenCalled();
+    }
+  });
+
+  it("drops a silence marker split across content parts", async () => {
+    const { sessionName } = seedSession();
+    const send = mock(async () => ({ messageId: "outbound-1" }));
+    const gateway = makeGateway(send);
+
+    await handleResponse(
+      gateway,
+      sessionName,
+      makeResponse({
+        response: "",
+        content: [
+          { type: "text", text: "@@SIL" },
+          { type: "text", text: "ENT@@" },
+        ],
+      }),
+    );
+
+    expect(send).not.toHaveBeenCalled();
+    expect(emitted).toContainEqual([
+      `ravi.session.${sessionName}.delivery`,
+      expect.objectContaining({ status: "dropped", reason: "silent" }),
+    ]);
+  });
+
+  it("delivers text that cites the silence marker instead of deleting it", async () => {
+    const { sessionName } = seedSession();
+    const send = mock(async () => ({ messageId: "outbound-1" }));
+    const gateway = makeGateway(send);
+    const cited = "Para silenciar, responda @@SILENT@@ no fim da mensagem.";
+
+    await handleResponse(gateway, sessionName, makeResponse({ response: cited }));
+
+    expect(send).toHaveBeenCalledTimes(1);
+    const [, , text] = send.mock.calls[0] as unknown as Parameters<GatewaySend>;
+    expect(text).toBe(cited);
   });
 
   it("does not reactivate presence from late activity after a terminal runtime event", async () => {
@@ -1768,7 +1816,7 @@ describe("Gateway session trace instrumentation", () => {
       `ravi.session.${sessionName}.delivery`,
       expect.objectContaining({ status: "dropped", reason: "missing_target" }),
     ]);
-    expect(listSessionEvents(sessionKey).map((event) => event.eventType)).toEqual([
+    expect(listSessionEventsForTest(sessionKey).map((event) => event.eventType)).toEqual([
       "response.emitted",
       "delivery.dropped",
     ]);
@@ -1788,7 +1836,7 @@ describe("Gateway session trace instrumentation", () => {
       expect.objectContaining({ status: "failed", reason: "send_error", error: "send exploded" }),
     ]);
 
-    const events = listSessionEvents(sessionKey);
+    const events = listSessionEventsForTest(sessionKey);
     expect(events.map((event) => event.eventType)).toEqual(["response.emitted", "delivery.failed"]);
     expect(events[1]?.messageId).toBe("inbound-1");
     expect(events[1]?.error).toBe("send exploded");

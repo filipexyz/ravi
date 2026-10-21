@@ -28,6 +28,7 @@ const actualGetSession = actualRouterSessionsModule.getSession;
 const actualUpdateProviderSession = actualRouterSessionsModule.updateProviderSession;
 
 const promptCalls: Array<[string, Record<string, unknown>]> = [];
+let publishSessionPromptError: Error | null = null;
 const chatMessageCalls: Array<Parameters<typeof actualDbUpsertChatMessage>[0]> = [];
 const chatParticipantCalls: Array<Parameters<typeof actualDbUpsertChatParticipant>[0]> = [];
 const sessionParticipantCalls: Array<Parameters<typeof actualDbUpsertSessionParticipant>[0]> = [];
@@ -96,6 +97,7 @@ mock.module("../nats.js", () => ({
 mock.module("./session-stream.js", () => ({
   ...actualSessionStreamModule,
   publishSessionPrompt: mock(async (sessionName: string, payload: Record<string, unknown>) => {
+    if (publishSessionPromptError) throw publishSessionPromptError;
     promptCalls.push([sessionName, payload]);
   }),
 }));
@@ -329,6 +331,7 @@ describe("OmniConsumer channel context", () => {
     commitMatchedRouteCalls.length = 0;
     actualGetOrCreateSession("agent:main:whatsapp:main:group:120363424772797713", "main", agentCwd);
     promptCalls.length = 0;
+    publishSessionPromptError = null;
     chatMessageCalls.length = 0;
     chatParticipantCalls.length = 0;
     sessionParticipantCalls.length = 0;
@@ -915,6 +918,222 @@ describe("OmniConsumer channel context", () => {
       platformIdentityId: "pi_agent_lid",
     });
     expect(promptCalls).toHaveLength(0);
+  });
+
+  it("treats its own device-suffixed WhatsApp message as the agent, without a turn", async () => {
+    agentPlatformIdentityByUser.set("5511999999999", {
+      id: "pi_agent_self_phone",
+      ownerType: "agent",
+      ownerId: "dev",
+      channel: "whatsapp",
+      instanceId: "agent-instance",
+      platformUserId: "5511999999999",
+      normalizedPlatformUserId: "5511999999999",
+      confidence: 1,
+    });
+    const consumer = new OmniConsumer(
+      { send: mock(async () => {}), sendTyping: mock(async () => {}), markRead: mock(async () => {}) } as never,
+      "http://omni.local",
+      "test-key",
+      { resolveGroupMetadata: async () => null },
+    );
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-self-device",
+      type: "message.received",
+      payload: {
+        externalId: "msg-self-device",
+        chatId: "120363424772797713@g.us",
+        from: "5511999999999:12@s.whatsapp.net",
+        content: { type: "text", text: "resposta do proprio bot" },
+        rawPayload: { pushName: "Ravi", chatName: "ravi - dev", isGroup: true },
+      },
+      metadata: { instanceId: "instance-1", channelType: "whatsapp-baileys", ingestMode: "realtime" },
+      timestamp: Date.now(),
+    });
+
+    expect(promptCalls).toHaveLength(0);
+    expect(chatMessageCalls[0]).toMatchObject({
+      providerMessageId: "msg-self-device",
+      rawSenderId: "5511999999999",
+      normalizedSenderId: "5511999999999",
+      actorType: "agent",
+      agentId: "dev",
+      contactId: null,
+      platformIdentityId: "pi_agent_self_phone",
+    });
+  });
+
+  it("suppresses a provider-flagged own message even when the agent identity is not resolvable", async () => {
+    const consumer = new OmniConsumer(
+      { send: mock(async () => {}), sendTyping: mock(async () => {}), markRead: mock(async () => {}) } as never,
+      "http://omni.local",
+      "test-key",
+      { resolveGroupMetadata: async () => null },
+    );
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-self-fromme",
+      type: "message.received",
+      payload: {
+        externalId: "msg-self-fromme",
+        chatId: "120363424772797713@g.us",
+        from: "5511888888888@s.whatsapp.net",
+        content: { type: "text", text: "eco sem identidade" },
+        rawPayload: { pushName: "Ravi", chatName: "ravi - dev", isGroup: true, key: { fromMe: true } },
+      },
+      metadata: { instanceId: "instance-1", channelType: "whatsapp-baileys", ingestMode: "realtime" },
+      timestamp: Date.now(),
+    });
+
+    expect(promptCalls).toHaveLength(0);
+    expect(ensureContactFromInboundCalls).toHaveLength(0);
+    expect(chatMessageCalls[0]).toMatchObject({ actorType: "agent", contactId: null });
+    const key = "instance-1:120363424772797713@g.us:msg-self-fromme";
+    expect(consumer["processedInboundMessages"].has(key)).toBe(true);
+    expect(consumer["inboundMessagesInFlight"].has(key)).toBe(false);
+  });
+
+  it("suppresses a provider-flagged own LID message without a turn", async () => {
+    const consumer = new OmniConsumer(
+      { send: mock(async () => {}), sendTyping: mock(async () => {}), markRead: mock(async () => {}) } as never,
+      "http://omni.local",
+      "test-key",
+      { resolveGroupMetadata: async () => null },
+    );
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-self-lid",
+      type: "message.received",
+      payload: {
+        externalId: "msg-self-lid",
+        chatId: "120363424772797713@g.us",
+        from: "35082198892544@lid",
+        content: { type: "text", text: "eco lid" },
+        rawPayload: { pushName: "Ravi", chatName: "ravi - dev", isGroup: true, key: { fromMe: true } },
+      },
+      metadata: { instanceId: "instance-1", channelType: "whatsapp-baileys", ingestMode: "realtime" },
+      timestamp: Date.now(),
+    });
+
+    expect(promptCalls).toHaveLength(0);
+    expect(chatMessageCalls[0]).toMatchObject({ actorType: "agent", contactId: null });
+  });
+
+  it("still dispatches a legitimate inbound exactly once", async () => {
+    platformIdentityByUser.set("5511947879044", {
+      id: "pi_luis_human",
+      ownerType: "contact",
+      ownerId: "contact_luis",
+      channel: "whatsapp",
+      platformUserId: "5511947879044",
+      confidence: 1,
+    });
+    contactByRef.set("contact_luis", { id: "contact_luis", status: "allowed", name: "Luis" });
+    const consumer = new OmniConsumer(
+      { send: mock(async () => {}), sendTyping: mock(async () => {}), markRead: mock(async () => {}) } as never,
+      "http://omni.local",
+      "test-key",
+      { resolveGroupMetadata: async () => null },
+    );
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-human",
+      type: "message.received",
+      payload: {
+        externalId: "msg-human",
+        chatId: "120363424772797713@g.us",
+        from: "5511947879044@s.whatsapp.net",
+        content: { type: "text", text: "oi" },
+        rawPayload: { pushName: "Luis", resolvedSenderPhone: "5511947879044", isGroup: true },
+      },
+      metadata: { instanceId: "instance-1", channelType: "whatsapp-baileys", ingestMode: "realtime" },
+      timestamp: Date.now(),
+    });
+
+    expect(promptCalls).toHaveLength(1);
+    expect(chatMessageCalls[0]).toMatchObject({ actorType: "contact", contactId: "contact_luis" });
+  });
+
+  it("does not open a second turn when the same inbound is redelivered", async () => {
+    platformIdentityByUser.set("5511947879044", {
+      id: "pi_luis_human",
+      ownerType: "contact",
+      ownerId: "contact_luis",
+      channel: "whatsapp",
+      platformUserId: "5511947879044",
+      confidence: 1,
+    });
+    contactByRef.set("contact_luis", { id: "contact_luis", status: "allowed", name: "Luis" });
+    const consumer = new OmniConsumer(
+      { send: mock(async () => {}), sendTyping: mock(async () => {}), markRead: mock(async () => {}) } as never,
+      "http://omni.local",
+      "test-key",
+      { resolveGroupMetadata: async () => null },
+    );
+    const event = {
+      id: "evt-redelivery",
+      type: "message.received" as const,
+      payload: {
+        externalId: "msg-redelivery",
+        chatId: "120363424772797713@g.us",
+        from: "5511947879044@s.whatsapp.net",
+        content: { type: "text", text: "oi de novo" },
+        rawPayload: { pushName: "Luis", resolvedSenderPhone: "5511947879044", isGroup: true },
+      },
+      metadata: { instanceId: "instance-1", channelType: "whatsapp-baileys", ingestMode: "realtime" as const },
+      timestamp: Date.now(),
+    };
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", event);
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", event);
+
+    expect(promptCalls).toHaveLength(1);
+  });
+
+  it("releases the inbound dedup key when prompt publication fails so a retry can dispatch", async () => {
+    platformIdentityByUser.set("5511947879044", {
+      id: "pi_luis_human",
+      ownerType: "contact",
+      ownerId: "contact_luis",
+      channel: "whatsapp",
+      platformUserId: "5511947879044",
+      confidence: 1,
+    });
+    contactByRef.set("contact_luis", { id: "contact_luis", status: "allowed", name: "Luis" });
+    const consumer = new OmniConsumer(
+      { send: mock(async () => {}), sendTyping: mock(async () => {}), markRead: mock(async () => {}) } as never,
+      "http://omni.local",
+      "test-key",
+      { resolveGroupMetadata: async () => null },
+    );
+    const event = {
+      id: "evt-publish-fail",
+      type: "message.received" as const,
+      payload: {
+        externalId: "msg-publish-fail",
+        chatId: "120363424772797713@g.us",
+        from: "5511947879044@s.whatsapp.net",
+        content: { type: "text", text: "oi" },
+        rawPayload: { pushName: "Luis", resolvedSenderPhone: "5511947879044", isGroup: true },
+      },
+      metadata: { instanceId: "instance-1", channelType: "whatsapp-baileys", ingestMode: "realtime" as const },
+      timestamp: Date.now(),
+    };
+    const key = "instance-1:120363424772797713@g.us:msg-publish-fail";
+
+    publishSessionPromptError = new Error("nats unavailable");
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", event);
+
+    expect(promptCalls).toHaveLength(0);
+    expect(consumer["inboundMessagesInFlight"].has(key)).toBe(false);
+    expect(consumer["processedInboundMessages"].has(key)).toBe(false);
+
+    publishSessionPromptError = null;
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", event);
+
+    expect(promptCalls).toHaveLength(1);
+    expect(consumer["processedInboundMessages"].has(key)).toBe(true);
   });
 
   it("routes WhatsApp LID DMs through the resolved sender phone", async () => {

@@ -32,6 +32,7 @@ import {
 } from "./knowledge/egress/guard.js";
 import { extractKnowledgeMarkers, handleKnowledgeMarkers } from "./knowledge/markers.js";
 import { KNOWLEDGE_CURATOR_CHANNEL } from "./knowledge/types.js";
+import { isEmptyOrExactSilentText, isExactSilentTokenText, isSilentTokenText, SILENT_TOKEN } from "./silent-token.js";
 import { unlink } from "node:fs/promises";
 import { nats } from "./nats.js";
 import type { ResponseContentPart, ResponseMediaAttachment, ResponseMessage } from "./runtime/message-types.js";
@@ -293,8 +294,8 @@ function withOutboundStatusAnchor(target: PresenceTarget, data: Record<string, u
   };
 }
 
-/** Silent reply token — when response contains this, don't send to channel */
-export const SILENT_TOKEN = "@@SILENT@@";
+/** Silent reply token — a response that is only this marker is not sent. */
+export { SILENT_TOKEN };
 
 export interface GatewayOptions {
   logLevel?: "debug" | "info" | "warn" | "error";
@@ -1174,11 +1175,19 @@ export class Gateway {
       .filter((part): part is Extract<ResponseContentPart, { type: "text" }> => part.type === "text")
       .reduce((total, part) => total + part.text.length, 0);
 
-    if (
-      !hasMedia &&
+    const textParts = parts.filter(
+      (part): part is Extract<ResponseContentPart, { type: "text" }> => part.type === "text",
+    );
+    // Silence is a delivery state, not a substring edit: drop the delivery when
+    // every text part is the marker/empty, or when the parts joined together
+    // form the marker (a marker split across content parts). A sentence that
+    // cites the marker stays deliverable.
+    const allTextPartsSilent =
       parts.length > 0 &&
-      parts.every((part) => part.type === "text" && (!part.text.trim() || part.text.trim() === SILENT_TOKEN))
-    ) {
+      textParts.length === parts.length &&
+      textParts.every((part) => isEmptyOrExactSilentText(part.text));
+    const joinedPartsSilent = textParts.length > 0 && isSilentTokenText(textParts.map((part) => part.text).join(""));
+    if (!hasMedia && (allTextPartsSilent || joinedPartsSilent)) {
       log.debug("Silent response, not sending to channel", { sessionName });
       await this.stopPresenceForSession(sessionName, target);
       await emitDelivery({ status: "dropped", reason: "silent", target });
@@ -1186,7 +1195,7 @@ export class Gateway {
     }
 
     const deliverableParts = parts.filter(
-      (part) => part.type === "media" || (part.text.trim() && part.text.trim() !== SILENT_TOKEN),
+      (part) => part.type === "media" || (!joinedPartsSilent && part.text.trim() && !isExactSilentTokenText(part.text)),
     );
     if (deliverableParts.length === 0) {
       await emitDelivery({ status: "dropped", reason: "empty_response", target });

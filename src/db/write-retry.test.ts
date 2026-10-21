@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import {
+  evaluateWalCheckpoint,
   executeWrite,
   executeWriteWithStats,
   isSqliteCapacityError,
@@ -172,5 +173,18 @@ describe("executeWrite", () => {
     });
     expect(inserted.value).toBe("typed");
     db.close();
+  });
+});
+
+describe("evaluateWalCheckpoint", () => {
+  it("warns when the checkpoint is busy or leaves a large backlog", () => {
+    expect(evaluateWalCheckpoint(null).shouldWarn).toBe(false);
+    expect(evaluateWalCheckpoint({ busy: 0, log: 100, checkpointed: 90 }).shouldWarn).toBe(false);
+
+    expect(evaluateWalCheckpoint({ busy: 1, log: 100, checkpointed: 100 }).shouldWarn).toBe(true);
+
+    const backlog = evaluateWalCheckpoint({ busy: 0, log: 1000, checkpointed: 100 });
+    expect(backlog.shouldWarn).toBe(true);
+    expect(backlog.status.backlogFrames).toBe(900);
   });
 });

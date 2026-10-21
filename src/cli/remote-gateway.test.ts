@@ -614,6 +614,119 @@ describe("remote gateway exit taxonomy", () => {
     },
   );
 
+  it("preserves the canonical capability and denial metadata of a remote denial", () => {
+    const error = remoteGatewayErrorToContractError(
+      "pages published",
+      result({
+        status: 403,
+        body: JSON.stringify({
+          success: false,
+          op: "pages published",
+          exitCode: 1,
+          outcome: "denied",
+          error: {
+            code: "PERMISSION_DENIED",
+            message:
+              "Permission denied: agent:main cannot execute pages published\nMissing capability: read:pages:list\nInspect: ravi permissions status",
+            retryable: false,
+            stage: "command_access",
+            denialId: 42,
+          },
+        }),
+      }),
+    );
+
+    expect(error).toMatchObject({
+      code: "PERMISSION_DENIED",
+      exitCode: 1,
+      details: {
+        status: 403,
+        authorizationDecision: "denied",
+        capability: "read:pages:list",
+        stage: "command_access",
+        denialId: 42,
+      },
+    });
+    expect(error?.envelope().error.message).toBe("Remote gateway denied the command.");
+  });
+
+  it("keeps a remote denial without a capability but does not relay raw server copy", () => {
+    const error = remoteGatewayErrorToContractError(
+      "pages published",
+      result({
+        status: 403,
+        body: JSON.stringify({
+          success: false,
+          op: "pages published",
+          exitCode: 1,
+          outcome: "denied",
+          error: {
+            code: "PERMISSION_DENIED",
+            message: "PRIVATE_REASON_9X2 no missing line here",
+            retryable: false,
+          },
+        }),
+      }),
+    );
+
+    expect(error).toMatchObject({
+      code: "PERMISSION_DENIED",
+      details: { status: 403, authorizationDecision: "denied" },
+    });
+    expect(error?.details.capability).toBeUndefined();
+    const serialized = JSON.stringify(error?.envelope());
+    expect(serialized).not.toContain("PRIVATE_REASON_9X2");
+  });
+
+  it("drops a remote capability field that is not a canonical capability", () => {
+    const error = remoteGatewayErrorToContractError(
+      "pages published",
+      result({
+        status: 403,
+        body: JSON.stringify({
+          success: false,
+          op: "pages published",
+          exitCode: 1,
+          outcome: "denied",
+          error: {
+            code: "PERMISSION_DENIED",
+            message: "denied",
+            retryable: false,
+            capability: "read pages list with PRIVATE_TEXT",
+          },
+        }),
+      }),
+    );
+
+    expect(error?.details.capability).toBeUndefined();
+    expect(JSON.stringify(error?.envelope())).not.toContain("PRIVATE_TEXT");
+  });
+
+  it("keeps an argument error as a 400 usage_error instead of a permission denial", () => {
+    const error = remoteGatewayErrorToContractError(
+      "pages published",
+      result({
+        status: 400,
+        body: JSON.stringify({
+          success: false,
+          op: "pages published",
+          exitCode: 2,
+          outcome: "usage_error",
+          error: {
+            code: "USAGE_ERROR",
+            message: "limit must be a string",
+            retryable: false,
+            issues: [{ path: ["limit"], code: "invalid_type", message: "Expected string" }],
+          },
+        }),
+      }),
+    );
+
+    expect(error).toMatchObject({ code: "USAGE_ERROR", exitCode: 2, details: { status: 400 } });
+    expect(error?.details.authorizationDecision).toBeUndefined();
+    expect(error?.details.issues).toMatchObject([{ path: ["limit"] }]);
+  });
+
   it("tells a remote dry-run to add --execute instead of reporting a policy block", () => {
     // `ravi bug comment <id>` without --execute from an agent session used to print
     // "Remote command was blocked by policy.", hiding the write brake's next step.

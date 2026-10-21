@@ -1,4 +1,5 @@
 import { getContext } from "../cli/context.js";
+import { resolveSubject, type SubjectRef } from "../identity/subject.js";
 import { CliExpectedError } from "../cli/expected-error.js";
 import { nats } from "../nats.js";
 import { getAgent } from "../router/config.js";
@@ -2264,6 +2265,25 @@ export function buildTaskResumePrompt(
   });
 }
 
+function resolveTaskSubjectFromRuntime(): SubjectRef | undefined {
+  const ctx = getContext();
+  const target = ctx?.context?.metadata?.turnReplyTarget as { chatId?: string; canonicalChatId?: string } | undefined;
+
+  // A relayed turn carries an agent actor and no context `source`; the reply
+  // target is the only place that still knows which conversation asked.
+  return resolveSubject({
+    env: process.env,
+    chatIds: [
+      ctx?.source?.chatId,
+      ctx?.source?.canonicalChatId,
+      target?.chatId,
+      target?.canonicalChatId,
+      process.env.RAVI_CHAT_ID,
+      process.env.RAVI_CANONICAL_CHAT_ID,
+    ],
+  });
+}
+
 export function createTask(input: CreateTaskInput): {
   task: TaskRecord;
   event: TaskEvent;
@@ -2301,6 +2321,7 @@ export function createTask(input: CreateTaskInput): {
   );
   const created = dbCreateTask({
     ...resolvedInput,
+    ...(resolvedInput.subject ? {} : { subject: resolveTaskSubjectFromRuntime() }),
     ...(taskProfileUsesObserver(profile) && typeof resolvedInput.checkpointIntervalMs !== "number"
       ? { checkpointIntervalMs: DEFAULT_TASK_OBSERVER_STALL_INTERVAL_MS }
       : {}),

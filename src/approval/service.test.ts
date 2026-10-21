@@ -1,6 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { dbCreateAgent, dbCreateContext, dbDeleteContext, dbGetContext, dbUpdateAgent } from "../router/router-db.js";
+import {
+  dbCreateAgent,
+  dbCreateContext,
+  dbDeleteContext,
+  dbGetContext,
+  dbUpdateAgent,
+  dbUpsertChat,
+  dbUpsertChatParticipant,
+  getDb,
+} from "../router/router-db.js";
 import { getOrCreateSession } from "../router/sessions.js";
 import {
   authorizeRuntimeContext,
@@ -63,8 +72,8 @@ function seedWhatsAppOwner(): void {
   });
 }
 
-function seedSlackOwner(instanceId = "main"): void {
-  seedApprovalContact({
+function seedSlackOwner(instanceId = "main"): ReturnType<typeof seedApprovalContact> {
+  const contact = seedApprovalContact({
     phone: APPROVAL_TEST_SLACK_OWNER_PHONE,
     name: "Slack Owner",
     tags: ["permission.admin"],
@@ -79,9 +88,10 @@ function seedSlackOwner(instanceId = "main"): void {
     objectType: "group",
     objectId: "daemon",
   });
+  return contact;
 }
 
-function createSlackApprovalContext(id: string) {
+function createSlackApprovalContext(id: string, chatId = "C123") {
   const context = dbCreateContext({
     contextId: id,
     contextKey: `r${id}`,
@@ -92,7 +102,7 @@ function createSlackApprovalContext(id: string) {
       approvalSource: {
         channel: "slack",
         accountId: "main",
-        chatId: "C123",
+        chatId,
         threadId: "1784000000.000001",
       },
     },
@@ -674,6 +684,49 @@ describe("approval service", () => {
     expect(String(respondedSlack[0]?.payload.text)).toContain(`Approved by <@${OWNER_SLACK_USER}>`);
     expect(JSON.stringify(respondedSlack[0]?.payload.blocks)).not.toContain('"type":"actions"');
     expect(finalizedSlack).toHaveLength(0);
+  });
+
+  it("attributes the approval request to the single human in the chat", async () => {
+    const owner = seedSlackOwner();
+    const chat = dbUpsertChat({
+      channel: "slack",
+      instanceId: "main",
+      platformChatId: "D-approval-owner",
+      chatType: "dm",
+    });
+    dbUpsertChatParticipant({
+      chatId: chat.id,
+      contactId: owner.id,
+      platformIdentityId: "pi_slack_owner",
+      rawPlatformUserId: OWNER_SLACK_USER,
+      role: "member",
+      source: "inbound_message",
+    });
+    requestReplyResult = {
+      messageId: "eph_1",
+      deliveries: [{ userId: OWNER_SLACK_USER, kind: "ephemeral", chatId: chat.id, messageId: "eph_1" }],
+    };
+    subscribeEvents = [slackClick({ userId: OWNER_SLACK_USER, messageTs: "eph_seen_by_slack" })];
+
+    await authorizeRuntimeContext({
+      context: createSlackApprovalContext("ctx_approval_subject", chat.id),
+      permission: "execute",
+      objectType: "executable",
+      objectId: "curl",
+      timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
+    });
+
+    const row = getDb()
+      .prepare(
+        "SELECT subject_kind, subject_contact_id, subject_identity_id, subject_channel, subject_raw_id FROM approval_requests",
+      )
+      .get() as Record<string, string | null> | undefined;
+
+    expect(row?.subject_kind).toBe("contact");
+    expect(row?.subject_contact_id).toBe(owner.id);
+    expect(row?.subject_identity_id).toBe("pi_slack_owner");
+    expect(row?.subject_channel).toBe("slack");
+    expect(row?.subject_raw_id).toBe(OWNER_SLACK_USER);
   });
 
   it("denies at once, without sending any card, when nobody in the Slack can grant it", async () => {

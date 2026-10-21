@@ -31,11 +31,19 @@ export interface CliCommandAccessInput {
   source: CliCommandAccessSource;
 }
 
+export interface CliCommandAccessDenialDetails {
+  stage: "command_access";
+  capability?: string;
+  [key: string]: unknown;
+}
+
 export interface CliCommandAccessResult {
   allowed: boolean;
   errorMessage: string;
   decision?: PermissionProviderDecision;
   attempted: PermissionProviderDecision[];
+  /** Structured denial details shared by CLI, tool and gateway surfaces. */
+  denialDetails?: CliCommandAccessDenialDetails;
 }
 
 export interface CliCommandAuthorizationInput extends CliCommandAccessInput {
@@ -68,6 +76,7 @@ export function enforceCliCommandAuthorization(input: CliCommandAuthorizationInp
     errorMessage: boundary.errorMessage,
     decision: accessResult.decision,
     attempted: accessResult.attempted,
+    denialDetails: commandAccessDenialDetails(input),
   };
 }
 
@@ -77,6 +86,7 @@ export function enforceCliCommandAccess(input: CliCommandAccessInput): CliComman
       allowed: false,
       errorMessage: `Permission denied: command ${formatCommand(input)} is missing @CommandAccess metadata`,
       attempted: [],
+      denialDetails: commandAccessDenialDetails(input),
     };
   }
   const inputWithAccess: CliCommandAccessInput & { access: CommandAccessOptions } = { ...input, access: input.access };
@@ -87,6 +97,7 @@ export function enforceCliCommandAccess(input: CliCommandAccessInput): CliComman
       allowed: false,
       errorMessage: authority.errorMessage,
       attempted: [],
+      denialDetails: commandAccessDenialDetails(input),
     };
   }
 
@@ -129,6 +140,21 @@ export function enforceCliCommandAccess(input: CliCommandAccessInput): CliComman
     errorMessage,
     decision: last,
     attempted,
+    denialDetails: commandAccessDenialDetails(input),
+  };
+}
+
+/** Structured denial shared by every surface so `details` stays identical. */
+function commandAccessDenialDetails(input: CliCommandAccessInput): CliCommandAccessDenialDetails {
+  if (!input.access) return { stage: "command_access" };
+  return {
+    stage: "command_access",
+    capability: canonicalCommandAccessCapability({
+      group: input.group,
+      command: input.command,
+      access: input.access,
+      input: input.input,
+    }),
   };
 }
 
@@ -167,6 +193,17 @@ export function listCliCommandAccessCandidates(
   input: CliCommandAccessInput & { access: CommandAccessOptions },
 ): AuthorizationCapability[] {
   return commandAccessCandidates(input);
+}
+
+/** Canonical capability the command access check asks for (the same one the denial message names). */
+export function canonicalCommandAccessCapability(input: {
+  group: string;
+  command: string;
+  access: CommandAccessOptions;
+  input?: Record<string, unknown>;
+}): string {
+  const capability = commandAccessCapability(input);
+  return `${capability.permission}:${capability.objectType}:${capability.objectId}`;
 }
 
 export function buildCliCommandOperation(input: CliCommandAccessInput): PermissionProviderCliCommandOperation {
@@ -271,9 +308,10 @@ function commandAccessCandidates(input: CliCommandAccessInput & { access: Comman
   return dedupeCandidates([...semanticCandidates, ...concreteResourceCandidates, ...legacyCandidates]);
 }
 
-function commandAccessConcreteResourceCandidates(
-  input: CliCommandAccessInput & { access: CommandAccessOptions },
-): Array<{
+function commandAccessConcreteResourceCandidates(input: {
+  access: CommandAccessOptions;
+  input?: Record<string, unknown>;
+}): Array<{
   permission: string;
   objectType: string;
   objectId: string;
@@ -429,9 +467,12 @@ function buildCommandAccessGuidance(
   });
 }
 
-function commandAccessCapability(
-  input: CliCommandAccessInput & { access: CommandAccessOptions },
-): AuthorizationCapability {
+function commandAccessCapability(input: {
+  group: string;
+  command: string;
+  access: CommandAccessOptions;
+  input?: Record<string, unknown>;
+}): AuthorizationCapability {
   if (input.access.requireConcreteResource) {
     const [concrete] = commandAccessConcreteResourceCandidates(input);
     if (concrete) return concrete;
