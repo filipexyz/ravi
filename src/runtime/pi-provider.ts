@@ -7,6 +7,7 @@ import type {
   RuntimeControlRequest,
   RuntimeControlResult,
   RuntimeControlState,
+  RuntimeDynamicToolCallResult,
   RuntimeEvent,
   RuntimeEventMetadata,
   RuntimeExecutionMetadata,
@@ -1904,17 +1905,30 @@ async function answerPiExtensionUiRequest(
     if (!transport.writeMessage) {
       throw new Error("Pi RPC transport cannot answer extension UI dynamic tool requests");
     }
-    const result = input.handleRuntimeToolCall
-      ? await input.handleRuntimeToolCall({
-          toolName: dynamicRequest.toolName,
-          callId: dynamicRequest.toolCallId,
-          arguments: dynamicRequest.arguments,
-        })
-      : {
-          success: false,
-          contentItems: [],
-          reason: "Ravi host tool execution is unavailable for this turn.",
-        };
+    let result: RuntimeDynamicToolCallResult;
+    try {
+      result = input.handleRuntimeToolCall
+        ? await input.handleRuntimeToolCall({
+            toolName: dynamicRequest.toolName,
+            callId: dynamicRequest.toolCallId,
+            arguments: dynamicRequest.arguments,
+          })
+        : {
+            success: false,
+            contentItems: [],
+            reason: "Ravi host tool execution is unavailable for this turn.",
+          };
+    } catch (error) {
+      result = {
+        success: false,
+        contentItems: [],
+        reason: error instanceof Error ? error.message : "Ravi host tool execution failed.",
+      };
+    }
+    log.info("Answered Pi dynamic tool request", {
+      toolName: dynamicRequest.toolName,
+      success: result.success,
+    });
     await transport.writeMessage(formatPiDynamicToolUiResponse(dynamicRequest, result));
     return;
   }

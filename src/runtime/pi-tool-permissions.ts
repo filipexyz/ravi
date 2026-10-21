@@ -86,6 +86,31 @@ function parseDynamicToolResult(value) {
   }
 }
 
+async function runDynamicTool(ctx, toolName, toolCallId, params) {
+  const payload = JSON.stringify({
+    version: 1,
+    toolName: toolName,
+    toolCallId: toolCallId,
+    arguments: params || {},
+  });
+  // Serialize against the permission dialogs: Pi keeps one outstanding dialog
+  // per session, and a late permission answer would otherwise cancel the tool
+  // call (the host reply then never reaches this promise).
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let raw = null;
+    try {
+      raw = await withPermissionGate(() => ctx.ui.input(DYNAMIC_TITLE, payload));
+    } catch {
+      raw = null;
+    }
+    const parsed = parseDynamicToolResult(raw);
+    if (parsed) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
 function parseDecision(value) {
   if (value === true || value === ALLOW) return { allowed: true };
   if (value === false || value == null || value === "") {
@@ -171,15 +196,18 @@ export default function (pi) {
         if (!ctx.ui || !ctx.ui.input) {
           throw new Error("Ravi dynamic tool bridge UI input is unavailable");
         }
-        const payload = JSON.stringify({
-          version: 1,
-          toolName: dynamicTool.name,
-          toolCallId: toolCallId,
-          arguments: params || {},
-        });
-        const parsed = parseDynamicToolResult(await ctx.ui.input(DYNAMIC_TITLE, payload));
+        const parsed = await runDynamicTool(ctx, dynamicTool.name, toolCallId, params);
         if (!parsed) {
-          throw new Error("Ravi dynamic tool bridge returned an unreadable result");
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Ravi dynamic tool bridge did not answer; retry this tool call once.",
+              },
+            ],
+            details: {},
+            isError: true,
+          };
         }
         if (!parsed.success) {
           throw new Error(
