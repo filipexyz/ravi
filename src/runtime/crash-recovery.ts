@@ -8,7 +8,19 @@ import type {
 } from "./crash-recovery-store.js";
 import { RUNTIME_TURN_ATTEMPT_INPUT_MUTATED_METADATA_KEY, sqliteCrashRecoveryStore } from "./crash-recovery-store.js";
 
-export const DEFAULT_CRASH_RECOVERY_LEASE_MS = 30_000;
+/**
+ * How long a boot/attempt lease stays valid without a successful heartbeat.
+ *
+ * The lease has to survive the longest synchronous write we can hand SQLite,
+ * not just a missed timer tick: the heartbeat lives on the same event loop as
+ * every query, and on a multi-GB production database a contended write (TTL
+ * prune batch, WAL checkpoint, another process holding the write lock) can
+ * stall the loop for tens of seconds. A 30s lease expired under a measured
+ * ~93s stall on 2026-10-20, which fail-closed the daemon and discarded every
+ * in-flight turn even though the heartbeat write itself was still the owner's.
+ * 120s keeps the fence meaningful while leaving room for that stall.
+ */
+export const DEFAULT_CRASH_RECOVERY_LEASE_MS = 120_000;
 export const DEFAULT_CRASH_RECOVERY_HEARTBEAT_INTERVAL_MS = 10_000;
 
 export interface RuntimeCrashRecoveryTimer {

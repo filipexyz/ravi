@@ -32,6 +32,7 @@ import {
 } from "./knowledge/egress/guard.js";
 import { extractKnowledgeMarkers, handleKnowledgeMarkers } from "./knowledge/markers.js";
 import { KNOWLEDGE_CURATOR_CHANNEL } from "./knowledge/types.js";
+import { isEmptyOrExactSilentText, isExactSilentTokenText, isSilentTokenText, SILENT_TOKEN } from "./silent-token.js";
 import { unlink } from "node:fs/promises";
 import { nats } from "./nats.js";
 import type { ResponseContentPart, ResponseMediaAttachment, ResponseMessage } from "./runtime/message-types.js";
@@ -68,7 +69,7 @@ import { resolveOmniGroupMetadata } from "./omni/group-metadata-cache.js";
 import { buildRaviTtsRequest, handleRaviTtsRequest, RAVI_TTS_TOPIC, shouldAutoTtsForAgent } from "./audio/tts.js";
 import { handleSlackThreadCreationDelivery, reconcileSlackThreadLifecycle } from "./channels/slack/thread-lifecycle.js";
 import { sendSlackMedia } from "./channels/slack/media.js";
-import { sendSlackText } from "./channels/slack/text-send.js";
+import { sendSlackPrivateCards, sendSlackText } from "./channels/slack/text-send.js";
 import { SessionResponseQueue } from "./gateway-response-order.js";
 
 const log = logger.child("gateway");
@@ -293,8 +294,8 @@ function withOutboundStatusAnchor(target: PresenceTarget, data: Record<string, u
   };
 }
 
-/** Silent reply token — when response contains this, don't send to channel */
-export const SILENT_TOKEN = "@@SILENT@@";
+/** Silent reply token — a response that is only this marker is not sent. */
+export { SILENT_TOKEN };
 
 export interface GatewayOptions {
   logLevel?: "debug" | "info" | "warn" | "error";
@@ -354,6 +355,11 @@ type DirectSendRequest = {
   replyTopic?: string;
   threadId?: string;
   blocks?: readonly Record<string, unknown>[];
+  /**
+   * Slack only: send the card privately to these people (ephemeral in `to`, or
+   * their DM with the app when they are not in it) instead of posting it.
+   */
+  privateTo?: readonly string[];
 };
 
 type MediaSendRequest = {
@@ -1169,11 +1175,19 @@ export class Gateway {
       .filter((part): part is Extract<ResponseContentPart, { type: "text" }> => part.type === "text")
       .reduce((total, part) => total + part.text.length, 0);
 
-    if (
-      !hasMedia &&
+    const textParts = parts.filter(
+      (part): part is Extract<ResponseContentPart, { type: "text" }> => part.type === "text",
+    );
+    // Silence is a delivery state, not a substring edit: drop the delivery when
+    // every text part is the marker/empty, or when the parts joined together
+    // form the marker (a marker split across content parts). A sentence that
+    // cites the marker stays deliverable.
+    const allTextPartsSilent =
       parts.length > 0 &&
-      parts.every((part) => part.type === "text" && (!part.text.trim() || part.text.trim() === SILENT_TOKEN))
-    ) {
+      textParts.length === parts.length &&
+      textParts.every((part) => isEmptyOrExactSilentText(part.text));
+    const joinedPartsSilent = textParts.length > 0 && isSilentTokenText(textParts.map((part) => part.text).join(""));
+    if (!hasMedia && (allTextPartsSilent || joinedPartsSilent)) {
       log.debug("Silent response, not sending to channel", { sessionName });
       await this.stopPresenceForSession(sessionName, target);
       await emitDelivery({ status: "dropped", reason: "silent", target });
@@ -1181,7 +1195,7 @@ export class Gateway {
     }
 
     const deliverableParts = parts.filter(
-      (part) => part.type === "media" || (part.text.trim() && part.text.trim() !== SILENT_TOKEN),
+      (part) => part.type === "media" || (!joinedPartsSilent && part.text.trim() && !isExactSilentTokenText(part.text)),
     );
     if (deliverableParts.length === 0) {
       await emitDelivery({ status: "dropped", reason: "empty_response", target });
@@ -1940,6 +1954,44 @@ export class Gateway {
     const text = data.text?.trim();
     if (!text) {
       await reply({ success: false, error: "Missing send text" });
+      return;
+    }
+
+    if (data.privateTo) {
+      try {
+        const result = await sendSlackPrivateCards({
+          accountId: resolved.accountId,
+          chatId: data.to,
+          text,
+          userIds: data.privateTo,
+          blocks: data.blocks ?? [],
+          ...(data.threadId ? { threadId: data.threadId } : {}),
+        });
+        log.info("Native private cards delivered", {
+          accountId: resolved.accountId,
+          delivered: result.deliveries.length,
+          failed: result.failures.length,
+        });
+        if (result.failures.length > 0) {
+          log.warn("Some private Slack cards were not delivered", { failures: result.failures });
+        }
+        if (result.deliveries.length === 0) {
+          await reply({
+            success: false,
+            error: result.failures[0]?.error ?? "No private card could be delivered",
+          });
+          return;
+        }
+        await reply({
+          success: true,
+          messageId: result.deliveries[0]?.messageId,
+          deliveries: result.deliveries,
+          failures: result.failures,
+        });
+      } catch (err) {
+        log.error("Failed to deliver native private cards", { accountId: resolved.accountId, error: err });
+        await reply({ success: false, error: err instanceof Error ? err.message : String(err) });
+      }
       return;
     }
 

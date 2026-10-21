@@ -172,6 +172,7 @@ Source agent: {{source.agentId}}
 Observer role: {{binding.observerRole}}
 Observer mode: {{binding.observerMode}}
 Delivery: realtime
+Delivery id: {{delivery.id}}
 Events: {{delivery.eventCount}}
 Run: {{delivery.runId}}
 
@@ -192,6 +193,7 @@ Source agent: {{source.agentId}}
 Observer role: {{binding.observerRole}}
 Observer mode: {{binding.observerMode}}
 Delivery: debounce
+Delivery id: {{delivery.id}}
 Events: {{delivery.eventCount}}
 Run: {{delivery.runId}}
 
@@ -218,6 +220,7 @@ Observer mode: {{binding.observerMode}}
 Rule: {{binding.ruleId}}
 Profile: {{profile.id}}@{{profile.version}}
 Delivery: end_of_turn
+Delivery id: {{delivery.id}}
 Events: {{delivery.eventCount}}
 Run: {{delivery.runId}}
 
@@ -854,6 +857,7 @@ function buildBaseRenderContext(input: {
   renderedEvents?: string;
   event?: ObserverProfileRenderEvent;
   input?: Record<string, unknown>;
+  deliveryId?: string;
 }): Record<string, unknown> {
   const instructions = observerInstructions(input.binding);
   // One hash per delivery: the idempotency key and the boundary token are two slices of the same
@@ -896,6 +900,7 @@ function buildBaseRenderContext(input: {
     },
     delivery: {
       policy: input.deliveryPolicy,
+      id: input.deliveryId ?? "-",
       runId: input.runId ?? "-",
       eventCount: input.events.length,
       timestamp: Date.now(),
@@ -974,8 +979,7 @@ export function neutralizeObservationBoundary(text: string): string {
     // gone and the line can no longer be read as a boundary.
     out = out.replace(new RegExp(marker.source, marker.flags), (match) => match.replace(/---/, "\\-\\-\\-"));
   }
-  // The task observer answers in a <task-verdict> block; observed text must not carry one it could echo.
-  return out.replace(/<(\s*\/?\s*)task-verdict/gi, "&lt;$1task-verdict");
+  return out;
 }
 
 export function renderObservationPromptForProfile(input: {
@@ -985,7 +989,8 @@ export function renderObservationPromptForProfile(input: {
   events: ObserverProfileRenderEvent[];
   deliveryPolicy?: ObserverProfileDeliveryPolicy;
   runId?: string;
-  /** Producer-supplied context under the `input` root, e.g. the observed task. */
+  deliveryId?: string;
+  /** Producer-supplied context under the `input` root. */
   input?: Record<string, unknown>;
 }): string {
   const deliveryPolicy = input.deliveryPolicy ?? input.binding.deliveryPolicy;
@@ -1015,7 +1020,7 @@ export function renderObservationPromptForProfile(input: {
   ).trim();
 }
 
-/** Sample `input` for previews and validation, shaped like the task observer's. */
+/** Sample `input` for previews and validation, shaped like a producer's. */
 const REPRESENTATIVE_PREVIEW_INPUT: Record<string, unknown> = {
   trigger: "end_of_turn",
   task: {

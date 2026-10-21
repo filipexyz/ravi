@@ -1,19 +1,19 @@
-import { afterAll, afterEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { setPluginDiscoveryOverrideForTests } from "../plugins/index.js";
+import type { PluginSpec } from "../plugins/index.js";
 import systemProfilesRaw from "./profile-catalog/system-profiles.json" with { type: "json" };
 
-let pluginDescriptors: Array<{ path: string }> = [];
+let pluginDescriptors: PluginSpec[] = [];
 let discoverPluginsCalls = 0;
 
-mock.module("../plugins/index.js", () => ({
-  discoverPlugins: () => {
-    discoverPluginsCalls += 1;
-    return pluginDescriptors;
-  },
-}));
+setPluginDiscoveryOverrideForTests(() => {
+  discoverPluginsCalls += 1;
+  return pluginDescriptors;
+});
 
 const {
   createTask,
@@ -25,9 +25,12 @@ const {
   previewTaskProfile,
   requireTaskProfileDefinition,
   resolveTaskProfile,
+  TaskProfileMissingInputError,
   taskProfileUsesObserver,
   validateTaskProfiles,
 } = await import("./index.js");
+const { expectedErrorToContractError } = await import("../cli/agent-contract.js");
+const { isSafeLocalPayloadMessage } = await import("../cli/payload-error-message.js");
 
 const originalCwd = process.cwd();
 const tempDirs: string[] = [];
@@ -257,7 +260,7 @@ describe("task profile catalog", () => {
     const pluginDir = makeTempDir("ravi-task-profiles-plugin-");
     const stateDir = await createIsolatedRaviState("ravi-task-profiles-state-");
     process.chdir(workspaceDir);
-    pluginDescriptors = [{ path: pluginDir }];
+    pluginDescriptors = [{ type: "local", path: pluginDir }];
 
     writeTaskProfile(join(pluginDir, "task-profiles"), "cascade-profile", {
       version: "plugin-1",
@@ -496,8 +499,20 @@ describe("task profile catalog", () => {
     });
 
     expect(() => previewTaskProfile("input-contract", { title: "Missing required input" })).toThrow(
-      "Task profile input-contract requires input(s): goal.",
+      "Missing required input(s) for task profile input-contract: goal. Pass them with --input goal=...",
     );
+
+    let missingInputError: unknown;
+    try {
+      previewTaskProfile("input-contract", { title: "Missing required input" });
+    } catch (error) {
+      missingInputError = error;
+    }
+    expect(missingInputError).toBeInstanceOf(TaskProfileMissingInputError);
+    expect(missingInputError).toMatchObject({ code: "USAGE_ERROR", exitCode: 2, missingInputs: ["goal"] });
+    const contractError = expectedErrorToContractError("tasks profiles preview", missingInputError);
+    expect(contractError).toMatchObject({ code: "USAGE_ERROR", exitCode: 2 });
+    expect(isSafeLocalPayloadMessage(contractError?.message ?? "")).toBeTrue();
 
     const preview = previewTaskProfile("input-contract", {
       title: "Optional input preview",
@@ -695,4 +710,4 @@ describe("task profile catalog", () => {
     expect(taskProfileUsesObserver(observedPreview.profile)).toBeTrue();
   });
 });
-afterAll(() => mock.restore());
+afterAll(() => setPluginDiscoveryOverrideForTests(undefined));

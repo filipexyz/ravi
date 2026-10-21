@@ -39,6 +39,7 @@ import {
   reserveRuntimeCredentialAttempt,
 } from "./credential-store.js";
 import { buildRuntimeHostAttachments } from "./runtime-host-attachments.js";
+import { resolveObservationAllowedTools } from "./observation-plane.js";
 import { prepareRuntimeProviderBootstrap } from "./runtime-provider-bootstrap.js";
 import {
   buildRuntimeRequestContext,
@@ -76,6 +77,7 @@ import type {
   RuntimeCapabilities,
   RuntimeHostServices,
   RuntimeProviderId,
+  RuntimeDynamicToolCallRequest,
   RuntimeStartRequest,
   SessionRuntimeProvider,
 } from "./types.js";
@@ -124,7 +126,10 @@ export interface RuntimeStartRequestBuildResult {
 
 export function installCrashRecoveryApprovalFences(options: {
   hostServices: RuntimeHostServices;
-  streamingSession: Pick<RuntimeHostStreamingSession, "currentCrashRecoveryAttemptId" | "currentTurnToolStarted">;
+  streamingSession: Pick<
+    RuntimeHostStreamingSession,
+    "currentCrashRecoveryAttemptId" | "currentTurnToolStarted" | "externalApprovalWait"
+  >;
   crashRecovery: Pick<RuntimeCrashRecoveryCoordinator, "markTurnAttemptSafety">;
 }): void {
   const { hostServices, streamingSession, crashRecovery } = options;
@@ -144,7 +149,27 @@ export function installCrashRecoveryApprovalFences(options: {
     reason: CRASH_RECOVERY_APPROVAL_OWNERSHIP_CHANGED_REASON,
   });
 
-  const createBeforeExternalApprovalFence = (attemptId: string) => () => {
+  /**
+   * One authorization call can ask for several approvals (tool, then
+   * executable). The wait is announced once per call and closed when it returns.
+   */
+  const trackExternalApprovalWait = () => {
+    let waiting = false;
+    return {
+      begin: () => {
+        if (waiting) return;
+        waiting = true;
+        streamingSession.externalApprovalWait?.begin();
+      },
+      end: () => {
+        if (!waiting) return;
+        waiting = false;
+        streamingSession.externalApprovalWait?.end();
+      },
+    };
+  };
+
+  const createBeforeExternalApprovalFence = (attemptId: string, onWait?: () => void) => () => {
     if (streamingSession.currentCrashRecoveryAttemptId !== attemptId) {
       throw new RuntimeCrashRecoveryApprovalOwnershipChangedError();
     }
@@ -152,6 +177,7 @@ export function installCrashRecoveryApprovalFences(options: {
     if (streamingSession.currentCrashRecoveryAttemptId !== attemptId) {
       throw new RuntimeCrashRecoveryApprovalOwnershipChangedError();
     }
+    onWait?.();
   };
 
   const authorizeWithFence = async (
@@ -162,13 +188,16 @@ export function installCrashRecoveryApprovalFences(options: {
       return denyOwnershipChanged();
     }
     let result: RuntimeApprovalResult;
+    const wait = trackExternalApprovalWait();
     try {
-      result = await authorize(createBeforeExternalApprovalFence(attemptId));
+      result = await authorize(createBeforeExternalApprovalFence(attemptId, wait.begin));
     } catch (error) {
       if (error instanceof RuntimeCrashRecoveryApprovalOwnershipChangedError) {
         return denyOwnershipChanged();
       }
       throw error;
+    } finally {
+      wait.end();
     }
 
     if (streamingSession.currentCrashRecoveryAttemptId !== attemptId) {
@@ -196,16 +225,19 @@ export function installCrashRecoveryApprovalFences(options: {
     }
 
     let result: Awaited<ReturnType<RuntimeHostServices["authorizeCapability"]>>;
+    const wait = trackExternalApprovalWait();
     try {
       result = await authorizeCapability({
         ...request,
-        beforeExternalApproval: createBeforeExternalApprovalFence(attemptId),
+        beforeExternalApproval: createBeforeExternalApprovalFence(attemptId, wait.begin),
       });
     } catch (error) {
       if (error instanceof RuntimeCrashRecoveryApprovalOwnershipChangedError) {
         return denyCapabilityOwnershipChanged();
       }
       throw error;
+    } finally {
+      wait.end();
     }
     if (streamingSession.currentCrashRecoveryAttemptId !== attemptId) {
       return denyCapabilityOwnershipChanged();
@@ -544,6 +576,8 @@ async function buildRuntimeStartRequestInternal(
     resolvedAllowedSkills.hasConfiguration && resolvedAllowedSkills.allowlist.length > 0
       ? resolvedAllowedSkills.allowlist
       : undefined;
+  const hostDynamicTools = runtimeCapabilities.dynamicTools.mode === "host" ? hostServices.listDynamicTools() : [];
+  const observationAllowedTools = resolveObservationAllowedTools(prompt._observation?.permissionGrants);
   const canResumeSkillSession = isStoredSkillVisibilityCompatible(
     storedRuntimeSessionParams,
     allowedSkills,
@@ -920,6 +954,12 @@ async function buildRuntimeStartRequestInternal(
         : {}),
       ...(forkFromProviderSessionId ? { forkSession: true } : {}),
       abortController: streamingSession.abortController,
+      ...(hostDynamicTools.length > 0
+        ? {
+            dynamicTools: hostDynamicTools,
+            handleRuntimeToolCall: (request: RuntimeDynamicToolCallRequest) => hostServices.executeDynamicTool(request),
+          }
+        : {}),
       permissionOptions: {
         permissionMode: "bypassPermissions",
       },
@@ -933,6 +973,7 @@ async function buildRuntimeStartRequestInternal(
       ...(runtimePlugins.length > 0 ? { plugins: runtimePlugins } : {}),
       agentId: agent.id,
       ...(allowedSkills ? { allowedSkills } : {}),
+      ...(observationAllowedTools ? { allowedTools: observationAllowedTools } : {}),
       ...(hiddenSkills.length > 0 ? { hiddenSkills } : {}),
       ...(prompt._cliDestination ? { omitAdvertisedSkillCatalog: true } : {}),
       ...(remoteSpawn ? { remoteSpawn } : {}),

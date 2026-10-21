@@ -98,7 +98,9 @@ When a user replies in a Slack thread, Ravi MUST create or reuse a dedicated chi
   authority, and both stay within one agent.
 - Every parent notice (report or close return) MUST name the thread by the first
   line of its initial message, when it has one, and its child session name, and
-  MUST include a Slack link when the workspace id is known. It MUST be sourced
+  MUST include a Slack link when the workspace id is known. The link MUST be a
+  `slack://channel?team=<team>&id=<channel>&thread_ts=<ts>` app link, since
+  `https://app.slack.com` links always open the browser. It MUST be sourced
   at the channel root, never inside the thread.
 
 ## Route Semantics
@@ -145,14 +147,24 @@ ravi sessions thread-send <thread> "<instructions>"
 
 ## Root Card
 
-The root of a programmatic thread is a Block Kit card, not the initial message
-as plain text: the first line is the title, the rest a summary of at most 300
-characters, and a context line with the thread status. When the summary leaves
-part of the message out, the whole message is posted as the first reply inside
-the thread. `report` (latest progress), `close-thread` (closed, with the
-`--return` result) and a `thread-send` that reopens the thread update the card
-in place. The card shows only text that passed the outbound Knowledge guard.
-A thread a person started keeps their message as root; Ravi never edits it.
+The root of a programmatic thread is one Slack `card` block, not the initial
+message as plain text: the first line is the title, the latest progress or
+result the subtitle, a summary of the rest of at most 200 characters the body,
+and a status line (status, who asked, when it changed, whether the brief was
+cut) the subtext. When Slack rejects the `card` block (`invalid_blocks`), the
+same content is sent once more as classic blocks (header, sections, context).
+
+Who asked is the contact who wrote the turn running `create-thread`, from the
+daemon's record of the turn; the operator's own turns (and the terminal) fall
+back to the `permission-owner` contact; agents, routines and unknown turns
+name no one.
+
+When the summary leaves part of the message out, the whole message is posted
+as the first reply inside the thread. `report` (latest progress),
+`close-thread` (closed, with the `--return` result) and a `thread-send` that
+reopens the thread update the card in place. The card shows only text that
+passed the outbound Knowledge guard, plus who asked. A thread a person started
+keeps their message as root; Ravi never edits it.
 
 ## Acceptance Criteria
 

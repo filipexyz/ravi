@@ -72,6 +72,45 @@ describe("planKnowledgeProposal", () => {
     expect(a.dedupeKey).toBeNull();
   });
 
+  it("scopes gap idempotency to its audience and keeps retries stable", () => {
+    const gapDeps = { ...deps, instanceChannel: () => "whatsapp" };
+    const input = { kind: "gap" as const, text: "Qual o prazo?", project: "acme", audience: "contacts:wa-main" };
+    const first = planKnowledgeProposal(input, gapDeps).plan;
+    const retry = planKnowledgeProposal(input, gapDeps).plan;
+    const other = planKnowledgeProposal({ ...input, audience: "contacts:wa-other" }, gapDeps).plan;
+
+    expect(first.idempotencyKey).toBe(retry.idempotencyKey);
+    expect(first.idempotencyKey).not.toBe(other.idempotencyKey);
+    expect(first.dedupeKey).not.toBe(other.dedupeKey);
+  });
+
+  it("distinguishes evidence, superseded refs and field boundaries", () => {
+    const input = { kind: "correction" as const, text: "Prazo de 12 dias", project: "acme" };
+    const first = planKnowledgeProposal(input, deps).plan;
+    const evidence = planKnowledgeProposal({ ...input, from: ["km:12"] }, deps).plan;
+    const supersedes = planKnowledgeProposal({ ...input, supersedes: "kc:0123abcd-0000" }, deps).plan;
+    const changedEvidence = planKnowledgeProposal(
+      { ...input, from: ["km:12"] },
+      { ...deps, localTextHash: () => "updated-hash" },
+    ).plan;
+
+    expect(new Set([first, evidence, supersedes, changedEvidence].map((plan) => plan.idempotencyKey)).size).toBe(4);
+    expect(evidence.idempotencyKey).toBe(
+      planKnowledgeProposal({ ...input, from: ["km:12"] }, deps).plan.idempotencyKey,
+    );
+    expect(planKnowledgeProposal({ kind: "note", text: "ab", project: "c" }, deps).plan.idempotencyKey).not.toBe(
+      planKnowledgeProposal({ kind: "note", text: "a", project: "bc" }, deps).plan.idempotencyKey,
+    );
+  });
+
+  it("distinguishes transcript titles even with identical content", () => {
+    writeTranscript("meeting-a", '{"segments":[]}');
+    writeTranscript("meeting-b", '{"segments":[]}');
+    const first = planKnowledgeProposal({ kind: "transcript", transcriptKey: "meeting-a", project: "acme" }, deps);
+    const other = planKnowledgeProposal({ kind: "transcript", transcriptKey: "meeting-b", project: "acme" }, deps);
+    expect(first.plan.idempotencyKey).not.toBe(other.plan.idempotencyKey);
+  });
+
   it("falls back to knowledge.project and is a usage error with neither", () => {
     const plan = planKnowledgeProposal({ kind: "note", text: "x" }, { ...deps, defaultProject: () => "from-setting" });
     expect(plan.plan.project).toBe("from-setting");

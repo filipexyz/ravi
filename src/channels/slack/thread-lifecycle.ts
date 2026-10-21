@@ -405,7 +405,11 @@ export function slackThreadTitle(record: Pick<SlackThreadLifecycleRecord, "initi
     : line;
 }
 
-/** Slack web link to the thread, when the workspace id is known from inbound provenance. */
+/**
+ * Slack app link to the thread, when the workspace id is known from inbound
+ * provenance. `slack://` opens the thread in the Slack app; an
+ * `https://app.slack.com` link always opens the browser.
+ */
 export function slackThreadLink(record: SlackThreadLifecycleRecord): string | undefined {
   const channelId = record.platformChatId;
   const threadTs = record.providerThreadId;
@@ -417,7 +421,7 @@ export function slackThreadLink(record: SlackThreadLifecycleRecord): string | un
   const teamId = chats
     .map((chat) => chat?.rawProvenance?.teamId)
     .find((value): value is string => typeof value === "string" && SLACK_ID_PATTERN.test(value));
-  return teamId ? `https://app.slack.com/client/${teamId}/${channelId}/thread/${channelId}-${threadTs}` : undefined;
+  return teamId ? `slack://channel?team=${teamId}&id=${channelId}&thread_ts=${threadTs}` : undefined;
 }
 
 export function summarizeSlackThread(record: SlackThreadLifecycleRecord): SlackThreadSummary {
@@ -585,7 +589,7 @@ export async function sendSlackThreadMessage(
  */
 async function updateSlackThreadCard(
   record: SlackThreadLifecycleRecord,
-  state: Omit<SlackThreadCardState, "updatedAt">,
+  state: Omit<SlackThreadCardState, "updatedAt" | "requestedBy">,
   dependencies: SlackThreadLifecycleDependencies,
 ): Promise<void> {
   const publish = dependencies.publishOutbound;
@@ -609,6 +613,7 @@ async function updateSlackThreadCard(
         status: state.status,
         ...(state.note?.trim() ? { note: state.note.trim() } : {}),
         updatedAt: Date.now(),
+        ...(record.requestedBy ? { requestedBy: record.requestedBy } : {}),
       },
     },
   });

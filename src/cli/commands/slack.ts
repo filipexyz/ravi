@@ -1496,6 +1496,7 @@ export class SlackCommands {
         file,
         valid: raw.ok === true,
         ...(raw.ok !== true && raw.error ? { error: raw.error } : {}),
+        ...(raw.ok !== true && Array.isArray(raw.errors) ? { errors: raw.errors } : {}),
       },
       raw,
     };

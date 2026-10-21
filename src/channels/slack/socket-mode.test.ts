@@ -54,6 +54,7 @@ import {
   createSlackNativeRuntimesFromEnv,
   slackClientMessageId,
 } from "./socket-mode.js";
+import { SlackApiError } from "./client.js";
 import { buildSlackThreadCard } from "./thread-card.js";
 import {
   acceptSlackInboundEnvelope,
@@ -752,6 +753,46 @@ describe("Slack Socket Mode routing", () => {
     });
   });
 
+  it("renders Markdown text as Block Kit and keeps every posted ts on the receipt", async () => {
+    let count = 0;
+    const postMessage = mock(async () => {
+      count += 1;
+      const ts = `1713000000.00010${count}`;
+      return { channel: "C123", ts, messageId: ts, raw: { ok: true } };
+    });
+    const delivery = new SlackTextDelivery(
+      { postMessage } as never,
+      { threadReplyMode: "thread" } as never,
+      undefined,
+      {
+        isKnowledgeGuardedChat: () => false,
+      },
+    );
+    const paragraph = "The agent explains one more part of the design in plain words. ".repeat(20);
+    const text = ["## Plano", ...Array.from({ length: 12 }, () => paragraph)].join("\n\n");
+
+    const result = await delivery.deliverText({
+      sessionName: "ravi-channels",
+      idempotencyKey: "emit-md",
+      target: { channel: "slack", accountId: "T1", chatId: "C123", threadId: "1712999999.000010" },
+      text,
+      format: "markdown",
+    });
+
+    expect(postMessage).toHaveBeenCalledTimes(2);
+    expect(postMessage).toHaveBeenNthCalledWith(1, {
+      channel: "C123",
+      text: "Plano",
+      blocks: [expect.objectContaining({ type: "markdown" })],
+      threadTs: "1712999999.000010",
+      clientMsgId: slackClientMessageId("emit-md"),
+    });
+    expect(result).toMatchObject({
+      platformMessageId: "1713000000.000101",
+      raw: { ok: true, ravi_additional_ts: ["1713000000.000102"] },
+    });
+  });
+
   it("executes native Slack edit, delete, and reaction actions against provider message ids", async () => {
     const updateMessage = mock(async () => ({
       channel: "C123",
@@ -829,6 +870,7 @@ describe("Slack Socket Mode routing", () => {
       channel: "C123",
       ts: "1713000000.000100",
       text: "corrected",
+      blocks: [{ type: "markdown", text: "corrected" }],
     });
     expect(deleteMessage).toHaveBeenCalledWith({ channel: "C123", ts: "1713000000.000100" });
     expect(addReaction).toHaveBeenCalledWith({
@@ -992,10 +1034,11 @@ describe("Slack Socket Mode routing", () => {
       sessionName: "ravi-slack-channel",
       idempotencyKey: "thread-long",
       target: { channel: "slack", accountId: "ravi-slack", chatId: "C123" },
-      action: { type: "chat_action", actionId: "thread.create", text: brief },
+      action: { type: "chat_action", actionId: "thread.create", text: brief, requestedBy: "Luís" },
     });
 
-    const card = buildSlackThreadCard(brief, { status: "open" });
+    const card = buildSlackThreadCard(brief, { status: "open", requestedBy: "Luís" });
+    expect(JSON.stringify(card.blocks)).toContain("pedido por Luís");
     expect(card.fullBrief).toBeDefined();
     expect(postMessage).toHaveBeenNthCalledWith(1, {
       channel: "C123",
@@ -1005,10 +1048,51 @@ describe("Slack Socket Mode routing", () => {
     });
     expect(postMessage).toHaveBeenNthCalledWith(2, {
       channel: "C123",
-      text: card.fullBrief,
+      text: "*Instruções completas*",
+      blocks: [{ type: "markdown", text: card.fullBrief }],
       threadTs: "1713000000.000300",
       clientMsgId: slackClientMessageId("thread-long:brief"),
     });
+  });
+
+  it("falls back to classic blocks when Slack rejects the card block", async () => {
+    const posted: Array<Record<string, unknown>> = [];
+    const postMessage = mock(async (input: Record<string, unknown>) => {
+      posted.push(input);
+      if (posted.length === 1) throw new SlackApiError("chat.postMessage", "invalid_blocks");
+      return { channel: "C123", ts: "1713000000.000400", messageId: "1713000000.000400", raw: { ok: true } };
+    });
+    const delivery = new SlackChatActionDelivery({ postMessage } as never);
+
+    await expect(
+      delivery.executeChatAction({
+        sessionName: "ravi-slack-channel",
+        idempotencyKey: "thread-fallback",
+        target: { channel: "slack", accountId: "ravi-slack", chatId: "C123" },
+        action: { type: "chat_action", actionId: "thread.create", text: "Investigate this branch" },
+      }),
+    ).resolves.toMatchObject({ platformMessageId: "1713000000.000400" });
+
+    const card = buildSlackThreadCard("Investigate this branch", { status: "open" });
+    expect(posted.map((input) => input.blocks)).toEqual([card.blocks, card.fallbackBlocks]);
+    expect(posted[0]!.clientMsgId).toBe(posted[1]!.clientMsgId);
+  });
+
+  it("does not retry a card post for an error other than invalid blocks", async () => {
+    const postMessage = mock(async () => {
+      throw new SlackApiError("chat.postMessage", "channel_not_found");
+    });
+    const delivery = new SlackChatActionDelivery({ postMessage } as never);
+
+    await expect(
+      delivery.executeChatAction({
+        sessionName: "ravi-slack-channel",
+        idempotencyKey: "thread-missing",
+        target: { channel: "slack", accountId: "ravi-slack", chatId: "C404" },
+        action: { type: "chat_action", actionId: "thread.create", text: "Investigate this branch" },
+      }),
+    ).rejects.toThrow("channel_not_found");
+    expect(postMessage).toHaveBeenCalledTimes(1);
   });
 
   it("re-renders a thread root card on a card edit", async () => {
@@ -1042,7 +1126,7 @@ describe("Slack Socket Mode routing", () => {
     });
   });
 
-  it("converts CommonMark chat-action text to mrkdwn before post and update", async () => {
+  it("renders chat-action Markdown as a card on post and a markdown block on update", async () => {
     const postMessage = mock(async () => ({
       channel: "C123",
       ts: "1713000000.000200",
@@ -1089,6 +1173,7 @@ describe("Slack Socket Mode routing", () => {
       channel: "C123",
       ts: "1713000000.000100",
       text: "Corrected *copy*",
+      blocks: [{ type: "markdown", text: "Corrected **copy**" }],
     });
   });
 

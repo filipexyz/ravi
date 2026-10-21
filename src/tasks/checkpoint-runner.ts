@@ -1,13 +1,39 @@
-import { publishSessionPrompt } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
 import { resolveTaskCheckpointIntervalMs, TASK_CHECKPOINT_SWEEP_INTERVAL_MS } from "./checkpoint.js";
-import { recordTaskStall } from "./observer-apply.js";
 import { TASK_OBSERVER_ACTOR } from "./observer-contract.js";
+import { neutralizeSystemMarkers } from "./progress-contract.js";
 import { resolveTaskProfileForTask, taskProfileUsesObserver } from "./profiles.js";
-import { dbGetActiveAssignment, dbListTasks, dbRegisterTaskCheckpointMiss } from "./task-db.js";
-import { buildTaskCheckpointReminderPrompt, emitTaskEvent } from "./service.js";
+import { dbAppendTaskEvent, dbGetActiveAssignment, dbListTasks, dbRegisterTaskCheckpointMiss } from "./task-db.js";
+import {
+  buildTaskCheckpointReminderPrompt,
+  emitTaskEvent,
+  publishTaskAssigneePrompt,
+  reportTaskStall,
+  resolveTaskAssigneeSession,
+} from "./service.js";
+import type { TaskEvent, TaskRecord } from "./types.js";
 
 const log = logger.child("tasks:checkpoint-runner");
+
+/** Record a stall and tell the requester. The observer never owns this path. */
+export async function recordTaskStall(
+  task: TaskRecord,
+  message: string,
+  actor: { actor: string; agentId?: string; sessionName?: string },
+): Promise<TaskEvent> {
+  const { task: current, event } = dbAppendTaskEvent(task.id, "task.stalled", {
+    ...actor,
+    message: neutralizeSystemMarkers(message),
+    progress: task.progress,
+  });
+  await emitTaskEvent(current, event);
+  try {
+    await reportTaskStall(current, event);
+  } catch (error) {
+    log.warn("Failed to report task stall", { taskId: task.id, error });
+  }
+  return event;
+}
 
 export interface TaskCheckpointRunnerOptions {
   canPublishSessionPrompt?(sessionName: string): boolean;
@@ -108,10 +134,19 @@ export class TaskCheckpointRunner {
             continue;
           }
 
-          reminders += 1;
           await emitTaskEvent(missed.task, missed.event);
 
-          await publishSessionPrompt(missed.assignment.sessionName, {
+          const target = resolveTaskAssigneeSession(missed.task, missed.assignment);
+          if (!target.ok) {
+            log.warn("Task checkpoint reminder not delivered to the assignee", {
+              taskId: task.id,
+              reason: target.reason,
+            });
+            continue;
+          }
+
+          reminders += 1;
+          await publishTaskAssigneePrompt(missed.task, target, {
             prompt: buildTaskCheckpointReminderPrompt(missed.task, {
               ...missed.assignment,
               checkpointOverdueCount: missed.assignment.checkpointOverdueCount ?? missed.missedCount,

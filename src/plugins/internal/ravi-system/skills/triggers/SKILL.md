@@ -94,11 +94,24 @@ quando ele para se perde.
 
 ## Eventos de linha de Bases
 
-Depois de `ravi bases subscribe <base>`, cada mudança de linha chega em
-`ravi.console.inbox.item` com `category: "bases"` (poll a cada 15 s). O payload
-traz ids (`baseSlug`, `rowId`, `version`, `surface`) e, em `bases.row.*`, os
-valores lidos na entrega (`payload.row.values`, sem `body`); o envelope traz
-`actor.type` (`user` ou `cli`) e `dedupeKey`.
+Depois de `ravi bases subscribe <base>`, cada evento da base chega em
+`ravi.console.inbox.item` com `category: "bases"` (poll a cada 15 s):
+`bases.row.created|updated|archived|restored`, `bases.rows.bulk_changed`,
+`bases.approval.requested|decided` e `bases.agent.requested|backfill`. O payload
+traz ids (`baseSlug`, `rowId`, `version`, `surface`; `propertyId`, `state` ou
+`inputsHash` nos de aprovação e agente; `subscriptionId` numa assinatura com
+filtro) e, nos eventos de uma linha, os valores lidos na entrega
+(`payload.row.values`, sem `body`); o envelope traz `actor.type` (`user` ou
+`cli`) e `dedupeKey`.
+
+`ravi bases subscribe <base> --events … --props … --view … --trigger --agent <id>`
+assina e cria o trigger num comando, com o filtro da assinatura pronto. Num
+turno de agente o trigger nasce desligado: o operador liga com
+`ravi triggers enable <id>`. Ele não filtra o `actor`; se o agente escreve na
+mesma base, some a regra 6 ao filtro gerado (`trigger.filter` no JSON):
+`ravi triggers set <id> filter '<filtro gerado> && data.actor.type == "user"'`.
+O `set` troca o filtro inteiro; só a condição do `actor` perderia base,
+assinatura e eventos.
 
 ```bash
 ravi triggers add "tarefas · fila" --topic "ravi.console.inbox.item" \
@@ -110,7 +123,7 @@ ravi cron add "tarefas · varredura" --every 1h --agent triagem --isolated --mes
 
 - Regra 5. O cooldown descarta eventos: o prompt do trigger manda processar toda linha no estado X, com `--cooldown` de até 5 s (ou `--debounce` em vez de cooldown, pra não descartar); o `rowId` do evento é só pista. Quando a última mudança importa, some uma varredura por cron. Motivo: acima do poll de 15 s, a última mudança se perde.
 - Regra 6. Se o agente escreve na base que o acorda, filtre `data.actor.type == "user"` (ou `data.payload.surface == "page"` se só a página conta) e faça você mesmo o passo seguinte: a sua escrita não acorda ninguém. `surface == "page"` ignora edições pela UI do Console.
-- O filtro decide quem acorda, não o que se executa, porque drenar é ler estado: confira aprovações em `ravi bases rows history`.
+- O filtro decide quem acorda, não o que se executa, porque drenar é ler estado: aprovação vai numa coluna `approval` (o Console só aceita aprovador) ou, feita com `select`, confira em `ravi bases rows history`.
 - Mais: `ravi skills show bases --file references/events-triggers.md`.
 
 ## Banco de Tópicos

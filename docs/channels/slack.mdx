@@ -47,7 +47,7 @@ At [api.slack.com/apps](https://api.slack.com/apps), choose **Create New App > F
 | `reactions:write` | The hourglass "working" reaction |
 | `files:read`, `files:write` | Files in both directions |
 
-Optional: `reactions:read` (reaction events), `canvases:read`/`canvases:write` (`ravi slack canvas-*`), `channels:manage`/`groups:write` (`ravi slack channels-create`), `links:read`/`links:write` (unfurls), `assistant:write` ([Working indicator](#working-indicator)).
+Optional: `reactions:read` (reaction events), `canvases:read`/`canvases:write` (`ravi slack canvas-*`, and long replies as canvases), `channels:manage`/`groups:write` (`ravi slack channels-create`), `links:read`/`links:write` (unfurls), `assistant:write` ([Working indicator](#working-indicator)).
 
 After changing scopes or events, reinstall the app, store the bot token again if it changed, and run `ravi channels restart`.
 
@@ -185,7 +185,7 @@ Do not use `ravi instances pending approve` with Slack IDs. For a channel it sto
 - To answer channel root messages in a new thread: `ravi channels set slack-main defaults '{"rootReplyMode":"new_thread"}'`, then `ravi channels restart`. This replaces the whole `defaults` object.
 - The agent keeps a DM or channel on its subject: work that strays from the conversation (an investigation, a fix, a long run of tools, another subject) goes to a new thread it opens with `ravi sessions create-thread`, where a thread session does the work. Inside a thread, it stays on that thread's subject. This needs the agent to be allowed to run `ravi sessions`.
 - The DM or channel session orchestrates the threads it opens. It lists them with `ravi sessions threads` and gives one new instructions with `ravi sessions thread-send <thread-session> "..."`. A thread sends progress back with `ravi sessions report "..."` and its result with `ravi sessions close-thread --return "..."`; both arrive in the channel session naming the thread by its first line.
-- A thread the agent opens shows in the channel as a card: the first line of its initial message as the title, a short summary, and its status (in progress, done, reopened). The whole message opens the thread when it does not fit the card. The card updates itself when the thread reports progress, closes (showing the result) or is reopened.
+- A thread the agent opens shows in the channel as a card: the first line of its initial message as the title, a short summary, who asked for it, and its status (in progress, done, reopened). The whole message opens the thread when it does not fit the card. The card updates itself when the thread reports progress, closes (showing the result) or is reopened.
 - There is no mention-only mode: every human message in a routed channel starts a turn. Other bots are ignored unless they mention your app.
 - Edited messages are ignored. Send a new one.
 - `ravi contacts block` does not stop Slack messages, and reply mode is not enforced. Keep people out with policies and routes ([Instances and routing](/guides/routing)).
@@ -193,6 +193,14 @@ Do not use `ravi instances pending approve` with Slack IDs. For a channel it sto
 <Note>
 Questions with options (polls, the agent's `AskUserQuestion`) do not work on Slack: Ravi cannot post a poll there (`Polls are not supported on Slack`), so the agent gets an error instead of your answer. Ask the agent to ask in plain text.
 </Note>
+
+### How replies look
+
+The agent writes Markdown and Ravi sends it as Block Kit, so headings, lists, tables, task lists, quotes and code with syntax highlighting show as Slack draws them. An image alone on its line becomes an image.
+
+- A long reply is split only between blocks (paragraphs, tables, code), never inside one.
+- A long document in a reply (a `markdown` or `text` code block of 40 lines or more), or a reply too long for one message, becomes a canvas the conversation can read, and the message keeps a link to it. Without `canvases:write`, on a free workspace or in a DM, it is sent as a file in the same thread instead. Knowledge-guarded conversations never get a canvas or a file.
+- If Slack refuses the blocks, the reply goes out as plain Slack text, split the same way.
 
 ### Working indicator
 
@@ -207,13 +215,15 @@ The agent then puts an hourglass reaction on your message and removes it when do
 
 ## Approvals
 
-When a turn asks for something the agent's ceiling does not cover and the request goes to approval, Ravi posts a message with **Approve** and **Reject** buttons in the chat the request came from. Only agents on the Pi and Grok providers ask. On Claude and Codex, a shell command outside the ceiling is refused at once, and on every provider a `ravi` command group outside it is refused without asking.
+When a turn asks for something the agent's ceiling does not cover and the request goes to approval, Ravi sends a card with **Approve** and **Reject** buttons privately to each person who can grant it: an ephemeral message in the chat the request came from, which only that person sees, or a message in their DM with the app when they are not in that chat. Nobody else sees the card. Only agents on the Pi and Grok providers ask. On Claude and Codex, a shell command outside the ceiling is refused at once, and on every provider a `ravi` command group outside it is refused without asking.
 
-- Approving a shell command does not make it run today: it is still refused. To let the agent run an executable, add it to the agent's ceiling.
+- A person can grant a request when their Slack user is linked to their contact on this instance and their capabilities cover it, or they have `admin:system:*` (your `permission-owner` tag).
+- When nobody can grant it, no card is sent and the request is refused at once, with that reason. Link your Slack user to your contact to receive the cards.
+- An approved command runs, and the approval lasts for that turn. For recurring access, add the executable to the agent's ceiling.
 - Only clicks count; reactions and text replies are ignored.
-- Only a contact whose capabilities cover the request, or who has `admin:system:*` (your `permission-owner` tag), can decide. Other clicks are ignored without any message in Slack.
+- Every click gets a private answer: your card shows the decision, and a click on a card that someone else already decided, that expired, or that you lack the permission for says so.
 - No click within 5 minutes means not approved.
-- Buttons need **Interactivity** on. The daemon posts the message, so it must read the tokens too (Keychain, or the Vault variables in `~/.ravi/.env`).
+- Buttons need **Interactivity** on. The daemon sends the cards, so it must read the tokens too (Keychain, or the Vault variables in `~/.ravi/.env`).
 
 At `full-access` few requests need approval. See [Permissions](/guides/permissions).
 
@@ -227,7 +237,7 @@ ravi channels status                               # health: ready ... connected
 1. **DM.** In the app's Messages tab, send `hi`; the agent answers. Ask it to run `ravi agents list`; it runs, because you are the owner.
 2. **Channel.** In the routed channel, send `@Ravi hi`. The answer appears at the channel root.
 3. **Thread.** Reply in a thread under that answer. The agent answers in the thread, and `ravi sessions list --agent main` shows a new session for the thread: its name contains `-t-` followed by the thread timestamp without the dot, and its key ends in `:thread:<ts>`.
-4. **Ceiling.** Lower the ceiling with `ravi agents permissions main bootstrap` (it applies at once) and ask the agent in the DM to run `uname -a`. The command is refused, because `uname` is outside `bootstrap` (on Pi or Grok, Ravi first posts **Approve** and **Reject** buttons; click **Reject**). Restore it with `ravi agents permissions main full-access --execute`.
+4. **Ceiling.** Lower the ceiling with `ravi agents permissions main bootstrap` (it applies at once) and ask the agent in the DM to run `uname -a`. The command is refused, because `uname` is outside `bootstrap` (on Pi or Grok, Ravi first sends you a private card with **Approve** and **Reject**; click **Reject**). Restore it with `ravi agents permissions main full-access --execute`.
 
 ## If it does not answer
 
@@ -237,6 +247,7 @@ ravi channels status                               # health: ready ... connected
 - **Log says `Slack inbound held for owner review`:** the chat has no route, or the instance name differs from the channel config. Check `ravi routes explain slack-main group:C0123ABCD`.
 - **Nothing in the log:** the app is not in the channel, an event subscription is missing, or the app was not reinstalled after a scope change.
 - **Answers without tools:** your Slack ID is not linked to your contact on `slack-main`. Check with `ravi contacts check <your contact>`.
-- **Approve does nothing:** Interactivity is off in the Slack app, or the request was for a shell command, which approving does not unblock today (see [Approvals](#approvals)).
+- **Approve does nothing:** Interactivity is off in the Slack app.
+- **No approval card arrives and the request is refused:** nobody who can grant it has their Slack user linked to their contact on `slack-main`. Check with `ravi contacts check <your contact>` (see [Approvals](#approvals)).
 
 More in [Troubleshooting](/guides/troubleshooting).

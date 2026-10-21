@@ -139,7 +139,7 @@ export interface ForgetDeps {
   chatIdsForContact?: (contactId: string) => string[];
   /** Platform and normalized ids of a chat ref. */
   chatIdsForChat?: (chatId: string) => string[];
-  /** Drops the contact's pending and uploaded gap questions. */
+  /** Cancels the contact's outstanding gap uploads and undelivered answers. */
   dropGapsForContact?: (contactId: string) => number;
 }
 

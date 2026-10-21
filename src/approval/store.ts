@@ -1,4 +1,5 @@
 import { getDb } from "../router/router-db.js";
+import { fromSubjectColumns, resolveSubjectForChat, toSubjectColumns, type SubjectRef } from "../identity/subject.js";
 
 export type ApprovalRequestType = "plan" | "spec" | "permission";
 export type ApprovalRequestStatus = "pending" | "decided" | "expired";
@@ -20,6 +21,8 @@ export interface ApprovalRequestRecord {
   readonly objectId: string | null;
   readonly status: ApprovalRequestStatus;
   readonly decision: ApprovalDecisionValue | null;
+  /** On whose behalf the approval was requested. Not the same as who asked for it (actor). */
+  readonly subject?: SubjectRef;
   readonly decidedBy: string | null;
   readonly reason: string | null;
   readonly createdAt: number;
@@ -43,6 +46,22 @@ export interface CreateApprovalRequestInput {
   readonly objectId?: string;
   readonly createdAt: number;
   readonly expiresAt: number;
+}
+
+/**
+ * Where one approval card went. Slack cards go privately to each person who can
+ * grant the request: an ephemeral card in the request's chat (only that person
+ * sees it) or, when they are not in that chat, a card in their DM with the app.
+ */
+export type ApprovalDeliveryKind = "ephemeral" | "dm";
+
+export interface ApprovalDeliveryRecord {
+  readonly requestId: string;
+  readonly userId: string;
+  readonly kind: ApprovalDeliveryKind;
+  readonly chatId: string;
+  readonly messageId: string;
+  readonly createdAt: number;
 }
 
 export interface ClaimApprovalDecisionInput {
@@ -74,17 +93,25 @@ interface ApprovalRequestRow {
   created_at: number;
   expires_at: number;
   decided_at: number | null;
+  subject_kind: string | null;
+  subject_contact_id: string | null;
+  subject_identity_id: string | null;
+  subject_agent_id: string | null;
+  subject_channel: string | null;
+  subject_raw_id: string | null;
 }
 
 export function createApprovalRequest(input: CreateApprovalRequestInput): ApprovalRequestRecord {
   ensureApprovalRequestTable();
+  const subject = toSubjectColumns(resolveSubjectForChat(input.chatId));
   getDb()
     .prepare(
       `INSERT INTO approval_requests (
         id, type, channel, account_id, chat_id, instance_id, thread_id, message_id,
         session_name, agent_id, permission, object_type, object_id,
+        subject_kind, subject_contact_id, subject_identity_id, subject_agent_id, subject_channel, subject_raw_id,
         status, decision, decided_by, reason, created_at, expires_at, decided_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, NULL, NULL, ?, ?, NULL)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, NULL, NULL, ?, ?, NULL)`,
     )
     .run(
       input.id,
@@ -100,6 +127,12 @@ export function createApprovalRequest(input: CreateApprovalRequestInput): Approv
       emptyToNull(input.permission),
       emptyToNull(input.objectType),
       emptyToNull(input.objectId),
+      subject.subjectKind,
+      subject.subjectContactId,
+      subject.subjectIdentityId,
+      subject.subjectAgentId,
+      subject.subjectChannel,
+      subject.subjectRawId,
       input.createdAt,
       input.expiresAt,
     );
@@ -132,6 +165,36 @@ export function getApprovalRequestByMessageId(messageId: string): ApprovalReques
     .prepare("SELECT * FROM approval_requests WHERE message_id = ? ORDER BY created_at DESC LIMIT 1")
     .get(messageId) as ApprovalRequestRow | undefined;
   return row ? rowToRecord(row) : null;
+}
+
+export function recordApprovalDeliveries(
+  requestId: string,
+  deliveries: readonly Omit<ApprovalDeliveryRecord, "requestId">[],
+): void {
+  ensureApprovalRequestTable();
+  const insert = getDb().prepare(
+    `INSERT OR REPLACE INTO approval_request_deliveries (
+      request_id, user_id, kind, chat_id, message_id, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?)`,
+  );
+  for (const delivery of deliveries) {
+    insert.run(requestId, delivery.userId, delivery.kind, delivery.chatId, delivery.messageId, delivery.createdAt);
+  }
+}
+
+export function listApprovalDeliveries(requestId: string): ApprovalDeliveryRecord[] {
+  ensureApprovalRequestTable();
+  const rows = getDb()
+    .prepare("SELECT * FROM approval_request_deliveries WHERE request_id = ? ORDER BY created_at, user_id")
+    .all(requestId) as ApprovalDeliveryRow[];
+  return rows.map((row) => ({
+    requestId: row.request_id,
+    userId: row.user_id,
+    kind: row.kind as ApprovalDeliveryKind,
+    chatId: row.chat_id,
+    messageId: row.message_id,
+    createdAt: row.created_at,
+  }));
 }
 
 export function claimApprovalDecision(input: ClaimApprovalDecisionInput): ApprovalRequestRecord | null {
@@ -169,6 +232,15 @@ export function isApprovalRequestOpen(record: ApprovalRequestRecord, now: number
   return record.status === "pending" && record.expiresAt > now;
 }
 
+interface ApprovalDeliveryRow {
+  request_id: string;
+  user_id: string;
+  kind: string;
+  chat_id: string;
+  message_id: string;
+  created_at: number;
+}
+
 function ensureApprovalRequestTable(): void {
   const db = getDb();
   db.prepare(
@@ -203,6 +275,33 @@ function ensureApprovalRequestTable(): void {
     `CREATE INDEX IF NOT EXISTS idx_approval_requests_status_expires
       ON approval_requests(status, expires_at)`,
   ).run();
+  const approvalColumns = new Set(
+    (db.prepare("PRAGMA table_info(approval_requests)").all() as Array<{ name: string }>).map((column) => column.name),
+  );
+  for (const column of [
+    "subject_kind",
+    "subject_contact_id",
+    "subject_identity_id",
+    "subject_agent_id",
+    "subject_channel",
+    "subject_raw_id",
+  ]) {
+    if (!approvalColumns.has(column)) {
+      db.exec(`ALTER TABLE approval_requests ADD COLUMN ${column} TEXT`);
+    }
+  }
+  db.exec("CREATE INDEX IF NOT EXISTS idx_approval_requests_subject_contact ON approval_requests(subject_contact_id)");
+  db.prepare(
+    `CREATE TABLE IF NOT EXISTS approval_request_deliveries (
+      request_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      chat_id TEXT NOT NULL,
+      message_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (request_id, user_id)
+    )`,
+  ).run();
 }
 
 function rowToRecord(row: ApprovalRequestRow): ApprovalRequestRecord {
@@ -222,6 +321,7 @@ function rowToRecord(row: ApprovalRequestRow): ApprovalRequestRecord {
     objectId: row.object_id,
     status: row.status as ApprovalRequestStatus,
     decision: (row.decision as ApprovalDecisionValue | null) ?? null,
+    ...(fromSubjectColumns(row) ? { subject: fromSubjectColumns(row) } : {}),
     decidedBy: row.decided_by,
     reason: row.reason,
     createdAt: row.created_at,

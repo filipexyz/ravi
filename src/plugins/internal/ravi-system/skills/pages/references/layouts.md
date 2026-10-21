@@ -4,10 +4,11 @@ Parte da skill pages. Pressupõe `data-pages.md` (connectors, valores, erros) e
 o cliente `esqueletos/_client.js.txt`, publicado como `client.js`. Cada layout
 diz se uma tag cobre e, se não, de qual esqueleto partir.
 
-Tabela, board, lista, galeria e formulário saem prontos com `<ravi-view>` e
-`<ravi-form>` (`widgets.md`): tema, campos por tipo, teclado e `--uses`
-derivado. Escreva à mão só o que a tag não cobre. No HTML à mão, cor, fonte e
-espaço vêm das variáveis do tema com fallback (`theme.md`), nunca literais.
+Tabela, board, lista, galeria, calendário, formulário e gráfico saem prontos
+com `<ravi-view>`, `<ravi-form>` e `<ravi-chart>` (`widgets.md`): tema, campos
+por tipo, edição, teclado e `--uses` derivado. Escreva à mão só o que a tag
+não cobre. No HTML à mão, cor, fonte e espaço vêm das variáveis do tema com
+fallback (`theme.md`), nunca literais.
 
 ## Padrões por layout
 
@@ -19,7 +20,7 @@ view.
 ### Tabela
 
 Tag: `<ravi-view view="<uuid>" layout="table" columns="a,b,c" sort="-b"></ravi-view>`.
-À mão (filtro na tela, ordenação por clique): `exemplo-board.md` (tabela com edição e formulário); troque o cliente inline por `client.js`.
+À mão (ordenação por clique no cabeçalho): `exemplo-board.md` (tabela com edição e formulário); troque o cliente inline por `client.js`. Filtro na tela não pede isso: mude o `where` da tag por JS (`widgets.md`).
 
 - Cabeçalhos: `columns` do describe, na ordem. Pule `body` (a query não traz).
 - Paginação: `limit` de 50 a 100 e "Carregar mais" com `nextCursor`. Não
@@ -64,7 +65,8 @@ Tag: `<ravi-view view="<uuid>" layout="list"></ravi-view>` ou `layout="gallery"`
 
 ### Calendário
 
-Sem tag (`<ravi-view>` num calendário desenha uma lista). Esqueleto: `esqueletos/board.html.txt`; troque `load()` pela consulta do mês e `render()` por uma grade de dias.
+Tag: `<ravi-view view="<uuid>" layout="calendar"></ravi-view>` (grade do mês, item no dia de início abre o registro).
+À mão (arrastar para outro dia, intervalo ocupando vários dias, semana): `esqueletos/board.html.txt`; troque `load()` pela consulta do mês e `render()` por uma grade de dias.
 
 - `layout.dateProp` é `date`, `created_time` ou `updated_time`.
 - Consulte o mês visível: `filter: { "prop": <dateProp>, "op": "between",
@@ -78,7 +80,8 @@ Sem tag (`<ravi-view>` num calendário desenha uma lista). Esqueleto: `esqueleto
 
 ### Formulário
 
-Tag: `<ravi-form view="<uuid>"></ravi-form>`. À mão (campo `body`, validação própria): `esqueletos/formulario.html.txt`.
+Tag: `<ravi-form view="<uuid>"></ravi-form>` (com `body` quando a view deixa escrever), ou `<ravi-view view="<uuid>" layout="form"></ravi-view>` com os textos do layout da view.
+À mão (`person`, `ref`, validação própria): `esqueletos/formulario.html.txt`.
 
 - `layout.type: "form"` traz `title`, `description`, `submitLabel` e
   `successMessage`. Em geral `read` é falso: não chame `query`.
@@ -93,8 +96,8 @@ Tag: `<ravi-form view="<uuid>"></ravi-form>`. À mão (campo `body`, validação
 
 ### Detalhe e arquivar
 
-Tag: um widget com `<ravi-button action="open">` (diálogo com o registro) ou `action="archive"`; no cartão padrão, `<ravi-view ... archive>`.
-À mão: nenhum esqueleto; `client.js` não tem helper para `rows.get` e `rows.archive`, chame `exec("ravi.bases.views.rows.get", { viewId, rowId })`.
+Tag: "Abrir" no cartão padrão e na tabela, ou um widget com `<ravi-button action="open">` (diálogo que lê e edita o registro); arquivar com `action="archive"` ou, no cartão padrão, `<ravi-view ... archive>`.
+À mão (detalhe em página própria): nenhum esqueleto; `client.js` não tem helper para `rows.get` e `rows.archive`, chame `exec("ravi.bases.views.rows.get", { viewId, rowId })`.
 
 - Detalhe: `rows.get { viewId, rowId }` traz a linha com `body` (se
   projetado) e `users`. `rowId` na URL (`#row=<id>`) é seguro; valores não.
@@ -107,7 +110,12 @@ Tag: um widget com `<ravi-button action="open">` (diálogo com o registro) ou `a
 
 ### Gráficos e dashboards
 
-Sem tag. Esqueleto: nenhum de página; cole o código abaixo depois de `client.js`.
+Tag: `<ravi-chart chart="<uuid>"></ravi-chart>`, uma por gráfico (todos os marks, legenda, tabela acessível e grupos ocultos; `widgets.md`). Dashboard = seu HTML com várias tags.
+À mão (cores ou marks próprios, clique que filtra): nenhum esqueleto de página; cole o código abaixo depois de `client.js`.
+
+Para quem não pode ver linhas, a view do gráfico usa `"mode": "aggregate"` no
+`page_viewer`. Uma view com `layout.type: "chart"` aponta o gráfico em
+`layout.chartId`.
 
 `charts.data` devolve `groups`: um objeto por grupo, com chaves de canal
 (`x`, `y`, `color`, `theta`, `text`). Canal de dimensão traz id de opção, user
@@ -119,9 +127,7 @@ não pelo `sort` do spec nem pela ordem das opções: aplique os dois no cliente
 `suppressedGroups > 0`: diga que grupos com menos de 5 linhas ficaram
 ocultos.
 
-Dashboard = um `charts.data` por gráfico. Para quem não pode ver linhas, a
-view do gráfico usa `"mode": "aggregate"` no `page_viewer`. Uma view com
-`layout.type: "chart"` aponta o gráfico em `layout.chartId`.
+À mão, um `charts.data` por gráfico.
 
 SVG puro, sem biblioteca: barras (por `color`, conforme `stack` da medida:
 `zero` empilha, `normalize` 100%, `null` lado a lado), linha, área (sem

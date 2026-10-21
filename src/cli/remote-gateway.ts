@@ -61,6 +61,14 @@ const REMOTE_CONTRACT_CODE_PATTERN = /^[A-Z][A-Z0-9_]{0,63}$/;
 const REMOTE_FLAG_PATTERN = /^--[a-z0-9][a-z0-9-]{0,63}$/;
 const REMOTE_POSITIONAL_PATTERN = /^(?:<[a-z][A-Za-z0-9_-]{0,63}(?:\.\.\.)?>|\[[a-z][A-Za-z0-9_-]{0,63}(?:\.\.\.)?\])$/;
 const REMOTE_SUGGESTION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+// Canonical capability (`read:pages:list`, `admin:system:*`) and denial
+// metadata from the gateway envelope. Bounded so a hostile message cannot
+// smuggle free-form content through the denial projection.
+const REMOTE_CAPABILITY_PATTERN = /^[a-z][a-z0-9_-]*(?::[A-Za-z0-9*_.-]+){1,3}$/;
+const REMOTE_CAPABILITY_MAX = 160;
+const REMOTE_DENIAL_STAGE_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
+const REMOTE_DENIAL_ID_PATTERN = /^\d{1,19}$/;
+const MISSING_CAPABILITY_LINE_PATTERN = /^Missing capability:\s*([A-Za-z0-9*_.:-]+)\s*$/im;
 const REMOTE_PLAN_KEY_PATTERN = /^[a-z][A-Za-z0-9]{0,63}$/;
 const REMOTE_PLAN_BLOCKED_STRING_KEY_SEGMENTS = new Set([
   "body",
@@ -366,7 +374,7 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
       if (isCompleteContractErrorBody(body, op)) {
         const turnLink = turnLinkRemoteCopy(body.error);
         const connectorTurn = turnLink ?? connectorTurnRemoteCopy(op, body.error);
-        const library = connectorTurn ? null : libraryRemoteCopy(op, body);
+        const library = connectorTurn ? null : (operatorOnlyRemoteCopy(op, body) ?? libraryRemoteCopy(op, body));
         const projected = remoteContractFailureMessage(
           op,
           body.outcome,
@@ -530,11 +538,54 @@ export function isLibraryRemoteOp(op: string): boolean {
 }
 
 /**
+ * `meetings read` and `agenda` refuse turns that are not the operator's own
+ * (meetings/read.ts). The daemon wrote the refusal for the agent: the rule
+ * that decided (`turn`), the next step and, when the operator asked in a
+ * group, the line to send them to their own chat. The relay keeps that copy
+ * instead of "Remote command was blocked by policy."
+ */
+const OPERATOR_ONLY_REMOTE_CODES: ReadonlyMap<string, (op: string) => boolean> = new Map([
+  ["MEETING_ACCESS_DENIED", (op: string) => op === "meetings read"],
+  ["CALENDAR_ACCESS_DENIED", (op: string) => op.startsWith("agenda ")],
+]);
+
+function isOperatorOnlyRefusal(op: string, code: string): boolean {
+  return OPERATOR_ONLY_REMOTE_CODES.get(code)?.(op) ?? false;
+}
+
+function operatorOnlyRemoteCopy(
+  op: string,
+  body: CompleteContractErrorBody,
+): { message: string; details: ContractErrorDetails } | null {
+  const remote = body.error;
+  if (body.outcome !== "blocked" || !isOperatorOnlyRefusal(op, remote.code)) return null;
+  const message = boundedRemoteLine(remote.message, LIBRARY_REMOTE_MESSAGE_MAX);
+  if (!message) return null;
+  const details: ContractErrorDetails = {};
+  const suggestedAction = boundedRemoteLine(remote.suggestedAction, LIBRARY_REMOTE_ACTION_MAX, "suggestedAction");
+  if (suggestedAction) details.suggestedAction = suggestedAction;
+  for (const key of ["refusal", "turn"] as const) {
+    const value = remote[key];
+    if (typeof value === "string" && LIBRARY_REMOTE_TOKEN_PATTERN.test(value)) details[key] = value;
+  }
+  const chatLine = boundedRemoteLine(remote.chatLine, CONNECTOR_CHAT_LINE_MAX, "chatLine");
+  if (chatLine) {
+    details.chatLine = chatLine;
+    const chatLinePt = boundedRemoteLine(remote.chatLinePt, CONNECTOR_CHAT_LINE_MAX, "chatLinePt");
+    if (chatLinePt) details.chatLinePt = chatLinePt;
+    if (typeof remote.replyTo === "string" && CONNECTOR_REPLY_TO_VALUES.has(remote.replyTo)) {
+      details.replyTo = remote.replyTo;
+    }
+  }
+  return { message, details };
+}
+
+/**
  * Text mode prints the message and the issues; a Library refusal's next step
  * is printed too when no issue already carries it.
  */
 export function remoteNextStepLine(error: ContractError): string | null {
-  if (!isLibraryRemoteOp(error.op)) return null;
+  if (!isLibraryRemoteOp(error.op) && !isOperatorOnlyRefusal(error.op, error.code)) return null;
   const next = error.details.suggestedAction;
   if (typeof next !== "string" || !next.trim()) return null;
   const issues = Array.isArray(error.details.issues) ? error.details.issues : [];
@@ -770,6 +821,60 @@ function boundedStringList(value: unknown, pattern: RegExp): string[] | undefine
   return items.length > 0 ? items : undefined;
 }
 
+function projectRemoteDenial(body: CompleteContractErrorBody): ContractErrorDetails | undefined {
+  if (body.outcome !== "denied") return undefined;
+  const remote = body.error;
+  const details: ContractErrorDetails = { authorizationDecision: "denied" };
+  const capability = remoteCapability(remote);
+  if (capability) details.capability = capability;
+  const stage = boundedRemoteField(remote, ["stage", "denialStage", "denial_stage"], REMOTE_DENIAL_STAGE_PATTERN);
+  if (stage) details.stage = stage;
+  const denialId = remoteDenialId(remote);
+  if (denialId !== undefined) details.denialId = denialId;
+  return details;
+}
+
+/** Canonical capability from a structured field or from the server's `Missing capability:` line. */
+function remoteCapability(remote: Record<string, unknown>): string | undefined {
+  const structured = boundedRemoteField(
+    remote,
+    ["capability", "requiredCapability", "missingCapability"],
+    REMOTE_CAPABILITY_PATTERN,
+    REMOTE_CAPABILITY_MAX,
+  );
+  if (structured) return structured;
+  if (typeof remote.message !== "string") return undefined;
+  const match = remote.message.match(MISSING_CAPABILITY_LINE_PATTERN);
+  const candidate = match?.[1]?.trim();
+  if (!candidate || candidate.length > REMOTE_CAPABILITY_MAX) return undefined;
+  return REMOTE_CAPABILITY_PATTERN.test(candidate) ? candidate : undefined;
+}
+
+function boundedRemoteField(
+  record: Record<string, unknown>,
+  keys: string[],
+  pattern: RegExp,
+  max = 64,
+): string | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.length <= max && pattern.test(value)) return value;
+  }
+  return undefined;
+}
+
+function remoteDenialId(remote: Record<string, unknown>): number | undefined {
+  for (const key of ["denialId", "denial_id"]) {
+    const value = remote[key];
+    if (typeof value === "number" && Number.isSafeInteger(value) && value > 0) return value;
+    if (typeof value === "string" && REMOTE_DENIAL_ID_PATTERN.test(value)) {
+      const parsed = Number(value);
+      if (Number.isSafeInteger(parsed) && parsed > 0) return parsed;
+    }
+  }
+  return undefined;
+}
+
 function projectRemoteContractDetails(
   op: string,
   body: CompleteContractErrorBody,
@@ -777,6 +882,8 @@ function projectRemoteContractDetails(
 ): ContractErrorDetails {
   const remote = body.error;
   const details: ContractErrorDetails = { retryable: remote.retryable, status };
+  const denial = projectRemoteDenial(body);
+  if (denial) Object.assign(details, denial);
   const mediaCatalog = op === "media send" ? localMediaSendCatalogCopy(remote.code) : undefined;
   const identityCatalog = IDENTITY_LINK_OPS.has(op) ? cloudContractCatalogCopy(remote.code) : undefined;
   const connectorCatalog =

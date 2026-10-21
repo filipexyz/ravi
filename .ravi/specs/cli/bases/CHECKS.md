@@ -51,9 +51,52 @@
   plans MUST name the generated Pages that stop working
   (`grep -n "Console" src/cli/commands/bases.ts` shows only project, scope,
   URL, and server-side wording).
-- The `bases` and `pages` skills MUST name only the seven `ravi.bases.*` ids listed in
+- The `bases` and `pages` skills MUST name only the eight `ravi.bases.*` ids listed in
   SPEC "Generated Pages". Every page example MUST ship with `--uses` covering
-  the ids it calls, and the skill MUST say that `--uses` is the union of the
-  ids called by every page on the same host.
+  the ids its own route calls, and the skills MUST say that the host allows
+  the union over its active routes (no skill, reference, skeleton or doc may
+  still teach "every ship lists the union of every page's ids":
+  `grep -rn "união do --uses\|união dos ids de todas\|union of the ids all" src/plugins docs AGENTS.md src/prompt-builder.ts`
+  finds nothing).
 - The skill MUST tell the agent, when it grants `page_viewer`, to tell the
   person which host (all routes) gains read or write access to which view.
+- `bases create`, `props add`, `views create` and `charts create` MUST send
+  the same key in the `Idempotency-Key` header and in `idempotencyKey`, with
+  no `clientHint` (`creates with idempotency keys` block of
+  `src/cli/commands/bases.test.ts`).
+- Inside a runtime turn, Bases reads (GET and POST `rows/query`,
+  `views/<v>/query`, `charts/<c>/data`) and writes MUST carry
+  `x-ravi-actor-contact`; outside a turn none (`Bases reads in a delegated
+  turn` block of `src/bases/client.test.ts`).
+- `bases subscribe --events/--props/--view` MUST post the filter body;
+  unknown events, more than 20 props, and trigger-only flags without
+  `--trigger` MUST fail `PAYLOAD_INVALID` before any call.
+- `bases subscribe --trigger` from the operator MUST create an enabled
+  trigger; from an agent turn a disabled one with `enableCommand`; the same
+  subscription again MUST reuse the trigger. The filter MUST match only its
+  own subscription's items (`Bases subscription triggers` in
+  `src/triggers/__tests__/runner-filter.test.ts`).
+- Inside a runtime turn Ravi cannot attribute, every Bases command (reads
+  included) MUST fail `ACTOR_UNKNOWN` (exit 3) with no Console call
+  (`src/bases/client.test.ts`, `src/cloud-auth/turn-actor.test.ts`).
+- `bases views share` without `--execute` MUST exit 3 after reading the
+  view and site, with no PATCH; with it, it MUST PATCH `access` at the
+  version read with the `page_viewer` added, MUST NOT PATCH when nothing
+  changes, MUST fail
+  `NOT_FOUND` for an unknown site and `PROJECT_ACCESS_DENIED` for a caller
+  without manage, and MUST return the disclosure.
+- `bases rows approve|reject` without `--execute` MUST read the row and exit 3
+  without a write (an unknown row exits 1), with no note text in the plan;
+  `request-approval|approve|reject` without `--expected-version` MUST send
+  `lastWriteWins: true` and no read-derived `expectedVersion`, so the same
+  key retries as the same request; with `--execute` they MUST write `{state, note?}` (through the view
+  with `--view`). `approval_forbidden` MUST surface as
+  `PROJECT_ACCESS_DENIED` with `consoleError: approval_forbidden`.
+- `bases rows fill` MUST post `{inputsHash, value|error}` with an idempotency
+  key; `agent_stale` MUST return `CONFLICT` with the current `inputsHash`.
+- The bootstrap floor MUST hold exactly the eight Bases read capabilities of
+  SPEC invariant 23 and no `mutate:bases*`, `read:bases.rows:query` or
+  `read:bases:aggregate` (`src/permissions/runtime-bootstrap-provider.test.ts`).
+- Inbox enrichment MUST add `payload.row` to `bases.approval.*` and
+  `bases.agent.requested` items and MUST NOT read a row for
+  `bases.rows.bulk_changed` or `bases.agent.backfill`.

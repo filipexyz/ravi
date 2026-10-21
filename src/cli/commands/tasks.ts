@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import { runCloudTaskDispatch } from "../cloud-task-dispatch.js";
 import { fail, getContext } from "../context.js";
 import {
   decodeListCursor,
@@ -13,7 +14,8 @@ import {
 } from "../listing.js";
 import { dbGetAgent } from "../../router/router-db.js";
 import { resolveSession } from "../../router/sessions.js";
-import { buildTaskObserverSummary } from "../../tasks/observer-contract.js";
+import { buildTaskObserverSummary, normalizeTaskObserverChecklist } from "../../tasks/observer-contract.js";
+import { readTaskOperationReceipt, writeTaskOperationReceipt } from "../../tasks/idempotency.js";
 import { nats } from "../../nats.js";
 import { formatDurationMs, parseDurationMs } from "../../cron/schedule.js";
 import { resolveTaskCheckpointIntervalMs } from "../../tasks/checkpoint.js";
@@ -45,8 +47,10 @@ import {
   readTaskDocFrontmatter,
   resolveTaskProfile,
   resolveTaskProfileForTask,
+  resolveTaskReportToSessionName,
   resolveTaskRuntimeForRead,
   reportTaskProgress,
+  saveTaskObserverChecklist,
   blockTask,
   failTask,
   taskProfileUsesArtifactFirstSync,
@@ -90,6 +94,35 @@ const MAX_TASK_LIST_LIMIT = 500;
 const DEFAULT_TASK_LIST_WINDOW = "1d";
 const DEFAULT_TASK_SHOW_LAST = 12;
 const TASK_LIST_SORT_FIELDS = ["updated", "created"] as const satisfies readonly TaskListSort[];
+
+function parseTaskChecklistOption(raw?: string): unknown {
+  if (raw === undefined) return undefined;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    fail("--checklist must be a JSON array of {item, done} objects.");
+  }
+}
+
+function readTaskMutationReplay<T>(taskId: string, idempotencyKey?: string): T | null {
+  const key = idempotencyKey?.trim();
+  if (!key) return null;
+  return readTaskOperationReceipt<T>(taskId, key)?.result ?? null;
+}
+
+function rememberTaskMutation(taskId: string, idempotencyKey: string | undefined, result: unknown): void {
+  const key = idempotencyKey?.trim();
+  if (!key) return;
+  writeTaskOperationReceipt(taskId, key, result);
+}
+
+function printTaskMutationReplay<T>(taskId: string, asJson: boolean | undefined, cached: T): void {
+  if (asJson) {
+    console.log(JSON.stringify(cached, null, 2));
+    return;
+  }
+  console.log(`✓ Task ${taskId} unchanged (idempotent replay)`);
+}
 
 function formatTaskStatus(status: TaskStatus | "waiting"): string {
   switch (status) {
@@ -1517,13 +1550,14 @@ export class TaskCommands {
       const observer = payload.observer;
       console.log("\nTask observer:");
       console.log(`  Model:      ${observer.model ?? "agent default"}`);
-      console.log(
-        `  Verdict:    ${observer.lastStatus ?? "-"}${observer.lastVerdictAt ? ` @ ${formatTime(observer.lastVerdictAt)}` : ""}`,
-      );
-      if (observer.lastMessage) console.log(`  Note:       ${observer.lastMessage}`);
-      console.log(`  Nudges:     ${observer.nudgesSinceProgress}${observer.stalledAt ? " · stalled" : ""}`);
-      for (const entry of observer.checklist) {
-        console.log(`  [${entry.done ? "x" : " "}] ${entry.item}`);
+      if (observer.updatedAt) console.log(`  Updated:    ${formatTime(observer.updatedAt)}`);
+      if (observer.checklist.length === 0) {
+        console.log("  Checklist:  (none)");
+      } else {
+        console.log("  Checklist:");
+        for (const entry of observer.checklist) {
+          console.log(`  [${entry.done ? "x" : " "}] ${entry.item}`);
+        }
       }
     }
 
@@ -1678,7 +1712,17 @@ export class TaskCommands {
     @Arg("taskId", { description: "Task ID" }) taskId: string,
     @Arg("body", { description: "Comment body" }) body: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--idempotency-key <key>",
+      description: "Apply this mutation once per key; a replay returns the previous result",
+    })
+    idempotencyKey?: string,
   ) {
+    const replay = readTaskMutationReplay<Record<string, unknown>>(taskId, idempotencyKey);
+    if (replay) {
+      printTaskMutationReplay(taskId, asJson, replay);
+      return replay;
+    }
     const trimmedBody = body.trim();
     if (!trimmedBody) {
       fail("Comment body cannot be empty.");
@@ -1691,6 +1735,7 @@ export class TaskCommands {
       authorSessionName: actor.sessionName,
       body: trimmedBody,
     });
+    rememberTaskMutation(taskId, idempotencyKey, result);
     await emitMutationEvents(result);
 
     if (asJson) {
@@ -1700,6 +1745,9 @@ export class TaskCommands {
       console.log(`  ${result.comment.body}`);
       if (result.steeredSessionName) {
         console.log(`  Steer: ${result.steeredSessionName}`);
+      }
+      if (result.steerSkippedReason) {
+        console.log(`  Not steered: ${result.steerSkippedReason}`);
       }
     }
     return result;
@@ -1784,6 +1832,15 @@ export class TaskCommands {
     })
     actorSessionName?: string,
     @Option({
+      flags: "--cloud",
+      description: "Run it as a paid cloud run of the agent's Library definition instead of a local session",
+    })
+    cloud?: boolean,
+    @Option({ flags: "--budget <usd>", description: "With --cloud: budget of the cloud run in US dollars (0.5-200)" })
+    budget?: string,
+    @Option({ flags: "--project <project>", description: "With --cloud: Console project of the run" })
+    project?: string,
+    @Option({
       flags: "--execute",
       description: "Actually dispatch the task; default is a dry-run that only shows the plan (exit 3)",
     })
@@ -1800,6 +1857,50 @@ export class TaskCommands {
     }
 
     const details = getTaskDetailsForContract("tasks dispatch", taskId, asJson);
+
+    if (cloud === true) {
+      if (sessionName || checkpoint || reportEvents || model || effort || thinking) {
+        contractFail(
+          "tasks dispatch",
+          "USAGE_ERROR",
+          "--session, --checkpoint, --report-events, --model, --effort and --thinking do not apply with --cloud",
+          { asJson, exitCode: 2 },
+        );
+      }
+      // The result comes back as a [System] Inform to the reporting session, or the dispatching one.
+      const actor = resolveDispatchActor(actorSessionName);
+      // Same resolution as a local dispatch, but before the brake: a wrong --report-to never starts a paid run.
+      let reportTo: string | undefined;
+      try {
+        reportTo = resolveTaskReportToSessionName(reportToSessionName, { callerSessionName: actor.sessionName });
+      } catch (error) {
+        contractFail(
+          "tasks dispatch",
+          "REPORT_TARGET_NOT_FOUND",
+          error instanceof Error ? error.message : String(error),
+          {
+            asJson,
+            details: { suggestedAction: "Pass an existing session name, session key or chat id: ravi sessions list" },
+          },
+        );
+      }
+      return runCloudTaskDispatch({
+        task: details.task,
+        agentId: normalizedAgentId,
+        ...(project?.trim() ? { project: project.trim() } : {}),
+        ...(budget !== undefined ? { budget } : {}),
+        informSession: reportTo || actor.sessionName || null,
+        actor: actor.actor,
+        execute: execute === true,
+        asJson,
+      });
+    }
+    if (budget !== undefined || project !== undefined) {
+      contractFail("tasks dispatch", "USAGE_ERROR", "--budget and --project apply only with --cloud", {
+        asJson,
+        exitCode: 2,
+      });
+    }
 
     const resolvedSessionName = sessionName?.trim() || getDefaultTaskSessionNameForTask(details.task);
     if (execute !== true) {
@@ -1894,7 +1995,22 @@ export class TaskCommands {
     @Option({ flags: "--message <text>", description: "Progress update message" }) message?: string,
     @Option({ flags: "--progress <n>", description: "Progress percentage 0-100" }) progress?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--idempotency-key <key>",
+      description: "Apply this mutation once per key; a replay returns the previous result",
+    })
+    idempotencyKey?: string,
+    @Option({
+      flags: "--checklist <json>",
+      description: 'Observer checklist as a JSON array of {"item": string, "done": boolean}',
+    })
+    checklist?: string,
   ) {
+    const replay = readTaskMutationReplay<{ task: TaskRecord; event: TaskEvent }>(taskId, idempotencyKey);
+    if (replay) {
+      printTaskMutationReplay(taskId, asJson, replay);
+      return replay;
+    }
     const details = getTaskDetails(taskId);
     if (!details.task) {
       fail(`Task not found: ${taskId}`);
@@ -1922,12 +2038,21 @@ export class TaskCommands {
     }
     const cliProgressValue = progress !== undefined ? Number.parseInt(progress, 10) : undefined;
     const progressValue = Number.isFinite(cliProgressValue) ? cliProgressValue : docState.progress;
+    const checklistInput = parseTaskChecklistOption(checklist);
+    if (checklistInput !== undefined && !Array.isArray(checklistInput)) {
+      fail("--checklist must be a JSON array of {item, done} objects.");
+    }
+    const checklistItems = checklistInput === undefined ? undefined : normalizeTaskObserverChecklist(checklistInput);
 
+    // Write the checklist before the progress mutation: if the checklist save
+    // throws, no progress event exists yet and a retry cannot duplicate it.
+    if (checklistItems) saveTaskObserverChecklist(taskId, checklistItems);
     const result = reportTaskProgress(taskId, {
       ...actor,
       message: finalMessage,
       ...(Number.isFinite(progressValue) ? { progress: progressValue } : {}),
     });
+    rememberTaskMutation(taskId, idempotencyKey, result);
     await emitMutationEvents(result);
 
     if (asJson) {
@@ -1953,7 +2078,17 @@ export class TaskCommands {
     @Arg("taskId", { description: "Task ID" }) taskId: string,
     @Option({ flags: "--summary <text>", description: "Completion summary" }) summary?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--idempotency-key <key>",
+      description: "Apply this mutation once per key; a replay returns the previous result",
+    })
+    idempotencyKey?: string,
   ) {
+    const replay = readTaskMutationReplay<Record<string, unknown>>(taskId, idempotencyKey);
+    if (replay) {
+      printTaskMutationReplay(taskId, asJson, replay);
+      return replay;
+    }
     const details = getTaskDetails(taskId);
     if (!details.task) {
       fail(`Task not found: ${taskId}`);
@@ -1976,6 +2111,7 @@ export class TaskCommands {
       ...actor,
       message: finalSummary,
     });
+    rememberTaskMutation(taskId, idempotencyKey, result);
     await emitMutationEvents(result);
 
     if (asJson) {
@@ -2002,7 +2138,17 @@ export class TaskCommands {
     @Arg("taskId", { description: "Task ID" }) taskId: string,
     @Option({ flags: "--reason <text>", description: "Concrete blocker reason" }) reason?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--idempotency-key <key>",
+      description: "Apply this mutation once per key; a replay returns the previous result",
+    })
+    idempotencyKey?: string,
   ) {
+    const replay = readTaskMutationReplay<Record<string, unknown>>(taskId, idempotencyKey);
+    if (replay) {
+      printTaskMutationReplay(taskId, asJson, replay);
+      return replay;
+    }
     const details = getTaskDetails(taskId);
     if (!details.task) {
       fail(`Task not found: ${taskId}`);
@@ -2023,6 +2169,7 @@ export class TaskCommands {
       message: finalReason,
       ...(typeof progressValue === "number" ? { progress: progressValue } : {}),
     });
+    rememberTaskMutation(taskId, idempotencyKey, result);
     await emitMutationEvents(result);
 
     if (asJson) {
@@ -2051,7 +2198,17 @@ export class TaskCommands {
     @Arg("taskId", { description: "Task ID" }) taskId: string,
     @Option({ flags: "--reason <text>", description: "Failure reason" }) reason?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--idempotency-key <key>",
+      description: "Apply this mutation once per key; a replay returns the previous result",
+    })
+    idempotencyKey?: string,
   ) {
+    const replay = readTaskMutationReplay<Record<string, unknown>>(taskId, idempotencyKey);
+    if (replay) {
+      printTaskMutationReplay(taskId, asJson, replay);
+      return replay;
+    }
     const details = getTaskDetails(taskId);
     if (!details.task) {
       fail(`Task not found: ${taskId}`);
@@ -2074,6 +2231,7 @@ export class TaskCommands {
       ...actor,
       message: finalReason,
     });
+    rememberTaskMutation(taskId, idempotencyKey, result);
     await emitMutationEvents(result);
 
     if (asJson) {

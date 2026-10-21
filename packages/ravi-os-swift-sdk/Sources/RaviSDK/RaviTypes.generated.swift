@@ -1078,6 +1078,7 @@ public struct AgentsPublishOptions: Codable, Sendable {
 
 public struct AgentsPublishReturn: Codable, Sendable {
   public var agent: String
+  public var cloud: RaviJSON
   public var contentHash: String
   public var item: RaviJSON
   public var leftOut: [RaviJSON]
@@ -1089,8 +1090,9 @@ public struct AgentsPublishReturn: Codable, Sendable {
   public var unchanged: Bool
   public var version: RaviJSON
 
-  public init(agent: String, contentHash: String, item: RaviJSON, leftOut: [RaviJSON], manifest: RaviJSON, next: RaviJSON, proposal: RaviJSON, ref: String, success: Bool, unchanged: Bool, version: RaviJSON) {
+  public init(agent: String, cloud: RaviJSON, contentHash: String, item: RaviJSON, leftOut: [RaviJSON], manifest: RaviJSON, next: RaviJSON, proposal: RaviJSON, ref: String, success: Bool, unchanged: Bool, version: RaviJSON) {
     self.agent = agent
+    self.cloud = cloud
     self.contentHash = contentHash
     self.item = item
     self.leftOut = leftOut
@@ -1105,6 +1107,7 @@ public struct AgentsPublishReturn: Codable, Sendable {
 
   enum CodingKeys: String, CodingKey {
     case agent = "agent"
+    case cloud = "cloud"
     case contentHash = "contentHash"
     case item = "item"
     case leftOut = "leftOut"
@@ -3675,13 +3678,15 @@ public struct BasesChartsArchiveReturn: Codable, Sendable {
 
 public struct BasesChartsCreateOptions: Codable, Sendable {
   public var console: String?
+  public var idempotencyKey: String?
   public var name: String?
   public var project: String?
   public var spec: String?
   public var view: String?
 
-  public init(console: String? = nil, name: String? = nil, project: String? = nil, spec: String? = nil, view: String? = nil) {
+  public init(console: String? = nil, idempotencyKey: String? = nil, name: String? = nil, project: String? = nil, spec: String? = nil, view: String? = nil) {
     self.console = console
+    self.idempotencyKey = idempotencyKey
     self.name = name
     self.project = project
     self.spec = spec
@@ -3690,6 +3695,7 @@ public struct BasesChartsCreateOptions: Codable, Sendable {
 
   enum CodingKeys: String, CodingKey {
     case console = "console"
+    case idempotencyKey = "idempotencyKey"
     case name = "name"
     case project = "project"
     case spec = "spec"
@@ -3699,6 +3705,9 @@ public struct BasesChartsCreateOptions: Codable, Sendable {
   func encodeBody(into body: inout [String: RaviJSON]) throws {
     if let value = self.console {
       body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.idempotencyKey {
+      body["idempotencyKey"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.name {
       body["name"] = try RaviJSON.fromEncodable(value)
@@ -3719,13 +3728,15 @@ public struct BasesChartsCreateReturn: Codable, Sendable {
   public var baseRef: String
   public var chart: RaviJSON
   public var consoleUrl: String
+  public var idempotencyKey: String
   public var projectRef: String
   public var success: Bool
 
-  public init(baseRef: String, chart: RaviJSON, consoleUrl: String, projectRef: String, success: Bool) {
+  public init(baseRef: String, chart: RaviJSON, consoleUrl: String, idempotencyKey: String, projectRef: String, success: Bool) {
     self.baseRef = baseRef
     self.chart = chart
     self.consoleUrl = consoleUrl
+    self.idempotencyKey = idempotencyKey
     self.projectRef = projectRef
     self.success = success
   }
@@ -3734,6 +3745,7 @@ public struct BasesChartsCreateReturn: Codable, Sendable {
     case baseRef = "baseRef"
     case chart = "chart"
     case consoleUrl = "consoleUrl"
+    case idempotencyKey = "idempotencyKey"
     case projectRef = "projectRef"
     case success = "success"
   }
@@ -3992,15 +4004,17 @@ public struct BasesCreateOptions: Codable, Sendable {
   public var console: String?
   public var description: String?
   public var icon: String?
+  public var idempotencyKey: String?
   public var project: String?
   public var schema: String?
   public var slug: String?
   public var timezone: String?
 
-  public init(console: String? = nil, description: String? = nil, icon: String? = nil, project: String? = nil, schema: String? = nil, slug: String? = nil, timezone: String? = nil) {
+  public init(console: String? = nil, description: String? = nil, icon: String? = nil, idempotencyKey: String? = nil, project: String? = nil, schema: String? = nil, slug: String? = nil, timezone: String? = nil) {
     self.console = console
     self.description = description
     self.icon = icon
+    self.idempotencyKey = idempotencyKey
     self.project = project
     self.schema = schema
     self.slug = slug
@@ -4011,6 +4025,7 @@ public struct BasesCreateOptions: Codable, Sendable {
     case console = "console"
     case description = "description"
     case icon = "icon"
+    case idempotencyKey = "idempotencyKey"
     case project = "project"
     case schema = "schema"
     case slug = "slug"
@@ -4026,6 +4041,9 @@ public struct BasesCreateOptions: Codable, Sendable {
     }
     if let value = self.icon {
       body["icon"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.idempotencyKey {
+      body["idempotencyKey"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.project {
       body["project"] = try RaviJSON.fromEncodable(value)
@@ -4045,12 +4063,14 @@ public struct BasesCreateOptions: Codable, Sendable {
 public struct BasesCreateReturn: Codable, Sendable {
   public var base: RaviJSON
   public var consoleUrl: String
+  public var idempotencyKey: String
   public var projectRef: String
   public var success: Bool
 
-  public init(base: RaviJSON, consoleUrl: String, projectRef: String, success: Bool) {
+  public init(base: RaviJSON, consoleUrl: String, idempotencyKey: String, projectRef: String, success: Bool) {
     self.base = base
     self.consoleUrl = consoleUrl
+    self.idempotencyKey = idempotencyKey
     self.projectRef = projectRef
     self.success = success
   }
@@ -4058,6 +4078,7 @@ public struct BasesCreateReturn: Codable, Sendable {
   enum CodingKeys: String, CodingKey {
     case base = "base"
     case consoleUrl = "consoleUrl"
+    case idempotencyKey = "idempotencyKey"
     case projectRef = "projectRef"
     case success = "success"
   }
@@ -4142,44 +4163,71 @@ public struct BasesListReturn: Codable, Sendable {
 }
 
 public struct BasesPropsAddOptions: Codable, Sendable {
+  public var agent: String?
+  public var approvers: String?
   public var config: String?
   public var console: String?
   public var description: String?
   public var expectedSchemaVersion: String?
+  public var idempotencyKey: String?
+  public var inputs: String?
+  public var instructions: String?
   public var key: String?
   public var options: String?
+  public var output: String?
   public var position: String?
   public var project: String?
   public var required: Bool?
+  public var resetOn: String?
   public var type: String?
 
-  public init(config: String? = nil, console: String? = nil, description: String? = nil, expectedSchemaVersion: String? = nil, key: String? = nil, options: String? = nil, position: String? = nil, project: String? = nil, required: Bool? = nil, type: String? = nil) {
+  public init(agent: String? = nil, approvers: String? = nil, config: String? = nil, console: String? = nil, description: String? = nil, expectedSchemaVersion: String? = nil, idempotencyKey: String? = nil, inputs: String? = nil, instructions: String? = nil, key: String? = nil, options: String? = nil, output: String? = nil, position: String? = nil, project: String? = nil, required: Bool? = nil, resetOn: String? = nil, type: String? = nil) {
+    self.agent = agent
+    self.approvers = approvers
     self.config = config
     self.console = console
     self.description = description
     self.expectedSchemaVersion = expectedSchemaVersion
+    self.idempotencyKey = idempotencyKey
+    self.inputs = inputs
+    self.instructions = instructions
     self.key = key
     self.options = options
+    self.output = output
     self.position = position
     self.project = project
     self.required = required
+    self.resetOn = resetOn
     self.type = type
   }
 
   enum CodingKeys: String, CodingKey {
+    case agent = "agent"
+    case approvers = "approvers"
     case config = "config"
     case console = "console"
     case description = "description"
     case expectedSchemaVersion = "expectedSchemaVersion"
+    case idempotencyKey = "idempotencyKey"
+    case inputs = "inputs"
+    case instructions = "instructions"
     case key = "key"
     case options = "options"
+    case output = "output"
     case position = "position"
     case project = "project"
     case required = "required"
+    case resetOn = "resetOn"
     case type = "type"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.agent {
+      body["agent"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.approvers {
+      body["approvers"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.config {
       body["config"] = try RaviJSON.fromEncodable(value)
     }
@@ -4192,11 +4240,23 @@ public struct BasesPropsAddOptions: Codable, Sendable {
     if let value = self.expectedSchemaVersion {
       body["expectedSchemaVersion"] = try RaviJSON.fromEncodable(value)
     }
+    if let value = self.idempotencyKey {
+      body["idempotencyKey"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.inputs {
+      body["inputs"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.instructions {
+      body["instructions"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.key {
       body["key"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.options {
       body["options"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.output {
+      body["output"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.position {
       body["position"] = try RaviJSON.fromEncodable(value)
@@ -4207,6 +4267,9 @@ public struct BasesPropsAddOptions: Codable, Sendable {
     if let value = self.required {
       body["required"] = try RaviJSON.fromEncodable(value)
     }
+    if let value = self.resetOn {
+      body["resetOn"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.type {
       body["type"] = try RaviJSON.fromEncodable(value)
     }
@@ -4216,14 +4279,16 @@ public struct BasesPropsAddOptions: Codable, Sendable {
 public struct BasesPropsAddReturn: Codable, Sendable {
   public var base: RaviJSON
   public var consoleUrl: String
+  public var idempotencyKey: String
   public var projectRef: String
   public var property: RaviJSON
   public var report: RaviJSON
   public var success: Bool
 
-  public init(base: RaviJSON, consoleUrl: String, projectRef: String, property: RaviJSON, report: RaviJSON, success: Bool) {
+  public init(base: RaviJSON, consoleUrl: String, idempotencyKey: String, projectRef: String, property: RaviJSON, report: RaviJSON, success: Bool) {
     self.base = base
     self.consoleUrl = consoleUrl
+    self.idempotencyKey = idempotencyKey
     self.projectRef = projectRef
     self.property = property
     self.report = report
@@ -4233,6 +4298,7 @@ public struct BasesPropsAddReturn: Codable, Sendable {
   enum CodingKeys: String, CodingKey {
     case base = "base"
     case consoleUrl = "consoleUrl"
+    case idempotencyKey = "idempotencyKey"
     case projectRef = "projectRef"
     case property = "property"
     case report = "report"
@@ -4711,6 +4777,102 @@ public struct BasesRowsAddReturn: Codable, Sendable {
   }
 }
 
+public struct BasesRowsApproveOptions: Codable, Sendable {
+  public var console: String?
+  public var execute: Bool?
+  public var expectedVersion: String?
+  public var idempotencyKey: String?
+  public var note: String?
+  public var project: String?
+  public var view: String?
+
+  public init(console: String? = nil, execute: Bool? = nil, expectedVersion: String? = nil, idempotencyKey: String? = nil, note: String? = nil, project: String? = nil, view: String? = nil) {
+    self.console = console
+    self.execute = execute
+    self.expectedVersion = expectedVersion
+    self.idempotencyKey = idempotencyKey
+    self.note = note
+    self.project = project
+    self.view = view
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case execute = "execute"
+    case expectedVersion = "expectedVersion"
+    case idempotencyKey = "idempotencyKey"
+    case note = "note"
+    case project = "project"
+    case view = "view"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.expectedVersion {
+      body["expectedVersion"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.idempotencyKey {
+      body["idempotencyKey"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.note {
+      body["note"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.view {
+      body["view"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesRowsApproveReturn: Codable, Sendable {
+  public var baseRef: String
+  public var consoleUrl: String
+  public var idempotencyKey: String
+  public var idempotentReplay: Bool
+  public var projectRef: String
+  public var property: String
+  public var row: RaviJSON
+  public var state: String
+  public var success: Bool
+  public var users: [String: RaviJSON]
+  public var viewId: RaviJSON
+
+  public init(baseRef: String, consoleUrl: String, idempotencyKey: String, idempotentReplay: Bool, projectRef: String, property: String, row: RaviJSON, state: String, success: Bool, users: [String: RaviJSON], viewId: RaviJSON) {
+    self.baseRef = baseRef
+    self.consoleUrl = consoleUrl
+    self.idempotencyKey = idempotencyKey
+    self.idempotentReplay = idempotentReplay
+    self.projectRef = projectRef
+    self.property = property
+    self.row = row
+    self.state = state
+    self.success = success
+    self.users = users
+    self.viewId = viewId
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case baseRef = "baseRef"
+    case consoleUrl = "consoleUrl"
+    case idempotencyKey = "idempotencyKey"
+    case idempotentReplay = "idempotentReplay"
+    case projectRef = "projectRef"
+    case property = "property"
+    case row = "row"
+    case state = "state"
+    case success = "success"
+    case users = "users"
+    case viewId = "viewId"
+  }
+}
+
 public struct BasesRowsArchiveOptions: Codable, Sendable {
   public var console: String?
   public var expectedVersion: String?
@@ -4891,6 +5053,96 @@ public struct BasesRowsExportReturn: Codable, Sendable {
     case success = "success"
     case truncated = "truncated"
     case viewId = "viewId"
+  }
+}
+
+public struct BasesRowsFillOptions: Codable, Sendable {
+  public var console: String?
+  public var error: String?
+  public var idempotencyKey: String?
+  public var inputsHash: String?
+  public var project: String?
+  public var value: String?
+
+  public init(console: String? = nil, error: String? = nil, idempotencyKey: String? = nil, inputsHash: String? = nil, project: String? = nil, value: String? = nil) {
+    self.console = console
+    self.error = error
+    self.idempotencyKey = idempotencyKey
+    self.inputsHash = inputsHash
+    self.project = project
+    self.value = value
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case error = "error"
+    case idempotencyKey = "idempotencyKey"
+    case inputsHash = "inputsHash"
+    case project = "project"
+    case value = "value"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.error {
+      body["error"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.idempotencyKey {
+      body["idempotencyKey"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.inputsHash {
+      body["inputsHash"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.value {
+      body["value"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesRowsFillReturn: Codable, Sendable {
+  public var baseRef: String
+  public var consoleUrl: String
+  public var idempotencyKey: String
+  public var idempotentReplay: Bool
+  public var projectRef: String
+  public var property: String
+  public var row: RaviJSON
+  public var success: Bool
+  public var users: [String: RaviJSON]
+  public var viewId: RaviJSON
+  public var warnings: [String]?
+
+  public init(baseRef: String, consoleUrl: String, idempotencyKey: String, idempotentReplay: Bool, projectRef: String, property: String, row: RaviJSON, success: Bool, users: [String: RaviJSON], viewId: RaviJSON, warnings: [String]? = nil) {
+    self.baseRef = baseRef
+    self.consoleUrl = consoleUrl
+    self.idempotencyKey = idempotencyKey
+    self.idempotentReplay = idempotentReplay
+    self.projectRef = projectRef
+    self.property = property
+    self.row = row
+    self.success = success
+    self.users = users
+    self.viewId = viewId
+    self.warnings = warnings
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case baseRef = "baseRef"
+    case consoleUrl = "consoleUrl"
+    case idempotencyKey = "idempotencyKey"
+    case idempotentReplay = "idempotentReplay"
+    case projectRef = "projectRef"
+    case property = "property"
+    case row = "row"
+    case success = "success"
+    case users = "users"
+    case viewId = "viewId"
+    case warnings = "warnings"
   }
 }
 
@@ -5305,6 +5557,252 @@ public struct BasesRowsQueryReturn: Codable, Sendable {
   }
 }
 
+public struct BasesRowsRejectOptions: Codable, Sendable {
+  public var console: String?
+  public var execute: Bool?
+  public var expectedVersion: String?
+  public var idempotencyKey: String?
+  public var note: String?
+  public var project: String?
+  public var view: String?
+
+  public init(console: String? = nil, execute: Bool? = nil, expectedVersion: String? = nil, idempotencyKey: String? = nil, note: String? = nil, project: String? = nil, view: String? = nil) {
+    self.console = console
+    self.execute = execute
+    self.expectedVersion = expectedVersion
+    self.idempotencyKey = idempotencyKey
+    self.note = note
+    self.project = project
+    self.view = view
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case execute = "execute"
+    case expectedVersion = "expectedVersion"
+    case idempotencyKey = "idempotencyKey"
+    case note = "note"
+    case project = "project"
+    case view = "view"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.expectedVersion {
+      body["expectedVersion"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.idempotencyKey {
+      body["idempotencyKey"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.note {
+      body["note"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.view {
+      body["view"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesRowsRejectReturn: Codable, Sendable {
+  public var baseRef: String
+  public var consoleUrl: String
+  public var idempotencyKey: String
+  public var idempotentReplay: Bool
+  public var projectRef: String
+  public var property: String
+  public var row: RaviJSON
+  public var state: String
+  public var success: Bool
+  public var users: [String: RaviJSON]
+  public var viewId: RaviJSON
+
+  public init(baseRef: String, consoleUrl: String, idempotencyKey: String, idempotentReplay: Bool, projectRef: String, property: String, row: RaviJSON, state: String, success: Bool, users: [String: RaviJSON], viewId: RaviJSON) {
+    self.baseRef = baseRef
+    self.consoleUrl = consoleUrl
+    self.idempotencyKey = idempotencyKey
+    self.idempotentReplay = idempotentReplay
+    self.projectRef = projectRef
+    self.property = property
+    self.row = row
+    self.state = state
+    self.success = success
+    self.users = users
+    self.viewId = viewId
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case baseRef = "baseRef"
+    case consoleUrl = "consoleUrl"
+    case idempotencyKey = "idempotencyKey"
+    case idempotentReplay = "idempotentReplay"
+    case projectRef = "projectRef"
+    case property = "property"
+    case row = "row"
+    case state = "state"
+    case success = "success"
+    case users = "users"
+    case viewId = "viewId"
+  }
+}
+
+public struct BasesRowsRequestApprovalOptions: Codable, Sendable {
+  public var console: String?
+  public var expectedVersion: String?
+  public var idempotencyKey: String?
+  public var note: String?
+  public var project: String?
+  public var view: String?
+
+  public init(console: String? = nil, expectedVersion: String? = nil, idempotencyKey: String? = nil, note: String? = nil, project: String? = nil, view: String? = nil) {
+    self.console = console
+    self.expectedVersion = expectedVersion
+    self.idempotencyKey = idempotencyKey
+    self.note = note
+    self.project = project
+    self.view = view
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case expectedVersion = "expectedVersion"
+    case idempotencyKey = "idempotencyKey"
+    case note = "note"
+    case project = "project"
+    case view = "view"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.expectedVersion {
+      body["expectedVersion"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.idempotencyKey {
+      body["idempotencyKey"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.note {
+      body["note"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.view {
+      body["view"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesRowsRequestApprovalReturn: Codable, Sendable {
+  public var baseRef: String
+  public var consoleUrl: String
+  public var idempotencyKey: String
+  public var idempotentReplay: Bool
+  public var projectRef: String
+  public var property: String
+  public var row: RaviJSON
+  public var state: String
+  public var success: Bool
+  public var users: [String: RaviJSON]
+  public var viewId: RaviJSON
+
+  public init(baseRef: String, consoleUrl: String, idempotencyKey: String, idempotentReplay: Bool, projectRef: String, property: String, row: RaviJSON, state: String, success: Bool, users: [String: RaviJSON], viewId: RaviJSON) {
+    self.baseRef = baseRef
+    self.consoleUrl = consoleUrl
+    self.idempotencyKey = idempotencyKey
+    self.idempotentReplay = idempotentReplay
+    self.projectRef = projectRef
+    self.property = property
+    self.row = row
+    self.state = state
+    self.success = success
+    self.users = users
+    self.viewId = viewId
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case baseRef = "baseRef"
+    case consoleUrl = "consoleUrl"
+    case idempotencyKey = "idempotencyKey"
+    case idempotentReplay = "idempotentReplay"
+    case projectRef = "projectRef"
+    case property = "property"
+    case row = "row"
+    case state = "state"
+    case success = "success"
+    case users = "users"
+    case viewId = "viewId"
+  }
+}
+
+public struct BasesRowsRerunOptions: Codable, Sendable {
+  public var console: String?
+  public var project: String?
+
+  public init(console: String? = nil, project: String? = nil) {
+    self.console = console
+    self.project = project
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case console = "console"
+    case project = "project"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesRowsRerunReturn: Codable, Sendable {
+  public var baseRef: String
+  public var consoleUrl: String
+  public var idempotentReplay: Bool
+  public var projectRef: String
+  public var property: String
+  public var row: RaviJSON
+  public var success: Bool
+  public var users: [String: RaviJSON]
+  public var viewId: RaviJSON
+
+  public init(baseRef: String, consoleUrl: String, idempotentReplay: Bool, projectRef: String, property: String, row: RaviJSON, success: Bool, users: [String: RaviJSON], viewId: RaviJSON) {
+    self.baseRef = baseRef
+    self.consoleUrl = consoleUrl
+    self.idempotentReplay = idempotentReplay
+    self.projectRef = projectRef
+    self.property = property
+    self.row = row
+    self.success = success
+    self.users = users
+    self.viewId = viewId
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case baseRef = "baseRef"
+    case consoleUrl = "consoleUrl"
+    case idempotentReplay = "idempotentReplay"
+    case projectRef = "projectRef"
+    case property = "property"
+    case row = "row"
+    case success = "success"
+    case users = "users"
+    case viewId = "viewId"
+  }
+}
+
 public struct BasesRowsRestoreOptions: Codable, Sendable {
   public var console: String?
   public var expectedVersion: String?
@@ -5531,25 +6029,67 @@ public struct BasesShowReturn: Codable, Sendable {
 }
 
 public struct BasesSubscribeOptions: Codable, Sendable {
+  public var agent: String?
   public var console: String?
+  public var events: String?
+  public var message: String?
   public var project: String?
+  public var props: String?
+  public var session: String?
+  public var trigger: Bool?
+  public var view: String?
 
-  public init(console: String? = nil, project: String? = nil) {
+  public init(agent: String? = nil, console: String? = nil, events: String? = nil, message: String? = nil, project: String? = nil, props: String? = nil, session: String? = nil, trigger: Bool? = nil, view: String? = nil) {
+    self.agent = agent
     self.console = console
+    self.events = events
+    self.message = message
     self.project = project
+    self.props = props
+    self.session = session
+    self.trigger = trigger
+    self.view = view
   }
 
   enum CodingKeys: String, CodingKey {
+    case agent = "agent"
     case console = "console"
+    case events = "events"
+    case message = "message"
     case project = "project"
+    case props = "props"
+    case session = "session"
+    case trigger = "trigger"
+    case view = "view"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.agent {
+      body["agent"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.console {
       body["console"] = try RaviJSON.fromEncodable(value)
     }
+    if let value = self.events {
+      body["events"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.message {
+      body["message"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.project {
       body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.props {
+      body["props"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.session {
+      body["session"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.trigger {
+      body["trigger"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.view {
+      body["view"] = try RaviJSON.fromEncodable(value)
     }
   }
 }
@@ -5557,24 +6097,30 @@ public struct BasesSubscribeOptions: Codable, Sendable {
 public struct BasesSubscribeReturn: Codable, Sendable {
   public var consoleUrl: String
   public var delivery: RaviJSON
+  public var filter: RaviJSON
   public var projectRef: String
   public var subscription: RaviJSON
   public var success: Bool
+  public var trigger: RaviJSON?
 
-  public init(consoleUrl: String, delivery: RaviJSON, projectRef: String, subscription: RaviJSON, success: Bool) {
+  public init(consoleUrl: String, delivery: RaviJSON, filter: RaviJSON, projectRef: String, subscription: RaviJSON, success: Bool, trigger: RaviJSON? = nil) {
     self.consoleUrl = consoleUrl
     self.delivery = delivery
+    self.filter = filter
     self.projectRef = projectRef
     self.subscription = subscription
     self.success = success
+    self.trigger = trigger
   }
 
   enum CodingKeys: String, CodingKey {
     case consoleUrl = "consoleUrl"
     case delivery = "delivery"
+    case filter = "filter"
     case projectRef = "projectRef"
     case subscription = "subscription"
     case success = "success"
+    case trigger = "trigger"
   }
 }
 
@@ -5877,12 +6423,14 @@ public struct BasesViewsBindReturn: Codable, Sendable {
 
 public struct BasesViewsCreateOptions: Codable, Sendable {
   public var console: String?
+  public var idempotencyKey: String?
   public var name: String?
   public var project: String?
   public var spec: String?
 
-  public init(console: String? = nil, name: String? = nil, project: String? = nil, spec: String? = nil) {
+  public init(console: String? = nil, idempotencyKey: String? = nil, name: String? = nil, project: String? = nil, spec: String? = nil) {
     self.console = console
+    self.idempotencyKey = idempotencyKey
     self.name = name
     self.project = project
     self.spec = spec
@@ -5890,6 +6438,7 @@ public struct BasesViewsCreateOptions: Codable, Sendable {
 
   enum CodingKeys: String, CodingKey {
     case console = "console"
+    case idempotencyKey = "idempotencyKey"
     case name = "name"
     case project = "project"
     case spec = "spec"
@@ -5898,6 +6447,9 @@ public struct BasesViewsCreateOptions: Codable, Sendable {
   func encodeBody(into body: inout [String: RaviJSON]) throws {
     if let value = self.console {
       body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.idempotencyKey {
+      body["idempotencyKey"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.name {
       body["name"] = try RaviJSON.fromEncodable(value)
@@ -5914,13 +6466,15 @@ public struct BasesViewsCreateOptions: Codable, Sendable {
 public struct BasesViewsCreateReturn: Codable, Sendable {
   public var baseRef: String
   public var consoleUrl: String
+  public var idempotencyKey: String
   public var projectRef: String
   public var success: Bool
   public var view: RaviJSON
 
-  public init(baseRef: String, consoleUrl: String, projectRef: String, success: Bool, view: RaviJSON) {
+  public init(baseRef: String, consoleUrl: String, idempotencyKey: String, projectRef: String, success: Bool, view: RaviJSON) {
     self.baseRef = baseRef
     self.consoleUrl = consoleUrl
+    self.idempotencyKey = idempotencyKey
     self.projectRef = projectRef
     self.success = success
     self.view = view
@@ -5929,6 +6483,7 @@ public struct BasesViewsCreateReturn: Codable, Sendable {
   enum CodingKeys: String, CodingKey {
     case baseRef = "baseRef"
     case consoleUrl = "consoleUrl"
+    case idempotencyKey = "idempotencyKey"
     case projectRef = "projectRef"
     case success = "success"
     case view = "view"
@@ -6121,6 +6676,102 @@ public struct BasesViewsQueryReturn: Codable, Sendable {
     case truncated = "truncated"
     case users = "users"
     case viewId = "viewId"
+  }
+}
+
+public struct BasesViewsShareOptions: Codable, Sendable {
+  public var archive: Bool?
+  public var console: String?
+  public var create: Bool?
+  public var execute: Bool?
+  public var project: String?
+  public var site: String?
+  public var write: String?
+  public var writeOnly: Bool?
+
+  public init(archive: Bool? = nil, console: String? = nil, create: Bool? = nil, execute: Bool? = nil, project: String? = nil, site: String? = nil, write: String? = nil, writeOnly: Bool? = nil) {
+    self.archive = archive
+    self.console = console
+    self.create = create
+    self.execute = execute
+    self.project = project
+    self.site = site
+    self.write = write
+    self.writeOnly = writeOnly
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case archive = "archive"
+    case console = "console"
+    case create = "create"
+    case execute = "execute"
+    case project = "project"
+    case site = "site"
+    case write = "write"
+    case writeOnly = "writeOnly"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.archive {
+      body["archive"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.console {
+      body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.create {
+      body["create"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.site {
+      body["site"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.write {
+      body["write"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.writeOnly {
+      body["writeOnly"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct BasesViewsShareReturn: Codable, Sendable {
+  public var baseRef: String
+  public var changed: Bool
+  public var consoleUrl: String
+  public var disclosure: [String]
+  public var grants: RaviJSON
+  public var projectRef: String
+  public var site: RaviJSON
+  public var success: Bool
+  public var view: RaviJSON
+
+  public init(baseRef: String, changed: Bool, consoleUrl: String, disclosure: [String], grants: RaviJSON, projectRef: String, site: RaviJSON, success: Bool, view: RaviJSON) {
+    self.baseRef = baseRef
+    self.changed = changed
+    self.consoleUrl = consoleUrl
+    self.disclosure = disclosure
+    self.grants = grants
+    self.projectRef = projectRef
+    self.site = site
+    self.success = success
+    self.view = view
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case baseRef = "baseRef"
+    case changed = "changed"
+    case consoleUrl = "consoleUrl"
+    case disclosure = "disclosure"
+    case grants = "grants"
+    case projectRef = "projectRef"
+    case site = "site"
+    case success = "success"
+    case view = "view"
   }
 }
 
@@ -8462,6 +9113,210 @@ public struct ChatsReadReturn: Codable, Sendable {
   }
 }
 
+public struct CloudAgentsArchiveOptions: Codable, Sendable {
+  public var project: String?
+
+  public init(project: String? = nil) {
+    self.project = project
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case project = "project"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct CloudAgentsArchiveReturn: Codable, Sendable {
+  public var agent: RaviJSON
+  public var archived: Bool
+  public var id: String
+  public var success: Bool
+
+  public init(agent: RaviJSON, archived: Bool, id: String, success: Bool) {
+    self.agent = agent
+    self.archived = archived
+    self.id = id
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agent = "agent"
+    case archived = "archived"
+    case id = "id"
+    case success = "success"
+  }
+}
+
+public struct CloudAgentsDeployOptions: Codable, Sendable {
+  public var execute: Bool?
+  public var project: String?
+  public var version: String?
+
+  public init(execute: Bool? = nil, project: String? = nil, version: String? = nil) {
+    self.execute = execute
+    self.project = project
+    self.version = version
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case execute = "execute"
+    case project = "project"
+    case version = "version"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.version {
+      body["version"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct CloudAgentsDeployReturn: Codable, Sendable {
+  public var agent: RaviJSON
+  public var changed: Bool
+  public var success: Bool
+  public var warnings: [String]
+
+  public init(agent: RaviJSON, changed: Bool, success: Bool, warnings: [String]) {
+    self.agent = agent
+    self.changed = changed
+    self.success = success
+    self.warnings = warnings
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agent = "agent"
+    case changed = "changed"
+    case success = "success"
+    case warnings = "warnings"
+  }
+}
+
+public struct CloudAgentsListOptions: Codable, Sendable {
+  public var limit: String?
+  public var offset: String?
+  public var project: String?
+
+  public init(limit: String? = nil, offset: String? = nil, project: String? = nil) {
+    self.limit = limit
+    self.offset = offset
+    self.project = project
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case limit = "limit"
+    case offset = "offset"
+    case project = "project"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct CloudAgentsListReturn: Codable, Sendable {
+  public var agents: [RaviJSON]
+  public var pagination: RaviJSON
+  public var project: String
+  public var success: Bool
+
+  public init(agents: [RaviJSON], pagination: RaviJSON, project: String, success: Bool) {
+    self.agents = agents
+    self.pagination = pagination
+    self.project = project
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agents = "agents"
+    case pagination = "pagination"
+    case project = "project"
+    case success = "success"
+  }
+}
+
+public struct CloudAgentsShowOptions: Codable, Sendable {
+  public var project: String?
+
+  public init(project: String? = nil) {
+    self.project = project
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case project = "project"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct CloudAgentsShowReturn: Codable, Sendable {
+  public var agent: RaviJSON
+  public var success: Bool
+
+  public init(agent: RaviJSON, success: Bool) {
+    self.agent = agent
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agent = "agent"
+    case success = "success"
+  }
+}
+
+public struct CloudKeyRemoveReturn: Codable, Sendable {
+  public var credential: RaviJSON
+  public var success: Bool
+
+  public init(credential: RaviJSON, success: Bool) {
+    self.credential = credential
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case credential = "credential"
+    case success = "success"
+  }
+}
+
+public struct CloudKeyStatusReturn: Codable, Sendable {
+  public var credential: RaviJSON
+  public var success: Bool
+
+  public init(credential: RaviJSON, success: Bool) {
+    self.credential = credential
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case credential = "credential"
+    case success = "success"
+  }
+}
+
 public struct CloudProjectsCreateOptions: Codable, Sendable {
   public var console: String?
   public var defaultPageSite: String?
@@ -8591,6 +9446,522 @@ public struct CloudProjectsListReturn: Codable, Sendable {
     case projects = "projects"
     case success = "success"
     case total = "total"
+  }
+}
+
+public struct CloudRunsApproveOptions: Codable, Sendable {
+  public var execute: Bool?
+
+  public init(execute: Bool? = nil) {
+    self.execute = execute
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case execute = "execute"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct CloudRunsApproveReturn: Codable, Sendable {
+  public var approval: RaviJSON
+  public var run: RaviJSON
+  public var success: Bool
+
+  public init(approval: RaviJSON, run: RaviJSON, success: Bool) {
+    self.approval = approval
+    self.run = run
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case approval = "approval"
+    case run = "run"
+    case success = "success"
+  }
+}
+
+public struct CloudRunsDenyOptions: Codable, Sendable {
+  public var reason: String?
+
+  public init(reason: String? = nil) {
+    self.reason = reason
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case reason = "reason"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.reason {
+      body["reason"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct CloudRunsDenyReturn: Codable, Sendable {
+  public var approval: RaviJSON
+  public var run: RaviJSON
+  public var success: Bool
+
+  public init(approval: RaviJSON, run: RaviJSON, success: Bool) {
+    self.approval = approval
+    self.run = run
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case approval = "approval"
+    case run = "run"
+    case success = "success"
+  }
+}
+
+public struct CloudRunsListOptions: Codable, Sendable {
+  public var agent: String?
+  public var cursor: String?
+  public var limit: String?
+  public var project: String?
+  public var status: String?
+
+  public init(agent: String? = nil, cursor: String? = nil, limit: String? = nil, project: String? = nil, status: String? = nil) {
+    self.agent = agent
+    self.cursor = cursor
+    self.limit = limit
+    self.project = project
+    self.status = status
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agent = "agent"
+    case cursor = "cursor"
+    case limit = "limit"
+    case project = "project"
+    case status = "status"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.agent {
+      body["agent"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.cursor {
+      body["cursor"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.status {
+      body["status"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct CloudRunsListReturn: Codable, Sendable {
+  public var cursor: RaviJSON
+  public var project: String
+  public var runs: [RaviJSON]
+  public var success: Bool
+
+  public init(cursor: RaviJSON, project: String, runs: [RaviJSON], success: Bool) {
+    self.cursor = cursor
+    self.project = project
+    self.runs = runs
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case cursor = "cursor"
+    case project = "project"
+    case runs = "runs"
+    case success = "success"
+  }
+}
+
+public struct CloudRunsOutputsOptions: Codable, Sendable {
+  public var download: String?
+
+  public init(download: String? = nil) {
+    self.download = download
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case download = "download"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.download {
+      body["download"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct CloudRunsOutputsReturn: Codable, Sendable {
+  public var directory: RaviJSON
+  public var downloaded: [RaviJSON]
+  public var outputs: [RaviJSON]
+  public var runId: String
+  public var success: Bool
+
+  public init(directory: RaviJSON, downloaded: [RaviJSON], outputs: [RaviJSON], runId: String, success: Bool) {
+    self.directory = directory
+    self.downloaded = downloaded
+    self.outputs = outputs
+    self.runId = runId
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case directory = "directory"
+    case downloaded = "downloaded"
+    case outputs = "outputs"
+    case runId = "runId"
+    case success = "success"
+  }
+}
+
+public struct CloudRunsReplyOptions: Codable, Sendable {
+  public var execute: Bool?
+
+  public init(execute: Bool? = nil) {
+    self.execute = execute
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case execute = "execute"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct CloudRunsReplyReturn: Codable, Sendable {
+  public var run: RaviJSON
+  public var success: Bool
+
+  public init(run: RaviJSON, success: Bool) {
+    self.run = run
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case run = "run"
+    case success = "success"
+  }
+}
+
+public struct CloudRunsShowReturn: Codable, Sendable {
+  public var run: RaviJSON
+  public var success: Bool
+
+  public init(run: RaviJSON, success: Bool) {
+    self.run = run
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case run = "run"
+    case success = "success"
+  }
+}
+
+public struct CloudRunsStartOptions: Codable, Sendable {
+  public var budget: String?
+  public var execute: Bool?
+  public var idempotencyKey: String?
+  public var project: String?
+  public var repo: [String]?
+
+  public init(budget: String? = nil, execute: Bool? = nil, idempotencyKey: String? = nil, project: String? = nil, repo: [String]? = nil) {
+    self.budget = budget
+    self.execute = execute
+    self.idempotencyKey = idempotencyKey
+    self.project = project
+    self.repo = repo
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case budget = "budget"
+    case execute = "execute"
+    case idempotencyKey = "idempotencyKey"
+    case project = "project"
+    case repo = "repo"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.budget {
+      body["budget"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.idempotencyKey {
+      body["idempotencyKey"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.repo {
+      body["repo"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct CloudRunsStartReturn: Codable, Sendable {
+  public var run: RaviJSON
+  public var success: Bool
+
+  public init(run: RaviJSON, success: Bool) {
+    self.run = run
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case run = "run"
+    case success = "success"
+  }
+}
+
+public struct CloudRunsStopReturn: Codable, Sendable {
+  public var run: RaviJSON
+  public var success: Bool
+
+  public init(run: RaviJSON, success: Bool) {
+    self.run = run
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case run = "run"
+    case success = "success"
+  }
+}
+
+public struct CloudSchedulesAddOptions: Codable, Sendable {
+  public var budget: String?
+  public var cron: String?
+  public var disabled: Bool?
+  public var execute: Bool?
+  public var project: String?
+  public var prompt: String?
+  public var timezone: String?
+
+  public init(budget: String? = nil, cron: String? = nil, disabled: Bool? = nil, execute: Bool? = nil, project: String? = nil, prompt: String? = nil, timezone: String? = nil) {
+    self.budget = budget
+    self.cron = cron
+    self.disabled = disabled
+    self.execute = execute
+    self.project = project
+    self.prompt = prompt
+    self.timezone = timezone
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case budget = "budget"
+    case cron = "cron"
+    case disabled = "disabled"
+    case execute = "execute"
+    case project = "project"
+    case prompt = "prompt"
+    case timezone = "timezone"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.budget {
+      body["budget"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.cron {
+      body["cron"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.disabled {
+      body["disabled"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.prompt {
+      body["prompt"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.timezone {
+      body["timezone"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct CloudSchedulesAddReturn: Codable, Sendable {
+  public var schedule: RaviJSON
+  public var success: Bool
+
+  public init(schedule: RaviJSON, success: Bool) {
+    self.schedule = schedule
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case schedule = "schedule"
+    case success = "success"
+  }
+}
+
+public struct CloudSchedulesListOptions: Codable, Sendable {
+  public var limit: String?
+  public var offset: String?
+  public var project: String?
+
+  public init(limit: String? = nil, offset: String? = nil, project: String? = nil) {
+    self.limit = limit
+    self.offset = offset
+    self.project = project
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case limit = "limit"
+    case offset = "offset"
+    case project = "project"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct CloudSchedulesListReturn: Codable, Sendable {
+  public var pagination: RaviJSON
+  public var project: String
+  public var schedules: [RaviJSON]
+  public var success: Bool
+
+  public init(pagination: RaviJSON, project: String, schedules: [RaviJSON], success: Bool) {
+    self.pagination = pagination
+    self.project = project
+    self.schedules = schedules
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case pagination = "pagination"
+    case project = "project"
+    case schedules = "schedules"
+    case success = "success"
+  }
+}
+
+public struct CloudSchedulesRemoveReturn: Codable, Sendable {
+  public var id: String
+  public var removed: Bool
+  public var success: Bool
+
+  public init(id: String, removed: Bool, success: Bool) {
+    self.id = id
+    self.removed = removed
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id = "id"
+    case removed = "removed"
+    case success = "success"
+  }
+}
+
+public struct CloudSchedulesUpdateOptions: Codable, Sendable {
+  public var budget: String?
+  public var cron: String?
+  public var disable: Bool?
+  public var enable: Bool?
+  public var execute: Bool?
+  public var heartbeat: Bool?
+  public var project: String?
+  public var prompt: String?
+  public var timezone: String?
+
+  public init(budget: String? = nil, cron: String? = nil, disable: Bool? = nil, enable: Bool? = nil, execute: Bool? = nil, heartbeat: Bool? = nil, project: String? = nil, prompt: String? = nil, timezone: String? = nil) {
+    self.budget = budget
+    self.cron = cron
+    self.disable = disable
+    self.enable = enable
+    self.execute = execute
+    self.heartbeat = heartbeat
+    self.project = project
+    self.prompt = prompt
+    self.timezone = timezone
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case budget = "budget"
+    case cron = "cron"
+    case disable = "disable"
+    case enable = "enable"
+    case execute = "execute"
+    case heartbeat = "heartbeat"
+    case project = "project"
+    case prompt = "prompt"
+    case timezone = "timezone"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.budget {
+      body["budget"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.cron {
+      body["cron"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.disable {
+      body["disable"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.enable {
+      body["enable"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.heartbeat {
+      body["heartbeat"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.prompt {
+      body["prompt"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.timezone {
+      body["timezone"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct CloudSchedulesUpdateReturn: Codable, Sendable {
+  public var schedule: RaviJSON
+  public var success: Bool
+
+  public init(schedule: RaviJSON, success: Bool) {
+    self.schedule = schedule
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case schedule = "schedule"
+    case success = "success"
   }
 }
 
@@ -20578,13 +21949,14 @@ public struct PagesPublishReturn: Codable, Sendable {
   public var publish: RaviJSON
   public var release: RaviJSON
   public var routes: [[String: RaviJSON]]
+  public var scope: RaviJSON
   public var site: RaviJSON
   public var success: Bool
   public var upload: RaviJSON
   public var uploadSession: RaviJSON
   public var url: RaviJSON
 
-  public init(artifact: RaviJSON, artifactVersion: RaviJSON, authenticated: Bool, consoleUrl: String, localSync: RaviJSON, publish: RaviJSON, release: RaviJSON, routes: [[String: RaviJSON]], site: RaviJSON, success: Bool, upload: RaviJSON, uploadSession: RaviJSON, url: RaviJSON) {
+  public init(artifact: RaviJSON, artifactVersion: RaviJSON, authenticated: Bool, consoleUrl: String, localSync: RaviJSON, publish: RaviJSON, release: RaviJSON, routes: [[String: RaviJSON]], scope: RaviJSON, site: RaviJSON, success: Bool, upload: RaviJSON, uploadSession: RaviJSON, url: RaviJSON) {
     self.artifact = artifact
     self.artifactVersion = artifactVersion
     self.authenticated = authenticated
@@ -20593,6 +21965,7 @@ public struct PagesPublishReturn: Codable, Sendable {
     self.publish = publish
     self.release = release
     self.routes = routes
+    self.scope = scope
     self.site = site
     self.success = success
     self.upload = upload
@@ -20609,6 +21982,7 @@ public struct PagesPublishReturn: Codable, Sendable {
     case publish = "publish"
     case release = "release"
     case routes = "routes"
+    case scope = "scope"
     case site = "site"
     case success = "success"
     case upload = "upload"
@@ -32509,17 +33883,23 @@ public struct TasksAutomationsShowReturn: Codable, Sendable {
 }
 
 public struct TasksBlockOptions: Codable, Sendable {
+  public var idempotencyKey: String?
   public var reason: String?
 
-  public init(reason: String? = nil) {
+  public init(idempotencyKey: String? = nil, reason: String? = nil) {
+    self.idempotencyKey = idempotencyKey
     self.reason = reason
   }
 
   enum CodingKeys: String, CodingKey {
+    case idempotencyKey = "idempotencyKey"
     case reason = "reason"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.idempotencyKey {
+      body["idempotencyKey"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.reason {
       body["reason"] = try RaviJSON.fromEncodable(value)
     }
@@ -32538,6 +33918,24 @@ public struct TasksBlockReturn: Codable, Sendable {
   enum CodingKeys: String, CodingKey {
     case event = "event"
     case task = "task"
+  }
+}
+
+public struct TasksCommentOptions: Codable, Sendable {
+  public var idempotencyKey: String?
+
+  public init(idempotencyKey: String? = nil) {
+    self.idempotencyKey = idempotencyKey
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case idempotencyKey = "idempotencyKey"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.idempotencyKey {
+      body["idempotencyKey"] = try RaviJSON.fromEncodable(value)
+    }
   }
 }
 
@@ -32829,22 +34227,28 @@ public struct TasksDepsRmReturn: Codable, Sendable {
 public struct TasksDispatchOptions: Codable, Sendable {
   public var actorSession: String?
   public var agent: String?
+  public var budget: String?
   public var checkpoint: String?
+  public var cloud: Bool?
   public var effort: String?
   public var execute: Bool?
   public var model: String?
+  public var project: String?
   public var reportEvents: String?
   public var reportTo: String?
   public var session: String?
   public var thinking: String?
 
-  public init(actorSession: String? = nil, agent: String? = nil, checkpoint: String? = nil, effort: String? = nil, execute: Bool? = nil, model: String? = nil, reportEvents: String? = nil, reportTo: String? = nil, session: String? = nil, thinking: String? = nil) {
+  public init(actorSession: String? = nil, agent: String? = nil, budget: String? = nil, checkpoint: String? = nil, cloud: Bool? = nil, effort: String? = nil, execute: Bool? = nil, model: String? = nil, project: String? = nil, reportEvents: String? = nil, reportTo: String? = nil, session: String? = nil, thinking: String? = nil) {
     self.actorSession = actorSession
     self.agent = agent
+    self.budget = budget
     self.checkpoint = checkpoint
+    self.cloud = cloud
     self.effort = effort
     self.execute = execute
     self.model = model
+    self.project = project
     self.reportEvents = reportEvents
     self.reportTo = reportTo
     self.session = session
@@ -32854,10 +34258,13 @@ public struct TasksDispatchOptions: Codable, Sendable {
   enum CodingKeys: String, CodingKey {
     case actorSession = "actorSession"
     case agent = "agent"
+    case budget = "budget"
     case checkpoint = "checkpoint"
+    case cloud = "cloud"
     case effort = "effort"
     case execute = "execute"
     case model = "model"
+    case project = "project"
     case reportEvents = "reportEvents"
     case reportTo = "reportTo"
     case session = "session"
@@ -32871,8 +34278,14 @@ public struct TasksDispatchOptions: Codable, Sendable {
     if let value = self.agent {
       body["agent"] = try RaviJSON.fromEncodable(value)
     }
+    if let value = self.budget {
+      body["budget"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.checkpoint {
       body["checkpoint"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.cloud {
+      body["cloud"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.effort {
       body["effort"] = try RaviJSON.fromEncodable(value)
@@ -32882,6 +34295,9 @@ public struct TasksDispatchOptions: Codable, Sendable {
     }
     if let value = self.model {
       body["model"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.project {
+      body["project"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.reportEvents {
       body["reportEvents"] = try RaviJSON.fromEncodable(value)
@@ -32920,17 +34336,23 @@ public struct TasksDispatchReturn: Codable, Sendable {
 }
 
 public struct TasksDoneOptions: Codable, Sendable {
+  public var idempotencyKey: String?
   public var summary: String?
 
-  public init(summary: String? = nil) {
+  public init(idempotencyKey: String? = nil, summary: String? = nil) {
+    self.idempotencyKey = idempotencyKey
     self.summary = summary
   }
 
   enum CodingKeys: String, CodingKey {
+    case idempotencyKey = "idempotencyKey"
     case summary = "summary"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.idempotencyKey {
+      body["idempotencyKey"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.summary {
       body["summary"] = try RaviJSON.fromEncodable(value)
     }
@@ -32953,17 +34375,23 @@ public struct TasksDoneReturn: Codable, Sendable {
 }
 
 public struct TasksFailOptions: Codable, Sendable {
+  public var idempotencyKey: String?
   public var reason: String?
 
-  public init(reason: String? = nil) {
+  public init(idempotencyKey: String? = nil, reason: String? = nil) {
+    self.idempotencyKey = idempotencyKey
     self.reason = reason
   }
 
   enum CodingKeys: String, CodingKey {
+    case idempotencyKey = "idempotencyKey"
     case reason = "reason"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.idempotencyKey {
+      body["idempotencyKey"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.reason {
       body["reason"] = try RaviJSON.fromEncodable(value)
     }
@@ -33333,20 +34761,32 @@ public struct TasksProfilesValidateReturn: Codable, Sendable {
 }
 
 public struct TasksReportOptions: Codable, Sendable {
+  public var checklist: String?
+  public var idempotencyKey: String?
   public var message: String?
   public var progress: String?
 
-  public init(message: String? = nil, progress: String? = nil) {
+  public init(checklist: String? = nil, idempotencyKey: String? = nil, message: String? = nil, progress: String? = nil) {
+    self.checklist = checklist
+    self.idempotencyKey = idempotencyKey
     self.message = message
     self.progress = progress
   }
 
   enum CodingKeys: String, CodingKey {
+    case checklist = "checklist"
+    case idempotencyKey = "idempotencyKey"
     case message = "message"
     case progress = "progress"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.checklist {
+      body["checklist"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.idempotencyKey {
+      body["idempotencyKey"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.message {
       body["message"] = try RaviJSON.fromEncodable(value)
     }

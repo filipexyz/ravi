@@ -188,6 +188,72 @@ describe("pages CLI commands", () => {
     });
   });
 
+  it("shows a host's pending custom domain with the DNS still missing", async () => {
+    const client = makeClient(async () => [
+      {
+        id: "site_1",
+        slug: "demo",
+        defaultHostname: "demo.ravi.page",
+        defaultVisibility: "public",
+        status: "active",
+        customDomains: [
+          { hostname: "docs.example.com", status: "ready" },
+          {
+            hostname: "example.com",
+            status: "pending",
+            apex: true,
+            nextAction: {
+              code: "configure_pages_dns",
+              message: "Add or keep these records in the hostname's authoritative DNS.",
+              dnsRecords: [{ name: "example.com", type: "CNAME", value: "cname.ravi.page" }],
+            },
+          },
+        ],
+      },
+    ]);
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() => command.list("proj"));
+
+    expect(output).toContain("custom domain docs.example.com  ready");
+    expect(output).toContain("custom domain example.com  not serving yet: the DNS below is missing");
+    expect(output).toContain("CNAME example.com = cname.ravi.page");
+    expect(output).toContain("a plain A record does not reach Pages");
+    expect(output).toContain("Check again: ravi pages domains demo example.com --project proj --check --execute");
+  });
+
+  it("lists a host's pending custom domains once below its published Pages", async () => {
+    const pending = {
+      hostname: "www.example.com",
+      status: "pending",
+      nextAction: {
+        code: "wait_for_pages",
+        message: "Ravi Pages is still provisioning this hostname.",
+        dnsRecords: [],
+      },
+    };
+    const client = makeClient(async () => ({
+      pages: ["/", "/docs"].map((path) => ({
+        id: `release_route${path}`,
+        title: path,
+        path,
+        siteSlug: "demo",
+        defaultHostname: "demo.ravi.page",
+        urls: [`https://demo.ravi.page${path}`],
+        customDomains: [pending],
+      })),
+      total: 2,
+    }));
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() => command.published("proj"));
+
+    expect(output).toContain("Custom domains of demo not serving yet");
+    expect(output.match(/custom domain www\.example\.com/g)).toHaveLength(1);
+    expect(output).toContain("Ravi Pages is still provisioning it");
+    expect(output).not.toContain("https://www.example.com");
+  });
+
   it("lists published Pages through the versioned Console CLI API", async () => {
     const calls: Array<{ method: string; path: string; body: unknown; accessToken: string }> = [];
     const client = makeClient(async (method, path, body, accessToken) => {
@@ -636,6 +702,11 @@ describe("pages CLI commands", () => {
       site: { slug: "demo" },
       release: { id: "rel_123" },
     });
+    // The gateway checks the declared return schema; the resolved scope used to
+    // be rejected as an unrecognized key, turning a completed publish into a 500.
+    expect(payload.scope).toMatchObject({ project: { ref: "proj" } });
+    const publishReturnSchema = getReturnsMetadata(PagesCommands).get("publish");
+    expect(publishReturnSchema?.safeParse(payload).error?.issues).toBeUndefined();
   });
 
   it("publishes to the project Pages host without an explicit site slug", async () => {
@@ -934,6 +1005,58 @@ describe("pages agent-first contract", () => {
       success: true,
       url: "https://demo.ravi.page/guide",
     });
+  });
+
+  it("publish dry-run rejects a missing source or entrypoint before the brake", async () => {
+    stateDir = await createIsolatedRaviState("ravi-pages-publish-dry-run-validation-test-");
+    const dir = await tempDir();
+    await writeFile(join(dir, "index.html"), "<h1>Docs</h1>");
+    const client = {
+      me: mock(async () => {
+        throw new Error("dry-run validation must not call Console");
+      }),
+    } as unknown as ConsoleApiClient;
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+    const dryRun = (source: string, route: string | undefined, entrypoint: string | undefined) =>
+      runWithContext({}, () =>
+        command.publish(
+          ["proj", "demo", source],
+          undefined,
+          route,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          entrypoint,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+        ),
+      );
+
+    const entrypointError = await dryRun(dir, "/guide", "missing.html").catch((error: unknown) => error);
+    expect(entrypointError).toBeInstanceOf(CloudAuthError);
+    expect((entrypointError as CloudAuthError).code).toBe("PAYLOAD_INVALID");
+    expect((entrypointError as CloudAuthError).issues).toEqual([
+      { path: ["entrypoint"], code: "invalid", message: "Package entrypoint is not included in files: missing.html" },
+    ]);
+
+    const sourceError = await dryRun(join(dir, "nope"), "/guide", undefined).catch((error: unknown) => error);
+    expect(sourceError).toBeInstanceOf(CloudAuthError);
+    expect((sourceError as CloudAuthError).code).toBe("PAYLOAD_INVALID");
+    expect((sourceError as CloudAuthError).issues?.[0]?.path).toEqual(["source"]);
+
+    // A valid source still brakes, and the plan shows the route the Console will use.
+    const brake = await expectContractError(() => dryRun(dir, "guide", "index.html"), "WRITE_REQUIRES_EXECUTE", 3);
+    expect(brake.details.plan).toMatchObject({ route: "/guide", entrypoint: "index.html" });
+    expect(client.me).not.toHaveBeenCalled();
   });
 
   it("password set without --execute never prompts for the password nor calls Console", async () => {

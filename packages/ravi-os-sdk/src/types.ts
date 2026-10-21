@@ -1086,6 +1086,39 @@ export type AgentsPublishInput = {
 /** Return shape for `agents.publish`. */
 export type AgentsPublishReturn = {
   agent: string;
+  cloud: ({
+    budgetUsd?: number;
+    effort?: string;
+    environment?: {
+      allowedHosts?: string[];
+      networking?: string;
+      packages?: {
+        apt?: string[];
+        npm?: string[];
+        pip?: string[];
+      };
+    };
+    mcp?: {
+      ravi?: boolean;
+      servers?: Array<{
+        name: string;
+        url: string;
+      }>;
+    };
+    model?: string;
+    repositories?: Array<{
+      branch?: string;
+      repo: string;
+    }>;
+    schedule?: {
+      cron: string;
+      timezone?: string;
+    };
+    tools?: {
+      webSearch?: boolean;
+      writes?: string;
+    };
+  }) | null;
   contentHash: string;
   item: ({
     archived: boolean;
@@ -2838,6 +2871,7 @@ export type BasesChartsArchiveReturn = {
 export type BasesChartsCreateInput = {
   base: string;
   console?: string;
+  idempotencyKey?: string;
   name?: string;
   project?: string;
   spec?: string;
@@ -2861,6 +2895,7 @@ export type BasesChartsCreateReturn = {
     viewId: string;
   };
   consoleUrl: string;
+  idempotencyKey: string;
   projectRef: string;
   success: true;
 };
@@ -2893,9 +2928,17 @@ export type BasesChartsDataReturn = {
   data: Array<Record<string, string | number | boolean | null>>;
   fields: Record<string, {
     config: {
+      agent?: string | null;
+      approvers?: Array<{
+        kind: string;
+        minRole?: string;
+        userId?: string;
+      }>;
       currency?: string;
       format?: string;
       includeTime?: boolean;
+      inputs?: string[];
+      instructions?: string;
       options?: Array<{
         archived?: boolean;
         color: string;
@@ -2903,7 +2946,9 @@ export type BasesChartsDataReturn = {
         id: string;
         name: string;
       }>;
+      output?: string;
       precision?: number;
+      resetOn?: string[];
     };
     key: string;
     name: string;
@@ -3040,6 +3085,7 @@ export type BasesCreateInput = {
   console?: string;
   description?: string;
   icon?: string;
+  idempotencyKey?: string;
   name: string;
   project?: string;
   schema?: string;
@@ -3082,9 +3128,17 @@ export type BasesCreateReturn = {
     projectId: string;
     properties: Array<{
       config: {
+        agent?: string | null;
+        approvers?: Array<{
+          kind: string;
+          minRole?: string;
+          userId?: string;
+        }>;
         currency?: string;
         format?: string;
         includeTime?: boolean;
+        inputs?: string[];
+        instructions?: string;
         options?: Array<{
           archived?: boolean;
           color: string;
@@ -3092,7 +3146,9 @@ export type BasesCreateReturn = {
           id: string;
           name: string;
         }>;
+        output?: string;
         precision?: number;
+        resetOn?: string[];
       };
       deletedAt: string | null;
       description: string | null;
@@ -3115,6 +3171,7 @@ export type BasesCreateReturn = {
       baseId: string;
       capabilities: {
         aggregateOnly: boolean;
+        approve?: string[];
         archive: boolean;
         create: boolean;
         manage: boolean;
@@ -3144,6 +3201,7 @@ export type BasesCreateReturn = {
       baseId: string;
       capabilities: {
         aggregateOnly: boolean;
+        approve?: string[];
         archive: boolean;
         create: boolean;
         manage: boolean;
@@ -3152,9 +3210,17 @@ export type BasesCreateReturn = {
       };
       columns: Array<{
         config: {
+          agent?: string | null;
+          approvers?: Array<{
+            kind: string;
+            minRole?: string;
+            userId?: string;
+          }>;
           currency?: string;
           format?: string;
           includeTime?: boolean;
+          inputs?: string[];
+          instructions?: string;
           options?: Array<{
             archived?: boolean;
             color: string;
@@ -3162,7 +3228,9 @@ export type BasesCreateReturn = {
             id: string;
             name: string;
           }>;
+          output?: string;
           precision?: number;
+          resetOn?: string[];
         };
         key: string;
         name: string;
@@ -3178,6 +3246,7 @@ export type BasesCreateReturn = {
     })>;
   };
   consoleUrl: string;
+  idempotencyKey: string;
   projectRef: string;
   success: true;
 };
@@ -3253,17 +3322,24 @@ export type BasesListReturn = {
 
 /** Input shape for `bases.props.add`. */
 export type BasesPropsAddInput = {
+  agent?: string;
+  approvers?: string;
   base: string;
   config?: string;
   console?: string;
   description?: string;
   expectedSchemaVersion?: string;
+  idempotencyKey?: string;
+  inputs?: string;
+  instructions?: string;
   key?: string;
   name: string;
   options?: string;
+  output?: string;
   position?: string;
   project?: string;
   required?: boolean;
+  resetOn?: string;
   type?: string;
 };
 
@@ -3291,12 +3367,21 @@ export type BasesPropsAddReturn = {
     version: number;
   };
   consoleUrl: string;
+  idempotencyKey: string;
   projectRef: string;
   property: {
     config: {
+      agent?: string | null;
+      approvers?: Array<{
+        kind: string;
+        minRole?: string;
+        userId?: string;
+      }>;
       currency?: string;
       format?: string;
       includeTime?: boolean;
+      inputs?: string[];
+      instructions?: string;
       options?: Array<{
         archived?: boolean;
         color: string;
@@ -3304,7 +3389,9 @@ export type BasesPropsAddReturn = {
         id: string;
         name: string;
       }>;
+      output?: string;
       precision?: number;
+      resetOn?: string[];
     };
     deletedAt: string | null;
     description: string | null;
@@ -3372,9 +3459,17 @@ export type BasesPropsDeleteReturn = {
   projectRef: string;
   property: {
     config: {
+      agent?: string | null;
+      approvers?: Array<{
+        kind: string;
+        minRole?: string;
+        userId?: string;
+      }>;
       currency?: string;
       format?: string;
       includeTime?: boolean;
+      inputs?: string[];
+      instructions?: string;
       options?: Array<{
         archived?: boolean;
         color: string;
@@ -3382,7 +3477,9 @@ export type BasesPropsDeleteReturn = {
         id: string;
         name: string;
       }>;
+      output?: string;
       precision?: number;
+      resetOn?: string[];
     };
     deletedAt: string | null;
     description: string | null;
@@ -3430,9 +3527,17 @@ export type BasesPropsListReturn = {
   consoleUrl: string;
   items: Array<{
     config?: {
+      agent?: string | null;
+      approvers?: Array<{
+        kind: string;
+        minRole?: string;
+        userId?: string;
+      }>;
       currency?: string;
       format?: string;
       includeTime?: boolean;
+      inputs?: string[];
+      instructions?: string;
       options?: Array<{
         archived?: boolean;
         color: string;
@@ -3440,7 +3545,9 @@ export type BasesPropsListReturn = {
         id: string;
         name: string;
       }>;
+      output?: string;
       precision?: number;
+      resetOn?: string[];
     };
     deletedAt?: string | null;
     description?: string | null;
@@ -3463,9 +3570,17 @@ export type BasesPropsListReturn = {
   projectRef: string;
   properties: Array<{
     config?: {
+      agent?: string | null;
+      approvers?: Array<{
+        kind: string;
+        minRole?: string;
+        userId?: string;
+      }>;
       currency?: string;
       format?: string;
       includeTime?: boolean;
+      inputs?: string[];
+      instructions?: string;
       options?: Array<{
         archived?: boolean;
         color: string;
@@ -3473,7 +3588,9 @@ export type BasesPropsListReturn = {
         id: string;
         name: string;
       }>;
+      output?: string;
       precision?: number;
+      resetOn?: string[];
     };
     deletedAt?: string | null;
     description?: string | null;
@@ -3525,9 +3642,17 @@ export type BasesPropsRestoreReturn = {
   projectRef: string;
   property: {
     config: {
+      agent?: string | null;
+      approvers?: Array<{
+        kind: string;
+        minRole?: string;
+        userId?: string;
+      }>;
       currency?: string;
       format?: string;
       includeTime?: boolean;
+      inputs?: string[];
+      instructions?: string;
       options?: Array<{
         archived?: boolean;
         color: string;
@@ -3535,7 +3660,9 @@ export type BasesPropsRestoreReturn = {
         id: string;
         name: string;
       }>;
+      output?: string;
       precision?: number;
+      resetOn?: string[];
     };
     deletedAt: string | null;
     description: string | null;
@@ -3611,9 +3738,17 @@ export type BasesPropsUpdateReturn = {
   projectRef: string;
   property: {
     config: {
+      agent?: string | null;
+      approvers?: Array<{
+        kind: string;
+        minRole?: string;
+        userId?: string;
+      }>;
       currency?: string;
       format?: string;
       includeTime?: boolean;
+      inputs?: string[];
+      instructions?: string;
       options?: Array<{
         archived?: boolean;
         color: string;
@@ -3621,7 +3756,9 @@ export type BasesPropsUpdateReturn = {
         id: string;
         name: string;
       }>;
+      output?: string;
       precision?: number;
+      resetOn?: string[];
     };
     deletedAt: string | null;
     description: string | null;
@@ -3726,6 +3863,45 @@ export type BasesRowsAddReturn = {
   warnings?: string[];
 };
 
+/** Input shape for `bases.rows.approve`. */
+export type BasesRowsApproveInput = {
+  base: string;
+  console?: string;
+  execute?: boolean;
+  expectedVersion?: string;
+  idempotencyKey?: string;
+  note?: string;
+  project?: string;
+  prop: string;
+  row: string;
+  view?: string;
+};
+
+/** Return shape for `bases.rows.approve`. */
+export type BasesRowsApproveReturn = {
+  baseRef: string;
+  consoleUrl: string;
+  idempotencyKey: string;
+  idempotentReplay: boolean;
+  projectRef: string;
+  property: string;
+  row: {
+    archivedAt?: string | null;
+    body?: string | null;
+    rowId: string;
+    values: Record<string, unknown>;
+    version: number;
+  };
+  state: "pending" | "approved" | "rejected";
+  success: true;
+  users: Record<string, {
+    avatarUrl: string | null;
+    displayName: string | null;
+    id: string;
+  }>;
+  viewId: string | null;
+};
+
 /** Input shape for `bases.rows.archive`. */
 export type BasesRowsArchiveInput = {
   base: string;
@@ -3788,6 +3964,44 @@ export type BasesRowsExportReturn = {
   viewId: string | null;
 };
 
+/** Input shape for `bases.rows.fill`. */
+export type BasesRowsFillInput = {
+  base: string;
+  console?: string;
+  error?: string;
+  idempotencyKey?: string;
+  inputsHash?: string;
+  project?: string;
+  prop: string;
+  row: string;
+  value?: string;
+};
+
+/** Return shape for `bases.rows.fill`. */
+export type BasesRowsFillReturn = {
+  baseRef: string;
+  consoleUrl: string;
+  idempotencyKey: string;
+  idempotentReplay: boolean;
+  projectRef: string;
+  property: string;
+  row: {
+    archivedAt?: string | null;
+    body?: string | null;
+    rowId: string;
+    values: Record<string, unknown>;
+    version: number;
+  };
+  success: true;
+  users: Record<string, {
+    avatarUrl: string | null;
+    displayName: string | null;
+    id: string;
+  }>;
+  viewId: string | null;
+  warnings?: string[];
+};
+
 /** Input shape for `bases.rows.get`. */
 export type BasesRowsGetInput = {
   base: string;
@@ -3839,6 +4053,10 @@ export type BasesRowsHistoryReturn = {
     actorId: string | null;
     actorType: string | null;
     after: Record<string, unknown>;
+    agent?: ({
+      id: string;
+      installationId: string | null;
+    }) | null;
     before: Record<string, unknown>;
     bodyChanged: boolean;
     changedKeys: string[];
@@ -3975,6 +4193,115 @@ export type BasesRowsQueryReturn = {
   viewId: string | null;
 };
 
+/** Input shape for `bases.rows.reject`. */
+export type BasesRowsRejectInput = {
+  base: string;
+  console?: string;
+  execute?: boolean;
+  expectedVersion?: string;
+  idempotencyKey?: string;
+  note?: string;
+  project?: string;
+  prop: string;
+  row: string;
+  view?: string;
+};
+
+/** Return shape for `bases.rows.reject`. */
+export type BasesRowsRejectReturn = {
+  baseRef: string;
+  consoleUrl: string;
+  idempotencyKey: string;
+  idempotentReplay: boolean;
+  projectRef: string;
+  property: string;
+  row: {
+    archivedAt?: string | null;
+    body?: string | null;
+    rowId: string;
+    values: Record<string, unknown>;
+    version: number;
+  };
+  state: "pending" | "approved" | "rejected";
+  success: true;
+  users: Record<string, {
+    avatarUrl: string | null;
+    displayName: string | null;
+    id: string;
+  }>;
+  viewId: string | null;
+};
+
+/** Input shape for `bases.rows.request-approval`. */
+export type BasesRowsRequestApprovalInput = {
+  base: string;
+  console?: string;
+  expectedVersion?: string;
+  idempotencyKey?: string;
+  note?: string;
+  project?: string;
+  prop: string;
+  row: string;
+  view?: string;
+};
+
+/** Return shape for `bases.rows.request-approval`. */
+export type BasesRowsRequestApprovalReturn = {
+  baseRef: string;
+  consoleUrl: string;
+  idempotencyKey: string;
+  idempotentReplay: boolean;
+  projectRef: string;
+  property: string;
+  row: {
+    archivedAt?: string | null;
+    body?: string | null;
+    rowId: string;
+    values: Record<string, unknown>;
+    version: number;
+  };
+  state: "pending" | "approved" | "rejected";
+  success: true;
+  users: Record<string, {
+    avatarUrl: string | null;
+    displayName: string | null;
+    id: string;
+  }>;
+  viewId: string | null;
+};
+
+/** Input shape for `bases.rows.rerun`. */
+export type BasesRowsRerunInput = {
+  base: string;
+  console?: string;
+  project?: string;
+  prop: string;
+  row: string;
+};
+
+/** Return shape for `bases.rows.rerun`. */
+export type BasesRowsRerunReturn = {
+  baseRef: string;
+  consoleUrl: string;
+  idempotentReplay: boolean;
+  projectRef: string;
+  property: string;
+  row: {
+    archivedAt?: string | null;
+    body?: string | null;
+    rowId: string;
+    values: Record<string, unknown>;
+    version: number;
+  };
+  success: true;
+  users: Record<string, {
+    avatarUrl: string | null;
+    displayName: string | null;
+    id: string;
+  }>;
+  viewId: string | null;
+};
+
 /** Input shape for `bases.rows.restore`. */
 export type BasesRowsRestoreInput = {
   base: string;
@@ -4089,9 +4416,17 @@ export type BasesShowReturn = {
     projectId: string;
     properties: Array<{
       config: {
+        agent?: string | null;
+        approvers?: Array<{
+          kind: string;
+          minRole?: string;
+          userId?: string;
+        }>;
         currency?: string;
         format?: string;
         includeTime?: boolean;
+        inputs?: string[];
+        instructions?: string;
         options?: Array<{
           archived?: boolean;
           color: string;
@@ -4099,7 +4434,9 @@ export type BasesShowReturn = {
           id: string;
           name: string;
         }>;
+        output?: string;
         precision?: number;
+        resetOn?: string[];
       };
       deletedAt: string | null;
       description: string | null;
@@ -4122,6 +4459,7 @@ export type BasesShowReturn = {
       baseId: string;
       capabilities: {
         aggregateOnly: boolean;
+        approve?: string[];
         archive: boolean;
         create: boolean;
         manage: boolean;
@@ -4151,6 +4489,7 @@ export type BasesShowReturn = {
       baseId: string;
       capabilities: {
         aggregateOnly: boolean;
+        approve?: string[];
         archive: boolean;
         create: boolean;
         manage: boolean;
@@ -4159,9 +4498,17 @@ export type BasesShowReturn = {
       };
       columns: Array<{
         config: {
+          agent?: string | null;
+          approvers?: Array<{
+            kind: string;
+            minRole?: string;
+            userId?: string;
+          }>;
           currency?: string;
           format?: string;
           includeTime?: boolean;
+          inputs?: string[];
+          instructions?: string;
           options?: Array<{
             archived?: boolean;
             color: string;
@@ -4169,7 +4516,9 @@ export type BasesShowReturn = {
             id: string;
             name: string;
           }>;
+          output?: string;
           precision?: number;
+          resetOn?: string[];
         };
         key: string;
         name: string;
@@ -4191,9 +4540,16 @@ export type BasesShowReturn = {
 
 /** Input shape for `bases.subscribe`. */
 export type BasesSubscribeInput = {
+  agent?: string;
   base: string;
   console?: string;
+  events?: string;
+  message?: string;
   project?: string;
+  props?: string;
+  session?: string;
+  trigger?: boolean;
+  view?: string;
 };
 
 /** Return shape for `bases.subscribe`. */
@@ -4203,18 +4559,38 @@ export type BasesSubscribeReturn = {
     category: string;
     natsSubject: string;
   };
+  filter: {
+    events: string[];
+    properties: string[];
+    viewId: string | null;
+  };
   projectRef: string;
   subscription: {
     baseId: string;
     createdAt: string;
+    events?: string[];
     id: string;
     installationName: string | null;
     localInstallationId: string;
+    properties?: string[];
     revokedAt: string | null;
     status: string;
     userId: string;
+    viewId?: string | null;
   };
   success: true;
+  trigger?: {
+    agentId: string;
+    created: boolean;
+    draft: boolean;
+    enableCommand: string | null;
+    enabled: boolean;
+    filter: string;
+    id: string;
+    name: string;
+    session: string;
+    topic: string;
+  };
 };
 
 /** Input shape for `bases.subscriptions`. */
@@ -4232,12 +4608,15 @@ export type BasesSubscriptionsReturn = {
   subscriptions: Array<{
     baseId: string;
     createdAt: string;
+    events?: string[];
     id: string;
     installationName: string | null;
     localInstallationId: string;
+    properties?: string[];
     revokedAt: string | null;
     status: string;
     userId: string;
+    viewId?: string | null;
   }>;
   success: true;
 };
@@ -4257,12 +4636,15 @@ export type BasesUnsubscribeReturn = {
   subscription: {
     baseId: string;
     createdAt: string;
+    events?: string[];
     id: string;
     installationName: string | null;
     localInstallationId: string;
+    properties?: string[];
     revokedAt: string | null;
     status: string;
     userId: string;
+    viewId?: string | null;
   };
   success: true;
 };
@@ -4329,6 +4711,7 @@ export type BasesViewsArchiveReturn = {
     baseId: string;
     capabilities: {
       aggregateOnly: boolean;
+      approve?: string[];
       archive: boolean;
       create: boolean;
       manage: boolean;
@@ -4379,6 +4762,7 @@ export type BasesViewsBindReturn = {
     baseId: string;
     capabilities: {
       aggregateOnly: boolean;
+      approve?: string[];
       archive: boolean;
       create: boolean;
       manage: boolean;
@@ -4412,6 +4796,7 @@ export type BasesViewsBindReturn = {
 export type BasesViewsCreateInput = {
   base: string;
   console?: string;
+  idempotencyKey?: string;
   name?: string;
   project?: string;
   spec?: string;
@@ -4421,6 +4806,7 @@ export type BasesViewsCreateInput = {
 export type BasesViewsCreateReturn = {
   baseRef: string;
   consoleUrl: string;
+  idempotencyKey: string;
   projectRef: string;
   success: true;
   view: {
@@ -4428,6 +4814,7 @@ export type BasesViewsCreateReturn = {
     baseId: string;
     capabilities: {
       aggregateOnly: boolean;
+      approve?: string[];
       archive: boolean;
       create: boolean;
       manage: boolean;
@@ -4475,6 +4862,7 @@ export type BasesViewsListReturn = {
     baseId?: string;
     capabilities?: {
       aggregateOnly: boolean;
+      approve?: string[];
       archive: boolean;
       create: boolean;
       manage: boolean;
@@ -4504,6 +4892,7 @@ export type BasesViewsListReturn = {
     baseId?: string;
     capabilities?: {
       aggregateOnly: boolean;
+      approve?: string[];
       archive: boolean;
       create: boolean;
       manage: boolean;
@@ -4512,9 +4901,17 @@ export type BasesViewsListReturn = {
     };
     columns?: Array<{
       config: {
+        agent?: string | null;
+        approvers?: Array<{
+          kind: string;
+          minRole?: string;
+          userId?: string;
+        }>;
         currency?: string;
         format?: string;
         includeTime?: boolean;
+        inputs?: string[];
+        instructions?: string;
         options?: Array<{
           archived?: boolean;
           color: string;
@@ -4522,7 +4919,9 @@ export type BasesViewsListReturn = {
           id: string;
           name: string;
         }>;
+        output?: string;
         precision?: number;
+        resetOn?: string[];
       };
       key: string;
       name: string;
@@ -4553,6 +4952,7 @@ export type BasesViewsListReturn = {
     baseId?: string;
     capabilities?: {
       aggregateOnly: boolean;
+      approve?: string[];
       archive: boolean;
       create: boolean;
       manage: boolean;
@@ -4582,6 +4982,7 @@ export type BasesViewsListReturn = {
     baseId?: string;
     capabilities?: {
       aggregateOnly: boolean;
+      approve?: string[];
       archive: boolean;
       create: boolean;
       manage: boolean;
@@ -4590,9 +4991,17 @@ export type BasesViewsListReturn = {
     };
     columns?: Array<{
       config: {
+        agent?: string | null;
+        approvers?: Array<{
+          kind: string;
+          minRole?: string;
+          userId?: string;
+        }>;
         currency?: string;
         format?: string;
         includeTime?: boolean;
+        inputs?: string[];
+        instructions?: string;
         options?: Array<{
           archived?: boolean;
           color: string;
@@ -4600,7 +5009,9 @@ export type BasesViewsListReturn = {
           id: string;
           name: string;
         }>;
+        output?: string;
         precision?: number;
+        resetOn?: string[];
       };
       key: string;
       name: string;
@@ -4663,6 +5074,74 @@ export type BasesViewsQueryReturn = {
   viewId: string | null;
 };
 
+/** Input shape for `bases.views.share`. */
+export type BasesViewsShareInput = {
+  archive?: boolean;
+  base: string;
+  console?: string;
+  create?: boolean;
+  execute?: boolean;
+  project?: string;
+  site?: string;
+  view: string;
+  write?: string;
+  writeOnly?: boolean;
+};
+
+/** Return shape for `bases.views.share`. */
+export type BasesViewsShareReturn = {
+  baseRef: string;
+  changed: boolean;
+  consoleUrl: string;
+  disclosure: string[];
+  grants: {
+    archive: boolean;
+    create: boolean;
+    read: boolean;
+    writeColumns: string[];
+  };
+  projectRef: string;
+  site: {
+    hostname: string | null;
+    id: string;
+    isDefault: boolean;
+    slug: string | null;
+  };
+  success: true;
+  view: {
+    access: Record<string, unknown>;
+    baseId: string;
+    capabilities: {
+      aggregateOnly: boolean;
+      approve?: string[];
+      archive: boolean;
+      create: boolean;
+      manage: boolean;
+      read: boolean;
+      writeColumns: string[];
+    };
+    columns: string[];
+    createdAt: string;
+    description: string | null;
+    id: string;
+    invalidReason: string | null;
+    layout: Record<string, unknown>;
+    name: string;
+    position: number;
+    query: {
+      filter: unknown | null;
+      sort: Array<{
+        dir: string;
+        prop: string;
+      }>;
+    };
+    status: string;
+    updatedAt: string;
+    valid: boolean;
+    version: number;
+  };
+};
+
 /** Input shape for `bases.views.show`. */
 export type BasesViewsShowInput = {
   base: string;
@@ -4681,6 +5160,7 @@ export type BasesViewsShowReturn = {
     baseId: string;
     capabilities: {
       aggregateOnly: boolean;
+      approve?: string[];
       archive: boolean;
       create: boolean;
       manage: boolean;
@@ -4689,9 +5169,17 @@ export type BasesViewsShowReturn = {
     };
     columns: Array<{
       config: {
+        agent?: string | null;
+        approvers?: Array<{
+          kind: string;
+          minRole?: string;
+          userId?: string;
+        }>;
         currency?: string;
         format?: string;
         includeTime?: boolean;
+        inputs?: string[];
+        instructions?: string;
         options?: Array<{
           archived?: boolean;
           color: string;
@@ -4699,7 +5187,9 @@ export type BasesViewsShowReturn = {
           id: string;
           name: string;
         }>;
+        output?: string;
         precision?: number;
+        resetOn?: string[];
       };
       key: string;
       name: string;
@@ -4717,6 +5207,7 @@ export type BasesViewsShowReturn = {
       baseId: string;
       capabilities: {
         aggregateOnly: boolean;
+        approve?: string[];
         archive: boolean;
         create: boolean;
         manage: boolean;
@@ -4768,6 +5259,7 @@ export type BasesViewsUpdateReturn = {
     baseId: string;
     capabilities: {
       aggregateOnly: boolean;
+      approve?: string[];
       archive: boolean;
       create: boolean;
       manage: boolean;
@@ -6879,6 +7371,233 @@ export type ChatsReadReturn = {
   total: number;
 };
 
+/** Input shape for `cloud.agents.archive`. */
+export type CloudAgentsArchiveInput = {
+  agent: string;
+  project?: string;
+};
+
+/** Return shape for `cloud.agents.archive`. */
+export type CloudAgentsArchiveReturn = {
+  agent: ({
+    config: {
+      budgetUsd: number;
+      mcpServers: string[];
+      networking: string;
+      raviMcp: boolean;
+      repositories: string[];
+      schedule: ({
+        cron: string;
+        timezone: string;
+      }) | null;
+      webSearch: boolean;
+      writes: string;
+    };
+    deployedAt: string | null;
+    deployedBy: ({
+      id: string;
+      name: string | null;
+    }) | null;
+    id: string;
+    lastError: string | null;
+    library: {
+      itemId: string;
+      scope: string;
+      slug: string;
+      version: number | null;
+    };
+    model: string | null;
+    name: string;
+    projectId: string;
+    provider: string;
+    status: string;
+  }) | null;
+  archived: true;
+  id: string;
+  success: true;
+};
+
+/** Input shape for `cloud.agents.deploy`. */
+export type CloudAgentsDeployInput = {
+  agent: string;
+  execute?: boolean;
+  project?: string;
+  version?: string;
+};
+
+/** Return shape for `cloud.agents.deploy`. */
+export type CloudAgentsDeployReturn = {
+  agent: {
+    config: {
+      budgetUsd: number;
+      mcpServers: string[];
+      networking: string;
+      raviMcp: boolean;
+      repositories: string[];
+      schedule: ({
+        cron: string;
+        timezone: string;
+      }) | null;
+      webSearch: boolean;
+      writes: string;
+    };
+    deployedAt: string | null;
+    deployedBy: ({
+      id: string;
+      name: string | null;
+    }) | null;
+    id: string;
+    lastError: string | null;
+    library: {
+      itemId: string;
+      scope: string;
+      slug: string;
+      version: number | null;
+    };
+    model: string | null;
+    name: string;
+    projectId: string;
+    provider: string;
+    status: string;
+  };
+  changed: boolean;
+  success: true;
+  warnings: string[];
+};
+
+/** Input shape for `cloud.agents.list`. */
+export type CloudAgentsListInput = {
+  limit?: string;
+  offset?: string;
+  project?: string;
+};
+
+/** Return shape for `cloud.agents.list`. */
+export type CloudAgentsListReturn = {
+  agents: Array<{
+    config: {
+      budgetUsd: number;
+      mcpServers: string[];
+      networking: string;
+      raviMcp: boolean;
+      repositories: string[];
+      schedule: ({
+        cron: string;
+        timezone: string;
+      }) | null;
+      webSearch: boolean;
+      writes: string;
+    };
+    deployedAt: string | null;
+    deployedBy: ({
+      id: string;
+      name: string | null;
+    }) | null;
+    id: string;
+    lastError: string | null;
+    library: {
+      itemId: string;
+      scope: string;
+      slug: string;
+      version: number | null;
+    };
+    model: string | null;
+    name: string;
+    projectId: string;
+    provider: string;
+    status: string;
+  }>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  project: string;
+  success: true;
+};
+
+/** Input shape for `cloud.agents.show`. */
+export type CloudAgentsShowInput = {
+  agent: string;
+  project?: string;
+};
+
+/** Return shape for `cloud.agents.show`. */
+export type CloudAgentsShowReturn = {
+  agent: {
+    config: {
+      budgetUsd: number;
+      mcpServers: string[];
+      networking: string;
+      raviMcp: boolean;
+      repositories: string[];
+      schedule: ({
+        cron: string;
+        timezone: string;
+      }) | null;
+      webSearch: boolean;
+      writes: string;
+    };
+    deployedAt: string | null;
+    deployedBy: ({
+      id: string;
+      name: string | null;
+    }) | null;
+    id: string;
+    lastError: string | null;
+    library: {
+      itemId: string;
+      scope: string;
+      slug: string;
+      version: number | null;
+    };
+    model: string | null;
+    name: string;
+    projectId: string;
+    provider: string;
+    status: string;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.key.remove`. */
+export type CloudKeyRemoveInput = Record<string, never>;
+
+/** Return shape for `cloud.key.remove`. */
+export type CloudKeyRemoveReturn = {
+  credential: {
+    configured: boolean;
+    keyHint: string | null;
+    monthCostUsd: number;
+    monthlyAlertUsd: number | null;
+    provider: string;
+    status: string;
+    verifiedAt: string | null;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.key.status`. */
+export type CloudKeyStatusInput = Record<string, never>;
+
+/** Return shape for `cloud.key.status`. */
+export type CloudKeyStatusReturn = {
+  credential: {
+    configured: boolean;
+    keyHint: string | null;
+    monthCostUsd: number;
+    monthlyAlertUsd: number | null;
+    provider: string;
+    status: string;
+    verifiedAt: string | null;
+  };
+  success: true;
+};
+
 /** Input shape for `cloud.projects.create`. */
 export type CloudProjectsCreateInput = {
   console?: string;
@@ -6922,6 +7641,657 @@ export type CloudProjectsListReturn = {
   projects: Array<Record<string, unknown>>;
   success: true;
   total: number;
+};
+
+/** Input shape for `cloud.runs.approve`. */
+export type CloudRunsApproveInput = {
+  approval: string;
+  execute?: boolean;
+  run: string;
+};
+
+/** Return shape for `cloud.runs.approve`. */
+export type CloudRunsApproveReturn = {
+  approval: {
+    decidedAt: string | null;
+    decidedBy: ({
+      id: string;
+      name: string | null;
+    }) | null;
+    id: string;
+    inputPreview: string | null;
+    requestedAt: string | null;
+    server: string | null;
+    status: string;
+    tool: string;
+  };
+  run: {
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    approvals: Array<{
+      decidedAt: string | null;
+      decidedBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      id: string;
+      inputPreview: string | null;
+      requestedAt: string | null;
+      server: string | null;
+      status: string;
+      tool: string;
+    }>;
+    budgetUsd: number | null;
+    costUsd: number;
+    endedAt: string | null;
+    error: ({
+      code: string;
+      message: string;
+    }) | null;
+    id: string;
+    origin: ({
+      deliveredAt: string | null;
+      delivery: string | null;
+      installationId: string | null;
+      kind: string;
+      sessionName: string | null;
+      taskId: string | null;
+    }) | null;
+    outputs: Array<{
+      id: string;
+      name: string;
+      size: number;
+    }>;
+    projectId: string;
+    prompt: string;
+    result: string | null;
+    runningSeconds: number;
+    startedAt: string | null;
+    status: string;
+    tokens: {
+      cacheRead: number;
+      cacheWrite: number;
+      input: number;
+      output: number;
+    };
+    trigger: string;
+    url: string | null;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.runs.deny`. */
+export type CloudRunsDenyInput = {
+  approval: string;
+  reason?: string;
+  run: string;
+};
+
+/** Return shape for `cloud.runs.deny`. */
+export type CloudRunsDenyReturn = {
+  approval: {
+    decidedAt: string | null;
+    decidedBy: ({
+      id: string;
+      name: string | null;
+    }) | null;
+    id: string;
+    inputPreview: string | null;
+    requestedAt: string | null;
+    server: string | null;
+    status: string;
+    tool: string;
+  };
+  run: {
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    approvals: Array<{
+      decidedAt: string | null;
+      decidedBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      id: string;
+      inputPreview: string | null;
+      requestedAt: string | null;
+      server: string | null;
+      status: string;
+      tool: string;
+    }>;
+    budgetUsd: number | null;
+    costUsd: number;
+    endedAt: string | null;
+    error: ({
+      code: string;
+      message: string;
+    }) | null;
+    id: string;
+    origin: ({
+      deliveredAt: string | null;
+      delivery: string | null;
+      installationId: string | null;
+      kind: string;
+      sessionName: string | null;
+      taskId: string | null;
+    }) | null;
+    outputs: Array<{
+      id: string;
+      name: string;
+      size: number;
+    }>;
+    projectId: string;
+    prompt: string;
+    result: string | null;
+    runningSeconds: number;
+    startedAt: string | null;
+    status: string;
+    tokens: {
+      cacheRead: number;
+      cacheWrite: number;
+      input: number;
+      output: number;
+    };
+    trigger: string;
+    url: string | null;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.runs.list`. */
+export type CloudRunsListInput = {
+  agent?: string;
+  cursor?: string;
+  limit?: string;
+  project?: string;
+  status?: string;
+};
+
+/** Return shape for `cloud.runs.list`. */
+export type CloudRunsListReturn = {
+  cursor: string | null;
+  project: string;
+  runs: Array<{
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    approvals: Array<{
+      decidedAt: string | null;
+      decidedBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      id: string;
+      inputPreview: string | null;
+      requestedAt: string | null;
+      server: string | null;
+      status: string;
+      tool: string;
+    }>;
+    budgetUsd: number | null;
+    costUsd: number;
+    endedAt: string | null;
+    error: ({
+      code: string;
+      message: string;
+    }) | null;
+    id: string;
+    origin: ({
+      deliveredAt: string | null;
+      delivery: string | null;
+      installationId: string | null;
+      kind: string;
+      sessionName: string | null;
+      taskId: string | null;
+    }) | null;
+    outputs: Array<{
+      id: string;
+      name: string;
+      size: number;
+    }>;
+    projectId: string;
+    prompt: string;
+    result: string | null;
+    runningSeconds: number;
+    startedAt: string | null;
+    status: string;
+    tokens: {
+      cacheRead: number;
+      cacheWrite: number;
+      input: number;
+      output: number;
+    };
+    trigger: string;
+    url: string | null;
+  }>;
+  success: true;
+};
+
+/** Input shape for `cloud.runs.outputs`. */
+export type CloudRunsOutputsInput = {
+  download?: string;
+  run: string;
+};
+
+/** Return shape for `cloud.runs.outputs`. */
+export type CloudRunsOutputsReturn = {
+  directory: string | null;
+  downloaded: Array<{
+    bytes: number;
+    id: string;
+    name: string;
+    path: string;
+  }>;
+  outputs: Array<{
+    id: string;
+    name: string;
+    size: number;
+  }>;
+  runId: string;
+  success: true;
+};
+
+/** Input shape for `cloud.runs.reply`. */
+export type CloudRunsReplyInput = {
+  execute?: boolean;
+  run: string;
+  text: string;
+};
+
+/** Return shape for `cloud.runs.reply`. */
+export type CloudRunsReplyReturn = {
+  run: {
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    approvals: Array<{
+      decidedAt: string | null;
+      decidedBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      id: string;
+      inputPreview: string | null;
+      requestedAt: string | null;
+      server: string | null;
+      status: string;
+      tool: string;
+    }>;
+    budgetUsd: number | null;
+    costUsd: number;
+    endedAt: string | null;
+    error: ({
+      code: string;
+      message: string;
+    }) | null;
+    id: string;
+    origin: ({
+      deliveredAt: string | null;
+      delivery: string | null;
+      installationId: string | null;
+      kind: string;
+      sessionName: string | null;
+      taskId: string | null;
+    }) | null;
+    outputs: Array<{
+      id: string;
+      name: string;
+      size: number;
+    }>;
+    projectId: string;
+    prompt: string;
+    result: string | null;
+    runningSeconds: number;
+    startedAt: string | null;
+    status: string;
+    tokens: {
+      cacheRead: number;
+      cacheWrite: number;
+      input: number;
+      output: number;
+    };
+    trigger: string;
+    url: string | null;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.runs.show`. */
+export type CloudRunsShowInput = {
+  run: string;
+};
+
+/** Return shape for `cloud.runs.show`. */
+export type CloudRunsShowReturn = {
+  run: {
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    approvals: Array<{
+      decidedAt: string | null;
+      decidedBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      id: string;
+      inputPreview: string | null;
+      requestedAt: string | null;
+      server: string | null;
+      status: string;
+      tool: string;
+    }>;
+    budgetUsd: number | null;
+    costUsd: number;
+    endedAt: string | null;
+    error: ({
+      code: string;
+      message: string;
+    }) | null;
+    id: string;
+    origin: ({
+      deliveredAt: string | null;
+      delivery: string | null;
+      installationId: string | null;
+      kind: string;
+      sessionName: string | null;
+      taskId: string | null;
+    }) | null;
+    outputs: Array<{
+      id: string;
+      name: string;
+      size: number;
+    }>;
+    projectId: string;
+    prompt: string;
+    result: string | null;
+    runningSeconds: number;
+    startedAt: string | null;
+    status: string;
+    tokens: {
+      cacheRead: number;
+      cacheWrite: number;
+      input: number;
+      output: number;
+    };
+    trigger: string;
+    url: string | null;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.runs.start`. */
+export type CloudRunsStartInput = {
+  agent: string;
+  budget?: string;
+  execute?: boolean;
+  idempotencyKey?: string;
+  project?: string;
+  prompt: string;
+  repo?: string[];
+};
+
+/** Return shape for `cloud.runs.start`. */
+export type CloudRunsStartReturn = {
+  run: {
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    approvals: Array<{
+      decidedAt: string | null;
+      decidedBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      id: string;
+      inputPreview: string | null;
+      requestedAt: string | null;
+      server: string | null;
+      status: string;
+      tool: string;
+    }>;
+    budgetUsd: number | null;
+    costUsd: number;
+    endedAt: string | null;
+    error: ({
+      code: string;
+      message: string;
+    }) | null;
+    id: string;
+    origin: ({
+      deliveredAt: string | null;
+      delivery: string | null;
+      installationId: string | null;
+      kind: string;
+      sessionName: string | null;
+      taskId: string | null;
+    }) | null;
+    outputs: Array<{
+      id: string;
+      name: string;
+      size: number;
+    }>;
+    projectId: string;
+    prompt: string;
+    result: string | null;
+    runningSeconds: number;
+    startedAt: string | null;
+    status: string;
+    tokens: {
+      cacheRead: number;
+      cacheWrite: number;
+      input: number;
+      output: number;
+    };
+    trigger: string;
+    url: string | null;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.runs.stop`. */
+export type CloudRunsStopInput = {
+  run: string;
+};
+
+/** Return shape for `cloud.runs.stop`. */
+export type CloudRunsStopReturn = {
+  run: {
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    approvals: Array<{
+      decidedAt: string | null;
+      decidedBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      id: string;
+      inputPreview: string | null;
+      requestedAt: string | null;
+      server: string | null;
+      status: string;
+      tool: string;
+    }>;
+    budgetUsd: number | null;
+    costUsd: number;
+    endedAt: string | null;
+    error: ({
+      code: string;
+      message: string;
+    }) | null;
+    id: string;
+    origin: ({
+      deliveredAt: string | null;
+      delivery: string | null;
+      installationId: string | null;
+      kind: string;
+      sessionName: string | null;
+      taskId: string | null;
+    }) | null;
+    outputs: Array<{
+      id: string;
+      name: string;
+      size: number;
+    }>;
+    projectId: string;
+    prompt: string;
+    result: string | null;
+    runningSeconds: number;
+    startedAt: string | null;
+    status: string;
+    tokens: {
+      cacheRead: number;
+      cacheWrite: number;
+      input: number;
+      output: number;
+    };
+    trigger: string;
+    url: string | null;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.schedules.add`. */
+export type CloudSchedulesAddInput = {
+  agent: string;
+  budget?: string;
+  cron?: string;
+  disabled?: boolean;
+  execute?: boolean;
+  project?: string;
+  prompt?: string;
+  timezone?: string;
+};
+
+/** Return shape for `cloud.schedules.add`. */
+export type CloudSchedulesAddReturn = {
+  schedule: {
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    budgetUsd: number | null;
+    cron: string;
+    enabled: boolean;
+    id: string;
+    lastRunAt: string | null;
+    lastRunId: string | null;
+    nextRunAt: string | null;
+    prompt: string | null;
+    timezone: string;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.schedules.list`. */
+export type CloudSchedulesListInput = {
+  limit?: string;
+  offset?: string;
+  project?: string;
+};
+
+/** Return shape for `cloud.schedules.list`. */
+export type CloudSchedulesListReturn = {
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  project: string;
+  schedules: Array<{
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    budgetUsd: number | null;
+    cron: string;
+    enabled: boolean;
+    id: string;
+    lastRunAt: string | null;
+    lastRunId: string | null;
+    nextRunAt: string | null;
+    prompt: string | null;
+    timezone: string;
+  }>;
+  success: true;
+};
+
+/** Input shape for `cloud.schedules.remove`. */
+export type CloudSchedulesRemoveInput = {
+  id: string;
+};
+
+/** Return shape for `cloud.schedules.remove`. */
+export type CloudSchedulesRemoveReturn = {
+  id: string;
+  removed: true;
+  success: true;
+};
+
+/** Input shape for `cloud.schedules.update`. */
+export type CloudSchedulesUpdateInput = {
+  budget?: string;
+  cron?: string;
+  disable?: boolean;
+  enable?: boolean;
+  execute?: boolean;
+  heartbeat?: boolean;
+  id: string;
+  project?: string;
+  prompt?: string;
+  timezone?: string;
+};
+
+/** Return shape for `cloud.schedules.update`. */
+export type CloudSchedulesUpdateReturn = {
+  schedule: {
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    budgetUsd: number | null;
+    cron: string;
+    enabled: boolean;
+    id: string;
+    lastRunAt: string | null;
+    lastRunId: string | null;
+    nextRunAt: string | null;
+    prompt: string | null;
+    timezone: string;
+  };
+  success: true;
 };
 
 /** Input shape for `cloud.scope.clear`. */
@@ -13884,6 +15254,21 @@ export type PagesPublishReturn = {
   publish: unknown;
   release: unknown;
   routes: Array<Record<string, unknown>>;
+  scope: {
+    consoleUrl: string;
+    organization?: ({
+      id?: string | null;
+      name?: string | null;
+      slug?: string | null;
+    }) | null;
+    project?: ({
+      id?: string | null;
+      name?: string | null;
+      ref: string;
+      slug?: string | null;
+    }) | null;
+    source: string;
+  };
   site: unknown;
   success: true;
   upload: {
@@ -20107,6 +21492,7 @@ export type TasksAutomationsShowReturn = {
 
 /** Input shape for `tasks.block`. */
 export type TasksBlockInput = {
+  idempotencyKey?: string;
   reason?: string;
   taskId: string;
 };
@@ -20121,6 +21507,7 @@ export type TasksBlockReturn = {
 /** Input shape for `tasks.comment`. */
 export type TasksCommentInput = {
   body: string;
+  idempotencyKey?: string;
   taskId: string;
 };
 
@@ -20230,10 +21617,13 @@ export type TasksDepsRmReturn = {
 export type TasksDispatchInput = {
   actorSession?: string;
   agent?: string;
+  budget?: string;
   checkpoint?: string;
+  cloud?: boolean;
   effort?: string;
   execute?: boolean;
   model?: string;
+  project?: string;
   reportEvents?: string;
   reportTo?: string;
   session?: string;
@@ -20252,6 +21642,7 @@ export type TasksDispatchReturn = {
 
 /** Input shape for `tasks.done`. */
 export type TasksDoneInput = {
+  idempotencyKey?: string;
   summary?: string;
   taskId: string;
 };
@@ -20265,6 +21656,7 @@ export type TasksDoneReturn = {
 
 /** Input shape for `tasks.fail`. */
 export type TasksFailInput = {
+  idempotencyKey?: string;
   reason?: string;
   taskId: string;
 };
@@ -20394,6 +21786,8 @@ export type TasksProfilesValidateReturn = {
 
 /** Input shape for `tasks.report`. */
 export type TasksReportInput = {
+  checklist?: string;
+  idempotencyKey?: string;
   message?: string;
   progress?: string;
   taskId: string;

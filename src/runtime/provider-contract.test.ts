@@ -281,7 +281,7 @@ describe("runtime provider contract", () => {
         ],
       },
       dynamicTools: {
-        mode: "none",
+        mode: "host",
       },
       execution: {
         mode: "subprocess-rpc",

@@ -34,6 +34,7 @@ import {
   type TaskWorktreeConfig,
 } from "./types.js";
 import { requireTaskProgressMessage } from "./progress-contract.js";
+import { fromSubjectColumns, toSubjectColumns, type SubjectRef } from "../identity/subject.js";
 import { normalizeTaskRuntimeOptions } from "./runtime-options.js";
 import { canonicalAssetIdsForTag } from "../tags/helpers.js";
 
@@ -59,6 +60,12 @@ interface TaskRow {
   created_by: string | null;
   created_by_agent_id: string | null;
   created_by_session_name: string | null;
+  subject_kind: string | null;
+  subject_contact_id: string | null;
+  subject_identity_id: string | null;
+  subject_agent_id: string | null;
+  subject_channel: string | null;
+  subject_raw_id: string | null;
   assignee_agent_id: string | null;
   assignee_session_name: string | null;
   worktree_mode: string | null;
@@ -206,6 +213,19 @@ function applyTaskWorktreeSchemaMigrations(): void {
   if (!taskColumns.has("created_by_session_name")) {
     db.exec("ALTER TABLE tasks ADD COLUMN created_by_session_name TEXT");
   }
+  for (const column of [
+    "subject_kind",
+    "subject_contact_id",
+    "subject_identity_id",
+    "subject_agent_id",
+    "subject_channel",
+    "subject_raw_id",
+  ]) {
+    if (!taskColumns.has(column)) {
+      db.exec(`ALTER TABLE tasks ADD COLUMN ${column} TEXT`);
+    }
+  }
+  db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_subject_contact ON tasks(subject_contact_id)");
   if (!taskColumns.has("parent_task_id")) {
     db.exec("ALTER TABLE tasks ADD COLUMN parent_task_id TEXT");
   }
@@ -371,6 +391,12 @@ function ensureTaskSchema(): void {
       created_by TEXT,
       created_by_agent_id TEXT,
       created_by_session_name TEXT,
+      subject_kind TEXT,
+      subject_contact_id TEXT,
+      subject_identity_id TEXT,
+      subject_agent_id TEXT,
+      subject_channel TEXT,
+      subject_raw_id TEXT,
       assignee_agent_id TEXT,
       assignee_session_name TEXT,
       worktree_mode TEXT,
@@ -578,6 +604,20 @@ function serializeTaskProfileSnapshot(snapshot?: TaskProfileSnapshot | null): st
   return JSON.stringify(snapshot);
 }
 
+function subjectFromRow(row: TaskRow): SubjectRef | undefined {
+  return fromSubjectColumns(row);
+}
+
+/**
+ * A child task inherits the subject of its parent: an agent working inside a
+ * task is acting on behalf of whoever asked for that task.
+ */
+function resolveInheritedSubject(parentTaskId?: string): SubjectRef | undefined {
+  const normalized = parentTaskId?.trim();
+  if (!normalized) return undefined;
+  return dbGetTask(normalized)?.subject;
+}
+
 function rowToTask(row: TaskRow): TaskRecord {
   return {
     id: row.id,
@@ -603,6 +643,7 @@ function rowToTask(row: TaskRow): TaskRecord {
     ...(row.created_by_session_name ? { createdBySessionName: row.created_by_session_name } : {}),
     ...(row.assignee_agent_id ? { assigneeAgentId: row.assignee_agent_id } : {}),
     ...(row.assignee_session_name ? { assigneeSessionName: row.assignee_session_name } : {}),
+    ...(subjectFromRow(row) ? { subject: subjectFromRow(row) } : {}),
     ...(rowToWorktree(row.worktree_mode, row.worktree_path, row.worktree_branch)
       ? { worktree: rowToWorktree(row.worktree_mode, row.worktree_path, row.worktree_branch) }
       : {}),
@@ -853,14 +894,17 @@ export function dbCreateTask(input: CreateTaskInput): { task: TaskRecord; event:
   const checkpointIntervalMs = resolveTaskCheckpointIntervalMs(input.checkpointIntervalMs);
   const reportToSessionName = normalizeTaskReportToSessionName(input.reportToSessionName ?? input.createdBySessionName);
   const reportEvents = serializeTaskReportEvents(input.reportEvents);
+  const subject = input.subject ?? resolveInheritedSubject(input.parentTaskId);
+  const subjectColumns = toSubjectColumns(subject);
 
   db.prepare(`
     INSERT INTO tasks (
       id, title, instructions, status, priority, progress, checkpoint_interval_ms, report_to_session_name, report_events,
       profile_id, profile_version, profile_source, profile_snapshot_json, profile_state_json, profile_input_json,
       runtime_override_json, parent_task_id, task_dir, created_by, created_by_agent_id, created_by_session_name, worktree_mode, worktree_path,
-      worktree_branch, created_at, updated_at
-    ) VALUES (?, ?, ?, 'open', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
+      worktree_branch, subject_kind, subject_contact_id, subject_identity_id, subject_agent_id, subject_channel, subject_raw_id,
+      created_at, updated_at
+    ) VALUES (?, ?, ?, 'open', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     input.title,
@@ -883,6 +927,12 @@ export function dbCreateTask(input: CreateTaskInput): { task: TaskRecord; event:
     worktreeMode,
     worktreePath,
     worktreeBranch,
+    subjectColumns.subjectKind,
+    subjectColumns.subjectContactId,
+    subjectColumns.subjectIdentityId,
+    subjectColumns.subjectAgentId,
+    subjectColumns.subjectChannel,
+    subjectColumns.subjectRawId,
     now,
     now,
   );

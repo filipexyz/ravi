@@ -7,6 +7,7 @@ import type {
   RuntimeControlRequest,
   RuntimeControlResult,
   RuntimeControlState,
+  RuntimeDynamicToolCallResult,
   RuntimeEvent,
   RuntimeEventMetadata,
   RuntimeExecutionMetadata,
@@ -37,6 +38,8 @@ import {
   isPiPermissionBridgeError,
   isPiPermissionHooksReadyEvent,
   materializePiPermissionExtensionFile,
+  formatPiDynamicToolUiResponse,
+  parsePiDynamicToolUiRequest,
   PI_PERMISSION_BRIDGE_UNAVAILABLE_MESSAGE,
   PI_PERMISSION_EXTENSION_FILENAME,
   PiPermissionBridgeError,
@@ -143,6 +146,8 @@ export interface PiRpcStartInput {
    * never told about skills the permission gate would deny.
    */
   disableNativeSkillDiscovery?: boolean;
+  /** Hard allowlist of tool names for this turn (Pi `--tools`). */
+  allowedTools?: string[];
 }
 
 export interface PiRpcCommand extends Record<string, unknown> {
@@ -237,7 +242,7 @@ export function createPiRuntimeProvider(options: CreatePiRuntimeProviderOptions 
           operations: PI_RUNTIME_CONTROL_OPERATIONS,
         },
         dynamicTools: {
-          mode: "none",
+          mode: "host",
         },
         execution: {
           mode: "subprocess-rpc",
@@ -684,9 +689,31 @@ export function buildPiRpcSpawnEnv(input: Pick<PiRpcStartInput, "env">): NodeJS.
 }
 
 function resolvePiRpcProcessEnv(input: RuntimeStartRequest): NodeJS.ProcessEnv {
-  return buildPiRpcSpawnEnv({
+  const env = buildPiRpcSpawnEnv({
     env: input.modelBroker ? (input.env ?? {}) : (input.env ?? process.env),
   });
+  const dynamicToolsEnv = buildPiDynamicToolsEnv(input.dynamicTools);
+  if (dynamicToolsEnv) {
+    env.RAVI_PI_DYNAMIC_TOOLS = dynamicToolsEnv;
+  }
+  return env;
+}
+
+/** Serialize the host tool catalog the Pi bridge registers as custom tools. */
+export function buildPiDynamicToolsEnv(
+  dynamicTools: RuntimeStartRequest["dynamicTools"] | undefined,
+): string | undefined {
+  if (!dynamicTools || dynamicTools.length === 0) {
+    return undefined;
+  }
+  return JSON.stringify(
+    dynamicTools.map((tool) => ({
+      name: tool.name,
+      label: tool.name,
+      description: tool.description,
+      parameters: tool.inputSchema ?? { type: "object", properties: {}, additionalProperties: true },
+    })),
+  );
 }
 
 /** Snapshot of managed Ravi authority env that must stay live in the Pi process. */
@@ -724,6 +751,7 @@ async function* runPiTurns(
     systemPromptAppend: input.systemPromptAppend,
     extensionPath: materializePiPermissionExtensionFile(),
     ...(input.allowedSkills && input.allowedSkills.length > 0 ? { disableNativeSkillDiscovery: true } : {}),
+    ...(input.allowedTools && input.allowedTools.length > 0 ? { allowedTools: input.allowedTools } : {}),
   };
   refreshPiStartInputModel(startInput, state.requestedModel ?? input.model, input.modelBroker);
   let transport = state.transport ?? createTransport();
@@ -1803,6 +1831,9 @@ export function buildPiRpcProcessArgs(input: PiRpcStartInput, commandArgs: strin
   if (input.disableNativeSkillDiscovery) {
     args.push("--no-skills");
   }
+  if (input.allowedTools && input.allowedTools.length > 0) {
+    args.push("--tools", input.allowedTools.join(","));
+  }
 
   return args;
 }
@@ -1875,6 +1906,38 @@ async function answerPiExtensionUiRequest(
   event: PiRpcEvent,
   input: RuntimeStartRequest,
 ): Promise<void> {
+  const dynamicRequest = parsePiDynamicToolUiRequest(event);
+  if (dynamicRequest) {
+    if (!transport.writeMessage) {
+      throw new Error("Pi RPC transport cannot answer extension UI dynamic tool requests");
+    }
+    let result: RuntimeDynamicToolCallResult;
+    try {
+      result = input.handleRuntimeToolCall
+        ? await input.handleRuntimeToolCall({
+            toolName: dynamicRequest.toolName,
+            callId: dynamicRequest.toolCallId,
+            arguments: dynamicRequest.arguments,
+          })
+        : {
+            success: false,
+            contentItems: [],
+            reason: "Ravi host tool execution is unavailable for this turn.",
+          };
+    } catch (error) {
+      result = {
+        success: false,
+        contentItems: [],
+        reason: error instanceof Error ? error.message : "Ravi host tool execution failed.",
+      };
+    }
+    log.info("Answered Pi dynamic tool request", {
+      toolName: dynamicRequest.toolName,
+      success: result.success,
+    });
+    await transport.writeMessage(formatPiDynamicToolUiResponse(dynamicRequest, result));
+    return;
+  }
   const response = await resolvePiExtensionUiResponse(event, {
     canUseTool: input.canUseTool,
     approveRuntimeRequest: input.approveRuntimeRequest,

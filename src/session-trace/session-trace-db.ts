@@ -20,7 +20,11 @@ const SECRET_KEY_PATTERN =
 const SECRET_ASSIGNMENT_PATTERN =
   /\b([A-Z][A-Z0-9_]*(?:API_KEY|TOKEN|SECRET|PASSWORD|PASSWD|PWD|CREDENTIAL|CREDENTIALS|COOKIE|AUTHORIZATION|ACCESS_TOKEN|REFRESH_TOKEN|CLIENT_SECRET|CONTEXT_KEY)[A-Z0-9_]*)=([^\s"']+)/g;
 
-interface SessionEventRow {
+/**
+ * Raw `session_events` row. Exported for the test-only unbounded reader in
+ * `src/test/session-trace-events.ts`; product code has no reason to touch it.
+ */
+export interface SessionEventRow {
   id: number;
   session_key: string;
   session_name: string | null;
@@ -320,7 +324,9 @@ function nextEventSeq(input: RecordSessionEventInput): number {
   return row.seq;
 }
 
-function rowToSessionEvent(row: SessionEventRow): SessionEventRecord {
+/** Row mapper for `session_events`. Exported so the test-only unbounded reader can
+ * reuse it instead of duplicating the payload/preview decoding. */
+export function rowToSessionEvent(row: SessionEventRow): SessionEventRecord {
   return {
     id: row.id,
     sessionKey: row.session_key,
@@ -682,10 +688,22 @@ export function getSessionTurn(turnId: string): SessionTurnRecord | null {
   return row ? rowToSessionTurn(row) : null;
 }
 
-export function listSessionEvents(sessionKey: string): SessionEventRecord[] {
+/**
+ * Events for a single turn, in trace order.
+ *
+ * Scope on `turn_id` alone, on purpose. `idx_session_events_turn_seq` is
+ * (turn_id, seq), so this is a handful of rows. Adding `session_key = ?` as a
+ * second predicate looks safer but is much slower: the planner then enters by
+ * `idx_session_events_key_id` and walks every event the session ever wrote,
+ * filtering `turn_id` as a residual. Measured on a 940k-row session:
+ * turn_id only = 3ms, session_key + turn_id = 21s, and the old
+ * `listSessionEvents(...).filter(turnId)` = 22.6s while it loaded 395MB of
+ * payload into JS. That stall is what expired the 30s crash-recovery lease.
+ */
+export function listSessionEventsByTurn(turnId: string): SessionEventRecord[] {
   const rows = getDb()
-    .prepare("SELECT * FROM session_events WHERE session_key = ? ORDER BY id ASC")
-    .all(sessionKey) as SessionEventRow[];
+    .prepare("SELECT * FROM session_events WHERE turn_id = ? ORDER BY seq ASC, id ASC")
+    .all(turnId) as SessionEventRow[];
   return rows.map(rowToSessionEvent);
 }
 

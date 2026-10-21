@@ -49,12 +49,14 @@ import { startTriggerRunner, stopTriggerRunner } from "./triggers/index.js";
 import { startEphemeralRunner, stopEphemeralRunner } from "./ephemeral/index.js";
 import { startInboxRunner, stopInboxRunner } from "./inbox/index.js";
 import { startLinkRequestWatcher, stopLinkRequestWatcher } from "./identity-link/link-watcher.js";
+import { startSlackApprovalClickFeedback, stopSlackApprovalClickFeedback } from "./approval/slack-click-feedback.js";
 import { startHookRunner, stopHookRunner } from "./hooks-runtime/index.js";
 import { startTaskCheckpointRunner, stopTaskCheckpointRunner } from "./tasks/index.js";
 import { startKnowledgeLeaderRunners, stopKnowledgeLeaderRunners } from "./knowledge/runners.js";
 import { startSyncRunner, stopSyncRunner } from "./sync/index.js";
 import { startLibraryPinRunner, stopLibraryPinRunner } from "./library/pin-runner.js";
 import { startLibraryRequestRunner, stopLibraryRequestRunner } from "./library/request-runner.js";
+import { startCloudTaskWatcher, stopCloudTaskWatcher } from "./cloud-agents/task-watcher.js";
 import { startCalendarAssistantRunner, stopCalendarAssistantRunner } from "./calendar/assistant-runner.js";
 import { createSessionAdapterBus } from "./adapters/index.js";
 import { resolveOmniConnection } from "./omni-config.js";
@@ -226,16 +228,30 @@ async function shutdown(signal: string, exitCode = 0) {
   }, 15_000);
 
   try {
-    const restartInfo = readRestartReasonInfo({ ensureEpoch: true });
-    if (restartInfo) {
-      dbUpsertDaemonRestartEpoch({
-        restartEpoch: restartInfo.restartEpoch,
-        reason: restartInfo.reason,
-        callerSessionName: restartInfo.sessionName,
-        createdAt: restartInfo.createdAt,
-        updatedAt: Date.now(),
-      });
-    }
+    // A restart must always be immediate: never drain in-flight turns. What we
+    // do instead is leave a restart intent behind so the next boot can tell the
+    // interrupted sessions to continue. When nothing wrote a reason file (plain
+    // `pm2 restart`, deploy, supervised bounce), synthesize one here and pass it
+    // to bot.stop so the per-session snapshots are recorded.
+    const restartInfo =
+      readRestartReasonInfo({ ensureEpoch: true }) ??
+      (() => {
+        const info: RestartReasonInfo = {
+          reason: "supervised_restart",
+          restartEpoch: newRestartEpoch(),
+          createdAt: Date.now(),
+        };
+        writeRestartReasonInfo(info);
+        return info;
+      })();
+
+    dbUpsertDaemonRestartEpoch({
+      restartEpoch: restartInfo.restartEpoch,
+      reason: restartInfo.reason,
+      callerSessionName: restartInfo.sessionName,
+      createdAt: restartInfo.createdAt,
+      updatedAt: Date.now(),
+    });
 
     // Stop bot FIRST to abort SDK subprocesses
     if (bot) {
@@ -256,9 +272,11 @@ async function shutdown(signal: string, exitCode = 0) {
     // Stop runners and release leadership so another daemon can take over
     await stopInboxRunner();
     await stopLinkRequestWatcher();
+    stopSlackApprovalClickFeedback();
     await stopSyncRunner();
     await stopLibraryPinRunner();
     await stopLibraryRequestRunner();
+    await stopCloudTaskWatcher();
     await stopCalendarAssistantRunner();
     await stopEphemeralRunner();
     await stopHookRunner();
@@ -477,6 +495,9 @@ export async function startDaemon() {
   await startLinkRequestWatcher();
   log.info("Link request watcher started");
 
+  await startSlackApprovalClickFeedback();
+  log.info("Slack approval click feedback started");
+
   await startSyncRunner();
   log.info("Sync runner started");
 
@@ -485,6 +506,9 @@ export async function startDaemon() {
 
   await startLibraryRequestRunner();
   log.info("Library request runner started");
+
+  await startCloudTaskWatcher();
+  log.info("Cloud task watcher started");
 
   sessionAdapterBus = createSessionAdapterBus();
   await sessionAdapterBus.start();
@@ -553,12 +577,19 @@ function createStubSender(): OmniSender {
 
 /**
  * Check if there's a restart reason file and notify the originating session.
+ *
+ * A plain `pm2 restart` (deploy, supervised bounce, crash) never writes
+ * `restart-reason.txt`, so this used to return early and the sessions were
+ * never told the daemon had restarted. Synthesize a boot reason instead and
+ * let the notice path run: without a snapshot the delivery fences into a
+ * `Daemon reiniciou` notice, which is exactly what the operator needs to see.
  */
 async function notifyRestartReason() {
-  const restartInfo = readRestartReasonInfo({ consume: true });
-  if (!restartInfo) {
-    return;
-  }
+  const restartInfo = readRestartReasonInfo({ consume: true }) ?? {
+    reason: "supervised_restart",
+    restartEpoch: newRestartEpoch(),
+    createdAt: Date.now(),
+  };
 
   dbUpsertDaemonRestartEpoch({
     restartEpoch: restartInfo.restartEpoch,

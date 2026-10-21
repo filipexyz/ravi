@@ -6,8 +6,10 @@ import { CloudAuthError, cloudAuthErrorFromUnknown } from "../../cloud-auth/erro
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import { resolveConsoleProjectRef, type ConsoleScopeResolverDeps } from "../../console-scope/resolver.js";
 import type { ResolvedConsoleScope } from "../../console-scope/types.js";
+import { ArtifactInputError } from "../../artifacts/store.js";
 import {
   publishArtifactToConsole,
+  validateArtifactPublishSource,
   type ArtifactPublishDeps,
   type ArtifactPublishResult,
 } from "../../artifacts/publish-client.js";
@@ -120,8 +122,15 @@ import {
 } from "../../pages/ship.js";
 import { CONTRACT_EXIT_USAGE, ContractError, contractDryRun, contractFail, pickFields } from "../agent-contract.js";
 import { getContext } from "../context.js";
-import { plannedPageDomainDns, plannedPageDomainDnsLines } from "../../pages/domain-setup.js";
+import {
+  type PageCustomDomain,
+  pageCustomDomainLines,
+  plannedPageDomainDns,
+  plannedPageDomainDnsLines,
+  projectPageCustomDomains,
+} from "../../pages/domain-setup.js";
 import { jsonObjectSchema, jsonValueSchema, strictCliOffsetPaginationSchema } from "../return-schemas.js";
+import { sanitizePayloadInvalidMessage } from "../payload-error-message.js";
 import { readConfirmedSecret, type ConfirmedSecretInputOptions } from "../secret-input.js";
 import { artifactPublishReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
 
@@ -831,6 +840,9 @@ export class PagesCommands {
       const parsed = parsePublishArgs(args, projectOption, siteOption);
       const normalizedVisibility = normalizePageVisibility(visibility);
       const parsedArtifactVersion = artifactVersion ? parseInteger(artifactVersion, "--artifact-version") : undefined;
+      // Side-effect-free source checks run before the brake, so a dry-run
+      // rejects a missing source or entrypoint instead of approving it.
+      await validateArtifactPublishSource(parsed.source, { entrypoint });
       if (execute !== true) {
         // Write brake (Manual v2 7.8): publishing uploads content and can
         // activate a release on a reachable route. Dry-run by default and exit 3
@@ -841,7 +853,7 @@ export class PagesCommands {
             project: parsed.project ?? "(Console scope default)",
             site: parsed.site ?? "(project Pages host)",
             source: parsed.source,
-            route: route ?? "/",
+            route: normalizePageRoutePath(route),
             visibility: normalizedVisibility ?? "(provider default)",
             entrypoint: entrypoint ?? "index.html",
             artifactVersion: parsedArtifactVersion ?? "latest",
@@ -2117,6 +2129,24 @@ const pageDomainBindReturnSchema = z.object({
   total: z.number(),
 });
 
+const consoleScopeNamedRefSchema = z.object({
+  id: z.string().nullable().optional(),
+  slug: z.string().nullable().optional(),
+  name: z.string().nullable().optional(),
+});
+
+const resolvedConsoleScopeSchema = z.object({
+  consoleUrl: z.string(),
+  organization: consoleScopeNamedRefSchema.nullable().optional(),
+  project: consoleScopeNamedRefSchema.extend({ ref: z.string() }).nullable().optional(),
+  source: z.string(),
+});
+
+// `pages publish` returns the artifact publish result plus the Console scope it
+// resolved. The artifact schema is strict, so the scope must be declared here or
+// the gateway answers a successful publish with RETURN_SHAPE_ERROR.
+const pagePublishReturnSchema = artifactPublishReturnSchema.extend({ scope: resolvedConsoleScopeSchema });
+
 const pagePasswordReturnSchema = z.object({
   success: z.literal(true),
   action: z.enum(["remove", "set", "status"]),
@@ -2334,7 +2364,7 @@ declareCommandReturns(PagesCommands, {
   read: pageReadReturnSchema,
   create: pageSiteCreateReturnSchema,
   ship: pageShipReturnSchema,
-  publish: artifactPublishReturnSchema,
+  publish: pagePublishReturnSchema,
   update: pageSiteUpdateReturnSchema,
   visibility: pageSiteUpdateReturnSchema,
   domains: pageDomainBindReturnSchema,
@@ -2368,10 +2398,20 @@ async function runPagesCommand<T>(op: string, asJson: boolean | undefined, run: 
     // envelope (or legacy text) and carry the exit taxonomy (1/2/3). Never let
     // the legacy CloudAuthError funnel swallow them (model: mail.ts).
     if (error instanceof ContractError) throw error;
-    const cloudError = cloudAuthErrorFromUnknown(error);
+    const cloudError = cloudAuthErrorFromUnknown(artifactInputToCloudError(error));
     failPagesNotFoundFromConsole(op, cloudError, asJson);
     throw cloudError;
   }
+}
+
+/** A bad local source or entrypoint is the caller's input, not a Console outage. */
+function artifactInputToCloudError(error: unknown): unknown {
+  if (!(error instanceof ArtifactInputError)) return error;
+  const message = sanitizePayloadInvalidMessage(error.message);
+  return new CloudAuthError("PAYLOAD_INVALID", error.message, {
+    cause: error,
+    ...(message ? { issues: [{ path: [error.field ?? "source"], code: "invalid", message }] } : {}),
+  });
 }
 
 /**
@@ -2495,6 +2535,13 @@ function printSiteList(
   );
   for (const site of result.sites) {
     console.log(`  - ${siteLabel(site)}`);
+    const slug = stringValue(site.slug);
+    if (!slug) continue;
+    for (const line of pageCustomDomainLines(projectPageCustomDomains(site.customDomains), (hostname) =>
+      domainRecheckCommand(result.projectRef, slug, hostname),
+    )) {
+      console.log(`      ${line}`);
+    }
   }
   if (pagination?.nextCommand) {
     console.log("\nNext page:");
@@ -2520,6 +2567,22 @@ function printPublishedPageList(
     console.log(`  - ${publishedPageLabel(page)}`);
     for (const url of stringArrayValue(page.urls)) {
       console.log(`      ${url}`);
+    }
+  }
+  // A pending domain belongs to the host, not the route: list it once per host.
+  const pendingBySite = new Map<string, PageCustomDomain[]>();
+  for (const page of result.pages) {
+    const slug = stringValue(page.siteSlug);
+    if (!slug || pendingBySite.has(slug)) continue;
+    const pending = projectPageCustomDomains(page.customDomains).filter((domain) => domain.status === "pending");
+    if (pending.length > 0) pendingBySite.set(slug, pending);
+  }
+  for (const [slug, pending] of pendingBySite) {
+    console.log(`\nCustom domains of ${slug} not serving yet:`);
+    for (const line of pageCustomDomainLines(pending, (hostname) =>
+      domainRecheckCommand(result.projectRef, slug, hostname),
+    )) {
+      console.log(`  ${line}`);
     }
   }
   if (pagination?.nextCommand) {
@@ -2910,6 +2973,10 @@ function printPasswordResult(result: PagePasswordManageResult): void {
   console.log(`  Route      ${result.path}`);
   console.log(`  Visibility ${result.route.effectiveVisibility}`);
   if (result.policy) console.log(`  Policy     ${result.policy.status} · version ${result.policy.version}`);
+}
+
+function domainRecheckCommand(projectRef: string, site: string, hostname: string): string {
+  return `ravi pages domains ${site} ${hostname} --project ${projectRef} --check --execute`;
 }
 
 function siteLabel(site: PageSitePayload): string {

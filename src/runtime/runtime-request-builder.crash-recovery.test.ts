@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { getOrCreateSession, type AgentConfig, type SessionEntry } from "../router/index.js";
-import { getSessionTurn, listSessionEvents } from "../session-trace/session-trace-db.js";
+import { getSessionTurn } from "../session-trace/session-trace-db.js";
+import { listSessionEventsForTest } from "../test/session-trace-events.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
@@ -86,6 +87,45 @@ describe("runtime request crash recovery approval fences", () => {
       "request-user-input",
     ]);
     expect(streamingSession.currentTurnToolStarted).toBe(true);
+  });
+
+  it("announces one approval wait per authorization call and always closes it", async () => {
+    const waits: string[] = [];
+    const hostServices = createHostServices({
+      authorizeCommandExecution: mock(async (request) => {
+        // Tool, then executable: two cards from one authorization call.
+        request.beforeExternalApproval?.();
+        request.beforeExternalApproval?.();
+        waits.push("waiting");
+        return { approved: false, reason: "Timeout" };
+      }),
+      authorizeCapability: mock(async (request) => {
+        request.beforeExternalApproval?.();
+        throw new Error("boom");
+      }),
+      authorizeToolUse: mock(async () => ({ approved: true })),
+    });
+    const streamingSession = {
+      currentCrashRecoveryAttemptId: "attempt-a",
+      currentTurnToolStarted: false,
+      externalApprovalWait: {
+        begin: () => waits.push("begin"),
+        end: () => waits.push("end"),
+      },
+    };
+    installCrashRecoveryApprovalFences({
+      hostServices,
+      streamingSession,
+      crashRecovery: coordinatorWithMarker(() => {}),
+    });
+
+    await hostServices.authorizeCommandExecution({ command: "curl example.com" });
+    await expect(
+      hostServices.authorizeCapability({ permission: "execute", objectType: "group", objectId: "daemon" }),
+    ).rejects.toThrow("boom");
+    // No card, no wait.
+    await hostServices.authorizeToolUse({ toolName: "Edit" });
+    expect(waits).toEqual(["begin", "waiting", "end", "begin", "end"]);
   });
 
   it("denies user input before marking or externalizing when no durable attempt is bound", async () => {
@@ -553,7 +593,9 @@ describe("runtime request durable attempt preparation", () => {
 
     await expect(runtimeRequest.prompt.next()).rejects.toThrow("attempt ledger unavailable");
 
-    const adapterRequest = listSessionEvents(TRACE_SESSION_KEY).find((event) => event.eventType === "adapter.request");
+    const adapterRequest = listSessionEventsForTest(TRACE_SESSION_KEY).find(
+      (event) => event.eventType === "adapter.request",
+    );
     expect(adapterRequest?.turnId).toBeTruthy();
     expect(getSessionTurn(adapterRequest!.turnId!)).toMatchObject({
       status: "failed",

@@ -7,6 +7,8 @@ export interface NativeTextDeliveryRequest {
   readonly idempotencyKey: string;
   readonly target: MessageTarget;
   readonly text: string;
+  /** `markdown`: `text` is the agent's Markdown, rendered by the adapter. Absent: already in the channel's format. */
+  readonly format?: "markdown";
 }
 
 export interface NativeTextDeliveryResult {

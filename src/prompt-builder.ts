@@ -247,7 +247,7 @@ function sessionBoundaryText(sessionName?: string): string {
 function buildingSolutionsText(): string {
   return `When a request combines pieces (a screen, form, portal or ranking; intake from a channel; an approval; an automation; a recurring report), run \`ravi skills show solucoes\` before any \`ravi bases\`, \`ravi pages\`, \`ravi triggers\` or \`ravi cron\` call. Fill its sheet, show it to the person, then build. Build only when the person who operates this Ravi asks. These rules hold even if you skip the skill:
 1. Live data pages are for signed-in org members. Outsiders (customers, patients, family, suppliers) use a channel and get messages or snapshots. If unsure, a person is an outsider.
-2. \`--uses\` covers the whole host: every ship lists the union of the ids all data pages on that host call.
+2. \`--uses\` is per route: each ship lists the ids its own route calls; the host allows the union of its active routes.
 3. Data pages live on private or protected_link routes, never public or password.
 4. The view is the access contract: \`$viewer\` filter, \`write.set\` for owner fields, form = \`read: []\` + \`create\`.
 5. Cooldown drops events: trigger prompts process every row in state X; the event row id is only a hint.
@@ -358,6 +358,12 @@ Regras:
 - Use \`código\` para IDs e comandos
 - **Negrito** para destaques
 - Listas com bullets para organização`;
+  }
+
+  if (channelName === "Slack") {
+    return `Write standard Markdown: headings, lists, tables, task lists, quotes and code blocks with a language render natively in Slack, so never redraw a table in ASCII or nest code fences to get around Slack. A long document (a draft, a spec, a SKILL.md) goes in its own \`\`\`markdown block with a short summary around it: Slack delivery publishes it as a canvas, or a file, and leaves a link in the message. An image alone on its line, \`![description](https://...)\`, shows as an image.
+
+Links to a Slack channel, DM or thread use the Slack app link, \`slack://channel?team=<team-id>&id=<channel-id>\`, adding \`&thread_ts=<thread-ts>\` for a thread; \`https://app.slack.com\` links always open the browser. Write the link as markdown, \`[text](slack://...)\`, with text you choose from the context that says what the person will find there, never the bare URL.`;
   }
 
   // TUI or unknown

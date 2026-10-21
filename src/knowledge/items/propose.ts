@@ -46,6 +46,11 @@ export interface ProposalPlanDeps {
   meetingsDir?: () => string;
 }
 
+/**
+ * Validates and normalizes a proposal without sending it to the Console.
+ * Local transcript/evidence reads supply the payload; hashing that complete
+ * payload gives stable retries while separating distinct approval requests.
+ */
 export function planKnowledgeProposal(
   input: {
     kind: KnowledgeProposalKind;
@@ -93,7 +98,7 @@ export function planKnowledgeProposal(
   const supersedes = input.supersedes?.trim() || null;
   if (supersedes && !isKnownRef(supersedes)) throw usage(op, "--supersedes takes a ref such as kc:<id>.");
 
-  const plan: ConsoleProposalCreate = {
+  const proposal: Omit<ConsoleProposalCreate, "idempotencyKey"> = {
     kind,
     project,
     title,
@@ -105,8 +110,10 @@ export function planKnowledgeProposal(
       kind === "gap" && requestedAudience.kind === "contacts"
         ? sha256(requestedAudience.instanceId + foldKnowledgeText(body))
         : null,
-    idempotencyKey: sha256(kind + body + project),
   };
+  // Hash the complete payload with field boundaries: audience, evidence,
+  // supersedes and transcript title must not collide with another plan.
+  const plan: ConsoleProposalCreate = { ...proposal, idempotencyKey: sha256(JSON.stringify(proposal)) };
   return {
     plan,
     summary: {

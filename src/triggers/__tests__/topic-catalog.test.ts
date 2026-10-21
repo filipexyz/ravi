@@ -2,6 +2,24 @@ import { describe, expect, it } from "bun:test";
 import { findTriggerTopicCatalogEntry, getTriggerTopicCatalog, getTriggerTopicDiagnostic } from "../topic-catalog.js";
 
 describe("trigger topic catalog", () => {
+  it("lists every Bases event type delivered on ravi.console.inbox.item", () => {
+    const entry = findTriggerTopicCatalogEntry("ravi.console.inbox.item");
+    const notes = (entry?.notes ?? []).join("\n");
+    for (const eventType of [
+      "bases.row.created",
+      "bases.rows.bulk_changed",
+      "bases.approval.requested",
+      "bases.approval.decided",
+      "bases.agent.requested",
+      "bases.agent.backfill",
+    ]) {
+      expect(notes).toContain(eventType);
+    }
+    expect(entry?.schema?.fields.map((field) => field.path)).toEqual(
+      expect.arrayContaining(["payload.propertyId", "payload.subscriptionId", "payload.row"]),
+    );
+  });
+
   it("registers the canonical inbound reaction subject", () => {
     expect(getTriggerTopicCatalog()).toContainEqual(
       expect.objectContaining({

@@ -1,0 +1,162 @@
+---
+title: Cloud agents
+description: Run a Library agent on Anthropic's managed agents with your organization's own key, from the CLI or from a task.
+icon: cloud
+---
+
+A cloud agent is an agent definition from your [Library](/organizations/machines#share-skills-and-agents-across-the-organization) that runs in the cloud instead of on your machine. The Console compiles it into an Anthropic managed agent and runs it with your organization's Anthropic API key. The Console keeps the key (encrypted), the budgets, the approvals and the roles; `ravi cloud` drives it with your `ravi login` session.
+
+```text
+ravi agents publish triage   →  Library agent definition
+ravi cloud agents deploy     →  managed agent + environment on Anthropic
+ravi cloud runs start        →  a paid run, with a budget
+  → waits for approval before a write outside its container
+  → result, cost, files → ravi cloud runs show / follow / outputs
+```
+
+<Note>
+You need a `ravi login` session, a Console project (`--project <slug>`, or your [default project](/console/login#project-scope)) and an agent published to the Library with `ravi agents publish`.
+</Note>
+
+## Braking
+
+Everything that spends money, creates provider objects or sends a secret is braked: without `--execute` the command prints its plan and exits 3, and nothing is sent. Stopping, denying, archiving, removing and disabling apply at once. Every command takes `--json`.
+
+| Command | Braked |
+|---|---|
+| `ravi cloud key set --stdin` | yes (terminal only) |
+| `ravi cloud agents deploy <agent>` | yes |
+| `ravi cloud runs start <agent> "<prompt>"` | yes |
+| `ravi cloud runs reply <run> "<text>"` | yes |
+| `ravi cloud runs approve <run> <approval>` | yes |
+| `ravi cloud schedules add` and `update` when the schedule ends up enabled | yes |
+| `ravi tasks dispatch <task> --agent <id> --cloud` | yes |
+| `key remove`, `agents archive`, `runs stop`, `runs deny`, `runs outputs`, `schedules remove`, `--disable` | no |
+
+## Set the organization's key
+
+An owner or admin sets the Anthropic API key once. The key is read only from redirected stdin, and only with `--execute`; it never comes back, only its last characters.
+
+```bash
+ravi cloud key status --json
+ravi cloud key set --stdin --execute < ~/secrets/anthropic-key
+ravi cloud key set --stdin --monthly-alert 200 --execute < ~/secrets/anthropic-key
+ravi cloud key remove
+```
+
+`--monthly-alert` notifies owners and admins when the month's cost passes the amount. Agents never set the key.
+
+## Deploy and run
+
+```bash
+ravi cloud agents deploy triage --project clinica --execute
+ravi cloud runs start triage "Summarize yesterday's open tickets" --project clinica --execute
+ravi cloud runs follow <run>
+ravi cloud runs show <run> --json
+ravi cloud runs reply <run> "Also check the billing queue" --execute
+ravi cloud runs stop <run>
+```
+
+- `--budget <usd>` (0.5 to 200) caps one run; without it the agent's budget applies (5 by default). A run that reaches it ends `budget_exceeded`.
+- `--repo owner/name[@branch]` mounts a repository the organization's GitHub App covers; repeat it for more.
+- `--idempotency-key <key>` makes a retry return the same run instead of starting a second one.
+- `runs follow --json` prints one event per line and ends with `{"type":"run","run":{...}}`.
+
+Run statuses: `starting`, `running`, `waiting_approval`, `completed`, `failed`, `stopped`, `budget_exceeded`.
+
+## Approvals
+
+With `tools.writes: "ask"` (the default), a run pauses in `waiting_approval` before a write outside its container, such as an MCP tool that changes something. Approving makes the run act as you.
+
+```bash
+ravi cloud runs show <run> --json
+ravi cloud runs approve <run> <approval> --execute
+ravi cloud runs deny <run> <approval> --reason "not now"
+```
+
+An agent turn of someone other than the operator cannot approve. You can also decide in the Console's run page.
+
+## Files
+
+```bash
+ravi cloud runs outputs <run>
+ravi cloud runs outputs <run> --download ./out
+```
+
+Files come through the Console. A download never overwrites an existing file; use an empty folder. Two outputs that would land on one path (also when only the case differs) are refused before anything is written.
+
+## Schedules
+
+Each tick starts a paid run as the person who scheduled it, with the schedule's prompt (default: the agent's `HEARTBEAT.md`) and budget.
+
+```bash
+ravi cloud schedules add triage --cron "0 9 * * 1-5" --timezone America/Sao_Paulo --project clinica --execute
+ravi cloud schedules list --project clinica
+ravi cloud schedules update <id> --disable
+ravi cloud schedules update <id> --enable --execute
+ravi cloud schedules remove <id>
+```
+
+## Run a task in the cloud
+
+```bash
+ravi tasks dispatch <task> --agent triage --cloud --budget 5 --execute
+```
+
+The task runs as a cloud run of the local agent's Library definition: the one it was installed from, or a Library agent with the same id. The task becomes `in_progress`, and the daemon follows the run every 30 seconds:
+
+- a pending approval reaches the session (`--report-to`, or the session that dispatched) with the approve command;
+- when the run ends, the task becomes `done` or `failed` and the result reaches the session once, quoted as untrusted text.
+
+An agent without a Library definition is refused with `CLOUD_AGENT_NOT_PUBLISHED`. From a terminal, pass `--report-to <session>`: a cloud task needs a session for its result (`CLOUD_TASK_SESSION_REQUIRED` otherwise).
+
+## The `cloud` block
+
+The agent's `agent.json` can carry a `cloud` block. `ravi agents publish` validates and publishes it; `ravi agents install` writes it back, so publishing again keeps it. Every key is optional:
+
+```json
+{
+  "cloud": {
+    "model": "sonnet",
+    "effort": "high",
+    "budgetUsd": 5,
+    "environment": {
+      "networking": "limited",
+      "allowedHosts": ["api.github.com"],
+      "packages": { "apt": [], "pip": ["pandas"], "npm": [] }
+    },
+    "mcp": { "ravi": true, "servers": [{ "name": "linear", "url": "https://mcp.linear.app/sse" }] },
+    "tools": { "webSearch": false, "writes": "ask" },
+    "repositories": [{ "repo": "acme/api", "branch": "main" }],
+    "schedule": { "cron": "0 9 * * 1-5", "timezone": "America/Sao_Paulo" }
+  }
+}
+```
+
+| Key | Values |
+|---|---|
+| `model` | `opus`, `sonnet`, `haiku` or a `claude-*` model id |
+| `effort` | `low`, `medium`, `high`, `xhigh`, `max` |
+| `budgetUsd` | 0.5 to 200 |
+| `environment.networking` | `limited` (only `allowedHosts`, up to 25) or `unrestricted` |
+| `environment.packages` | `apt`, `pip`, `npm`: up to 50 each |
+| `mcp.servers` | up to 10, `https` only; `ravi` is reserved |
+| `tools.writes` | `ask` (approval before writes) or `auto` |
+| `repositories` | up to 10 `owner/name` with an optional `branch` |
+
+The block never carries credentials: keys that look like secrets (token, secret, password, apiKey, authorization, cookie), URLs with a user or a query string, and unknown keys are refused with `CLOUD_AGENT_DEFINITION_INVALID`.
+
+## Errors
+
+| Code | Exit | What to do |
+|---|---|---|
+| `AUTH_REQUIRED` | 1 | `ravi login` |
+| `CLOUD_PROJECT_REQUIRED` | 2 | pass `--project <slug>` |
+| `CLOUD_AGENTS_NOT_ENABLED` | 3 | cloud agents are not enabled for the organization |
+| `CLOUD_CREDENTIAL_MISSING`, `CLOUD_CREDENTIAL_INVALID` | 1 | an owner or admin runs `ravi cloud key set --stdin --execute` |
+| `CLOUD_AGENT_NOT_FOUND` | 1 | `ravi cloud agents list`, then deploy |
+| `CLOUD_AGENT_DEFINITION_INVALID` | 2 | fix the `cloud` block and publish again |
+| `CLOUD_AGENT_REPOSITORY_UNAVAILABLE` | 1 | add the repository to the organization's GitHub App |
+| `CLOUD_RUN_NOT_ACTIVE` | 1 | the run already ended |
+| `CLOUD_AGENTS_FORBIDDEN` | 1 | your role does not allow it |
+| `CLOUD_PROVIDER_ERROR` | 1 | retry in a moment |

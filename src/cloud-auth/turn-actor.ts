@@ -7,7 +7,9 @@
  * `ravi link` binding for it and credits (and authorizes) the write to the
  * bound person, with the operator kept as executor. With no binding Console
  * refuses writes (`ACTOR_NOT_LINKED`), which starts the person's link
- * (`identity-link/turn-link.ts`); reads stay the operator's.
+ * (`identity-link/turn-link.ts`); Bases refuses reads too. A turn Ravi cannot
+ * attribute sends no contact; Bases calls refuse it locally
+ * (`isUnattributedTurn`) instead of reading or writing as the operator.
  *
  * The contact comes from the same turn classification the access calls use
  * (`resolveAccessActor`), which reads the daemon's own record of the turn
@@ -43,4 +45,21 @@ export function inRuntimeTurn(env: NodeJS.ProcessEnv = process.env): boolean {
   if (env[RAVI_CONTEXT_KEY_ENV]?.trim()) return true;
   const transport = getContext({ localOnly: true })?.transport;
   return transport === "gateway" || transport === "tool";
+}
+
+/**
+ * True when a runtime turn runs this command and Ravi cannot say who asked
+ * (`resolveAccessActor` refused it: another agent's turn, an unresolved
+ * speaker), or the classification fails. Such a turn sends no contact, so a
+ * call that must act as the person of the turn refuses it instead of going
+ * out as the operator. Outside a runtime turn, and for the operator or a
+ * contact, false.
+ */
+export function isUnattributedTurn(env: NodeJS.ProcessEnv = process.env, deps: AccessActorDeps = {}): boolean {
+  if (!deps.actor && !inRuntimeTurn(env)) return false;
+  try {
+    return resolveAccessActor({ ...deps, turn: { ...deps.turn, env } }).kind === "refused";
+  } catch {
+    return true;
+  }
 }

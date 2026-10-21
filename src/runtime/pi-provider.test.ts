@@ -7,6 +7,7 @@ import {
   buildPiRpcProcessArgs,
   buildPiSkillCatalogSystemPrompt,
   buildPiRpcSpawnEnv,
+  buildPiDynamicToolsEnv,
   createPiRpcSubprocessTransport,
   createPiRuntimeProvider,
   listPiManagedRuntimeEnvKeys,
@@ -333,13 +334,29 @@ describe("Pi runtime provider", () => {
     ).toThrow(/refuses upstream credential environment variable OPENAI_API_KEY/);
     expect(transport.starts).toHaveLength(0);
   });
+  it("serializes the host tool catalog into the bridge env", () => {
+    const env = buildPiDynamicToolsEnv([
+      { name: "tasks_show", description: "Show a task", inputSchema: { type: "object", properties: {} } },
+    ]);
+    expect(JSON.parse(env ?? "null")).toEqual([
+      {
+        name: "tasks_show",
+        label: "tasks_show",
+        description: "Show a task",
+        parameters: { type: "object", properties: {} },
+      },
+    ]);
+    expect(buildPiDynamicToolsEnv([])).toBeUndefined();
+    expect(buildPiDynamicToolsEnv(undefined)).toBeUndefined();
+  });
+
   it("advertises an explicit subprocess RPC capability matrix", () => {
     expect(createPiRuntimeProvider().getCapabilities()).toMatchObject({
       runtimeControl: {
         supported: true,
       },
       dynamicTools: {
-        mode: "none",
+        mode: "host",
       },
       execution: {
         mode: "subprocess-rpc",

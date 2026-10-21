@@ -18,7 +18,7 @@ const binding = {
 };
 
 describe("renderSlackContent", () => {
-  it("converts CommonMark agent text to Slack mrkdwn", () => {
+  it("keeps the agent's Markdown for Slack delivery to render as Block Kit", () => {
     expect(
       renderSlackContent([
         {
@@ -26,16 +26,16 @@ describe("renderSlackContent", () => {
           text: "# Status\nRead the **guide** and [docs](https://example.com).",
         },
       ]),
-    ).toBe("*Status*\nRead the *guide* and <https://example.com|docs>.");
+    ).toBe("# Status\nRead the **guide** and [docs](https://example.com).");
   });
 
-  it("joins text and attachment placeholders before converting", () => {
+  it("joins text and attachment placeholders", () => {
     expect(
       renderSlackContent([
         { type: "text", text: "See **screenshot**" },
         { type: "artifact", artifactId: "art_1", name: "shot.png" },
       ]),
-    ).toBe("See *screenshot*\n[Attachment: shot.png]");
+    ).toBe("See **screenshot**\n[Attachment: shot.png]");
   });
 });
 
@@ -83,7 +83,7 @@ describe("renderSlackSafeError", () => {
 });
 
 describe("createSlackNativeChannelDriver", () => {
-  it("publishes converted mrkdwn on the backend Slack text egress path", async () => {
+  it("publishes the agent's Markdown, marked for rendering, on the backend Slack text egress path", async () => {
     const published: ChannelOutboundJob[] = [];
     const driver = createSlackNativeChannelDriver(
       {},
@@ -163,7 +163,8 @@ describe("createSlackNativeChannelDriver", () => {
     expect(published).toHaveLength(1);
     expect(published[0]?.request.content).toEqual({
       type: "text",
-      text: "*Ready.* See <https://example.com/runbook|runbook>.",
+      text: "**Ready.** See [runbook](https://example.com/runbook).",
+      format: "markdown",
     });
   });
 });
