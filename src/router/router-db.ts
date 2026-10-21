@@ -15,6 +15,7 @@ import { mkdirSync, existsSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
 import { logger } from "../utils/logger.js";
+import { createReadWatchdog } from "../db/read-watchdog.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import { normalizePhone, normalizeRoutePattern } from "../utils/phone.js";
 import { normalizeLimitOffsetPage, type ListPage } from "../utils/pagination.js";
@@ -1131,6 +1132,14 @@ export interface ListContextsOptions {
 const SLOW_QUERY_WARN_MS = Number(process.env.RAVI_DB_SLOW_QUERY_WARN_MS ?? 250);
 const SLOW_QUERY_ERROR_MS = Number(process.env.RAVI_DB_SLOW_QUERY_ERROR_MS ?? 5000);
 const SLOW_QUERY_DISABLED = process.env.RAVI_DB_SLOW_QUERY_DISABLE === "1";
+/**
+ * A read that stays open (an iterator that is never finalized) pins the WAL
+ * snapshot even though no query is slow. Watchdogs report it with the call
+ * site so the holder can be named instead of guessed from shm marks.
+ */
+const READ_WATCHDOG_WARN_MS = Number(process.env.RAVI_DB_READ_WATCHDOG_MS ?? 5_000);
+const READ_WATCHDOG_INTERVAL_MS = Number(process.env.RAVI_DB_READ_WATCHDOG_INTERVAL_MS ?? 5_000);
+const READ_WATCHDOG_DISABLED = process.env.RAVI_DB_READ_WATCHDOG_DISABLE === "1";
 
 function shortSql(sql: string): string {
   const collapsed = sql.replace(/\s+/g, " ").trim();
@@ -1149,8 +1158,121 @@ function reportSlowQuery(elapsed: number, method: string, sql: string): void {
   }
 }
 
-function instrumentSlowQueries(db: Database): void {
+export interface LongReadReport {
+  ms: number;
+  state: "open" | "closed";
+  sql: string;
+  caller: string;
+}
+
+function readWatchdogCaller(): string {
+  return (new Error().stack ?? "")
+    .split("\n")
+    .slice(3, 6)
+    .map((line) => line.trim().replace(/^at\s+/, ""))
+    .join(" <- ");
+}
+
+/**
+ * Wrap a statement iterator so a read snapshot that stays open past the
+ * threshold is logged with its duration and call site (and again, once, when it
+ * closes). The proxy preserves the iterator protocol.
+ */
+export function trackReadIterator<T extends object>(
+  iterator: T,
+  options: {
+    sql: string;
+    caller: string;
+    warnMs?: number;
+    intervalMs?: number;
+    onLongRead?: (report: LongReadReport) => void;
+  },
+): T {
+  const warnMs = options.warnMs ?? READ_WATCHDOG_WARN_MS;
+  const intervalMs = options.intervalMs ?? READ_WATCHDOG_INTERVAL_MS;
+  const startedAt = Date.now();
+  let reported = false;
+  const report = (state: "open" | "closed") => {
+    if (reported) return;
+    reported = true;
+    const payload: LongReadReport = {
+      ms: Date.now() - startedAt,
+      state,
+      sql: shortSql(options.sql),
+      caller: options.caller,
+    };
+    if (options.onLongRead) {
+      options.onLongRead(payload);
+    } else if (state === "open") {
+      log.warn("long db read iterator (still open)", payload);
+    } else {
+      log.warn("long db read iterator", payload);
+    }
+  };
+  const timer = setInterval(() => {
+    if (Date.now() - startedAt >= warnMs) report("open");
+  }, intervalMs);
+  timer.unref?.();
+  const finish = () => {
+    clearInterval(timer);
+    if (Date.now() - startedAt >= warnMs) report("closed");
+  };
+
+  const proxy: T = new Proxy(iterator, {
+    get(target, property, receiver) {
+      if (property === Symbol.iterator) {
+        return () => proxy;
+      }
+      const value = Reflect.get(target, property, receiver);
+      if (typeof value !== "function") return value;
+      if (property === "next") {
+        return (...args: unknown[]) => {
+          const result = value.apply(target, args) as IteratorResult<unknown>;
+          if (result.done) finish();
+          return result;
+        };
+      }
+      if (property === "return" || property === "throw") {
+        return (...args: unknown[]) => {
+          try {
+            return value.apply(target, args);
+          } finally {
+            finish();
+          }
+        };
+      }
+      return value.bind(target);
+    },
+  });
+  return proxy;
+}
+
+function instrumentSlowQueries(db: Database, dbPath?: string): void {
   if (SLOW_QUERY_DISABLED) return;
+
+  // In-flight registry + WAL pin dump: a reader that never returns pins the
+  // snapshot without ever reaching the slow-query logger.
+  const watchdog = createReadWatchdog({
+    dbPath,
+    checkpointProbe: () => {
+      try {
+        const row = db.query("PRAGMA wal_checkpoint(PASSIVE)").get() as {
+          busy?: number;
+          log?: number;
+          checkpointed?: number;
+        } | null;
+        if (!row) return null;
+        return {
+          busy: Number(row.busy ?? 0),
+          log: Number(row.log ?? 0),
+          checkpointed: Number(row.checkpointed ?? 0),
+        };
+      } catch {
+        return null;
+      }
+    },
+  });
+  let openTransaction: number | undefined;
 
   const originalPrepare = db.prepare.bind(db);
   // @ts-expect-error: replacing method with a wrapper of identical signature
@@ -1159,15 +1281,23 @@ function instrumentSlowQueries(db: Database): void {
     const proxy = new Proxy(stmt, {
       get(target, prop, receiver) {
         const value = Reflect.get(target, prop, receiver);
-        if (
-          typeof value === "function" &&
-          (prop === "run" || prop === "get" || prop === "all" || prop === "iterate" || prop === "values")
-        ) {
+        if (typeof value === "function" && prop === "iterate") {
           return (...args: unknown[]) => {
             const start = Date.now();
+            const caller = readWatchdogCaller();
+            const iterator = (value as (...a: unknown[]) => object).apply(target, args);
+            reportSlowQuery(Date.now() - start, "iterate", sql);
+            return READ_WATCHDOG_DISABLED ? iterator : trackReadIterator(iterator, { sql, caller });
+          };
+        }
+        if (typeof value === "function" && (prop === "run" || prop === "get" || prop === "all" || prop === "values")) {
+          return (...args: unknown[]) => {
+            const start = Date.now();
+            const operation = watchdog.begin("statement", shortSql(sql));
             try {
               return (value as (...a: unknown[]) => unknown).apply(target, args);
             } finally {
+              watchdog.finish(operation);
               reportSlowQuery(Date.now() - start, String(prop), sql);
             }
           };
@@ -1181,9 +1311,19 @@ function instrumentSlowQueries(db: Database): void {
   const originalExec = db.exec.bind(db);
   db.exec = (sql: string, ...rest: unknown[]) => {
     const start = Date.now();
+    const head = sql.trim().slice(0, 20).toUpperCase();
+    const isBegin = head.startsWith("BEGIN");
+    const isEnd = head.startsWith("COMMIT") || head.startsWith("ROLLBACK") || head.startsWith("END");
+    if (isBegin && openTransaction === undefined) {
+      openTransaction = watchdog.begin("transaction", shortSql(sql));
+    }
     try {
       return originalExec(sql, ...(rest as []));
     } finally {
+      if (isEnd && openTransaction !== undefined) {
+        watchdog.finish(openTransaction);
+        openTransaction = undefined;
+      }
       reportSlowQuery(Date.now() - start, "exec", sql);
     }
   };
@@ -1258,7 +1398,7 @@ function getDb(): Database {
   }
 
   const db = new Database(nextDbPath);
-  instrumentSlowQueries(db);
+  instrumentSlowQueries(db, nextDbPath);
   routerDbState.db = db;
   routerDbState.dbPath = nextDbPath;
 
