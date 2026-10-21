@@ -1,4 +1,5 @@
 import { getContext } from "../cli/context.js";
+import { isEmptySubject, readSubjectFromEnv, resolveSubjectForChat, type SubjectRef } from "../identity/subject.js";
 import { CliExpectedError } from "../cli/expected-error.js";
 import { nats } from "../nats.js";
 import { getAgent } from "../router/config.js";
@@ -2257,6 +2258,20 @@ export function buildTaskResumePrompt(
   });
 }
 
+function resolveTaskSubjectFromRuntime(): SubjectRef | undefined {
+  // A CLI subprocess inherits the turn's actor bundle; the daemon itself does not.
+  if (process.env.RAVI_CONTEXT_KEY || process.env.RAVI_SESSION_KEY) {
+    const fromTurn = readSubjectFromEnv(process.env);
+    if (!isEmptySubject(fromTurn)) return fromTurn;
+  }
+  const chatId = getContext()?.source?.chatId;
+  if (chatId) {
+    const fromChat = resolveSubjectForChat(chatId);
+    if (!isEmptySubject(fromChat)) return fromChat;
+  }
+  return undefined;
+}
+
 export function createTask(input: CreateTaskInput): {
   task: TaskRecord;
   event: TaskEvent;
@@ -2294,6 +2309,7 @@ export function createTask(input: CreateTaskInput): {
   );
   const created = dbCreateTask({
     ...resolvedInput,
+    ...(resolvedInput.subject ? {} : { subject: resolveTaskSubjectFromRuntime() }),
     ...(taskProfileUsesObserver(profile) && typeof resolvedInput.checkpointIntervalMs !== "number"
       ? { checkpointIntervalMs: DEFAULT_TASK_OBSERVER_STALL_INTERVAL_MS }
       : {}),

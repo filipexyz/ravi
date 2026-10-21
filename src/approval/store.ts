@@ -1,4 +1,5 @@
 import { getDb } from "../router/router-db.js";
+import { fromSubjectColumns, resolveSubjectForChat, toSubjectColumns, type SubjectRef } from "../identity/subject.js";
 
 export type ApprovalRequestType = "plan" | "spec" | "permission";
 export type ApprovalRequestStatus = "pending" | "decided" | "expired";
@@ -20,6 +21,8 @@ export interface ApprovalRequestRecord {
   readonly objectId: string | null;
   readonly status: ApprovalRequestStatus;
   readonly decision: ApprovalDecisionValue | null;
+  /** On whose behalf the approval was requested. Not the same as who asked for it (actor). */
+  readonly subject?: SubjectRef;
   readonly decidedBy: string | null;
   readonly reason: string | null;
   readonly createdAt: number;
@@ -90,17 +93,25 @@ interface ApprovalRequestRow {
   created_at: number;
   expires_at: number;
   decided_at: number | null;
+  subject_kind: string | null;
+  subject_contact_id: string | null;
+  subject_identity_id: string | null;
+  subject_agent_id: string | null;
+  subject_channel: string | null;
+  subject_raw_id: string | null;
 }
 
 export function createApprovalRequest(input: CreateApprovalRequestInput): ApprovalRequestRecord {
   ensureApprovalRequestTable();
+  const subject = toSubjectColumns(resolveSubjectForChat(input.chatId));
   getDb()
     .prepare(
       `INSERT INTO approval_requests (
         id, type, channel, account_id, chat_id, instance_id, thread_id, message_id,
         session_name, agent_id, permission, object_type, object_id,
+        subject_kind, subject_contact_id, subject_identity_id, subject_agent_id, subject_channel, subject_raw_id,
         status, decision, decided_by, reason, created_at, expires_at, decided_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, NULL, NULL, ?, ?, NULL)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, NULL, NULL, ?, ?, NULL)`,
     )
     .run(
       input.id,
@@ -116,6 +127,12 @@ export function createApprovalRequest(input: CreateApprovalRequestInput): Approv
       emptyToNull(input.permission),
       emptyToNull(input.objectType),
       emptyToNull(input.objectId),
+      subject.subjectKind,
+      subject.subjectContactId,
+      subject.subjectIdentityId,
+      subject.subjectAgentId,
+      subject.subjectChannel,
+      subject.subjectRawId,
       input.createdAt,
       input.expiresAt,
     );
@@ -258,6 +275,22 @@ function ensureApprovalRequestTable(): void {
     `CREATE INDEX IF NOT EXISTS idx_approval_requests_status_expires
       ON approval_requests(status, expires_at)`,
   ).run();
+  const approvalColumns = new Set(
+    (db.prepare("PRAGMA table_info(approval_requests)").all() as Array<{ name: string }>).map((column) => column.name),
+  );
+  for (const column of [
+    "subject_kind",
+    "subject_contact_id",
+    "subject_identity_id",
+    "subject_agent_id",
+    "subject_channel",
+    "subject_raw_id",
+  ]) {
+    if (!approvalColumns.has(column)) {
+      db.exec(`ALTER TABLE approval_requests ADD COLUMN ${column} TEXT`);
+    }
+  }
+  db.exec("CREATE INDEX IF NOT EXISTS idx_approval_requests_subject_contact ON approval_requests(subject_contact_id)");
   db.prepare(
     `CREATE TABLE IF NOT EXISTS approval_request_deliveries (
       request_id TEXT NOT NULL,
@@ -288,6 +321,7 @@ function rowToRecord(row: ApprovalRequestRow): ApprovalRequestRecord {
     objectId: row.object_id,
     status: row.status as ApprovalRequestStatus,
     decision: (row.decision as ApprovalDecisionValue | null) ?? null,
+    ...(fromSubjectColumns(row) ? { subject: fromSubjectColumns(row) } : {}),
     decidedBy: row.decided_by,
     reason: row.reason,
     createdAt: row.created_at,
