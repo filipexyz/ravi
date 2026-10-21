@@ -1,4 +1,5 @@
 import type { RuntimeEffort } from "../runtime/effort.js";
+import type { SubjectRef } from "../identity/subject.js";
 
 export type TaskStatus = "open" | "dispatched" | "in_progress" | "blocked" | "done" | "failed";
 
@@ -320,6 +321,8 @@ export interface TaskRecord {
   createdBy?: string;
   createdByAgentId?: string;
   createdBySessionName?: string;
+  /** On whose behalf this task exists. The actor (who ran it) is a separate concept. */
+  subject?: SubjectRef;
   assigneeAgentId?: string;
   assigneeSessionName?: string;
   worktree?: TaskWorktreeConfig;
@@ -447,6 +450,8 @@ export interface CreateTaskInput {
   createdBy?: string;
   createdByAgentId?: string;
   createdBySessionName?: string;
+  /** On whose behalf this task exists; inherited from the parent task when omitted. */
+  subject?: SubjectRef;
   parentTaskId?: string;
   dependsOnTaskIds?: string[];
   worktree?: TaskWorktreeConfig;
