@@ -47161,6 +47161,41 @@ export const ContactsLinkReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `contacts.link-agent`. */
+export const ContactsLinkAgentInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent ID that owns the platform identity",
+      "type": "string"
+    },
+    "channel": {
+      "description": "Channel, e.g. slack, telegram, discord",
+      "type": "string"
+    },
+    "id": {
+      "description": "Platform user ID",
+      "type": "string"
+    },
+    "instance": {
+      "description": "Channel instance ID",
+      "type": "string"
+    },
+    "name": {
+      "description": "Platform display name",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Reason for the link audit event",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `contacts.list`. */
 export const ContactsListInputSchema = {
   "additionalProperties": false,
