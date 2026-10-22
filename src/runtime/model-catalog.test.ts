@@ -2,7 +2,12 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getDefaultModelForProvider, listRuntimeModels, resolvePreferredRuntimeModel } from "./model-catalog.js";
+import {
+  getDefaultModelForProvider,
+  listRuntimeModels,
+  modelProviderMismatch,
+  resolvePreferredRuntimeModel,
+} from "./model-catalog.js";
 import { resolveAgentModelSelection, resolveEffectiveAgentModel } from "./model-preset-resolver.js";
 import type { RuntimeModelPreset } from "./model-preset-store.js";
 
@@ -169,5 +174,31 @@ describe("agent model preset resolution", () => {
     expect(effective.effectiveModel).toBeNull();
     expect(effective.modelSource).toBeNull();
     expect(effective.error).toContain("disabled");
+  });
+});
+
+describe("modelProviderMismatch", () => {
+  test("accepts a model that belongs to the provider", () => {
+    expect(modelProviderMismatch("claude", "sonnet")).toBeNull();
+    expect(modelProviderMismatch("claude", "claude-sonnet-4-5")).toBeNull();
+    expect(modelProviderMismatch("codex", "gpt-5.4")).toBeNull();
+    expect(modelProviderMismatch("grok", "grok-4")).toBeNull();
+  });
+
+  test("rejects a Claude alias on a non-Claude runtime", () => {
+    expect(modelProviderMismatch("codex", "sonnet")).toContain("Claude alias and codex cannot run it");
+    expect(modelProviderMismatch("grok", "claude-opus-4")).toContain("Claude alias");
+  });
+
+  test("rejects a foreign vendor model on the Claude runtime", () => {
+    expect(modelProviderMismatch("claude", "gpt-5.6")).toContain("does not belong to the claude runtime");
+    expect(modelProviderMismatch("claude", "gemini-2.5-pro")).toContain("does not belong");
+  });
+
+  test("leaves open-ended ids alone when nothing is known about them", () => {
+    expect(modelProviderMismatch("claude", "my-private-finetune")).toBeNull();
+    expect(modelProviderMismatch("codex", "my-private-finetune")).toBeNull();
+    expect(modelProviderMismatch(undefined, "sonnet")).toBeNull();
+    expect(modelProviderMismatch("codex", undefined)).toBeNull();
   });
 });

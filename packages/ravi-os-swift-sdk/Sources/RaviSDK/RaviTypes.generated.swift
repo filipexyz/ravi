@@ -26420,25 +26420,43 @@ public struct SessionsCloseThreadReturn: Codable, Sendable {
 }
 
 public struct SessionsCreateThreadOptions: Codable, Sendable {
+  public var effort: String?
   public var model: String?
+  public var provider: String?
   public var session: String?
+  public var thinking: String?
 
-  public init(model: String? = nil, session: String? = nil) {
+  public init(effort: String? = nil, model: String? = nil, provider: String? = nil, session: String? = nil, thinking: String? = nil) {
+    self.effort = effort
     self.model = model
+    self.provider = provider
     self.session = session
+    self.thinking = thinking
   }
 
   enum CodingKeys: String, CodingKey {
+    case effort = "effort"
     case model = "model"
+    case provider = "provider"
     case session = "session"
+    case thinking = "thinking"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.effort {
+      body["effort"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.model {
       body["model"] = try RaviJSON.fromEncodable(value)
     }
+    if let value = self.provider {
+      body["provider"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.session {
       body["session"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.thinking {
+      body["thinking"] = try RaviJSON.fromEncodable(value)
     }
   }
 }

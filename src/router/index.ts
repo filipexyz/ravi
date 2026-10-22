@@ -159,6 +159,8 @@ export {
   updateSessionThreadId,
   updateSessionContext,
   updateSessionModelOverride,
+  updateSessionEffortOverride,
+  updateSessionThinkingLevel,
   updateSessionDisplayName,
   updateSessionHeartbeat,
   isNameTaken,

@@ -8,12 +8,17 @@ import {
   attachChatToSession,
   ensureUniqueName,
   generateThreadForkSessionName,
+  getAgent,
   getOrCreateSession,
   getSession,
+  loadRouterConfig,
   updateSessionContext,
+  updateSessionEffortOverride,
   updateSessionModelOverride,
   updateSessionName,
+  updateSessionRuntimeProviderOverride,
   updateSessionSource,
+  updateSessionThinkingLevel,
   updateSessionThreadId,
 } from "../../router/index.js";
 import { dbFindChat, dbGetChat, dbGetSessionDefaultChatId, dbUpsertChat } from "../../router/router-db.js";
@@ -25,6 +30,8 @@ import type {
   RuntimeTurnOriginPrincipal,
 } from "../../runtime/message-types.js";
 import { buildSessionRelayTurnOrigin, type SessionRelayOriginContext } from "../../runtime/turn-origin.js";
+import { applyProviderModelRule } from "../../runtime/model-catalog.js";
+import { resolveEffectiveSessionRuntime } from "../../runtime/runtime-selection.js";
 import { logger } from "../../utils/logger.js";
 import {
   claimSlackThreadCreation,
@@ -367,6 +374,25 @@ const SLACK_THREAD_TITLE_MAX_LENGTH = 80;
 const SLACK_ID_PATTERN = /^[A-Z0-9]+$/;
 const SLACK_TS_PATTERN = /^\d+\.\d+$/;
 
+export interface SlackThreadRuntimeSummary {
+  /** Values the child session resolves to right now (creation intent until it starts). */
+  provider: string;
+  providerSource: string;
+  model: string | null;
+  modelSource: string | null;
+  effort: string;
+  effortSource: string;
+  thinking: string | null;
+  thinkingSource: string | null;
+  /** What the creation call asked for, before agent/global resolution. */
+  requested: {
+    provider: string | null;
+    model: string | null;
+    effort: string | null;
+    thinking: string | null;
+  };
+}
+
 export interface SlackThreadSummary {
   requestId: string;
   title: string | null;
@@ -376,6 +402,7 @@ export interface SlackThreadSummary {
   childSessionName: string | null;
   slackThreadTs: string | null;
   link: string | null;
+  runtime: SlackThreadRuntimeSummary;
   createdAt: number;
   updatedAt: number;
   closedAt: number | null;
@@ -434,6 +461,7 @@ export function summarizeSlackThread(record: SlackThreadLifecycleRecord): SlackT
     childSessionName: record.childSessionName ?? null,
     slackThreadTs: record.providerThreadId ?? null,
     link: slackThreadLink(record) ?? null,
+    runtime: summarizeSlackThreadRuntime(record),
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
     closedAt: record.closedAt ?? null,
@@ -442,6 +470,59 @@ export function summarizeSlackThread(record: SlackThreadLifecycleRecord): SlackT
       pending: record.parentReturnRequested && record.parentNotifiedAt === undefined,
     },
   };
+}
+
+/** What this thread is running: resolved from the child session once it exists. */
+export function summarizeSlackThreadRuntime(record: SlackThreadLifecycleRecord): SlackThreadRuntimeSummary {
+  const requested = {
+    provider: record.providerOverride ?? null,
+    model: record.modelOverride ?? null,
+    effort: record.effortOverride ?? null,
+    thinking: record.thinkingLevel ?? null,
+  };
+  const child = record.childSessionKey ? getSession(record.childSessionKey) : null;
+  if (!child) {
+    return {
+      provider: requested.provider ?? "inherited",
+      providerSource: requested.provider ? "thread_creation" : "unstarted",
+      model: requested.model,
+      modelSource: requested.model ? "thread_creation" : null,
+      effort: requested.effort ?? "inherited",
+      effortSource: requested.effort ? "thread_creation" : "unstarted",
+      thinking: requested.thinking,
+      thinkingSource: requested.thinking ? "thread_creation" : null,
+      requested,
+    };
+  }
+  const agent = getAgent(child.agentId) ?? loadRouterConfig().agents[child.agentId] ?? null;
+  const resolved = resolveEffectiveSessionRuntime({ session: child, agent });
+  // Report the model the runtime will actually run, not the alias it was handed.
+  const effectiveModel = applyProviderModelRule(resolved.provider.value, resolved.model.value);
+  const modelRemapped = effectiveModel !== null && effectiveModel !== resolved.model.value;
+  return {
+    provider: resolved.provider.value,
+    providerSource: resolved.provider.source,
+    model: effectiveModel,
+    modelSource: modelRemapped ? "provider_remap" : resolved.model.source,
+    effort: resolved.effort.value,
+    effortSource: resolved.effort.source,
+    thinking: resolved.thinking.value ?? null,
+    thinkingSource: resolved.thinking.source ?? null,
+    requested,
+  };
+}
+
+/** Compact label for a thread's requested runtime shape; undefined when nothing was pinned. */
+export function slackThreadRuntimeLabel(input: {
+  providerOverride?: string;
+  modelOverride?: string;
+  effortOverride?: string;
+  thinkingLevel?: string;
+}): string | undefined {
+  const parts = [input.providerOverride, input.modelOverride, input.effortOverride, input.thinkingLevel]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value));
+  return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
 /** Threads owned by the channel-root session of `session` (itself, or the parent of a thread child). */
@@ -614,6 +695,7 @@ async function updateSlackThreadCard(
         ...(state.note?.trim() ? { note: state.note.trim() } : {}),
         updatedAt: Date.now(),
         ...(record.requestedBy ? { requestedBy: record.requestedBy } : {}),
+        ...(slackThreadRuntimeLabel(record) ? { runtime: slackThreadRuntimeLabel(record) } : {}),
       },
     },
   });
@@ -667,9 +749,22 @@ function materializeSlackThreadChild(record: SlackThreadLifecycleRecord): {
     lastTo: record.platformChatId,
     lastThreadId: record.providerThreadId,
     ...(record.modelOverride ? { modelOverride: record.modelOverride } : {}),
+    ...(record.providerOverride ? { runtimeProviderOverride: record.providerOverride } : {}),
+    ...(record.effortOverride ? { effortOverride: record.effortOverride as SessionEntry["effortOverride"] } : {}),
+    ...(record.thinkingLevel ? { thinkingLevel: record.thinkingLevel as SessionEntry["thinkingLevel"] } : {}),
   });
   if (!child.name) updateSessionName(child.sessionKey, childSessionName);
-  if (record.modelOverride) updateSessionModelOverride(child.sessionKey, record.modelOverride);
+  // Creation-time intent is applied once: a later materialization (reconcile after
+  // a restart) must not stamp over values the operator changed on the child since.
+  if (record.modelOverride && !child.modelOverride) updateSessionModelOverride(child.sessionKey, record.modelOverride);
+  if (record.providerOverride && !child.runtimeProviderOverride)
+    updateSessionRuntimeProviderOverride(
+      child.sessionKey,
+      record.providerOverride as SessionEntry["runtimeProviderOverride"],
+    );
+  if (record.effortOverride && !child.effortOverride)
+    updateSessionEffortOverride(child.sessionKey, record.effortOverride as SessionEntry["effortOverride"]);
+  if (record.thinkingLevel && !child.thinkingLevel) updateSessionThinkingLevel(child.sessionKey, record.thinkingLevel);
   updateSessionSource(child.sessionKey, {
     channel: "slack",
     accountId: record.accountId,
@@ -736,6 +831,9 @@ function buildSlackThreadInitialPrompt(
       childSessionName: materialized.childSessionName,
       providerThreadId,
       modelOverride: record.modelOverride ?? null,
+      providerOverride: record.providerOverride ?? null,
+      effortOverride: record.effortOverride ?? null,
+      thinkingLevel: record.thinkingLevel ?? null,
     },
   };
 }
@@ -845,6 +943,9 @@ function buildSlackThreadCreatedEvent(record: SlackThreadLifecycleRecord, agentI
     parentSessionKey: record.parentSessionKey,
     parentSessionName: record.parentSessionName,
     modelOverride: record.modelOverride ?? null,
+    providerOverride: record.providerOverride ?? null,
+    effortOverride: record.effortOverride ?? null,
+    thinkingLevel: record.thinkingLevel ?? null,
     createdAt: record.promptPublishedAt ?? Date.now(),
   };
 }

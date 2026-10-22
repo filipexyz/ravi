@@ -91266,6 +91266,10 @@ class RaviSchemas {
 {
   "additionalProperties": false,
   "properties": {
+    "effort": {
+      "description": "Reasoning effort for the child session: none|minimal|low|medium|high|xhigh|max|ultra",
+      "type": "string"
+    },
     "message": {
       "description": "Initial Slack message and first instruction for the child session",
       "type": "string"
@@ -91274,8 +91278,16 @@ class RaviSchemas {
       "description": "Optional model override for the child session",
       "type": "string"
     },
+    "provider": {
+      "description": "Runtime provider for the child (claude|codex|grok|pi); defaults to the parent's explicit provider override",
+      "type": "string"
+    },
     "session": {
       "description": "Explicit initiating session (defaults to current session)",
+      "type": "string"
+    },
+    "thinking": {
+      "description": "Thinking level for the child session: off|normal|verbose (claude and pi runtimes)",
       "type": "string"
     }
   },
@@ -91297,7 +91309,27 @@ class RaviSchemas {
     "child": {
       "additionalProperties": false,
       "properties": {
+        "effortOverride": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "modelOverride": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "providerOverride": {
           "anyOf": [
             {
               "type": "string"
@@ -91310,11 +91342,24 @@ class RaviSchemas {
         "status": {
           "const": "pending_root_delivery",
           "type": "string"
+        },
+        "thinkingLevel": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
         "status",
-        "modelOverride"
+        "modelOverride",
+        "providerOverride",
+        "effortOverride",
+        "thinkingLevel"
       ],
       "type": "object"
     },
@@ -96134,6 +96179,127 @@ class RaviSchemas {
         "requestId": {
           "type": "string"
         },
+        "runtime": {
+          "additionalProperties": false,
+          "properties": {
+            "effort": {
+              "type": "string"
+            },
+            "effortSource": {
+              "type": "string"
+            },
+            "model": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "modelSource": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "provider": {
+              "type": "string"
+            },
+            "providerSource": {
+              "type": "string"
+            },
+            "requested": {
+              "additionalProperties": false,
+              "properties": {
+                "effort": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "model": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "provider": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "thinking": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "provider",
+                "model",
+                "effort",
+                "thinking"
+              ],
+              "type": "object"
+            },
+            "thinking": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "thinkingSource": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "provider",
+            "providerSource",
+            "model",
+            "modelSource",
+            "effort",
+            "effortSource",
+            "thinking",
+            "thinkingSource",
+            "requested"
+          ],
+          "type": "object"
+        },
         "slackThreadTs": {
           "anyOf": [
             {
@@ -96185,6 +96351,7 @@ class RaviSchemas {
         "childSessionName",
         "slackThreadTs",
         "link",
+        "runtime",
         "createdAt",
         "updatedAt",
         "closedAt",
@@ -96311,6 +96478,127 @@ class RaviSchemas {
           "requestId": {
             "type": "string"
           },
+          "runtime": {
+            "additionalProperties": false,
+            "properties": {
+              "effort": {
+                "type": "string"
+              },
+              "effortSource": {
+                "type": "string"
+              },
+              "model": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "modelSource": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "provider": {
+                "type": "string"
+              },
+              "providerSource": {
+                "type": "string"
+              },
+              "requested": {
+                "additionalProperties": false,
+                "properties": {
+                  "effort": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "model": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "provider": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "thinking": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "provider",
+                  "model",
+                  "effort",
+                  "thinking"
+                ],
+                "type": "object"
+              },
+              "thinking": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "thinkingSource": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "provider",
+              "providerSource",
+              "model",
+              "modelSource",
+              "effort",
+              "effortSource",
+              "thinking",
+              "thinkingSource",
+              "requested"
+            ],
+            "type": "object"
+          },
           "slackThreadTs": {
             "anyOf": [
               {
@@ -96362,6 +96650,7 @@ class RaviSchemas {
           "childSessionName",
           "slackThreadTs",
           "link",
+          "runtime",
           "createdAt",
           "updatedAt",
           "closedAt",
