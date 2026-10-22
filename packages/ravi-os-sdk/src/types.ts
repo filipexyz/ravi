@@ -17714,17 +17714,23 @@ export type SessionsCloseThreadReturn = {
 
 /** Input shape for `sessions.create-thread`. */
 export type SessionsCreateThreadInput = {
+  effort?: string;
   message: string;
   model?: string;
+  provider?: string;
   session?: string;
+  thinking?: string;
 };
 
 /** Return shape for `sessions.create-thread`. */
 export type SessionsCreateThreadReturn = {
   actionId: "thread.create";
   child: {
+    effortOverride: string | null;
     modelOverride: string | null;
+    providerOverride: string | null;
     status: "pending_root_delivery";
+    thinkingLevel: string | null;
   };
   executionMode: "durable";
   idempotencyKey: string;
@@ -18761,6 +18767,22 @@ export type SessionsThreadSendReturn = {
       requested: boolean;
     };
     requestId: string;
+    runtime: {
+      effort: string;
+      effortSource: string;
+      model: string | null;
+      modelSource: string | null;
+      provider: string;
+      providerSource: string;
+      requested: {
+        effort: string | null;
+        model: string | null;
+        provider: string | null;
+        thinking: string | null;
+      };
+      thinking: string | null;
+      thinkingSource: string | null;
+    };
     slackThreadTs: string | null;
     source: "action" | "inbound";
     status: "queued" | "root_delivered" | "starting" | "open" | "closed" | "failed";
@@ -18793,6 +18815,22 @@ export type SessionsThreadsReturn = {
       requested: boolean;
     };
     requestId: string;
+    runtime: {
+      effort: string;
+      effortSource: string;
+      model: string | null;
+      modelSource: string | null;
+      provider: string;
+      providerSource: string;
+      requested: {
+        effort: string | null;
+        model: string | null;
+        provider: string | null;
+        thinking: string | null;
+      };
+      thinking: string | null;
+      thinkingSource: string | null;
+    };
     slackThreadTs: string | null;
     source: "action" | "inbound";
     status: "queued" | "root_delivered" | "starting" | "open" | "closed" | "failed";

@@ -22502,17 +22502,29 @@ class SessionsCloseThreadReturn {
 SessionsCloseThreadReturn sessionsCloseThreadReturnFromJson(Object? json) => SessionsCloseThreadReturn.fromJsonValue(json);
 
 class SessionsCreateThreadOptions {
-  const SessionsCreateThreadOptions({this.model, this.session});
+  const SessionsCreateThreadOptions({this.effort, this.model, this.provider, this.session, this.thinking});
 
+  final String? effort;
   final String? model;
+  final String? provider;
   final String? session;
+  final String? thinking;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (effort != null) {
+      into["effort"] = RaviJson.from(effort);
+    }
     if (model != null) {
       into["model"] = RaviJson.from(model);
     }
+    if (provider != null) {
+      into["provider"] = RaviJson.from(provider);
+    }
     if (session != null) {
       into["session"] = RaviJson.from(session);
+    }
+    if (thinking != null) {
+      into["thinking"] = RaviJson.from(thinking);
     }
   }
 }

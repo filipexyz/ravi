@@ -1914,6 +1914,9 @@ function getDb(): Database {
       initial_prompt TEXT,
       requested_by TEXT,
       model_override TEXT,
+      provider_override TEXT,
+      effort_override TEXT,
+      thinking_level TEXT,
       creation_claim_id TEXT,
       creation_claim_expires_at INTEGER,
       prompt_published_at INTEGER,
@@ -3305,6 +3308,9 @@ function getDb(): Database {
     log.info("Added on_error column to triggers table");
   }
   ensureColumn(db, "slack_thread_lifecycle", "requested_by", "TEXT");
+  ensureColumn(db, "slack_thread_lifecycle", "provider_override", "TEXT");
+  ensureColumn(db, "slack_thread_lifecycle", "effort_override", "TEXT");
+  ensureColumn(db, "slack_thread_lifecycle", "thinking_level", "TEXT");
   ensureColumn(db, "triggers", "filter_reject_count", "INTEGER DEFAULT 0");
   migrateTriggerDebounce(db);
   ensureColumn(db, "triggers", "last_filter_reject_at", "INTEGER");

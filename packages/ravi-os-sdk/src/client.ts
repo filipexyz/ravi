@@ -7088,8 +7088,11 @@ export class RaviClient {
     },
     /** Create a native Slack thread and start a child session in it */
     createThread: async (message: string, options?: {
+      effort?: string;
       model?: string;
+      provider?: string;
       session?: string;
+      thinking?: string;
     }): Promise<SessionsCreateThreadReturn> => {
       return this.transport.call({
         groupSegments: ["sessions"],
