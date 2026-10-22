@@ -21410,6 +21410,56 @@ export type TagsShowReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `tasks.answer`. */
+export type TasksAnswerInput = {
+  by?: string;
+  key?: string;
+  taskId: string;
+  text?: string;
+};
+
+/** Return shape for `tasks.answer`. */
+export type TasksAnswerReturn = {
+  created?: boolean;
+  decision: {
+    answer: string | null;
+    answeredAt: number | null;
+    answeredBy: string | null;
+    ask: string;
+    askedAt: number;
+    askedBy: string | null;
+    blocks: boolean;
+    createdAt: number;
+    id: string;
+    key: string;
+    ownerId: string | null;
+    ownerType: "human" | "agent" | "unassigned";
+    status: "open" | "answered" | "superseded";
+    taskId: string;
+    updatedAt: number;
+  };
+  event: {
+    actor?: string;
+    agentId?: string;
+    createdAt: number;
+    id: number;
+    message?: string;
+    progress?: number;
+    sessionName?: string;
+    taskId: string;
+    type: "task.decision.open" | "task.decision.answered";
+  };
+  task: {
+    assigneeAgentId?: string | null;
+    assigneeSessionName?: string | null;
+    id: string;
+    priority: string;
+    progress: number;
+    status: string;
+    title: string;
+  };
+};
+
 /** Input shape for `tasks.archive`. */
 export type TasksArchiveInput = {
   reason?: string;
@@ -21421,6 +21471,50 @@ export type TasksArchiveReturn = {
   event: Record<string, unknown>;
   task: Record<string, unknown>;
   [k: string]: unknown;
+};
+
+/** Input shape for `tasks.attention`. */
+export type TasksAttentionInput = {
+  agent?: string;
+  owner?: string;
+  task?: string;
+};
+
+/** Return shape for `tasks.attention`. */
+export type TasksAttentionReturn = {
+  decisionCount: number;
+  entries: Array<{
+    ageSeconds: number;
+    assigneeAgentId: string | null;
+    assigneeSessionName: string | null;
+    decisionCount: number;
+    decisions: Array<{
+      ageSeconds: number;
+      ask: string;
+      askedAt: number;
+      askedBy: string | null;
+      blocks: boolean;
+      id: string;
+      key: string;
+      ownerId: string | null;
+      ownerType: "human" | "agent" | "unassigned";
+    }>;
+    parked: boolean;
+    taskId: string;
+    taskPriority: string;
+    taskStatus: string;
+    taskTitle: string;
+    waitingFor: "human" | "agent" | "unassigned";
+  }>;
+  filters: {
+    agentId?: string;
+    ownerType?: "human" | "agent" | "unassigned";
+    taskId?: string;
+  };
+  generatedAt: number;
+  kind: "task.decision.attention";
+  parkedCount: number;
+  total: number;
 };
 
 /** Input shape for `tasks.automations.add`. */
@@ -21617,6 +21711,57 @@ export type TasksCreateReturn = {
   task: Record<string, unknown>;
   taskProfile: Record<string, unknown>;
   [k: string]: unknown;
+};
+
+/** Input shape for `tasks.decide`. */
+export type TasksDecideInput = {
+  ask?: string;
+  blocks?: boolean;
+  key?: string;
+  owner?: string;
+  taskId: string;
+};
+
+/** Return shape for `tasks.decide`. */
+export type TasksDecideReturn = {
+  created?: boolean;
+  decision: {
+    answer: string | null;
+    answeredAt: number | null;
+    answeredBy: string | null;
+    ask: string;
+    askedAt: number;
+    askedBy: string | null;
+    blocks: boolean;
+    createdAt: number;
+    id: string;
+    key: string;
+    ownerId: string | null;
+    ownerType: "human" | "agent" | "unassigned";
+    status: "open" | "answered" | "superseded";
+    taskId: string;
+    updatedAt: number;
+  };
+  event: {
+    actor?: string;
+    agentId?: string;
+    createdAt: number;
+    id: number;
+    message?: string;
+    progress?: number;
+    sessionName?: string;
+    taskId: string;
+    type: "task.decision.open" | "task.decision.answered";
+  };
+  task: {
+    assigneeAgentId?: string | null;
+    assigneeSessionName?: string | null;
+    id: string;
+    priority: string;
+    progress: number;
+    status: string;
+    title: string;
+  };
 };
 
 /** Input shape for `tasks.deps.add`. */

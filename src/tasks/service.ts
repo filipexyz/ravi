@@ -42,6 +42,7 @@ import {
   dbArchiveTask,
   dbAddTaskComment,
   dbAddTaskDependency,
+  dbAnswerTaskDecision,
   dbAppendTaskEvent,
   dbAutoResumeBlockedTask,
   dbUnarchiveTask,
@@ -49,6 +50,7 @@ import {
   dbCreateTask,
   dbDeleteTask,
   dbDispatchTask,
+  dbDecideTask,
   dbFailTask,
   dbBlockTask,
   dbGetTask,
@@ -56,6 +58,8 @@ import {
   dbGetTaskLaunchPlan,
   dbListAssignments,
   dbListTaskComments,
+  dbListTaskDecisions,
+  dbListOpenTaskDecisions,
   dbListChildTasks,
   dbListTaskDependencies,
   dbListTaskDependents,
@@ -112,6 +116,11 @@ import type {
   TaskCommentInput,
   TaskDependencyEdge,
   TaskDependencyRecord,
+  TaskDecision,
+  TaskDecisionAnswerInput,
+  TaskDecisionAttentionOptions,
+  TaskDecisionAttentionReport,
+  TaskDecisionInput,
   TaskProfileArtifactKind,
   TaskProfileArtifactRef,
   TaskProgressInput,
@@ -128,6 +137,7 @@ import type {
   TaskWorktreeMode,
 } from "./types.js";
 import { TASK_REPORT_EVENTS } from "./types.js";
+import { TaskDecisionError, foldTaskDecisionAttention } from "./decisions.js";
 import { attachTagSlugsToAsset } from "../tags/helpers.js";
 import { searchTagBindingsForSelector } from "../tags/service.js";
 import type { TagBinding } from "../tags/types.js";
@@ -2390,6 +2400,7 @@ export function getTaskDetails(taskId: string): {
   assignments: ReturnType<typeof dbListAssignments>;
   events: ReturnType<typeof dbListTaskEvents>;
   comments: ReturnType<typeof dbListTaskComments>;
+  decisions: TaskDecision[];
 } {
   const task = dbGetTask(taskId);
   const surfacedTask = task ? surfaceTaskRecordForRead(task) : null;
@@ -2409,6 +2420,7 @@ export function getTaskDetails(taskId: string): {
     assignments: dbListAssignments(taskId),
     events: dbListTaskEvents(taskId, 200),
     comments: dbListTaskComments(taskId, 200),
+    decisions: dbListTaskDecisions(taskId),
   };
 }
 
@@ -3242,6 +3254,66 @@ export async function commentTask(
     ...(steeredSessionName ? { steeredSessionName } : {}),
     ...(steerTarget && !steerTarget.ok ? { steerSkippedReason: steerTarget.reason } : {}),
   };
+}
+
+/**
+ * Ask (or re-ask) a task decision. A decision is task metadata, never a task
+ * status: it records who owns the answer and whether the task is parked on it.
+ */
+export function decideTask(
+  taskId: string,
+  input: TaskDecisionInput,
+): { task: TaskRecord; decision: TaskDecision; event: TaskEvent; created: boolean } {
+  const existingTask = dbGetTask(taskId);
+  if (!existingTask) {
+    throw new Error(`Task not found: ${taskId}`);
+  }
+  const result = dbDecideTask(taskId, input);
+  return {
+    task: dbGetTask(taskId) ?? existingTask,
+    decision: result.decision,
+    event: result.event,
+    created: result.created,
+  };
+}
+
+/**
+ * Close a decision by answering it. Only whoever is not the assignee that holds
+ * the work may answer: a worker cannot answer its own pending question.
+ */
+export function answerTaskDecision(
+  taskId: string,
+  input: TaskDecisionAnswerInput,
+): { task: TaskRecord; decision: TaskDecision; event: TaskEvent } {
+  const existingTask = dbGetTask(taskId);
+  if (!existingTask) {
+    throw new Error(`Task not found: ${taskId}`);
+  }
+
+  const assignment = dbGetActiveAssignment(taskId);
+  if (assignment && input.sessionName && assignment.sessionName === input.sessionName) {
+    throw new TaskDecisionError(
+      "TASK_DECISION_SELF_ANSWER",
+      `Cannot answer decision "${input.key}" on task ${taskId} from its own work session ${assignment.sessionName}. ` +
+        `The pending decision is waiting on someone else.`,
+      { suggestedAction: "Answer it from the requesting session, a human turn, or another agent session." },
+    );
+  }
+
+  const result = dbAnswerTaskDecision(taskId, input);
+  return { task: dbGetTask(taskId) ?? existingTask, ...result };
+}
+
+/**
+ * Deterministic, side-effect-free attention fold over open decisions. It reads
+ * decisions only and never detects stalls or blocked tasks.
+ */
+export function listTaskDecisionAttention(
+  options: TaskDecisionAttentionOptions = {},
+  now?: number,
+): TaskDecisionAttentionReport {
+  const rows = dbListOpenTaskDecisions(options);
+  return foldTaskDecisionAttention(rows, { filters: options, ...(typeof now === "number" ? { now } : {}) });
 }
 
 export function blockTask(

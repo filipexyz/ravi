@@ -10,6 +10,7 @@ capabilities:
   - reporting
   - dependencies
   - automations
+  - decisions
 tags:
   - tasks
   - runtime
@@ -45,6 +46,7 @@ Tasks own:
 
 - task lifecycle: `open`, `dispatched`, `in_progress`, `blocked`, `done`, and `failed`;
 - assignment, dispatch, comments, archive/unarchive, dependencies, and automations;
+- decisions: pending questions with an owner, a stable key and an answer record;
 - task events and task stream snapshots;
 - profile resolution at creation and dispatch time;
 - task-level runtime overrides for model, effort, and thinking;
@@ -57,7 +59,8 @@ Tasks do not own:
 - agent configuration, cwd, or permissions;
 - workflow graph semantics, except task nodes attached to workflow runs;
 - observer prompt rendering, except selecting task/profile metadata that observers may consume;
-- the contents of every artifact beyond the profile contract that declares it.
+- the contents of every artifact beyond the profile contract that declares it;
+- decision/stall detection (attention reads decisions; a future runtime/signals producer owns detection).
 
 ## Core Model
 
@@ -88,6 +91,7 @@ Tasks do not own:
 - Task-level and dispatch-level runtime overrides MUST NOT be implemented by mutating session model or thinking preferences.
 - Reporting, blocking, completing, and failing a task MUST write through the task runtime so DB state and task events stay authoritative.
 - External channel messages are not the task runtime's primitive. If a task report needs to reach a person or session, it MUST use the explicit report delivery path.
+- A decision is task metadata, not a task status. The task status enum MUST stay `open|dispatched|in_progress|blocked|done|failed`, and a decision command MUST NOT change it. See `tasks/decisions`.
 
 ## CLI Surface
 
@@ -102,6 +106,9 @@ ravi tasks report <task-id> --message "..."
 ravi tasks done <task-id> --summary "..."
 ravi tasks block <task-id> --reason "..."
 ravi tasks fail <task-id> --reason "..."
+ravi tasks decide <task-id> --key <k> --ask "..." [--owner human:<contact>|agent:<id>] [--blocks]
+ravi tasks answer <task-id> --key <k> --text "..." [--by <actor>]
+ravi tasks attention [--agent <id>] [--owner human|agent|unassigned] [--task <id>]
 ```
 
 Canonical profile catalog commands:
@@ -122,6 +129,8 @@ ravi tasks profiles init <profile-id> --preset <doc-first|brainstorm|runtime-onl
 - `report`, `done`, `block`, and `fail` update durable task state and emit task events.
 - A profile that does not use `TASK.md` can run without task-document side effects.
 - A task with dependencies can defer dispatch until readiness is satisfied.
+- A decision can be opened, re-asked in place, answered once, and folded by `attention` without ever changing the task status.
+- `bun test src/tasks/decisions.test.ts` covers the decision primitive.
 
 ## Validation
 
@@ -138,4 +147,6 @@ ravi tasks profiles init <profile-id> --preset <doc-first|brainstorm|runtime-onl
 - Using `ravi sessions set-model` or `ravi sessions set-effort` to implement task runtime overrides.
 - Reading or writing stale task context in a later non-task turn.
 - Reporting task progress only in chat without mutating durable task state.
+- Encoding a pending question as `blocked --reason` instead of a decision with an owner and a key.
+- Responding to a decision from the worker's own assignment session.
 - Making `show` or `watch` create files as a display side effect.
