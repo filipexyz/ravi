@@ -108494,6 +108494,253 @@ export const TagsShowReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `tasks.answer`. */
+export const TasksAnswerInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "by": {
+      "description": "Who is answering, recorded as provenance",
+      "type": "string"
+    },
+    "key": {
+      "description": "Decision key to answer",
+      "type": "string"
+    },
+    "taskId": {
+      "description": "Task ID",
+      "type": "string"
+    },
+    "text": {
+      "description": "The decision outcome",
+      "type": "string"
+    }
+  },
+  "required": [
+    "taskId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `tasks.answer`. */
+export const TasksAnswerReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "created": {
+      "type": "boolean"
+    },
+    "decision": {
+      "additionalProperties": false,
+      "properties": {
+        "answer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ask": {
+          "type": "string"
+        },
+        "askedAt": {
+          "type": "number"
+        },
+        "askedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blocks": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "ownerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ownerType": {
+          "enum": [
+            "human",
+            "agent",
+            "unassigned"
+          ],
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "open",
+            "answered",
+            "superseded"
+          ],
+          "type": "string"
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "taskId",
+        "key",
+        "status",
+        "ownerType",
+        "ownerId",
+        "ask",
+        "askedBy",
+        "askedAt",
+        "answer",
+        "answeredBy",
+        "answeredAt",
+        "blocks",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "event": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "type": "string"
+        },
+        "agentId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "id": {
+          "type": "number"
+        },
+        "message": {
+          "type": "string"
+        },
+        "progress": {
+          "type": "number"
+        },
+        "sessionName": {
+          "type": "string"
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "task.decision.open",
+            "task.decision.answered"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "taskId",
+        "type",
+        "createdAt"
+      ],
+      "type": "object"
+    },
+    "task": {
+      "additionalProperties": false,
+      "properties": {
+        "assigneeAgentId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "assigneeSessionName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "priority": {
+          "type": "string"
+        },
+        "progress": {
+          "type": "number"
+        },
+        "status": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "status",
+        "priority",
+        "progress"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "task",
+    "decision",
+    "event"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tasks.archive`. */
 export const TasksArchiveInputSchema = {
   "additionalProperties": false,
@@ -108531,6 +108778,216 @@ export const TasksArchiveReturnSchema = {
   "required": [
     "task",
     "event"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `tasks.attention`. */
+export const TasksAttentionInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Only tasks assigned to this agent",
+      "type": "string"
+    },
+    "owner": {
+      "description": "human|agent|unassigned",
+      "type": "string"
+    },
+    "task": {
+      "description": "Only decisions of this task",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `tasks.attention`. */
+export const TasksAttentionReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "decisionCount": {
+      "type": "number"
+    },
+    "entries": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "ageSeconds": {
+            "type": "number"
+          },
+          "assigneeAgentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "assigneeSessionName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decisionCount": {
+            "type": "number"
+          },
+          "decisions": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "ageSeconds": {
+                  "type": "number"
+                },
+                "ask": {
+                  "type": "string"
+                },
+                "askedAt": {
+                  "type": "number"
+                },
+                "askedBy": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "blocks": {
+                  "type": "boolean"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "key": {
+                  "type": "string"
+                },
+                "ownerId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ownerType": {
+                  "enum": [
+                    "human",
+                    "agent",
+                    "unassigned"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "key",
+                "ask",
+                "ownerType",
+                "ownerId",
+                "askedBy",
+                "askedAt",
+                "blocks",
+                "ageSeconds"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "parked": {
+            "type": "boolean"
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "taskPriority": {
+            "type": "string"
+          },
+          "taskStatus": {
+            "type": "string"
+          },
+          "taskTitle": {
+            "type": "string"
+          },
+          "waitingFor": {
+            "enum": [
+              "human",
+              "agent",
+              "unassigned"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "taskId",
+          "taskTitle",
+          "taskStatus",
+          "taskPriority",
+          "assigneeAgentId",
+          "assigneeSessionName",
+          "parked",
+          "waitingFor",
+          "ageSeconds",
+          "decisionCount",
+          "decisions"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "filters": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "ownerType": {
+          "enum": [
+            "human",
+            "agent",
+            "unassigned"
+          ],
+          "type": "string"
+        },
+        "taskId": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "generatedAt": {
+      "type": "number"
+    },
+    "kind": {
+      "const": "task.decision.attention",
+      "type": "string"
+    },
+    "parkedCount": {
+      "type": "number"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "kind",
+    "generatedAt",
+    "total",
+    "parkedCount",
+    "decisionCount",
+    "filters",
+    "entries"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -108591,7 +109048,7 @@ export const TasksAutomationsAddInputSchema = {
       "type": "string"
     },
     "on": {
-      "description": "Comma-separated events: task.blocked,task.done,task.failed,task.child.blocked,task.child.done,task.child.failed",
+      "description": "Comma-separated events: task.blocked,task.done,task.failed,task.decision.open,task.decision.answered,task.child.blocked,task.child.done,task.child.failed",
       "type": "string"
     },
     "priority": {
@@ -109266,6 +109723,257 @@ export const TasksCreateReturnSchema = {
     "dependencies",
     "dependents",
     "launchPlan"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `tasks.decide`. */
+export const TasksDecideInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "ask": {
+      "description": "The pending question",
+      "type": "string"
+    },
+    "blocks": {
+      "description": "Park the task on this decision",
+      "type": "boolean"
+    },
+    "key": {
+      "description": "Stable decision slug, unique while open per task",
+      "type": "string"
+    },
+    "owner": {
+      "description": "human:<contact>|agent:<id>|unassigned (default: unassigned)",
+      "type": "string"
+    },
+    "taskId": {
+      "description": "Task ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "taskId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `tasks.decide`. */
+export const TasksDecideReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "created": {
+      "type": "boolean"
+    },
+    "decision": {
+      "additionalProperties": false,
+      "properties": {
+        "answer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ask": {
+          "type": "string"
+        },
+        "askedAt": {
+          "type": "number"
+        },
+        "askedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blocks": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "ownerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ownerType": {
+          "enum": [
+            "human",
+            "agent",
+            "unassigned"
+          ],
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "open",
+            "answered",
+            "superseded"
+          ],
+          "type": "string"
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "taskId",
+        "key",
+        "status",
+        "ownerType",
+        "ownerId",
+        "ask",
+        "askedBy",
+        "askedAt",
+        "answer",
+        "answeredBy",
+        "answeredAt",
+        "blocks",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "event": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "type": "string"
+        },
+        "agentId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "id": {
+          "type": "number"
+        },
+        "message": {
+          "type": "string"
+        },
+        "progress": {
+          "type": "number"
+        },
+        "sessionName": {
+          "type": "string"
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "task.decision.open",
+            "task.decision.answered"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "taskId",
+        "type",
+        "createdAt"
+      ],
+      "type": "object"
+    },
+    "task": {
+      "additionalProperties": false,
+      "properties": {
+        "assigneeAgentId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "assigneeSessionName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "priority": {
+          "type": "string"
+        },
+        "progress": {
+          "type": "number"
+        },
+        "status": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "status",
+        "priority",
+        "progress"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "task",
+    "decision",
+    "event"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;

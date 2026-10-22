@@ -28497,6 +28497,50 @@ class TagsShowReturn {
 
 TagsShowReturn tagsShowReturnFromJson(Object? json) => TagsShowReturn.fromJsonValue(json);
 
+class TasksAnswerOptions {
+  const TasksAnswerOptions({this.by, this.key, this.text});
+
+  final String? by;
+  final String? key;
+  final String? text;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (by != null) {
+      into["by"] = RaviJson.from(by);
+    }
+    if (key != null) {
+      into["key"] = RaviJson.from(key);
+    }
+    if (text != null) {
+      into["text"] = RaviJson.from(text);
+    }
+  }
+}
+
+class TasksAnswerReturn {
+  const TasksAnswerReturn({this.created, required this.decision, required this.event, required this.task});
+
+  final bool? created;
+  final RaviJson decision;
+  final RaviJson event;
+  final RaviJson task;
+
+  factory TasksAnswerReturn.fromJson(Map<String, Object?> json) {
+    return TasksAnswerReturn(
+      created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
+      decision: RaviJson.from(json["decision"]),
+      event: RaviJson.from(json["event"]),
+      task: RaviJson.from(json["task"]),
+    );
+  }
+
+  static TasksAnswerReturn fromJsonValue(Object? json) {
+    return TasksAnswerReturn.fromJson(raviJsonObject(json, "TasksAnswerReturn"));
+  }
+}
+
+TasksAnswerReturn tasksAnswerReturnFromJson(Object? json) => TasksAnswerReturn.fromJsonValue(json);
+
 class TasksArchiveOptions {
   const TasksArchiveOptions({this.reason});
 
@@ -28528,6 +28572,56 @@ class TasksArchiveReturn {
 }
 
 TasksArchiveReturn tasksArchiveReturnFromJson(Object? json) => TasksArchiveReturn.fromJsonValue(json);
+
+class TasksAttentionOptions {
+  const TasksAttentionOptions({this.agent, this.owner, this.task});
+
+  final String? agent;
+  final String? owner;
+  final String? task;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (agent != null) {
+      into["agent"] = RaviJson.from(agent);
+    }
+    if (owner != null) {
+      into["owner"] = RaviJson.from(owner);
+    }
+    if (task != null) {
+      into["task"] = RaviJson.from(task);
+    }
+  }
+}
+
+class TasksAttentionReturn {
+  const TasksAttentionReturn({required this.decisionCount, required this.entries, required this.filters, required this.generatedAt, required this.kind, required this.parkedCount, required this.total});
+
+  final double decisionCount;
+  final List<RaviJson> entries;
+  final RaviJson filters;
+  final double generatedAt;
+  final String kind;
+  final double parkedCount;
+  final double total;
+
+  factory TasksAttentionReturn.fromJson(Map<String, Object?> json) {
+    return TasksAttentionReturn(
+      decisionCount: raviJsonAsDouble(json["decisionCount"]),
+      entries: raviJsonAsList(json["entries"], RaviJson.from),
+      filters: RaviJson.from(json["filters"]),
+      generatedAt: raviJsonAsDouble(json["generatedAt"]),
+      kind: raviJsonAsString(json["kind"]),
+      parkedCount: raviJsonAsDouble(json["parkedCount"]),
+      total: raviJsonAsDouble(json["total"]),
+    );
+  }
+
+  static TasksAttentionReturn fromJsonValue(Object? json) {
+    return TasksAttentionReturn.fromJson(raviJsonObject(json, "TasksAttentionReturn"));
+  }
+}
+
+TasksAttentionReturn tasksAttentionReturnFromJson(Object? json) => TasksAttentionReturn.fromJsonValue(json);
 
 class TasksAutomationsAddOptions {
   const TasksAutomationsAddOptions({this.agent, this.checkpoint, this.detached, this.disabled, this.filter, this.freshCheckpoint, this.freshReportEvents, this.freshReportTo, this.freshWorktree, this.input, this.instructions, this.on, this.priority, this.profile, this.reportEvents, this.reportTo, this.session, this.title});
@@ -28970,6 +29064,54 @@ class TasksCreateReturn {
 }
 
 TasksCreateReturn tasksCreateReturnFromJson(Object? json) => TasksCreateReturn.fromJsonValue(json);
+
+class TasksDecideOptions {
+  const TasksDecideOptions({this.ask, this.blocks, this.key, this.owner});
+
+  final String? ask;
+  final bool? blocks;
+  final String? key;
+  final String? owner;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (ask != null) {
+      into["ask"] = RaviJson.from(ask);
+    }
+    if (blocks != null) {
+      into["blocks"] = RaviJson.from(blocks);
+    }
+    if (key != null) {
+      into["key"] = RaviJson.from(key);
+    }
+    if (owner != null) {
+      into["owner"] = RaviJson.from(owner);
+    }
+  }
+}
+
+class TasksDecideReturn {
+  const TasksDecideReturn({this.created, required this.decision, required this.event, required this.task});
+
+  final bool? created;
+  final RaviJson decision;
+  final RaviJson event;
+  final RaviJson task;
+
+  factory TasksDecideReturn.fromJson(Map<String, Object?> json) {
+    return TasksDecideReturn(
+      created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
+      decision: RaviJson.from(json["decision"]),
+      event: RaviJson.from(json["event"]),
+      task: RaviJson.from(json["task"]),
+    );
+  }
+
+  static TasksDecideReturn fromJsonValue(Object? json) {
+    return TasksDecideReturn.fromJson(raviJsonObject(json, "TasksDecideReturn"));
+  }
+}
+
+TasksDecideReturn tasksDecideReturnFromJson(Object? json) => TasksDecideReturn.fromJsonValue(json);
 
 class TasksDepsAddReturn {
   const TasksDepsAddReturn({required this.event, required this.task});

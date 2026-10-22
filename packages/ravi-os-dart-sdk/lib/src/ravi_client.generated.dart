@@ -9379,6 +9379,18 @@ class TasksNamespace {
 
   TasksProfilesNamespace get profiles => TasksProfilesNamespace(_transport);
 
+  Future<TasksAnswerReturn> answer(String taskId, [TasksAnswerOptions options = const TasksAnswerOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["taskId"] = RaviJson.from(taskId);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["tasks"],
+      command: "answer",
+      body: requestBody,
+      decode: tasksAnswerReturnFromJson,
+    );
+  }
+
   Future<TasksArchiveReturn> archive(String taskId, [TasksArchiveOptions options = const TasksArchiveOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["taskId"] = RaviJson.from(taskId);
@@ -9388,6 +9400,17 @@ class TasksNamespace {
       command: "archive",
       body: requestBody,
       decode: tasksArchiveReturnFromJson,
+    );
+  }
+
+  Future<TasksAttentionReturn> attention([TasksAttentionOptions options = const TasksAttentionOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["tasks"],
+      command: "attention",
+      body: requestBody,
+      decode: tasksAttentionReturnFromJson,
     );
   }
 
@@ -9425,6 +9448,18 @@ class TasksNamespace {
       command: "create",
       body: requestBody,
       decode: tasksCreateReturnFromJson,
+    );
+  }
+
+  Future<TasksDecideReturn> decide(String taskId, [TasksDecideOptions options = const TasksDecideOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["taskId"] = RaviJson.from(taskId);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["tasks"],
+      command: "decide",
+      body: requestBody,
+      decode: tasksDecideReturnFromJson,
     );
   }
 

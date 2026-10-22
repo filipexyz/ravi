@@ -6512,11 +6512,24 @@ public struct TasksNamespace: Sendable {
     TasksProfilesNamespace(transport: transport)
   }
 
+  public func answer(_ taskId: String, _ options: TasksAnswerOptions = .init()) async throws -> TasksAnswerReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["taskId"] = try RaviJSON.fromEncodable(taskId)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["tasks"], command: "answer", body: requestBody, as: TasksAnswerReturn.self)
+  }
+
   public func archive(_ taskId: String, _ options: TasksArchiveOptions = .init()) async throws -> TasksArchiveReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["taskId"] = try RaviJSON.fromEncodable(taskId)
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["tasks"], command: "archive", body: requestBody, as: TasksArchiveReturn.self)
+  }
+
+  public func attention(_ options: TasksAttentionOptions = .init()) async throws -> TasksAttentionReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["tasks"], command: "attention", body: requestBody, as: TasksAttentionReturn.self)
   }
 
   public func block(_ taskId: String, _ options: TasksBlockOptions = .init()) async throws -> TasksBlockReturn {
@@ -6539,6 +6552,13 @@ public struct TasksNamespace: Sendable {
     requestBody["title"] = try RaviJSON.fromEncodable(title)
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["tasks"], command: "create", body: requestBody, as: TasksCreateReturn.self)
+  }
+
+  public func decide(_ taskId: String, _ options: TasksDecideOptions = .init()) async throws -> TasksDecideReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["taskId"] = try RaviJSON.fromEncodable(taskId)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["tasks"], command: "decide", body: requestBody, as: TasksDecideReturn.self)
   }
 
   public func dispatch(_ taskId: String, _ options: TasksDispatchOptions = .init()) async throws -> TasksDispatchReturn {

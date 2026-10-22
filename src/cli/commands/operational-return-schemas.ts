@@ -1565,6 +1565,93 @@ export const taskCommentReturnSchema = taskMutationReturnSchema
   })
   .passthrough();
 
+const taskDecisionTaskReturnSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  status: z.string(),
+  priority: z.string(),
+  progress: z.number(),
+  assigneeAgentId: z.string().nullable().optional(),
+  assigneeSessionName: z.string().nullable().optional(),
+});
+
+const taskDecisionEventReturnSchema = z.object({
+  id: z.number(),
+  taskId: z.string(),
+  type: z.enum(["task.decision.open", "task.decision.answered"]),
+  actor: z.string().optional(),
+  agentId: z.string().optional(),
+  sessionName: z.string().optional(),
+  message: z.string().optional(),
+  progress: z.number().optional(),
+  createdAt: z.number(),
+});
+
+const taskDecisionRecordReturnSchema = z.object({
+  id: z.string(),
+  taskId: z.string(),
+  key: z.string(),
+  status: z.enum(["open", "answered", "superseded"]),
+  ownerType: z.enum(["human", "agent", "unassigned"]),
+  ownerId: z.string().nullable(),
+  ask: z.string(),
+  askedBy: z.string().nullable(),
+  askedAt: z.number(),
+  answer: z.string().nullable(),
+  answeredBy: z.string().nullable(),
+  answeredAt: z.number().nullable(),
+  blocks: z.boolean(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+export const taskDecisionMutationReturnSchema = z.object({
+  task: taskDecisionTaskReturnSchema,
+  decision: taskDecisionRecordReturnSchema,
+  event: taskDecisionEventReturnSchema,
+  created: z.boolean().optional(),
+});
+
+const taskDecisionAttentionItemReturnSchema = z.object({
+  id: z.string(),
+  key: z.string(),
+  ask: z.string(),
+  ownerType: z.enum(["human", "agent", "unassigned"]),
+  ownerId: z.string().nullable(),
+  askedBy: z.string().nullable(),
+  askedAt: z.number(),
+  blocks: z.boolean(),
+  ageSeconds: z.number(),
+});
+
+const taskDecisionAttentionEntryReturnSchema = z.object({
+  taskId: z.string(),
+  taskTitle: z.string(),
+  taskStatus: z.string(),
+  taskPriority: z.string(),
+  assigneeAgentId: z.string().nullable(),
+  assigneeSessionName: z.string().nullable(),
+  parked: z.boolean(),
+  waitingFor: z.enum(["human", "agent", "unassigned"]),
+  ageSeconds: z.number(),
+  decisionCount: z.number(),
+  decisions: z.array(taskDecisionAttentionItemReturnSchema),
+});
+
+export const taskDecisionAttentionReturnSchema = z.object({
+  kind: z.literal("task.decision.attention"),
+  generatedAt: z.number(),
+  total: z.number(),
+  parkedCount: z.number(),
+  decisionCount: z.number(),
+  filters: z.object({
+    agentId: z.string().optional(),
+    ownerType: z.enum(["human", "agent", "unassigned"]).optional(),
+    taskId: z.string().optional(),
+  }),
+  entries: z.array(taskDecisionAttentionEntryReturnSchema),
+});
+
 export const taskDispatchReturnSchema = z
   .object({
     mode: z.string(),
