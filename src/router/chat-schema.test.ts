@@ -1322,6 +1322,25 @@ describe("slack thread lifecycle schema", () => {
 
     expect(lifecycleColumns(getDb())).toContain("requested_by");
   });
+
+  it("adds the thread runtime columns to a ravi.db created before threads could pin them", () => {
+    const columns = ["provider_override", "effort_override", "thinking_level"];
+    for (const column of columns) {
+      expect(lifecycleColumns(getDb())).toContain(column);
+    }
+    closeRouterDb();
+
+    const legacyDb = new Database(join(stateDir!, "ravi.db"));
+    for (const column of columns) {
+      legacyDb.exec(`ALTER TABLE slack_thread_lifecycle DROP COLUMN ${column}`);
+      expect(lifecycleColumns(legacyDb)).not.toContain(column);
+    }
+    legacyDb.close();
+
+    for (const column of columns) {
+      expect(lifecycleColumns(getDb())).toContain(column);
+    }
+  });
 });
 
 describe("session_events index budget", () => {

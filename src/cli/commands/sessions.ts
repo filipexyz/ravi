@@ -6432,7 +6432,19 @@ export class SessionCommands {
     // agent default while `--model` was measured against a different runtime.
     const inheritedProvider = creationTarget.parentSession.runtimeProviderOverride?.trim() || undefined;
     const resolvedProvider = normalizedProvider ?? inheritedProvider;
-    const providerMismatch = modelProviderMismatch(resolvedProvider as RuntimeProviderId | undefined, normalizedModel);
+    // The check needs the runtime the child will actually start on, which is the
+    // parent's effective provider when nothing was pinned. That value is used for
+    // validation only: storing it would pin a thread that should follow its agent.
+    const parentProvider =
+      resolvedProvider ??
+      resolveEffectiveSessionRuntime({
+        session: creationTarget.parentSession,
+        agent:
+          getAgent(creationTarget.parentSession.agentId) ??
+          loadRouterConfig().agents[creationTarget.parentSession.agentId] ??
+          null,
+      }).provider.value;
+    const providerMismatch = modelProviderMismatch(parentProvider, normalizedModel);
     if (providerMismatch) {
       fail(providerMismatch);
       return;

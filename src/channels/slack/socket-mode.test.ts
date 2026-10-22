@@ -976,6 +976,39 @@ describe("Slack Socket Mode routing", () => {
     ).rejects.toThrow(/Slack reaction was not accepted: invalid_name/);
   });
 
+  it("shows the requested runtime on the thread root card", async () => {
+    const postMessage = mock(async () => ({
+      channel: "C123",
+      ts: "1713000000.000200",
+      messageId: "1713000000.000200",
+      raw: { ok: true },
+    }));
+    const delivery = new SlackChatActionDelivery({ postMessage } as never);
+    const runtime = "codex · gpt-5.4 · high";
+
+    await delivery.executeChatAction({
+      sessionName: "ravi-slack-channel",
+      idempotencyKey: "thread-runtime",
+      target: { channel: "slack", accountId: "ravi-slack", chatId: "C123" },
+      action: {
+        type: "chat_action",
+        actionId: "thread.create",
+        text: "Investigate this branch",
+        runtime,
+      },
+    });
+
+    const card = buildSlackThreadCard("Investigate this branch", { status: "open", runtime });
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: "C123",
+        text: "Investigate this branch",
+        blocks: card.blocks,
+      }),
+    );
+    expect(JSON.stringify(card.blocks)).toContain(`runtime ${runtime}`);
+  });
+
   it("creates a native Slack thread root with a stable client message id", async () => {
     const postMessage = mock(async () => ({
       channel: "C123",

@@ -30,6 +30,7 @@ import type {
   RuntimeTurnOriginPrincipal,
 } from "../../runtime/message-types.js";
 import { buildSessionRelayTurnOrigin, type SessionRelayOriginContext } from "../../runtime/turn-origin.js";
+import { applyProviderModelRule } from "../../runtime/model-catalog.js";
 import { resolveEffectiveSessionRuntime } from "../../runtime/runtime-selection.js";
 import { logger } from "../../utils/logger.js";
 import {
@@ -495,11 +496,14 @@ export function summarizeSlackThreadRuntime(record: SlackThreadLifecycleRecord):
   }
   const agent = getAgent(child.agentId) ?? loadRouterConfig().agents[child.agentId] ?? null;
   const resolved = resolveEffectiveSessionRuntime({ session: child, agent });
+  // Report the model the runtime will actually run, not the alias it was handed.
+  const effectiveModel = applyProviderModelRule(resolved.provider.value, resolved.model.value);
+  const modelRemapped = effectiveModel !== null && effectiveModel !== resolved.model.value;
   return {
     provider: resolved.provider.value,
     providerSource: resolved.provider.source,
-    model: resolved.model.value,
-    modelSource: resolved.model.source,
+    model: effectiveModel,
+    modelSource: modelRemapped ? "provider_remap" : resolved.model.source,
     effort: resolved.effort.value,
     effortSource: resolved.effort.source,
     thinking: resolved.thinking.value ?? null,

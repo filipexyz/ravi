@@ -2125,6 +2125,73 @@ describe("SessionCommands attach hints", () => {
     expect(publishedOutboundJobs).toHaveLength(0);
   });
 
+  it("checks the model against the runtime the child will actually start on", async () => {
+    const sessionKey = "agent:dev:slack:ravi-slack:C123";
+    resolvedSession = {
+      sessionKey,
+      name: "dev-slack",
+      agentId: "dev",
+      agentCwd: "/tmp/dev",
+    };
+    toolContext = {
+      sessionKey,
+      sessionName: "dev-slack",
+      source: {
+        channel: "slack",
+        accountId: "ravi-slack",
+        instanceId: "ravi-slack",
+        chatId: "C123",
+        canonicalChatId: "chat_slack",
+      },
+    };
+    sessionSubscriptions = [
+      {
+        id: "sub_slack",
+        sessionKey,
+        chatId: "chat_slack",
+        role: "primary",
+        outputAttachedAt: 1,
+      },
+    ];
+    chatRecords.set("chat_slack", {
+      id: "chat_slack",
+      title: "ravi",
+      channel: "slack",
+      instanceId: "ravi-slack",
+      platformChatId: "C123",
+      chatType: "channel",
+    });
+    // Nothing pins the child here: its runtime comes from the agent, and that is
+    // the provider the model has to be valid for.
+    routerConfig = {
+      agents: { dev: { id: "dev", name: "dev", cwd: "/tmp/dev", provider: "claude" } },
+      channels: {
+        "ravi-slack": {
+          name: "ravi-slack",
+          provider: "slack",
+          enabled: true,
+          credentialConnection: "ravi-slack-secret",
+        },
+      },
+      instances: {},
+      instanceToAccount: {},
+    };
+
+    await expect(
+      new SessionCommands().createThread(
+        "Investigate this branch",
+        "gpt-5.6",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      ),
+    ).rejects.toThrow(/does not belong to the claude runtime/);
+    expect(createdSlackThreadLifecycles).toHaveLength(0);
+    expect(publishedOutboundJobs).toHaveLength(0);
+  });
+
   it("closes the current Slack child and opts into a parent return only with --return", async () => {
     const childKey = "agent:dev:slack:ravi-slack:C123:thread:1713000000.000100";
     resolvedSession = {

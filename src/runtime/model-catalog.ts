@@ -160,6 +160,19 @@ export function isClaudeModelAlias(model: string | null | undefined): boolean {
   return CLAUDE_MODEL_ALIASES.has(value) || value.includes("claude");
 }
 
+/**
+ * The model a runtime will actually run for a requested model.
+ *
+ * Non-Claude runtimes cannot run a Claude alias, so the launcher replaces it
+ * with the provider default. Display paths share this rule so `sessions threads`
+ * cannot claim a model the runtime will not use.
+ */
+export function applyProviderModelRule(provider: RuntimeProviderId, model: string | null | undefined): string | null {
+  const value = model?.trim();
+  if (!value) return null;
+  return provider !== "claude" && isClaudeModelAlias(value) ? resolvePreferredRuntimeModel(provider, value) : value;
+}
+
 /** Model families that are unambiguously owned by a non-Claude runtime. */
 const FOREIGN_MODEL_PATTERN = /^(gpt[-_.]?\d|gpt-|o[1-9]([-_.]|$)|codex|grok|gemini|llama|mistral|deepseek)/i;
 
