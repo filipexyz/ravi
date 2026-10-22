@@ -19008,6 +19008,846 @@ export type SettingsSetReturn = {
   };
 };
 
+/** Input shape for `signals.ack`. */
+export type SignalsAckInput = {
+  by?: string;
+  idOrKey: string;
+  note?: string;
+};
+
+/** Return shape for `signals.ack`. */
+export type SignalsAckReturn = {
+  created?: boolean;
+  signal: {
+    acknowledgedAt?: number | null;
+    acknowledgedBy?: string | null;
+    clearSince?: number | null;
+    clearWhen: ({
+      expr: string;
+      grace_ms: number;
+      probe: string;
+      recheck_ms: number;
+      type: "probe";
+    }) | ({
+      field: string;
+      op: string;
+      recheck_ms: number;
+      type: "metric";
+      value: number;
+    }) | ({
+      ttl_ms: number;
+      type: "producer_resolve";
+    }) | ({
+      after_ms: number;
+      type: "decay";
+    }) | ({
+      owner?: string;
+      type: "manual";
+    });
+    closeReason?: string | null;
+    closedAt?: number | null;
+    cooldownMs: number;
+    createdAt: number;
+    dedupeKey?: string;
+    detail?: string;
+    escalateAfterMs?: number | null;
+    escalationCount: number;
+    evidence?: Record<string, unknown>;
+    id: string;
+    key: string;
+    kind: string;
+    lastEvalAt?: number | null;
+    lastEvalError?: string | null;
+    lastSeenAt: number;
+    maxSurfaces: number;
+    muteReason?: string;
+    mutedUntil?: number | null;
+    openedAt: number;
+    previousState?: string;
+    producerClass: string;
+    producerId: string;
+    producerType: string;
+    renotifyAfterMs: number;
+    reopenAfterMs: number;
+    schemaVersion: number;
+    scopeId: string;
+    scopeType: string;
+    severity: string;
+    state: string;
+    subjectId?: string;
+    subjectType?: string;
+    surfaceCount: number;
+    surfacedAt?: number | null;
+    targetSessions?: string[];
+    title: string;
+    ttlMs: number;
+    updatedAt: number;
+    version: number;
+  };
+  status: string;
+  suppressed?: string;
+  updated?: boolean;
+};
+
+/** Input shape for `signals.budget`. */
+export type SignalsBudgetInput = Record<string, never>;
+
+/** Return shape for `signals.budget`. */
+export type SignalsBudgetReturn = {
+  budget: {
+    day: string;
+    held: number;
+    limit: number;
+    used: number;
+  };
+};
+
+/** Input shape for `signals.explain`. */
+export type SignalsExplainInput = {
+  idOrKey: string;
+};
+
+/** Return shape for `signals.explain`. */
+export type SignalsExplainReturn = {
+  budget: {
+    day: string;
+    held: number;
+    limit: number;
+    used: number;
+  };
+  clearRule: string;
+  effectiveSeverity: string;
+  events: Array<{
+    actorId?: string;
+    actorType?: string;
+    createdAt: number;
+    id: number;
+    message?: string;
+    payload?: Record<string, unknown>;
+    signalId: string;
+    type: string;
+  }>;
+  keyMute: ({
+    mutedUntil: number;
+    reason?: string;
+  }) | null;
+  lastEvaluation: {
+    at: number | null;
+    cleared: boolean | null;
+    error: string | null;
+    fields?: Record<string, unknown>;
+  };
+  lastOobAt: number | null;
+  lastSurfaceAt: number | null;
+  signal: {
+    acknowledgedAt?: number | null;
+    acknowledgedBy?: string | null;
+    clearSince?: number | null;
+    clearWhen: ({
+      expr: string;
+      grace_ms: number;
+      probe: string;
+      recheck_ms: number;
+      type: "probe";
+    }) | ({
+      field: string;
+      op: string;
+      recheck_ms: number;
+      type: "metric";
+      value: number;
+    }) | ({
+      ttl_ms: number;
+      type: "producer_resolve";
+    }) | ({
+      after_ms: number;
+      type: "decay";
+    }) | ({
+      owner?: string;
+      type: "manual";
+    });
+    closeReason?: string | null;
+    closedAt?: number | null;
+    cooldownMs: number;
+    createdAt: number;
+    dedupeKey?: string;
+    detail?: string;
+    escalateAfterMs?: number | null;
+    escalationCount: number;
+    evidence?: Record<string, unknown>;
+    id: string;
+    key: string;
+    kind: string;
+    lastEvalAt?: number | null;
+    lastEvalError?: string | null;
+    lastSeenAt: number;
+    maxSurfaces: number;
+    muteReason?: string;
+    mutedUntil?: number | null;
+    openedAt: number;
+    previousState?: string;
+    producerClass: string;
+    producerId: string;
+    producerType: string;
+    renotifyAfterMs: number;
+    reopenAfterMs: number;
+    schemaVersion: number;
+    scopeId: string;
+    scopeType: string;
+    severity: string;
+    state: string;
+    subjectId?: string;
+    subjectType?: string;
+    surfaceCount: number;
+    surfacedAt?: number | null;
+    targetSessions?: string[];
+    title: string;
+    ttlMs: number;
+    updatedAt: number;
+    version: number;
+  };
+  targetSessions: string[];
+};
+
+/** Input shape for `signals.list`. */
+export type SignalsListInput = {
+  key?: string;
+  limit?: string;
+  offset?: string;
+  scope?: string;
+  state?: string;
+};
+
+/** Return shape for `signals.list`. */
+export type SignalsListReturn = {
+  items: Array<{
+    acknowledgedAt?: number | null;
+    acknowledgedBy?: string | null;
+    clearSince?: number | null;
+    clearWhen: ({
+      expr: string;
+      grace_ms: number;
+      probe: string;
+      recheck_ms: number;
+      type: "probe";
+    }) | ({
+      field: string;
+      op: string;
+      recheck_ms: number;
+      type: "metric";
+      value: number;
+    }) | ({
+      ttl_ms: number;
+      type: "producer_resolve";
+    }) | ({
+      after_ms: number;
+      type: "decay";
+    }) | ({
+      owner?: string;
+      type: "manual";
+    });
+    closeReason?: string | null;
+    closedAt?: number | null;
+    cooldownMs: number;
+    createdAt: number;
+    dedupeKey?: string;
+    detail?: string;
+    escalateAfterMs?: number | null;
+    escalationCount: number;
+    evidence?: Record<string, unknown>;
+    id: string;
+    key: string;
+    kind: string;
+    lastEvalAt?: number | null;
+    lastEvalError?: string | null;
+    lastSeenAt: number;
+    maxSurfaces: number;
+    muteReason?: string;
+    mutedUntil?: number | null;
+    openedAt: number;
+    previousState?: string;
+    producerClass: string;
+    producerId: string;
+    producerType: string;
+    renotifyAfterMs: number;
+    reopenAfterMs: number;
+    schemaVersion: number;
+    scopeId: string;
+    scopeType: string;
+    severity: string;
+    state: string;
+    subjectId?: string;
+    subjectType?: string;
+    surfaceCount: number;
+    surfacedAt?: number | null;
+    targetSessions?: string[];
+    title: string;
+    ttlMs: number;
+    updatedAt: number;
+    version: number;
+  }>;
+  total: number;
+};
+
+/** Input shape for `signals.mute`. */
+export type SignalsMuteInput = {
+  by?: string;
+  for?: string;
+  idOrKey: string;
+  reason?: string;
+};
+
+/** Return shape for `signals.mute`. */
+export type SignalsMuteReturn = {
+  created?: boolean;
+  signal: {
+    acknowledgedAt?: number | null;
+    acknowledgedBy?: string | null;
+    clearSince?: number | null;
+    clearWhen: ({
+      expr: string;
+      grace_ms: number;
+      probe: string;
+      recheck_ms: number;
+      type: "probe";
+    }) | ({
+      field: string;
+      op: string;
+      recheck_ms: number;
+      type: "metric";
+      value: number;
+    }) | ({
+      ttl_ms: number;
+      type: "producer_resolve";
+    }) | ({
+      after_ms: number;
+      type: "decay";
+    }) | ({
+      owner?: string;
+      type: "manual";
+    });
+    closeReason?: string | null;
+    closedAt?: number | null;
+    cooldownMs: number;
+    createdAt: number;
+    dedupeKey?: string;
+    detail?: string;
+    escalateAfterMs?: number | null;
+    escalationCount: number;
+    evidence?: Record<string, unknown>;
+    id: string;
+    key: string;
+    kind: string;
+    lastEvalAt?: number | null;
+    lastEvalError?: string | null;
+    lastSeenAt: number;
+    maxSurfaces: number;
+    muteReason?: string;
+    mutedUntil?: number | null;
+    openedAt: number;
+    previousState?: string;
+    producerClass: string;
+    producerId: string;
+    producerType: string;
+    renotifyAfterMs: number;
+    reopenAfterMs: number;
+    schemaVersion: number;
+    scopeId: string;
+    scopeType: string;
+    severity: string;
+    state: string;
+    subjectId?: string;
+    subjectType?: string;
+    surfaceCount: number;
+    surfacedAt?: number | null;
+    targetSessions?: string[];
+    title: string;
+    ttlMs: number;
+    updatedAt: number;
+    version: number;
+  };
+  status: string;
+  suppressed?: string;
+  updated?: boolean;
+};
+
+/** Input shape for `signals.mute-key`. */
+export type SignalsMuteKeyInput = {
+  for?: string;
+  key: string;
+  reason?: string;
+};
+
+/** Return shape for `signals.mute-key`. */
+export type SignalsMuteKeyReturn = {
+  key: string;
+  mutedUntil: number;
+  reason?: string;
+  status: string;
+};
+
+/** Input shape for `signals.raise`. */
+export type SignalsRaiseInput = {
+  clearDecay?: string;
+  clearExpr?: string;
+  clearManual?: boolean;
+  clearMetric?: string;
+  clearProbe?: string;
+  clearProducerResolve?: boolean;
+  cooldown?: string;
+  dedupeKey?: string;
+  detail?: string;
+  escalateAfter?: string;
+  evidence?: string;
+  grace?: string;
+  key: string;
+  kind?: string;
+  maxSurfaces?: string;
+  recheck?: string;
+  renotifyAfter?: string;
+  reopenAfter?: string;
+  scope?: string;
+  severity?: string;
+  source?: string;
+  subject?: string;
+  targetSession?: string;
+  title?: string;
+  ttl?: string;
+};
+
+/** Return shape for `signals.raise`. */
+export type SignalsRaiseReturn = {
+  created?: boolean;
+  signal: {
+    acknowledgedAt?: number | null;
+    acknowledgedBy?: string | null;
+    clearSince?: number | null;
+    clearWhen: ({
+      expr: string;
+      grace_ms: number;
+      probe: string;
+      recheck_ms: number;
+      type: "probe";
+    }) | ({
+      field: string;
+      op: string;
+      recheck_ms: number;
+      type: "metric";
+      value: number;
+    }) | ({
+      ttl_ms: number;
+      type: "producer_resolve";
+    }) | ({
+      after_ms: number;
+      type: "decay";
+    }) | ({
+      owner?: string;
+      type: "manual";
+    });
+    closeReason?: string | null;
+    closedAt?: number | null;
+    cooldownMs: number;
+    createdAt: number;
+    dedupeKey?: string;
+    detail?: string;
+    escalateAfterMs?: number | null;
+    escalationCount: number;
+    evidence?: Record<string, unknown>;
+    id: string;
+    key: string;
+    kind: string;
+    lastEvalAt?: number | null;
+    lastEvalError?: string | null;
+    lastSeenAt: number;
+    maxSurfaces: number;
+    muteReason?: string;
+    mutedUntil?: number | null;
+    openedAt: number;
+    previousState?: string;
+    producerClass: string;
+    producerId: string;
+    producerType: string;
+    renotifyAfterMs: number;
+    reopenAfterMs: number;
+    schemaVersion: number;
+    scopeId: string;
+    scopeType: string;
+    severity: string;
+    state: string;
+    subjectId?: string;
+    subjectType?: string;
+    surfaceCount: number;
+    surfacedAt?: number | null;
+    targetSessions?: string[];
+    title: string;
+    ttlMs: number;
+    updatedAt: number;
+    version: number;
+  };
+  status: string;
+  suppressed?: string;
+  updated?: boolean;
+};
+
+/** Input shape for `signals.resolve`. */
+export type SignalsResolveInput = {
+  by?: string;
+  idOrKey: string;
+  reason?: string;
+};
+
+/** Return shape for `signals.resolve`. */
+export type SignalsResolveReturn = {
+  created?: boolean;
+  signal: {
+    acknowledgedAt?: number | null;
+    acknowledgedBy?: string | null;
+    clearSince?: number | null;
+    clearWhen: ({
+      expr: string;
+      grace_ms: number;
+      probe: string;
+      recheck_ms: number;
+      type: "probe";
+    }) | ({
+      field: string;
+      op: string;
+      recheck_ms: number;
+      type: "metric";
+      value: number;
+    }) | ({
+      ttl_ms: number;
+      type: "producer_resolve";
+    }) | ({
+      after_ms: number;
+      type: "decay";
+    }) | ({
+      owner?: string;
+      type: "manual";
+    });
+    closeReason?: string | null;
+    closedAt?: number | null;
+    cooldownMs: number;
+    createdAt: number;
+    dedupeKey?: string;
+    detail?: string;
+    escalateAfterMs?: number | null;
+    escalationCount: number;
+    evidence?: Record<string, unknown>;
+    id: string;
+    key: string;
+    kind: string;
+    lastEvalAt?: number | null;
+    lastEvalError?: string | null;
+    lastSeenAt: number;
+    maxSurfaces: number;
+    muteReason?: string;
+    mutedUntil?: number | null;
+    openedAt: number;
+    previousState?: string;
+    producerClass: string;
+    producerId: string;
+    producerType: string;
+    renotifyAfterMs: number;
+    reopenAfterMs: number;
+    schemaVersion: number;
+    scopeId: string;
+    scopeType: string;
+    severity: string;
+    state: string;
+    subjectId?: string;
+    subjectType?: string;
+    surfaceCount: number;
+    surfacedAt?: number | null;
+    targetSessions?: string[];
+    title: string;
+    ttlMs: number;
+    updatedAt: number;
+    version: number;
+  };
+  status: string;
+  suppressed?: string;
+  updated?: boolean;
+};
+
+/** Input shape for `signals.show`. */
+export type SignalsShowInput = {
+  idOrKey: string;
+};
+
+/** Return shape for `signals.show`. */
+export type SignalsShowReturn = {
+  signal: {
+    acknowledgedAt?: number | null;
+    acknowledgedBy?: string | null;
+    clearSince?: number | null;
+    clearWhen: ({
+      expr: string;
+      grace_ms: number;
+      probe: string;
+      recheck_ms: number;
+      type: "probe";
+    }) | ({
+      field: string;
+      op: string;
+      recheck_ms: number;
+      type: "metric";
+      value: number;
+    }) | ({
+      ttl_ms: number;
+      type: "producer_resolve";
+    }) | ({
+      after_ms: number;
+      type: "decay";
+    }) | ({
+      owner?: string;
+      type: "manual";
+    });
+    closeReason?: string | null;
+    closedAt?: number | null;
+    cooldownMs: number;
+    createdAt: number;
+    dedupeKey?: string;
+    detail?: string;
+    escalateAfterMs?: number | null;
+    escalationCount: number;
+    evidence?: Record<string, unknown>;
+    id: string;
+    key: string;
+    kind: string;
+    lastEvalAt?: number | null;
+    lastEvalError?: string | null;
+    lastSeenAt: number;
+    maxSurfaces: number;
+    muteReason?: string;
+    mutedUntil?: number | null;
+    openedAt: number;
+    previousState?: string;
+    producerClass: string;
+    producerId: string;
+    producerType: string;
+    renotifyAfterMs: number;
+    reopenAfterMs: number;
+    schemaVersion: number;
+    scopeId: string;
+    scopeType: string;
+    severity: string;
+    state: string;
+    subjectId?: string;
+    subjectType?: string;
+    surfaceCount: number;
+    surfacedAt?: number | null;
+    targetSessions?: string[];
+    title: string;
+    ttlMs: number;
+    updatedAt: number;
+    version: number;
+  };
+};
+
+/** Input shape for `signals.tick`. */
+export type SignalsTickInput = {
+  execute?: boolean;
+};
+
+/** Return shape for `signals.tick`. */
+export type SignalsTickReturn = {
+  candidates: Array<{
+    id: string;
+    route: string;
+    sessionName: string;
+    severity: string;
+  }>;
+  errors: Array<{
+    error: string;
+    id: string;
+  }>;
+  escalated: number;
+  evaluated: number;
+  executed: boolean;
+  expired: number;
+  resolved: number;
+  watchers: Array<{
+    error?: string;
+    id: string;
+    raised: boolean;
+    resolved: boolean;
+  }>;
+};
+
+/** Input shape for `signals.unmute`. */
+export type SignalsUnmuteInput = {
+  idOrKey: string;
+};
+
+/** Return shape for `signals.unmute`. */
+export type SignalsUnmuteReturn = {
+  created?: boolean;
+  signal: {
+    acknowledgedAt?: number | null;
+    acknowledgedBy?: string | null;
+    clearSince?: number | null;
+    clearWhen: ({
+      expr: string;
+      grace_ms: number;
+      probe: string;
+      recheck_ms: number;
+      type: "probe";
+    }) | ({
+      field: string;
+      op: string;
+      recheck_ms: number;
+      type: "metric";
+      value: number;
+    }) | ({
+      ttl_ms: number;
+      type: "producer_resolve";
+    }) | ({
+      after_ms: number;
+      type: "decay";
+    }) | ({
+      owner?: string;
+      type: "manual";
+    });
+    closeReason?: string | null;
+    closedAt?: number | null;
+    cooldownMs: number;
+    createdAt: number;
+    dedupeKey?: string;
+    detail?: string;
+    escalateAfterMs?: number | null;
+    escalationCount: number;
+    evidence?: Record<string, unknown>;
+    id: string;
+    key: string;
+    kind: string;
+    lastEvalAt?: number | null;
+    lastEvalError?: string | null;
+    lastSeenAt: number;
+    maxSurfaces: number;
+    muteReason?: string;
+    mutedUntil?: number | null;
+    openedAt: number;
+    previousState?: string;
+    producerClass: string;
+    producerId: string;
+    producerType: string;
+    renotifyAfterMs: number;
+    reopenAfterMs: number;
+    schemaVersion: number;
+    scopeId: string;
+    scopeType: string;
+    severity: string;
+    state: string;
+    subjectId?: string;
+    subjectType?: string;
+    surfaceCount: number;
+    surfacedAt?: number | null;
+    targetSessions?: string[];
+    title: string;
+    ttlMs: number;
+    updatedAt: number;
+    version: number;
+  };
+  status: string;
+  suppressed?: string;
+  updated?: boolean;
+};
+
+/** Input shape for `signals.unmute-key`. */
+export type SignalsUnmuteKeyInput = {
+  key: string;
+};
+
+/** Return shape for `signals.unmute-key`. */
+export type SignalsUnmuteKeyReturn = {
+  key: string;
+  status: string;
+};
+
+/** Input shape for `signals.update`. */
+export type SignalsUpdateInput = {
+  by?: string;
+  detail?: string;
+  evidence?: string;
+  idOrKey: string;
+  severity?: string;
+  title?: string;
+};
+
+/** Return shape for `signals.update`. */
+export type SignalsUpdateReturn = {
+  created?: boolean;
+  signal: {
+    acknowledgedAt?: number | null;
+    acknowledgedBy?: string | null;
+    clearSince?: number | null;
+    clearWhen: ({
+      expr: string;
+      grace_ms: number;
+      probe: string;
+      recheck_ms: number;
+      type: "probe";
+    }) | ({
+      field: string;
+      op: string;
+      recheck_ms: number;
+      type: "metric";
+      value: number;
+    }) | ({
+      ttl_ms: number;
+      type: "producer_resolve";
+    }) | ({
+      after_ms: number;
+      type: "decay";
+    }) | ({
+      owner?: string;
+      type: "manual";
+    });
+    closeReason?: string | null;
+    closedAt?: number | null;
+    cooldownMs: number;
+    createdAt: number;
+    dedupeKey?: string;
+    detail?: string;
+    escalateAfterMs?: number | null;
+    escalationCount: number;
+    evidence?: Record<string, unknown>;
+    id: string;
+    key: string;
+    kind: string;
+    lastEvalAt?: number | null;
+    lastEvalError?: string | null;
+    lastSeenAt: number;
+    maxSurfaces: number;
+    muteReason?: string;
+    mutedUntil?: number | null;
+    openedAt: number;
+    previousState?: string;
+    producerClass: string;
+    producerId: string;
+    producerType: string;
+    renotifyAfterMs: number;
+    reopenAfterMs: number;
+    schemaVersion: number;
+    scopeId: string;
+    scopeType: string;
+    severity: string;
+    state: string;
+    subjectId?: string;
+    subjectType?: string;
+    surfaceCount: number;
+    surfacedAt?: number | null;
+    targetSessions?: string[];
+    title: string;
+    ttlMs: number;
+    updatedAt: number;
+    version: number;
+  };
+  status: string;
+  suppressed?: string;
+  updated?: boolean;
+};
+
 /** Input shape for `skill-gates.disable`. */
 export type SkillGatesDisableInput = {
   id: string;

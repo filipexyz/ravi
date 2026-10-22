@@ -3,6 +3,8 @@ import { resolveTaskCheckpointIntervalMs, TASK_CHECKPOINT_SWEEP_INTERVAL_MS } fr
 import { TASK_OBSERVER_ACTOR } from "./observer-contract.js";
 import { neutralizeSystemMarkers } from "./progress-contract.js";
 import { resolveTaskProfileForTask, taskProfileUsesObserver } from "./profiles.js";
+import { dbGetSetting } from "../router/router-db.js";
+import { raiseTaskStallSignal } from "../signals/producers/task.js";
 import { dbAppendTaskEvent, dbGetActiveAssignment, dbListTasks, dbRegisterTaskCheckpointMiss } from "./task-db.js";
 import {
   buildTaskCheckpointReminderPrompt,
@@ -15,11 +17,12 @@ import type { TaskEvent, TaskRecord } from "./types.js";
 
 const log = logger.child("tasks:checkpoint-runner");
 
-/** Record a stall and tell the requester. The observer never owns this path. */
+/** Record a stall and, unless the caller says signals already reported it, tell the requester. The observer never owns this path. */
 export async function recordTaskStall(
   task: TaskRecord,
   message: string,
   actor: { actor: string; agentId?: string; sessionName?: string },
+  options: { report?: boolean } = {},
 ): Promise<TaskEvent> {
   const { task: current, event } = dbAppendTaskEvent(task.id, "task.stalled", {
     ...actor,
@@ -27,10 +30,12 @@ export async function recordTaskStall(
     progress: task.progress,
   });
   await emitTaskEvent(current, event);
-  try {
-    await reportTaskStall(current, event);
-  } catch (error) {
-    log.warn("Failed to report task stall", { taskId: task.id, error });
+  if (options.report !== false) {
+    try {
+      await reportTaskStall(current, event);
+    } catch (error) {
+      log.warn("Failed to report task stall", { taskId: task.id, error });
+    }
   }
   return event;
 }
@@ -51,6 +56,7 @@ export function listTaskCheckpointSweepTasks(): TaskRecord[] {
 
 export interface TaskCheckpointRunnerOptions {
   canPublishSessionPrompt?(sessionName: string): boolean;
+  getSessionRuntimeState?(sessionName: string): { turnActive: boolean; pendingCount: number } | null;
 }
 
 export class TaskCheckpointRunner {
@@ -123,6 +129,34 @@ export class TaskCheckpointRunner {
           // silence detector: the observer pushes it on every read, so a miss means
           // nothing was seen for a whole interval, and the requester hears it once.
           if (taskProfileUsesObserver(resolveTaskProfileForTask(task))) {
+            let signalRaised = false;
+            if (this.options.getSessionRuntimeState && dbGetSetting("signals.enabled") === "true") {
+              try {
+                const runtimeState = this.options.getSessionRuntimeState(assignment.sessionName);
+                const signal = raiseTaskStallSignal({
+                  task,
+                  observation: runtimeState,
+                  sourceSession: assignment.sessionName,
+                });
+                if (signal.classification.action === "none") {
+                  log.debug("Task observer signal suppressed", {
+                    taskId: task.id,
+                    reason: signal.classification.reason,
+                  });
+                  continue;
+                }
+                signalRaised = Boolean(signal.raised);
+                if (signal.classification.action === "orphan") {
+                  continue;
+                }
+              } catch (error) {
+                log.warn("Task signal classification failed; keeping legacy stall path", {
+                  taskId: task.id,
+                  error,
+                });
+              }
+            }
+
             const silentForMinutes = Math.round(
               resolveTaskCheckpointIntervalMs(assignment.checkpointIntervalMs) / 60000,
             );
@@ -138,6 +172,7 @@ export class TaskCheckpointRunner {
                 missed.task,
                 `No worker activity seen for ${silentForMinutes} min; the turn may be hung or the session gone.`,
                 { actor: TASK_OBSERVER_ACTOR },
+                { report: !signalRaised },
               );
             }
             continue;
