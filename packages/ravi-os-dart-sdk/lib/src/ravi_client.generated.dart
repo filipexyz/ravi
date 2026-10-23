@@ -65,6 +65,7 @@ class RaviClient {
   SelfNamespace get self => SelfNamespace(_transport);
   SessionsNamespace get sessions => SessionsNamespace(_transport);
   SettingsNamespace get settings => SettingsNamespace(_transport);
+  SignalsNamespace get signals => SignalsNamespace(_transport);
   SkillGatesNamespace get skillGates => SkillGatesNamespace(_transport);
   SkillsNamespace get skills => SkillsNamespace(_transport);
   SlackNamespace get slack => SlackNamespace(_transport);
@@ -8267,6 +8268,160 @@ class SettingsNamespace {
       command: "set",
       body: requestBody,
       decode: settingsSetReturnFromJson,
+    );
+  }
+}
+
+class SignalsNamespace {
+  const SignalsNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<SignalsAckReturn> ack(String idOrKey, [SignalsAckOptions options = const SignalsAckOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["idOrKey"] = RaviJson.from(idOrKey);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["signals"],
+      command: "ack",
+      body: requestBody,
+      decode: signalsAckReturnFromJson,
+    );
+  }
+
+  Future<SignalsBudgetReturn> budget() async {
+    final requestBody = <String, RaviJson>{};
+    return _transport.callJson(
+      groupSegments: const ["signals"],
+      command: "budget",
+      body: requestBody,
+      decode: signalsBudgetReturnFromJson,
+    );
+  }
+
+  Future<SignalsExplainReturn> explain(String idOrKey) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["idOrKey"] = RaviJson.from(idOrKey);
+    return _transport.callJson(
+      groupSegments: const ["signals"],
+      command: "explain",
+      body: requestBody,
+      decode: signalsExplainReturnFromJson,
+    );
+  }
+
+  Future<SignalsListReturn> list([SignalsListOptions options = const SignalsListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["signals"],
+      command: "list",
+      body: requestBody,
+      decode: signalsListReturnFromJson,
+    );
+  }
+
+  Future<SignalsMuteReturn> mute(String idOrKey, [SignalsMuteOptions options = const SignalsMuteOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["idOrKey"] = RaviJson.from(idOrKey);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["signals"],
+      command: "mute",
+      body: requestBody,
+      decode: signalsMuteReturnFromJson,
+    );
+  }
+
+  Future<SignalsMuteKeyReturn> muteKey(String key, [SignalsMuteKeyOptions options = const SignalsMuteKeyOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["key"] = RaviJson.from(key);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["signals"],
+      command: "mute-key",
+      body: requestBody,
+      decode: signalsMuteKeyReturnFromJson,
+    );
+  }
+
+  Future<SignalsRaiseReturn> raise(String key, [SignalsRaiseOptions options = const SignalsRaiseOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["key"] = RaviJson.from(key);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["signals"],
+      command: "raise",
+      body: requestBody,
+      decode: signalsRaiseReturnFromJson,
+    );
+  }
+
+  Future<SignalsResolveReturn> resolve(String idOrKey, [SignalsResolveOptions options = const SignalsResolveOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["idOrKey"] = RaviJson.from(idOrKey);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["signals"],
+      command: "resolve",
+      body: requestBody,
+      decode: signalsResolveReturnFromJson,
+    );
+  }
+
+  Future<SignalsShowReturn> show(String idOrKey) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["idOrKey"] = RaviJson.from(idOrKey);
+    return _transport.callJson(
+      groupSegments: const ["signals"],
+      command: "show",
+      body: requestBody,
+      decode: signalsShowReturnFromJson,
+    );
+  }
+
+  Future<SignalsTickReturn> tick([SignalsTickOptions options = const SignalsTickOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["signals"],
+      command: "tick",
+      body: requestBody,
+      decode: signalsTickReturnFromJson,
+    );
+  }
+
+  Future<SignalsUnmuteReturn> unmute(String idOrKey) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["idOrKey"] = RaviJson.from(idOrKey);
+    return _transport.callJson(
+      groupSegments: const ["signals"],
+      command: "unmute",
+      body: requestBody,
+      decode: signalsUnmuteReturnFromJson,
+    );
+  }
+
+  Future<SignalsUnmuteKeyReturn> unmuteKey(String key) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["key"] = RaviJson.from(key);
+    return _transport.callJson(
+      groupSegments: const ["signals"],
+      command: "unmute-key",
+      body: requestBody,
+      decode: signalsUnmuteKeyReturnFromJson,
+    );
+  }
+
+  Future<SignalsUpdateReturn> update(String idOrKey, [SignalsUpdateOptions options = const SignalsUpdateOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["idOrKey"] = RaviJson.from(idOrKey);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["signals"],
+      command: "update",
+      body: requestBody,
+      decode: signalsUpdateReturnFromJson,
     );
   }
 }
