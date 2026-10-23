@@ -3626,6 +3626,7 @@ describe("Slack Socket Mode foreign bot intake", () => {
     sourceTeamId?: string | null;
     userTeamId?: string | null;
     authorizations?: unknown;
+    text?: string;
   }): SlackSocketEnvelope {
     return {
       envelope_id: input.envelopeId,
@@ -3639,7 +3640,7 @@ describe("Slack Socket Mode foreign bot intake", () => {
           channel: "C123",
           channel_type: "channel",
           user: "UHUMAN",
-          text: "human message",
+          text: input.text ?? "human message",
           ts: input.ts,
           ...(input.eventTeamId === null || input.eventTeamId === undefined ? {} : { team: input.eventTeamId }),
           ...(input.sourceTeamId === null || input.sourceTeamId === undefined
@@ -3682,7 +3683,7 @@ describe("Slack Socket Mode foreign bot intake", () => {
     });
   }
 
-  it("preserves human intake without Slack team provenance and does not call auth.test", async () => {
+  it("preserves human intake without Slack team provenance and does not wait on auth.test", async () => {
     const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
     const authTest = mock(async () => ({ ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" }));
     const service = makeBotService({ published, authTest });
@@ -3697,7 +3698,8 @@ describe("Slack Socket Mode foreign bot intake", () => {
         }),
       ),
     ).toBe("processed");
-    expect(authTest).not.toHaveBeenCalled();
+    // Human intake only starts a background identity lookup; it never gates admission.
+    expect(authTest).toHaveBeenCalledTimes(1);
     expect(published).toHaveLength(1);
     const source = published[0]!.payload.source as MessageTarget;
     expect(dbGetChat(source.canonicalChatId!)).toMatchObject({
@@ -3705,7 +3707,7 @@ describe("Slack Socket Mode foreign bot intake", () => {
     });
   });
 
-  it("preserves event.team precedence for conflicting human team values without calling auth.test", async () => {
+  it("preserves event.team precedence for conflicting human team values without waiting on auth.test", async () => {
     const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
     const authTest = mock(async () => ({ ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" }));
     const service = makeBotService({ published, authTest });
@@ -3723,7 +3725,8 @@ describe("Slack Socket Mode foreign bot intake", () => {
         }),
       ),
     ).toBe("processed");
-    expect(authTest).not.toHaveBeenCalled();
+    // Human intake only starts a background identity lookup; it never gates admission.
+    expect(authTest).toHaveBeenCalledTimes(1);
     expect(published).toHaveLength(1);
     const source = published[0]!.payload.source as MessageTarget;
     expect(dbGetChat(source.canonicalChatId!)).toMatchObject({
@@ -4155,6 +4158,66 @@ describe("Slack Socket Mode foreign bot intake", () => {
 
     expect(authTest).not.toHaveBeenCalled();
     expect(published).toHaveLength(0);
+  });
+
+  async function flushBackgroundWork(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  it("marks a human message that mentions the local bot and tags the bot in group context", async () => {
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const authTest = mock(async () => ({ ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" }));
+    const service = makeBotService({ published, authTest });
+    service.warmLocalBotIdentity();
+    await flushBackgroundWork();
+
+    for (const [index, text] of ["<@ULOCAL> ta ai?", "oi <@ULOCAL|ravi>, ta ai?"].entries()) {
+      expect(
+        await service.handleEnvelope(
+          humanEnvelope({ envelopeId: `human-self-mention-${index}`, ts: `1713000092.00010${index}`, text }),
+        ),
+      ).toBe("processed");
+    }
+    expect(
+      await service.handleEnvelope(
+        humanEnvelope({ envelopeId: "human-other-mention", ts: "1713000092.000200", text: "<@UOTHER> ta ai?" }),
+      ),
+    ).toBe("processed");
+
+    expect(authTest).toHaveBeenCalledTimes(1);
+    expect(published).toHaveLength(3);
+    for (const entry of published.slice(0, 2)) {
+      expect(String(entry.payload.prompt).split("\n")[0]).toContain(" @mention]");
+      expect((entry.payload.context as MessageContext).botTag).toBe("<@ULOCAL>");
+    }
+    expect(String(published[2]!.payload.prompt)).not.toContain("@mention");
+    expect((published[2]!.payload.context as MessageContext).botTag).toBe("<@ULOCAL>");
+  });
+
+  it("admits a human bot mention while auth.test is stuck or failing, without the marker", async () => {
+    for (const [index, authTest] of [
+      mock(() => new Promise<never>(() => {})),
+      mock(async () => {
+        throw new Error("auth_failed");
+      }),
+    ].entries()) {
+      const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+      const service = makeBotService({ published, authTest, authTestTimeoutMs: 60_000 });
+      expect(
+        await service.handleEnvelope(
+          humanEnvelope({
+            envelopeId: `human-self-mention-no-identity-${index}`,
+            ts: `1713000093.00010${index}`,
+            text: "<@ULOCAL> ta ai?",
+          }),
+        ),
+      ).toBe("processed");
+      expect(authTest).toHaveBeenCalledTimes(1);
+      expect(published).toHaveLength(1);
+      expect(String(published[0]!.payload.prompt)).not.toContain("@mention");
+      expect((published[0]!.payload.context as MessageContext).botTag).toBeUndefined();
+      await service.stop();
+    }
   });
 
   it("coalesces concurrent auth.test discovery for foreign bot messages", async () => {

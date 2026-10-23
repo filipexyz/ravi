@@ -9,6 +9,9 @@ import type {
   SlackThreadReplyMode,
 } from "./types.js";
 
+/** Slack user mention as delivered in message text: `<@U…>` or the legacy `<@U…|name>`. */
+export const SLACK_USER_MENTION_RE = /<@([UW][A-Z0-9]+)(?:\|([^>]*))?>/g;
+
 export const DEFAULT_SLACK_ROUTING_POLICY: SlackRoutingPolicy = {
   subscriptionScope: "thread",
   threadReplyMode: "same_thread",
@@ -114,13 +117,23 @@ export function shouldIgnoreSlackMessageEvent(
 
   const text = typeof event.text === "string" ? event.text : "";
   return !(
-    (selfUserId && text.includes(`<@${selfUserId}>`)) ||
+    (selfUserId && slackTextMentionsUser(text, selfUserId)) ||
     isSlackMessageAddressedByAlias({
       channelId: cleanSlackId(event.channel),
       text,
       aliasesByChat: options.botMessageAliasesByChat,
     })
   );
+}
+
+/** True when the text carries an explicit Slack mention of `userId` (`<@U…>` or `<@U…|label>`). */
+export function slackTextMentionsUser(text: string, userId: string | undefined): boolean {
+  const target = cleanSlackId(userId);
+  if (!target || !text) return false;
+  for (const match of text.matchAll(SLACK_USER_MENTION_RE)) {
+    if (match[1] === target) return true;
+  }
+  return false;
 }
 
 export function isSlackMessageEventStructurallyEligible(event: SlackEventPayload): boolean {

@@ -8,6 +8,7 @@ import {
   slackPeerKindForChannelType,
   slackRoutingPolicyFromChannelDefaults,
   slackRoutingPolicyFromEnv,
+  slackTextMentionsUser,
 } from "./routing.js";
 
 describe("Slack routing policy", () => {
@@ -194,5 +195,14 @@ describe("Slack routing policy", () => {
         ts: "1.0",
       }),
     ).toBe(true);
+  });
+
+  it("detects an explicit mention of one Slack user id, with or without a label", () => {
+    expect(slackTextMentionsUser("<@ULOCAL> ta ai?", "ULOCAL")).toBe(true);
+    expect(slackTextMentionsUser("oi <@ULOCAL|ravi>", "ULOCAL")).toBe(true);
+    expect(slackTextMentionsUser("<@ULOCAL2> ta ai?", "ULOCAL")).toBe(false);
+    expect(slackTextMentionsUser("<@UOTHER> ULOCAL", "ULOCAL")).toBe(false);
+    expect(slackTextMentionsUser("<@ULOCAL>", undefined)).toBe(false);
+    expect(slackTextMentionsUser("", "ULOCAL")).toBe(false);
   });
 });
