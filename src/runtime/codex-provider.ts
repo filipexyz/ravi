@@ -1096,9 +1096,11 @@ async function* normalizeCodexEvents(
             { threadId: turnSessionId, turnId: activeTurnId },
           );
           const terminal = terminalTracker.fail({
-            error: "Codex app-server connection closed without a terminal event",
+            error: lastErrorMessage ?? "Codex app-server connection closed without a terminal event",
             recoverable: true,
-            failureKind: "transport",
+            // A Codex error event (an unavailable model, a usage limit) explains the
+            // failure; replaying it would only fail again.
+            failureKind: lastErrorMessage ? undefined : "transport",
             rawEvent: { ...buildCodexExitRawEvent(result, stderrTail), error: error.message },
             metadata,
           });
@@ -1351,6 +1353,11 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     };
 
     const transportKind: CodexTransportKind = resolveCodexTransportKind(input.env);
+    // Failures before the channel is ready (spawn errors such as a missing
+    // executable, a listener that never appears) are setup problems and keep
+    // failing the turn as thrown errors; only a ready connection that drops is
+    // a recoverable transport failure.
+    let channelReady = false;
     const newTransport = createCodexTransport(transportKind, {
       command,
       baseArgs: buildCodexAppServerBaseArgs(),
@@ -1382,7 +1389,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           settleTurn(
             activeTurn,
             { exitCode: 1, stderr: getStderr().slice(activeTurn.stderrOffset) },
-            { failQueue: new CodexAppServerTransportError(error) },
+            { failQueue: channelReady ? new CodexAppServerTransportError(error) : error },
           );
         }
         signalCodexTransportProcess(newTransport.child, "SIGKILL");
@@ -1413,6 +1420,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     // before any caller attempts writeJsonRpc. Stdio resolves immediately.
     try {
       await newTransport.ready;
+      channelReady = true;
     } catch (error) {
       handleChildTermination(newTransport, 1, null, error instanceof Error ? error : new Error(String(error)));
       throw error;

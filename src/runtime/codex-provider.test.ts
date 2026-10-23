@@ -1410,6 +1410,48 @@ process.on("SIGTERM", () => {
     });
   });
 
+  it("keeps a Codex error event as the failure when the connection drops after it", async () => {
+    const { transport } = createMockTransport([
+      () => ({
+        events: (async function* () {
+          yield { type: "turn.started" };
+          yield { type: "error", message: "The requested model is not available." };
+          throw new CodexAppServerTransportError(new Error("codex websocket closed (code=1006, reason=n/a)"));
+        })(),
+        result: Promise.resolve({ exitCode: 1, signal: null, stderr: "" }),
+      }),
+    ]);
+    const provider = createCodexRuntimeProvider({ transport: transport as any, defaultModel: "gpt-5" });
+    const session = provider.startSession(makeStartRequest(["oi"]));
+
+    const events = await collectEvents(session.events);
+    const failures = findEventsByType(events, "turn.failed");
+
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({ error: "The requested model is not available.", recoverable: true });
+    expect(failures[0]?.failureKind).toBeUndefined();
+  });
+
+  it("does not turn a missing Codex executable into a retryable transport failure", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-missing-bin-"));
+    const provider = createCodexRuntimeProvider({ command: join(cwd, "missing-codex"), defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest(["oi"], { cwd, env: { PATH: process.env.PATH ?? "", RAVI_CODEX_TRANSPORT: "websocket" } }),
+    );
+
+    const events: RuntimeEvent[] = [];
+    let thrown: unknown;
+    try {
+      for await (const event of session.events) events.push(event);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Error);
+    expect(thrown).not.toBeInstanceOf(CodexAppServerTransportError);
+    expect(findEventsByType(events, "turn.failed").filter((event) => event.failureKind === "transport")).toEqual([]);
+  });
+
   it("strips terminal escapes from the stderr diagnostic and keeps its tail", () => {
     expect(codexStderrTail("")).toBeUndefined();
     expect(codexStderrTail("\u001b[2m \u001b[0m\n")).toBeUndefined();
