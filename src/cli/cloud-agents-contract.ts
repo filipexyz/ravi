@@ -99,6 +99,48 @@ const CONSOLE_CODES: Record<string, ConsoleCodeCopy> = {
     message: "The run is no longer active.",
     suggestedAction: "Check it with: ravi cloud runs show <run>",
   },
+  // Product codes (secrets, caps, credits, manifest approval, workers, webhook).
+  CLOUD_SECRET_MISSING: {
+    code: "CLOUD_SECRET_MISSING",
+    exitCode: CONTRACT_EXIT_ERROR,
+    message: "A secret the agent needs is not set.",
+    suggestedAction:
+      "An owner or admin sets it: ravi cloud secrets set <NAME> --host <host> --stdin --execute < <file-with-the-value>",
+  },
+  CLOUD_MONTHLY_CAP_REACHED: {
+    code: "CLOUD_MONTHLY_CAP_REACHED",
+    exitCode: CONTRACT_EXIT_POLICY,
+    message: "The monthly spending cap was reached; runs are paused until next month or until an admin raises the cap.",
+    suggestedAction:
+      "See the caps with ravi cloud settings show; an owner or admin raises one: ravi cloud agents cap <agent> <usd> --execute, or ravi cloud settings set --monthly-cap <usd> --execute",
+  },
+  CLOUD_CREDITS_INSUFFICIENT: {
+    code: "CLOUD_CREDITS_INSUFFICIENT",
+    exitCode: CONTRACT_EXIT_POLICY,
+    message: "The organization's Ravi credits do not cover this run's budget.",
+    suggestedAction:
+      "Check the balance with ravi cloud credits show; an owner or admin adds credits: ravi cloud credits topup <amount> --execute",
+  },
+  CLOUD_AGENT_AWAITING_APPROVAL: {
+    code: "CLOUD_AGENT_AWAITING_APPROVAL",
+    exitCode: CONTRACT_EXIT_POLICY,
+    message: "An owner or admin must approve this agent's capabilities before it runs.",
+    suggestedAction:
+      "An owner or admin reviews it with ravi cloud agents show and approves it: ravi cloud agents approve <agent> --execute",
+  },
+  CLOUD_WORKER_OFFLINE: {
+    code: "CLOUD_WORKER_OFFLINE",
+    exitCode: CONTRACT_EXIT_ERROR,
+    message: "The installation that runs this agent is offline.",
+    suggestedAction: "On that machine: ravi cloud worker list, then start the daemon or set the worker key",
+    retryable: true,
+  },
+  CLOUD_WEBHOOK_INVALID: {
+    code: "CLOUD_WEBHOOK_INVALID",
+    exitCode: CONTRACT_EXIT_USAGE,
+    message: "The webhook signing secret was refused.",
+    suggestedAction: "Copy the whsec_ secret from the provider console again",
+  },
   FORBIDDEN: {
     code: "CLOUD_AGENTS_FORBIDDEN",
     exitCode: CONTRACT_EXIT_ERROR,

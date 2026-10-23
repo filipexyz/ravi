@@ -268,16 +268,30 @@ export interface CloudScheduleBody {
 
 // ---------------------------------------------------------------------------
 // Product shapes (F1-F4). Transport only: the Console decides what they hold.
+// Dates are ISO strings (null when the Console omits them).
 
 export interface CloudSecret {
   id: string;
+  /** Null for an organization-wide secret. */
   projectId: string | null;
   name: string;
   /** Last characters only; the value never leaves the Console. */
   valueHint: string | null;
   allowedHosts: string[];
-  createdAt: string | null;
+  updatedAt: string | null;
+  updatedBy: CloudUserRef | null;
   lastUsedAt: string | null;
+}
+
+export const CLOUD_TRIGGER_SOURCES = ["bases", "mail", "meetings", "pages_comments"] as const;
+export type CloudTriggerSource = (typeof CLOUD_TRIGGER_SOURCES)[number];
+
+export interface CloudTriggerFilter {
+  baseId?: string;
+  viewId?: string;
+  events?: string[];
+  mailboxId?: string;
+  siteId?: string;
 }
 
 export interface CloudTrigger {
@@ -286,8 +300,9 @@ export interface CloudTrigger {
   agentId: string;
   agentName: string;
   actor: CloudUserRef;
-  source: "bases" | "mail" | "meetings" | "pages_comments";
-  filter: { baseId?: string; viewId?: string; events?: string[]; mailboxId?: string; siteId?: string };
+  source: CloudTriggerSource;
+  filter: CloudTriggerFilter;
+  /** Template; `{{event}}` is replaced by the quoted, neutralized event summary. */
   prompt: string;
   delivery: CloudDelivery | null;
   enabled: boolean;
@@ -297,62 +312,117 @@ export interface CloudTrigger {
   budgetUsd: number | null;
   firedToday: number;
   lastFiredAt: string | null;
+  lastRunId: string | null;
   pausedReason: string | null;
+  pendingEvents: number;
+}
+
+/** `POST triggers/<id>/test`: what the trigger would send now; no run starts. */
+export interface CloudTriggerTest {
+  prompt: string | null;
+  eventCount: number;
+  /** True when no event is pending and the prompt was built from a sample event. */
+  sample: boolean;
+  /** Why it would not start a run now (cap, pause), or null. */
+  blockedBy: string | null;
+}
+
+/** `GET agents/<id>` only: the agent's memory scope and its active store count. */
+export interface CloudAgentMemorySummary {
+  scope: "agent" | "person" | null;
+  storeCount: number;
+}
+
+export type CloudBillingMode = "byok" | "credits";
+
+export interface CloudWebhook {
+  /** The provider webhook URL to paste in the provider console; null until the Console has one. */
+  url: string | null;
+  configured: boolean;
+  lastEventAt: string | null;
 }
 
 export interface CloudOrgSettings {
-  billingMode: "byok" | "credits";
+  billingMode: CloudBillingMode;
   monthlyCapUsd: number | null;
+  monthSpentUsd: number;
   pausedAt: string | null;
   pausedReason: string | null;
   dailyEventRunsCap: number;
+  webhook: CloudWebhook;
+  /** Whether credits mode is available (the Ravi gateway is configured). */
+  gatewayAvailable: boolean;
+}
+
+/** `POST settings` (owner/admin; the Console refuses other keys). */
+export interface CloudOrgSettingsBody {
+  billingMode?: CloudBillingMode;
+  monthlyCapUsd?: number | null;
+  dailyEventRunsCap?: number;
 }
 
 export interface CloudCreditEntry {
   id: string;
-  kind: string;
+  kind: "topup" | "run" | "adjustment" | "refund";
+  /** Signed: a top-up adds, a run subtracts. */
   amountBrl: number;
-  status: string;
+  usd: number | null;
+  /** The USD-BRL rate used, as the Console writes it (decimal string). */
+  fxRate: string | null;
   runId: string | null;
-  fxRate: number | null;
+  status: "pending" | "posted" | "void";
   paymentUrl: string | null;
   pixCopyPaste: string | null;
   createdAt: string | null;
+  postedAt: string | null;
 }
 
 export interface CloudCredits {
-  mode: "byok" | "credits";
+  mode: CloudBillingMode;
   balanceBrl: number;
-  fxRate: number | null;
+  fxRate: string | null;
   monthSpentBrl: number;
   entries: CloudCreditEntry[];
 }
 
 export interface CloudCatalogEntry {
   id: string;
+  slug: string;
   name: string;
+  summary: string;
   sector: string | null;
-  summary: string | null;
   publisher: { id: string; name: string | null };
+  /** The capability manifest snapshot (what an installed agent can do). */
   manifest: Record<string, unknown> | null;
-  status: string;
+  manifestHash: string | null;
+  status: "listed" | "unlisted";
+  installed: boolean;
 }
 
 export interface CloudCatalogPack {
   id: string;
+  slug: string;
   name: string;
+  summary: string;
   sector: string | null;
-  summary: string | null;
-  entryIds: string[];
   publisher: { id: string; name: string | null };
+  entries: Array<{ id: string; slug: string; name: string }>;
+  revenueShareBps: number;
+  status: "listed" | "unlisted";
 }
 
+export const CLOUD_WORKER_STATUSES = ["waiting_key", "online", "offline", "disabled"] as const;
+export type CloudWorkerStatus = (typeof CLOUD_WORKER_STATUSES)[number];
+
+/** A self-hosted environment this installation serves (agent placement `installation`). */
 export interface CloudWorker {
   id: string;
   agentId: string;
   agentName: string;
+  projectId: string;
   installationId: string;
-  providerEnvironmentId: string | null;
-  status: "waiting_key" | "online" | "offline" | "disabled";
+  providerEnvironmentId: string;
+  status: CloudWorkerStatus;
   lastSeenAt: string | null;
+  lastError: string | null;
 }

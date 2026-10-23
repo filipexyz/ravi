@@ -414,7 +414,7 @@ function requireCredential(value: unknown): CloudCredential {
   };
 }
 
-function requireAgent(value: unknown): CloudAgent {
+export function requireAgent(value: unknown): CloudAgent {
   const agent = objectValue(value);
   if (!agent || typeof agent.id !== "string" || !agent.id) throw unexpected("cloud agent");
   const library = objectValue(agent.library);
