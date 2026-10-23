@@ -1,3 +1,5 @@
+import { stripVTControlCharacters } from "node:util";
+
 const MAX_TURN_FAILURE_RESPONSE = 320;
 const INTERNAL_RUNTIME_FAILURE_MESSAGE =
   "The agent could not complete this request because of an internal runtime error. Please try again.";
@@ -60,6 +62,19 @@ const INTERNAL_ERROR_PATTERNS = [
   /\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis):\/\/\S+/i,
 ];
 
+// Native runtime diagnostics: tracing log lines (`<ts> WARN crate::module: ...`),
+// Rust module paths, Codex thread-store failures and process exits without a
+// terminal event. They belong to logs and traces; chat gets the generic message.
+const NATIVE_DIAGNOSTIC_PATTERNS = [
+  /^(?:\d{4}-\d{2}-\d{2}[T ][\d:.]+Z?\s+)?(?:TRACE|DEBUG|INFO|WARN|WARNING|ERROR)\s+[A-Za-z_][\w]*(?:::[\w]+)*\s*:/,
+  /\b[A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)+/,
+  /\bthread-store internal error\b/i,
+  /^Codex (?:CLI|app-server) (?:exited|connection closed)\b/i,
+  /^codex websocket (?:error|closed)\b/i,
+];
+
+const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+
 export function isRuntimeCredentialResolutionFailure(detail: string): boolean {
   return RUNTIME_CREDENTIAL_RESOLUTION_PATTERNS.some((pattern) => pattern.test(detail));
 }
@@ -70,17 +85,22 @@ export function publicRuntimeFailureDetail(error: unknown): string {
     return INTERNAL_RUNTIME_FAILURE_MESSAGE;
   }
 
-  const firstLine = raw
+  const text = stripControlCharacters(raw);
+  const firstLine = text
     .split("\n")
     .map((line) => line.trim())
     .find(Boolean);
-  const detail = (firstLine ?? raw.trim()).replace(/^(?:Error:\s*)+/i, "").trim();
+  const detail = (firstLine ?? text.trim()).replace(/^(?:Error:\s*)+/i, "").trim();
 
   if (isRuntimeCredentialResolutionFailure(detail)) {
     return RUNTIME_CREDENTIAL_UNAVAILABLE_MESSAGE;
   }
 
-  if (!detail || INTERNAL_ERROR_PATTERNS.some((pattern) => pattern.test(detail))) {
+  if (
+    !detail ||
+    INTERNAL_ERROR_PATTERNS.some((pattern) => pattern.test(detail)) ||
+    NATIVE_DIAGNOSTIC_PATTERNS.some((pattern) => pattern.test(detail))
+  ) {
     return INTERNAL_RUNTIME_FAILURE_MESSAGE;
   }
 
@@ -95,9 +115,10 @@ export function publicRuntimeFailureDetail(error: unknown): string {
     return PROVIDER_TEMPORARILY_UNAVAILABLE_MESSAGE;
   }
 
-  return detail.length > MAX_TURN_FAILURE_RESPONSE
-    ? `${detail.slice(0, MAX_TURN_FAILURE_RESPONSE - 15)}... [truncated]`
-    : detail;
+  const redacted = detail.replace(UUID_PATTERN, "<id>");
+  return redacted.length > MAX_TURN_FAILURE_RESPONSE
+    ? `${redacted.slice(0, MAX_TURN_FAILURE_RESPONSE - 15)}... [truncated]`
+    : redacted;
 }
 
 export const PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE =
@@ -148,6 +169,11 @@ export function shouldEmitUserFacingTurnFailure(input: {
     return false;
   }
   return !isRecoverableOpenToolsOrInterruptFailure(input);
+}
+
+/** Removes ANSI escapes and control characters other than tab and newline. */
+function stripControlCharacters(text: string): string {
+  return stripVTControlCharacters(text).replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, "");
 }
 
 function runtimeFailureText(error: unknown): string | null {

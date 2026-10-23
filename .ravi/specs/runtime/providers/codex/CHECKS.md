@@ -33,6 +33,10 @@
 - Model is omitted because default model should be native default.
 - Native thread id exists but provider session params are missing.
 - A resume response followed immediately by terminal notifications is buffered and reconciled without losing events.
+- A process exit without a terminal event and with ANSI tracing output on stderr yields `failureKind=transport` with stable error text; the stderr tail appears only in `rawEvent.message`, without escapes.
+- A dropped app-server connection (`CodexAppServerTransportError`) yields a recoverable transport `turn.failed`, not a thrown session error.
+- A `turn/interrupt` that never answers, for a turn that already ended, does not signal the process running the next turn.
+- `publicRuntimeFailureDetail` turns tracing lines, Rust `::` paths, thread-store errors and Codex exit/connection diagnostics into the generic message, strips control characters and redacts UUIDs in what stays visible.
 
 ## Automatic goals
 
