@@ -104,6 +104,10 @@ The default output is the fallback for source-less continues and for
 proactive turns (cron, heartbeat, follow-up). It never overrides a real
 attached inbound source.
 
+`unresolved` means the session has no external target. It suppresses external
+delivery only; the utterance MUST still be materialized per
+`sessions/turn-output`.
+
 ## Turn Isolation
 
 A provider session has one ordered transcript, so its turns MUST remain
