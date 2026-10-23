@@ -197,10 +197,29 @@ export interface CoverageGateError {
   message: string;
 }
 
+export interface CoverageGateExemption {
+  kind: "revert";
+  reason: string;
+}
+
 export interface CoverageGateResult {
   ok: boolean;
   triggeredPrefixes: string[];
   errors: CoverageGateError[];
+  /**
+   * Present only when the gate was explicitly exempted (for example a revert
+   * PR). Never inferred from the diff shape: the caller must ask for it.
+   */
+  exempted?: CoverageGateExemption;
+}
+
+export interface CoverageGateOptions {
+  /**
+   * Explicit revert signal, supplied by the CI caller (label/title/env).
+   * A revert removes source without adding focused tests, and the deleted
+   * tests are invisible to `git diff --diff-filter=ACMR`.
+   */
+  revert?: boolean;
 }
 
 /**
@@ -397,7 +416,11 @@ export function findTriggeredPrefixes(changedFiles: string[]): string[] {
  * updated or added alongside source). Existence on disk alone is not
  * sufficient — the diff must include the focused test.
  */
-export function runCoverageGate(changedFiles: string[], _cwd?: string): CoverageGateResult {
+export function runCoverageGate(
+  changedFiles: string[],
+  _cwd?: string,
+  opts: CoverageGateOptions = {},
+): CoverageGateResult {
   const triggeredPrefixes = findTriggeredPrefixes(changedFiles);
   const result: CoverageGateResult = {
     ok: true,
@@ -425,6 +448,22 @@ export function runCoverageGate(changedFiles: string[], _cwd?: string): Coverage
     }
   }
 
+  // Revert exemption: explicit opt-in only, and only when the gate actually
+  // failed. A revert deletes the feature and its focused tests, so no test
+  // file ever shows up in the diff (deletions are filtered out upstream).
+  if (!result.ok && opts.revert === true) {
+    const failedPrefixes = result.errors.map((error) => error.prefix);
+    return {
+      ok: true,
+      triggeredPrefixes,
+      errors: [],
+      exempted: {
+        kind: "revert",
+        reason: `Revert PR: ${failedPrefixes.join(", ")} changed without a focused test in the diff; a revert removes source and its tests instead of adding coverage. Exemption requested explicitly by the CI caller.`,
+      },
+    };
+  }
+
   return result;
 }
 
@@ -434,9 +473,10 @@ export function runCoverageGate(changedFiles: string[], _cwd?: string): Coverage
 export function runQualityGate(
   changedFiles: string[],
   cwd?: string,
+  opts: CoverageGateOptions = {},
 ): { spec: SpecGateResult; coverage: CoverageGateResult; ok: boolean } {
   const spec = runSpecGate(changedFiles, cwd);
-  const coverage = runCoverageGate(changedFiles, cwd);
+  const coverage = runCoverageGate(changedFiles, cwd, opts);
   return {
     spec,
     coverage,
