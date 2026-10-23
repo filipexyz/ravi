@@ -439,6 +439,8 @@ export class OmniConsumer {
       abortRuntimeSession?: (sessionName: string, provenance: RuntimeAbortProvenance) => boolean;
       /** Answers a private message of a person in the `ravi link` flow; true when it took the message. */
       answerLinkingDm?: (message: LinkingDirectMessage) => Promise<boolean>;
+      /** Hands a cloud run's person's reply to the run; true when it took the message. */
+      interceptCloudChat?: typeof interceptCloudChatMessage;
     } = {},
   ) {
     this.typingPresence = new TypingPresenceHeartbeat(
@@ -1205,7 +1207,7 @@ export class OmniConsumer {
       !editInfo &&
       effectiveActorType === "contact" &&
       effectiveContactId &&
-      (await interceptCloudChatMessage(
+      (await (this.options.interceptCloudChat ?? interceptCloudChatMessage)(
         {
           channel: sessionChannel,
           accountId: effectiveAccountId,
