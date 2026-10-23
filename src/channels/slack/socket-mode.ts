@@ -90,6 +90,7 @@ import { buildSlackThreadCard, isSlackInvalidBlocksError, type SlackThreadCardMe
 import {
   cleanSlackId,
   envelopeEvent,
+  SLACK_USER_MENTION_RE,
   isSlackMessageEventStructurallyEligible,
   normalizeSlackRoutingPolicy,
   resolveSlackThreadContext,
@@ -98,6 +99,7 @@ import {
   slackRoutingPolicyFromChannelDefaults,
   slackRoutingPolicyFromEnv,
   slackSenderIdForEvent,
+  slackTextMentionsUser,
   slackTsToMs,
 } from "./routing.js";
 import type {
@@ -120,7 +122,6 @@ const DEFAULT_SLACK_HELLO_TIMEOUT_MS = 10_000;
 const DEFAULT_SLACK_INBOUND_RECONCILE_INTERVAL_MS = 5_000;
 const DEFAULT_SLACK_INBOUND_PRUNE_INTERVAL_MS = 6 * 60 * 60_000;
 const SLACK_FILE_INFO_RETRY_DELAYS_MS = [0, 250, 750, 1_500] as const;
-const SLACK_USER_MENTION_RE = /<@([UW][A-Z0-9]+)(?:\|([^>]*))?>/g;
 const SLACK_MAX_RESOLVED_MENTIONS = 20;
 const SLACK_LOOKUP_FAILURE_BACKOFF_MS = 10 * 60_000;
 
@@ -764,6 +765,7 @@ export class SlackSocketModeService {
     this.connectedAt = undefined;
     this.reconnectCount = 0;
     this.setLifecycle("connecting", "opening_socket");
+    this.warmLocalBotIdentity();
     this.startInboundReconciler();
     this.loopPromise = this.runLoop();
   }
@@ -1213,6 +1215,7 @@ export class SlackSocketModeService {
     let teamId = eventTeamId ?? payloadTeamId ?? this.options.accountId;
     let originTeamId: string | undefined;
     let localBotIdentity: SlackLocalBotIdentity | null = null;
+    let selfUserId: string | undefined;
     if (isBotMessage) {
       const legacyInstallationTeamIds = uniqueCleanSlackIds([payloadTeamId, eventTeamId]);
       originTeamId =
@@ -1236,7 +1239,9 @@ export class SlackSocketModeService {
         return null;
       }
       teamId = eventTeamId ?? payloadTeamId ?? originTeamId;
+      selfUserId = localBotIdentity.userId;
     } else {
+      selfUserId = this.cachedLocalBotUserId();
       const originCandidates = uniqueCleanSlackIds([payloadTeamId, eventTeamId]);
       originTeamId = sourceTeamId ?? (originCandidates.length === 1 ? originCandidates[0] : undefined);
     }
@@ -1271,6 +1276,7 @@ export class SlackSocketModeService {
       payloadTeamId,
       authorizedTeamIds,
       localTeamId: localBotIdentity?.teamId,
+      ...(selfUserId ? { selfUserId } : {}),
       channelId,
       channelType: cleanSlackId(event.channel_type) ?? "channel",
       userId,
@@ -1286,6 +1292,24 @@ export class SlackSocketModeService {
       eventTimeMs,
       rawEnvelope: envelope,
     };
+  }
+
+  /**
+   * Start resolving the local bot identity in the background so the first
+   * human message that mentions the bot can already be marked.
+   */
+  warmLocalBotIdentity(): void {
+    void this.resolveLocalBotIdentity();
+  }
+
+  /**
+   * Human intake never waits for `auth.test`: return the cached bot user id,
+   * or start a background resolution (honoring its backoff) and return none.
+   */
+  private cachedLocalBotUserId(): string | undefined {
+    if (this.localBotIdentity) return this.localBotIdentity.userId;
+    this.warmLocalBotIdentity();
+    return undefined;
   }
 
   private async resolveLocalBotIdentity(): Promise<SlackLocalBotIdentity | null> {
@@ -1323,11 +1347,14 @@ export class SlackSocketModeService {
       })
       .catch((error) => {
         this.nextLocalBotIdentityAttemptAt = this.now() + this.authTestFailureRetryMs;
-        log.warn("Slack bot message ignored because local bot identity could not be resolved", {
-          accountId: this.options.accountId,
-          retryAt: this.nextLocalBotIdentityAttemptAt,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        log.warn(
+          "Slack local bot identity could not be resolved; bot messages are ignored and bot mentions stay unmarked until it resolves",
+          {
+            accountId: this.options.accountId,
+            retryAt: this.nextLocalBotIdentityAttemptAt,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        );
         return null;
       });
 
@@ -1949,6 +1976,7 @@ export class SlackSocketModeService {
       isGroup: peerKind !== "dm",
       groupId: peerKind !== "dm" ? message.channelId : undefined,
       groupName: peerKind !== "dm" ? (channelName ?? message.channelId) : undefined,
+      ...(peerKind !== "dm" && message.selfUserId ? { botTag: `<@${message.selfUserId}>` } : {}),
       timestamp: message.eventTimeMs,
       canonicalChatId: canonicalChat.id,
       rawSenderId: message.userId,
@@ -2822,6 +2850,7 @@ function formatSlackPrompt(
     message.thread.inboundThreadTs ? `thread:${message.thread.inboundThreadTs}` : undefined,
     `mid:${message.ts}`,
     new Date(message.eventTimeMs).toISOString(),
+    slackTextMentionsUser(message.text, message.selfUserId) ? "@mention" : undefined,
   ].filter(Boolean);
   const sender = senderDisplayName ? `${senderDisplayName} (<@${message.userId}>)` : `<@${message.userId}>`;
   return `[${parts.join(" ")}]\n${sender}: ${formatSlackMessageBody(message, files)}`;
