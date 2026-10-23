@@ -2049,6 +2049,18 @@ describe("Slack Socket Mode routing", () => {
       expect(listSessionSubscriptions(mainSession.sessionKey)).toEqual([expect.objectContaining({ chatId: chat.id })]);
     });
 
+    it("keeps an explicit attach on its own session when the route forces another session of the same agent", async () => {
+      const { chat, mainSession } = setupResidualSubscription("user");
+      getOrCreateSession("agent:main-agent:main-other", "main-agent", "/tmp/main-agent", { name: "main-other" });
+      const published: Array<{ sessionName: string; payload: unknown }> = [];
+
+      await service(config("main-agent", "main-other"), published).handleEnvelope(envelope("env-a2d9-same-key"));
+
+      expect(published).toHaveLength(1);
+      expect(published[0]?.sessionName).toBe("main-agent-c777");
+      expect(listSessionSubscriptions(mainSession.sessionKey)).toEqual([expect.objectContaining({ chatId: chat.id })]);
+    });
+
     it("settles the envelope instead of retrying when the route's session belongs to another agent", async () => {
       seedAgent("main-agent", "/tmp/main-agent");
       seedAgent("specialist-agent", "/tmp/specialist-agent");

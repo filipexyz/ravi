@@ -128,6 +128,12 @@ const SLACK_USER_MENTION_RE = /<@([UW][A-Z0-9]+)(?:\|([^>]*))?>/g;
 const SLACK_MAX_RESOLVED_MENTIONS = 20;
 const SLACK_LOOKUP_FAILURE_BACKOFF_MS = 10 * 60_000;
 
+/**
+ * Ingress rejections that repeat identically on every retry. INTERNAL stays
+ * retryable: it also covers a receipt write that failed on a locked database.
+ */
+const TERMINAL_INGRESS_CODES = new Set(["INVALID_REQUEST", "IDEMPOTENCY_CONFLICT", "NOT_FOUND"]);
+
 /** An inbound that can never be delivered as is: settled, not retried. */
 export class SlackInboundTerminalError extends Error {
   constructor(
@@ -1760,6 +1766,11 @@ export class SlackSocketModeService {
             } satisfies MatchedRoute;
           }
           trustedSubscription = true;
+          // Even when the keys already agree, an attached chat must not be
+          // redirected to a different session the route forces.
+          if (matched?.route?.session && forcedSessionName && !subscriptionIsForcedSession) {
+            matched = { ...matched, route: { ...matched.route, session: undefined } };
+          }
         }
       } else {
         log.warn("Slack subscription points to a missing session or agent - falling back to route resolution", {
@@ -2081,7 +2092,7 @@ export class SlackSocketModeService {
     );
     if (ingress.disposition === "rejected") {
       const code = `slack_channel_backend_${ingress.error?.code.toLowerCase() ?? "rejected"}`;
-      if (ingress.error?.retryable === false) {
+      if (ingress.error && TERMINAL_INGRESS_CODES.has(ingress.error.code)) {
         log.error("Slack inbound rejected by channel ingress", {
           accountId: this.options.accountId,
           channelId: message.channelId,

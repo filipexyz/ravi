@@ -668,6 +668,17 @@ function isSharedMainSessionKey(sessionKey: string): boolean {
   return parts.length === 3 && parts[0] === "agent" && parts[2] === "main";
 }
 
+function sessionKeyHasGroup(normalizedSessionKey: string, groupId: string): boolean {
+  const token = `group:${groupId}`;
+  let index = normalizedSessionKey.indexOf(token);
+  while (index !== -1) {
+    const next = normalizedSessionKey[index + token.length];
+    if (next === undefined || next === ":") return true;
+    index = normalizedSessionKey.indexOf(token, index + 1);
+  }
+  return false;
+}
+
 function deleteConflictingSessions(
   pattern: string,
   targetAgent: string,
@@ -688,7 +699,8 @@ function deleteConflictingSessions(
 
     if (normalizedPattern.startsWith("group:")) {
       const groupId = normalizedPattern.slice("group:".length);
-      shouldDelete = normalizedSessionKey.includes(`group:${groupId}`);
+      // Whole id only: `group:123` must not match a `group:1234` session.
+      shouldDelete = sessionKeyHasGroup(normalizedSessionKey, groupId);
     } else if (normalizedPattern.startsWith("lid:")) {
       const digits = normalizedPattern.slice("lid:".length);
       const last6 = digits.slice(-6);

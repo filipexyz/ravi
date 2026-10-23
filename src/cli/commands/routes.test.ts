@@ -639,6 +639,47 @@ describe("RoutesCommands", () => {
     expect(payload.detachedSubscriptions).toBe(stickyDetachResult.detached);
   });
 
+  it("only cleans sessions of the exact group id", () => {
+    instanceNames = new Set(["ravi-rbbt-slack"]);
+    routes = [
+      {
+        id: 1,
+        accountId: "ravi-rbbt-slack",
+        pattern: "group:c123",
+        agent: "specialist",
+        priority: 0,
+        channel: "slack",
+      },
+    ];
+    sessions = [
+      {
+        sessionKey: "agent:other:slack:ravi-rbbt-slack:group:C123",
+        agentId: "other",
+        accountId: "ravi-rbbt-slack",
+        lastAccountId: "ravi-rbbt-slack",
+      },
+      {
+        sessionKey: "agent:other:slack:ravi-rbbt-slack:group:C1234",
+        agentId: "other",
+        accountId: "ravi-rbbt-slack",
+        lastAccountId: "ravi-rbbt-slack",
+      },
+    ];
+
+    captureJson(() => {
+      new InstancesRoutesCommands().set(
+        "ravi-rbbt-slack",
+        "group:c123",
+        "session",
+        "specialist-fixed",
+        undefined,
+        true,
+      );
+    });
+
+    expect(deletedSessionKeys).toEqual(["agent:other:slack:ravi-rbbt-slack:group:C123"]);
+  });
+
   it("releases automatic chat pins when a route gets a fixed session (bug a2d9fc1c)", () => {
     instanceNames = new Set(["ravi-rbbt-slack"]);
     routes = [
