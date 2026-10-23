@@ -223,14 +223,14 @@ export async function listCloudWorkers(client: CloudAgentsClient): Promise<Cloud
 }
 
 /**
- * The daemon serves this worker: `online` (its environment worker runs) or `disabled` (the operator turned the
- * runner off on this machine, so the Console refuses its runs at once). A worker that fails or has no key sends
- * nothing and goes offline after 120 s.
+ * The daemon serves this worker: `online` (its environment worker runs), `offline` with the error (it failed and
+ * waits to restart) or `disabled` (the operator turned the runner off on this machine, so the Console refuses its
+ * runs at once). A worker with no key sends nothing and goes offline after 120 s.
  */
 export async function heartbeatCloudWorker(
   client: CloudAgentsClient,
   id: string,
-  body: { status: "online" | "disabled"; error?: string | null },
+  body: { status: "online" | "offline" | "disabled"; error?: string | null },
 ): Promise<CloudWorker | null> {
   const payload = objectValue(await client.request<unknown>("POST", `/workers/${segment(id)}/heartbeat`, body));
   return normalizeWorker(payload?.worker);

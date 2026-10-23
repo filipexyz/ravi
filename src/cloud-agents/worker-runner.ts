@@ -10,8 +10,8 @@
  *    (`@anthropic-ai/sdk/helpers/beta/environments`), which claims the
  *    environment's work and runs its tools (bash, files) in
  *    `~/.ravi/cloud-workers/<agentId>/work`, and heartbeats `online`;
- * 3. a worker that failed restarts after a backoff and sends no heartbeat
- *    meanwhile, so the Console marks it offline after 120 s and refuses its runs.
+ * 3. a worker that failed restarts after a backoff and heartbeats `offline`
+ *    with its error meanwhile, so the Console refuses its runs and shows why.
  *
  * Assignments that disappear stop their worker. Disabling the runner (`ravi
  * cloud worker disable`) stops them all on the next tick and heartbeats
@@ -69,7 +69,7 @@ export interface CloudWorkerTickResult {
   started: number;
   stopped: number;
   waitingKey: number;
-  /** Workers waiting out a restart backoff (no heartbeat: the Console marks them offline). */
+  /** Workers waiting out a restart backoff (heartbeat `offline` with their error). */
   backoff: number;
   heartbeats: number;
   errors: number;
@@ -227,8 +227,11 @@ export class CloudWorkerRunner {
         if (await this.heartbeat(session, worker.id, { status: "online" })) result.heartbeats += 1;
         else result.errors += 1;
       } else {
-        // Waiting out the restart backoff: no heartbeat, so the Console marks it offline and refuses its runs.
+        // Waiting out the restart backoff: offline with its error, so the Console refuses its runs and shows why.
         result.backoff += 1;
+        if (await this.heartbeat(session, worker.id, { status: "offline", error: history?.lastError ?? null }))
+          result.heartbeats += 1;
+        else result.errors += 1;
         runtime[worker.id] = {
           state: "backoff",
           error: history?.lastError ?? null,
@@ -306,7 +309,7 @@ export class CloudWorkerRunner {
   private async heartbeat(
     session: CloudAgentsSession,
     workerId: string,
-    body: { status: "online" | "disabled"; error?: string | null },
+    body: { status: "online" | "offline" | "disabled"; error?: string | null },
   ): Promise<boolean> {
     try {
       await heartbeatCloudWorker(session.client, workerId, body);

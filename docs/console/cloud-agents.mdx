@@ -245,7 +245,7 @@ ravi cloud worker disable
 
 ## Ravi provider (prototype)
 
-`"provider": "ravi"` in the `cloud` block runs the agent with the Ravi runtime in a disposable E2B sandbox, with the organization's model key, for organizations that need zero data retention. It is a prototype, off unless the Console enables it, and it needs the organization's E2B key. The sandbox runs `ravi cloud worker session`: it reads its session from the Console, runs the agent with the Console's `ravi` tools, waits for a person before each write, and uploads the files the agent leaves in `/mnt/session/outputs`. Approvals, questions, results and costs work as above.
+`"provider": "ravi"` in the `cloud` block runs the agent with the Ravi runtime in a disposable E2B sandbox, with the organization's model key, for organizations that need zero data retention. It is a prototype, off unless the Console enables it, and it needs the organization's E2B key. The sandbox runs `ravi cloud worker session`: it reads its session from the Console, runs the agent with the Console's `ravi` tools, waits for a person before each write, and uploads the files the agent leaves in `/mnt/session/outputs`. Approvals, questions, results and costs work as above. The agent's tools can read the sandbox's environment, model key included, so the Ravi provider runs only on the organization's own Anthropic key: in credits mode its runs are refused with `CLOUD_AGENT_PROVIDER_UNSUPPORTED`.
 
 ## Run a task in the cloud
 

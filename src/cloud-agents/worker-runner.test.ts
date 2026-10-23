@@ -118,7 +118,7 @@ describe("CloudWorkerRunner", () => {
     await runner.stop();
   });
 
-  it("a failed worker waits out a backoff without heartbeats, then restarts", async () => {
+  it("a failed worker heartbeats offline with its error during the backoff, then restarts", async () => {
     const fake = createFakeProductConsole();
     const env = stateEnv();
     writeCloudWorkerState({ enabled: true, enabledAt: null }, env);
@@ -137,7 +137,11 @@ describe("CloudWorkerRunner", () => {
     expect(runner.runningWorkerIds()).toEqual([]);
 
     const waiting = await runner.tick();
-    expect(waiting).toMatchObject({ started: 0, backoff: 1, heartbeats: 0 });
+    expect(waiting).toMatchObject({ started: 0, backoff: 1, heartbeats: 1 });
+    expect(fake.heartbeats.at(-1)).toEqual({
+      id: "wrk_1",
+      body: { status: "offline", error: "401 Unauthorized for key [key]" },
+    });
     const local = readCloudWorkerRuntime(env)?.workers.wrk_1;
     expect(local?.state).toBe("backoff");
     expect(local?.error).toBe("401 Unauthorized for key [key]");
