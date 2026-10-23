@@ -59,15 +59,6 @@ const SAFE_EXECUTABLES = [
   "xargs",
 ];
 
-export const BASELINE_SIGNAL_ACTIONS = [
-  ["read", "signals", "list"],
-  ["read", "signals", "show"],
-  ["read", "signals", "explain"],
-  ["read", "signals", "budget"],
-  ["mutate", "signals", "raise"],
-  ["mutate", "signals", "ack"],
-] as const;
-
 /**
  * Temporary explicit bootstrap materializer for the provider-runtime era.
  *
@@ -132,12 +123,6 @@ function bootstrapCapabilitiesFor(subjectType: string): ContextCapability[] {
     })),
     ...BASELINE_BASES_READ_ACTIONS.map(([objectType, objectId]) => ({
       permission: "read" as const,
-      objectType,
-      objectId,
-      source,
-    })),
-    ...BASELINE_SIGNAL_ACTIONS.map(([permission, objectType, objectId]) => ({
-      permission: permission as "read" | "mutate",
       objectType,
       objectId,
       source,
