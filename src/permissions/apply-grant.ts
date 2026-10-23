@@ -12,6 +12,7 @@
  * both call this module, so the rule lives here and nowhere else.
  */
 
+import { createHash } from "node:crypto";
 import { addContactTag, getContactById } from "../contacts.js";
 import { getDb } from "../router/router-db.js";
 import { dbCreateTagDefinition, dbGetTagDefinition, dbUpdateTagDefinition, normalizeTagSlug } from "../tags/index.js";
@@ -596,19 +597,39 @@ export function capabilityListsEqual(a: readonly PermissionCapability[], b: read
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
+function shortCapabilityHash(capability: AuthorizationCapability): string {
+  return createHash("sha256").update(formatCanonicalCapability(capability)).digest("hex").slice(0, 8);
+}
+
 /**
- * The profile an exact grant attaches. The derived slug is used only when it
- * carries exactly the denied capability; anything else on it would leak into
- * the contact through the grant, so the grant moves to a deterministic
- * single-capability sibling (`<derived>-exact`). A tag permissions does not own
- * is still refused, exactly like any other profile write.
+ * The profile an exact grant attaches.
+ *
+ * A grant never redefines a profile somebody else may already use, so every
+ * candidate slug is read before it is written: it is reused only when it does
+ * not exist yet or when it already carries exactly the denied capability.
+ * The derived slug is tried first, then a single-capability sibling
+ * (`<derived>-exact`), then a capability-hashed sibling
+ * (`<derived>-exact-<hash>`, deterministic so a repeated click lands on the
+ * same profile). If all three already carry other capabilities the grant fails
+ * loudly instead of rewriting a definition another holder depends on. A tag
+ * permissions does not own is still refused, exactly like any other profile
+ * write.
  */
 function selectExactGrantProfile(derivedProfile: string, capability: AuthorizationCapability): string {
-  const existing = dbGetTagDefinition(normalizePermissionProfileSlug(derivedProfile));
-  if (!existing) return derivedProfile;
-  assertProviderOwnedPermissionTag(derivedProfile, existing.kind, existing.source);
-  const current = readPermissionTagCapabilities(existing);
-  return capabilityListsEqual(current, [capability])
-    ? derivedProfile
-    : normalizePermissionProfileSlug(`${derivedProfile}-exact`);
+  const candidates = [
+    normalizePermissionProfileSlug(derivedProfile),
+    normalizePermissionProfileSlug(`${derivedProfile}-exact`),
+    normalizePermissionProfileSlug(`${derivedProfile}-exact-${shortCapabilityHash(capability)}`),
+  ];
+  for (const candidate of candidates) {
+    const existing = dbGetTagDefinition(candidate);
+    if (!existing) return candidate;
+    assertProviderOwnedPermissionTag(candidate, existing.kind, existing.source);
+    if (capabilityListsEqual(readPermissionTagCapabilities(existing), [capability])) return candidate;
+  }
+  throw new Error(
+    `Cannot grant ${formatCanonicalCapability(capability)} without redefining an existing permission profile: ` +
+      `${candidates.join(", ")} already carry different capabilities. ` +
+      "Create an explicit single-capability profile and grant that instead.",
+  );
 }
