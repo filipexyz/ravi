@@ -1918,6 +1918,166 @@ describe("Slack Socket Mode routing", () => {
     ]);
   });
 
+  describe("route with a fixed session vs a residual chat subscription (bug a2d9fc1c)", () => {
+    const SLACK_INSTANCE = "ravi-rbbt-slack";
+    const MAIN_KEY = `agent:main-agent:slack:${SLACK_INSTANCE}:group:C777`;
+    const SPECIALIST_KEY = "agent:specialist-agent:specialist-fixed";
+
+    function setupResidualSubscription(attachedByType: "system" | "user") {
+      seedAgent("main-agent", "/tmp/main-agent");
+      seedAgent("specialist-agent", "/tmp/specialist-agent");
+      const chat = dbUpsertChat({
+        channel: "slack",
+        instanceId: SLACK_INSTANCE,
+        platformChatId: "C777",
+        chatType: "group",
+        title: "C777",
+        rawProvenance: { source: "test" },
+        seenAt: 1_713_000_000_000,
+      });
+      const mainSession = getOrCreateSession(MAIN_KEY, "main-agent", "/tmp/main-agent", {
+        name: "main-agent-c777",
+        channel: "slack",
+        accountId: SLACK_INSTANCE,
+        groupId: "C777",
+        lastChannel: "slack",
+        lastTo: "C777",
+        lastAccountId: SLACK_INSTANCE,
+      });
+      const specialistSession = getOrCreateSession(SPECIALIST_KEY, "specialist-agent", "/tmp/specialist-agent", {
+        name: "specialist-fixed",
+      });
+      attachChatToSession({
+        sessionKey: mainSession.sessionKey,
+        chatId: chat.id,
+        role: "primary",
+        attachedByType,
+        attachedReason: attachedByType === "system" ? "slack-socket-mode" : "test-operator",
+        setOutputTarget: true,
+      });
+      return { chat, mainSession, specialistSession };
+    }
+
+    function config(routeAgent: string, routeSession: string): RouterConfig {
+      return {
+        agents: {
+          "main-agent": { id: "main-agent", cwd: "/tmp/main-agent", dmScope: "per-peer" },
+          "specialist-agent": { id: "specialist-agent", cwd: "/tmp/specialist-agent", dmScope: "per-peer" },
+        },
+        routes: [
+          {
+            pattern: "group:C777",
+            accountId: SLACK_INSTANCE,
+            agent: routeAgent,
+            session: routeSession,
+            priority: 0,
+          },
+        ],
+        defaultAgent: "main-agent",
+        defaultDmScope: "per-peer",
+        accountAgents: {},
+        instanceToAccount: { [SLACK_INSTANCE]: SLACK_INSTANCE },
+        instances: {},
+      };
+    }
+
+    function service(routerConfig: RouterConfig, published: Array<{ sessionName: string; payload: unknown }>) {
+      return new SlackSocketModeService({
+        appToken: "xapp-test",
+        botToken: "xoxb-test",
+        accountId: SLACK_INSTANCE,
+        routeAccountId: SLACK_INSTANCE,
+        instanceId: SLACK_INSTANCE,
+        getRouterConfig: () => routerConfig,
+        publishPrompt: async (sessionName, payload) => {
+          published.push({ sessionName, payload });
+        },
+        webClient: {} as never,
+      });
+    }
+
+    function envelope(envelopeId: string) {
+      return {
+        envelope_id: envelopeId,
+        payload: {
+          team_id: "T1",
+          event_id: `Ev-${envelopeId}`,
+          event_time: 1_713_000_001,
+          event: {
+            type: "message",
+            channel: "C777",
+            channel_type: "channel",
+            user: "U123",
+            text: "hello specialist",
+            ts: "1713000001.000200",
+          },
+        },
+      };
+    }
+
+    it("delivers to the route's fixed session and rebinds an automatic subscription", async () => {
+      const { chat, mainSession, specialistSession } = setupResidualSubscription("system");
+      const published: Array<{ sessionName: string; payload: unknown }> = [];
+
+      const result = await service(config("specialist-agent", "specialist-fixed"), published).handleEnvelope(
+        envelope("env-a2d9-system"),
+      );
+
+      expect(result).toBe("processed");
+      expect(published).toHaveLength(1);
+      expect(published[0]?.sessionName).toBe("specialist-fixed");
+      expect(getSessionByName("specialist-fixed")?.agentId).toBe("specialist-agent");
+      expect(listSessionSubscriptions(mainSession.sessionKey)).toEqual([]);
+      expect(listSessionSubscriptions(specialistSession.sessionKey)).toEqual([
+        expect.objectContaining({ chatId: chat.id }),
+      ]);
+      expect(getSlackInboundEnvelope(SLACK_INSTANCE, "env-a2d9-system")).toMatchObject({ state: "processed" });
+    });
+
+    it("keeps an explicit attach and never pairs its agent with the route's session", async () => {
+      const { chat, mainSession } = setupResidualSubscription("user");
+      const published: Array<{ sessionName: string; payload: unknown }> = [];
+
+      await service(config("specialist-agent", "specialist-fixed"), published).handleEnvelope(
+        envelope("env-a2d9-explicit"),
+      );
+
+      expect(published).toHaveLength(1);
+      expect(published[0]?.sessionName).toBe("main-agent-c777");
+      expect(getSessionByName("main-agent-c777")?.sessionKey).toBe(mainSession.sessionKey);
+      expect(getSessionByName("specialist-fixed")?.sessionKey).toBe(SPECIALIST_KEY);
+      expect(listSessionSubscriptions(mainSession.sessionKey)).toEqual([expect.objectContaining({ chatId: chat.id })]);
+    });
+
+    it("keeps an explicit attach on its own session when the route forces another session of the same agent", async () => {
+      const { chat, mainSession } = setupResidualSubscription("user");
+      getOrCreateSession("agent:main-agent:main-other", "main-agent", "/tmp/main-agent", { name: "main-other" });
+      const published: Array<{ sessionName: string; payload: unknown }> = [];
+
+      await service(config("main-agent", "main-other"), published).handleEnvelope(envelope("env-a2d9-same-key"));
+
+      expect(published).toHaveLength(1);
+      expect(published[0]?.sessionName).toBe("main-agent-c777");
+      expect(listSessionSubscriptions(mainSession.sessionKey)).toEqual([expect.objectContaining({ chatId: chat.id })]);
+    });
+
+    it("settles the envelope instead of retrying when the route's session belongs to another agent", async () => {
+      seedAgent("main-agent", "/tmp/main-agent");
+      seedAgent("specialist-agent", "/tmp/specialist-agent");
+      getOrCreateSession(SPECIALIST_KEY, "specialist-agent", "/tmp/specialist-agent", { name: "specialist-fixed" });
+      const published: Array<{ sessionName: string; payload: unknown }> = [];
+      const slack = service(config("main-agent", "specialist-fixed"), published);
+
+      const result = await slack.handleEnvelope(envelope("env-a2d9-conflict"));
+
+      expect(result).toBe("ignored");
+      expect(published).toHaveLength(0);
+      expect(getSlackInboundEnvelope(SLACK_INSTANCE, "env-a2d9-conflict")).toMatchObject({ state: "processed" });
+      expect(await slack.resumePendingInboundEnvelopes()).toMatchObject({ scanned: 0, failed: 0 });
+      expect(getSessionByName("specialist-fixed")?.agentId).toBe("specialist-agent");
+    });
+  });
+
   it("publishes Block Kit interactions as native inbound interaction events", async () => {
     const order: string[] = [];
     const prompts: unknown[] = [];
