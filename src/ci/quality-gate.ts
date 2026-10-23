@@ -81,6 +81,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/runtime/": [
     "src/channels/backend.test.ts",
     "src/channels/runtime-events.test.ts",
+    // Signals piggyback: the transformTurnPrompt seam in the delivery queue.
+    "src/signals/delivery-seam.test.ts",
     "src/runtime/index.test.ts",
     "src/runtime/model-catalog.test.ts",
     "src/runtime/context-registry.test.ts",

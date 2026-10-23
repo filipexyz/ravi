@@ -17,6 +17,7 @@ import { buildTurnReplyTarget } from "./turn-reply-target.js";
 import { resolveAgentSkills } from "./allowed-skills.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { createRuntimeMessageGenerator } from "./delivery-queue.js";
+import { renderSignalsForTurn } from "../signals/render.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
 import {
   resolveRuntimeToolEffectFence,
@@ -932,6 +933,14 @@ async function buildRuntimeStartRequestInternal(
       });
       turnRuntimeContextActivated = true;
       streamingSession.currentRuntimeContextKey = runtimeEnv.RAVI_CONTEXT_KEY;
+    },
+    transformTurnPrompt: ({ combinedPrompt }) => {
+      try {
+        const rendered = renderSignalsForTurn({ sessionName, sessionKey: dbSessionKey });
+        return rendered.suffix ? `${combinedPrompt}${rendered.suffix}` : combinedPrompt;
+      } catch {
+        return combinedPrompt;
+      }
     },
     traceTurnStart,
   });
