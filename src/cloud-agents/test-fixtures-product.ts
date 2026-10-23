@@ -353,6 +353,7 @@ export function createFakeProductConsole(input: { agents?: Json[]; workers?: Jso
       query: parsed.searchParams,
       body: init?.body ? (JSON.parse(String(init.body)) as Json) : null,
       authorization: new Headers(init?.headers).get("authorization"),
+      actorContact: new Headers(init?.headers).get("x-ravi-actor-contact"),
     };
     state.requests.push(request);
     const failure = state.failures.find(
