@@ -351,6 +351,32 @@ describe("channel backend ingress", () => {
     });
   });
 
+  it("rejects a resolved session owned by another agent before saving a receipt", async () => {
+    dbCreateAgent({ id: "agent-b", name: "Agent B", cwd: "/tmp/ravi-channel-agent-b" });
+    const resolved = resolvedRequest();
+    const publishPrompt = mock(
+      async (_sessionName: string, _payload: Record<string, unknown>, _options?: { messageId?: string }) => {},
+    );
+
+    const rejected = await acceptResolvedChannelIngress(
+      { ...resolved, request: { ...resolved.request, agentId: "agent-b" } },
+      { publishPrompt },
+    );
+
+    expect(rejected).toMatchObject({
+      disposition: "rejected",
+      error: { code: "INVALID_REQUEST", retryable: false },
+    });
+    expect(dbGetChannelBackendIngressReceipt("channel-instance-a", "resolved-idempotency-a")).toBeNull();
+    expect(publishPrompt).not.toHaveBeenCalled();
+
+    // Once routing is corrected, the same message is accepted, not an
+    // IDEMPOTENCY_CONFLICT left behind by the rejected attempt.
+    const accepted = await acceptResolvedChannelIngress(resolved, { publishPrompt });
+    expect(accepted).toMatchObject({ disposition: "accepted" });
+    expect(publishPrompt).toHaveBeenCalledTimes(1);
+  });
+
   it("resumes a durable resolved prompt after publication failure and process restart", async () => {
     const rejected = await acceptResolvedChannelIngress(resolvedRequest(), {
       publishPrompt: async () => {

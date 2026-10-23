@@ -38,11 +38,20 @@
 - Repeated detach MUST be idempotent and MUST preserve unrelated chats and
   session history.
 - Inbound routing MUST attach through `session_chat_subscriptions` only.
+- A Slack chat automatically subscribed to agent A's session, with an exact
+  route to agent B and a fixed session of B, MUST deliver to B's session and
+  move the subscription there. With an explicit attach it MUST stay on A's
+  session. Neither case may hand channel ingress agent A with B's session.
+- A route whose forced session belongs to another agent MUST settle the
+  Slack envelope without delivery instead of retrying it every reconcile.
+- Channel ingress MUST reject a resolved session owned by another agent
+  before saving a receipt, so the corrected retry is not an
+  `IDEMPOTENCY_CONFLICT`.
 - `ravi sessions attach|detach --json` MUST report attached, default output,
   remaining active subscriptions, and `legacy.status: none`.
 - Attach/detach during a running turn MUST NOT redirect that turn's captured
   reply target.
 - Different source chats and threads MUST run as separate serialized turns.
 - `ravi sessions mute`, `unmute`, `focus`, and related state MUST NOT exist.
-- `bun test src/router/session-attach.test.ts src/runtime/session-output-target.test.ts src/cli/commands/sessions.test.ts src/omni/consumer-context.test.ts src/runtime/session-surface-hint.test.ts src/runtime/session-trace.test.ts src/cli/session-cli-surface.test.ts`
+- `bun test src/router/session-attach.test.ts src/runtime/session-output-target.test.ts src/cli/commands/sessions.test.ts src/omni/consumer-context.test.ts src/runtime/session-surface-hint.test.ts src/runtime/session-trace.test.ts src/cli/session-cli-surface.test.ts src/channels/slack/socket-mode.test.ts src/router/route-sticky-attach.test.ts src/channels/backend.test.ts`
   SHOULD pass after changing attach behavior.

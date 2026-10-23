@@ -121,6 +121,52 @@ describe("route agent migration releases inbound subscriptions", () => {
     expect(listRouteStickyOverrides({ accountId: "main", pattern: PHONE, channel: "whatsapp" })).toEqual([]);
   });
 
+  it("releases a Slack channel pinned to the previous agent (group:<id> route, bug a2d9fc1c)", () => {
+    dbUpsertInstance({ name: "slack-main", instanceId: "slack-main", channel: "slack", agent: "michael-test" });
+    const session = getOrCreateSession(
+      "agent:michael-test:slack:slack-main:group:C0ABC123",
+      "michael-test",
+      "/tmp/michael-test",
+      { accountId: "slack-main", channel: "slack", chatType: "group", name: "michael-test-c0abc123" },
+    );
+    const chat = dbUpsertChat({
+      channel: "slack",
+      instanceId: "slack-main",
+      platformChatId: "C0ABC123",
+      chatType: "group",
+      title: "C0ABC123",
+    });
+    attachChatToSession({
+      sessionKey: session.sessionKey,
+      chatId: chat.id,
+      role: "primary",
+      attachedByType: "system",
+      attachedReason: "slack-socket-mode",
+      setOutputTarget: true,
+    });
+    dbCreateRoute({
+      pattern: "group:C0ABC123",
+      accountId: "slack-main",
+      agent: "nba-front-user",
+      session: "nba-front-user-fixed",
+      channel: "slack",
+    });
+
+    expect(listRouteStickyOverrides({ accountId: "slack-main", pattern: "group:C0ABC123", channel: "slack" })).toEqual([
+      expect.objectContaining({ chatId: chat.id, agentId: "michael-test" }),
+    ]);
+
+    const released = detachRouteBookkeepingSubscriptions({
+      accountId: "slack-main",
+      pattern: "group:C0ABC123",
+      targetAgent: "nba-front-user",
+      channel: "slack",
+    });
+
+    expect(released.detached).toBe(1);
+    expect(findSessionByAttachedChat(chat.id)).toBeNull();
+  });
+
   it("keeps an explicit sessions attach and reports that it still overrides the route", () => {
     dbCreateRoute({
       pattern: PHONE,

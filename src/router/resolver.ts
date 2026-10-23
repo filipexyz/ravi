@@ -188,6 +188,33 @@ export function resolveRoute(
 }
 
 /**
+ * A route forces a session that belongs to a different agent than the one
+ * the match resolved to (for example a chat subscription that overrode the
+ * agent but kept the route's fixed session). Terminal: retrying the same
+ * inbound produces the same conflict until the route or binding changes.
+ */
+export class RouteSessionAgentConflictError extends Error {
+  readonly code = "ROUTE_SESSION_AGENT_CONFLICT";
+  readonly terminal = true;
+
+  constructor(
+    readonly details: {
+      routeSession: string;
+      sessionKey: string;
+      sessionAgentId: string;
+      matchedAgentId: string;
+      matchedSessionKey: string;
+      routePattern?: string;
+    },
+  ) {
+    super(
+      `Route session "${details.routeSession}" belongs to agent ${details.sessionAgentId}, but the route resolved to agent ${details.matchedAgentId}`,
+    );
+    this.name = "RouteSessionAgentConflictError";
+  }
+}
+
+/**
  * Commit a previously matched route to the DB: ensures the session row
  * exists (idempotent) and assigns or reuses a canonical sessionName.
  *
@@ -222,6 +249,18 @@ export function commitMatchedRoute(
   if (forcedRouteSessionName && !threadId) {
     const target = forcedRouteSession;
     if (target && target.sessionKey !== sessionKey) {
+      // Never hand back one agent with another agent's session: ingress
+      // rejects the pair later, and the message is lost (bug a2d9fc1c).
+      if (target.agentId !== agentId) {
+        throw new RouteSessionAgentConflictError({
+          routeSession: forcedRouteSessionName,
+          sessionKey: target.sessionKey,
+          sessionAgentId: target.agentId,
+          matchedAgentId: agentId,
+          matchedSessionKey: sessionKey,
+          ...(route?.pattern ? { routePattern: route.pattern } : {}),
+        });
+      }
       log.info("Route redirecting to existing session", {
         routeSession: forcedRouteSessionName,
         targetKey: target.sessionKey,
