@@ -19,6 +19,7 @@
 
 import type { SlackBlockKitBlock } from "./block-kit.js";
 import { markdownToSlackMrkdwn } from "./mrkdwn.js";
+import { decodeLiteralLineBreaks } from "./thread-text.js";
 
 export type SlackThreadCardStatus = "open" | "closed" | "reopened";
 
@@ -63,11 +64,13 @@ const NOTE_LABELS: Record<SlackThreadCardStatus, string> = {
   reopened: "Progresso",
 };
 
-export function buildSlackThreadCard(brief: string, state: SlackThreadCardState): SlackThreadCardMessage {
+export function buildSlackThreadCard(rawBrief: string, state: SlackThreadCardState): SlackThreadCardMessage {
+  // Threads opened before the CLI decoded shell-typed `\n` still store them literally.
+  const brief = decodeLiteralLineBreaks(rawBrief);
   const { title, body } = splitSlackThreadBrief(brief);
   const summary = body ? fitMrkdwn(body, BODY_MAX_LENGTH) : undefined;
   const truncated = summary !== undefined && summary.cut;
-  const note = state.note?.trim();
+  const note = state.note === undefined ? undefined : decodeLiteralLineBreaks(state.note).trim();
   const noteLabel = `*${NOTE_LABELS[state.status]}:* `;
   const noteText = note ? fitMrkdwn(note, SUBTITLE_MAX_LENGTH - noteLabel.length) : undefined;
 
