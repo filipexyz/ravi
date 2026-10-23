@@ -356,3 +356,29 @@ export interface CloudWorker {
   status: "waiting_key" | "online" | "offline" | "disabled";
   lastSeenAt: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// Console -> OSS inbox events of category `cloud_agents` (contract F1/F3).
+// Transport only: the Console decides who gets them; this side renders and acks.
+
+export const CLOUD_INBOX_CATEGORY = "cloud_agents";
+
+export const CLOUD_DELIVERY_EVENT_TYPES = [
+  "cloud_agents.run.result",
+  "cloud_agents.approval.requested",
+  "cloud_agents.question.asked",
+  "cloud_agents.delivery.message",
+  "cloud_agents.run.thread",
+] as const;
+
+export type CloudDeliveryEventType = (typeof CLOUD_DELIVERY_EVENT_TYPES)[number];
+
+export function isCloudDeliveryEventType(value: string): value is CloudDeliveryEventType {
+  return (CLOUD_DELIVERY_EVENT_TYPES as readonly string[]).includes(value);
+}
+
+/** The person a run acts as, as the Console names them for the chat. */
+export interface CloudActorContact {
+  email?: string;
+  name: string;
+}

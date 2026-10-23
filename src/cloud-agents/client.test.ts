@@ -4,7 +4,7 @@ import { ConsoleApiClient } from "../cloud-auth/client.js";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 import type { CloudCredentials } from "../cloud-auth/types.js";
 import { fakeCredentials } from "../library/test-fixtures.js";
-import { CloudAgentsClient } from "./client.js";
+import { CloudAgentsClient, normalizeDelivery, normalizeQuestion } from "./client.js";
 import {
   createFakeCloudConsole,
   FAKE_CONSOLE_URL,
@@ -238,5 +238,130 @@ describe("cloud agents client", () => {
     await expect(client.listAgents("clinica")).rejects.toMatchObject({ code: "PROJECT_ACCESS_DENIED" });
     const forbidden = (await client.listAgents("clinica").catch((caught: unknown) => caught)) as CloudAuthError;
     expect(forbidden.consoleCode ?? forbidden.code).toBe("FORBIDDEN");
+  });
+});
+
+describe("cloud agents client: chat delivery and thread = run", () => {
+  it("normalizes delivery, questions, files, outcome and BRL cost", async () => {
+    const fake = createFakeCloudConsole({
+      runs: [
+        fakeCloudRun({
+          delivery: {
+            kind: "session",
+            installationId: "inst-1",
+            sessionName: "dev",
+            chat: { channel: "slack", chatId: "C1" },
+          },
+          deliveredAt: "2026-10-18T10:09:00.000Z",
+          questions: [
+            { id: "q_1", question: "Qual fila?", options: ["a", "b", 3], status: "pending" },
+            { question: "no id" },
+          ],
+          files: [{ fileId: "f_1", name: "data.csv", size: 3 }, { name: "no id" }],
+          outcome: { rubric: "Tem 3 itens", maxIterations: 3, iterations: 1, lastResult: "needs_revision" },
+          threadKey: "slack:slack-main:C1:1712345678.1",
+          billingMode: "credits",
+          chargedBrl: 1.5,
+          costBrl: 0.42,
+        }),
+      ],
+    });
+    const run = await fakeCloudClient(fake).getRun("run_1");
+    expect(run.delivery).toEqual({
+      kind: "session",
+      installationId: "inst-1",
+      sessionName: "dev",
+      chat: { channel: "slack", chatId: "C1", threadId: null, instanceId: null },
+    });
+    expect(run.deliveredAt).toBe("2026-10-18T10:09:00.000Z");
+    expect(run.questions).toEqual([
+      {
+        id: "q_1",
+        question: "Qual fila?",
+        options: ["a", "b"],
+        status: "pending",
+        answer: null,
+        askedAt: null,
+        answeredAt: null,
+        answeredBy: null,
+      },
+    ]);
+    expect(run.files).toEqual([{ fileId: "f_1", name: "data.csv", size: 3 }]);
+    expect(run.outcome).toEqual({
+      rubric: "Tem 3 itens",
+      maxIterations: 3,
+      iterations: 1,
+      lastResult: "needs_revision",
+      feedback: null,
+    });
+    expect(run).toMatchObject({ threadKey: "slack:slack-main:C1:1712345678.1", billingMode: "credits", costBrl: 0.42 });
+
+    const bare = await fakeCloudClient(createFakeCloudConsole({ runs: [fakeCloudRun()] })).getRun("run_1");
+    expect(bare).toMatchObject({
+      questions: [],
+      delivery: null,
+      files: [],
+      outcome: null,
+      threadKey: null,
+      costBrl: null,
+    });
+    expect(bare.billingMode).toBe("byok");
+  });
+
+  it("drops delivery kinds and question states the contract does not name", () => {
+    expect(normalizeDelivery({ kind: "email", sessionName: "x" })).toBeNull();
+    expect(normalizeDelivery({ kind: "none", extra: 1 })).toEqual({ kind: "none" });
+    expect(normalizeDelivery({ kind: "page_room", roomId: "r_1", siteId: "" })).toEqual({
+      kind: "page_room",
+      roomId: "r_1",
+    });
+    expect(normalizeQuestion({ id: "q", status: "weird" })?.status).toBe("pending");
+    expect(normalizeQuestion({ id: "q", options: Array.from({ length: 9 }, (_, i) => `o${i}`) })?.options).toHaveLength(
+      6,
+    );
+    expect(normalizeQuestion(null)).toBeNull();
+  });
+
+  it("acks a session delivery with kind result and a task run with an empty body", async () => {
+    const fake = createFakeCloudConsole({ runs: [fakeCloudRun()] });
+    const client = fakeCloudClient(fake);
+    await client.markDelivered("run_1", "result");
+    await client.markDelivered("run_1");
+    expect(fake.writes().map((write) => [write.path, write.body])).toEqual([
+      ["/runs/run_1/delivered", { kind: "result" }],
+      ["/runs/run_1/delivered", {}],
+    ]);
+  });
+
+  it("answers a question, and a question no longer pending is a conflict", async () => {
+    const fake = createFakeCloudConsole({
+      runs: [
+        fakeCloudRun({ status: "waiting_input", questions: [{ id: "q_1", question: "Qual?", status: "pending" }] }),
+      ],
+    });
+    const client = fakeCloudClient(fake);
+    const run = await client.answerQuestion("run_1", "q_1", "Suporte");
+    expect(run?.questions?.[0]).toMatchObject({ status: "answered", answer: "Suporte" });
+    expect(fake.writes()[0]).toMatchObject({ path: "/runs/run_1/questions/q_1", body: { answer: "Suporte" } });
+    await expect(client.answerQuestion("run_1", "q_1", "de novo")).rejects.toMatchObject({ status: 409 });
+  });
+
+  it("finds a run by its conversation key, null when none is bound, and posts thread messages", async () => {
+    const key = "whatsapp:inst-wa:120363012345678901@g.us";
+    const fake = createFakeCloudConsole({ runs: [fakeCloudRun({ threadKey: key })] });
+    const client = fakeCloudClient(fake);
+    expect((await client.getRunByThread(key))?.id).toBe("run_1");
+    expect(fake.requests[0]!.query.get("key")).toBe(key);
+    expect(await client.getRunByThread("whatsapp:inst-wa:other@g.us")).toBeNull();
+    expect((await client.sendThreadMessage(key, "olha isso"))?.id).toBe("run_1");
+    expect(fake.writes().at(-1)).toMatchObject({ path: "/runs/by-thread/messages", body: { key, text: "olha isso" } });
+    await expect(client.sendThreadMessage("whatsapp:inst-wa:other@g.us", "x")).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("acts for a chat contact through the actor header", async () => {
+    const fake = createFakeCloudConsole({ runs: [fakeCloudRun({ approvals: [fakeCloudApproval()] })] });
+    await fakeCloudClient(fake, undefined, "contact-ana").decideApproval("run_1", "ap_1", { decision: "approve" });
+    await fakeCloudClient(fake).getRun("run_1");
+    expect(fake.requests.map((request) => request.actorContact)).toEqual(["contact-ana", null]);
   });
 });

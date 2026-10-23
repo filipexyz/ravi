@@ -18,7 +18,10 @@
 //   POST /api/cli/cloud-agents/runs/<id>/stop
 //   POST /api/cli/cloud-agents/runs/<id>/approvals/<approvalId>
 //   GET  /api/cli/cloud-agents/runs/<id>/outputs/<outputId>   (bytes)
-//   POST /api/cli/cloud-agents/runs/<id>/delivered
+//   POST /api/cli/cloud-agents/runs/<id>/delivered            { kind?: "result" }
+//   POST /api/cli/cloud-agents/runs/<id>/questions/<questionId> { answer }
+//   GET  /api/cli/cloud-agents/runs/by-thread?key=
+//   POST /api/cli/cloud-agents/runs/by-thread/messages        { key, text }
 //   GET  /api/cli/cloud-agents/schedules?project=
 //   POST /api/cli/cloud-agents/schedules
 //   POST /api/cli/cloud-agents/schedules/<id>
@@ -34,9 +37,12 @@ import type {
   CloudAgent,
   CloudApproval,
   CloudCredential,
+  CloudDelivery,
+  CloudQuestion,
   CloudRun,
   CloudRunEvent,
   CloudRunOrigin,
+  CloudRunOutcome,
   CloudRunStartBody,
   CloudSchedule,
   CloudScheduleBody,
@@ -214,9 +220,43 @@ export class CloudAgentsClient {
     return this.withAuth((token) => this.session.client.requestBytes(path, token));
   }
 
-  /** This installation took a task run's result (the Console stops offering it). */
-  async markDelivered(id: string): Promise<void> {
-    await this.request<unknown>("POST", `/runs/${segment(id)}/delivered`, {});
+  /**
+   * This installation took a run's result (the Console stops offering it). A
+   * task run sends `{}` as before; a run delivered to a session sends `kind: "result"`.
+   */
+  async markDelivered(id: string, kind?: "result"): Promise<void> {
+    await this.request<unknown>("POST", `/runs/${segment(id)}/delivered`, kind ? { kind } : {});
+  }
+
+  /** The run's person answers a question the agent asked (`ask_human`). */
+  async answerQuestion(id: string, questionId: string, answer: string): Promise<CloudRun | null> {
+    return this.optionalRunOf(
+      await this.request<unknown>("POST", `/runs/${segment(id)}/questions/${segment(questionId)}`, { answer }),
+    );
+  }
+
+  /** The run bound to a conversation key (thread = run), or null when none is. */
+  async getRunByThread(key: string): Promise<CloudRun | null> {
+    try {
+      return this.optionalRunOf(await this.request<unknown>("GET", `/runs/by-thread${query({ key })}`));
+    } catch (error) {
+      if (isCloudAuthError(error) && (error.code === "NOT_FOUND" || error.status === 404)) return null;
+      throw error;
+    }
+  }
+
+  /** A message from the bound conversation to its run (same authorization as `messages`). */
+  async sendThreadMessage(key: string, text: string): Promise<CloudRun | null> {
+    return this.optionalRunOf(await this.request<unknown>("POST", "/runs/by-thread/messages", { key, text }));
+  }
+
+  /**
+   * The local contact a Console user linked on this installation (`ravi link`),
+   * or null. The Console answers only for this login's installation.
+   */
+  async resolveLinkedContact(consoleUserId: string): Promise<string | null> {
+    const binding = await this.withAuth((token) => this.session.client.resolveActorBinding({ consoleUserId }, token));
+    return binding?.consoleUserId === consoleUserId ? binding.contactId : null;
   }
 
   // -------------------------------------------------------------------------
@@ -320,6 +360,12 @@ export interface CloudAgentsSessionOptions {
   project?: string | null;
   /** Skip project resolution (org-level calls such as the key). */
   resolveProject?: boolean;
+  /**
+   * The local contact the calls act for (`x-ravi-actor-contact`), for the
+   * daemon acting on a person's own chat answer (an approval button or code).
+   * null sends no contact; omitted keeps the turn's author.
+   */
+  actorContactId?: string | null;
 }
 
 export interface CloudAgentsSessionDeps extends ConsoleScopeResolverDeps {
@@ -340,6 +386,8 @@ export interface CloudAgentsSession {
   organization: string | null;
   /** The organization id of the login (a task run is only watched by the same login). */
   organizationId: string | null;
+  /** The Console user of the `ravi login` session (the operator). */
+  userId?: string | null;
 }
 
 /** A client bound to the `ravi login` session, or null when there is none. */
@@ -372,9 +420,15 @@ export async function openCloudAgentsSession(
       project = null;
     }
   }
+  const actorContactId = options.actorContactId;
   return {
     client: new CloudAgentsClient({
-      client: deps.client ?? new ConsoleApiClient({ consoleUrl: credentials.consoleUrl }),
+      client:
+        deps.client ??
+        new ConsoleApiClient({
+          consoleUrl: credentials.consoleUrl,
+          ...(actorContactId !== undefined ? { actorContact: () => actorContactId } : {}),
+        }),
       credentials,
       write: deps.writeCredentials ?? writeCloudCredentials,
       delete: deps.deleteCredentials ?? deleteCloudCredentials,
@@ -385,6 +439,7 @@ export async function openCloudAgentsSession(
     project,
     projectSource,
     organizationId: credentials.organization?.id?.trim() || null,
+    userId: credentials.user?.id?.trim() || null,
     organization:
       credentials.organization?.slug?.trim() ||
       credentials.organization?.name?.trim() ||
@@ -497,6 +552,85 @@ export function requireRun(value: unknown, consoleUrl: string): CloudRun {
         : null,
     origin: normalizeOrigin(run.origin),
     url: consoleLink(consoleUrl, run.url),
+    questions: Array.isArray(run.questions)
+      ? run.questions.flatMap((entry) => {
+          const question = normalizeQuestion(entry);
+          return question ? [question] : [];
+        })
+      : [],
+    delivery: normalizeDelivery(run.delivery),
+    deliveredAt: stringOrNull(run.deliveredAt),
+    files: Array.isArray(run.files)
+      ? run.files.flatMap((entry) => {
+          const file = objectValue(entry);
+          if (!file || typeof file.fileId !== "string" || !file.fileId) return [];
+          return [{ fileId: file.fileId, name: stringOr(file.name, file.fileId), size: numberOr(file.size, 0) }];
+        })
+      : [],
+    outcome: normalizeOutcome(run.outcome),
+    threadKey: stringOrNull(run.threadKey),
+    triggerId: stringOrNull(run.triggerId),
+    billingMode: run.billingMode === "credits" ? "credits" : "byok",
+    chargedBrl: numberOrNull(run.chargedBrl),
+    costBrl: numberOrNull(run.costBrl),
+  };
+}
+
+const DELIVERY_KINDS: ReadonlySet<string> = new Set(["session", "page_room", "none"]);
+
+/** A delivery target: only its contract fields, and only when its kind is one the contract names. */
+export function normalizeDelivery(value: unknown): CloudDelivery | null {
+  const delivery = objectValue(value);
+  if (!delivery || typeof delivery.kind !== "string" || !DELIVERY_KINDS.has(delivery.kind)) return null;
+  const chat = objectValue(delivery.chat);
+  const optional = (key: string) => {
+    const field = delivery[key];
+    return typeof field === "string" && field ? { [key]: field } : {};
+  };
+  return {
+    kind: delivery.kind as CloudDelivery["kind"],
+    ...optional("installationId"),
+    ...optional("sessionName"),
+    ...optional("roomId"),
+    ...optional("siteId"),
+    ...(chat && typeof chat.channel === "string" && typeof chat.chatId === "string"
+      ? {
+          chat: {
+            channel: chat.channel,
+            chatId: chat.chatId,
+            threadId: stringOrNull(chat.threadId),
+            instanceId: stringOrNull(chat.instanceId),
+          },
+        }
+      : {}),
+  };
+}
+
+export function normalizeQuestion(value: unknown): CloudQuestion | null {
+  const question = objectValue(value);
+  if (!question || typeof question.id !== "string" || !question.id) return null;
+  const status = question.status === "answered" || question.status === "expired" ? question.status : "pending";
+  return {
+    id: question.id,
+    question: stringOr(question.question, ""),
+    options: stringArray(question.options).slice(0, 6),
+    status,
+    answer: stringOrNull(question.answer),
+    askedAt: stringOrNull(question.askedAt),
+    answeredAt: stringOrNull(question.answeredAt),
+    answeredBy: userRef(question.answeredBy),
+  };
+}
+
+function normalizeOutcome(value: unknown): CloudRunOutcome | null {
+  const outcome = objectValue(value);
+  if (!outcome || typeof outcome.rubric !== "string") return null;
+  return {
+    rubric: outcome.rubric,
+    maxIterations: numberOr(outcome.maxIterations, 1),
+    iterations: numberOr(outcome.iterations, 0),
+    lastResult: stringOrNull(outcome.lastResult),
+    feedback: stringOrNull(outcome.feedback),
   };
 }
 
@@ -559,6 +693,7 @@ function requireSchedule(value: unknown): CloudSchedule {
     nextRunAt: stringOrNull(schedule.nextRunAt),
     lastRunAt: stringOrNull(schedule.lastRunAt),
     lastRunId: stringOrNull(schedule.lastRunId),
+    delivery: normalizeDelivery(schedule.delivery),
   };
 }
 
