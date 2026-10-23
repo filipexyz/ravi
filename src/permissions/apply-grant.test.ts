@@ -65,6 +65,34 @@ describe("apply permission grant", () => {
     ]);
   });
 
+  it("adds the granted capability to an existing profile instead of replacing it", () => {
+    dbCreateTagDefinition({
+      slug: "permission-use-tool-bash",
+      label: "Use Bash",
+      kind: "system",
+      source: "permissions",
+      metadata: { permissions: { capabilities: ["use:tool:Read"] } },
+    });
+
+    const result = applyPermissionGrant({
+      intent: "exact",
+      scope: { type: "chat", chatId: chatA },
+      capability: CAPABILITY,
+      contactId,
+      agentId: "grant-agent",
+      idempotencyKey: "test:profile-merge:1",
+    });
+
+    expect(
+      result.capabilities.map(
+        (capability) => `${capability.permission}:${capability.objectType}:${capability.objectId}`,
+      ),
+    ).toEqual(["use:tool:Read", "use:tool:Bash"]);
+    expect(dbGetTagDefinition("permission-use-tool-bash")?.metadata).toEqual({
+      permissions: { capabilities: ["use:tool:Read", "use:tool:Bash"] },
+    });
+  });
+
   it("replays the same idempotency key without writing again", () => {
     const first = applyPermissionGrant({
       intent: "exact",

@@ -202,7 +202,11 @@ function evaluateGrantClick(request: ApprovalRequestRecord, candidate: ApprovalC
     return { kind: "ignore", reason: "unauthorized_grantor" };
   }
 
-  const scopeValue = candidate.scopeValue ?? getApprovalCardScope(request.id, actorId) ?? undefined;
+  // The scope persisted by the select interaction is the source of truth: a
+  // button value is rendered once and can be stale after a select change or a
+  // failed re-render. The button value is only a fallback when nothing was saved.
+  const storedScope = getApprovalCardScope(request.id, actorId) ?? undefined;
+  const scopeValue = storedScope ?? candidate.scopeValue;
   const resolved = grant.scopes.length > 0 ? resolveClickScope(grant, scopeValue ?? undefined) : null;
   if (grant.scopes.length > 0 && !resolved) {
     return { kind: "ignore", reason: "scope_not_allowed" };

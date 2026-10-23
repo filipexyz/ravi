@@ -7,6 +7,7 @@ import {
   listPermissionDenials,
   resolvePermissionDenials,
   emitPermissionGrantAudit,
+  type PermissionDenial,
 } from "../permissions/denials.js";
 import {
   applyPermissionGrant,
@@ -624,18 +625,88 @@ function latestOpenDenialId(
 ): number | undefined {
   const agentId = context.agentId;
   if (!agentId) return undefined;
+  const provenance = buildAuditContextProvenance({ context });
+  const scope = {
+    chatId: provenance?.source?.chatId ?? context.source?.chatId ?? undefined,
+    contactId: contactIdFromPrincipal(provenance?.actorPrincipal),
+  };
   const open = listPermissionDenials({ subjectType: "agent", subjectId: agentId, resolved: false });
   for (let index = open.length - 1; index >= 0; index -= 1) {
     const denial = open[index];
     if (
       denial.relation === capability.permission &&
       denial.objectType === capability.objectType &&
-      denial.objectId === capability.objectId
+      denial.objectId === capability.objectId &&
+      denialMatchesScope(denial, scope)
     ) {
       return denial.id;
     }
   }
   return undefined;
+}
+
+interface DenialScopeFilter {
+  readonly chatId?: string;
+  readonly contactId?: string;
+}
+
+/**
+ * A denial is only attributable to a scope when its provenance says so. A
+ * denial with no provenance is kept: it cannot be assigned to another chat.
+ */
+function denialMatchesScope(denial: PermissionDenial, scope: DenialScopeFilter): boolean {
+  const context = denialProvenanceContext(denial);
+  const denialChatId = stringValue(nestedValue(context, "source", "chatId"));
+  if (scope.chatId && denialChatId && denialChatId !== scope.chatId) return false;
+  const denialContactId = contactIdFromPrincipal(stringValue(context?.actorPrincipal));
+  if (scope.contactId && denialContactId && denialContactId !== scope.contactId) return false;
+  return true;
+}
+
+/**
+ * Which open denials a grant may close. A chat grant only covers its own chat;
+ * a contact or chat-tag grant covers the requester's denials; an agent-only
+ * grant stays agent-wide.
+ */
+function denialScopeSelector(
+  grant: PermissionGrantMetadata,
+  request: ApprovalRequestRecord,
+  scope: PermissionGrantScopeValue | null,
+): DenialScopeFilter {
+  if (!scope) return {};
+  if (scope === "chat") {
+    const chatId = request.chatId?.trim();
+    return chatId ? { chatId } : {};
+  }
+  const contactId = grant.targets.contactId;
+  return contactId ? { contactId } : {};
+}
+
+function denialProvenanceContext(denial: PermissionDenial): Record<string, unknown> | null {
+  const context = denial.detail?.context;
+  return context && typeof context === "object" && !Array.isArray(context)
+    ? (context as Record<string, unknown>)
+    : null;
+}
+
+function nestedValue(record: Record<string, unknown> | null, ...path: string[]): unknown {
+  let current: unknown = record;
+  for (const key of path) {
+    if (!current || typeof current !== "object" || Array.isArray(current)) return undefined;
+    current = (current as Record<string, unknown>)[key];
+  }
+  return current;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function contactIdFromPrincipal(principal: string | undefined): string | undefined {
+  const normalized = principal?.trim();
+  if (!normalized?.startsWith("contact:")) return undefined;
+  const contactId = normalized.slice("contact:".length).trim();
+  return contactId.length > 0 ? contactId : undefined;
 }
 
 function requesterUserIdFor(
@@ -886,15 +957,14 @@ async function applyGrantForDecision(
 
   let resolvedDenials = 0;
   if (applied) {
+    const denialSubjectId = grant.targets.agentId ?? request.agentId;
+    const denialScope = denialScopeSelector(grant, request, click.scope);
     resolvedDenials = resolvePermissionDenials({
       relation: grant.capability.permission,
       objectType: grant.capability.objectType,
       objectId: grant.capability.objectId,
-      ...(typeof grant.denialId === "number"
-        ? { denialId: grant.denialId }
-        : grant.targets.agentId
-          ? { subjectType: "agent", subjectId: grant.targets.agentId }
-          : {}),
+      ...(denialSubjectId ? { subjectType: "agent", subjectId: denialSubjectId } : {}),
+      ...denialScope,
       now,
     });
   }

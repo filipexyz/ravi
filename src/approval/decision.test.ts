@@ -9,7 +9,12 @@ import {
   SLACK_PERMISSION_GRANT_ACTION_IGNORE,
   SLACK_PERMISSION_GRANT_ACTION_SCOPE,
 } from "./slack-blocks.js";
-import { attachApprovalRequestMessageId, createApprovalRequest, recordApprovalDeliveries } from "./store.js";
+import {
+  attachApprovalRequestMessageId,
+  createApprovalRequest,
+  recordApprovalDeliveries,
+  setApprovalCardScope,
+} from "./store.js";
 import { dbCreateTagDefinition } from "../tags/index.js";
 import {
   APPROVAL_TEST_NOW_MS,
@@ -317,6 +322,29 @@ describe("approval grant card clicks", () => {
       kind: "decide",
       decision: "approved",
       grant: { intent: "exact", scope: "chat-tag:ops" },
+    });
+  });
+
+  it("applies the persisted scope when the button still carries the old one", () => {
+    // The admin changed the select to contact, but clicked a button rendered
+    // before the re-render reached the message (which still says chat).
+    setApprovalCardScope({
+      requestId: "req_grant",
+      userId: APPROVAL_TEST_SLACK_OWNER_USER,
+      scope: "contact",
+      now: APPROVAL_TEST_NOW_MS + 500,
+    });
+
+    expect(
+      grantClick({
+        userId: APPROVAL_TEST_SLACK_OWNER_USER,
+        actionId: SLACK_PERMISSION_GRANT_ACTION_EXACT,
+        value: "req_grant|chat",
+      }),
+    ).toMatchObject({
+      kind: "decide",
+      decision: "approved",
+      grant: { intent: "exact", scope: "contact" },
     });
   });
 

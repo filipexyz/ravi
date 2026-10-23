@@ -377,10 +377,16 @@ export function applyPermissionGrant(input: ApplyPermissionGrantInput): ApplyPer
   }
 
   const operations: PermissionGrantOperation[] = [];
+  let profileCapabilities: AuthorizationCapability[] = capabilities;
   if (input.intent === "full-access" || !isAdminPermissionProfile(profile)) {
+    // A grant adds one capability; it must never shrink a profile that already
+    // carries others (a CLI-created profile, or a previous grant). Merge with
+    // the stored definition instead of replacing it.
+    profileCapabilities =
+      input.intent === "full-access" ? capabilities : mergeProfileCapabilities(profile, capabilities);
     const profileResult = upsertPermissionProfileDefinition({
       profile,
-      capabilities,
+      capabilities: profileCapabilities,
       updatedBy: input.createdBy ?? "approval.grant-card",
     });
     operations.push({
@@ -425,7 +431,7 @@ export function applyPermissionGrant(input: ApplyPermissionGrantInput): ApplyPer
 
   const result: ApplyPermissionGrantResult = {
     profile,
-    capabilities,
+    capabilities: profileCapabilities,
     operations,
     changed: operations.some((operation) => operation.status === "applied"),
     replay: false,
@@ -587,4 +593,23 @@ export function capabilityListsEqual(a: readonly PermissionCapability[], b: read
   const left = a.map(formatCanonicalCapability).sort();
   const right = b.map(formatCanonicalCapability).sort();
   return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+/**
+ * Union of the capabilities already stored on a provider-owned profile and the
+ * ones a new grant adds. Order is stable and duplicates are dropped, so the
+ * definition only ever grows.
+ */
+function mergeProfileCapabilities(profile: string, added: readonly PermissionCapability[]): AuthorizationCapability[] {
+  const existing = dbGetTagDefinition(normalizePermissionProfileSlug(profile));
+  const merged: AuthorizationCapability[] = [];
+  const seen = new Set<string>();
+  const current = existing ? readPermissionTagCapabilities(existing) : [];
+  for (const capability of [...current, ...added]) {
+    const key = formatCanonicalCapability(capability);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(capability);
+  }
+  return merged;
 }

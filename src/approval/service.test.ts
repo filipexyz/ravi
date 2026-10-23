@@ -1312,6 +1312,123 @@ describe("approval service", () => {
       });
     });
 
+    it("does not resolve an open denial from another chat when the grant is chat scoped", async () => {
+      delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+      seedSlackOwner();
+      const requester = seedRequester();
+      const chat = seedGrantChat();
+      dbUpsertChat({
+        channel: "slack",
+        instanceId: "main",
+        platformChatId: "C999",
+        chatType: "group",
+        title: "other",
+      });
+      const denialInChat = recordPermissionDenial({
+        subjectType: "agent",
+        subjectId: "dev",
+        relation: "use",
+        objectType: "tool",
+        objectId: "Bash",
+        agentId: "dev",
+        contextId: "ctx_prior_chat_a",
+        detail: { context: { source: { chatId: "C123" } } },
+      });
+      const denialOtherChat = recordPermissionDenial({
+        subjectType: "agent",
+        subjectId: "dev",
+        relation: "use",
+        objectType: "tool",
+        objectId: "Bash",
+        agentId: "dev",
+        contextId: "ctx_prior_chat_b",
+        detail: { context: { source: { chatId: "C999" } } },
+      });
+      const otherChatDenialId = denialOtherChat?.id ?? -1;
+      expect(otherChatDenialId).toBeGreaterThan(0);
+
+      requestReplyResult = {
+        messageId: "eph_1",
+        deliveries: [{ userId: OWNER_SLACK_USER, kind: "ephemeral", chatId: "C123", messageId: "eph_1" }],
+      };
+      subscribeEvents = [
+        slackClick({
+          userId: OWNER_SLACK_USER,
+          messageTs: "eph_seen_by_slack",
+          actionId: SLACK_PERMISSION_GRANT_ACTION_EXACT,
+        }),
+      ];
+
+      const context = seedDeniedContext({
+        contextId: "ctx_grant_chat_scope",
+        contactId: requester.id,
+        chatId: chat.id,
+      });
+      const result = await authorizeRuntimeContext({
+        context,
+        permission: "use",
+        objectType: "tool",
+        objectId: "Bash",
+        timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
+      });
+
+      expect(result).toMatchObject({ allowed: true, approved: true });
+      const open = listPermissionDenials({ subjectType: "agent", subjectId: "dev", resolved: false });
+      expect(open.map((denial) => denial.id)).toEqual([otherChatDenialId]);
+      expect(open.map((denial) => denial.id)).not.toContain(denialInChat?.id);
+      await flushPermissionAuditEvents();
+      expect(auditEvents.find((entry) => entry.topic === "ravi.audit.permission_grant")?.data).toMatchObject({
+        resolvedDenials: 1,
+      });
+    });
+
+    it("resolves every open denial for the subject and capability, not only the newest one", async () => {
+      seedSlackOwner();
+      const requester = seedRequester();
+      const chat = seedGrantChat();
+      const denials = [1, 2, 3].map((index) =>
+        recordPermissionDenial({
+          subjectType: "agent",
+          subjectId: "dev",
+          relation: "use",
+          objectType: "tool",
+          objectId: "Bash",
+          agentId: "dev",
+          contextId: `ctx_prior_all_${index}`,
+          detail: { context: { source: { chatId: "C123" } } },
+        }),
+      );
+      expect(denials.every((denial) => typeof denial?.id === "number")).toBe(true);
+
+      requestReplyResult = {
+        messageId: "eph_1",
+        deliveries: [{ userId: OWNER_SLACK_USER, kind: "ephemeral", chatId: "C123", messageId: "eph_1" }],
+      };
+      subscribeEvents = [
+        slackClick({
+          userId: OWNER_SLACK_USER,
+          messageTs: "eph_seen_by_slack",
+          actionId: SLACK_PERMISSION_GRANT_ACTION_EXACT,
+        }),
+      ];
+
+      const context = seedDeniedContext({
+        contextId: "ctx_grant_all_denials",
+        contactId: requester.id,
+        chatId: chat.id,
+      });
+      const result = await authorizeRuntimeContext({
+        context,
+        permission: "use",
+        objectType: "tool",
+        objectId: "Bash",
+        timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
+      });
+
+      expect(result).toMatchObject({ allowed: true, approved: true });
+      expect(listPermissionDenials({ subjectType: "agent", subjectId: "dev", resolved: false })).toEqual([]);
+    });
+
     it("offers Full access to an admin even when the requester is the admin", async () => {
       const owner = seedApprovalContact({
         phone: APPROVAL_TEST_SLACK_OWNER_PHONE,

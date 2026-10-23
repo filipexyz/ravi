@@ -234,6 +234,17 @@ export interface ResolvePermissionDenialsInput {
   relation: string;
   objectType: string;
   objectId: string;
+  /**
+   * Only close denials recorded from this chat (raw channel chat id), used by a
+   * chat-scoped grant. Denials without provenance are kept: they cannot be
+   * attributed to another chat.
+   */
+  chatId?: string;
+  /**
+   * Only close denials whose actor resolved to this contact, used by contact
+   * and chat-tag scoped grants. Same provenance rule as `chatId`.
+   */
+  contactId?: string;
   now?: number;
 }
 
@@ -259,6 +270,21 @@ export function resolvePermissionDenials(input: ResolvePermissionDenialsInput): 
     params.push(input.subjectType, input.subjectId);
   } else {
     return 0;
+  }
+
+  const chatId = normalizeText(input.chatId);
+  if (chatId) {
+    matching.push(
+      "(json_extract(detail_json, '$.context.source.chatId') IS NULL OR json_extract(detail_json, '$.context.source.chatId') = ?)",
+    );
+    params.push(chatId);
+  }
+  const contactId = normalizeText(input.contactId);
+  if (contactId) {
+    matching.push(
+      "(json_extract(detail_json, '$.context.actorPrincipal') IS NULL OR json_extract(detail_json, '$.context.actorPrincipal') = ?)",
+    );
+    params.push(`contact:${contactId}`);
   }
 
   const result = getDb()
