@@ -436,6 +436,39 @@ export const cloudApprovalReturnSchema = z
   })
   .strict();
 
+const cloudDeliveryReturnSchema = z
+  .object({
+    kind: z.enum(["session", "page_room", "none"]),
+    installationId: z.string().optional(),
+    sessionName: z.string().optional(),
+    chat: z
+      .object({
+        channel: z.string(),
+        chatId: z.string(),
+        threadId: z.string().nullable().optional(),
+        instanceId: z.string().nullable().optional(),
+      })
+      .strict()
+      .nullable()
+      .optional(),
+    roomId: z.string().optional(),
+    siteId: z.string().optional(),
+  })
+  .strict();
+
+export const cloudQuestionReturnSchema = z
+  .object({
+    id: z.string(),
+    question: z.string(),
+    options: z.array(z.string()),
+    status: z.enum(["pending", "answered", "expired"]),
+    answer: z.string().nullable(),
+    askedAt: z.string().nullable(),
+    answeredAt: z.string().nullable(),
+    answeredBy: userRefSchema.nullable(),
+  })
+  .strict();
+
 export const cloudRunReturnSchema = z
   .object({
     id: z.string(),
@@ -468,6 +501,27 @@ export const cloudRunReturnSchema = z
       .strict()
       .nullable(),
     url: z.string().nullable(),
+    // Product additions (Console 0070): questions, delivery, files, outcome, thread, cost in BRL.
+    questions: z.array(cloudQuestionReturnSchema).optional(),
+    delivery: cloudDeliveryReturnSchema.nullable().optional(),
+    deliveredAt: z.string().nullable().optional(),
+    files: z.array(z.object({ fileId: z.string(), name: z.string(), size: z.number() }).strict()).optional(),
+    outcome: z
+      .object({
+        rubric: z.string(),
+        maxIterations: z.number(),
+        iterations: z.number(),
+        lastResult: z.string().nullable(),
+        feedback: z.string().nullable(),
+      })
+      .strict()
+      .nullable()
+      .optional(),
+    threadKey: z.string().nullable().optional(),
+    triggerId: z.string().nullable().optional(),
+    billingMode: z.enum(["byok", "credits"]).optional(),
+    chargedBrl: z.number().nullable().optional(),
+    costBrl: z.number().nullable().optional(),
   })
   .strict();
 
@@ -497,5 +551,6 @@ export const cloudScheduleReturnSchema = z
     nextRunAt: z.string().nullable(),
     lastRunAt: z.string().nullable(),
     lastRunId: z.string().nullable(),
+    delivery: cloudDeliveryReturnSchema.nullable().optional(),
   })
   .strict();
