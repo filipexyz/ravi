@@ -20,6 +20,7 @@ import {
 
 const log = logger.child("codex");
 import { ensureAgentInstructionFiles, loadAgentWorkspaceInstructions } from "./agent-instructions.js";
+import { stripControlCharacters } from "./public-failure.js";
 import { buildRaviRulesPromptSection } from "./ravi-rules.js";
 import {
   buildCodexSkillVisibilitySnapshot,
@@ -1047,18 +1048,28 @@ async function* normalizeCodexEvents(
           continue;
         }
 
-        const stderrMessage = result.stderr.trim();
-        const missingTerminalEvent = !lastErrorMessage && !stderrMessage;
+        // The native process ended without a terminal event. Its stderr is
+        // tracing output (ANSI colors, Rust module paths, thread ids): it stays
+        // in logs and the trace, never in the turn error a channel may show.
+        const stderrTail = codexStderrTail(result.stderr);
+        const exitDetail = describeCodexExit(result.exitCode, result.signal);
+        log.warn("Codex app-server exited without a terminal event", {
+          threadId: turnSessionId,
+          turnId: activeTurnId,
+          exitCode: result.exitCode,
+          signal: result.signal,
+          ...(lastErrorMessage ? { lastError: lastErrorMessage } : {}),
+          ...(stderrTail ? { stderr: stderrTail } : {}),
+        });
         const metadata = buildCodexEventMetadata(
           { type: "turn.failed", thread_id: turnSessionId, turn_id: activeTurnId },
           { threadId: turnSessionId, turnId: activeTurnId },
         );
         const terminal = terminalTracker.fail({
-          error:
-            lastErrorMessage ??
-            (stderrMessage || `Codex CLI exited without a terminal event (code ${result.exitCode ?? "unknown"})`),
+          error: lastErrorMessage ?? `Codex CLI exited without a terminal event (${exitDetail})`,
           recoverable: true,
-          failureKind: missingTerminalEvent ? "transport" : undefined,
+          failureKind: lastErrorMessage ? undefined : "transport",
+          rawEvent: buildCodexExitRawEvent(result, stderrTail),
           metadata,
         });
         if (terminal) {
@@ -1067,6 +1078,36 @@ async function* normalizeCodexEvents(
       } catch (error) {
         if (outerAbortSignal.aborted && !state.interrupted) {
           break;
+        }
+
+        if (error instanceof CodexAppServerTransportError && !state.interrupted) {
+          // The websocket (or JSON-RPC stream) can drop before the child's exit
+          // is observed. Same outcome as an exit without a terminal event.
+          const result = await turn.result;
+          const stderrTail = codexStderrTail(result.stderr);
+          log.warn("Codex app-server transport failed without a terminal event", {
+            threadId: turnSessionId,
+            turnId: activeTurnId,
+            error: error.message,
+            ...(stderrTail ? { stderr: stderrTail } : {}),
+          });
+          const metadata = buildCodexEventMetadata(
+            { type: "turn.failed", thread_id: turnSessionId, turn_id: activeTurnId },
+            { threadId: turnSessionId, turnId: activeTurnId },
+          );
+          const terminal = terminalTracker.fail({
+            error: lastErrorMessage ?? "Codex app-server connection closed without a terminal event",
+            recoverable: true,
+            // A Codex error event (an unavailable model, a usage limit) explains the
+            // failure; replaying it would only fail again.
+            failureKind: lastErrorMessage ? undefined : "transport",
+            rawEvent: { ...buildCodexExitRawEvent(result, stderrTail), error: error.message },
+            metadata,
+          });
+          if (terminal) {
+            yield terminal;
+          }
+          continue;
         }
 
         if (state.interrupted || isAbortLikeError(error)) {
@@ -1094,6 +1135,36 @@ async function* normalizeCodexEvents(
   } finally {
     await closeTransport();
   }
+}
+
+const CODEX_STDERR_TAIL_MAX = 2_000;
+
+/** A failure of the app-server connection itself, not of the native turn. */
+export class CodexAppServerTransportError extends Error {
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause));
+    this.name = "CodexAppServerTransportError";
+  }
+}
+
+/** The last part of native stderr, without terminal escapes, for logs and traces only. */
+export function codexStderrTail(stderr: string): string | undefined {
+  const clean = stripControlCharacters(stderr).trim();
+  if (!clean) return undefined;
+  return clean.length > CODEX_STDERR_TAIL_MAX ? `...${clean.slice(-CODEX_STDERR_TAIL_MAX)}` : clean;
+}
+
+function describeCodexExit(exitCode: number | null, signal: NodeJS.Signals | null): string {
+  return signal ? `signal ${signal}` : `code ${exitCode ?? "unknown"}`;
+}
+
+function buildCodexExitRawEvent(result: CodexCliTurnResult, stderrTail: string | undefined): Record<string, unknown> {
+  return {
+    type: "process.exit",
+    exitCode: result.exitCode,
+    signal: result.signal,
+    ...(stderrTail ? { message: stderrTail } : {}),
+  };
 }
 
 function createCodexAppServerTransport(options: { command?: string } = {}): CodexCliTransport {
@@ -1194,6 +1265,8 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     turn.settled = true;
     if (activeTurn === turn) {
       activeTurn = null;
+      // An interrupt escalation armed for this turn must not outlive it.
+      if (!closePromise) clearForcedKillTimer();
     }
 
     if (options?.failQueue !== undefined) {
@@ -1278,6 +1351,11 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     };
 
     const transportKind: CodexTransportKind = resolveCodexTransportKind(input.env);
+    // Failures before the channel is ready (spawn errors such as a missing
+    // executable, a listener that never appears) are setup problems and keep
+    // failing the turn as thrown errors; only a ready connection that drops is
+    // a recoverable transport failure.
+    let channelReady = false;
     const newTransport = createCodexTransport(transportKind, {
       command,
       baseArgs: buildCodexAppServerBaseArgs(),
@@ -1292,7 +1370,11 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           routeAppServerMessage(parsed);
         } catch (error) {
           if (activeTurn) {
-            settleTurn(activeTurn, { exitCode: 1, stderr: getStderr() }, { failQueue: error });
+            settleTurn(
+              activeTurn,
+              { exitCode: 1, stderr: getStderr().slice(activeTurn.stderrOffset) },
+              { failQueue: new CodexAppServerTransportError(error) },
+            );
           }
           signalCodexTransportProcess(newTransport.child, "SIGKILL");
         }
@@ -1302,7 +1384,11 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           return;
         }
         if (activeTurn) {
-          settleTurn(activeTurn, { exitCode: 1, stderr: getStderr() }, { failQueue: error });
+          settleTurn(
+            activeTurn,
+            { exitCode: 1, stderr: getStderr().slice(activeTurn.stderrOffset) },
+            { failQueue: channelReady ? new CodexAppServerTransportError(error) : error },
+          );
         }
         signalCodexTransportProcess(newTransport.child, "SIGKILL");
       },
@@ -1332,6 +1418,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     // before any caller attempts writeJsonRpc. Stdio resolves immediately.
     try {
       await newTransport.ready;
+      channelReady = true;
     } catch (error) {
       handleChildTermination(newTransport, 1, null, error instanceof Error ? error : new Error(String(error)));
       throw error;
@@ -1488,14 +1575,26 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           },
           { timeoutMs: INTERRUPT_GRACE_MS },
         );
-      } catch {
-        if (!child || closed) {
+      } catch (error) {
+        // Only escalate against the process that ran this turn, and only while
+        // the turn is still the active one: a late timeout from an earlier
+        // attempt must never signal the process now running the next turn.
+        const targetChild = child;
+        if (!targetChild || closed || turn.settled || activeTurn !== turn) {
           return;
         }
-        signalCodexTransportProcess(child, "SIGINT");
+        log.warn("Codex turn/interrupt did not answer; signalling app-server", {
+          pid: targetChild.pid,
+          threadId,
+          turnId: turn.turnId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        signalCodexTransportProcess(targetChild, "SIGINT");
+        clearForcedKillTimer();
         forcedKillTimer = setTimeout(() => {
-          if (!closed && child) {
-            signalCodexTransportProcess(child, "SIGKILL");
+          forcedKillTimer = null;
+          if (!closed && child === targetChild && !turn.settled && activeTurn === turn) {
+            signalCodexTransportProcess(targetChild, "SIGKILL");
           }
         }, INTERRUPT_GRACE_MS);
         forcedKillTimer.unref?.();
@@ -2227,6 +2326,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     closePromise = (async () => {
       transport?.closeChannel();
       signalCodexTransportProcess(targetChild, "SIGTERM");
+      clearForcedKillTimer();
       forcedKillTimer = setTimeout(() => {
         if (child === targetChild && !closed) {
           signalCodexTransportProcess(targetChild, "SIGKILL");
@@ -2254,6 +2354,8 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       if (activeTurn && !activeTurn.settled) {
         throw new Error("Codex app-server transport does not support overlapping turns");
       }
+      // A kill escalation left from an earlier turn's interrupt must not reach this one.
+      if (!closePromise) clearForcedKillTimer();
 
       let resolveResult!: (result: CodexCliTurnResult) => void;
       const queue = createAsyncQueue<CodexCliEvent>();
