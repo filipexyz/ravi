@@ -87,6 +87,7 @@ import {
 } from "./inbound-inbox.js";
 import { registerSlackThreadInboundLifecycle } from "./thread-lifecycle.js";
 import { buildSlackThreadCard, isSlackInvalidBlocksError, type SlackThreadCardMessage } from "./thread-card.js";
+import { interceptCloudChatMessage } from "../../cloud-agents/chat-routing.js";
 import {
   cleanSlackId,
   envelopeEvent,
@@ -1963,6 +1964,33 @@ export class SlackSocketModeService {
     });
     const leadingPrefix = parseSlackMessagePrefix(message.text);
     const promptText = await this.resolveSlackUserMentions(leadingPrefix ? leadingPrefix.body : message.text);
+    // A cloud run's person in a thread bound to the run, or answering an
+    // approval (`aprovar <código>`): the run gets it, not the agent
+    // (src/cloud-agents/chat-routing.ts).
+    if (
+      actorIdentity.actorType === "contact" &&
+      actorIdentity.contactId &&
+      (await interceptCloudChatMessage(
+        {
+          channel: "slack",
+          accountId: this.options.accountId,
+          instanceId,
+          chatId: message.channelId,
+          threadTs: message.thread.inboundThreadTs ?? null,
+          isGroup,
+          contactId: actorIdentity.contactId,
+          text: promptText,
+        },
+        (text) =>
+          this.webClient.postMessage({
+            channel: message.channelId,
+            ...(message.thread.outboundThreadTs ? { threadTs: message.thread.outboundThreadTs } : {}),
+            text,
+          }),
+      ))
+    ) {
+      return;
+    }
     const ingress = await acceptResolvedChannelIngress(
       {
         request: {

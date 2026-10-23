@@ -19,6 +19,7 @@ import {
   isLinkingDirectMessage,
   type LinkingDirectMessage,
 } from "../identity-link/link-dm-flow.js";
+import { interceptCloudChatMessage } from "../cloud-agents/chat-routing.js";
 import { isIgnoredOmniInstanceId } from "../router/omni-ignore.js";
 import { promisify } from "node:util";
 
@@ -1076,6 +1077,30 @@ export class OmniConsumer {
         });
         return;
       }
+    }
+
+    // A cloud run's person answering in chat (`aprovar <código>`, `@run ...`
+    // in a group bound to a run): the run gets it, not the agent, before any
+    // route or mention policy (src/cloud-agents/chat-routing.ts).
+    if (
+      !editInfo &&
+      effectiveActorType === "contact" &&
+      effectiveContactId &&
+      (await interceptCloudChatMessage(
+        {
+          channel: sessionChannel,
+          accountId: effectiveAccountId,
+          instanceId,
+          chatId: chatJid,
+          isGroup,
+          contactId: effectiveContactId,
+          text: payload.content.text ?? "",
+          replyToId: payload.replyToId ?? null,
+        },
+        (text) => this.sender.send(instanceId, chatJid, text),
+      ))
+    ) {
+      return;
     }
 
     // Match route (pure) — no DB writes yet. The session row is only
