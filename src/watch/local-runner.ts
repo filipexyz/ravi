@@ -20,7 +20,9 @@ import { eventSubject } from "./connectors.js";
 import { readLocalWatchSnapshot, writeLocalWatchSnapshot } from "./local-state.js";
 import {
   deriveLocalGitHubEvents,
+  PULL_REQUEST_COMMENT_EVENT,
   type DepartedPullRequest,
+  type LocalCommentObservation,
   type LocalPullRequestState,
   type LocalWatchSnapshot,
   type LocalWorkflowRunState,
@@ -44,6 +46,14 @@ export interface LocalWatchTickResult {
 export interface LocalWatchSource {
   readSnapshot(repo: string): LocalWatchSnapshot;
   /**
+   * Comentários recentes das PRs abertas.
+   *
+   * Opcional e opt-in: custa duas chamadas `gh api` por repo e só interessa a
+   * watch que assina o evento de comentário. `null` = não deu pra ler (não
+   * afirmamos nada, o estado anterior fica).
+   */
+  readComments?(repo: string, openPullRequests: number[]): LocalCommentObservation[] | null;
+  /**
    * Estado final das PRs que saíram da lista de abertas desde a última leitura.
    *
    * Sem isso não dá pra distinguir merge de fechamento: as duas somem da lista de
@@ -52,7 +62,6 @@ export interface LocalWatchSource {
    */
   readDeparted(repo: string, numbers: number[]): Record<string, DepartedPullRequest>;
 }
-
 export interface LocalWatchRunnerOptions {
   intervalMs?: number;
   source?: LocalWatchSource;
@@ -80,9 +89,96 @@ interface GhWorkflowRun {
   headBranch?: string;
 }
 
+interface GhIssueComment {
+  id?: number;
+  body?: string;
+  html_url?: string;
+  issue_url?: string;
+  updated_at?: string;
+  user?: { login?: string };
+}
+
+interface GhReviewComment {
+  id?: number;
+  body?: string;
+  html_url?: string;
+  pull_request_url?: string;
+  updated_at?: string;
+  user?: { login?: string };
+}
+
+/** Um repo inteiro em duas chamadas, independente de quantas PRs abertas tem. */
+const RECENT_COMMENTS_QUERY = "sort=created&direction=desc&per_page=100";
+
+function trailingNumber(value: string | undefined): number | null {
+  const match = /(?:issues|pulls)\/(\d+)$/.exec(value?.trim() ?? "");
+  if (!match) return null;
+  const parsed = Number.parseInt(match[1] ?? "", 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 /**
- * Fonte padrão: `gh` local, que já está autenticado na máquina. É uma leitura
- * por chamada, então tudo é feito em duas chamadas por repo por tick.
+ * Comentários recentes do repo, limitados às PRs abertas que a leitura viu.
+ *
+ * Um comentário em PR fechada não interessa ao acompanhamento, e o número da PR
+ * só existe na URL (`issue_url` / `pull_request_url`), não no corpo do comentário.
+ */
+function readRecentComments(
+  runner: (args: string[]) => string,
+  repo: string,
+  openPullRequests: Set<number>,
+): LocalCommentObservation[] | null {
+  const observed: LocalCommentObservation[] = [];
+  const read = (endpoint: "issues" | "pulls"): Array<GhIssueComment & GhReviewComment> | null => {
+    try {
+      return parseJson<Array<GhIssueComment & GhReviewComment>>(
+        runner(["api", `repos/${repo}/${endpoint}/comments?${RECENT_COMMENTS_QUERY}`]),
+      );
+    } catch {
+      // Sem leitura de comentário não afirmamos nada: o estado anterior fica.
+      return null;
+    }
+  };
+
+  const issueComments = read("issues");
+  if (issueComments === null) return null;
+  for (const comment of issueComments) {
+    const number = trailingNumber(comment.issue_url);
+    if (typeof comment.id !== "number" || number === null || !openPullRequests.has(number)) continue;
+    observed.push({
+      key: `issue:${comment.id}`,
+      id: comment.id,
+      number,
+      url: comment.html_url ?? "",
+      body: comment.body ?? "",
+      author: comment.user?.login ?? "",
+      updatedAt: comment.updated_at ?? "",
+    });
+  }
+
+  const reviewComments = read("pulls");
+  if (reviewComments === null) return null;
+  for (const comment of reviewComments) {
+    const number = trailingNumber(comment.pull_request_url);
+    if (typeof comment.id !== "number" || number === null || !openPullRequests.has(number)) continue;
+    observed.push({
+      key: `review:${comment.id}`,
+      id: comment.id,
+      number,
+      url: comment.html_url ?? "",
+      body: comment.body ?? "",
+      author: comment.user?.login ?? "",
+      updatedAt: comment.updated_at ?? "",
+    });
+  }
+
+  return observed;
+}
+
+/**
+ * Fonte padrão: `gh` local, que já está autenticado na máquina. A leitura é barata
+ * (duas chamadas por repo por tick), e comentário acrescenta duas chamadas só para
+ * watch que assina o evento.
  */
 export function createGhLocalWatchSource(runner: (args: string[]) => string): LocalWatchSource {
   return {
@@ -146,6 +242,9 @@ export function createGhLocalWatchSource(runner: (args: string[]) => string): Lo
       return { version: 1, pullRequests, workflowRuns };
     },
 
+    readComments(repo: string, openPullRequests: number[]) {
+      return readRecentComments(runner, repo, new Set(openPullRequests));
+    },
     readDeparted(repo: string, numbers: number[]) {
       const departed: Record<string, DepartedPullRequest> = {};
       for (const number of numbers) {
@@ -286,7 +385,19 @@ export class LocalWatchRunner {
     // Só pergunta o estado final de quem de fato saiu da lista de abertas.
     const departedNumbers = departedNumbersBetween(previous, snapshot);
     const departed = departedNumbers.length > 0 ? this.source.readDeparted(repo, departedNumbers) : {};
-    const { events, snapshot: next } = deriveLocalGitHubEvents(repo, { previous, current: snapshot, departed });
+    // Comentário é caro (duas chamadas) e só quem assina paga.
+    const comments = watch.eventTypes.includes(PULL_REQUEST_COMMENT_EVENT)
+      ? (this.source.readComments?.(
+          repo,
+          Object.values(snapshot.pullRequests).map((pullRequest) => pullRequest.number),
+        ) ?? undefined)
+      : undefined;
+    const { events, snapshot: next } = deriveLocalGitHubEvents(repo, {
+      previous,
+      current: snapshot,
+      departed,
+      ...(comments ? { comments } : {}),
+    });
     this.writeSnapshotState(watch.id, next);
 
     // O watch declara em quais eventos ele tem interesse; o que o Console já entrega
@@ -353,7 +464,14 @@ function defaultGhRunner(args: string[]): string {
   // `require` dentro de módulo ESM depende do bundler resolver: no bundle do
   // daemon isso é bomba-relógio. Import estático de node:child_process é barato e
   // não depende de shim.
-  return execFileSync("gh", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }) as string;
+  //
+  // Timeout existe porque este runner roda dentro do tick do poller: um `gh`
+  // travado (rede, prompt de auth) pararia o poll de todos os watches.
+  return execFileSync("gh", args, {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    timeout: 20_000,
+  }) as string;
 }
 
 export function resolveLocalWatchIntervalMs(value = process.env.RAVI_WATCH_LOCAL_INTERVAL_MS): number {

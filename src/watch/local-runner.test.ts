@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { LocalWatchSnapshot } from "./local-events.js";
+import type { LocalCommentObservation, LocalWatchSnapshot } from "./local-events.js";
 import { LocalWatchRunner, type LocalWatchSource } from "./local-runner.js";
 import type { WatchNatsPayload, WatchRecord } from "./types.js";
 
@@ -52,11 +52,13 @@ function harness(options: {
   watches: WatchRecord[];
   snapshots: LocalWatchSnapshot[];
   departed?: (numbers: number[]) => Record<string, { state: string; title: string; url: string }>;
+  comments?: (numbers: number[]) => LocalCommentObservation[] | null;
   publish?: (subject: string, payload: WatchNatsPayload) => Promise<void>;
 }) {
   const dir = mkdtempSync(join(tmpdir(), "ravi-local-watch-"));
   const published: Array<{ subject: string; payload: WatchNatsPayload }> = [];
   const departedCalls: number[][] = [];
+  const commentCalls: number[][] = [];
   const deliveredMarks: string[] = [];
   let index = 0;
   const source: LocalWatchSource = {
@@ -68,6 +70,10 @@ function harness(options: {
     readDeparted(_repo, numbers) {
       departedCalls.push(numbers);
       return options.departed?.(numbers) ?? {};
+    },
+    readComments(_repo, numbers) {
+      commentCalls.push(numbers);
+      return options.comments?.(numbers) ?? [];
     },
   };
   const runner = new LocalWatchRunner({
@@ -86,6 +92,7 @@ function harness(options: {
     runner,
     published,
     departedCalls,
+    commentCalls,
     deliveredMarks,
     cleanup: () => rmSync(dir, { recursive: true, force: true }),
   };
@@ -234,6 +241,72 @@ describe("local watch runner", () => {
       const result = await h.runner.tick();
 
       expect(result.watchesScanned).toBe(0);
+    } finally {
+      await h.runner.stop();
+      h.cleanup();
+    }
+  });
+
+  it("does not pay for comment reads when the watch does not subscribe to them", async () => {
+    const h = harness({
+      watches: [makeWatch({ eventTypes: ["workflow_run.failed"] })],
+      snapshots: [snapshot([{ number: 1 }]), snapshot([{ number: 1 }])],
+      comments: () => [
+        {
+          key: "issue:9",
+          id: 9,
+          number: 1,
+          url: "https://x/9",
+          body: "oi",
+          author: "luis",
+          updatedAt: "2026-10-22T19:00:00Z",
+        },
+      ],
+    });
+    try {
+      await h.runner.start();
+      await h.runner.tick();
+      await h.runner.tick();
+
+      // Duas chamadas `gh api` por tick só para quem assina o evento.
+      expect(h.commentCalls).toEqual([]);
+      expect(h.published).toEqual([]);
+    } finally {
+      await h.runner.stop();
+      h.cleanup();
+    }
+  });
+
+  it("publishes a new comment only for the watch that subscribes to it", async () => {
+    let reads = 0;
+    const h = harness({
+      watches: [makeWatch({ eventTypes: ["pull_request_comment.created"] })],
+      snapshots: [snapshot([{ number: 1 }]), snapshot([{ number: 1 }])],
+      comments: () => {
+        reads += 1;
+        // Baseline sem comentário; o comentário nasce no tick seguinte.
+        if (reads === 1) return [];
+        return [
+          {
+            key: "issue:9",
+            id: 9,
+            number: 1,
+            url: "https://x/9",
+            body: "oi",
+            author: "luis",
+            updatedAt: "2026-10-22T19:00:00Z",
+          },
+        ];
+      },
+    });
+    try {
+      await h.runner.start();
+      await h.runner.tick(); // baseline: nem comentário nem PR
+      await h.runner.tick();
+
+      expect(h.commentCalls[0]).toEqual([1]);
+      expect(h.published.map((item) => item.payload.eventType)).toEqual(["pull_request_comment.created"]);
+      expect(h.published[0]!.payload.subject).toBe("ravi.watch.github.pull_request_comment.created");
     } finally {
       await h.runner.stop();
       h.cleanup();

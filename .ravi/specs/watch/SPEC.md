@@ -120,6 +120,21 @@ Triggers MAY subscribe broadly with `ravi.watch.>` or narrowly to connector and
 event subjects. Trigger filters SHOULD inspect payload fields such as
 `watchId`, `source.repo`, `source.package`, or `eventType`.
 
+## Local Derivation Coverage
+
+A local connector observes state, so it can only announce what it can derive from
+two readings. The declaration and the derivation must be the same set.
+
+- An event type MUST be marked local-supported only when the local derivation can
+  actually produce it; the connector catalog reads that set from the derivation.
+- A watch MUST pay a source read only for the events it subscribes to; optional
+  reads (for example PR comments) stay off for watches that did not ask for them.
+- A snapshot written before an optional read existed MUST be treated as baseline:
+  the first tick after the upgrade records state and emits nothing.
+- A consumer that depends on the whole derived set (such as a PR follow) MUST
+  request the current set and MUST replace its own watch when that set grows,
+  instead of reusing a watch that silently covers less.
+
 ## Console Delivery Boundary
 
 Console delivery is not a separate event product. It is the local delivery
@@ -158,6 +173,9 @@ second trigger runner.
 - `ravi watch create ...` creates a durable watch and prints trigger-ready
   topics.
 - Local watches and Console watches emit the same watch event shape.
+- A local watch subscribed to `pull_request_comment.created` publishes a new
+  comment once, including PR number, url, author and body, and never republishes
+  an edit.
 - Console-produced watch events arrive through Console delivery and publish normalized
   `ravi.watch...` subjects.
 - Ordinary `ravi triggers` subscriptions can react to watch events and reply in
