@@ -1,4 +1,7 @@
 import { describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   CLOUD_RUN_FILES_MAX,
@@ -95,5 +98,35 @@ describe("prepareCloudRunFiles", () => {
     expect(
       prepareCloudRunFiles(["a/r.txt", "b/R.txt"], deps({ "/agents/dev/a/r.txt": "1", "/agents/dev/b/R.txt": "2" })),
     ).toContain("two files would be named");
+  });
+
+  it("judges a symlink by where it points and reads its target", () => {
+    const root = mkdtempSync(join(tmpdir(), "ravi-run-files-"));
+    try {
+      const cwd = join(root, "agent");
+      const state = join(root, "state");
+      mkdirSync(join(cwd, ".secret"), { recursive: true });
+      mkdirSync(state);
+      writeFileSync(join(cwd, ".secret", "key.txt"), "hidden");
+      writeFileSync(join(state, "ravi.db"), "state");
+      writeFileSync(join(root, "outside.txt"), "outside");
+      writeFileSync(join(cwd, "real.txt"), "visible");
+      symlinkSync(join(cwd, ".secret", "key.txt"), join(cwd, "to-hidden.txt"));
+      symlinkSync(join(state, "ravi.db"), join(cwd, "to-state.txt"));
+      symlinkSync(join(root, "outside.txt"), join(cwd, "to-outside.txt"));
+      symlinkSync(join(cwd, "real.txt"), join(cwd, "alias.txt"));
+      const real = { cwd, insideCwdOnly: true, stateDir: state };
+
+      expect(prepareCloudRunFiles(["to-hidden.txt"], real)).toContain("hidden files");
+      expect(prepareCloudRunFiles(["to-state.txt"], real)).toContain("Ravi's own state");
+      expect(prepareCloudRunFiles(["to-outside.txt"], real)).toContain("only files inside the agent's folder");
+      const ok = prepareCloudRunFiles(["alias.txt"], real) as PreparedCloudRunFiles;
+      expect(ok.files[0]).toMatchObject({
+        name: "alias.txt",
+        contentBase64: Buffer.from("visible").toString("base64"),
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

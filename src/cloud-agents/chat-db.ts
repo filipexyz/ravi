@@ -258,7 +258,20 @@ export interface CloudChatApproval {
   actorName: string | null;
   status: CloudChatApprovalStatus;
   createdAt: number;
+  /** When it was decided; while `deciding`, when it was claimed. */
   decidedAt: number | null;
+}
+
+/** A claim older than this was left by a Ravi that stopped mid-decision: the approval is open again. */
+export const CLOUD_CHAT_APPROVAL_CLAIM_TTL_MS = 2 * 60_000;
+
+/** Whether a person can still decide it here: pending, or a claim a stopped Ravi left behind. */
+export function isCloudChatApprovalOpen(approval: CloudChatApproval, now = Date.now()): boolean {
+  if (approval.status === "pending") return true;
+  return (
+    approval.status === "deciding" &&
+    (approval.decidedAt === null || approval.decidedAt < now - CLOUD_CHAT_APPROVAL_CLAIM_TTL_MS)
+  );
 }
 
 interface ApprovalRow {
@@ -335,20 +348,24 @@ export function dbGetCloudChatApproval(approvalId: string): CloudChatApproval | 
   return row ? toApproval(row) : null;
 }
 
-/** Pending approvals with this short code (normally one). */
-export function dbFindPendingCloudChatApprovals(code: string): CloudChatApproval[] {
+const OPEN_APPROVAL = "(status = 'pending' OR (status = 'deciding' AND (decided_at IS NULL OR decided_at < ?)))";
+
+/** Open approvals with this short code (normally one). */
+export function dbFindPendingCloudChatApprovals(code: string, now = Date.now()): CloudChatApproval[] {
   const rows = db()
-    .prepare("SELECT * FROM cloud_chat_approvals WHERE code = ? AND status = 'pending' ORDER BY created_at DESC")
-    .all(code.toLowerCase()) as ApprovalRow[];
+    .prepare(`SELECT * FROM cloud_chat_approvals WHERE code = ? AND ${OPEN_APPROVAL} ORDER BY created_at DESC`)
+    .all(code.toLowerCase(), now - CLOUD_CHAT_APPROVAL_CLAIM_TTL_MS) as ApprovalRow[];
   return rows.map(toApproval);
 }
 
-/** Takes a pending approval for one decision; false when another answer took it first. */
-export function dbClaimCloudChatApproval(approvalId: string): boolean {
+/** Takes an open approval for one decision; false when another answer took it first. */
+export function dbClaimCloudChatApproval(approvalId: string, now = Date.now()): boolean {
   return (
     db()
-      .prepare("UPDATE cloud_chat_approvals SET status = 'deciding' WHERE approval_id = ? AND status = 'pending'")
-      .run(approvalId).changes === 1
+      .prepare(
+        `UPDATE cloud_chat_approvals SET status = 'deciding', decided_at = ? WHERE approval_id = ? AND ${OPEN_APPROVAL}`,
+      )
+      .run(now, approvalId, now - CLOUD_CHAT_APPROVAL_CLAIM_TTL_MS).changes === 1
   );
 }
 
@@ -574,28 +591,35 @@ export function dbGetActiveCloudThreadByKey(threadKey: string): CloudThreadRun |
   return row ? toThread(row) : null;
 }
 
-/** The active binding of a Slack thread (`threadTs`) or a WhatsApp group (no `threadTs`). */
+/**
+ * The active binding of a Slack thread (`threadTs`) or a WhatsApp group (no `threadTs`), on the
+ * instance the message came in on: two instances in the same group each have their own bindings.
+ */
 export function dbFindActiveCloudThread(input: {
   channel: CloudThreadChannel;
+  /** The receiving instance; a binding made without an instance id stored the account instead. */
+  instanceId: string;
+  accountId?: string | null;
   chatId: string;
   threadTs?: string | null;
 }): CloudThreadRun | null {
+  const instances = [input.instanceId, input.accountId ?? input.instanceId];
   const row = (
     input.channel === "slack"
       ? db()
           .prepare(
             `SELECT * FROM cloud_thread_runs
-              WHERE channel = 'slack' AND chat_id = ? AND thread_ts = ? AND ended_at IS NULL
+              WHERE channel = 'slack' AND instance_id IN (?, ?) AND chat_id = ? AND thread_ts = ? AND ended_at IS NULL
               ORDER BY created_at DESC LIMIT 1`,
           )
-          .get(input.chatId, input.threadTs ?? "")
+          .get(...instances, input.chatId, input.threadTs ?? "")
       : db()
           .prepare(
             `SELECT * FROM cloud_thread_runs
-              WHERE channel = 'whatsapp' AND chat_id = ? AND ended_at IS NULL
+              WHERE channel = 'whatsapp' AND instance_id IN (?, ?) AND chat_id = ? AND ended_at IS NULL
               ORDER BY created_at DESC LIMIT 1`,
           )
-          .get(input.chatId)
+          .get(...instances, input.chatId)
   ) as ThreadRow | undefined;
   return row ? toThread(row) : null;
 }

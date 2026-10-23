@@ -63,6 +63,7 @@ import {
 import {
   type CloudChatDeliveryReply,
   type CloudChatTarget,
+  chatFromDelivery,
   deliverToChat as defaultDeliverToChat,
   normalizeChatChannel,
   personWroteFirst as defaultPersonWroteFirst,
@@ -104,8 +105,16 @@ export interface CloudDeliveryRunnerDeps {
   openSession?: (options: CloudAgentsSessionOptions) => Promise<CloudAgentsSession | null>;
   /** The session's own name when it exists here, else null. */
   resolveSessionName?: (sessionName: string) => string | null;
-  /** Hands a `[System] Inform` to a session; `messageId` collapses a retried publish. */
-  informSession?: (sessionName: string, prompt: string, messageId: string) => Promise<void>;
+  /**
+   * Hands a `[System] Inform` to a session; `messageId` collapses a retried publish. `source` is the run's
+   * chat, so the reply goes there even when the session has since talked in another chat.
+   */
+  informSession?: (
+    sessionName: string,
+    prompt: string,
+    messageId: string,
+    source: CloudChatTarget | null,
+  ) => Promise<void>;
   resolveSessionChat?: (sessionName: string) => CloudChatTarget | null;
   deliverToChat?: (
     target: CloudChatTarget,
@@ -300,8 +309,20 @@ export class CloudDeliveryRunner {
     return (this.deps.resolveSessionName ?? ((name: string) => resolveSession(name)?.name ?? null))(item.sessionName);
   }
 
+  /** The chat the run was started in, else the session's current chat. */
+  private chat(item: CloudDeliveryItem, sessionName: string): CloudChatTarget | null {
+    const current = (this.deps.resolveSessionChat ?? defaultResolveSessionChat)(sessionName);
+    const saved = normalizeDelivery(item.payload.delivery)?.chat;
+    return saved ? chatFromDelivery(saved, current) : current;
+  }
+
   private inform(sessionName: string, prompt: string, item: CloudDeliveryItem): Promise<void> {
-    return (this.deps.informSession ?? defaultInformSession)(sessionName, prompt, `cloud-delivery:${item.itemId}`);
+    return (this.deps.informSession ?? defaultInformSession)(
+      sessionName,
+      prompt,
+      `cloud-delivery:${item.itemId}`,
+      this.chat(item, sessionName),
+    );
   }
 
   private async result(item: CloudDeliveryItem, session: CloudAgentsSession): Promise<Outcome> {
@@ -375,7 +396,7 @@ export class CloudDeliveryRunner {
       now: this.now(),
     });
     let via: CloudApprovalInformInput["via"] = actorContactId ? "reply_code" : "console";
-    const chat = (this.deps.resolveSessionChat ?? defaultResolveSessionChat)(sessionName);
+    const chat = this.chat(item, sessionName);
     if (actorContactId && chat && normalizeChatChannel(chat.channel) === "slack") {
       const userIds = (this.deps.slackUserIdsForContact ?? defaultSlackUserIdsForContact)(
         actorContactId,
@@ -467,7 +488,7 @@ export class CloudDeliveryRunner {
     if (!sessionName) return { state: "failed", reason: `session ${item.sessionName ?? "-"} not found` };
     const text = (stringOrNull(item.payload.text) ?? stringOrNull(item.payload.message) ?? "").trim();
     if (!text) return { state: "failed", reason: "message event without text" };
-    const chat = (this.deps.resolveSessionChat ?? defaultResolveSessionChat)(sessionName);
+    const chat = this.chat(item, sessionName);
     // Never a new conversation: only the chat the session already talks in.
     if (!chat) return { state: "failed", reason: "the session has no chat" };
     // WhatsApp (and every channel but Slack): only where a person wrote first.
@@ -513,10 +534,20 @@ export class CloudDeliveryRunner {
   }
 }
 
-async function defaultInformSession(sessionName: string, prompt: string, messageId: string): Promise<void> {
+async function defaultInformSession(
+  sessionName: string,
+  prompt: string,
+  messageId: string,
+  source: CloudChatTarget | null,
+): Promise<void> {
   await publishSessionPrompt(
     sessionName,
-    { prompt, deliveryBarrier: "after_response", deliveryBarrierSource: "default" },
+    {
+      prompt,
+      deliveryBarrier: "after_response",
+      deliveryBarrierSource: "default",
+      ...(source ? { source } : {}),
+    },
     { messageId },
   );
 }

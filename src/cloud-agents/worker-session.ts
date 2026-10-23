@@ -50,6 +50,8 @@ const TOOL_RESULT_MAX_CHARS = 2_000;
 const MESSAGE_MAX_CHARS = 50_000;
 const ERROR_MAX_CHARS = 500;
 const MAX_EVENTS_PER_POST = 100;
+/** Extra tries for an output upload that failed, before the turn reports it missing. */
+const OUTPUT_UPLOAD_RETRIES = 3;
 const MAX_ACKS_PER_PULL = 100;
 const MAX_OUTPUT_FILES = 100;
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -348,11 +350,15 @@ export function toolPermission(spec: RaviSessionSpec, toolName: string): "allow"
   return config.allowTools.includes(tool) ? "allow" : "ask";
 }
 
-function domainMatches(host: string, domains: string[]): boolean {
-  const name = host.toLowerCase().replace(/\.$/, "");
+/** An entry is a domain (optionally `*.`) with an optional path: `docs.example.org/api` covers `/api` and below. */
+function domainMatches(url: URL, domains: string[]): boolean {
+  const name = url.hostname.toLowerCase().replace(/\.$/, "");
   return domains.some((domain) => {
-    const d = domain.toLowerCase().replace(/^\*\./, "");
-    return name === d || name.endsWith(`.${d}`);
+    const slash = domain.indexOf("/");
+    const d = (slash < 0 ? domain : domain.slice(0, slash)).toLowerCase().replace(/^\*\./, "");
+    if (name !== d && !name.endsWith(`.${d}`)) return false;
+    const path = slash < 0 ? "" : domain.slice(slash).replace(/\/+$/, "");
+    return !path || url.pathname === path || url.pathname.startsWith(`${path}/`);
   });
 }
 
@@ -364,16 +370,17 @@ function domainMatches(host: string, domains: string[]): boolean {
 export function applyWebFilters(spec: RaviSessionSpec, toolName: string, input: Record<string, unknown>): ToolDecision {
   const { allowedDomains, blockedDomains } = spec.web;
   if (toolName === "WebFetch" && (allowedDomains.length > 0 || blockedDomains.length > 0)) {
-    let host = "";
+    let url: URL;
     try {
-      host = new URL(String(input.url ?? "")).hostname;
+      url = new URL(String(input.url ?? ""));
     } catch {
       return { behavior: "deny", message: "WebFetch needs a valid URL." };
     }
-    if (allowedDomains.length > 0 && !domainMatches(host, allowedDomains)) {
+    const host = url.hostname;
+    if (allowedDomains.length > 0 && !domainMatches(url, allowedDomains)) {
       return { behavior: "deny", message: `${host} is not in this agent's allowed web domains.` };
     }
-    if (domainMatches(host, blockedDomains)) {
+    if (domainMatches(url, blockedDomains)) {
       return { behavior: "deny", message: `${host} is in this agent's blocked web domains.` };
     }
   }
@@ -488,6 +495,9 @@ class WorkerSession {
         await this.runTurn(prompt);
         continue;
       }
+      // Events a failed post kept (the turn's final status among them) go out while idle too.
+      if (this.buffer.length > 0) await this.flush();
+      if (this.terminated) break;
       const received = await this.pollOnce();
       if (this.terminated) break;
       if (received === 0) {
@@ -560,7 +570,21 @@ class WorkerSession {
       await polling;
     }
     if (this.terminated) return;
-    await this.uploadOutputs(spec);
+    // The turn reports completion only after its outputs are up, or names the ones that are not.
+    let missing = await this.uploadOutputs(spec);
+    for (let attempt = 1; missing.length > 0 && attempt <= OUTPUT_UPLOAD_RETRIES && !this.terminated; attempt += 1) {
+      await this.sleep(this.pollMs * 2 ** attempt);
+      missing = await this.uploadOutputs(spec);
+    }
+    if (this.terminated) return;
+    if (missing.length > 0) {
+      this.emit({
+        kind: "error",
+        errorType: "output_upload_failed",
+        message: clip(`Not uploaded after ${OUTPUT_UPLOAD_RETRIES + 1} tries: ${missing.join(", ")}`, 300),
+        retrying: false,
+      });
+    }
     this.emitStatus("idle", stopReason);
     await this.flush();
   }
@@ -828,10 +852,12 @@ class WorkerSession {
     }
   }
 
-  private async uploadOutputs(spec: RaviSessionSpec): Promise<void> {
-    if (!existsSync(spec.outputsDir)) return;
+  /** Uploads new or changed outputs; returns the names whose upload failed (tried again later). */
+  private async uploadOutputs(spec: RaviSessionSpec): Promise<string[]> {
+    const failed: string[] = [];
+    if (!existsSync(spec.outputsDir)) return failed;
     for (const path of listFiles(spec.outputsDir)) {
-      if (this.terminated) return;
+      if (this.terminated) return [];
       const name = relative(spec.outputsDir, path);
       let stats: ReturnType<typeof statSync>;
       try {
@@ -862,15 +888,17 @@ class WorkerSession {
           },
           body: readFileSync(path),
         });
-        if (this.ended(response)) return;
+        if (this.ended(response)) return [];
         if (!response.ok) throw new Error(`outputs answered ${response.status}`);
         this.uploaded.set(name, version);
         this.outputsUploaded += 1;
       } catch (error) {
         if (error instanceof WorkerSessionError) throw error;
         this.log(`output upload failed for ${name}: ${error instanceof Error ? error.message : String(error)}`);
+        failed.push(name);
       }
     }
+    return failed;
   }
 
   private call(url: string, init: RequestInit): Promise<Response> {

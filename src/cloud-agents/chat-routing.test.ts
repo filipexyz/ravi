@@ -4,6 +4,8 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-
 import {
   dbBindCloudThreadRun,
   dbGetActiveCloudThreadByKey,
+  CLOUD_CHAT_APPROVAL_CLAIM_TTL_MS,
+  dbClaimCloudChatApproval,
   dbGetCloudChatApproval,
   dbPendingCloudChatQuestion,
   dbRecordCloudChatApproval,
@@ -140,6 +142,23 @@ describe("approval codes typed in chat", () => {
     });
     expect(fake.writes()).toHaveLength(0);
     expect(dbGetCloudChatApproval(APPROVAL_ID)?.status).toBe("pending");
+  });
+
+  it("a claim a stopped Ravi left behind opens again after a while", async () => {
+    const fake = waitingRun();
+    recordApproval();
+    const claimedAt = Date.now();
+    expect(dbClaimCloudChatApproval(APPROVAL_ID, claimedAt)).toBe(true);
+    // Mid-decision: another answer cannot take it.
+    const opener = fakeCloudSessionOpener(fake);
+    expect(await routeCloudChatMessage(whatsapp("aprovar ab12cd"), { openSession: opener })).toEqual({
+      handled: false,
+    });
+    // Ravi restarted before recording the decision: later the person can answer again.
+    const later = () => claimedAt + CLOUD_CHAT_APPROVAL_CLAIM_TTL_MS + 1;
+    const result = await routeCloudChatMessage(whatsapp("aprovar ab12cd"), { openSession: opener, now: later });
+    expect(result).toMatchObject({ handled: true, kind: "approval" });
+    expect(dbGetCloudChatApproval(APPROVAL_ID)?.status).toBe("approved");
   });
 
   it("a decision the Console refuses reopens the approval and tells why", async () => {
@@ -313,6 +332,14 @@ describe("thread = run", () => {
     expect(fake.writes()[1]!.body).toEqual({ key: WHATSAPP_KEY, text: "pode seguir" });
     // In a private chat there is no binding.
     expect(await routeCloudChatMessage(whatsapp("@run oi"), { openSession: opener })).toEqual({ handled: false });
+    // Another instance in the same group has its own bindings: this one is not its.
+    expect(
+      await routeCloudChatMessage(
+        whatsapp("@run oi", { chatId: GROUP, isGroup: true, instanceId: "inst-wa-2", accountId: "wa-two" }),
+        { openSession: opener },
+      ),
+    ).toEqual({ handled: false });
+    expect(fake.writes()).toHaveLength(2);
   });
 
   it("a conversation no run follows any more ends the binding; the agent gets the message", async () => {

@@ -37,6 +37,7 @@ import {
   dbMarkCloudChatQuestionAnswered,
   dbPendingCloudChatQuestion,
   dbSettleCloudChatApproval,
+  isCloudChatApprovalOpen,
 } from "./chat-db.js";
 import { slackUserContactId as defaultSlackUserContactId } from "./chat-people.js";
 import { normalizeChatChannel } from "./chat-target.js";
@@ -87,7 +88,9 @@ export async function routeCloudChatMessage(
 
   const reply = parseCloudApprovalReply(text);
   if (reply) {
-    const matches = dbFindPendingCloudChatApprovals(reply.code).filter((row) => row.actorContactId === contactId);
+    const matches = dbFindPendingCloudChatApprovals(reply.code, (deps.now ?? Date.now)()).filter(
+      (row) => row.actorContactId === contactId,
+    );
     if (matches.length === 1) {
       const row = matches[0]!;
       const result = await decideCloudChatApproval(row, reply.decision, contactId, reply.reason, deps);
@@ -125,12 +128,13 @@ export async function routeCloudChatMessage(
 
 function boundThreadOf(input: CloudChatInbound): CloudThreadRun | null {
   const channel = normalizeChatChannel(input.channel);
+  const on = { instanceId: input.instanceId, accountId: input.accountId };
   if (channel === "slack") {
     const threadTs = input.threadTs?.trim();
-    return threadTs ? dbFindActiveCloudThread({ channel: "slack", chatId: input.chatId, threadTs }) : null;
+    return threadTs ? dbFindActiveCloudThread({ ...on, channel: "slack", chatId: input.chatId, threadTs }) : null;
   }
   if (channel === "whatsapp" && input.isGroup)
-    return dbFindActiveCloudThread({ channel: "whatsapp", chatId: input.chatId });
+    return dbFindActiveCloudThread({ ...on, channel: "whatsapp", chatId: input.chatId });
   return null;
 }
 
@@ -204,8 +208,8 @@ export async function decideCloudChatApproval(
   deps: CloudChatRoutingDeps = {},
 ): Promise<{ outcome: CloudApprovalOutcome; error?: string }> {
   if (!row.actorContactId || row.actorContactId !== contactId) return { outcome: "not_person" };
-  if (!dbClaimCloudChatApproval(row.approvalId)) return { outcome: "already_decided" };
   const now = deps.now ?? Date.now;
+  if (!dbClaimCloudChatApproval(row.approvalId, now())) return { outcome: "already_decided" };
   try {
     const session = await (deps.openSession ?? openCloudAgentsSession)({
       resolveProject: false,
@@ -311,7 +315,7 @@ export async function handleCloudApprovalClick(
     await respond("not_person", row);
     return "not_person";
   }
-  if (row.status !== "pending") {
+  if (!isCloudChatApprovalOpen(row, (deps.now ?? Date.now)())) {
     await respond("already_decided", row);
     return "already_decided";
   }

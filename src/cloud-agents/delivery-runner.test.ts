@@ -91,16 +91,16 @@ interface SetupOptions {
 
 function setup(fake: FakeCloudConsole, options: SetupOptions = {}) {
   let offset = 0;
-  const informs: Array<{ session: string; prompt: string; messageId: string }> = [];
+  const informs: Array<{ session: string; prompt: string; messageId: string; source: CloudChatTarget | null }> = [];
   const sent: Array<{ target: CloudChatTarget; message: Record<string, unknown> }> = [];
   const cards: Array<{ threadKey: string; status: string; summary: string | null }> = [];
   const runner = new CloudDeliveryRunner({
     openSession: fakeCloudSessionOpener(fake, { loggedIn: options.loggedIn }),
     now: () => Date.now() + offset,
     resolveSessionName: (name) => (name === "missing" ? null : name),
-    informSession: async (session, prompt, messageId) => {
+    informSession: async (session, prompt, messageId, source) => {
       if (options.informFails?.()) throw new Error("NATS down");
-      informs.push({ session, prompt, messageId });
+      informs.push({ session, prompt, messageId, source });
     },
     resolveSessionChat: () => (options.chat === undefined ? WHATSAPP_CHAT : options.chat),
     deliverToChat: async (target, message) => {
@@ -337,6 +337,32 @@ describe("CloudDeliveryRunner", () => {
     acceptCloudInboxItem(nowhere);
     await none.runner.tickOnce();
     expect(dbGetCloudDeliveryItem(nowhere.eventId)?.lastError).toBe("the session has no chat");
+  });
+
+  it("everything goes to the chat the run started in, even after the session talked elsewhere", async () => {
+    const fake = createFakeCloudConsole();
+    // The session's last chat is now someone else's DM; the run was started in Ana's.
+    const other: CloudChatTarget = { ...WHATSAPP_CHAT, chatId: "5511888888888@s.whatsapp.net" };
+    const { runner, informs, sent } = setup(fake, { chat: other });
+    const delivery = {
+      ...DELIVERY,
+      chat: { channel: "whatsapp", chatId: WHATSAPP_CHAT.chatId, threadId: null, instanceId: "inst-wa" },
+    };
+    acceptCloudInboxItem(inboxItem("cloud_agents.run.result", { ...RESULT, delivery }));
+    acceptCloudInboxItem(inboxItem("cloud_agents.delivery.message", { text: "Pronto.", delivery }));
+    await runner.tickOnce();
+    expect(informs[0]!.source).toMatchObject({
+      channel: "whatsapp",
+      chatId: WHATSAPP_CHAT.chatId,
+      instanceId: "inst-wa",
+    });
+    expect(sent.map((entry) => entry.target.chatId)).toEqual([WHATSAPP_CHAT.chatId]);
+
+    // Still in the same chat: the session's own target (account, canonical chat) is kept.
+    const same = setup(fake);
+    acceptCloudInboxItem(inboxItem("cloud_agents.run.result", { ...RESULT, delivery }));
+    await same.runner.tickOnce();
+    expect(same.informs[0]!.source).toEqual(WHATSAPP_CHAT);
   });
 
   it("run.thread: updates the card; the binding ends with the run", async () => {

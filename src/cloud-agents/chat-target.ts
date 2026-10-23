@@ -70,6 +70,32 @@ export function resolveSessionChat(sessionName: string): CloudChatTarget | null 
   };
 }
 
+/** The chat a run's delivery names: where the run was started, kept even if the session moves on. */
+export function chatFromDelivery(
+  saved: { channel: string; chatId: string; threadId?: string | null; instanceId?: string | null },
+  current: CloudChatTarget | null,
+): CloudChatTarget {
+  const threadId = saved.threadId ?? undefined;
+  // The session still talks there: its own target carries the account and the canonical chat.
+  if (
+    current &&
+    normalizeChatChannel(current.channel) === normalizeChatChannel(saved.channel) &&
+    current.chatId === saved.chatId &&
+    (current.threadId ?? undefined) === threadId &&
+    (!saved.instanceId || !current.instanceId || current.instanceId === saved.instanceId)
+  ) {
+    return current;
+  }
+  const instance = saved.instanceId ? dbGetInstanceByInstanceId(saved.instanceId) : null;
+  return {
+    channel: saved.channel,
+    accountId: instance?.name ?? saved.instanceId ?? current?.accountId ?? "",
+    ...(saved.instanceId ? { instanceId: saved.instanceId } : {}),
+    chatId: saved.chatId,
+    ...(threadId ? { threadId } : {}),
+  };
+}
+
 /** True when a person (a contact) already wrote in this chat; an agent's own messages do not count. */
 export function personWroteFirst(target: CloudChatTarget): boolean {
   const chat = target.canonicalChatId ? dbGetChat(target.canonicalChatId) : findChat(target);

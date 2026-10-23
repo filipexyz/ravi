@@ -275,6 +275,17 @@ describe("worker session environment and spec", () => {
     });
     const blocked = { ...spec, web: { allowedDomains: [], blockedDomains: ["evil.test"] } };
     expect(applyWebFilters(blocked, "WebFetch", { url: "https://www.evil.test/" })).toMatchObject({ behavior: "deny" });
+
+    // An entry with a path covers that path and below, on the domain and its subdomains.
+    const paths = { ...spec, web: { allowedDomains: ["*.example.org/api"], blockedDomains: ["docs.test/private/"] } };
+    const fetch = (url: string) => applyWebFilters(paths, "WebFetch", { url }).behavior;
+    expect(fetch("https://example.org/api")).toBe("allow");
+    expect(fetch("https://v2.example.org/api/users")).toBe("allow");
+    expect(fetch("https://example.org/apikeys")).toBe("deny");
+    expect(fetch("https://example.org/")).toBe("deny");
+    const blockedPath = { ...spec, web: { allowedDomains: [], blockedDomains: ["docs.test/private/"] } };
+    expect(applyWebFilters(blockedPath, "WebFetch", { url: "https://docs.test/private/x" }).behavior).toBe("deny");
+    expect(applyWebFilters(blockedPath, "WebFetch", { url: "https://docs.test/public" }).behavior).toBe("allow");
   });
 });
 
@@ -449,6 +460,67 @@ describe("runWorkerSession", () => {
       { name: "charts%2Fa.png", type: "image/png", bytes: 3 },
       { name: "report.pdf", type: "application/pdf", bytes: 9 },
     ]);
+  });
+
+  it("a failed output upload is tried again before completion, or reported missing", async () => {
+    const outputsDir = mkdtempSync(join(tmpdir(), "ravi-session-outputs-"));
+    tempDirs.push(outputsDir);
+    const runTurn: RunAgentTurn = async function* () {
+      writeFileSync(join(outputsDir, "report.pdf"), "pdf-bytes");
+      yield { type: "result", subtype: "success" };
+    };
+    /** Fails the first `times` output uploads with a 503. */
+    const flaky = (fake: FakeCallback, times: number) => {
+      let failures = 0;
+      return (async (url: string | URL | Request, init?: RequestInit) => {
+        if (new URL(String(url)).pathname.endsWith("/outputs") && failures < times) {
+          failures += 1;
+          return new Response("{}", { status: 503 });
+        }
+        return fake.fetch(url, init);
+      }) as typeof globalThis.fetch;
+    };
+
+    const recovers = fakeCallback({ items: [{ type: "message", text: "Write the report" }], react: endAfterTurn });
+    await runWorkerSession({ env: sessionEnv(), fetch: flaky(recovers, 2), runTurn, outputsDir, ...quick });
+    expect(recovers.outputs.map((output) => output.name)).toEqual(["report.pdf"]);
+    expect(recovers.events.some((entry) => entry.event.kind === "error")).toBe(false);
+
+    rmSync(join(outputsDir, "report.pdf"));
+    const fails = fakeCallback({ items: [{ type: "message", text: "Write the report" }], react: endAfterTurn });
+    await runWorkerSession({ env: sessionEnv(), fetch: flaky(fails, 99), runTurn, outputsDir, ...quick });
+    const kinds = fails.events.map((entry) => entry.event.kind);
+    const error = fails.events.find((entry) => entry.event.kind === "error")!;
+    expect(error.event).toMatchObject({ errorType: "output_upload_failed", retrying: false });
+    expect((error.event as { message: string }).message).toContain("report.pdf");
+    // Reported before the final idle status.
+    expect(kinds.lastIndexOf("error")).toBeLessThan(kinds.lastIndexOf("status"));
+  });
+
+  it("the final status a failed post kept goes out while the session is idle", async () => {
+    const fake = fakeCallback({ items: [{ type: "message", text: "Hi" }], react: endAfterTurn });
+    const runTurn: RunAgentTurn = async function* () {
+      yield { type: "result", subtype: "success" };
+    };
+    let failNext = false;
+    const fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      if (new URL(String(url)).pathname.endsWith("/events")) {
+        const body = JSON.parse(String(init?.body)) as { events: RaviSessionEventEntry[] };
+        const final = body.events.some(
+          (entry) => entry.event.kind === "status" && entry.event.status === "idle" && fake.events.length > 1,
+        );
+        // The first post carrying the turn's final status fails once.
+        if (final && !failNext) {
+          failNext = true;
+          return new Response("{}", { status: 502 });
+        }
+      }
+      return fake.fetch(url, init);
+    }) as typeof globalThis.fetch;
+    await runWorkerSession({ env: sessionEnv(), fetch, runTurn, ...quick });
+    expect(failNext).toBe(true);
+    const last = fake.events.at(-1)!;
+    expect(last.event).toEqual({ kind: "status", status: "idle", stopReason: { type: "end_turn" } });
   });
 
   it("an interrupt aborts the running turn", async () => {
