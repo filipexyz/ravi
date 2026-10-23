@@ -39785,6 +39785,438 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CloudAgentsApproveInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "description": "Cloud agent id, Library slug or name",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Approve (without it, print the plan and exit 3)",
+        "type": "boolean"
+      },
+      "project": {
+        "description": "Console project slug (default: the cwd's project)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "agent"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudAgentsApproveReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "additionalProperties": false,
+        "properties": {
+          "cap": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "monthSpentUsd": {
+                    "type": "number"
+                  },
+                  "monthlyCapUsd": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "pausedAt": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "pausedReason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "monthlyCapUsd",
+                  "monthSpentUsd",
+                  "pausedAt",
+                  "pausedReason"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "catalogEntryId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "config": {
+            "additionalProperties": false,
+            "properties": {
+              "askHuman": {
+                "type": "boolean"
+              },
+              "budgetUsd": {
+                "type": "number"
+              },
+              "mcpServers": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "memory": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "agent",
+                      "person"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "networking": {
+                "type": "string"
+              },
+              "office": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "outcome": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "maxIterations": {
+                        "type": "number"
+                      },
+                      "rubric": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "rubric",
+                      "maxIterations"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "placement": {
+                "enum": [
+                  "cloud",
+                  "installation"
+                ],
+                "type": "string"
+              },
+              "provider": {
+                "enum": [
+                  "anthropic",
+                  "ravi"
+                ],
+                "type": "string"
+              },
+              "raviMcp": {
+                "type": "boolean"
+              },
+              "repositories": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "schedule": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cron": {
+                        "type": "string"
+                      },
+                      "timezone": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "cron",
+                      "timezone"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "secrets": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "webFetch": {
+                "type": "boolean"
+              },
+              "webSearch": {
+                "type": "boolean"
+              },
+              "workflows": {
+                "type": "boolean"
+              },
+              "writes": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "budgetUsd",
+              "networking",
+              "webSearch",
+              "writes",
+              "raviMcp",
+              "mcpServers",
+              "repositories",
+              "schedule"
+            ],
+            "type": "object"
+          },
+          "deployedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deployedBy": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "name"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "library": {
+            "additionalProperties": false,
+            "properties": {
+              "itemId": {
+                "type": "string"
+              },
+              "scope": {
+                "type": "string"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "version": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "itemId",
+              "slug",
+              "scope",
+              "version"
+            ],
+            "type": "object"
+          },
+          "manifest": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "approved": {
+                    "type": "boolean"
+                  },
+                  "approvedAt": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "hash": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "value": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": {},
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "hash",
+                  "approved",
+                  "approvedAt",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "placementInstallationId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "name",
+          "library",
+          "provider",
+          "model",
+          "status",
+          "deployedAt",
+          "deployedBy",
+          "lastError",
+          "config"
+        ],
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "agent"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CloudAgentsArchiveInputSchema = #"""
   {
     "additionalProperties": false,
@@ -40023,6 +40455,443 @@ public enum RaviSchemas {
       "success",
       "id",
       "archived",
+      "agent"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudAgentsCapInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "description": "Cloud agent id, Library slug or name",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Raise or remove the cap (without it, print the plan and exit 3)",
+        "type": "boolean"
+      },
+      "project": {
+        "description": "Console project slug (default: the cwd's project)",
+        "type": "string"
+      },
+      "usd": {
+        "description": "Monthly cap in US dollars, or none",
+        "type": "string"
+      }
+    },
+    "required": [
+      "agent",
+      "usd"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudAgentsCapReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "additionalProperties": false,
+        "properties": {
+          "cap": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "monthSpentUsd": {
+                    "type": "number"
+                  },
+                  "monthlyCapUsd": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "pausedAt": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "pausedReason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "monthlyCapUsd",
+                  "monthSpentUsd",
+                  "pausedAt",
+                  "pausedReason"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "catalogEntryId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "config": {
+            "additionalProperties": false,
+            "properties": {
+              "askHuman": {
+                "type": "boolean"
+              },
+              "budgetUsd": {
+                "type": "number"
+              },
+              "mcpServers": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "memory": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "agent",
+                      "person"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "networking": {
+                "type": "string"
+              },
+              "office": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "outcome": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "maxIterations": {
+                        "type": "number"
+                      },
+                      "rubric": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "rubric",
+                      "maxIterations"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "placement": {
+                "enum": [
+                  "cloud",
+                  "installation"
+                ],
+                "type": "string"
+              },
+              "provider": {
+                "enum": [
+                  "anthropic",
+                  "ravi"
+                ],
+                "type": "string"
+              },
+              "raviMcp": {
+                "type": "boolean"
+              },
+              "repositories": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "schedule": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cron": {
+                        "type": "string"
+                      },
+                      "timezone": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "cron",
+                      "timezone"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "secrets": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "webFetch": {
+                "type": "boolean"
+              },
+              "webSearch": {
+                "type": "boolean"
+              },
+              "workflows": {
+                "type": "boolean"
+              },
+              "writes": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "budgetUsd",
+              "networking",
+              "webSearch",
+              "writes",
+              "raviMcp",
+              "mcpServers",
+              "repositories",
+              "schedule"
+            ],
+            "type": "object"
+          },
+          "deployedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deployedBy": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "name"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "library": {
+            "additionalProperties": false,
+            "properties": {
+              "itemId": {
+                "type": "string"
+              },
+              "scope": {
+                "type": "string"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "version": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "itemId",
+              "slug",
+              "scope",
+              "version"
+            ],
+            "type": "object"
+          },
+          "manifest": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "approved": {
+                    "type": "boolean"
+                  },
+                  "approvedAt": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "hash": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "value": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": {},
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "hash",
+                  "approved",
+                  "approvedAt",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "placementInstallationId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "name",
+          "library",
+          "provider",
+          "model",
+          "status",
+          "deployedAt",
+          "deployedBy",
+          "lastError",
+          "config"
+        ],
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
       "agent"
     ],
     "type": "object"
@@ -40563,6 +41432,58 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CloudAgentsMemoryResetInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "description": "Cloud agent id, Library slug or name",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Archive the stores (without it, print the plan and exit 3)",
+        "type": "boolean"
+      },
+      "project": {
+        "description": "Console project slug (default: the cwd's project)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "agent"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudAgentsMemoryResetReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agentId": {
+        "type": "string"
+      },
+      "archivedStores": {
+        "type": "number"
+      },
+      "name": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "agentId",
+      "name",
+      "archivedStores"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CloudAgentsShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -40786,6 +41707,1647 @@ public enum RaviSchemas {
     "required": [
       "success",
       "agent"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudCatalogInstallInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "entry": {
+        "description": "Catalog entry slug or id",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Install (without it, print the plan and exit 3)",
+        "type": "boolean"
+      },
+      "project": {
+        "description": "Console project slug (default: the cwd's project)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "entry"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudCatalogInstallReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agents": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "cap": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "monthSpentUsd": {
+                      "type": "number"
+                    },
+                    "monthlyCapUsd": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "pausedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "pausedReason": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "monthlyCapUsd",
+                    "monthSpentUsd",
+                    "pausedAt",
+                    "pausedReason"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "catalogEntryId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "config": {
+              "additionalProperties": false,
+              "properties": {
+                "askHuman": {
+                  "type": "boolean"
+                },
+                "budgetUsd": {
+                  "type": "number"
+                },
+                "mcpServers": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "memory": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "agent",
+                        "person"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "networking": {
+                  "type": "string"
+                },
+                "office": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "outcome": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "maxIterations": {
+                          "type": "number"
+                        },
+                        "rubric": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "rubric",
+                        "maxIterations"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "placement": {
+                  "enum": [
+                    "cloud",
+                    "installation"
+                  ],
+                  "type": "string"
+                },
+                "provider": {
+                  "enum": [
+                    "anthropic",
+                    "ravi"
+                  ],
+                  "type": "string"
+                },
+                "raviMcp": {
+                  "type": "boolean"
+                },
+                "repositories": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "schedule": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "cron": {
+                          "type": "string"
+                        },
+                        "timezone": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "cron",
+                        "timezone"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "secrets": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "webFetch": {
+                  "type": "boolean"
+                },
+                "webSearch": {
+                  "type": "boolean"
+                },
+                "workflows": {
+                  "type": "boolean"
+                },
+                "writes": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "budgetUsd",
+                "networking",
+                "webSearch",
+                "writes",
+                "raviMcp",
+                "mcpServers",
+                "repositories",
+                "schedule"
+              ],
+              "type": "object"
+            },
+            "deployedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "deployedBy": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "lastError": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "library": {
+              "additionalProperties": false,
+              "properties": {
+                "itemId": {
+                  "type": "string"
+                },
+                "scope": {
+                  "type": "string"
+                },
+                "slug": {
+                  "type": "string"
+                },
+                "version": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "itemId",
+                "slug",
+                "scope",
+                "version"
+              ],
+              "type": "object"
+            },
+            "manifest": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "approved": {
+                      "type": "boolean"
+                    },
+                    "approvedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "hash": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "value": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": {},
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "hash",
+                    "approved",
+                    "approvedAt",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "model": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "placementInstallationId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "projectId": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "projectId",
+            "name",
+            "library",
+            "provider",
+            "model",
+            "status",
+            "deployedAt",
+            "deployedBy",
+            "lastError",
+            "config"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "installed": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "entry",
+              "pack"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "project": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "project",
+      "installed",
+      "agents"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudCatalogListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "sector": {
+        "description": "Only this sector",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let CloudCatalogListReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "entries": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "installed": {
+              "type": "boolean"
+            },
+            "manifest": {
+              "anyOf": [
+                {
+                  "additionalProperties": {},
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "manifestHash": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "publisher": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ],
+              "type": "object"
+            },
+            "sector": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "slug": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "listed",
+                "unlisted"
+              ],
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "slug",
+            "name",
+            "summary",
+            "sector",
+            "publisher",
+            "manifest",
+            "manifestHash",
+            "status",
+            "installed"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "packs": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "entries": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "slug": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "slug",
+                  "name"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "publisher": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ],
+              "type": "object"
+            },
+            "revenueShareBps": {
+              "type": "number"
+            },
+            "sector": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "slug": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "listed",
+                "unlisted"
+              ],
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "slug",
+            "name",
+            "summary",
+            "sector",
+            "publisher",
+            "entries",
+            "revenueShareBps",
+            "status"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "entries",
+      "packs"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudCatalogPacksInstallInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "execute": {
+        "description": "Install (without it, print the plan and exit 3)",
+        "type": "boolean"
+      },
+      "pack": {
+        "description": "Pack slug or id",
+        "type": "string"
+      },
+      "project": {
+        "description": "Console project slug (default: the cwd's project)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "pack"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudCatalogPacksInstallReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agents": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "cap": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "monthSpentUsd": {
+                      "type": "number"
+                    },
+                    "monthlyCapUsd": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "pausedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "pausedReason": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "monthlyCapUsd",
+                    "monthSpentUsd",
+                    "pausedAt",
+                    "pausedReason"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "catalogEntryId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "config": {
+              "additionalProperties": false,
+              "properties": {
+                "askHuman": {
+                  "type": "boolean"
+                },
+                "budgetUsd": {
+                  "type": "number"
+                },
+                "mcpServers": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "memory": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "agent",
+                        "person"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "networking": {
+                  "type": "string"
+                },
+                "office": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "outcome": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "maxIterations": {
+                          "type": "number"
+                        },
+                        "rubric": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "rubric",
+                        "maxIterations"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "placement": {
+                  "enum": [
+                    "cloud",
+                    "installation"
+                  ],
+                  "type": "string"
+                },
+                "provider": {
+                  "enum": [
+                    "anthropic",
+                    "ravi"
+                  ],
+                  "type": "string"
+                },
+                "raviMcp": {
+                  "type": "boolean"
+                },
+                "repositories": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "schedule": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "cron": {
+                          "type": "string"
+                        },
+                        "timezone": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "cron",
+                        "timezone"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "secrets": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "webFetch": {
+                  "type": "boolean"
+                },
+                "webSearch": {
+                  "type": "boolean"
+                },
+                "workflows": {
+                  "type": "boolean"
+                },
+                "writes": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "budgetUsd",
+                "networking",
+                "webSearch",
+                "writes",
+                "raviMcp",
+                "mcpServers",
+                "repositories",
+                "schedule"
+              ],
+              "type": "object"
+            },
+            "deployedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "deployedBy": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "lastError": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "library": {
+              "additionalProperties": false,
+              "properties": {
+                "itemId": {
+                  "type": "string"
+                },
+                "scope": {
+                  "type": "string"
+                },
+                "slug": {
+                  "type": "string"
+                },
+                "version": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "itemId",
+                "slug",
+                "scope",
+                "version"
+              ],
+              "type": "object"
+            },
+            "manifest": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "approved": {
+                      "type": "boolean"
+                    },
+                    "approvedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "hash": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "value": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": {},
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "hash",
+                    "approved",
+                    "approvedAt",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "model": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "placementInstallationId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "projectId": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "projectId",
+            "name",
+            "library",
+            "provider",
+            "model",
+            "status",
+            "deployedAt",
+            "deployedBy",
+            "lastError",
+            "config"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "installed": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "entry",
+              "pack"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "project": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "project",
+      "installed",
+      "agents"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudCreditsShowInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let CloudCreditsShowReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "credits": {
+        "additionalProperties": false,
+        "properties": {
+          "balanceBrl": {
+            "type": "number"
+          },
+          "entries": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "amountBrl": {
+                  "type": "number"
+                },
+                "createdAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "fxRate": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "topup",
+                    "run",
+                    "adjustment",
+                    "refund"
+                  ],
+                  "type": "string"
+                },
+                "paymentUrl": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "pixCopyPaste": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "postedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "runId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "enum": [
+                    "pending",
+                    "posted",
+                    "void"
+                  ],
+                  "type": "string"
+                },
+                "usd": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "amountBrl",
+                "usd",
+                "fxRate",
+                "runId",
+                "status",
+                "paymentUrl",
+                "pixCopyPaste",
+                "createdAt",
+                "postedAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "fxRate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mode": {
+            "enum": [
+              "byok",
+              "credits"
+            ],
+            "type": "string"
+          },
+          "monthSpentBrl": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "mode",
+          "balanceBrl",
+          "fxRate",
+          "monthSpentBrl",
+          "entries"
+        ],
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "credits"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudCreditsTopupInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "amount": {
+        "description": "Amount in reais (20 to 5000)",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Create the Pix charge (without it, print the plan and exit 3)",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "amount"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudCreditsTopupReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "credits": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "balanceBrl": {
+                "type": "number"
+              },
+              "entries": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "amountBrl": {
+                      "type": "number"
+                    },
+                    "createdAt": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "fxRate": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "enum": [
+                        "topup",
+                        "run",
+                        "adjustment",
+                        "refund"
+                      ],
+                      "type": "string"
+                    },
+                    "paymentUrl": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "pixCopyPaste": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "postedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "runId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "status": {
+                      "enum": [
+                        "pending",
+                        "posted",
+                        "void"
+                      ],
+                      "type": "string"
+                    },
+                    "usd": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "kind",
+                    "amountBrl",
+                    "usd",
+                    "fxRate",
+                    "runId",
+                    "status",
+                    "paymentUrl",
+                    "pixCopyPaste",
+                    "createdAt",
+                    "postedAt"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "fxRate": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "mode": {
+                "enum": [
+                  "byok",
+                  "credits"
+                ],
+                "type": "string"
+              },
+              "monthSpentBrl": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "mode",
+              "balanceBrl",
+              "fxRate",
+              "monthSpentBrl",
+              "entries"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "entry": {
+        "additionalProperties": false,
+        "properties": {
+          "amountBrl": {
+            "type": "number"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fxRate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "topup",
+              "run",
+              "adjustment",
+              "refund"
+            ],
+            "type": "string"
+          },
+          "paymentUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pixCopyPaste": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "postedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "runId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "posted",
+              "void"
+            ],
+            "type": "string"
+          },
+          "usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "amountBrl",
+          "usd",
+          "fxRate",
+          "runId",
+          "status",
+          "paymentUrl",
+          "pixCopyPaste",
+          "createdAt",
+          "postedAt"
+        ],
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "entry",
+      "credits"
     ],
     "type": "object"
   }
@@ -41233,6 +43795,827 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CloudRunsAnswerInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "execute": {
+        "description": "Send the answer (without it, print the plan and exit 3)",
+        "type": "boolean"
+      },
+      "question": {
+        "description": "Question id (ravi cloud runs show <run>)",
+        "type": "string"
+      },
+      "run": {
+        "description": "Run id",
+        "type": "string"
+      },
+      "text": {
+        "description": "The answer, in the person's words",
+        "type": "string"
+      }
+    },
+    "required": [
+      "question",
+      "run",
+      "text"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudRunsAnswerReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "question": {
+        "additionalProperties": false,
+        "properties": {
+          "answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "answeredAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "answeredBy": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "name"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "askedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "question": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "answered",
+              "expired"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "question",
+          "options",
+          "status",
+          "answer",
+          "askedAt",
+          "answeredAt",
+          "answeredBy"
+        ],
+        "type": "object"
+      },
+      "run": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "approvals": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "decidedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "decidedBy": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "inputPreview": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "requestedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "server": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string"
+                },
+                "tool": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "tool",
+                "server",
+                "inputPreview",
+                "status",
+                "requestedAt",
+                "decidedAt",
+                "decidedBy"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "billingMode": {
+            "enum": [
+              "byok",
+              "credits"
+            ],
+            "type": "string"
+          },
+          "budgetUsd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "chargedBrl": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "costBrl": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "costUsd": {
+            "type": "number"
+          },
+          "deliveredAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "delivery": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "chat": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "channel": {
+                            "type": "string"
+                          },
+                          "chatId": {
+                            "type": "string"
+                          },
+                          "instanceId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "threadId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "channel",
+                          "chatId"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "installationId": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "session",
+                      "page_room",
+                      "none"
+                    ],
+                    "type": "string"
+                  },
+                  "roomId": {
+                    "type": "string"
+                  },
+                  "sessionName": {
+                    "type": "string"
+                  },
+                  "siteId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "endedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "files": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "fileId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "fileId",
+                "name",
+                "size"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "deliveredAt": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "delivery": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "installationId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "kind": {
+                    "type": "string"
+                  },
+                  "sessionName": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "taskId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "installationId",
+                  "sessionName",
+                  "taskId",
+                  "delivery",
+                  "deliveredAt"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "feedback": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "iterations": {
+                    "type": "number"
+                  },
+                  "lastResult": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "maxIterations": {
+                    "type": "number"
+                  },
+                  "rubric": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "rubric",
+                  "maxIterations",
+                  "iterations",
+                  "lastResult",
+                  "feedback"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "outputs": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "size"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "questions": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "answer": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "answeredAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "answeredBy": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "askedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "options": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "question": {
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "pending",
+                    "answered",
+                    "expired"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "question",
+                "options",
+                "status",
+                "answer",
+                "askedAt",
+                "answeredAt",
+                "answeredBy"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "runningSeconds": {
+            "type": "number"
+          },
+          "startedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "threadKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tokens": {
+            "additionalProperties": false,
+            "properties": {
+              "cacheRead": {
+                "type": "number"
+              },
+              "cacheWrite": {
+                "type": "number"
+              },
+              "input": {
+                "type": "number"
+              },
+              "output": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "input",
+              "output",
+              "cacheRead",
+              "cacheWrite"
+            ],
+            "type": "object"
+          },
+          "trigger": {
+            "type": "string"
+          },
+          "triggerId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "agentName",
+          "projectId",
+          "status",
+          "trigger",
+          "actor",
+          "prompt",
+          "result",
+          "budgetUsd",
+          "costUsd",
+          "runningSeconds",
+          "tokens",
+          "approvals",
+          "outputs",
+          "startedAt",
+          "endedAt",
+          "error",
+          "origin",
+          "url"
+        ],
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "run",
+      "question"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CloudRunsApproveInputSchema = #"""
   {
     "additionalProperties": false,
@@ -41487,7 +44870,34 @@ public enum RaviSchemas {
             },
             "type": "array"
           },
+          "billingMode": {
+            "enum": [
+              "byok",
+              "credits"
+            ],
+            "type": "string"
+          },
           "budgetUsd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "chargedBrl": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "costBrl": {
             "anyOf": [
               {
                 "type": "number"
@@ -41499,6 +44909,95 @@ public enum RaviSchemas {
           },
           "costUsd": {
             "type": "number"
+          },
+          "deliveredAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "delivery": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "chat": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "channel": {
+                            "type": "string"
+                          },
+                          "chatId": {
+                            "type": "string"
+                          },
+                          "instanceId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "threadId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "channel",
+                          "chatId"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "installationId": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "session",
+                      "page_room",
+                      "none"
+                    ],
+                    "type": "string"
+                  },
+                  "roomId": {
+                    "type": "string"
+                  },
+                  "sessionName": {
+                    "type": "string"
+                  },
+                  "siteId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "endedAt": {
             "anyOf": [
@@ -41532,6 +45031,29 @@ public enum RaviSchemas {
                 "type": "null"
               }
             ]
+          },
+          "files": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "fileId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "fileId",
+                "name",
+                "size"
+              ],
+              "type": "object"
+            },
+            "type": "array"
           },
           "id": {
             "type": "string"
@@ -41610,6 +45132,55 @@ public enum RaviSchemas {
               }
             ]
           },
+          "outcome": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "feedback": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "iterations": {
+                    "type": "number"
+                  },
+                  "lastResult": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "maxIterations": {
+                    "type": "number"
+                  },
+                  "rubric": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "rubric",
+                  "maxIterations",
+                  "iterations",
+                  "lastResult",
+                  "feedback"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "outputs": {
             "items": {
               "additionalProperties": false,
@@ -41639,6 +45210,105 @@ public enum RaviSchemas {
           "prompt": {
             "type": "string"
           },
+          "questions": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "answer": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "answeredAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "answeredBy": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "askedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "options": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "question": {
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "pending",
+                    "answered",
+                    "expired"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "question",
+                "options",
+                "status",
+                "answer",
+                "askedAt",
+                "answeredAt",
+                "answeredBy"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "result": {
             "anyOf": [
               {
@@ -41664,6 +45334,16 @@ public enum RaviSchemas {
           },
           "status": {
             "type": "string"
+          },
+          "threadKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "tokens": {
             "additionalProperties": false,
@@ -41691,6 +45371,16 @@ public enum RaviSchemas {
           },
           "trigger": {
             "type": "string"
+          },
+          "triggerId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "url": {
             "anyOf": [
@@ -41995,7 +45685,34 @@ public enum RaviSchemas {
             },
             "type": "array"
           },
+          "billingMode": {
+            "enum": [
+              "byok",
+              "credits"
+            ],
+            "type": "string"
+          },
           "budgetUsd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "chargedBrl": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "costBrl": {
             "anyOf": [
               {
                 "type": "number"
@@ -42007,6 +45724,95 @@ public enum RaviSchemas {
           },
           "costUsd": {
             "type": "number"
+          },
+          "deliveredAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "delivery": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "chat": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "channel": {
+                            "type": "string"
+                          },
+                          "chatId": {
+                            "type": "string"
+                          },
+                          "instanceId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "threadId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "channel",
+                          "chatId"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "installationId": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "session",
+                      "page_room",
+                      "none"
+                    ],
+                    "type": "string"
+                  },
+                  "roomId": {
+                    "type": "string"
+                  },
+                  "sessionName": {
+                    "type": "string"
+                  },
+                  "siteId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "endedAt": {
             "anyOf": [
@@ -42040,6 +45846,29 @@ public enum RaviSchemas {
                 "type": "null"
               }
             ]
+          },
+          "files": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "fileId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "fileId",
+                "name",
+                "size"
+              ],
+              "type": "object"
+            },
+            "type": "array"
           },
           "id": {
             "type": "string"
@@ -42118,6 +45947,55 @@ public enum RaviSchemas {
               }
             ]
           },
+          "outcome": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "feedback": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "iterations": {
+                    "type": "number"
+                  },
+                  "lastResult": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "maxIterations": {
+                    "type": "number"
+                  },
+                  "rubric": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "rubric",
+                  "maxIterations",
+                  "iterations",
+                  "lastResult",
+                  "feedback"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "outputs": {
             "items": {
               "additionalProperties": false,
@@ -42147,6 +46025,105 @@ public enum RaviSchemas {
           "prompt": {
             "type": "string"
           },
+          "questions": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "answer": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "answeredAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "answeredBy": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "askedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "options": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "question": {
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "pending",
+                    "answered",
+                    "expired"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "question",
+                "options",
+                "status",
+                "answer",
+                "askedAt",
+                "answeredAt",
+                "answeredBy"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "result": {
             "anyOf": [
               {
@@ -42172,6 +46149,16 @@ public enum RaviSchemas {
           },
           "status": {
             "type": "string"
+          },
+          "threadKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "tokens": {
             "additionalProperties": false,
@@ -42199,6 +46186,16 @@ public enum RaviSchemas {
           },
           "trigger": {
             "type": "string"
+          },
+          "triggerId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "url": {
             "anyOf": [
@@ -42426,7 +46423,34 @@ public enum RaviSchemas {
               },
               "type": "array"
             },
+            "billingMode": {
+              "enum": [
+                "byok",
+                "credits"
+              ],
+              "type": "string"
+            },
             "budgetUsd": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "chargedBrl": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "costBrl": {
               "anyOf": [
                 {
                   "type": "number"
@@ -42438,6 +46462,95 @@ public enum RaviSchemas {
             },
             "costUsd": {
               "type": "number"
+            },
+            "deliveredAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "delivery": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "chat": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "channel": {
+                              "type": "string"
+                            },
+                            "chatId": {
+                              "type": "string"
+                            },
+                            "instanceId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "threadId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "channel",
+                            "chatId"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "installationId": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "enum": [
+                        "session",
+                        "page_room",
+                        "none"
+                      ],
+                      "type": "string"
+                    },
+                    "roomId": {
+                      "type": "string"
+                    },
+                    "sessionName": {
+                      "type": "string"
+                    },
+                    "siteId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "endedAt": {
               "anyOf": [
@@ -42471,6 +46584,29 @@ public enum RaviSchemas {
                   "type": "null"
                 }
               ]
+            },
+            "files": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "fileId": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "size": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "fileId",
+                  "name",
+                  "size"
+                ],
+                "type": "object"
+              },
+              "type": "array"
             },
             "id": {
               "type": "string"
@@ -42549,6 +46685,55 @@ public enum RaviSchemas {
                 }
               ]
             },
+            "outcome": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "feedback": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "iterations": {
+                      "type": "number"
+                    },
+                    "lastResult": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "maxIterations": {
+                      "type": "number"
+                    },
+                    "rubric": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "rubric",
+                    "maxIterations",
+                    "iterations",
+                    "lastResult",
+                    "feedback"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "outputs": {
               "items": {
                 "additionalProperties": false,
@@ -42578,6 +46763,105 @@ public enum RaviSchemas {
             "prompt": {
               "type": "string"
             },
+            "questions": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "answer": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "answeredAt": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "answeredBy": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "askedAt": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "options": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "question": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "enum": [
+                      "pending",
+                      "answered",
+                      "expired"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "question",
+                  "options",
+                  "status",
+                  "answer",
+                  "askedAt",
+                  "answeredAt",
+                  "answeredBy"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
             "result": {
               "anyOf": [
                 {
@@ -42603,6 +46887,16 @@ public enum RaviSchemas {
             },
             "status": {
               "type": "string"
+            },
+            "threadKey": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "tokens": {
               "additionalProperties": false,
@@ -42630,6 +46924,16 @@ public enum RaviSchemas {
             },
             "trigger": {
               "type": "string"
+            },
+            "triggerId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "url": {
               "anyOf": [
@@ -42945,7 +47249,34 @@ public enum RaviSchemas {
             },
             "type": "array"
           },
+          "billingMode": {
+            "enum": [
+              "byok",
+              "credits"
+            ],
+            "type": "string"
+          },
           "budgetUsd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "chargedBrl": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "costBrl": {
             "anyOf": [
               {
                 "type": "number"
@@ -42957,6 +47288,95 @@ public enum RaviSchemas {
           },
           "costUsd": {
             "type": "number"
+          },
+          "deliveredAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "delivery": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "chat": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "channel": {
+                            "type": "string"
+                          },
+                          "chatId": {
+                            "type": "string"
+                          },
+                          "instanceId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "threadId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "channel",
+                          "chatId"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "installationId": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "session",
+                      "page_room",
+                      "none"
+                    ],
+                    "type": "string"
+                  },
+                  "roomId": {
+                    "type": "string"
+                  },
+                  "sessionName": {
+                    "type": "string"
+                  },
+                  "siteId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "endedAt": {
             "anyOf": [
@@ -42990,6 +47410,29 @@ public enum RaviSchemas {
                 "type": "null"
               }
             ]
+          },
+          "files": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "fileId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "fileId",
+                "name",
+                "size"
+              ],
+              "type": "object"
+            },
+            "type": "array"
           },
           "id": {
             "type": "string"
@@ -43068,6 +47511,55 @@ public enum RaviSchemas {
               }
             ]
           },
+          "outcome": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "feedback": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "iterations": {
+                    "type": "number"
+                  },
+                  "lastResult": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "maxIterations": {
+                    "type": "number"
+                  },
+                  "rubric": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "rubric",
+                  "maxIterations",
+                  "iterations",
+                  "lastResult",
+                  "feedback"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "outputs": {
             "items": {
               "additionalProperties": false,
@@ -43097,6 +47589,105 @@ public enum RaviSchemas {
           "prompt": {
             "type": "string"
           },
+          "questions": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "answer": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "answeredAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "answeredBy": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "askedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "options": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "question": {
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "pending",
+                    "answered",
+                    "expired"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "question",
+                "options",
+                "status",
+                "answer",
+                "askedAt",
+                "answeredAt",
+                "answeredBy"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "result": {
             "anyOf": [
               {
@@ -43122,6 +47713,16 @@ public enum RaviSchemas {
           },
           "status": {
             "type": "string"
+          },
+          "threadKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "tokens": {
             "additionalProperties": false,
@@ -43149,6 +47750,16 @@ public enum RaviSchemas {
           },
           "trigger": {
             "type": "string"
+          },
+          "triggerId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "url": {
             "anyOf": [
@@ -43348,7 +47959,34 @@ public enum RaviSchemas {
             },
             "type": "array"
           },
+          "billingMode": {
+            "enum": [
+              "byok",
+              "credits"
+            ],
+            "type": "string"
+          },
           "budgetUsd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "chargedBrl": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "costBrl": {
             "anyOf": [
               {
                 "type": "number"
@@ -43360,6 +47998,95 @@ public enum RaviSchemas {
           },
           "costUsd": {
             "type": "number"
+          },
+          "deliveredAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "delivery": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "chat": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "channel": {
+                            "type": "string"
+                          },
+                          "chatId": {
+                            "type": "string"
+                          },
+                          "instanceId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "threadId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "channel",
+                          "chatId"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "installationId": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "session",
+                      "page_room",
+                      "none"
+                    ],
+                    "type": "string"
+                  },
+                  "roomId": {
+                    "type": "string"
+                  },
+                  "sessionName": {
+                    "type": "string"
+                  },
+                  "siteId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "endedAt": {
             "anyOf": [
@@ -43393,6 +48120,29 @@ public enum RaviSchemas {
                 "type": "null"
               }
             ]
+          },
+          "files": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "fileId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "fileId",
+                "name",
+                "size"
+              ],
+              "type": "object"
+            },
+            "type": "array"
           },
           "id": {
             "type": "string"
@@ -43471,6 +48221,55 @@ public enum RaviSchemas {
               }
             ]
           },
+          "outcome": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "feedback": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "iterations": {
+                    "type": "number"
+                  },
+                  "lastResult": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "maxIterations": {
+                    "type": "number"
+                  },
+                  "rubric": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "rubric",
+                  "maxIterations",
+                  "iterations",
+                  "lastResult",
+                  "feedback"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "outputs": {
             "items": {
               "additionalProperties": false,
@@ -43500,6 +48299,105 @@ public enum RaviSchemas {
           "prompt": {
             "type": "string"
           },
+          "questions": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "answer": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "answeredAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "answeredBy": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "askedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "options": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "question": {
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "pending",
+                    "answered",
+                    "expired"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "question",
+                "options",
+                "status",
+                "answer",
+                "askedAt",
+                "answeredAt",
+                "answeredBy"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "result": {
             "anyOf": [
               {
@@ -43525,6 +48423,16 @@ public enum RaviSchemas {
           },
           "status": {
             "type": "string"
+          },
+          "threadKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "tokens": {
             "additionalProperties": false,
@@ -43552,6 +48460,16 @@ public enum RaviSchemas {
           },
           "trigger": {
             "type": "string"
+          },
+          "triggerId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "url": {
             "anyOf": [
@@ -43609,6 +48527,10 @@ public enum RaviSchemas {
         "description": "Library agent slug, or a cloud agent id or name",
         "type": "string"
       },
+      "bindThread": {
+        "description": "Make this Slack thread or WhatsApp group the run's conversation (run card, replies go to the run)",
+        "type": "boolean"
+      },
       "budget": {
         "description": "Budget for this run in US dollars (0.5-200)",
         "type": "string"
@@ -43617,8 +48539,28 @@ public enum RaviSchemas {
         "description": "Start the run (without it, print the plan and exit 3)",
         "type": "boolean"
       },
+      "file": {
+        "description": "A file the run reads at /mnt/session/inputs/<name>, repeatable (10 files, 3 MB in all)",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
       "idempotencyKey": {
         "description": "Same key, same run: a retry never starts a second run",
+        "type": "string"
+      },
+      "maxIterations": {
+        "description": "Revisions for --outcome (1-5, default 1)",
+        "type": "string"
+      },
+      "noDeliver": {
+        "default": false,
+        "description": "Do not bring the result back to this conversation",
+        "type": "boolean"
+      },
+      "outcome": {
+        "description": "What the result must satisfy; the run revises until it does",
         "type": "string"
       },
       "project": {
@@ -43635,6 +48577,14 @@ public enum RaviSchemas {
           "type": "string"
         },
         "type": "array"
+      },
+      "rowsLimit": {
+        "description": "How many rows of --rows-view (1-500)",
+        "type": "string"
+      },
+      "rowsView": {
+        "description": "Work through the rows of this Base view (needs a budget)",
+        "type": "string"
       }
     },
     "required": [
@@ -43779,7 +48729,34 @@ public enum RaviSchemas {
             },
             "type": "array"
           },
+          "billingMode": {
+            "enum": [
+              "byok",
+              "credits"
+            ],
+            "type": "string"
+          },
           "budgetUsd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "chargedBrl": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "costBrl": {
             "anyOf": [
               {
                 "type": "number"
@@ -43791,6 +48768,95 @@ public enum RaviSchemas {
           },
           "costUsd": {
             "type": "number"
+          },
+          "deliveredAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "delivery": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "chat": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "channel": {
+                            "type": "string"
+                          },
+                          "chatId": {
+                            "type": "string"
+                          },
+                          "instanceId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "threadId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "channel",
+                          "chatId"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "installationId": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "session",
+                      "page_room",
+                      "none"
+                    ],
+                    "type": "string"
+                  },
+                  "roomId": {
+                    "type": "string"
+                  },
+                  "sessionName": {
+                    "type": "string"
+                  },
+                  "siteId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "endedAt": {
             "anyOf": [
@@ -43824,6 +48890,29 @@ public enum RaviSchemas {
                 "type": "null"
               }
             ]
+          },
+          "files": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "fileId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "fileId",
+                "name",
+                "size"
+              ],
+              "type": "object"
+            },
+            "type": "array"
           },
           "id": {
             "type": "string"
@@ -43902,6 +48991,55 @@ public enum RaviSchemas {
               }
             ]
           },
+          "outcome": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "feedback": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "iterations": {
+                    "type": "number"
+                  },
+                  "lastResult": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "maxIterations": {
+                    "type": "number"
+                  },
+                  "rubric": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "rubric",
+                  "maxIterations",
+                  "iterations",
+                  "lastResult",
+                  "feedback"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "outputs": {
             "items": {
               "additionalProperties": false,
@@ -43931,6 +49069,105 @@ public enum RaviSchemas {
           "prompt": {
             "type": "string"
           },
+          "questions": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "answer": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "answeredAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "answeredBy": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "askedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "options": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "question": {
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "pending",
+                    "answered",
+                    "expired"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "question",
+                "options",
+                "status",
+                "answer",
+                "askedAt",
+                "answeredAt",
+                "answeredBy"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "result": {
             "anyOf": [
               {
@@ -43956,6 +49193,16 @@ public enum RaviSchemas {
           },
           "status": {
             "type": "string"
+          },
+          "threadKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "tokens": {
             "additionalProperties": false,
@@ -43983,6 +49230,16 @@ public enum RaviSchemas {
           },
           "trigger": {
             "type": "string"
+          },
+          "triggerId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "url": {
             "anyOf": [
@@ -44022,6 +49279,37 @@ public enum RaviSchemas {
       "success": {
         "const": true,
         "type": "boolean"
+      },
+      "thread": {
+        "additionalProperties": false,
+        "properties": {
+          "cardMessageId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "channel": {
+            "enum": [
+              "slack",
+              "whatsapp"
+            ],
+            "type": "string"
+          },
+          "threadKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "threadKey",
+          "channel",
+          "cardMessageId"
+        ],
+        "type": "object"
       }
     },
     "required": [
@@ -44182,7 +49470,34 @@ public enum RaviSchemas {
             },
             "type": "array"
           },
+          "billingMode": {
+            "enum": [
+              "byok",
+              "credits"
+            ],
+            "type": "string"
+          },
           "budgetUsd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "chargedBrl": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "costBrl": {
             "anyOf": [
               {
                 "type": "number"
@@ -44194,6 +49509,95 @@ public enum RaviSchemas {
           },
           "costUsd": {
             "type": "number"
+          },
+          "deliveredAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "delivery": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "chat": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "channel": {
+                            "type": "string"
+                          },
+                          "chatId": {
+                            "type": "string"
+                          },
+                          "instanceId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "threadId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "channel",
+                          "chatId"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "installationId": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "session",
+                      "page_room",
+                      "none"
+                    ],
+                    "type": "string"
+                  },
+                  "roomId": {
+                    "type": "string"
+                  },
+                  "sessionName": {
+                    "type": "string"
+                  },
+                  "siteId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "endedAt": {
             "anyOf": [
@@ -44227,6 +49631,29 @@ public enum RaviSchemas {
                 "type": "null"
               }
             ]
+          },
+          "files": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "fileId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "fileId",
+                "name",
+                "size"
+              ],
+              "type": "object"
+            },
+            "type": "array"
           },
           "id": {
             "type": "string"
@@ -44305,6 +49732,55 @@ public enum RaviSchemas {
               }
             ]
           },
+          "outcome": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "feedback": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "iterations": {
+                    "type": "number"
+                  },
+                  "lastResult": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "maxIterations": {
+                    "type": "number"
+                  },
+                  "rubric": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "rubric",
+                  "maxIterations",
+                  "iterations",
+                  "lastResult",
+                  "feedback"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "outputs": {
             "items": {
               "additionalProperties": false,
@@ -44334,6 +49810,105 @@ public enum RaviSchemas {
           "prompt": {
             "type": "string"
           },
+          "questions": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "answer": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "answeredAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "answeredBy": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "askedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "options": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "question": {
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "pending",
+                    "answered",
+                    "expired"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "question",
+                "options",
+                "status",
+                "answer",
+                "askedAt",
+                "answeredAt",
+                "answeredBy"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "result": {
             "anyOf": [
               {
@@ -44359,6 +49934,16 @@ public enum RaviSchemas {
           },
           "status": {
             "type": "string"
+          },
+          "threadKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "tokens": {
             "additionalProperties": false,
@@ -44386,6 +49971,16 @@ public enum RaviSchemas {
           },
           "trigger": {
             "type": "string"
+          },
+          "triggerId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "url": {
             "anyOf": [
@@ -44459,6 +50054,11 @@ public enum RaviSchemas {
         "description": "Create an enabled schedule (without it, print the plan and exit 3)",
         "type": "boolean"
       },
+      "noDeliver": {
+        "default": false,
+        "description": "Do not bring each run's result back to this conversation",
+        "type": "boolean"
+      },
       "project": {
         "description": "Console project slug (default: the cwd's project)",
         "type": "string"
@@ -44527,6 +50127,85 @@ public enum RaviSchemas {
           },
           "cron": {
             "type": "string"
+          },
+          "delivery": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "chat": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "channel": {
+                            "type": "string"
+                          },
+                          "chatId": {
+                            "type": "string"
+                          },
+                          "instanceId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "threadId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "channel",
+                          "chatId"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "installationId": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "session",
+                      "page_room",
+                      "none"
+                    ],
+                    "type": "string"
+                  },
+                  "roomId": {
+                    "type": "string"
+                  },
+                  "sessionName": {
+                    "type": "string"
+                  },
+                  "siteId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "enabled": {
             "type": "boolean"
@@ -44731,6 +50410,85 @@ public enum RaviSchemas {
             "cron": {
               "type": "string"
             },
+            "delivery": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "chat": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "channel": {
+                              "type": "string"
+                            },
+                            "chatId": {
+                              "type": "string"
+                            },
+                            "instanceId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "threadId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "channel",
+                            "chatId"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "installationId": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "enum": [
+                        "session",
+                        "page_room",
+                        "none"
+                      ],
+                      "type": "string"
+                    },
+                    "roomId": {
+                      "type": "string"
+                    },
+                    "sessionName": {
+                      "type": "string"
+                    },
+                    "siteId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "enabled": {
               "type": "boolean"
             },
@@ -44887,6 +50645,11 @@ public enum RaviSchemas {
         "description": "Schedule id",
         "type": "string"
       },
+      "noDeliver": {
+        "default": false,
+        "description": "Stop bringing each run's result back to a conversation",
+        "type": "boolean"
+      },
       "project": {
         "description": "Console project slug (default: the cwd's project)",
         "type": "string"
@@ -44955,6 +50718,85 @@ public enum RaviSchemas {
           },
           "cron": {
             "type": "string"
+          },
+          "delivery": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "chat": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "channel": {
+                            "type": "string"
+                          },
+                          "chatId": {
+                            "type": "string"
+                          },
+                          "instanceId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "threadId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "channel",
+                          "chatId"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "installationId": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "session",
+                      "page_room",
+                      "none"
+                    ],
+                    "type": "string"
+                  },
+                  "roomId": {
+                    "type": "string"
+                  },
+                  "sessionName": {
+                    "type": "string"
+                  },
+                  "siteId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "enabled": {
             "type": "boolean"
@@ -45892,6 +51734,1871 @@ public enum RaviSchemas {
     "required": [
       "success",
       "scope"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudSecretsListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "project": {
+        "description": "Only this Console project's secrets",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let CloudSecretsListReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "project": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "secrets": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "allowedHosts": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "id": {
+              "type": "string"
+            },
+            "lastUsedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "projectId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "updatedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "updatedBy": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "valueHint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "projectId",
+            "name",
+            "valueHint",
+            "allowedHosts",
+            "updatedAt",
+            "updatedBy",
+            "lastUsedAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "project",
+      "secrets"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudSecretsRemoveInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "project": {
+        "description": "The project the secret is bound to (default: organization-wide)",
+        "type": "string"
+      },
+      "secret": {
+        "description": "Secret name or id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "secret"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudSecretsRemoveReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      },
+      "removed": {
+        "const": true,
+        "type": "boolean"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "id",
+      "name",
+      "removed"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudSettingsSetInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "billingMode": {
+        "description": "byok (the organization's key) or credits (Ravi credits)",
+        "type": "string"
+      },
+      "dailyEventRuns": {
+        "description": "Runs event triggers may start per day (1-1000)",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Apply a change that can raise spending (without it, exit 3)",
+        "type": "boolean"
+      },
+      "monthlyCap": {
+        "description": "Monthly cap in US dollars for the organization, or none",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let CloudSettingsSetReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "changes": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "settings": {
+        "additionalProperties": false,
+        "properties": {
+          "billingMode": {
+            "enum": [
+              "byok",
+              "credits"
+            ],
+            "type": "string"
+          },
+          "dailyEventRunsCap": {
+            "type": "number"
+          },
+          "gatewayAvailable": {
+            "type": "boolean"
+          },
+          "monthSpentUsd": {
+            "type": "number"
+          },
+          "monthlyCapUsd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pausedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pausedReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "webhook": {
+            "additionalProperties": false,
+            "properties": {
+              "configured": {
+                "type": "boolean"
+              },
+              "lastEventAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "url": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "url",
+              "configured",
+              "lastEventAt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "billingMode",
+          "monthlyCapUsd",
+          "monthSpentUsd",
+          "pausedAt",
+          "pausedReason",
+          "dailyEventRunsCap",
+          "webhook",
+          "gatewayAvailable"
+        ],
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "settings",
+      "changes"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudSettingsShowInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let CloudSettingsShowReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "settings": {
+        "additionalProperties": false,
+        "properties": {
+          "billingMode": {
+            "enum": [
+              "byok",
+              "credits"
+            ],
+            "type": "string"
+          },
+          "dailyEventRunsCap": {
+            "type": "number"
+          },
+          "gatewayAvailable": {
+            "type": "boolean"
+          },
+          "monthSpentUsd": {
+            "type": "number"
+          },
+          "monthlyCapUsd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pausedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pausedReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "webhook": {
+            "additionalProperties": false,
+            "properties": {
+              "configured": {
+                "type": "boolean"
+              },
+              "lastEventAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "url": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "url",
+              "configured",
+              "lastEventAt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "billingMode",
+          "monthlyCapUsd",
+          "monthSpentUsd",
+          "pausedAt",
+          "pausedReason",
+          "dailyEventRunsCap",
+          "webhook",
+          "gatewayAvailable"
+        ],
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "settings"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudTriggersCreateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "description": "Library agent slug, or a cloud agent id or name",
+        "type": "string"
+      },
+      "base": {
+        "description": "Bases: only this base",
+        "type": "string"
+      },
+      "batchWindow": {
+        "description": "Wait this long to batch events (0-3600, default 60)",
+        "type": "string"
+      },
+      "budget": {
+        "description": "Budget per run in US dollars (default: the agent's)",
+        "type": "string"
+      },
+      "dailyCap": {
+        "description": "Runs per day at most (1-200, default 20)",
+        "type": "string"
+      },
+      "dedupeWindow": {
+        "description": "Drop repeats of an event within (default 600)",
+        "type": "string"
+      },
+      "deliverTo": {
+        "description": "Session that gets each result, or none",
+        "type": "string"
+      },
+      "disabled": {
+        "description": "Create it disabled (applies at once)",
+        "type": "boolean"
+      },
+      "events": {
+        "description": "Only these event types (comma-separated or repeated)",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "execute": {
+        "description": "Create an enabled trigger (without it, print the plan and exit 3)",
+        "type": "boolean"
+      },
+      "mailbox": {
+        "description": "Mail: only this mailbox",
+        "type": "string"
+      },
+      "project": {
+        "description": "Console project slug (default: the cwd's project)",
+        "type": "string"
+      },
+      "prompt": {
+        "description": "What each run does; {{event}} is where the events go",
+        "type": "string"
+      },
+      "site": {
+        "description": "Page comments: only this site",
+        "type": "string"
+      },
+      "source": {
+        "description": "bases, mail, meetings or pages_comments",
+        "type": "string"
+      },
+      "view": {
+        "description": "Bases: only rows of this view",
+        "type": "string"
+      }
+    },
+    "required": [
+      "agent"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudTriggersCreateReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "trigger": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "batchWindowSeconds": {
+            "type": "number"
+          },
+          "budgetUsd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dailyCap": {
+            "type": "number"
+          },
+          "dedupeWindowSeconds": {
+            "type": "number"
+          },
+          "delivery": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "chat": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "channel": {
+                            "type": "string"
+                          },
+                          "chatId": {
+                            "type": "string"
+                          },
+                          "instanceId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "threadId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "channel",
+                          "chatId"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "installationId": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "session",
+                      "page_room",
+                      "none"
+                    ],
+                    "type": "string"
+                  },
+                  "roomId": {
+                    "type": "string"
+                  },
+                  "sessionName": {
+                    "type": "string"
+                  },
+                  "siteId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "filter": {
+            "additionalProperties": false,
+            "properties": {
+              "baseId": {
+                "type": "string"
+              },
+              "events": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "mailboxId": {
+                "type": "string"
+              },
+              "siteId": {
+                "type": "string"
+              },
+              "viewId": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "firedToday": {
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastFiredAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastRunId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pausedReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pendingEvents": {
+            "type": "number"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "bases",
+              "mail",
+              "meetings",
+              "pages_comments"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "agentId",
+          "agentName",
+          "actor",
+          "source",
+          "filter",
+          "prompt",
+          "delivery",
+          "enabled",
+          "dailyCap",
+          "batchWindowSeconds",
+          "dedupeWindowSeconds",
+          "budgetUsd",
+          "firedToday",
+          "lastFiredAt",
+          "lastRunId",
+          "pausedReason",
+          "pendingEvents"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "success",
+      "trigger"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudTriggersListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "project": {
+        "description": "Console project slug (default: the cwd's project)",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let CloudTriggersListReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "project": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "triggers": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "actor": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ],
+              "type": "object"
+            },
+            "agentId": {
+              "type": "string"
+            },
+            "agentName": {
+              "type": "string"
+            },
+            "batchWindowSeconds": {
+              "type": "number"
+            },
+            "budgetUsd": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "dailyCap": {
+              "type": "number"
+            },
+            "dedupeWindowSeconds": {
+              "type": "number"
+            },
+            "delivery": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "chat": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "channel": {
+                              "type": "string"
+                            },
+                            "chatId": {
+                              "type": "string"
+                            },
+                            "instanceId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "threadId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "channel",
+                            "chatId"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "installationId": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "enum": [
+                        "session",
+                        "page_room",
+                        "none"
+                      ],
+                      "type": "string"
+                    },
+                    "roomId": {
+                      "type": "string"
+                    },
+                    "sessionName": {
+                      "type": "string"
+                    },
+                    "siteId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "filter": {
+              "additionalProperties": false,
+              "properties": {
+                "baseId": {
+                  "type": "string"
+                },
+                "events": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "mailboxId": {
+                  "type": "string"
+                },
+                "siteId": {
+                  "type": "string"
+                },
+                "viewId": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "firedToday": {
+              "type": "number"
+            },
+            "id": {
+              "type": "string"
+            },
+            "lastFiredAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "lastRunId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "pausedReason": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "pendingEvents": {
+              "type": "number"
+            },
+            "projectId": {
+              "type": "string"
+            },
+            "prompt": {
+              "type": "string"
+            },
+            "source": {
+              "enum": [
+                "bases",
+                "mail",
+                "meetings",
+                "pages_comments"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "projectId",
+            "agentId",
+            "agentName",
+            "actor",
+            "source",
+            "filter",
+            "prompt",
+            "delivery",
+            "enabled",
+            "dailyCap",
+            "batchWindowSeconds",
+            "dedupeWindowSeconds",
+            "budgetUsd",
+            "firedToday",
+            "lastFiredAt",
+            "lastRunId",
+            "pausedReason",
+            "pendingEvents"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "success",
+      "project",
+      "triggers"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudTriggersRemoveInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Trigger id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudTriggersRemoveReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "type": "string"
+      },
+      "removed": {
+        "const": true,
+        "type": "boolean"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "id",
+      "removed"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudTriggersTestInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Trigger id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudTriggersTestReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "test": {
+        "additionalProperties": false,
+        "properties": {
+          "blockedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "eventCount": {
+            "type": "number"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sample": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "prompt",
+          "eventCount",
+          "sample",
+          "blockedBy"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "success",
+      "id",
+      "test"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudTriggersUpdateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "batchWindow": {
+        "description": "Wait this long to batch events (0-3600)",
+        "type": "string"
+      },
+      "budget": {
+        "description": "Budget per run in US dollars, or none for the agent's",
+        "type": "string"
+      },
+      "dailyCap": {
+        "description": "Runs per day at most (1-200)",
+        "type": "string"
+      },
+      "dedupeWindow": {
+        "description": "Drop repeats of an event within",
+        "type": "string"
+      },
+      "deliverTo": {
+        "description": "Session that gets each result, or none",
+        "type": "string"
+      },
+      "disable": {
+        "description": "Disable it (applies at once)",
+        "type": "boolean"
+      },
+      "enable": {
+        "description": "Enable it",
+        "type": "boolean"
+      },
+      "events": {
+        "description": "Only these event types",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "execute": {
+        "description": "Apply a change that leaves the trigger enabled (without it, print the plan and exit 3)",
+        "type": "boolean"
+      },
+      "id": {
+        "description": "Trigger id",
+        "type": "string"
+      },
+      "project": {
+        "description": "Console project slug (default: the cwd's project)",
+        "type": "string"
+      },
+      "prompt": {
+        "description": "What each run does; {{event}} is where the events go",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudTriggersUpdateReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "trigger": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "batchWindowSeconds": {
+            "type": "number"
+          },
+          "budgetUsd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dailyCap": {
+            "type": "number"
+          },
+          "dedupeWindowSeconds": {
+            "type": "number"
+          },
+          "delivery": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "chat": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "channel": {
+                            "type": "string"
+                          },
+                          "chatId": {
+                            "type": "string"
+                          },
+                          "instanceId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "threadId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "channel",
+                          "chatId"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "installationId": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "session",
+                      "page_room",
+                      "none"
+                    ],
+                    "type": "string"
+                  },
+                  "roomId": {
+                    "type": "string"
+                  },
+                  "sessionName": {
+                    "type": "string"
+                  },
+                  "siteId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "filter": {
+            "additionalProperties": false,
+            "properties": {
+              "baseId": {
+                "type": "string"
+              },
+              "events": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "mailboxId": {
+                "type": "string"
+              },
+              "siteId": {
+                "type": "string"
+              },
+              "viewId": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "firedToday": {
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastFiredAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastRunId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pausedReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pendingEvents": {
+            "type": "number"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "bases",
+              "mail",
+              "meetings",
+              "pages_comments"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "agentId",
+          "agentName",
+          "actor",
+          "source",
+          "filter",
+          "prompt",
+          "delivery",
+          "enabled",
+          "dailyCap",
+          "batchWindowSeconds",
+          "dedupeWindowSeconds",
+          "budgetUsd",
+          "firedToday",
+          "lastFiredAt",
+          "lastRunId",
+          "pausedReason",
+          "pendingEvents"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "success",
+      "trigger"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudWebhookRemoveInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let CloudWebhookRemoveReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "webhook": {
+        "additionalProperties": false,
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "lastEventAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "url",
+          "configured",
+          "lastEventAt"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "success",
+      "webhook"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudWebhookShowInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let CloudWebhookShowReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "webhook": {
+        "additionalProperties": false,
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "lastEventAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "url",
+          "configured",
+          "lastEventAt"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "success",
+      "webhook"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudWorkerDisableInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let CloudWorkerDisableReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "changed": {
+        "type": "boolean"
+      },
+      "enabled": {
+        "type": "boolean"
+      },
+      "enabledAt": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "enabled",
+      "enabledAt",
+      "changed"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudWorkerKeyRemoveInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "workerId": {
+        "description": "Worker id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "workerId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudWorkerKeyRemoveReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "removed": {
+        "type": "boolean"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "workerId": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "success",
+      "workerId",
+      "removed"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CloudWorkerListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let CloudWorkerListReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "enabled": {
+        "type": "boolean"
+      },
+      "enabledAt": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "orphanKeys": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "workers": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "type": "string"
+            },
+            "agentName": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "installationId": {
+              "type": "string"
+            },
+            "lastError": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "lastSeenAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "local": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "restartAt": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "state": {
+                      "enum": [
+                        "running",
+                        "waiting_key",
+                        "backoff"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "error",
+                    "restartAt"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "localKey": {
+              "type": "boolean"
+            },
+            "projectId": {
+              "type": "string"
+            },
+            "providerEnvironmentId": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "waiting_key",
+                "online",
+                "offline",
+                "disabled"
+              ],
+              "type": "string"
+            },
+            "thisMachine": {
+              "type": "boolean"
+            },
+            "workdir": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "agentId",
+            "agentName",
+            "projectId",
+            "installationId",
+            "providerEnvironmentId",
+            "status",
+            "lastSeenAt",
+            "lastError",
+            "localKey",
+            "thisMachine",
+            "workdir",
+            "local"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "success",
+      "enabled",
+      "enabledAt",
+      "workers",
+      "orphanKeys"
     ],
     "type": "object"
   }

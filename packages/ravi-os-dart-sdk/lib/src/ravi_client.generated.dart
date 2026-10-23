@@ -2138,6 +2138,10 @@ class CloudNamespace {
 
   CloudAgentsNamespace get agents => CloudAgentsNamespace(_transport);
 
+  CloudCatalogNamespace get catalog => CloudCatalogNamespace(_transport);
+
+  CloudCreditsNamespace get credits => CloudCreditsNamespace(_transport);
+
   CloudKeyNamespace get key => CloudKeyNamespace(_transport);
 
   CloudProjectsNamespace get projects => CloudProjectsNamespace(_transport);
@@ -2147,12 +2151,34 @@ class CloudNamespace {
   CloudSchedulesNamespace get schedules => CloudSchedulesNamespace(_transport);
 
   CloudScopeNamespace get scope => CloudScopeNamespace(_transport);
+
+  CloudSecretsNamespace get secrets => CloudSecretsNamespace(_transport);
+
+  CloudSettingsNamespace get settings => CloudSettingsNamespace(_transport);
+
+  CloudTriggersNamespace get triggers => CloudTriggersNamespace(_transport);
+
+  CloudWebhookNamespace get webhook => CloudWebhookNamespace(_transport);
+
+  CloudWorkerNamespace get worker => CloudWorkerNamespace(_transport);
 }
 
 class CloudAgentsNamespace {
   const CloudAgentsNamespace(this._transport);
 
   final RaviTransport _transport;
+
+  Future<CloudAgentsApproveReturn> approve(String agent, [CloudAgentsApproveOptions options = const CloudAgentsApproveOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["agent"] = RaviJson.from(agent);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "agents"],
+      command: "approve",
+      body: requestBody,
+      decode: cloudAgentsApproveReturnFromJson,
+    );
+  }
 
   Future<CloudAgentsArchiveReturn> archive(String agent, [CloudAgentsArchiveOptions options = const CloudAgentsArchiveOptions()]) async {
     final requestBody = <String, RaviJson>{};
@@ -2163,6 +2189,19 @@ class CloudAgentsNamespace {
       command: "archive",
       body: requestBody,
       decode: cloudAgentsArchiveReturnFromJson,
+    );
+  }
+
+  Future<CloudAgentsCapReturn> cap(String agent, String usd, [CloudAgentsCapOptions options = const CloudAgentsCapOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["agent"] = RaviJson.from(agent);
+    requestBody["usd"] = RaviJson.from(usd);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "agents"],
+      command: "cap",
+      body: requestBody,
+      decode: cloudAgentsCapReturnFromJson,
     );
   }
 
@@ -2189,6 +2228,18 @@ class CloudAgentsNamespace {
     );
   }
 
+  Future<CloudAgentsMemoryResetReturn> memoryReset(String agent, [CloudAgentsMemoryResetOptions options = const CloudAgentsMemoryResetOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["agent"] = RaviJson.from(agent);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "agents"],
+      command: "memory-reset",
+      body: requestBody,
+      decode: cloudAgentsMemoryResetReturnFromJson,
+    );
+  }
+
   Future<CloudAgentsShowReturn> show(String agent, [CloudAgentsShowOptions options = const CloudAgentsShowOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["agent"] = RaviJson.from(agent);
@@ -2198,6 +2249,83 @@ class CloudAgentsNamespace {
       command: "show",
       body: requestBody,
       decode: cloudAgentsShowReturnFromJson,
+    );
+  }
+}
+
+class CloudCatalogNamespace {
+  const CloudCatalogNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  CloudCatalogPacksNamespace get packs => CloudCatalogPacksNamespace(_transport);
+
+  Future<CloudCatalogInstallReturn> install(String entry, [CloudCatalogInstallOptions options = const CloudCatalogInstallOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["entry"] = RaviJson.from(entry);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "catalog"],
+      command: "install",
+      body: requestBody,
+      decode: cloudCatalogInstallReturnFromJson,
+    );
+  }
+
+  Future<CloudCatalogListReturn> list([CloudCatalogListOptions options = const CloudCatalogListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "catalog"],
+      command: "list",
+      body: requestBody,
+      decode: cloudCatalogListReturnFromJson,
+    );
+  }
+}
+
+class CloudCatalogPacksNamespace {
+  const CloudCatalogPacksNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<CloudCatalogPacksInstallReturn> install(String pack, [CloudCatalogPacksInstallOptions options = const CloudCatalogPacksInstallOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["pack"] = RaviJson.from(pack);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "catalog", "packs"],
+      command: "install",
+      body: requestBody,
+      decode: cloudCatalogPacksInstallReturnFromJson,
+    );
+  }
+}
+
+class CloudCreditsNamespace {
+  const CloudCreditsNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<CloudCreditsShowReturn> show() async {
+    final requestBody = <String, RaviJson>{};
+    return _transport.callJson(
+      groupSegments: const ["cloud", "credits"],
+      command: "show",
+      body: requestBody,
+      decode: cloudCreditsShowReturnFromJson,
+    );
+  }
+
+  Future<CloudCreditsTopupReturn> topup(String amount, [CloudCreditsTopupOptions options = const CloudCreditsTopupOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["amount"] = RaviJson.from(amount);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "credits"],
+      command: "topup",
+      body: requestBody,
+      decode: cloudCreditsTopupReturnFromJson,
     );
   }
 }
@@ -2261,6 +2389,20 @@ class CloudRunsNamespace {
   const CloudRunsNamespace(this._transport);
 
   final RaviTransport _transport;
+
+  Future<CloudRunsAnswerReturn> answer(String run, String question, String text, [CloudRunsAnswerOptions options = const CloudRunsAnswerOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["run"] = RaviJson.from(run);
+    requestBody["question"] = RaviJson.from(question);
+    requestBody["text"] = RaviJson.from(text);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "runs"],
+      command: "answer",
+      body: requestBody,
+      decode: cloudRunsAnswerReturnFromJson,
+    );
+  }
 
   Future<CloudRunsApproveReturn> approve(String run, String approval, [CloudRunsApproveOptions options = const CloudRunsApproveOptions()]) async {
     final requestBody = <String, RaviJson>{};
@@ -2458,6 +2600,196 @@ class CloudScopeNamespace {
       command: "show",
       body: requestBody,
       decode: cloudScopeShowReturnFromJson,
+    );
+  }
+}
+
+class CloudSecretsNamespace {
+  const CloudSecretsNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<CloudSecretsListReturn> list([CloudSecretsListOptions options = const CloudSecretsListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "secrets"],
+      command: "list",
+      body: requestBody,
+      decode: cloudSecretsListReturnFromJson,
+    );
+  }
+
+  Future<CloudSecretsRemoveReturn> remove(String secret, [CloudSecretsRemoveOptions options = const CloudSecretsRemoveOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["secret"] = RaviJson.from(secret);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "secrets"],
+      command: "remove",
+      body: requestBody,
+      decode: cloudSecretsRemoveReturnFromJson,
+    );
+  }
+}
+
+class CloudSettingsNamespace {
+  const CloudSettingsNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<CloudSettingsSetReturn> set_([CloudSettingsSetOptions options = const CloudSettingsSetOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "settings"],
+      command: "set",
+      body: requestBody,
+      decode: cloudSettingsSetReturnFromJson,
+    );
+  }
+
+  Future<CloudSettingsShowReturn> show() async {
+    final requestBody = <String, RaviJson>{};
+    return _transport.callJson(
+      groupSegments: const ["cloud", "settings"],
+      command: "show",
+      body: requestBody,
+      decode: cloudSettingsShowReturnFromJson,
+    );
+  }
+}
+
+class CloudTriggersNamespace {
+  const CloudTriggersNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<CloudTriggersCreateReturn> create(String agent, [CloudTriggersCreateOptions options = const CloudTriggersCreateOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["agent"] = RaviJson.from(agent);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "triggers"],
+      command: "create",
+      body: requestBody,
+      decode: cloudTriggersCreateReturnFromJson,
+    );
+  }
+
+  Future<CloudTriggersListReturn> list([CloudTriggersListOptions options = const CloudTriggersListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "triggers"],
+      command: "list",
+      body: requestBody,
+      decode: cloudTriggersListReturnFromJson,
+    );
+  }
+
+  Future<CloudTriggersRemoveReturn> remove(String id) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "triggers"],
+      command: "remove",
+      body: requestBody,
+      decode: cloudTriggersRemoveReturnFromJson,
+    );
+  }
+
+  Future<CloudTriggersTestReturn> test(String id) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "triggers"],
+      command: "test",
+      body: requestBody,
+      decode: cloudTriggersTestReturnFromJson,
+    );
+  }
+
+  Future<CloudTriggersUpdateReturn> update(String id, [CloudTriggersUpdateOptions options = const CloudTriggersUpdateOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "triggers"],
+      command: "update",
+      body: requestBody,
+      decode: cloudTriggersUpdateReturnFromJson,
+    );
+  }
+}
+
+class CloudWebhookNamespace {
+  const CloudWebhookNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<CloudWebhookRemoveReturn> remove() async {
+    final requestBody = <String, RaviJson>{};
+    return _transport.callJson(
+      groupSegments: const ["cloud", "webhook"],
+      command: "remove",
+      body: requestBody,
+      decode: cloudWebhookRemoveReturnFromJson,
+    );
+  }
+
+  Future<CloudWebhookShowReturn> show() async {
+    final requestBody = <String, RaviJson>{};
+    return _transport.callJson(
+      groupSegments: const ["cloud", "webhook"],
+      command: "show",
+      body: requestBody,
+      decode: cloudWebhookShowReturnFromJson,
+    );
+  }
+}
+
+class CloudWorkerNamespace {
+  const CloudWorkerNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  CloudWorkerKeyNamespace get key => CloudWorkerKeyNamespace(_transport);
+
+  Future<CloudWorkerDisableReturn> disable() async {
+    final requestBody = <String, RaviJson>{};
+    return _transport.callJson(
+      groupSegments: const ["cloud", "worker"],
+      command: "disable",
+      body: requestBody,
+      decode: cloudWorkerDisableReturnFromJson,
+    );
+  }
+
+  Future<CloudWorkerListReturn> list() async {
+    final requestBody = <String, RaviJson>{};
+    return _transport.callJson(
+      groupSegments: const ["cloud", "worker"],
+      command: "list",
+      body: requestBody,
+      decode: cloudWorkerListReturnFromJson,
+    );
+  }
+}
+
+class CloudWorkerKeyNamespace {
+  const CloudWorkerKeyNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<CloudWorkerKeyRemoveReturn> remove(String workerId) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["workerId"] = RaviJson.from(workerId);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "worker", "key"],
+      command: "remove",
+      body: requestBody,
+      decode: cloudWorkerKeyRemoveReturnFromJson,
     );
   }
 }

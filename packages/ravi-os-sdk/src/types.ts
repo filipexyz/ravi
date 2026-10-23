@@ -7371,6 +7371,77 @@ export type ChatsReadReturn = {
   total: number;
 };
 
+/** Input shape for `cloud.agents.approve`. */
+export type CloudAgentsApproveInput = {
+  agent: string;
+  execute?: boolean;
+  project?: string;
+};
+
+/** Return shape for `cloud.agents.approve`. */
+export type CloudAgentsApproveReturn = {
+  agent: {
+    cap?: ({
+      monthSpentUsd: number;
+      monthlyCapUsd: number | null;
+      pausedAt: string | null;
+      pausedReason: string | null;
+    }) | null;
+    catalogEntryId?: string | null;
+    config: {
+      askHuman?: boolean;
+      budgetUsd: number;
+      mcpServers: string[];
+      memory?: ("agent" | "person") | null;
+      networking: string;
+      office?: string[];
+      outcome?: ({
+        maxIterations: number;
+        rubric: string;
+      }) | null;
+      placement?: "cloud" | "installation";
+      provider?: "anthropic" | "ravi";
+      raviMcp: boolean;
+      repositories: string[];
+      schedule: ({
+        cron: string;
+        timezone: string;
+      }) | null;
+      secrets?: string[];
+      webFetch?: boolean;
+      webSearch: boolean;
+      workflows?: boolean;
+      writes: string;
+    };
+    deployedAt: string | null;
+    deployedBy: ({
+      id: string;
+      name: string | null;
+    }) | null;
+    id: string;
+    lastError: string | null;
+    library: {
+      itemId: string;
+      scope: string;
+      slug: string;
+      version: number | null;
+    };
+    manifest?: ({
+      approved: boolean;
+      approvedAt: string | null;
+      hash: string | null;
+      value: (Record<string, unknown>) | null;
+    }) | null;
+    model: string | null;
+    name: string;
+    placementInstallationId?: string | null;
+    projectId: string;
+    provider: string;
+    status: string;
+  };
+  success: true;
+};
+
 /** Input shape for `cloud.agents.archive`. */
 export type CloudAgentsArchiveInput = {
   agent: string;
@@ -7414,6 +7485,78 @@ export type CloudAgentsArchiveReturn = {
   }) | null;
   archived: true;
   id: string;
+  success: true;
+};
+
+/** Input shape for `cloud.agents.cap`. */
+export type CloudAgentsCapInput = {
+  agent: string;
+  execute?: boolean;
+  project?: string;
+  usd: string;
+};
+
+/** Return shape for `cloud.agents.cap`. */
+export type CloudAgentsCapReturn = {
+  agent: {
+    cap?: ({
+      monthSpentUsd: number;
+      monthlyCapUsd: number | null;
+      pausedAt: string | null;
+      pausedReason: string | null;
+    }) | null;
+    catalogEntryId?: string | null;
+    config: {
+      askHuman?: boolean;
+      budgetUsd: number;
+      mcpServers: string[];
+      memory?: ("agent" | "person") | null;
+      networking: string;
+      office?: string[];
+      outcome?: ({
+        maxIterations: number;
+        rubric: string;
+      }) | null;
+      placement?: "cloud" | "installation";
+      provider?: "anthropic" | "ravi";
+      raviMcp: boolean;
+      repositories: string[];
+      schedule: ({
+        cron: string;
+        timezone: string;
+      }) | null;
+      secrets?: string[];
+      webFetch?: boolean;
+      webSearch: boolean;
+      workflows?: boolean;
+      writes: string;
+    };
+    deployedAt: string | null;
+    deployedBy: ({
+      id: string;
+      name: string | null;
+    }) | null;
+    id: string;
+    lastError: string | null;
+    library: {
+      itemId: string;
+      scope: string;
+      slug: string;
+      version: number | null;
+    };
+    manifest?: ({
+      approved: boolean;
+      approvedAt: string | null;
+      hash: string | null;
+      value: (Record<string, unknown>) | null;
+    }) | null;
+    model: string | null;
+    name: string;
+    placementInstallationId?: string | null;
+    projectId: string;
+    provider: string;
+    status: string;
+  };
   success: true;
 };
 
@@ -7520,6 +7663,21 @@ export type CloudAgentsListReturn = {
   success: true;
 };
 
+/** Input shape for `cloud.agents.memory-reset`. */
+export type CloudAgentsMemoryResetInput = {
+  agent: string;
+  execute?: boolean;
+  project?: string;
+};
+
+/** Return shape for `cloud.agents.memory-reset`. */
+export type CloudAgentsMemoryResetReturn = {
+  agentId: string;
+  archivedStores: number;
+  name: string;
+  success: true;
+};
+
 /** Input shape for `cloud.agents.show`. */
 export type CloudAgentsShowInput = {
   agent: string;
@@ -7560,6 +7718,273 @@ export type CloudAgentsShowReturn = {
     projectId: string;
     provider: string;
     status: string;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.catalog.install`. */
+export type CloudCatalogInstallInput = {
+  entry: string;
+  execute?: boolean;
+  project?: string;
+};
+
+/** Return shape for `cloud.catalog.install`. */
+export type CloudCatalogInstallReturn = {
+  agents: Array<{
+    cap?: ({
+      monthSpentUsd: number;
+      monthlyCapUsd: number | null;
+      pausedAt: string | null;
+      pausedReason: string | null;
+    }) | null;
+    catalogEntryId?: string | null;
+    config: {
+      askHuman?: boolean;
+      budgetUsd: number;
+      mcpServers: string[];
+      memory?: ("agent" | "person") | null;
+      networking: string;
+      office?: string[];
+      outcome?: ({
+        maxIterations: number;
+        rubric: string;
+      }) | null;
+      placement?: "cloud" | "installation";
+      provider?: "anthropic" | "ravi";
+      raviMcp: boolean;
+      repositories: string[];
+      schedule: ({
+        cron: string;
+        timezone: string;
+      }) | null;
+      secrets?: string[];
+      webFetch?: boolean;
+      webSearch: boolean;
+      workflows?: boolean;
+      writes: string;
+    };
+    deployedAt: string | null;
+    deployedBy: ({
+      id: string;
+      name: string | null;
+    }) | null;
+    id: string;
+    lastError: string | null;
+    library: {
+      itemId: string;
+      scope: string;
+      slug: string;
+      version: number | null;
+    };
+    manifest?: ({
+      approved: boolean;
+      approvedAt: string | null;
+      hash: string | null;
+      value: (Record<string, unknown>) | null;
+    }) | null;
+    model: string | null;
+    name: string;
+    placementInstallationId?: string | null;
+    projectId: string;
+    provider: string;
+    status: string;
+  }>;
+  installed: {
+    id: string;
+    kind: "entry" | "pack";
+    name: string;
+  };
+  project: string;
+  success: true;
+};
+
+/** Input shape for `cloud.catalog.list`. */
+export type CloudCatalogListInput = {
+  sector?: string;
+};
+
+/** Return shape for `cloud.catalog.list`. */
+export type CloudCatalogListReturn = {
+  entries: Array<{
+    id: string;
+    installed: boolean;
+    manifest: (Record<string, unknown>) | null;
+    manifestHash: string | null;
+    name: string;
+    publisher: {
+      id: string;
+      name: string | null;
+    };
+    sector: string | null;
+    slug: string;
+    status: "listed" | "unlisted";
+    summary: string;
+  }>;
+  packs: Array<{
+    entries: Array<{
+      id: string;
+      name: string;
+      slug: string;
+    }>;
+    id: string;
+    name: string;
+    publisher: {
+      id: string;
+      name: string | null;
+    };
+    revenueShareBps: number;
+    sector: string | null;
+    slug: string;
+    status: "listed" | "unlisted";
+    summary: string;
+  }>;
+  success: true;
+};
+
+/** Input shape for `cloud.catalog.packs.install`. */
+export type CloudCatalogPacksInstallInput = {
+  execute?: boolean;
+  pack: string;
+  project?: string;
+};
+
+/** Return shape for `cloud.catalog.packs.install`. */
+export type CloudCatalogPacksInstallReturn = {
+  agents: Array<{
+    cap?: ({
+      monthSpentUsd: number;
+      monthlyCapUsd: number | null;
+      pausedAt: string | null;
+      pausedReason: string | null;
+    }) | null;
+    catalogEntryId?: string | null;
+    config: {
+      askHuman?: boolean;
+      budgetUsd: number;
+      mcpServers: string[];
+      memory?: ("agent" | "person") | null;
+      networking: string;
+      office?: string[];
+      outcome?: ({
+        maxIterations: number;
+        rubric: string;
+      }) | null;
+      placement?: "cloud" | "installation";
+      provider?: "anthropic" | "ravi";
+      raviMcp: boolean;
+      repositories: string[];
+      schedule: ({
+        cron: string;
+        timezone: string;
+      }) | null;
+      secrets?: string[];
+      webFetch?: boolean;
+      webSearch: boolean;
+      workflows?: boolean;
+      writes: string;
+    };
+    deployedAt: string | null;
+    deployedBy: ({
+      id: string;
+      name: string | null;
+    }) | null;
+    id: string;
+    lastError: string | null;
+    library: {
+      itemId: string;
+      scope: string;
+      slug: string;
+      version: number | null;
+    };
+    manifest?: ({
+      approved: boolean;
+      approvedAt: string | null;
+      hash: string | null;
+      value: (Record<string, unknown>) | null;
+    }) | null;
+    model: string | null;
+    name: string;
+    placementInstallationId?: string | null;
+    projectId: string;
+    provider: string;
+    status: string;
+  }>;
+  installed: {
+    id: string;
+    kind: "entry" | "pack";
+    name: string;
+  };
+  project: string;
+  success: true;
+};
+
+/** Input shape for `cloud.credits.show`. */
+export type CloudCreditsShowInput = Record<string, never>;
+
+/** Return shape for `cloud.credits.show`. */
+export type CloudCreditsShowReturn = {
+  credits: {
+    balanceBrl: number;
+    entries: Array<{
+      amountBrl: number;
+      createdAt: string | null;
+      fxRate: string | null;
+      id: string;
+      kind: "topup" | "run" | "adjustment" | "refund";
+      paymentUrl: string | null;
+      pixCopyPaste: string | null;
+      postedAt: string | null;
+      runId: string | null;
+      status: "pending" | "posted" | "void";
+      usd: number | null;
+    }>;
+    fxRate: string | null;
+    mode: "byok" | "credits";
+    monthSpentBrl: number;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.credits.topup`. */
+export type CloudCreditsTopupInput = {
+  amount: string;
+  execute?: boolean;
+};
+
+/** Return shape for `cloud.credits.topup`. */
+export type CloudCreditsTopupReturn = {
+  credits: ({
+    balanceBrl: number;
+    entries: Array<{
+      amountBrl: number;
+      createdAt: string | null;
+      fxRate: string | null;
+      id: string;
+      kind: "topup" | "run" | "adjustment" | "refund";
+      paymentUrl: string | null;
+      pixCopyPaste: string | null;
+      postedAt: string | null;
+      runId: string | null;
+      status: "pending" | "posted" | "void";
+      usd: number | null;
+    }>;
+    fxRate: string | null;
+    mode: "byok" | "credits";
+    monthSpentBrl: number;
+  }) | null;
+  entry: {
+    amountBrl: number;
+    createdAt: string | null;
+    fxRate: string | null;
+    id: string;
+    kind: "topup" | "run" | "adjustment" | "refund";
+    paymentUrl: string | null;
+    pixCopyPaste: string | null;
+    postedAt: string | null;
+    runId: string | null;
+    status: "pending" | "posted" | "void";
+    usd: number | null;
   };
   success: true;
 };
@@ -7643,6 +8068,132 @@ export type CloudProjectsListReturn = {
   total: number;
 };
 
+/** Input shape for `cloud.runs.answer`. */
+export type CloudRunsAnswerInput = {
+  execute?: boolean;
+  question: string;
+  run: string;
+  text: string;
+};
+
+/** Return shape for `cloud.runs.answer`. */
+export type CloudRunsAnswerReturn = {
+  question: {
+    answer: string | null;
+    answeredAt: string | null;
+    answeredBy: ({
+      id: string;
+      name: string | null;
+    }) | null;
+    askedAt: string | null;
+    id: string;
+    options: string[];
+    question: string;
+    status: "pending" | "answered" | "expired";
+  };
+  run: {
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    approvals: Array<{
+      decidedAt: string | null;
+      decidedBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      id: string;
+      inputPreview: string | null;
+      requestedAt: string | null;
+      server: string | null;
+      status: string;
+      tool: string;
+    }>;
+    billingMode?: "byok" | "credits";
+    budgetUsd: number | null;
+    chargedBrl?: number | null;
+    costBrl?: number | null;
+    costUsd: number;
+    deliveredAt?: string | null;
+    delivery?: ({
+      chat?: ({
+        channel: string;
+        chatId: string;
+        instanceId?: string | null;
+        threadId?: string | null;
+      }) | null;
+      installationId?: string;
+      kind: "session" | "page_room" | "none";
+      roomId?: string;
+      sessionName?: string;
+      siteId?: string;
+    }) | null;
+    endedAt: string | null;
+    error: ({
+      code: string;
+      message: string;
+    }) | null;
+    files?: Array<{
+      fileId: string;
+      name: string;
+      size: number;
+    }>;
+    id: string;
+    origin: ({
+      deliveredAt: string | null;
+      delivery: string | null;
+      installationId: string | null;
+      kind: string;
+      sessionName: string | null;
+      taskId: string | null;
+    }) | null;
+    outcome?: ({
+      feedback: string | null;
+      iterations: number;
+      lastResult: string | null;
+      maxIterations: number;
+      rubric: string;
+    }) | null;
+    outputs: Array<{
+      id: string;
+      name: string;
+      size: number;
+    }>;
+    projectId: string;
+    prompt: string;
+    questions?: Array<{
+      answer: string | null;
+      answeredAt: string | null;
+      answeredBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      askedAt: string | null;
+      id: string;
+      options: string[];
+      question: string;
+      status: "pending" | "answered" | "expired";
+    }>;
+    result: string | null;
+    runningSeconds: number;
+    startedAt: string | null;
+    status: string;
+    threadKey?: string | null;
+    tokens: {
+      cacheRead: number;
+      cacheWrite: number;
+      input: number;
+      output: number;
+    };
+    trigger: string;
+    triggerId?: string | null;
+    url: string | null;
+  };
+  success: true;
+};
+
 /** Input shape for `cloud.runs.approve`. */
 export type CloudRunsApproveInput = {
   approval: string;
@@ -7685,13 +8236,35 @@ export type CloudRunsApproveReturn = {
       status: string;
       tool: string;
     }>;
+    billingMode?: "byok" | "credits";
     budgetUsd: number | null;
+    chargedBrl?: number | null;
+    costBrl?: number | null;
     costUsd: number;
+    deliveredAt?: string | null;
+    delivery?: ({
+      chat?: ({
+        channel: string;
+        chatId: string;
+        instanceId?: string | null;
+        threadId?: string | null;
+      }) | null;
+      installationId?: string;
+      kind: "session" | "page_room" | "none";
+      roomId?: string;
+      sessionName?: string;
+      siteId?: string;
+    }) | null;
     endedAt: string | null;
     error: ({
       code: string;
       message: string;
     }) | null;
+    files?: Array<{
+      fileId: string;
+      name: string;
+      size: number;
+    }>;
     id: string;
     origin: ({
       deliveredAt: string | null;
@@ -7701,6 +8274,13 @@ export type CloudRunsApproveReturn = {
       sessionName: string | null;
       taskId: string | null;
     }) | null;
+    outcome?: ({
+      feedback: string | null;
+      iterations: number;
+      lastResult: string | null;
+      maxIterations: number;
+      rubric: string;
+    }) | null;
     outputs: Array<{
       id: string;
       name: string;
@@ -7708,10 +8288,24 @@ export type CloudRunsApproveReturn = {
     }>;
     projectId: string;
     prompt: string;
+    questions?: Array<{
+      answer: string | null;
+      answeredAt: string | null;
+      answeredBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      askedAt: string | null;
+      id: string;
+      options: string[];
+      question: string;
+      status: "pending" | "answered" | "expired";
+    }>;
     result: string | null;
     runningSeconds: number;
     startedAt: string | null;
     status: string;
+    threadKey?: string | null;
     tokens: {
       cacheRead: number;
       cacheWrite: number;
@@ -7719,6 +8313,7 @@ export type CloudRunsApproveReturn = {
       output: number;
     };
     trigger: string;
+    triggerId?: string | null;
     url: string | null;
   };
   success: true;
@@ -7766,13 +8361,35 @@ export type CloudRunsDenyReturn = {
       status: string;
       tool: string;
     }>;
+    billingMode?: "byok" | "credits";
     budgetUsd: number | null;
+    chargedBrl?: number | null;
+    costBrl?: number | null;
     costUsd: number;
+    deliveredAt?: string | null;
+    delivery?: ({
+      chat?: ({
+        channel: string;
+        chatId: string;
+        instanceId?: string | null;
+        threadId?: string | null;
+      }) | null;
+      installationId?: string;
+      kind: "session" | "page_room" | "none";
+      roomId?: string;
+      sessionName?: string;
+      siteId?: string;
+    }) | null;
     endedAt: string | null;
     error: ({
       code: string;
       message: string;
     }) | null;
+    files?: Array<{
+      fileId: string;
+      name: string;
+      size: number;
+    }>;
     id: string;
     origin: ({
       deliveredAt: string | null;
@@ -7782,6 +8399,13 @@ export type CloudRunsDenyReturn = {
       sessionName: string | null;
       taskId: string | null;
     }) | null;
+    outcome?: ({
+      feedback: string | null;
+      iterations: number;
+      lastResult: string | null;
+      maxIterations: number;
+      rubric: string;
+    }) | null;
     outputs: Array<{
       id: string;
       name: string;
@@ -7789,10 +8413,24 @@ export type CloudRunsDenyReturn = {
     }>;
     projectId: string;
     prompt: string;
+    questions?: Array<{
+      answer: string | null;
+      answeredAt: string | null;
+      answeredBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      askedAt: string | null;
+      id: string;
+      options: string[];
+      question: string;
+      status: "pending" | "answered" | "expired";
+    }>;
     result: string | null;
     runningSeconds: number;
     startedAt: string | null;
     status: string;
+    threadKey?: string | null;
     tokens: {
       cacheRead: number;
       cacheWrite: number;
@@ -7800,6 +8438,7 @@ export type CloudRunsDenyReturn = {
       output: number;
     };
     trigger: string;
+    triggerId?: string | null;
     url: string | null;
   };
   success: true;
@@ -7838,13 +8477,35 @@ export type CloudRunsListReturn = {
       status: string;
       tool: string;
     }>;
+    billingMode?: "byok" | "credits";
     budgetUsd: number | null;
+    chargedBrl?: number | null;
+    costBrl?: number | null;
     costUsd: number;
+    deliveredAt?: string | null;
+    delivery?: ({
+      chat?: ({
+        channel: string;
+        chatId: string;
+        instanceId?: string | null;
+        threadId?: string | null;
+      }) | null;
+      installationId?: string;
+      kind: "session" | "page_room" | "none";
+      roomId?: string;
+      sessionName?: string;
+      siteId?: string;
+    }) | null;
     endedAt: string | null;
     error: ({
       code: string;
       message: string;
     }) | null;
+    files?: Array<{
+      fileId: string;
+      name: string;
+      size: number;
+    }>;
     id: string;
     origin: ({
       deliveredAt: string | null;
@@ -7854,6 +8515,13 @@ export type CloudRunsListReturn = {
       sessionName: string | null;
       taskId: string | null;
     }) | null;
+    outcome?: ({
+      feedback: string | null;
+      iterations: number;
+      lastResult: string | null;
+      maxIterations: number;
+      rubric: string;
+    }) | null;
     outputs: Array<{
       id: string;
       name: string;
@@ -7861,10 +8529,24 @@ export type CloudRunsListReturn = {
     }>;
     projectId: string;
     prompt: string;
+    questions?: Array<{
+      answer: string | null;
+      answeredAt: string | null;
+      answeredBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      askedAt: string | null;
+      id: string;
+      options: string[];
+      question: string;
+      status: "pending" | "answered" | "expired";
+    }>;
     result: string | null;
     runningSeconds: number;
     startedAt: string | null;
     status: string;
+    threadKey?: string | null;
     tokens: {
       cacheRead: number;
       cacheWrite: number;
@@ -7872,6 +8554,7 @@ export type CloudRunsListReturn = {
       output: number;
     };
     trigger: string;
+    triggerId?: string | null;
     url: string | null;
   }>;
   success: true;
@@ -7930,13 +8613,35 @@ export type CloudRunsReplyReturn = {
       status: string;
       tool: string;
     }>;
+    billingMode?: "byok" | "credits";
     budgetUsd: number | null;
+    chargedBrl?: number | null;
+    costBrl?: number | null;
     costUsd: number;
+    deliveredAt?: string | null;
+    delivery?: ({
+      chat?: ({
+        channel: string;
+        chatId: string;
+        instanceId?: string | null;
+        threadId?: string | null;
+      }) | null;
+      installationId?: string;
+      kind: "session" | "page_room" | "none";
+      roomId?: string;
+      sessionName?: string;
+      siteId?: string;
+    }) | null;
     endedAt: string | null;
     error: ({
       code: string;
       message: string;
     }) | null;
+    files?: Array<{
+      fileId: string;
+      name: string;
+      size: number;
+    }>;
     id: string;
     origin: ({
       deliveredAt: string | null;
@@ -7946,6 +8651,13 @@ export type CloudRunsReplyReturn = {
       sessionName: string | null;
       taskId: string | null;
     }) | null;
+    outcome?: ({
+      feedback: string | null;
+      iterations: number;
+      lastResult: string | null;
+      maxIterations: number;
+      rubric: string;
+    }) | null;
     outputs: Array<{
       id: string;
       name: string;
@@ -7953,10 +8665,24 @@ export type CloudRunsReplyReturn = {
     }>;
     projectId: string;
     prompt: string;
+    questions?: Array<{
+      answer: string | null;
+      answeredAt: string | null;
+      answeredBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      askedAt: string | null;
+      id: string;
+      options: string[];
+      question: string;
+      status: "pending" | "answered" | "expired";
+    }>;
     result: string | null;
     runningSeconds: number;
     startedAt: string | null;
     status: string;
+    threadKey?: string | null;
     tokens: {
       cacheRead: number;
       cacheWrite: number;
@@ -7964,6 +8690,7 @@ export type CloudRunsReplyReturn = {
       output: number;
     };
     trigger: string;
+    triggerId?: string | null;
     url: string | null;
   };
   success: true;
@@ -7996,13 +8723,35 @@ export type CloudRunsShowReturn = {
       status: string;
       tool: string;
     }>;
+    billingMode?: "byok" | "credits";
     budgetUsd: number | null;
+    chargedBrl?: number | null;
+    costBrl?: number | null;
     costUsd: number;
+    deliveredAt?: string | null;
+    delivery?: ({
+      chat?: ({
+        channel: string;
+        chatId: string;
+        instanceId?: string | null;
+        threadId?: string | null;
+      }) | null;
+      installationId?: string;
+      kind: "session" | "page_room" | "none";
+      roomId?: string;
+      sessionName?: string;
+      siteId?: string;
+    }) | null;
     endedAt: string | null;
     error: ({
       code: string;
       message: string;
     }) | null;
+    files?: Array<{
+      fileId: string;
+      name: string;
+      size: number;
+    }>;
     id: string;
     origin: ({
       deliveredAt: string | null;
@@ -8012,6 +8761,13 @@ export type CloudRunsShowReturn = {
       sessionName: string | null;
       taskId: string | null;
     }) | null;
+    outcome?: ({
+      feedback: string | null;
+      iterations: number;
+      lastResult: string | null;
+      maxIterations: number;
+      rubric: string;
+    }) | null;
     outputs: Array<{
       id: string;
       name: string;
@@ -8019,10 +8775,24 @@ export type CloudRunsShowReturn = {
     }>;
     projectId: string;
     prompt: string;
+    questions?: Array<{
+      answer: string | null;
+      answeredAt: string | null;
+      answeredBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      askedAt: string | null;
+      id: string;
+      options: string[];
+      question: string;
+      status: "pending" | "answered" | "expired";
+    }>;
     result: string | null;
     runningSeconds: number;
     startedAt: string | null;
     status: string;
+    threadKey?: string | null;
     tokens: {
       cacheRead: number;
       cacheWrite: number;
@@ -8030,6 +8800,7 @@ export type CloudRunsShowReturn = {
       output: number;
     };
     trigger: string;
+    triggerId?: string | null;
     url: string | null;
   };
   success: true;
@@ -8038,12 +8809,19 @@ export type CloudRunsShowReturn = {
 /** Input shape for `cloud.runs.start`. */
 export type CloudRunsStartInput = {
   agent: string;
+  bindThread?: boolean;
   budget?: string;
   execute?: boolean;
+  file?: string[];
   idempotencyKey?: string;
+  maxIterations?: string;
+  noDeliver?: boolean;
+  outcome?: string;
   project?: string;
   prompt: string;
   repo?: string[];
+  rowsLimit?: string;
+  rowsView?: string;
 };
 
 /** Return shape for `cloud.runs.start`. */
@@ -8068,13 +8846,35 @@ export type CloudRunsStartReturn = {
       status: string;
       tool: string;
     }>;
+    billingMode?: "byok" | "credits";
     budgetUsd: number | null;
+    chargedBrl?: number | null;
+    costBrl?: number | null;
     costUsd: number;
+    deliveredAt?: string | null;
+    delivery?: ({
+      chat?: ({
+        channel: string;
+        chatId: string;
+        instanceId?: string | null;
+        threadId?: string | null;
+      }) | null;
+      installationId?: string;
+      kind: "session" | "page_room" | "none";
+      roomId?: string;
+      sessionName?: string;
+      siteId?: string;
+    }) | null;
     endedAt: string | null;
     error: ({
       code: string;
       message: string;
     }) | null;
+    files?: Array<{
+      fileId: string;
+      name: string;
+      size: number;
+    }>;
     id: string;
     origin: ({
       deliveredAt: string | null;
@@ -8084,6 +8884,13 @@ export type CloudRunsStartReturn = {
       sessionName: string | null;
       taskId: string | null;
     }) | null;
+    outcome?: ({
+      feedback: string | null;
+      iterations: number;
+      lastResult: string | null;
+      maxIterations: number;
+      rubric: string;
+    }) | null;
     outputs: Array<{
       id: string;
       name: string;
@@ -8091,10 +8898,24 @@ export type CloudRunsStartReturn = {
     }>;
     projectId: string;
     prompt: string;
+    questions?: Array<{
+      answer: string | null;
+      answeredAt: string | null;
+      answeredBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      askedAt: string | null;
+      id: string;
+      options: string[];
+      question: string;
+      status: "pending" | "answered" | "expired";
+    }>;
     result: string | null;
     runningSeconds: number;
     startedAt: string | null;
     status: string;
+    threadKey?: string | null;
     tokens: {
       cacheRead: number;
       cacheWrite: number;
@@ -8102,9 +8923,15 @@ export type CloudRunsStartReturn = {
       output: number;
     };
     trigger: string;
+    triggerId?: string | null;
     url: string | null;
   };
   success: true;
+  thread?: {
+    cardMessageId: string | null;
+    channel: "slack" | "whatsapp";
+    threadKey: string;
+  };
 };
 
 /** Input shape for `cloud.runs.stop`. */
@@ -8134,13 +8961,35 @@ export type CloudRunsStopReturn = {
       status: string;
       tool: string;
     }>;
+    billingMode?: "byok" | "credits";
     budgetUsd: number | null;
+    chargedBrl?: number | null;
+    costBrl?: number | null;
     costUsd: number;
+    deliveredAt?: string | null;
+    delivery?: ({
+      chat?: ({
+        channel: string;
+        chatId: string;
+        instanceId?: string | null;
+        threadId?: string | null;
+      }) | null;
+      installationId?: string;
+      kind: "session" | "page_room" | "none";
+      roomId?: string;
+      sessionName?: string;
+      siteId?: string;
+    }) | null;
     endedAt: string | null;
     error: ({
       code: string;
       message: string;
     }) | null;
+    files?: Array<{
+      fileId: string;
+      name: string;
+      size: number;
+    }>;
     id: string;
     origin: ({
       deliveredAt: string | null;
@@ -8150,6 +8999,13 @@ export type CloudRunsStopReturn = {
       sessionName: string | null;
       taskId: string | null;
     }) | null;
+    outcome?: ({
+      feedback: string | null;
+      iterations: number;
+      lastResult: string | null;
+      maxIterations: number;
+      rubric: string;
+    }) | null;
     outputs: Array<{
       id: string;
       name: string;
@@ -8157,10 +9013,24 @@ export type CloudRunsStopReturn = {
     }>;
     projectId: string;
     prompt: string;
+    questions?: Array<{
+      answer: string | null;
+      answeredAt: string | null;
+      answeredBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      askedAt: string | null;
+      id: string;
+      options: string[];
+      question: string;
+      status: "pending" | "answered" | "expired";
+    }>;
     result: string | null;
     runningSeconds: number;
     startedAt: string | null;
     status: string;
+    threadKey?: string | null;
     tokens: {
       cacheRead: number;
       cacheWrite: number;
@@ -8168,6 +9038,7 @@ export type CloudRunsStopReturn = {
       output: number;
     };
     trigger: string;
+    triggerId?: string | null;
     url: string | null;
   };
   success: true;
@@ -8180,6 +9051,7 @@ export type CloudSchedulesAddInput = {
   cron?: string;
   disabled?: boolean;
   execute?: boolean;
+  noDeliver?: boolean;
   project?: string;
   prompt?: string;
   timezone?: string;
@@ -8196,6 +9068,19 @@ export type CloudSchedulesAddReturn = {
     agentName: string;
     budgetUsd: number | null;
     cron: string;
+    delivery?: ({
+      chat?: ({
+        channel: string;
+        chatId: string;
+        instanceId?: string | null;
+        threadId?: string | null;
+      }) | null;
+      installationId?: string;
+      kind: "session" | "page_room" | "none";
+      roomId?: string;
+      sessionName?: string;
+      siteId?: string;
+    }) | null;
     enabled: boolean;
     id: string;
     lastRunAt: string | null;
@@ -8235,6 +9120,19 @@ export type CloudSchedulesListReturn = {
     agentName: string;
     budgetUsd: number | null;
     cron: string;
+    delivery?: ({
+      chat?: ({
+        channel: string;
+        chatId: string;
+        instanceId?: string | null;
+        threadId?: string | null;
+      }) | null;
+      installationId?: string;
+      kind: "session" | "page_room" | "none";
+      roomId?: string;
+      sessionName?: string;
+      siteId?: string;
+    }) | null;
     enabled: boolean;
     id: string;
     lastRunAt: string | null;
@@ -8267,6 +9165,7 @@ export type CloudSchedulesUpdateInput = {
   execute?: boolean;
   heartbeat?: boolean;
   id: string;
+  noDeliver?: boolean;
   project?: string;
   prompt?: string;
   timezone?: string;
@@ -8283,6 +9182,19 @@ export type CloudSchedulesUpdateReturn = {
     agentName: string;
     budgetUsd: number | null;
     cron: string;
+    delivery?: ({
+      chat?: ({
+        channel: string;
+        chatId: string;
+        instanceId?: string | null;
+        threadId?: string | null;
+      }) | null;
+      installationId?: string;
+      kind: "session" | "page_room" | "none";
+      roomId?: string;
+      sessionName?: string;
+      siteId?: string;
+    }) | null;
     enabled: boolean;
     id: string;
     lastRunAt: string | null;
@@ -8431,6 +9343,385 @@ export type CloudScopeShowReturn = {
     source: "explicit" | "runtime_context" | "local_project_mapping" | "session_default" | "agent_default" | "workspace_default" | "global_default" | "cloud_credentials" | "env_compat" | "single_remote_project";
   };
   success: true;
+};
+
+/** Input shape for `cloud.secrets.list`. */
+export type CloudSecretsListInput = {
+  project?: string;
+};
+
+/** Return shape for `cloud.secrets.list`. */
+export type CloudSecretsListReturn = {
+  project: string | null;
+  secrets: Array<{
+    allowedHosts: string[];
+    id: string;
+    lastUsedAt: string | null;
+    name: string;
+    projectId: string | null;
+    updatedAt: string | null;
+    updatedBy: ({
+      id: string;
+      name: string | null;
+    }) | null;
+    valueHint: string | null;
+  }>;
+  success: true;
+};
+
+/** Input shape for `cloud.secrets.remove`. */
+export type CloudSecretsRemoveInput = {
+  project?: string;
+  secret: string;
+};
+
+/** Return shape for `cloud.secrets.remove`. */
+export type CloudSecretsRemoveReturn = {
+  id: string;
+  name: string;
+  removed: true;
+  success: true;
+};
+
+/** Input shape for `cloud.settings.set`. */
+export type CloudSettingsSetInput = {
+  billingMode?: string;
+  dailyEventRuns?: string;
+  execute?: boolean;
+  monthlyCap?: string;
+};
+
+/** Return shape for `cloud.settings.set`. */
+export type CloudSettingsSetReturn = {
+  changes: string[];
+  settings: {
+    billingMode: "byok" | "credits";
+    dailyEventRunsCap: number;
+    gatewayAvailable: boolean;
+    monthSpentUsd: number;
+    monthlyCapUsd: number | null;
+    pausedAt: string | null;
+    pausedReason: string | null;
+    webhook: {
+      configured: boolean;
+      lastEventAt: string | null;
+      url: string | null;
+    };
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.settings.show`. */
+export type CloudSettingsShowInput = Record<string, never>;
+
+/** Return shape for `cloud.settings.show`. */
+export type CloudSettingsShowReturn = {
+  settings: {
+    billingMode: "byok" | "credits";
+    dailyEventRunsCap: number;
+    gatewayAvailable: boolean;
+    monthSpentUsd: number;
+    monthlyCapUsd: number | null;
+    pausedAt: string | null;
+    pausedReason: string | null;
+    webhook: {
+      configured: boolean;
+      lastEventAt: string | null;
+      url: string | null;
+    };
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.triggers.create`. */
+export type CloudTriggersCreateInput = {
+  agent: string;
+  base?: string;
+  batchWindow?: string;
+  budget?: string;
+  dailyCap?: string;
+  dedupeWindow?: string;
+  deliverTo?: string;
+  disabled?: boolean;
+  events?: string[];
+  execute?: boolean;
+  mailbox?: string;
+  project?: string;
+  prompt?: string;
+  site?: string;
+  source?: string;
+  view?: string;
+};
+
+/** Return shape for `cloud.triggers.create`. */
+export type CloudTriggersCreateReturn = {
+  success: true;
+  trigger: {
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    batchWindowSeconds: number;
+    budgetUsd: number | null;
+    dailyCap: number;
+    dedupeWindowSeconds: number;
+    delivery: ({
+      chat?: ({
+        channel: string;
+        chatId: string;
+        instanceId?: string | null;
+        threadId?: string | null;
+      }) | null;
+      installationId?: string;
+      kind: "session" | "page_room" | "none";
+      roomId?: string;
+      sessionName?: string;
+      siteId?: string;
+    }) | null;
+    enabled: boolean;
+    filter: {
+      baseId?: string;
+      events?: string[];
+      mailboxId?: string;
+      siteId?: string;
+      viewId?: string;
+    };
+    firedToday: number;
+    id: string;
+    lastFiredAt: string | null;
+    lastRunId: string | null;
+    pausedReason: string | null;
+    pendingEvents: number;
+    projectId: string;
+    prompt: string;
+    source: "bases" | "mail" | "meetings" | "pages_comments";
+  };
+};
+
+/** Input shape for `cloud.triggers.list`. */
+export type CloudTriggersListInput = {
+  project?: string;
+};
+
+/** Return shape for `cloud.triggers.list`. */
+export type CloudTriggersListReturn = {
+  project: string;
+  success: true;
+  triggers: Array<{
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    batchWindowSeconds: number;
+    budgetUsd: number | null;
+    dailyCap: number;
+    dedupeWindowSeconds: number;
+    delivery: ({
+      chat?: ({
+        channel: string;
+        chatId: string;
+        instanceId?: string | null;
+        threadId?: string | null;
+      }) | null;
+      installationId?: string;
+      kind: "session" | "page_room" | "none";
+      roomId?: string;
+      sessionName?: string;
+      siteId?: string;
+    }) | null;
+    enabled: boolean;
+    filter: {
+      baseId?: string;
+      events?: string[];
+      mailboxId?: string;
+      siteId?: string;
+      viewId?: string;
+    };
+    firedToday: number;
+    id: string;
+    lastFiredAt: string | null;
+    lastRunId: string | null;
+    pausedReason: string | null;
+    pendingEvents: number;
+    projectId: string;
+    prompt: string;
+    source: "bases" | "mail" | "meetings" | "pages_comments";
+  }>;
+};
+
+/** Input shape for `cloud.triggers.remove`. */
+export type CloudTriggersRemoveInput = {
+  id: string;
+};
+
+/** Return shape for `cloud.triggers.remove`. */
+export type CloudTriggersRemoveReturn = {
+  id: string;
+  removed: true;
+  success: true;
+};
+
+/** Input shape for `cloud.triggers.test`. */
+export type CloudTriggersTestInput = {
+  id: string;
+};
+
+/** Return shape for `cloud.triggers.test`. */
+export type CloudTriggersTestReturn = {
+  id: string;
+  success: true;
+  test: {
+    blockedBy: string | null;
+    eventCount: number;
+    prompt: string | null;
+    sample: boolean;
+  };
+};
+
+/** Input shape for `cloud.triggers.update`. */
+export type CloudTriggersUpdateInput = {
+  batchWindow?: string;
+  budget?: string;
+  dailyCap?: string;
+  dedupeWindow?: string;
+  deliverTo?: string;
+  disable?: boolean;
+  enable?: boolean;
+  events?: string[];
+  execute?: boolean;
+  id: string;
+  project?: string;
+  prompt?: string;
+};
+
+/** Return shape for `cloud.triggers.update`. */
+export type CloudTriggersUpdateReturn = {
+  success: true;
+  trigger: {
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    batchWindowSeconds: number;
+    budgetUsd: number | null;
+    dailyCap: number;
+    dedupeWindowSeconds: number;
+    delivery: ({
+      chat?: ({
+        channel: string;
+        chatId: string;
+        instanceId?: string | null;
+        threadId?: string | null;
+      }) | null;
+      installationId?: string;
+      kind: "session" | "page_room" | "none";
+      roomId?: string;
+      sessionName?: string;
+      siteId?: string;
+    }) | null;
+    enabled: boolean;
+    filter: {
+      baseId?: string;
+      events?: string[];
+      mailboxId?: string;
+      siteId?: string;
+      viewId?: string;
+    };
+    firedToday: number;
+    id: string;
+    lastFiredAt: string | null;
+    lastRunId: string | null;
+    pausedReason: string | null;
+    pendingEvents: number;
+    projectId: string;
+    prompt: string;
+    source: "bases" | "mail" | "meetings" | "pages_comments";
+  };
+};
+
+/** Input shape for `cloud.webhook.remove`. */
+export type CloudWebhookRemoveInput = Record<string, never>;
+
+/** Return shape for `cloud.webhook.remove`. */
+export type CloudWebhookRemoveReturn = {
+  success: true;
+  webhook: {
+    configured: boolean;
+    lastEventAt: string | null;
+    url: string | null;
+  };
+};
+
+/** Input shape for `cloud.webhook.show`. */
+export type CloudWebhookShowInput = Record<string, never>;
+
+/** Return shape for `cloud.webhook.show`. */
+export type CloudWebhookShowReturn = {
+  success: true;
+  webhook: {
+    configured: boolean;
+    lastEventAt: string | null;
+    url: string | null;
+  };
+};
+
+/** Input shape for `cloud.worker.disable`. */
+export type CloudWorkerDisableInput = Record<string, never>;
+
+/** Return shape for `cloud.worker.disable`. */
+export type CloudWorkerDisableReturn = {
+  changed: boolean;
+  enabled: boolean;
+  enabledAt: string | null;
+  success: true;
+};
+
+/** Input shape for `cloud.worker.key.remove`. */
+export type CloudWorkerKeyRemoveInput = {
+  workerId: string;
+};
+
+/** Return shape for `cloud.worker.key.remove`. */
+export type CloudWorkerKeyRemoveReturn = {
+  removed: boolean;
+  success: true;
+  workerId: string;
+};
+
+/** Input shape for `cloud.worker.list`. */
+export type CloudWorkerListInput = Record<string, never>;
+
+/** Return shape for `cloud.worker.list`. */
+export type CloudWorkerListReturn = {
+  enabled: boolean;
+  enabledAt: string | null;
+  orphanKeys: string[];
+  success: true;
+  workers: Array<{
+    agentId: string;
+    agentName: string;
+    id: string;
+    installationId: string;
+    lastError: string | null;
+    lastSeenAt: string | null;
+    local: ({
+      error: string | null;
+      restartAt: string | null;
+      state: "running" | "waiting_key" | "backoff";
+    }) | null;
+    localKey: boolean;
+    projectId: string;
+    providerEnvironmentId: string;
+    status: "waiting_key" | "online" | "offline" | "disabled";
+    thisMachine: boolean;
+    workdir: string;
+  }>;
 };
 
 /** Input shape for `commands.list`. */
