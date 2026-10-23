@@ -352,12 +352,17 @@ export interface ApplyPermissionGrantResult {
 export function applyPermissionGrant(input: ApplyPermissionGrantInput): ApplyPermissionGrantResult {
   const now = input.now ?? Date.now();
   const deniedCapability = normalizeGrantCapability(input.capability);
-  const profile =
-    input.intent === "full-access" ? FULL_ACCESS_PROFILE : derivePermissionProfileSlugForCapability(input.capability);
-  const capabilities: AuthorizationCapability[] =
-    input.intent === "full-access"
-      ? [{ permission: "admin", objectType: "system", objectId: "*" }]
-      : [deniedCapability];
+  const fullAccess = input.intent === "full-access";
+  const derivedProfile = derivePermissionProfileSlugForCapability(input.capability);
+  // An exact grant delivers the denied capability and nothing else. The derived
+  // profile can already carry other capabilities (an operator-created profile,
+  // or a previous grant), so it is never attached as is: the grant goes through
+  // a single-capability sibling instead. The derived profile itself is left
+  // untouched, so its current holders keep every capability they already have.
+  const profile = fullAccess ? FULL_ACCESS_PROFILE : selectExactGrantProfile(derivedProfile, deniedCapability);
+  const capabilities: AuthorizationCapability[] = fullAccess
+    ? [{ permission: "admin", objectType: "system", objectId: "*" }]
+    : [deniedCapability];
 
   const ledgerKey = input.idempotencyKey?.trim();
   if (ledgerKey) {
@@ -377,16 +382,12 @@ export function applyPermissionGrant(input: ApplyPermissionGrantInput): ApplyPer
   }
 
   const operations: PermissionGrantOperation[] = [];
-  let profileCapabilities: AuthorizationCapability[] = capabilities;
-  if (input.intent === "full-access" || !isAdminPermissionProfile(profile)) {
-    // A grant adds one capability; it must never shrink a profile that already
-    // carries others (a CLI-created profile, or a previous grant). Merge with
-    // the stored definition instead of replacing it.
-    profileCapabilities =
-      input.intent === "full-access" ? capabilities : mergeProfileCapabilities(profile, capabilities);
+  if (fullAccess || !isAdminPermissionProfile(profile)) {
     const profileResult = upsertPermissionProfileDefinition({
       profile,
-      capabilities: profileCapabilities,
+      // An exact grant writes exactly the denied capability, so neither the
+      // derived profile nor its sibling can widen what the contact receives.
+      capabilities,
       updatedBy: input.createdBy ?? "approval.grant-card",
     });
     operations.push({
@@ -431,7 +432,7 @@ export function applyPermissionGrant(input: ApplyPermissionGrantInput): ApplyPer
 
   const result: ApplyPermissionGrantResult = {
     profile,
-    capabilities: profileCapabilities,
+    capabilities,
     operations,
     changed: operations.some((operation) => operation.status === "applied"),
     replay: false,
@@ -596,20 +597,18 @@ export function capabilityListsEqual(a: readonly PermissionCapability[], b: read
 }
 
 /**
- * Union of the capabilities already stored on a provider-owned profile and the
- * ones a new grant adds. Order is stable and duplicates are dropped, so the
- * definition only ever grows.
+ * The profile an exact grant attaches. The derived slug is used only when it
+ * carries exactly the denied capability; anything else on it would leak into
+ * the contact through the grant, so the grant moves to a deterministic
+ * single-capability sibling (`<derived>-exact`). A tag permissions does not own
+ * is still refused, exactly like any other profile write.
  */
-function mergeProfileCapabilities(profile: string, added: readonly PermissionCapability[]): AuthorizationCapability[] {
-  const existing = dbGetTagDefinition(normalizePermissionProfileSlug(profile));
-  const merged: AuthorizationCapability[] = [];
-  const seen = new Set<string>();
-  const current = existing ? readPermissionTagCapabilities(existing) : [];
-  for (const capability of [...current, ...added]) {
-    const key = formatCanonicalCapability(capability);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    merged.push(capability);
-  }
-  return merged;
+function selectExactGrantProfile(derivedProfile: string, capability: AuthorizationCapability): string {
+  const existing = dbGetTagDefinition(normalizePermissionProfileSlug(derivedProfile));
+  if (!existing) return derivedProfile;
+  assertProviderOwnedPermissionTag(derivedProfile, existing.kind, existing.source);
+  const current = readPermissionTagCapabilities(existing);
+  return capabilityListsEqual(current, [capability])
+    ? derivedProfile
+    : normalizePermissionProfileSlug(`${derivedProfile}-exact`);
 }

@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { createContact, getContact } from "../contacts.js";
 import { readAgentRuntimePermissionsConfig } from "../permissions/agent-default-capabilities-provider.js";
+import {
+  readProfileCapabilityStrings,
+  resolveContactChatOverlay,
+} from "../permissions/contact-policy-permissions-provider.js";
 import { dbGetContactChatGrant, dbListContactChatGrants } from "../permissions/contact-chat-grants.js";
 import { dbCreateAgent, dbUpsertChat } from "../router/router-db.js";
 import { dbCreateTagDefinition, dbGetTagDefinition } from "../tags/index.js";
@@ -65,7 +69,11 @@ describe("apply permission grant", () => {
     ]);
   });
 
-  it("adds the granted capability to an existing profile instead of replacing it", () => {
+  function capabilityKeys(capabilities: readonly { permission: string; objectType: string; objectId: string }[]) {
+    return capabilities.map((capability) => `${capability.permission}:${capability.objectType}:${capability.objectId}`);
+  }
+
+  it("keeps an exact grant to the denied capability while the derived profile carries others", () => {
     dbCreateTagDefinition({
       slug: "permission-use-tool-bash",
       label: "Use Bash",
@@ -80,17 +88,95 @@ describe("apply permission grant", () => {
       capability: CAPABILITY,
       contactId,
       agentId: "grant-agent",
-      idempotencyKey: "test:profile-merge:1",
+      idempotencyKey: "test:profile-exact:1",
     });
 
+    // The grant attaches a single-capability sibling, never the derived profile.
+    expect(result.profile).toBe("permission-use-tool-bash-exact");
+    expect(capabilityKeys(result.capabilities)).toEqual(["use:tool:Bash"]);
+    expect(dbGetTagDefinition("permission-use-tool-bash-exact")?.metadata).toEqual({
+      permissions: { capabilities: ["use:tool:Bash"] },
+    });
     expect(
-      result.capabilities.map(
+      dbGetContactChatGrant({
+        contactId,
+        profileSlug: "permission-use-tool-bash-exact",
+        scopeType: "chat",
+        scopeId: chatA,
+      }),
+    ).not.toBeNull();
+    expect(
+      dbGetContactChatGrant({
+        contactId,
+        profileSlug: "permission-use-tool-bash",
+        scopeType: "chat",
+        scopeId: chatA,
+      }),
+    ).toBeNull();
+    // The contact receives the denied capability only: no Read leak.
+    expect(readProfileCapabilityStrings(result.profile)).toEqual(["use:tool:Bash"]);
+    expect(
+      resolveContactChatOverlay({ contactId, chatId: chatA }).capabilities.map(
         (capability) => `${capability.permission}:${capability.objectType}:${capability.objectId}`,
       ),
-    ).toEqual(["use:tool:Read", "use:tool:Bash"]);
+    ).toEqual(["use:tool:Bash"]);
+    expect(readAgentRuntimePermissionsConfig("grant-agent")?.capabilities).toEqual([
+      { permission: "use", objectType: "tool", objectId: "Bash" },
+    ]);
+
+    // Existing holders of the derived profile keep their capabilities.
     expect(dbGetTagDefinition("permission-use-tool-bash")?.metadata).toEqual({
-      permissions: { capabilities: ["use:tool:Read", "use:tool:Bash"] },
+      permissions: { capabilities: ["use:tool:Read"] },
     });
+  });
+
+  it("replays the exact grant on the sibling profile without duplicating it or widening it", () => {
+    dbCreateTagDefinition({
+      slug: "permission-use-tool-bash",
+      label: "Use Bash",
+      kind: "system",
+      source: "permissions",
+      metadata: { permissions: { capabilities: ["use:tool:Read"] } },
+    });
+
+    const first = applyPermissionGrant({
+      intent: "exact",
+      scope: { type: "chat", chatId: chatA },
+      capability: CAPABILITY,
+      contactId,
+      agentId: "grant-agent",
+      idempotencyKey: "test:profile-exact-replay:1",
+    });
+    const second = applyPermissionGrant({
+      intent: "exact",
+      scope: { type: "chat", chatId: chatA },
+      capability: CAPABILITY,
+      contactId,
+      agentId: "grant-agent",
+      idempotencyKey: "test:profile-exact-replay:1",
+    });
+    // A replay without a ledger key is an ensure: nothing changes.
+    const third = applyPermissionGrant({
+      intent: "exact",
+      scope: { type: "chat", chatId: chatA },
+      capability: CAPABILITY,
+      contactId,
+      agentId: "grant-agent",
+    });
+
+    expect(first.profile).toBe("permission-use-tool-bash-exact");
+    expect(first.replay).toBe(false);
+    expect(second.replay).toBe(true);
+    expect(second.profile).toBe("permission-use-tool-bash-exact");
+    expect(third.changed).toBe(false);
+    expect(third.operations.every((operation) => operation.status === "unchanged")).toBe(true);
+    // One sibling, one grant, and still only the denied capability.
+    expect(dbGetTagDefinition("permission-use-tool-bash-exact")?.metadata).toEqual({
+      permissions: { capabilities: ["use:tool:Bash"] },
+    });
+    expect(dbListContactChatGrants({ contactId, profileSlug: "permission-use-tool-bash-exact" })).toMatchObject([
+      { scopeType: "chat", scopeId: chatA, profileSlug: "permission-use-tool-bash-exact" },
+    ]);
   });
 
   it("replays the same idempotency key without writing again", () => {
