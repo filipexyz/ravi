@@ -234,7 +234,23 @@ describe("ravi cloud runs", () => {
     const commands = new CloudRunsCommands(deps(fake));
     const prompt = "Summarize yesterday's open tickets";
     const braked = await capture(() =>
-      commands.start("triage", prompt, "2.5", ["acme/api@main"], undefined, undefined, true, false),
+      commands.start(
+        "triage",
+        prompt,
+        "2.5",
+        ["acme/api@main"],
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        false,
+      ),
     );
     const plan = expectBrake(braked, fake);
     expect(plan).toMatchObject({
@@ -246,7 +262,23 @@ describe("ravi cloud runs", () => {
     expect(braked.lines.join("\n")).not.toContain(prompt);
 
     const done = await capture(() =>
-      commands.start("triage", prompt, "2.5", ["acme/api@main"], undefined, "retry-key-0001", true, true),
+      commands.start(
+        "triage",
+        prompt,
+        "2.5",
+        ["acme/api@main"],
+        undefined,
+        "retry-key-0001",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        true,
+      ),
     );
     expect(fake.writes()[0]!.body).toMatchObject({
       project: "clinica",
@@ -263,15 +295,82 @@ describe("ravi cloud runs", () => {
   it("start marks runs from an agent runtime and validates input", async () => {
     const fake = createFakeCloudConsole();
     const commands = new CloudRunsCommands(deps(fake, { inAgentRuntime: () => true }));
-    await capture(() => commands.start("triage", "go", undefined, undefined, undefined, undefined, true, true));
+    await capture(() =>
+      commands.start(
+        "triage",
+        "go",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        true,
+      ),
+    );
     expect(fake.writes()[0]!.body).toMatchObject({ trigger: "agent" });
-    const badBudget = await capture(() => commands.start("triage", "go", "999", undefined, undefined, undefined, true));
+    const badBudget = await capture(() =>
+      commands.start(
+        "triage",
+        "go",
+        "999",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      ),
+    );
     expect(badBudget.error).toMatchObject({ code: "USAGE_ERROR", exitCode: 2 });
     const badRepo = await capture(() =>
-      commands.start("triage", "go", undefined, ["nope"], undefined, undefined, true),
+      commands.start(
+        "triage",
+        "go",
+        undefined,
+        ["nope"],
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      ),
     );
     expect(badRepo.error).toMatchObject({ code: "USAGE_ERROR", exitCode: 2 });
-    const empty = await capture(() => commands.start("triage", "  ", undefined, undefined, undefined, undefined, true));
+    const empty = await capture(() =>
+      commands.start(
+        "triage",
+        "  ",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      ),
+    );
     expect(empty.error).toMatchObject({ code: "USAGE_ERROR", exitCode: 2 });
   });
 
@@ -461,7 +560,18 @@ describe("ravi cloud schedules", () => {
     const commands = new CloudSchedulesCommands(deps(fake));
     const plan = expectBrake(
       await capture(() =>
-        commands.add("triage", "0 9 * * 1-5", "America/Sao_Paulo", undefined, "3", undefined, undefined, true, false),
+        commands.add(
+          "triage",
+          "0 9 * * 1-5",
+          "America/Sao_Paulo",
+          undefined,
+          "3",
+          undefined,
+          undefined,
+          undefined,
+          true,
+          false,
+        ),
       ),
       fake,
     );
@@ -473,13 +583,24 @@ describe("ravi cloud schedules", () => {
     });
 
     const disabled = await capture(() =>
-      commands.add("triage", "0 9 * * 1-5", undefined, "Check the queue", undefined, true, undefined, true, false),
+      commands.add(
+        "triage",
+        "0 9 * * 1-5",
+        undefined,
+        "Check the queue",
+        undefined,
+        true,
+        undefined,
+        undefined,
+        true,
+        false,
+      ),
     );
     expect(fake.writes()[0]!.body).toMatchObject({ enabled: false, timezone: "UTC", prompt: "Check the queue" });
     expectSchema(CloudSchedulesCommands, "add", disabled.result);
 
     const bad = await capture(() =>
-      commands.add("triage", "nope", undefined, undefined, undefined, true, undefined, true),
+      commands.add("triage", "nope", undefined, undefined, undefined, true, undefined, undefined, true),
     );
     expect(bad.error).toMatchObject({ code: "USAGE_ERROR", exitCode: 2 });
   });
@@ -492,6 +613,7 @@ describe("ravi cloud schedules", () => {
         commands.update(
           "sch_1",
           "0 10 * * *",
+          undefined,
           undefined,
           undefined,
           undefined,
@@ -518,6 +640,7 @@ describe("ravi cloud schedules", () => {
         undefined,
         true,
         undefined,
+        undefined,
         true,
         false,
       ),
@@ -527,12 +650,25 @@ describe("ravi cloud schedules", () => {
     expectSchema(CloudSchedulesCommands, "update", off.result);
 
     const missing = await capture(() =>
-      commands.update("sch_x", undefined, undefined, undefined, undefined, undefined, undefined, true, undefined, true),
+      commands.update(
+        "sch_x",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        undefined,
+        undefined,
+        true,
+      ),
     );
     expect(missing.error).toMatchObject({ code: "CLOUD_SCHEDULE_NOT_FOUND", exitCode: 1 });
     const nothing = await capture(() =>
       commands.update(
         "sch_1",
+        undefined,
         undefined,
         undefined,
         undefined,
@@ -649,8 +785,6 @@ describe("ravi cloud runs: conversations, files and questions", () => {
         undefined,
         undefined,
         undefined,
-        true,
-        execute,
         extras.files,
         extras.outcome,
         extras.maxIterations,
@@ -658,6 +792,8 @@ describe("ravi cloud runs: conversations, files and questions", () => {
         extras.rowsLimit,
         extras.bindThread,
         extras.noDeliver,
+        true,
+        execute,
       ),
     );
   }
@@ -942,27 +1078,50 @@ describe("ravi cloud runs: conversations, files and questions", () => {
   it("schedules made in a session deliver there; --no-deliver turns it off", async () => {
     const fake = createFakeCloudConsole({ schedules: [fakeCloudSchedule()] });
     const commands = new CloudSchedulesCommands(deps(fake, { chatContext: chatIn(SLACK_THREAD) }));
-    // add(agent, cron, tz, prompt, budget, disabled, project, json, execute, noDeliver)
+    // add(agent, cron, tz, prompt, budget, disabled, project, noDeliver, json, execute)
     const plan = expectBrake(
       await capture(() =>
-        commands.add("triage", "0 9 * * 1-5", undefined, undefined, undefined, undefined, undefined, true, false),
+        commands.add(
+          "triage",
+          "0 9 * * 1-5",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+          false,
+        ),
       ),
       fake,
     );
     expect(plan.delivery).toEqual({ kind: "session", sessionName: "dev-main" });
     const added = await capture(() =>
-      commands.add("triage", "0 9 * * 1-5", undefined, undefined, undefined, true, undefined, true, false),
+      commands.add("triage", "0 9 * * 1-5", undefined, undefined, undefined, true, undefined, undefined, true, false),
     );
     expect(fake.writes()[0]!.body).toMatchObject({ delivery: { kind: "session", sessionName: "dev-main" } });
     expectSchema(CloudSchedulesCommands, "add", added.result);
     await capture(() =>
-      commands.add("triage", "0 9 * * 1-5", undefined, undefined, undefined, true, undefined, true, false, true),
+      commands.add("triage", "0 9 * * 1-5", undefined, undefined, undefined, true, undefined, true, true, false),
     );
     expect(fake.writes()[1]!.body).toMatchObject({ delivery: { kind: "none" } });
 
-    // update(id, cron, tz, prompt, heartbeat, budget, enable, disable, project, json, execute, noDeliver)
+    // update(id, cron, tz, prompt, heartbeat, budget, enable, disable, project, noDeliver, json, execute)
     const updated = await capture(() =>
-      commands.update("sch_1", undefined, undefined, undefined, undefined, undefined, undefined, true, undefined, true),
+      commands.update(
+        "sch_1",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        undefined,
+        undefined,
+        true,
+      ),
     );
     expect(fake.writes()[2]!.body).toEqual({
       enabled: false,
@@ -994,6 +1153,7 @@ describe("ravi cloud runs: conversations, files and questions", () => {
     const nothing = await capture(() =>
       commands.update(
         "sch_1",
+        undefined,
         undefined,
         undefined,
         undefined,

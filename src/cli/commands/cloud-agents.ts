@@ -793,9 +793,6 @@ export class CloudRunsCommands {
     project?: string,
     @Option({ flags: "--idempotency-key <key>", description: "Same key, same run: a retry never starts a second run" })
     idempotencyKey?: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
-    @Option({ flags: "--execute", description: "Start the run (without it, print the plan and exit 3)" })
-    execute?: boolean,
     @Option({
       flags: "--file <path...>",
       description: "A file the run reads at /mnt/session/inputs/<name>, repeatable (10 files, 3 MB in all)",
@@ -815,6 +812,9 @@ export class CloudRunsCommands {
     bindThread?: boolean,
     @Option({ flags: "--no-deliver", description: "Do not bring the result back to this conversation" })
     noDeliver?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--execute", description: "Start the run (without it, print the plan and exit 3)" })
+    execute?: boolean,
   ) {
     const op = "cloud runs start";
     const d = defaultsOf(this.deps);
@@ -1636,11 +1636,11 @@ export class CloudSchedulesCommands {
     @Option({ flags: "--disabled", description: "Create it disabled (applies at once)" }) disabled?: boolean,
     @Option({ flags: "--project <project>", description: "Console project slug (default: the cwd's project)" })
     project?: string,
+    @Option({ flags: "--no-deliver", description: "Do not bring each run's result back to this conversation" })
+    noDeliver?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--execute", description: "Create an enabled schedule (without it, print the plan and exit 3)" })
     execute?: boolean,
-    @Option({ flags: "--no-deliver", description: "Do not bring each run's result back to this conversation" })
-    noDeliver?: boolean,
   ) {
     const op = "cloud schedules add";
     const d = defaultsOf(this.deps);
@@ -1728,14 +1728,14 @@ export class CloudSchedulesCommands {
     @Option({ flags: "--disable", description: "Disable it (applies at once)" }) disable?: boolean,
     @Option({ flags: "--project <project>", description: "Console project slug (default: the cwd's project)" })
     project?: string,
+    @Option({ flags: "--no-deliver", description: "Stop bringing each run's result back to a conversation" })
+    noDeliver?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({
       flags: "--execute",
       description: "Apply a change that leaves the schedule enabled (without it, print the plan and exit 3)",
     })
     execute?: boolean,
-    @Option({ flags: "--no-deliver", description: "Stop bringing each run's result back to a conversation" })
-    noDeliver?: boolean,
   ) {
     const op = "cloud schedules update";
     const d = defaultsOf(this.deps);
