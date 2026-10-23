@@ -23,7 +23,12 @@ import type { ContextSource } from "../router/router-db.js";
 import { dbCreateTrigger, dbListTriggers, type Trigger, type TriggerInput } from "../triggers/index.js";
 import type { TriggerReplySource } from "../triggers/types.js";
 import { logger } from "../utils/logger.js";
-import { createWatch, listWatchConnectors, listWatchRecords } from "../watch/index.js";
+import {
+  createWatch,
+  listWatchConnectors,
+  listWatchRecords,
+  removeWatch as removeWatchOperation,
+} from "../watch/index.js";
 import type { WatchRecord } from "../watch/types.js";
 import { addPendingGhFollow, type PendingGhFollow } from "./gh-follow-pending.js";
 
@@ -109,7 +114,7 @@ export interface GhWatchFollowResult {
   repo: string;
   watchId: string | null;
   watchReused: boolean;
-  /** Watch local que cobre CI. Sem ele o follow só vê ciclo de vida de PR. */
+  /** Watch local que cobre CI e comentários. Sem ele o follow só vê ciclo de vida. */
   ciWatchId?: string | null;
   ciWatchReused?: boolean;
   triggerId?: string;
@@ -562,7 +567,7 @@ export function buildGhFollowTriggerInput(
   return {
     name: ghFollowTriggerName(repo, prNumber),
     topic: GH_PR_FOLLOW_TOPIC,
-    message: `Activity on ${repo}#${prNumber} (PR lifecycle or CI result). Tell the user in one short line what changed — state and title, or the CI conclusion when present — and include the url from this event.`,
+    message: `Activity on ${repo}#${prNumber} (PR lifecycle, CI result or a new comment). Tell the user in one short line what changed — state and title, the CI conclusion, or who commented and what they said — and include the url from this event. A bot comment that asks nothing of the user (author ending in [bot]): answer @@SILENT@@.`,
     agentId: context.agentId,
     accountId: context.accountId,
     replySession: context.sessionName ?? context.sessionKey,
@@ -592,6 +597,11 @@ export function isGhFollowManagedWatch(watch: { filters?: Record<string, unknown
   return watch.filters?.managedBy === GH_FOLLOW_MANAGED_FILTER.managedBy;
 }
 
+/** Um watch local só serve se declara tudo que a derivação sabe produzir. */
+function coversLocalEventTypes(watch: WatchRecord, localEventTypes: string[]): boolean {
+  return localEventTypes.every((eventType) => watch.eventTypes.includes(eventType));
+}
+
 /**
  * Eventos que o placement local sabe produzir, lidos do próprio catálogo do
  * connector.
@@ -612,32 +622,90 @@ export function locallySupportedEventTypes(provider = "github"): string[] {
  * Console, que é o caminho de entrega que hoje funciona sem depender de poller.
  *
  * Além dele, garante um watch **local** com os eventos que o Console não entrega
- * (CI). São dois watches porque servem a dois produtores diferentes, e o filtro do
- * trigger não se importa de onde o evento veio.
+ * (CI e comentário). São dois watches porque servem a dois produtores diferentes, e
+ * o filtro do trigger não se importa de onde o evento veio.
  */
 export async function ensureRepoWatch(
   repo: string,
-  deps: Pick<GhWatchFollowDeps, "listWatches" | "createWatch"> & { localEventTypes?: () => string[] } = {},
+  deps: Pick<GhWatchFollowDeps, "listWatches" | "createWatch"> & {
+    localEventTypes?: () => string[];
+    removeWatch?: (id: string) => Promise<boolean>;
+  } = {},
 ): Promise<{ watchId: string | null; reused: boolean; ciWatchId: string | null; ciWatchReused: boolean }> {
-  const listWatches = deps.listWatches ?? listWatchRecords;
   const create = deps.createWatch ?? createWatch;
-  const localEventTypes = (deps.localEventTypes ?? locallySupportedEventTypes)();
+  const activeWatches = listActiveRepoWatches(repo, deps.listWatches ?? listWatchRecords);
+  const { ciWatchId, ciWatchReused } = await reconcileLocalWatch(repo, activeWatches, deps);
+  const anyWatch = activeWatches[0];
 
-  let activeWatches: WatchRecord[] = [];
+  if (anyWatch) return { watchId: anyWatch.id, reused: true, ciWatchId, ciWatchReused };
+
   try {
-    activeWatches = listWatches({ provider: "github", status: "active", limit: 200 }).items.filter(
+    const created = await create({ provider: "github", resourceRef: repo });
+    return { watchId: created.watch.id, reused: false, ciWatchId, ciWatchReused };
+  } catch (error) {
+    // Sem login de Console, o único caminho restante é polling local: o watch
+    // existe e passa a produzir assim que o runner local estiver ativo.
+    log.warn("Could not create console watch, relying on local", { repo, error });
+    return { watchId: ciWatchId, reused: false, ciWatchId, ciWatchReused };
+  }
+}
+
+/**
+ * Garante só o produtor local (CI e comentários), sem tocar em watch de Console.
+ *
+ * É o que a manutenção do follow precisa a cada tick: o watch de Console é
+ * criado no nascimento do acompanhamento, mas o local é o que some e deixa o
+ * trigger mudo. Repetir a criação de Console aqui seria uma chamada de rede por
+ * repo por minuto.
+ */
+export async function ensureFollowWatchProducer(
+  repo: string,
+  deps: Pick<GhWatchFollowDeps, "listWatches" | "createWatch"> & {
+    localEventTypes?: () => string[];
+    removeWatch?: (id: string) => Promise<boolean>;
+  } = {},
+): Promise<{ ciWatchId: string | null; ciWatchReused: boolean }> {
+  const activeWatches = listActiveRepoWatches(repo, deps.listWatches ?? listWatchRecords);
+  return reconcileLocalWatch(repo, activeWatches, deps);
+}
+
+function listActiveRepoWatches(repo: string, listWatches: typeof listWatchRecords): WatchRecord[] {
+  try {
+    return listWatches({ provider: "github", status: "active", limit: 200 }).items.filter(
       (watch) => watch.resourceRef === repo,
     );
   } catch (error) {
     log.warn("Could not list watches while ensuring repo watch", { repo, error });
+    return [];
   }
+}
 
-  const anyWatch = activeWatches[0];
-  const localWatch = activeWatches.find((watch) => watch.placement === "local");
+async function reconcileLocalWatch(
+  repo: string,
+  activeWatches: WatchRecord[],
+  deps: Pick<GhWatchFollowDeps, "createWatch"> & {
+    localEventTypes?: () => string[];
+    removeWatch?: (id: string) => Promise<boolean>;
+  },
+): Promise<{ ciWatchId: string | null; ciWatchReused: boolean }> {
+  const create = deps.createWatch ?? createWatch;
+  const removeWatch = deps.removeWatch ?? removeWatchOperation;
+  const localEventTypes = (deps.localEventTypes ?? locallySupportedEventTypes)();
 
-  let ciWatchId: string | null = localWatch?.id ?? null;
-  let ciWatchReused = Boolean(localWatch);
-  if (!localWatch) {
+  // Só um watch que declara o conjunto inteiro serve. Reaproveitar um watch local
+  // antigo (feito quando a derivação produzia menos eventos) deixaria o follow mudo
+  // justamente no evento novo — foi o caso de CI e de comentário.
+  const reusableLocal = activeWatches.find(
+    (watch) => watch.placement === "local" && coversLocalEventTypes(watch, localEventTypes),
+  );
+  const staleManagedLocal = activeWatches.find(
+    (watch) =>
+      watch.placement === "local" && isGhFollowManagedWatch(watch) && !coversLocalEventTypes(watch, localEventTypes),
+  );
+
+  let ciWatchId: string | null = reusableLocal?.id ?? null;
+  let ciWatchReused = Boolean(reusableLocal);
+  if (!reusableLocal) {
     if (localEventTypes.length > 0) {
       try {
         const created = await create({
@@ -655,17 +723,19 @@ export async function ensureRepoWatch(
     }
   }
 
-  if (anyWatch) return { watchId: anyWatch.id, reused: true, ciWatchId, ciWatchReused };
-
-  try {
-    const created = await create({ provider: "github", resourceRef: repo });
-    return { watchId: created.watch.id, reused: false, ciWatchId, ciWatchReused };
-  } catch (error) {
-    // Sem login de Console, o único caminho restante é polling local: o watch
-    // existe e passa a produzir assim que o runner local estiver ativo.
-    log.warn("Could not create console watch, relying on local", { repo, error });
-    return { watchId: ciWatchId, reused: false, ciWatchId, ciWatchReused };
+  // O watch antigo já foi substituído por um que cobre o conjunto atual. Só
+  // removemos o que carrega a nossa marca e depois que o novo existe: apagar
+  // antes de ter substituto deixaria o repo sem produtor local.
+  if (staleManagedLocal && ciWatchId && ciWatchId !== staleManagedLocal.id) {
+    try {
+      await removeWatch(staleManagedLocal.id);
+      log.info("Removed outdated local CI watch", { repo, watchId: staleManagedLocal.id, replacement: ciWatchId });
+    } catch (error) {
+      log.warn("Could not remove outdated local CI watch", { repo, watchId: staleManagedLocal.id, error });
+    }
   }
+
+  return { ciWatchId, ciWatchReused };
 }
 
 export async function ensureGhWatchFollow(

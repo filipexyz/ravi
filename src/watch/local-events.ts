@@ -29,10 +29,36 @@ export interface LocalWorkflowRunState {
   branch?: string;
 }
 
+/**
+ * Comentário lido do GitHub neste tick.
+ *
+ * `key` identifica o comentário entre ticks (`issue:123` / `review:456`); o corpo
+ * viaja só no evento, nunca no snapshot — estado durável não guarda texto de
+ * terceiro.
+ */
+export interface LocalCommentObservation {
+  key: string;
+  id: number;
+  number: number;
+  url: string;
+  body: string;
+  author: string;
+  updatedAt: string;
+}
+
+export interface LocalCommentState {
+  updatedAt: string;
+}
+
 export interface LocalWatchSnapshot {
   version: 1;
   pullRequests: Record<string, LocalPullRequestState>;
   workflowRuns: Record<string, LocalWorkflowRunState>;
+  /**
+   * Comentários já vistos. Ausente = este snapshot é de antes de existir leitura
+   * de comentário, e vira baseline: não emitimos o histórico inteiro de uma vez.
+   */
+  comments?: Record<string, LocalCommentState>;
 }
 
 /** PR que saiu da lista de abertas: só o estado final interessa. */
@@ -51,6 +77,8 @@ export interface DeriveLocalEventsInput {
   previous: LocalWatchSnapshot | null;
   current: LocalWatchSnapshot;
   departed: Record<string, DepartedPullRequest>;
+  /** Ausente = este tick não leu comentários; o estado anterior é preservado. */
+  comments?: LocalCommentObservation[];
 }
 
 export interface DeriveLocalEventsResult {
@@ -76,7 +104,20 @@ export const LOCAL_GITHUB_DERIVABLE_EVENTS = [
   "workflow_run.failed",
   "workflow_run.succeeded",
   "workflow_run.cancelled",
+  "pull_request_comment.created",
 ] as const;
+
+/**
+ * Comentário novo em PR.
+ *
+ * Um só evento para os dois endpoints do GitHub (comentário de conversa e
+ * comentário de review): quem acompanha a PR quer saber que comentaram, e separar
+ * isso em dois tipos obrigaria todo trigger a assinar os dois.
+ */
+export const PULL_REQUEST_COMMENT_EVENT = "pull_request_comment.created";
+
+/** Corpo de comentário não é canal de transporte: o evento carrega o suficiente. */
+const MAX_COMMENT_BODY_CHARS = 1_200;
 
 const WORKFLOW_OUTCOME_EVENTS: Record<string, string> = {
   success: "workflow_run.succeeded",
@@ -128,7 +169,12 @@ function workflowRunPayload(
 export function deriveLocalGitHubEvents(repo: string, input: DeriveLocalEventsInput): DeriveLocalEventsResult {
   const events: DerivedLocalEvent[] = [];
   if (input.previous === null) {
-    return { events, snapshot: input.current };
+    // A linha de base também grava o estado de comentários: sem isso o tick
+    // seguinte releria a mesma janela como se tudo fosse novo.
+    return {
+      events,
+      snapshot: { ...input.current, ...commentState(input.comments, input.current.comments) },
+    };
   }
 
   const previousPrs = input.previous.pullRequests;
@@ -174,6 +220,34 @@ export function deriveLocalGitHubEvents(repo: string, input: DeriveLocalEventsIn
     if (pr.headRefName) pullRequestsByBranch.set(pr.headRefName, pr.number);
   }
 
+  // Comentários: só o que apareceu desde a última leitura.
+  //
+  // `previous.comments === undefined` (snapshot antigo) é baseline, não ausência
+  // de comentários: emitir aí despejaria o histórico como se fosse novidade.
+  const previousComments = input.previous.comments;
+  if (input.comments && previousComments) {
+    for (const comment of input.comments) {
+      if (previousComments[comment.key]) continue;
+      events.push({
+        eventType: PULL_REQUEST_COMMENT_EVENT,
+        payload: {
+          repository: repo,
+          number: comment.number,
+          // Duas formas do número: o filtro do follow aceita as duas, e o payload
+          // fica no mesmo formato do evento de Console.
+          pull_request: { number: comment.number },
+          commentId: comment.id,
+          url: comment.url,
+          author: comment.author,
+          body:
+            comment.body.length > MAX_COMMENT_BODY_CHARS
+              ? `${comment.body.slice(0, MAX_COMMENT_BODY_CHARS)}…`
+              : comment.body,
+        },
+      });
+    }
+  }
+
   for (const [key, run] of Object.entries(input.current.workflowRuns)) {
     if (run.status !== "completed") continue;
     const before = input.previous.workflowRuns[key];
@@ -189,5 +263,28 @@ export function deriveLocalGitHubEvents(repo: string, input: DeriveLocalEventsIn
     events.push({ eventType: "workflow_run.completed", payload });
   }
 
-  return { events, snapshot: input.current };
+  return {
+    events,
+    snapshot: {
+      ...input.current,
+      ...commentState(input.comments, input.previous?.comments ?? input.current.comments),
+    },
+  };
+}
+
+/**
+ * Estado de comentários do próximo snapshot.
+ *
+ * Sem leitura neste tick, o mapa anterior fica: apagar faria o próximo tick ler
+ * tudo como novo. O mapa é substituído (não acumulado) porque a leitura é uma
+ * janela recente: guardar além dela só cresceria o arquivo sem servir pra nada.
+ */
+function commentState(
+  observed: LocalCommentObservation[] | undefined,
+  previous: Record<string, LocalCommentState> | undefined,
+): Pick<LocalWatchSnapshot, "comments"> {
+  if (!observed) return previous ? { comments: previous } : {};
+  const comments: Record<string, LocalCommentState> = {};
+  for (const comment of observed) comments[comment.key] = { updatedAt: comment.updatedAt };
+  return { comments };
 }

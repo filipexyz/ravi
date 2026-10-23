@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import {
+  ensureFollowWatchProducer,
   ensureGhWatchFollow,
   ensureRepoWatch,
   findExistingGhFollowTrigger,
@@ -272,10 +273,17 @@ describe("gh watch follow", () => {
     expect(created).toBe(1);
   });
 
-  it("does not create a second local watch when one is already there", async () => {
+  it("does not create a second local watch when one already covers the event set", async () => {
     let created = 0;
     const result = await ensureRepoWatch("o/r", {
-      listWatches: () => ({ items: [watch(), watch({ id: "local_1", placement: "local" })], total: 2 }) as never,
+      listWatches: () =>
+        ({
+          items: [
+            watch(),
+            watch({ id: "local_1", placement: "local", eventTypes: LOCAL_TYPES, filters: { managedBy: "gh-follow" } }),
+          ],
+          total: 2,
+        }) as never,
       localEventTypes: () => LOCAL_TYPES,
       createWatch: async () => {
         created += 1;
@@ -285,6 +293,60 @@ describe("gh watch follow", () => {
 
     expect(result).toMatchObject({ ciWatchId: "local_1", ciWatchReused: true });
     expect(created).toBe(0);
+  });
+
+  it("replaces its own local watch when the derivation gained new events", async () => {
+    const created: string[][] = [];
+    const removed: string[] = [];
+    const result = await ensureRepoWatch("o/r", {
+      listWatches: () =>
+        ({
+          items: [
+            watch(),
+            // Watch criado quando a derivação só produzia ciclo de vida.
+            watch({
+              id: "local_old",
+              placement: "local",
+              eventTypes: ["pull_request.opened"],
+              filters: { managedBy: "gh-follow" },
+            }),
+          ],
+          total: 2,
+        }) as never,
+      localEventTypes: () => LOCAL_TYPES,
+      createWatch: async (input) => {
+        created.push(input.eventTypes ?? []);
+        return { watch: watch({ id: "local_new", placement: "local" }), createdRemote: false };
+      },
+      removeWatch: async (id) => {
+        removed.push(id);
+        return true;
+      },
+    });
+
+    // Reaproveitar o watch antigo deixaria o follow mudo no evento novo.
+    expect(created).toEqual([LOCAL_TYPES]);
+    expect(result).toMatchObject({ ciWatchId: "local_new", ciWatchReused: false });
+    expect(removed).toEqual(["local_old"]);
+  });
+
+  it("does not replace a local watch someone else created without the ownership mark", async () => {
+    const removed: string[] = [];
+    await ensureRepoWatch("o/r", {
+      listWatches: () =>
+        ({
+          items: [watch(), watch({ id: "local_user", placement: "local", eventTypes: ["pull_request.opened"] })],
+          total: 2,
+        }) as never,
+      localEventTypes: () => LOCAL_TYPES,
+      createWatch: async () => ({ watch: watch({ id: "local_new", placement: "local" }), createdRemote: false }),
+      removeWatch: async (id) => {
+        removed.push(id);
+        return true;
+      },
+    });
+
+    expect(removed).toEqual([]);
   });
 
   it("requests exactly the locally supported event types for the CI watch", async () => {
@@ -333,6 +395,50 @@ describe("gh watch follow", () => {
 
     expect(placements).toEqual(["local", "console"]);
     expect(result).toMatchObject({ watchId: "local_1", reused: false });
+  });
+
+  it("ensures only the local producer without touching the Console watch", async () => {
+    const placements: string[] = [];
+    const result = await ensureFollowWatchProducer("o/r", {
+      listWatches: () => ({ items: [] }) as never,
+      localEventTypes: () => LOCAL_TYPES,
+      createWatch: async (input) => {
+        placements.push(input.placement ?? "console");
+        return { watch: watch({ id: "local_new", placement: "local" }), createdRemote: false };
+      },
+    });
+
+    // A manutenção roda a cada minuto: criar watch de Console aqui seria chamada
+    // de rede por repo por tick.
+    expect(placements).toEqual(["local"]);
+    expect(result).toMatchObject({ ciWatchId: "local_new", ciWatchReused: false });
+  });
+
+  it("reconciles the producer to the current event set on every maintenance pass", async () => {
+    const created: string[][] = [];
+    const result = await ensureFollowWatchProducer("o/r", {
+      listWatches: () =>
+        ({
+          items: [
+            watch(),
+            watch({
+              id: "local_old",
+              placement: "local",
+              eventTypes: ["pull_request.opened"],
+              filters: { managedBy: "gh-follow" },
+            }),
+          ],
+        }) as never,
+      localEventTypes: () => LOCAL_TYPES,
+      createWatch: async (input) => {
+        created.push(input.eventTypes ?? []);
+        return { watch: watch({ id: "local_new", placement: "local" }), createdRemote: false };
+      },
+      removeWatch: async () => true,
+    });
+
+    expect(created).toEqual([LOCAL_TYPES]);
+    expect(result.ciWatchId).toBe("local_new");
   });
 
   it("creates the PR trigger once and reuses it afterwards", async () => {
