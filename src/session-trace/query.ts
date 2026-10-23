@@ -322,9 +322,10 @@ function addSessionFilter(
   const rawSession = compactText(session);
 
   // Fast path: caller already supplied a session_key (production CLI does this
-  // via resolveTraceTarget). Skip the OR — uses idx_session_events_key_time
-  // directly. With ~800k rows in session_events the OR fallback was scanning
-  // the whole table and producing 10s+ peaks.
+  // via resolveTraceTarget). Skip the OR — uses
+  // idx_session_events_key_time_seq_id directly. With ~800k rows in
+  // session_events the OR fallback was scanning the whole table and producing
+  // 10s+ peaks.
   if (resolvedSessionKey) {
     where.push(`session_key = ?`);
     params.push(resolvedSessionKey);

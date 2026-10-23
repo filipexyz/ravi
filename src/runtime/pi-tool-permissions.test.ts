@@ -7,6 +7,9 @@ import {
   PI_PERMISSION_MISSING_DECISION_REASON,
   PI_PERMISSION_OPAQUE_DENY_REASON,
   PI_PERMISSION_UI_TITLE,
+  PI_DYNAMIC_TOOL_UI_TITLE,
+  formatPiDynamicToolUiResponse,
+  parsePiDynamicToolUiRequest,
   PI_RAVI_PERMISSION_EXTENSION_SOURCE,
   authorizePiToolCall,
   buildPiPermissionUiResponse,
@@ -735,5 +738,50 @@ describe("Pi tool permission bridge", () => {
         handlers,
       ),
     ).resolves.toEqual({ allowed: true });
+  });
+});
+
+describe("pi dynamic tool bridge", () => {
+  it("registers host tools from the RAVI_PI_DYNAMIC_TOOLS env", () => {
+    expect(PI_RAVI_PERMISSION_EXTENSION_SOURCE).toContain("pi.registerTool(");
+    expect(PI_RAVI_PERMISSION_EXTENSION_SOURCE).toContain("RAVI_PI_DYNAMIC_TOOLS");
+    expect(PI_RAVI_PERMISSION_EXTENSION_SOURCE).toContain("RAVI_PI_DYNAMIC_TOOLS_FILE");
+    expect(PI_RAVI_PERMISSION_EXTENSION_SOURCE).toContain(PI_DYNAMIC_TOOL_UI_TITLE);
+  });
+
+  it("recognizes a host tool execution request", () => {
+    const request = parsePiDynamicToolUiRequest({
+      type: "extension_ui_request",
+      id: "evt-1",
+      title: PI_DYNAMIC_TOOL_UI_TITLE,
+      message: JSON.stringify({
+        toolName: "tasks_show",
+        toolCallId: "call-1",
+        arguments: { taskId: "task-1" },
+      }),
+    });
+    expect(request).toEqual({
+      id: "evt-1",
+      toolName: "tasks_show",
+      toolCallId: "call-1",
+      arguments: { taskId: "task-1" },
+    });
+  });
+
+  it("ignores unrelated extension UI requests", () => {
+    expect(parsePiDynamicToolUiRequest({ title: "permission", id: "x" })).toBeNull();
+    expect(parsePiDynamicToolUiRequest({ title: PI_DYNAMIC_TOOL_UI_TITLE })).toBeNull();
+  });
+
+  it("encodes a host tool result for the bridge", () => {
+    const response = formatPiDynamicToolUiResponse(
+      { id: "evt-1", toolName: "tasks_show", arguments: {} },
+      { success: true, contentItems: [{ type: "inputText", text: "ok" }] },
+    );
+    expect(response).toEqual({
+      type: "extension_ui_response",
+      id: "evt-1",
+      value: JSON.stringify({ success: true, contentItems: [{ type: "inputText", text: "ok" }] }),
+    });
   });
 });

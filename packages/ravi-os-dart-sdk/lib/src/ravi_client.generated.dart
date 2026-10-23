@@ -3054,6 +3054,18 @@ class ContactsNamespace {
     );
   }
 
+  Future<ContactsLinkAgentReturn> linkAgent(String agent, [ContactsLinkAgentOptions options = const ContactsLinkAgentOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["agent"] = RaviJson.from(agent);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["contacts"],
+      command: "link-agent",
+      body: requestBody,
+      decode: contactsLinkAgentReturnFromJson,
+    );
+  }
+
   Future<ContactsListReturn> list([ContactsListOptions options = const ContactsListOptions()]) async {
     final requestBody = <String, RaviJson>{};
     options.encodeBody(requestBody);
@@ -9699,6 +9711,18 @@ class TasksNamespace {
 
   TasksProfilesNamespace get profiles => TasksProfilesNamespace(_transport);
 
+  Future<TasksAnswerReturn> answer(String taskId, [TasksAnswerOptions options = const TasksAnswerOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["taskId"] = RaviJson.from(taskId);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["tasks"],
+      command: "answer",
+      body: requestBody,
+      decode: tasksAnswerReturnFromJson,
+    );
+  }
+
   Future<TasksArchiveReturn> archive(String taskId, [TasksArchiveOptions options = const TasksArchiveOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["taskId"] = RaviJson.from(taskId);
@@ -9708,6 +9732,17 @@ class TasksNamespace {
       command: "archive",
       body: requestBody,
       decode: tasksArchiveReturnFromJson,
+    );
+  }
+
+  Future<TasksAttentionReturn> attention([TasksAttentionOptions options = const TasksAttentionOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["tasks"],
+      command: "attention",
+      body: requestBody,
+      decode: tasksAttentionReturnFromJson,
     );
   }
 
@@ -9723,10 +9758,11 @@ class TasksNamespace {
     );
   }
 
-  Future<TasksCommentReturn> comment(String taskId, String body) async {
+  Future<TasksCommentReturn> comment(String taskId, String body, [TasksCommentOptions options = const TasksCommentOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["taskId"] = RaviJson.from(taskId);
     requestBody["body"] = RaviJson.from(body);
+    options.encodeBody(requestBody);
     return _transport.callJson(
       groupSegments: const ["tasks"],
       command: "comment",
@@ -9744,6 +9780,18 @@ class TasksNamespace {
       command: "create",
       body: requestBody,
       decode: tasksCreateReturnFromJson,
+    );
+  }
+
+  Future<TasksDecideReturn> decide(String taskId, [TasksDecideOptions options = const TasksDecideOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["taskId"] = RaviJson.from(taskId);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["tasks"],
+      command: "decide",
+      body: requestBody,
+      decode: tasksDecideReturnFromJson,
     );
   }
 

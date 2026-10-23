@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { configStore } from "../../config-store.js";
 import {
   createContact,
@@ -974,6 +977,39 @@ describe("Slack Socket Mode routing", () => {
         },
       }),
     ).rejects.toThrow(/Slack reaction was not accepted: invalid_name/);
+  });
+
+  it("shows the requested runtime on the thread root card", async () => {
+    const postMessage = mock(async () => ({
+      channel: "C123",
+      ts: "1713000000.000200",
+      messageId: "1713000000.000200",
+      raw: { ok: true },
+    }));
+    const delivery = new SlackChatActionDelivery({ postMessage } as never);
+    const runtime = "codex · gpt-5.4 · high";
+
+    await delivery.executeChatAction({
+      sessionName: "ravi-slack-channel",
+      idempotencyKey: "thread-runtime",
+      target: { channel: "slack", accountId: "ravi-slack", chatId: "C123" },
+      action: {
+        type: "chat_action",
+        actionId: "thread.create",
+        text: "Investigate this branch",
+        runtime,
+      },
+    });
+
+    const card = buildSlackThreadCard("Investigate this branch", { status: "open", runtime });
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: "C123",
+        text: "Investigate this branch",
+        blocks: card.blocks,
+      }),
+    );
+    expect(JSON.stringify(card.blocks)).toContain(`runtime ${runtime}`);
   });
 
   it("creates a native Slack thread root with a stable client message id", async () => {
@@ -5048,4 +5084,65 @@ describe("Slack Socket Mode instance alias canonicalization", () => {
     });
     expect(actorResolutionForSource(secondSource, secondContext)).toBe("missing_contact");
   });
+});
+
+describe("Slack inbound envelope write retry", () => {
+  let retryStateDir: string | null = null;
+
+  beforeEach(async () => {
+    retryStateDir = await createIsolatedRaviState("ravi-slack-inbound-lock-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(retryStateDir);
+    retryStateDir = null;
+  });
+
+  it("retries the accept while another writer holds the lock instead of dropping the delivery", () => {
+    const dbPath = join(retryStateDir!, "ravi.db");
+    // Materialize the schema before the lock holder starts.
+    pruneProcessedSlackInboundEnvelopes({ scopeId: "slack-instance-1", olderThan: 1 });
+    const marker = join(retryStateDir!, "lock-held.marker");
+    // Hold the SQLite write lock past the 5s busy_timeout: without the retry the
+    // accept throws "database is locked" and the Slack delivery is lost.
+    const holder = spawn(
+      process.execPath,
+      [
+        "-e",
+        [
+          'const { Database } = require("bun:sqlite");',
+          'const fs = require("node:fs");',
+          "const db = new Database(process.env.DB_PATH);",
+          'db.exec("BEGIN IMMEDIATE");',
+          'fs.writeFileSync(process.env.MARKER, "1");',
+          "Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5300);",
+          'db.exec("COMMIT");',
+          "db.close();",
+        ].join("\n"),
+      ],
+      { env: { ...process.env, DB_PATH: dbPath, MARKER: marker }, stdio: "ignore" },
+    );
+    try {
+      const deadline = Date.now() + 5_000;
+      while (!existsSync(marker) && Date.now() < deadline) {
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+      }
+      expect(existsSync(marker)).toBe(true);
+
+      const accepted = acceptSlackInboundEnvelope({
+        scopeId: "slack-instance-1",
+        envelopeId: "envelope-lock-retry",
+        envelope: {
+          envelope_id: "envelope-lock-retry",
+          payload: {
+            event: { type: "message", channel: "C123", user: "U123", text: "retry", ts: "1713000000.000300" },
+          },
+        } as SlackSocketEnvelope,
+      });
+      expect(accepted.status).toBe("accepted");
+      expect(getSlackInboundEnvelope("slack-instance-1", "envelope-lock-retry")?.state).toBe("accepted");
+    } finally {
+      holder.kill();
+    }
+  }, 15_000);
 });

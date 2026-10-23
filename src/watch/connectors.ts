@@ -56,7 +56,7 @@ const GITHUB_EVENT_TYPES: WatchConnectorEventType[] = [
   githubEvent("issue.assigned", "Issue assigned", "console", "derived"),
   githubEvent("issue.edited", "Issue edited", "console", "best_effort"),
   githubEvent("issue_comment.created", "Issue comment created", "console", "full"),
-  githubEvent("pull_request_comment.created", "Pull request comment created", "console", "full"),
+  githubEvent("pull_request_comment.created", "Pull request comment created", "local", "best_effort"),
   githubEvent("workflow_run.requested", "Workflow run requested", "console", "derived"),
   githubEvent("workflow_run.in_progress", "Workflow run in progress", "console", "derived"),
   githubEvent("workflow_run.completed", "Workflow run completed", "console", "full"),

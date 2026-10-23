@@ -1,4 +1,5 @@
 import { getContext } from "../cli/context.js";
+import { resolveSubject, type SubjectRef } from "../identity/subject.js";
 import { CliExpectedError } from "../cli/expected-error.js";
 import { nats } from "../nats.js";
 import { getAgent } from "../router/config.js";
@@ -41,6 +42,7 @@ import {
   dbArchiveTask,
   dbAddTaskComment,
   dbAddTaskDependency,
+  dbAnswerTaskDecision,
   dbAppendTaskEvent,
   dbAutoResumeBlockedTask,
   dbUnarchiveTask,
@@ -48,6 +50,7 @@ import {
   dbCreateTask,
   dbDeleteTask,
   dbDispatchTask,
+  dbDecideTask,
   dbFailTask,
   dbBlockTask,
   dbGetTask,
@@ -55,6 +58,8 @@ import {
   dbGetTaskLaunchPlan,
   dbListAssignments,
   dbListTaskComments,
+  dbListTaskDecisions,
+  dbListOpenTaskDecisions,
   dbListChildTasks,
   dbListTaskDependencies,
   dbListTaskDependents,
@@ -80,6 +85,13 @@ import {
 import { publishTaskSessionPrompt } from "./session-publisher.js";
 import { neutralizeSystemMarkers, requireTaskProgressMessage } from "./progress-contract.js";
 import {
+  dbGetTaskObserverState,
+  dbSaveTaskObserverChecklist,
+  type TaskObserverChecklistItem,
+} from "./observer-contract.js";
+import { disableTaskObserverRule, ensureTaskObserverRuleForDispatch } from "./observer-rule.js";
+import { reconcileObserverBindingsForSession } from "../runtime/observation-plane.js";
+import {
   DEFAULT_TASK_CHECKPOINT_INTERVAL_MS,
   DEFAULT_TASK_OBSERVER_STALL_INTERVAL_MS,
   resolveTaskCheckpointIntervalMs,
@@ -104,6 +116,11 @@ import type {
   TaskCommentInput,
   TaskDependencyEdge,
   TaskDependencyRecord,
+  TaskDecision,
+  TaskDecisionAnswerInput,
+  TaskDecisionAttentionOptions,
+  TaskDecisionAttentionReport,
+  TaskDecisionInput,
   TaskProfileArtifactKind,
   TaskProfileArtifactRef,
   TaskProgressInput,
@@ -120,6 +137,7 @@ import type {
   TaskWorktreeMode,
 } from "./types.js";
 import { TASK_REPORT_EVENTS } from "./types.js";
+import { TaskDecisionError, foldTaskDecisionAttention } from "./decisions.js";
 import { attachTagSlugsToAsset } from "../tags/helpers.js";
 import { searchTagBindingsForSelector } from "../tags/service.js";
 import type { TagBinding } from "../tags/types.js";
@@ -2257,6 +2275,25 @@ export function buildTaskResumePrompt(
   });
 }
 
+function resolveTaskSubjectFromRuntime(): SubjectRef | undefined {
+  const ctx = getContext();
+  const target = ctx?.context?.metadata?.turnReplyTarget as { chatId?: string; canonicalChatId?: string } | undefined;
+
+  // A relayed turn carries an agent actor and no context `source`; the reply
+  // target is the only place that still knows which conversation asked.
+  return resolveSubject({
+    env: process.env,
+    chatIds: [
+      ctx?.source?.chatId,
+      ctx?.source?.canonicalChatId,
+      target?.chatId,
+      target?.canonicalChatId,
+      process.env.RAVI_CHAT_ID,
+      process.env.RAVI_CANONICAL_CHAT_ID,
+    ],
+  });
+}
+
 export function createTask(input: CreateTaskInput): {
   task: TaskRecord;
   event: TaskEvent;
@@ -2294,6 +2331,7 @@ export function createTask(input: CreateTaskInput): {
   );
   const created = dbCreateTask({
     ...resolvedInput,
+    ...(resolvedInput.subject ? {} : { subject: resolveTaskSubjectFromRuntime() }),
     ...(taskProfileUsesObserver(profile) && typeof resolvedInput.checkpointIntervalMs !== "number"
       ? { checkpointIntervalMs: DEFAULT_TASK_OBSERVER_STALL_INTERVAL_MS }
       : {}),
@@ -2362,6 +2400,7 @@ export function getTaskDetails(taskId: string): {
   assignments: ReturnType<typeof dbListAssignments>;
   events: ReturnType<typeof dbListTaskEvents>;
   comments: ReturnType<typeof dbListTaskComments>;
+  decisions: TaskDecision[];
 } {
   const task = dbGetTask(taskId);
   const surfacedTask = task ? surfaceTaskRecordForRead(task) : null;
@@ -2381,6 +2420,7 @@ export function getTaskDetails(taskId: string): {
     assignments: dbListAssignments(taskId),
     events: dbListTaskEvents(taskId, 200),
     comments: dbListTaskComments(taskId, 200),
+    decisions: dbListTaskDecisions(taskId),
   };
 }
 
@@ -2855,6 +2895,28 @@ export async function dispatchTask(
     : ensureTaskWorkspaceBootstrap(task, taskProfile);
   const documentedTaskDocPath = resolveTaskDocumentPathForProfile(documentedTask, taskProfile);
 
+  // The observer is a real, stored rule matching this worker session; it is
+  // created here, at dispatch, and never synthesized by the observation plane.
+  if (taskProfileUsesObserver(taskProfile)) {
+    const observerAgent = getAgent(agentId);
+    if (observerAgent) {
+      ensureTaskObserverRuleForDispatch({ task: documentedTask, sessionName, agent: observerAgent });
+      const workerSession = getSessionByName(sessionName);
+      if (workerSession) {
+        try {
+          reconcileObserverBindingsForSession({
+            sessionName,
+            session: workerSession,
+            agent: observerAgent,
+            mode: "refresh-profile",
+          });
+        } catch (error) {
+          log.warn("Failed to attach the task observer binding", { taskId, sessionName, error });
+        }
+      }
+    }
+  }
+
   const prompt = buildTaskDispatchPrompt(documentedTask, agentId, sessionName, {
     sessionCwd,
     worktree,
@@ -3043,6 +3105,21 @@ export function reportTaskProgress(taskId: string, input: TaskProgressInput): { 
   });
 }
 
+/** Persist the observer checklist written by `tasks report --checklist`. */
+export function saveTaskObserverChecklist(
+  taskId: string,
+  checklist: TaskObserverChecklistItem[],
+): ReturnType<typeof dbSaveTaskObserverChecklist> {
+  if (!dbGetTask(taskId)) {
+    throw new Error(`Task not found: ${taskId}`);
+  }
+  return dbSaveTaskObserverChecklist(taskId, checklist);
+}
+
+export function getTaskObserverChecklist(taskId: string): TaskObserverChecklistItem[] {
+  return dbGetTaskObserverState(taskId)?.checklist ?? [];
+}
+
 export function archiveTask(
   taskId: string,
   input: TaskArchiveInput,
@@ -3060,6 +3137,7 @@ export function archiveTask(
   const documentedTask = result.wasNoop
     ? result.task
     : syncRequiredTaskDocumentAfterRuntimeEvent(result.task, profile, result.event);
+  if (!result.wasNoop) disableTaskObserverRule(taskId);
   return { ...result, task: documentedTask };
 }
 
@@ -3178,6 +3256,66 @@ export async function commentTask(
   };
 }
 
+/**
+ * Ask (or re-ask) a task decision. A decision is task metadata, never a task
+ * status: it records who owns the answer and whether the task is parked on it.
+ */
+export function decideTask(
+  taskId: string,
+  input: TaskDecisionInput,
+): { task: TaskRecord; decision: TaskDecision; event: TaskEvent; created: boolean } {
+  const existingTask = dbGetTask(taskId);
+  if (!existingTask) {
+    throw new Error(`Task not found: ${taskId}`);
+  }
+  const result = dbDecideTask(taskId, input);
+  return {
+    task: dbGetTask(taskId) ?? existingTask,
+    decision: result.decision,
+    event: result.event,
+    created: result.created,
+  };
+}
+
+/**
+ * Close a decision by answering it. Only whoever is not the assignee that holds
+ * the work may answer: a worker cannot answer its own pending question.
+ */
+export function answerTaskDecision(
+  taskId: string,
+  input: TaskDecisionAnswerInput,
+): { task: TaskRecord; decision: TaskDecision; event: TaskEvent } {
+  const existingTask = dbGetTask(taskId);
+  if (!existingTask) {
+    throw new Error(`Task not found: ${taskId}`);
+  }
+
+  const assignment = dbGetActiveAssignment(taskId);
+  if (assignment && input.sessionName && assignment.sessionName === input.sessionName) {
+    throw new TaskDecisionError(
+      "TASK_DECISION_SELF_ANSWER",
+      `Cannot answer decision "${input.key}" on task ${taskId} from its own work session ${assignment.sessionName}. ` +
+        `The pending decision is waiting on someone else.`,
+      { suggestedAction: "Answer it from the requesting session, a human turn, or another agent session." },
+    );
+  }
+
+  const result = dbAnswerTaskDecision(taskId, input);
+  return { task: dbGetTask(taskId) ?? existingTask, ...result };
+}
+
+/**
+ * Deterministic, side-effect-free attention fold over open decisions. It reads
+ * decisions only and never detects stalls or blocked tasks.
+ */
+export function listTaskDecisionAttention(
+  options: TaskDecisionAttentionOptions = {},
+  now?: number,
+): TaskDecisionAttentionReport {
+  const rows = dbListOpenTaskDecisions(options);
+  return foldTaskDecisionAttention(rows, { filters: options, ...(typeof now === "number" ? { now } : {}) });
+}
+
 export function blockTask(
   taskId: string,
   input: TaskTerminalInput,
@@ -3222,6 +3360,7 @@ export function failTask(
   const documentedTask = result.wasNoop
     ? result.task
     : syncRequiredTaskDocumentAfterRuntimeEvent(result.task, profile, result.event);
+  if (!result.wasNoop) disableTaskObserverRule(taskId);
   syncWorkflowNodeRunForTask(taskId);
   return {
     ...result,
@@ -3249,6 +3388,7 @@ export async function completeTask(
   const documentedTask = result.wasNoop
     ? result.task
     : syncRequiredTaskDocumentAfterRuntimeEvent(result.task, profile, result.event);
+  if (!result.wasNoop) disableTaskObserverRule(taskId);
   syncWorkflowNodeRunForTask(taskId);
   const dependencyRelatedEvents = result.wasNoop
     ? []

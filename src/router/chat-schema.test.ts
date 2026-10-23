@@ -34,6 +34,7 @@ import {
   dbUpsertChatParticipant,
   dbUpsertSessionParticipant,
   closeRouterDb,
+  dropRedundantSessionEventIndexes,
   getDb,
 } from "./router-db.js";
 import { recomputeChatReadingListMembers } from "../chats/reading-lists.js";
@@ -1320,5 +1321,58 @@ describe("slack thread lifecycle schema", () => {
     legacyDb.close();
 
     expect(lifecycleColumns(getDb())).toContain("requested_by");
+  });
+
+  it("adds the thread runtime columns to a ravi.db created before threads could pin them", () => {
+    const columns = ["provider_override", "effort_override", "thinking_level"];
+    for (const column of columns) {
+      expect(lifecycleColumns(getDb())).toContain(column);
+    }
+    closeRouterDb();
+
+    const legacyDb = new Database(join(stateDir!, "ravi.db"));
+    for (const column of columns) {
+      legacyDb.exec(`ALTER TABLE slack_thread_lifecycle DROP COLUMN ${column}`);
+      expect(lifecycleColumns(legacyDb)).not.toContain(column);
+    }
+    legacyDb.close();
+
+    for (const column of columns) {
+      expect(lifecycleColumns(getDb())).toContain(column);
+    }
+  });
+});
+
+describe("session_events index budget", () => {
+  const REDUNDANT_INDEXES = [
+    "idx_session_events_key_time",
+    "idx_session_events_name_time",
+    "idx_session_events_type_time",
+    "idx_session_events_chat_time",
+    "idx_session_events_rollup_turns",
+    "idx_session_events_canonical_chat",
+  ];
+
+  it("drops the redundant indexes on boot and is idempotent", () => {
+    const db = getDb();
+    for (const name of REDUNDANT_INDEXES) {
+      db.exec(`CREATE INDEX IF NOT EXISTS ${name} ON session_events(session_key)`);
+    }
+    const placeholders = REDUNDANT_INDEXES.map(() => "?").join(", ");
+    const present = () =>
+      (
+        db
+          .prepare(`SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'index' AND name IN (${placeholders})`)
+          .get(...REDUNDANT_INDEXES) as { n: number }
+      ).n;
+
+    expect(present()).toBe(REDUNDANT_INDEXES.length);
+
+    dropRedundantSessionEventIndexes(db);
+    expect(present()).toBe(0);
+
+    // Every daemon/CLI boot repeats the drop; a second run must stay a no-op.
+    dropRedundantSessionEventIndexes(db);
+    expect(present()).toBe(0);
   });
 });

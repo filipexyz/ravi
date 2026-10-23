@@ -5,8 +5,10 @@ import { enqueueTraceExportBatch } from "../session-trace/cloud-trace-export.js"
 import { recordSessionEvent } from "../session-trace/session-trace-db.js";
 import { getSyncCursor } from "../sync/db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { createReadWatchdog } from "../db/read-watchdog.js";
 import {
   dbCreateAgent,
+  trackReadIterator,
   dbCreateChatReadingList,
   dbCreateContext,
   dbGetContext,
@@ -584,5 +586,121 @@ describe("canonical message receipts", () => {
       providerMessageId: "1713000000.000100",
       providerTimestamp: 1_713_000_000_999,
     });
+  });
+});
+
+describe("long read watchdog", () => {
+  it("reports an iterator that stays open past the threshold exactly once", async () => {
+    const reports: Array<{ state: string; ms: number; sql: string }> = [];
+    const source = {
+      next: () => ({ done: false, value: 1 }) as IteratorResult<number>,
+      return: () => ({ done: true, value: undefined }) as IteratorResult<number>,
+      [Symbol.iterator]() {
+        return this;
+      },
+    };
+    const tracked = trackReadIterator(source, {
+      sql: "SELECT * FROM tasks",
+      caller: "test-caller",
+      warnMs: 5,
+      intervalMs: 2,
+      onLongRead: (report) => reports.push({ state: report.state, ms: report.ms, sql: report.sql }),
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(reports).toHaveLength(1);
+    expect(reports[0]?.state).toBe("open");
+    expect(reports[0]?.sql).toContain("FROM tasks");
+
+    expect(tracked.next().done).toBe(false);
+    (tracked as { return?: () => unknown }).return?.();
+    expect(reports).toHaveLength(1);
+  });
+
+  it("does not report an iterator that closes before the threshold", async () => {
+    const reports: unknown[] = [];
+    const source = {
+      next: () => ({ done: false, value: 1 }) as IteratorResult<number>,
+      return: () => ({ done: true, value: undefined }) as IteratorResult<number>,
+      [Symbol.iterator]() {
+        return this;
+      },
+    };
+    const tracked = trackReadIterator(source, {
+      sql: "SELECT 1",
+      caller: "test-caller",
+      warnMs: 1_000,
+      intervalMs: 50,
+      onLongRead: (report) => reports.push(report),
+    });
+    tracked.next();
+    (tracked as { return?: () => unknown }).return?.();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(reports).toHaveLength(0);
+  });
+});
+
+describe("read watchdog", () => {
+  it("reports operations still open after the warn threshold", () => {
+    const reports: number[][] = [];
+    const watchdog = createReadWatchdog({
+      warnMs: 0,
+      startTimer: false,
+      onLongOperations: (operations) => reports.push(operations.map((operation) => operation.ms)),
+    });
+    const operation = watchdog.begin("statement", "SELECT 1", "test-caller");
+    watchdog.scan(Date.now() + 30_000);
+    expect(reports).toHaveLength(1);
+    expect(reports[0]).toHaveLength(1);
+    watchdog.finish(operation);
+    watchdog.scan(Date.now() + 30_000);
+    expect(reports).toHaveLength(1);
+    watchdog.dispose();
+  });
+
+  it("flags a pinned WAL once a mark stalls while the frame count grows", () => {
+    const pinned: Array<{ lagFrames: number; marks: number[] }> = [];
+    let marks = { mxFrame: 100, backfill: 0, marks: [100] };
+    const watchdog = createReadWatchdog({
+      dbPath: "/tmp/fake-read-watchdog.db",
+      marksReader: () => marks,
+      startTimer: false,
+      onLongOperations: () => {},
+      onPinnedWal: (report) => pinned.push({ lagFrames: report.lagFrames, marks: report.marks }),
+    });
+    const start = 1_000_000;
+    watchdog.scan(start);
+    marks = { mxFrame: 700, backfill: 0, marks: [100] };
+    watchdog.scan(start + 5_000);
+    expect(pinned).toHaveLength(0);
+    marks = { mxFrame: 900, backfill: 0, marks: [100] };
+    watchdog.scan(start + 30_000);
+    expect(pinned).toHaveLength(1);
+    expect(pinned[0]?.lagFrames).toBe(800);
+    expect(pinned[0]?.marks).toEqual([100]);
+    watchdog.dispose();
+  });
+});
+
+describe("read watchdog checkpoint probe", () => {
+  it("flags a passive checkpoint that stays busy while the log grows", () => {
+    const pinned: number[] = [];
+    let probe = { busy: 1, log: 1200, checkpointed: 0 };
+    const watchdog = createReadWatchdog({
+      startTimer: false,
+      checkpointProbe: () => probe,
+      onLongOperations: () => {},
+      onPinnedWal: (report) => pinned.push(report.lagFrames),
+    });
+    const start = 1_000_000;
+    watchdog.scan(start);
+    probe = { busy: 1, log: 1400, checkpointed: 0 };
+    watchdog.scan(start + 5_000);
+    expect(pinned).toHaveLength(0);
+    probe = { busy: 0, log: 1700, checkpointed: 0 };
+    watchdog.scan(start + 30_000);
+    expect(pinned).toHaveLength(1);
+    expect(pinned[0]).toBe(1700);
+    watchdog.dispose();
   });
 });

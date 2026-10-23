@@ -1,17 +1,53 @@
 import { logger } from "../utils/logger.js";
 import { resolveTaskCheckpointIntervalMs, TASK_CHECKPOINT_SWEEP_INTERVAL_MS } from "./checkpoint.js";
-import { recordTaskStall } from "./observer-apply.js";
 import { TASK_OBSERVER_ACTOR } from "./observer-contract.js";
+import { neutralizeSystemMarkers } from "./progress-contract.js";
 import { resolveTaskProfileForTask, taskProfileUsesObserver } from "./profiles.js";
-import { dbGetActiveAssignment, dbListTasks, dbRegisterTaskCheckpointMiss } from "./task-db.js";
+import { dbAppendTaskEvent, dbGetActiveAssignment, dbListTasks, dbRegisterTaskCheckpointMiss } from "./task-db.js";
 import {
   buildTaskCheckpointReminderPrompt,
   emitTaskEvent,
   publishTaskAssigneePrompt,
+  reportTaskStall,
   resolveTaskAssigneeSession,
 } from "./service.js";
+import type { TaskEvent, TaskRecord } from "./types.js";
 
 const log = logger.child("tasks:checkpoint-runner");
+
+/** Record a stall and tell the requester. The observer never owns this path. */
+export async function recordTaskStall(
+  task: TaskRecord,
+  message: string,
+  actor: { actor: string; agentId?: string; sessionName?: string },
+): Promise<TaskEvent> {
+  const { task: current, event } = dbAppendTaskEvent(task.id, "task.stalled", {
+    ...actor,
+    message: neutralizeSystemMarkers(message),
+    progress: task.progress,
+  });
+  await emitTaskEvent(current, event);
+  try {
+    await reportTaskStall(current, event);
+  } catch (error) {
+    log.warn("Failed to report task stall", { taskId: task.id, error });
+  }
+  return event;
+}
+
+/**
+ * Tasks the checkpoint sweep may look at.
+ *
+ * Archived tasks keep their pre-archive status (the archive is a flag, not a
+ * status): without the explicit exclude an archived-but-in_progress task keeps
+ * being swept and reports checkpoint.missed/task.stalled forever.
+ */
+export function listTaskCheckpointSweepTasks(): TaskRecord[] {
+  return [
+    ...dbListTasks({ status: "dispatched", archiveMode: "exclude" }),
+    ...dbListTasks({ status: "in_progress", archiveMode: "exclude" }),
+  ];
+}
 
 export interface TaskCheckpointRunnerOptions {
   canPublishSessionPrompt?(sessionName: string): boolean;
@@ -64,7 +100,7 @@ export class TaskCheckpointRunner {
     let stalls = 0;
 
     try {
-      const tasks = [...dbListTasks({ status: "dispatched" }), ...dbListTasks({ status: "in_progress" })];
+      const tasks = listTaskCheckpointSweepTasks();
 
       for (const task of tasks) {
         if (!this.running) break;

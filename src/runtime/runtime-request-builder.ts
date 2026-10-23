@@ -39,6 +39,7 @@ import {
   reserveRuntimeCredentialAttempt,
 } from "./credential-store.js";
 import { buildRuntimeHostAttachments } from "./runtime-host-attachments.js";
+import { resolveObservationAllowedTools } from "./observation-plane.js";
 import { prepareRuntimeProviderBootstrap } from "./runtime-provider-bootstrap.js";
 import {
   buildRuntimeRequestContext,
@@ -76,6 +77,7 @@ import type {
   RuntimeCapabilities,
   RuntimeHostServices,
   RuntimeProviderId,
+  RuntimeDynamicToolCallRequest,
   RuntimeStartRequest,
   SessionRuntimeProvider,
 } from "./types.js";
@@ -574,6 +576,8 @@ async function buildRuntimeStartRequestInternal(
     resolvedAllowedSkills.hasConfiguration && resolvedAllowedSkills.allowlist.length > 0
       ? resolvedAllowedSkills.allowlist
       : undefined;
+  const hostDynamicTools = runtimeCapabilities.dynamicTools.mode === "host" ? hostServices.listDynamicTools() : [];
+  const observationAllowedTools = resolveObservationAllowedTools(prompt._observation?.permissionGrants);
   const canResumeSkillSession = isStoredSkillVisibilityCompatible(
     storedRuntimeSessionParams,
     allowedSkills,
@@ -950,6 +954,12 @@ async function buildRuntimeStartRequestInternal(
         : {}),
       ...(forkFromProviderSessionId ? { forkSession: true } : {}),
       abortController: streamingSession.abortController,
+      ...(hostDynamicTools.length > 0
+        ? {
+            dynamicTools: hostDynamicTools,
+            handleRuntimeToolCall: (request: RuntimeDynamicToolCallRequest) => hostServices.executeDynamicTool(request),
+          }
+        : {}),
       permissionOptions: {
         permissionMode: "bypassPermissions",
       },
@@ -963,6 +973,7 @@ async function buildRuntimeStartRequestInternal(
       ...(runtimePlugins.length > 0 ? { plugins: runtimePlugins } : {}),
       agentId: agent.id,
       ...(allowedSkills ? { allowedSkills } : {}),
+      ...(observationAllowedTools ? { allowedTools: observationAllowedTools } : {}),
       ...(hiddenSkills.length > 0 ? { hiddenSkills } : {}),
       ...(prompt._cliDestination ? { omitAdvertisedSkillCatalog: true } : {}),
       ...(remoteSpawn ? { remoteSpawn } : {}),

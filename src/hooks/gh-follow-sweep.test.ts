@@ -9,7 +9,7 @@ import {
 } from "./gh-follow-pending.js";
 import {
   parseGhFollowTriggerName,
-  runGhFollowMaintenance,
+  runGhFollowMaintenance as runMaintenanceRaw,
   selectGhFollowFilterRepairs,
   selectStaleGhFollowTriggers,
 } from "./gh-follow-sweep.js";
@@ -19,6 +19,14 @@ import type { Trigger } from "../triggers/index.js";
 
 const LEGACY_UNQUOTED_FILTER = (repo: string, prNumber: number) =>
   `data.payload.repository == ${JSON.stringify(repo)} && (data.payload.number == ${prNumber} || data.payload.pull_request.number == ${prNumber})`;
+
+/**
+ * Em produção a manutenção garante watch por repo acompanhado. Nos testes esse
+ * default criaria watch de verdade (banco/Console), então o wrapper injeta no-op e
+ * cada teste que se importa com isso passa o próprio `ensureWatches`.
+ */
+const runMaintenance = (deps: Parameters<typeof runMaintenanceRaw>[0] = {}) =>
+  runMaintenanceRaw({ ensureWatches: async () => undefined, ...deps });
 
 function trigger(name: string, id = "t1"): Trigger {
   return { id, name } as Trigger;
@@ -128,7 +136,7 @@ describe("gh follow maintenance", () => {
     const created: string[] = [];
     const writes: PendingGhFollow[][] = [];
 
-    const result = await runGhFollowMaintenance({
+    const result = await runMaintenance({
       readPending: () => [pending()],
       writePending: (entries) => {
         writes.push(entries);
@@ -149,7 +157,7 @@ describe("gh follow maintenance", () => {
 
   it("keeps a pending that cannot be resolved yet", async () => {
     const writes: PendingGhFollow[][] = [];
-    const result = await runGhFollowMaintenance({
+    const result = await runMaintenance({
       readPending: () => [pending()],
       writePending: (entries) => {
         writes.push(entries);
@@ -167,7 +175,7 @@ describe("gh follow maintenance", () => {
 
   it("drops expired pendings instead of retrying forever", async () => {
     const writes: PendingGhFollow[][] = [];
-    const result = await runGhFollowMaintenance({
+    const result = await runMaintenance({
       readPending: () => [pending({ createdAt: 0 })],
       writePending: (entries) => {
         writes.push(entries);
@@ -192,7 +200,7 @@ describe("gh follow maintenance", () => {
     const deleted: string[] = [];
     let refreshes = 0;
 
-    const result = await runGhFollowMaintenance({
+    const result = await runMaintenance({
       readPending: () => [],
       listTriggers: () => [trigger("gh-follow:o/r#1", "a"), trigger("gh-follow:o/r#2", "b")],
       deleteTrigger: (id) => {
@@ -235,7 +243,7 @@ describe("gh follow maintenance", () => {
     const deleted: string[] = [];
     let refreshes = 0;
 
-    const result = await runGhFollowMaintenance({
+    const result = await runMaintenance({
       readPending: () => [],
       listTriggers: () => [
         { ...trigger("gh-follow:o/r#1", "open_legacy"), filter: LEGACY_UNQUOTED_FILTER("o/r", 1) },
@@ -271,7 +279,7 @@ describe("gh follow maintenance", () => {
 
   it("does nothing when there is no follow to maintain", async () => {
     let stateCalls = 0;
-    const result = await runGhFollowMaintenance({
+    const result = await runMaintenance({
       readPending: () => [],
       listTriggers: () => [trigger("bug-follow:x", "a")],
       listWatches: () => [],
@@ -287,7 +295,7 @@ describe("gh follow maintenance", () => {
 
   it("removes the managed local watch once no subscription needs it", async () => {
     const removed: string[] = [];
-    const result = await runGhFollowMaintenance({
+    const result = await runMaintenance({
       readPending: () => [],
       listTriggers: () => [],
       listWatches: () =>
@@ -325,7 +333,7 @@ describe("gh follow maintenance", () => {
       },
     ] as never;
 
-    const withTrigger = await runGhFollowMaintenance({
+    const withTrigger = await runMaintenance({
       readPending: () => [],
       listTriggers: () => [trigger("gh-follow:o/r#1", "t1")],
       listWatches: () => watches,
@@ -340,7 +348,7 @@ describe("gh follow maintenance", () => {
 
     removed.length = 0;
     // PR recém-criada: acompanhamento em formação, o watch ainda é necessário.
-    const withPending = await runGhFollowMaintenance({
+    const withPending = await runMaintenance({
       readPending: () => [pending({ repo: "o/pending" })],
       writePending: () => {},
       listTriggers: () => [],
@@ -360,7 +368,7 @@ describe("gh follow maintenance", () => {
 
   it("never removes a watch it did not create", async () => {
     let removed = 0;
-    const result = await runGhFollowMaintenance({
+    const result = await runMaintenance({
       readPending: () => [],
       listTriggers: () => [],
       listWatches: () =>
@@ -389,5 +397,79 @@ describe("gh follow maintenance", () => {
 
     expect(removed).toBe(0);
     expect(result.watchesRemoved).toBe(0);
+  });
+
+  it("ensures a watch for every repo that still has a live follow", async () => {
+    const ensured: string[] = [];
+    const removed: string[] = [];
+    const result = await runMaintenance({
+      readPending: () => [],
+      listTriggers: () => [trigger("gh-follow:o/live#1", "live"), trigger("gh-follow:o/dead#2", "dead")],
+      // `dead` fecha: sai do follow e não deve receber watch.
+      listPrStates: (repo) => (repo === "o/dead" ? new Map([[2, "CLOSED"]]) : new Map()),
+      listWatches: () =>
+        [
+          {
+            id: "w_live",
+            placement: "local",
+            status: "active",
+            resourceRef: "o/live",
+            filters: { managedBy: "gh-follow" },
+          },
+          {
+            id: "w_dead",
+            placement: "local",
+            status: "active",
+            resourceRef: "o/dead",
+            filters: { managedBy: "gh-follow" },
+          },
+        ] as never,
+      ensureWatches: async (repo) => {
+        ensured.push(repo);
+      },
+      deleteTrigger: () => true,
+      emitTriggersRefresh: async () => undefined,
+      removeWatch: async (id) => {
+        removed.push(id);
+        return true;
+      },
+    });
+
+    // Só o repo que continua acompanhado: o sweep já removeu o trigger de `o/dead`.
+    expect(ensured).toEqual(["o/live"]);
+    expect(result.watchesEnsured).toBe(1);
+    // O watch do repo morto continua sendo limpo como órfão.
+    expect(removed).toEqual(["w_dead"]);
+  });
+
+  it("keeps the follow alive when ensuring its watch fails", async () => {
+    const result = await runMaintenance({
+      readPending: () => [],
+      listTriggers: () => [trigger("gh-follow:o/r#1", "t1")],
+      listPrStates: () => new Map(),
+      listWatches: () => [],
+      ensureWatches: async () => {
+        throw new Error("AUTH_REQUIRED");
+      },
+    });
+
+    // Falha de watch não justifica derrubar trigger nem virar erro de manutenção.
+    expect(result.triggersRemoved).toBe(0);
+    expect(result.errors).toBe(1);
+  });
+
+  it("does not count a repair that produced no watch as ensured", async () => {
+    const result = await runMaintenance({
+      readPending: () => [],
+      listTriggers: () => [trigger("gh-follow:o/r#1", "t1")],
+      listPrStates: () => new Map(),
+      listWatches: () => [],
+      // O reconciliador engole a falha de criação e devolve ciWatchId nulo; sem
+      // isso o sweep diria que garantiu o watch e o repo seguiria mudo.
+      ensureWatches: async () => ({ ciWatchId: null, ciWatchReused: false }),
+    });
+
+    expect(result.watchesEnsured).toBe(0);
+    expect(result.errors).toBe(1);
   });
 });

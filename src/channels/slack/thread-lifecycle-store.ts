@@ -26,6 +26,10 @@ export interface SlackThreadLifecycleRecord {
   /** Who asked for a programmatic thread, as shown on its root card. */
   requestedBy?: string;
   modelOverride?: string;
+  /** Runtime provider requested for the child, recorded so a delayed materialization keeps it. */
+  providerOverride?: string;
+  effortOverride?: string;
+  thinkingLevel?: string;
   creationClaimId?: string;
   creationClaimExpiresAt?: number;
   promptPublishedAt?: number;
@@ -62,6 +66,9 @@ interface SlackThreadLifecycleRow {
   initial_prompt: string | null;
   requested_by: string | null;
   model_override: string | null;
+  provider_override: string | null;
+  effort_override: string | null;
+  thinking_level: string | null;
   creation_claim_id: string | null;
   creation_claim_expires_at: number | null;
   prompt_published_at: number | null;
@@ -91,6 +98,9 @@ export interface CreateSlackThreadLifecycleInput {
   initialPrompt: string;
   requestedBy?: string;
   modelOverride?: string;
+  providerOverride?: string;
+  effortOverride?: string;
+  thinkingLevel?: string;
   createdAt?: number;
 }
 
@@ -128,9 +138,10 @@ export function createSlackThreadLifecycle(input: CreateSlackThreadLifecycleInpu
             request_id, source, status, parent_session_key, parent_session_name,
             initiator_session_key, initiator_session_name, account_id, instance_id,
             platform_chat_id, root_canonical_chat_id, initial_prompt, requested_by, model_override,
+            provider_override, effort_override, thinking_level,
             created_at, updated_at
           )
-          VALUES (?, 'action', 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, 'action', 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(request_id) DO NOTHING
         `,
         )
@@ -147,6 +158,9 @@ export function createSlackThreadLifecycle(input: CreateSlackThreadLifecycleInpu
           initialPrompt,
           cleanOptional(input.requestedBy),
           cleanOptional(input.modelOverride),
+          cleanOptional(input.providerOverride),
+          cleanOptional(input.effortOverride),
+          cleanOptional(input.thinkingLevel),
           now,
           now,
         );
@@ -728,6 +742,9 @@ function rowToSlackThreadLifecycle(row: SlackThreadLifecycleRow): SlackThreadLif
     ...(row.initial_prompt ? { initialPrompt: row.initial_prompt } : {}),
     ...(row.requested_by ? { requestedBy: row.requested_by } : {}),
     ...(row.model_override ? { modelOverride: row.model_override } : {}),
+    ...(row.provider_override ? { providerOverride: row.provider_override } : {}),
+    ...(row.effort_override ? { effortOverride: row.effort_override } : {}),
+    ...(row.thinking_level ? { thinkingLevel: row.thinking_level } : {}),
     ...(row.creation_claim_id ? { creationClaimId: row.creation_claim_id } : {}),
     ...(row.creation_claim_expires_at !== null ? { creationClaimExpiresAt: row.creation_claim_expires_at } : {}),
     ...(row.prompt_published_at !== null ? { promptPublishedAt: row.prompt_published_at } : {}),

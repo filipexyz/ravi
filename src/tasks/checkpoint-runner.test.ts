@@ -34,8 +34,10 @@ mock.module("../omni/session-stream.js", () => ({
 
 const {
   TaskCheckpointRunner,
+  listTaskCheckpointSweepTasks,
   createTask,
   dbDeleteTask,
+  dbArchiveTask,
   dbDispatchTask,
   dbGetActiveAssignment,
   dbListTaskEvents,
@@ -305,5 +307,41 @@ describe.skip("task checkpoint runner", () => {
     expect(prompt).toContain("Primary artifact:");
     expect(prompt).toContain("draft.md");
     expect(prompt).not.toContain("TASK.md");
+  });
+});
+
+describe("task checkpoint runner sweep selection", () => {
+  it("leaves archived tasks out even when they kept an in_progress status", async () => {
+    const archived = createTask({
+      title: "Archived mid flight",
+      instructions: "The archive is a flag, not a status.",
+      createdBy: "test",
+      checkpointIntervalMs: 5000,
+    });
+    createdTaskIds.push(archived.task.id);
+    dbDispatchTask(archived.task.id, {
+      agentId: "dev",
+      sessionName: `${archived.task.id}-work`,
+      assignedBy: "test",
+    });
+    dbMarkTaskAcceptedForSession(`${archived.task.id}-work`, archived.task.id);
+    dbArchiveTask(archived.task.id, { actor: "test", reason: "parked by the operator" });
+
+    const active = createTask({
+      title: "Active control",
+      instructions: "Control task for the sweep selection.",
+      createdBy: "test",
+      checkpointIntervalMs: 5000,
+    });
+    createdTaskIds.push(active.task.id);
+    dbDispatchTask(active.task.id, {
+      agentId: "dev",
+      sessionName: `${active.task.id}-work`,
+      assignedBy: "test",
+    });
+
+    const swept = listTaskCheckpointSweepTasks().map((task) => task.id);
+    expect(swept).not.toContain(archived.task.id);
+    expect(swept).toContain(active.task.id);
   });
 });

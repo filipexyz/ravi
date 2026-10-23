@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { AckPolicy, DeliverPolicy, RetentionPolicy, StringCodec, type JetStreamManager } from "nats";
 import { ensureConnected, getNats } from "../nats.js";
 import type { MessageTarget, ResponseMessage } from "../runtime/message-types.js";
+import { isSilentTokenText } from "../silent-token.js";
 import { logger } from "../utils/logger.js";
 import type { ChannelChatActionContent } from "./chat-actions.js";
 
@@ -277,7 +278,9 @@ export function buildChannelOutboundJobFromResponse(
 
   const rawText = response.error ? `Error: ${response.error}` : response.response;
   if (!rawText) return { ok: false, reason: "empty_response" };
-  if (rawText.trim() === "@@SILENT@@") return { ok: false, reason: "silent_response" };
+  // Last boundary before the channel job: a marker-only delivery is silence,
+  // including whitespace/truncated variants. Mixed prose is left untouched.
+  if (isSilentTokenText(rawText)) return { ok: false, reason: "silent_response" };
   // Slack renders the agent's Markdown at delivery (Block Kit), so it travels as written.
   const markdown = isSlackChannel(target.channel);
 

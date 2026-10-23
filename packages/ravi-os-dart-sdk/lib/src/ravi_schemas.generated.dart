@@ -55257,6 +55257,109 @@ class RaviSchemas {
 }
 ''';
 
+  static const contactsLinkAgentInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent ID that owns the platform identity",
+      "type": "string"
+    },
+    "channel": {
+      "description": "Channel, e.g. slack, telegram, discord",
+      "type": "string"
+    },
+    "id": {
+      "description": "Platform user ID",
+      "type": "string"
+    },
+    "instance": {
+      "description": "Channel instance ID",
+      "type": "string"
+    },
+    "name": {
+      "description": "Platform display name",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Reason for the link audit event",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent"
+  ],
+  "type": "object"
+}
+''';
+
+  static const contactsLinkAgentReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "type": "string"
+    },
+    "identity": {
+      "additionalProperties": false,
+      "properties": {
+        "channel": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "instanceId": {
+          "type": "string"
+        },
+        "ownerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ownerType": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "platformUserId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "channel",
+        "instanceId",
+        "platformUserId",
+        "ownerType",
+        "ownerId"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "const": "linked",
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "agent",
+    "identity"
+  ],
+  "type": "object"
+}
+''';
+
   static const contactsListInputSchema = r'''
 {
   "additionalProperties": false,
@@ -98870,6 +98973,10 @@ class RaviSchemas {
 {
   "additionalProperties": false,
   "properties": {
+    "effort": {
+      "description": "Reasoning effort for the child session: none|minimal|low|medium|high|xhigh|max|ultra",
+      "type": "string"
+    },
     "message": {
       "description": "Initial Slack message and first instruction for the child session",
       "type": "string"
@@ -98878,8 +98985,16 @@ class RaviSchemas {
       "description": "Optional model override for the child session",
       "type": "string"
     },
+    "provider": {
+      "description": "Runtime provider for the child (claude|codex|grok|pi); defaults to the parent's explicit provider override",
+      "type": "string"
+    },
     "session": {
       "description": "Explicit initiating session (defaults to current session)",
+      "type": "string"
+    },
+    "thinking": {
+      "description": "Thinking level for the child session: off|normal|verbose (claude and pi runtimes)",
       "type": "string"
     }
   },
@@ -98901,7 +99016,27 @@ class RaviSchemas {
     "child": {
       "additionalProperties": false,
       "properties": {
+        "effortOverride": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "modelOverride": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "providerOverride": {
           "anyOf": [
             {
               "type": "string"
@@ -98914,11 +99049,24 @@ class RaviSchemas {
         "status": {
           "const": "pending_root_delivery",
           "type": "string"
+        },
+        "thinkingLevel": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
         "status",
-        "modelOverride"
+        "modelOverride",
+        "providerOverride",
+        "effortOverride",
+        "thinkingLevel"
       ],
       "type": "object"
     },
@@ -103738,6 +103886,127 @@ class RaviSchemas {
         "requestId": {
           "type": "string"
         },
+        "runtime": {
+          "additionalProperties": false,
+          "properties": {
+            "effort": {
+              "type": "string"
+            },
+            "effortSource": {
+              "type": "string"
+            },
+            "model": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "modelSource": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "provider": {
+              "type": "string"
+            },
+            "providerSource": {
+              "type": "string"
+            },
+            "requested": {
+              "additionalProperties": false,
+              "properties": {
+                "effort": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "model": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "provider": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "thinking": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "provider",
+                "model",
+                "effort",
+                "thinking"
+              ],
+              "type": "object"
+            },
+            "thinking": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "thinkingSource": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "provider",
+            "providerSource",
+            "model",
+            "modelSource",
+            "effort",
+            "effortSource",
+            "thinking",
+            "thinkingSource",
+            "requested"
+          ],
+          "type": "object"
+        },
         "slackThreadTs": {
           "anyOf": [
             {
@@ -103789,6 +104058,7 @@ class RaviSchemas {
         "childSessionName",
         "slackThreadTs",
         "link",
+        "runtime",
         "createdAt",
         "updatedAt",
         "closedAt",
@@ -103915,6 +104185,127 @@ class RaviSchemas {
           "requestId": {
             "type": "string"
           },
+          "runtime": {
+            "additionalProperties": false,
+            "properties": {
+              "effort": {
+                "type": "string"
+              },
+              "effortSource": {
+                "type": "string"
+              },
+              "model": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "modelSource": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "provider": {
+                "type": "string"
+              },
+              "providerSource": {
+                "type": "string"
+              },
+              "requested": {
+                "additionalProperties": false,
+                "properties": {
+                  "effort": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "model": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "provider": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "thinking": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "provider",
+                  "model",
+                  "effort",
+                  "thinking"
+                ],
+                "type": "object"
+              },
+              "thinking": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "thinkingSource": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "provider",
+              "providerSource",
+              "model",
+              "modelSource",
+              "effort",
+              "effortSource",
+              "thinking",
+              "thinkingSource",
+              "requested"
+            ],
+            "type": "object"
+          },
           "slackThreadTs": {
             "anyOf": [
               {
@@ -103966,6 +104357,7 @@ class RaviSchemas {
           "childSessionName",
           "slackThreadTs",
           "link",
+          "runtime",
           "createdAt",
           "updatedAt",
           "closedAt",
@@ -117206,6 +117598,255 @@ class RaviSchemas {
 }
 ''';
 
+  static const tasksAnswerInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "by": {
+      "description": "Who is answering, recorded as provenance",
+      "type": "string"
+    },
+    "key": {
+      "description": "Decision key to answer",
+      "type": "string"
+    },
+    "taskId": {
+      "description": "Task ID",
+      "type": "string"
+    },
+    "text": {
+      "description": "The decision outcome",
+      "type": "string"
+    }
+  },
+  "required": [
+    "taskId"
+  ],
+  "type": "object"
+}
+''';
+
+  static const tasksAnswerReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "created": {
+      "type": "boolean"
+    },
+    "decision": {
+      "additionalProperties": false,
+      "properties": {
+        "answer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ask": {
+          "type": "string"
+        },
+        "askedAt": {
+          "type": "number"
+        },
+        "askedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blocks": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "ownerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ownerType": {
+          "enum": [
+            "human",
+            "agent",
+            "unassigned"
+          ],
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "open",
+            "answered",
+            "superseded"
+          ],
+          "type": "string"
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "taskId",
+        "key",
+        "status",
+        "ownerType",
+        "ownerId",
+        "ask",
+        "askedBy",
+        "askedAt",
+        "answer",
+        "answeredBy",
+        "answeredAt",
+        "blocks",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "event": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "type": "string"
+        },
+        "agentId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "id": {
+          "type": "number"
+        },
+        "message": {
+          "type": "string"
+        },
+        "progress": {
+          "type": "number"
+        },
+        "sessionName": {
+          "type": "string"
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "task.decision.open",
+            "task.decision.answered"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "taskId",
+        "type",
+        "createdAt"
+      ],
+      "type": "object"
+    },
+    "task": {
+      "additionalProperties": false,
+      "properties": {
+        "assigneeAgentId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "assigneeSessionName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "priority": {
+          "type": "string"
+        },
+        "progress": {
+          "type": "number"
+        },
+        "status": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "status",
+        "priority",
+        "progress"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "task",
+    "decision",
+    "event"
+  ],
+  "type": "object"
+}
+''';
+
   static const tasksArchiveInputSchema = r'''
 {
   "additionalProperties": false,
@@ -117244,6 +117885,218 @@ class RaviSchemas {
   "required": [
     "task",
     "event"
+  ],
+  "type": "object"
+}
+''';
+
+  static const tasksAttentionInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Only tasks assigned to this agent",
+      "type": "string"
+    },
+    "owner": {
+      "description": "human|agent|unassigned",
+      "type": "string"
+    },
+    "task": {
+      "description": "Only decisions of this task",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const tasksAttentionReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "decisionCount": {
+      "type": "number"
+    },
+    "entries": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "ageSeconds": {
+            "type": "number"
+          },
+          "assigneeAgentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "assigneeSessionName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decisionCount": {
+            "type": "number"
+          },
+          "decisions": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "ageSeconds": {
+                  "type": "number"
+                },
+                "ask": {
+                  "type": "string"
+                },
+                "askedAt": {
+                  "type": "number"
+                },
+                "askedBy": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "blocks": {
+                  "type": "boolean"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "key": {
+                  "type": "string"
+                },
+                "ownerId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ownerType": {
+                  "enum": [
+                    "human",
+                    "agent",
+                    "unassigned"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "key",
+                "ask",
+                "ownerType",
+                "ownerId",
+                "askedBy",
+                "askedAt",
+                "blocks",
+                "ageSeconds"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "parked": {
+            "type": "boolean"
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "taskPriority": {
+            "type": "string"
+          },
+          "taskStatus": {
+            "type": "string"
+          },
+          "taskTitle": {
+            "type": "string"
+          },
+          "waitingFor": {
+            "enum": [
+              "human",
+              "agent",
+              "unassigned"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "taskId",
+          "taskTitle",
+          "taskStatus",
+          "taskPriority",
+          "assigneeAgentId",
+          "assigneeSessionName",
+          "parked",
+          "waitingFor",
+          "ageSeconds",
+          "decisionCount",
+          "decisions"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "filters": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "ownerType": {
+          "enum": [
+            "human",
+            "agent",
+            "unassigned"
+          ],
+          "type": "string"
+        },
+        "taskId": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "generatedAt": {
+      "type": "number"
+    },
+    "kind": {
+      "const": "task.decision.attention",
+      "type": "string"
+    },
+    "parkedCount": {
+      "type": "number"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "kind",
+    "generatedAt",
+    "total",
+    "parkedCount",
+    "decisionCount",
+    "filters",
+    "entries"
   ],
   "type": "object"
 }
@@ -117305,7 +118158,7 @@ class RaviSchemas {
       "type": "string"
     },
     "on": {
-      "description": "Comma-separated events: task.blocked,task.done,task.failed,task.child.blocked,task.child.done,task.child.failed",
+      "description": "Comma-separated events: task.blocked,task.done,task.failed,task.decision.open,task.decision.answered,task.child.blocked,task.child.done,task.child.failed",
       "type": "string"
     },
     "priority": {
@@ -117717,6 +118570,10 @@ class RaviSchemas {
 {
   "additionalProperties": false,
   "properties": {
+    "idempotencyKey": {
+      "description": "Apply this mutation once per key; a replay returns the previous result",
+      "type": "string"
+    },
     "reason": {
       "description": "Concrete blocker reason",
       "type": "string"
@@ -117762,6 +118619,10 @@ class RaviSchemas {
   "properties": {
     "body": {
       "description": "Comment body",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Apply this mutation once per key; a replay returns the previous result",
       "type": "string"
     },
     "taskId": {
@@ -117989,6 +118850,259 @@ class RaviSchemas {
     "dependencies",
     "dependents",
     "launchPlan"
+  ],
+  "type": "object"
+}
+''';
+
+  static const tasksDecideInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "ask": {
+      "description": "The pending question",
+      "type": "string"
+    },
+    "blocks": {
+      "description": "Park the task on this decision",
+      "type": "boolean"
+    },
+    "key": {
+      "description": "Stable decision slug, unique while open per task",
+      "type": "string"
+    },
+    "owner": {
+      "description": "human:<contact>|agent:<id>|unassigned (default: unassigned)",
+      "type": "string"
+    },
+    "taskId": {
+      "description": "Task ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "taskId"
+  ],
+  "type": "object"
+}
+''';
+
+  static const tasksDecideReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "created": {
+      "type": "boolean"
+    },
+    "decision": {
+      "additionalProperties": false,
+      "properties": {
+        "answer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ask": {
+          "type": "string"
+        },
+        "askedAt": {
+          "type": "number"
+        },
+        "askedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blocks": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "ownerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ownerType": {
+          "enum": [
+            "human",
+            "agent",
+            "unassigned"
+          ],
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "open",
+            "answered",
+            "superseded"
+          ],
+          "type": "string"
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "taskId",
+        "key",
+        "status",
+        "ownerType",
+        "ownerId",
+        "ask",
+        "askedBy",
+        "askedAt",
+        "answer",
+        "answeredBy",
+        "answeredAt",
+        "blocks",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "event": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "type": "string"
+        },
+        "agentId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "id": {
+          "type": "number"
+        },
+        "message": {
+          "type": "string"
+        },
+        "progress": {
+          "type": "number"
+        },
+        "sessionName": {
+          "type": "string"
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "task.decision.open",
+            "task.decision.answered"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "taskId",
+        "type",
+        "createdAt"
+      ],
+      "type": "object"
+    },
+    "task": {
+      "additionalProperties": false,
+      "properties": {
+        "assigneeAgentId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "assigneeSessionName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "priority": {
+          "type": "string"
+        },
+        "progress": {
+          "type": "number"
+        },
+        "status": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "status",
+        "priority",
+        "progress"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "task",
+    "decision",
+    "event"
   ],
   "type": "object"
 }
@@ -118330,6 +119444,10 @@ class RaviSchemas {
 {
   "additionalProperties": false,
   "properties": {
+    "idempotencyKey": {
+      "description": "Apply this mutation once per key; a replay returns the previous result",
+      "type": "string"
+    },
     "summary": {
       "description": "Completion summary",
       "type": "string"
@@ -118373,6 +119491,10 @@ class RaviSchemas {
 {
   "additionalProperties": false,
   "properties": {
+    "idempotencyKey": {
+      "description": "Apply this mutation once per key; a replay returns the previous result",
+      "type": "string"
+    },
     "reason": {
       "description": "Failure reason",
       "type": "string"
@@ -118853,6 +119975,14 @@ class RaviSchemas {
 {
   "additionalProperties": false,
   "properties": {
+    "checklist": {
+      "description": "Observer checklist as a JSON array of {\"item\": string, \"done\": boolean}",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Apply this mutation once per key; a replay returns the previous result",
+      "type": "string"
+    },
     "message": {
       "description": "Progress update message",
       "type": "string"
@@ -123523,7 +124653,11 @@ class RaviSchemas {
       "type": "string"
     },
     "cooldown": {
-      "description": "Cooldown between fires (e.g., 5s, 30s, 1m)",
+      "description": "Minimum gap between fires; events inside it are dropped (e.g., 30s, 1m; off to disable). Default: 5s",
+      "type": "string"
+    },
+    "debounce": {
+      "description": "Batch a burst of events into one fire, this long after the last event, carrying every event (e.g., 2s, 1m). Default: off",
       "type": "string"
     },
     "envFile": {
@@ -123928,7 +125062,7 @@ class RaviSchemas {
       "type": "string"
     },
     "key": {
-      "description": "Property: name, message, shell, exec, timeout, env-file, on-error, topic, agent, account, session, cooldown, filter, replySession",
+      "description": "Property: name, message, shell, exec, timeout, env-file, on-error, topic, agent, account, session, cooldown, debounce, filter, replySession",
       "type": "string"
     },
     "value": {

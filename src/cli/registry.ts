@@ -316,6 +316,7 @@ function registerCommand(
       const contractError = permissionDeniedToContractError(
         commandOperation(groupName, cmdMeta.name),
         accessResult.errorMessage,
+        accessResult.denialDetails ?? {},
       );
       renderContractError(contractError, input.json === true);
       await emitCliAuditEvent({

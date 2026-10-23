@@ -1,4 +1,5 @@
 import type { RuntimeEffort } from "../runtime/effort.js";
+import type { SubjectRef } from "../identity/subject.js";
 
 export type TaskStatus = "open" | "dispatched" | "in_progress" | "blocked" | "done" | "failed";
 
@@ -86,6 +87,8 @@ export type TaskEventType =
   | "task.resumed"
   | "task.done"
   | "task.failed"
+  | "task.decision.open"
+  | "task.decision.answered"
   | "task.child.blocked"
   | "task.child.done"
   | "task.child.failed";
@@ -94,6 +97,8 @@ export const TASK_AUTOMATION_EVENTS = [
   "task.blocked",
   "task.done",
   "task.failed",
+  "task.decision.open",
+  "task.decision.answered",
   "task.child.blocked",
   "task.child.done",
   "task.child.failed",
@@ -320,6 +325,8 @@ export interface TaskRecord {
   createdBy?: string;
   createdByAgentId?: string;
   createdBySessionName?: string;
+  /** On whose behalf this task exists. The actor (who ran it) is a separate concept. */
+  subject?: SubjectRef;
   assigneeAgentId?: string;
   assigneeSessionName?: string;
   worktree?: TaskWorktreeConfig;
@@ -404,6 +411,103 @@ export interface TaskLaunchPlan {
   updatedAt: number;
 }
 
+export type TaskDecisionStatus = "open" | "answered" | "superseded";
+
+export type TaskDecisionOwnerType = "human" | "agent" | "unassigned";
+
+/**
+ * A pending question attached to a task. A decision is task metadata, never a
+ * task status: it records who owns the answer and whether the task is parked
+ * on it.
+ */
+export interface TaskDecision {
+  id: string;
+  taskId: string;
+  key: string;
+  status: TaskDecisionStatus;
+  ownerType: TaskDecisionOwnerType;
+  ownerId: string | null;
+  ask: string;
+  askedBy: string | null;
+  askedAt: number;
+  answer: string | null;
+  answeredBy: string | null;
+  answeredAt: number | null;
+  blocks: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface TaskDecisionInput {
+  key: string;
+  ask: string;
+  ownerType?: TaskDecisionOwnerType;
+  ownerId?: string | null;
+  blocks?: boolean;
+  actor?: string;
+  agentId?: string;
+  sessionName?: string;
+}
+
+export interface TaskDecisionAnswerInput {
+  key: string;
+  answer: string;
+  actor?: string;
+  agentId?: string;
+  sessionName?: string;
+}
+
+export interface TaskDecisionAttentionOptions {
+  agentId?: string;
+  ownerType?: TaskDecisionOwnerType;
+  taskId?: string;
+}
+
+export interface TaskDecisionAttentionItem {
+  id: string;
+  key: string;
+  ask: string;
+  ownerType: TaskDecisionOwnerType;
+  ownerId: string | null;
+  askedBy: string | null;
+  askedAt: number;
+  blocks: boolean;
+  ageSeconds: number;
+}
+
+export interface TaskDecisionAttentionEntry {
+  taskId: string;
+  taskTitle: string;
+  taskStatus: TaskStatus;
+  taskPriority: TaskPriority;
+  assigneeAgentId: string | null;
+  assigneeSessionName: string | null;
+  parked: boolean;
+  waitingFor: TaskDecisionOwnerType;
+  ageSeconds: number;
+  decisionCount: number;
+  decisions: TaskDecisionAttentionItem[];
+}
+
+export interface TaskDecisionAttentionReport {
+  kind: "task.decision.attention";
+  generatedAt: number;
+  total: number;
+  parkedCount: number;
+  decisionCount: number;
+  filters: TaskDecisionAttentionOptions;
+  entries: TaskDecisionAttentionEntry[];
+}
+
+export interface TaskOpenDecisionRow {
+  decision: TaskDecision;
+  taskTitle: string;
+  taskStatus: TaskStatus;
+  taskPriority: TaskPriority;
+  assigneeAgentId: string | null;
+  assigneeSessionName: string | null;
+}
+
 export interface TaskDependencyEdge {
   direction: "dependency" | "dependent";
   taskId: string;
@@ -447,6 +551,8 @@ export interface CreateTaskInput {
   createdBy?: string;
   createdByAgentId?: string;
   createdBySessionName?: string;
+  /** On whose behalf this task exists; inherited from the parent task when omitted. */
+  subject?: SubjectRef;
   parentTaskId?: string;
   dependsOnTaskIds?: string[];
   worktree?: TaskWorktreeConfig;

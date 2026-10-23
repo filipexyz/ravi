@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { getOrCreateSession, type AgentConfig, type SessionEntry } from "../router/index.js";
-import { getSessionTurn, listSessionEvents } from "../session-trace/session-trace-db.js";
+import { getSessionTurn } from "../session-trace/session-trace-db.js";
+import { listSessionEventsForTest } from "../test/session-trace-events.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
@@ -592,7 +593,9 @@ describe("runtime request durable attempt preparation", () => {
 
     await expect(runtimeRequest.prompt.next()).rejects.toThrow("attempt ledger unavailable");
 
-    const adapterRequest = listSessionEvents(TRACE_SESSION_KEY).find((event) => event.eventType === "adapter.request");
+    const adapterRequest = listSessionEventsForTest(TRACE_SESSION_KEY).find(
+      (event) => event.eventType === "adapter.request",
+    );
     expect(adapterRequest?.turnId).toBeTruthy();
     expect(getSessionTurn(adapterRequest!.turnId!)).toMatchObject({
       status: "failed",

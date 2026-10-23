@@ -30,6 +30,8 @@ export interface SlackThreadCardState {
   readonly updatedAt?: number;
   /** The person who asked for the thread, by name. */
   readonly requestedBy?: string;
+  /** Requested runtime shape, e.g. `codex · gpt-5.4 · high`; shown only when the caller pinned one. */
+  readonly runtime?: string;
 }
 
 export interface SlackThreadCardMessage {
@@ -71,6 +73,8 @@ export function buildSlackThreadCard(brief: string, state: SlackThreadCardState)
 
   const status = [STATUS_LABELS[state.status]];
   const requestedBy = state.requestedBy?.trim();
+  const runtime = state.runtime?.trim();
+  if (runtime) status.push(`runtime ${escapeSlackText(runtime)}`);
   if (requestedBy) status.push(`pedido por ${escapeSlackText(requestedBy)}`);
   if (state.updatedAt !== undefined) status.push(slackLocalTime(state.updatedAt));
   if (truncated) status.push("instruções completas na thread");

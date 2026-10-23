@@ -160,6 +160,46 @@ export function isClaudeModelAlias(model: string | null | undefined): boolean {
   return CLAUDE_MODEL_ALIASES.has(value) || value.includes("claude");
 }
 
+/**
+ * The model a runtime will actually run for a requested model.
+ *
+ * Non-Claude runtimes cannot run a Claude alias, so the launcher replaces it
+ * with the provider default. Display paths share this rule so `sessions threads`
+ * cannot claim a model the runtime will not use.
+ */
+export function applyProviderModelRule(provider: RuntimeProviderId, model: string | null | undefined): string | null {
+  const value = model?.trim();
+  if (!value) return null;
+  return provider !== "claude" && isClaudeModelAlias(value) ? resolvePreferredRuntimeModel(provider, value) : value;
+}
+
+/** Model families that are unambiguously owned by a non-Claude runtime. */
+const FOREIGN_MODEL_PATTERN = /^(gpt[-_.]?\d|gpt-|o[1-9]([-_.]|$)|codex|grok|gemini|llama|mistral|deepseek)/i;
+
+/**
+ * Cross-vendor model check for an explicit `--provider` + `--model` pair.
+ *
+ * The launcher only remaps Claude aliases when the runtime is not Claude, so a
+ * mismatched pair silently degrades (non-Claude runtime) or fails on the first
+ * turn (Claude runtime). Creation paths call this to fail before the user pays
+ * for a thread that cannot run.
+ */
+export function modelProviderMismatch(
+  provider: RuntimeProviderId | undefined,
+  model: string | null | undefined,
+): string | null {
+  const value = model?.trim();
+  if (!value || !provider) return null;
+  if (provider === "claude") {
+    if (isClaudeModelAlias(value) || !FOREIGN_MODEL_PATTERN.test(value)) return null;
+    return `Model "${value}" does not belong to the claude runtime. Pass --provider for that model, or choose a Claude model.`;
+  }
+  if (isClaudeModelAlias(value)) {
+    return `Model "${value}" is a Claude alias and ${provider} cannot run it. Pass --provider claude, or choose a ${provider} model.`;
+  }
+  return null;
+}
+
 function normalizeRuntimeModel(provider: RuntimeProviderId, model: string | null | undefined): string | null {
   const value = model?.trim();
   if (!value) {

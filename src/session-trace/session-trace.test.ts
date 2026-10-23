@@ -5,12 +5,8 @@ import { dbUpsertChat } from "../router/router-db.js";
 import { recordDeliveryTrace, recordResponseEmittedTrace } from "./channel-trace.js";
 import { querySessionTrace } from "./query.js";
 import { recordAdapterRequestTrace } from "./runtime-trace.js";
-import {
-  getSessionTraceBlob,
-  listRecentSessionEventsByType,
-  listSessionEvents,
-  recordSessionEvent,
-} from "./session-trace-db.js";
+import { getSessionTraceBlob, listRecentSessionEventsByType, recordSessionEvent } from "./session-trace-db.js";
+import { listSessionEventsForTest } from "../test/session-trace-events.js";
 
 let stateDir: string | null = null;
 
@@ -157,7 +153,7 @@ describe("session trace query", () => {
       },
     });
 
-    expect(listSessionEvents(sessionKey)[0]?.payloadJson).toMatchObject({
+    expect(listSessionEventsForTest(sessionKey)[0]?.payloadJson).toMatchObject({
       deliveryMessageId: "slack:C123:1713000000.000100",
       canonicalMessageId: "cm_123",
       platformMessageId: "1713000000.000100",
@@ -201,7 +197,7 @@ describe("session trace query", () => {
       timestamp: 30,
     });
 
-    const event = listSessionEvents(sessionKey)[0];
+    const event = listSessionEventsForTest(sessionKey)[0];
     expect(event).toMatchObject({
       eventType: "response.emitted",
       sourceChatId: "5511999999999@s.whatsapp.net",

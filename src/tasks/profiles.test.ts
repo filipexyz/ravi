@@ -1,19 +1,19 @@
-import { afterAll, afterEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { setPluginDiscoveryOverrideForTests } from "../plugins/index.js";
+import type { PluginSpec } from "../plugins/index.js";
 import systemProfilesRaw from "./profile-catalog/system-profiles.json" with { type: "json" };
 
-let pluginDescriptors: Array<{ path: string }> = [];
+let pluginDescriptors: PluginSpec[] = [];
 let discoverPluginsCalls = 0;
 
-mock.module("../plugins/index.js", () => ({
-  discoverPlugins: () => {
-    discoverPluginsCalls += 1;
-    return pluginDescriptors;
-  },
-}));
+setPluginDiscoveryOverrideForTests(() => {
+  discoverPluginsCalls += 1;
+  return pluginDescriptors;
+});
 
 const {
   createTask,
@@ -260,7 +260,7 @@ describe("task profile catalog", () => {
     const pluginDir = makeTempDir("ravi-task-profiles-plugin-");
     const stateDir = await createIsolatedRaviState("ravi-task-profiles-state-");
     process.chdir(workspaceDir);
-    pluginDescriptors = [{ path: pluginDir }];
+    pluginDescriptors = [{ type: "local", path: pluginDir }];
 
     writeTaskProfile(join(pluginDir, "task-profiles"), "cascade-profile", {
       version: "plugin-1",
@@ -710,4 +710,4 @@ describe("task profile catalog", () => {
     expect(taskProfileUsesObserver(observedPreview.profile)).toBeTrue();
   });
 });
-afterAll(() => mock.restore());
+afterAll(() => setPluginDiscoveryOverrideForTests(undefined));

@@ -14,7 +14,8 @@ import {
 } from "../listing.js";
 import { dbGetAgent } from "../../router/router-db.js";
 import { resolveSession } from "../../router/sessions.js";
-import { buildTaskObserverSummary } from "../../tasks/observer-contract.js";
+import { buildTaskObserverSummary, normalizeTaskObserverChecklist } from "../../tasks/observer-contract.js";
+import { readTaskOperationReceipt, writeTaskOperationReceipt } from "../../tasks/idempotency.js";
 import { nats } from "../../nats.js";
 import { formatDurationMs, parseDurationMs } from "../../cron/schedule.js";
 import { resolveTaskCheckpointIntervalMs } from "../../tasks/checkpoint.js";
@@ -49,6 +50,14 @@ import {
   resolveTaskReportToSessionName,
   resolveTaskRuntimeForRead,
   reportTaskProgress,
+  saveTaskObserverChecklist,
+  decideTask,
+  answerTaskDecision,
+  listTaskDecisionAttention,
+  normalizeTaskDecisionKey,
+  parseTaskDecisionOwner,
+  formatTaskDecisionOwner,
+  TaskDecisionError,
   blockTask,
   failTask,
   taskProfileUsesArtifactFirstSync,
@@ -63,6 +72,8 @@ import type {
   TaskArchiveMode,
   TaskComment,
   TaskDependencyEdge,
+  TaskDecision,
+  TaskDecisionOwnerType,
   TaskEvent,
   TaskPriority,
   TaskReadiness,
@@ -78,6 +89,8 @@ import type {
 import {
   taskCommentReturnSchema,
   taskCreateReturnSchema,
+  taskDecisionAttentionReturnSchema,
+  taskDecisionMutationReturnSchema,
   taskDispatchReturnSchema,
   taskListReturnSchema,
   taskMutationReturnSchema,
@@ -92,6 +105,35 @@ const MAX_TASK_LIST_LIMIT = 500;
 const DEFAULT_TASK_LIST_WINDOW = "1d";
 const DEFAULT_TASK_SHOW_LAST = 12;
 const TASK_LIST_SORT_FIELDS = ["updated", "created"] as const satisfies readonly TaskListSort[];
+
+function parseTaskChecklistOption(raw?: string): unknown {
+  if (raw === undefined) return undefined;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    fail("--checklist must be a JSON array of {item, done} objects.");
+  }
+}
+
+function readTaskMutationReplay<T>(taskId: string, idempotencyKey?: string): T | null {
+  const key = idempotencyKey?.trim();
+  if (!key) return null;
+  return readTaskOperationReceipt<T>(taskId, key)?.result ?? null;
+}
+
+function rememberTaskMutation(taskId: string, idempotencyKey: string | undefined, result: unknown): void {
+  const key = idempotencyKey?.trim();
+  if (!key) return;
+  writeTaskOperationReceipt(taskId, key, result);
+}
+
+function printTaskMutationReplay<T>(taskId: string, asJson: boolean | undefined, cached: T): void {
+  if (asJson) {
+    console.log(JSON.stringify(cached, null, 2));
+    return;
+  }
+  console.log(`✓ Task ${taskId} unchanged (idempotent replay)`);
+}
 
 function formatTaskStatus(status: TaskStatus | "waiting"): string {
   switch (status) {
@@ -732,6 +774,34 @@ function buildTaskLineageNode(task: TaskRecord) {
 function formatTaskComment(comment: TaskComment): string {
   const author = comment.authorSessionName ?? comment.authorAgentId ?? comment.author ?? "unknown";
   return `  - ${formatTime(comment.createdAt)} ${author} :: ${comment.body}`;
+}
+
+function handleTaskDecisionError(op: string, error: unknown, asJson?: boolean): never {
+  if (error instanceof TaskDecisionError) {
+    contractFail(op, error.code, error.message, {
+      asJson,
+      exitCode: error.exitCode,
+      ...(error.suggestedAction ? { details: { suggestedAction: error.suggestedAction } } : {}),
+    });
+  }
+  if (error instanceof Error && /^Task not found/i.test(error.message)) {
+    contractFail(op, "TASK_NOT_FOUND", error.message, { asJson, exitCode: 1 });
+  }
+  throw error;
+}
+
+function formatTaskDecisionLine(decision: TaskDecision, taskStatus?: TaskStatus, archived = false): string {
+  const state = decision.status.toUpperCase();
+  const owner = formatTaskDecisionOwner(decision);
+  const terminal = taskStatus === "done" || taskStatus === "failed";
+  const parked =
+    !terminal && !archived && decision.status === "open" && decision.blocks && decision.ownerType === "human"
+      ? " :: parked"
+      : "";
+  const age = formatDurationMs(Math.max(0, Date.now() - decision.askedAt));
+  const answered = decision.answeredAt ? ` @ ${formatTime(decision.answeredAt)}` : "";
+  const answer = decision.answer ? ` :: ${decision.answer}` : "";
+  return `  - ${state} [${decision.key}] :: ${owner}${parked} :: ${age}${answered} :: ${decision.ask}${answer}`;
 }
 
 async function emitMutationEvents(result: {
@@ -1519,13 +1589,24 @@ export class TaskCommands {
       const observer = payload.observer;
       console.log("\nTask observer:");
       console.log(`  Model:      ${observer.model ?? "agent default"}`);
-      console.log(
-        `  Verdict:    ${observer.lastStatus ?? "-"}${observer.lastVerdictAt ? ` @ ${formatTime(observer.lastVerdictAt)}` : ""}`,
-      );
-      if (observer.lastMessage) console.log(`  Note:       ${observer.lastMessage}`);
-      console.log(`  Nudges:     ${observer.nudgesSinceProgress}${observer.stalledAt ? " · stalled" : ""}`);
-      for (const entry of observer.checklist) {
-        console.log(`  [${entry.done ? "x" : " "}] ${entry.item}`);
+      if (observer.updatedAt) console.log(`  Updated:    ${formatTime(observer.updatedAt)}`);
+      if (observer.checklist.length === 0) {
+        console.log("  Checklist:  (none)");
+      } else {
+        console.log("  Checklist:");
+        for (const entry of observer.checklist) {
+          console.log(`  [${entry.done ? "x" : " "}] ${entry.item}`);
+        }
+      }
+    }
+
+    const taskDecisions = details.decisions ?? [];
+    console.log("\nDecisions:");
+    if (taskDecisions.length === 0) {
+      console.log("  - none");
+    } else {
+      for (const decision of taskDecisions) {
+        console.log(formatTaskDecisionLine(decision, details.task.status, Boolean(details.task.archivedAt)));
       }
     }
 
@@ -1680,7 +1761,17 @@ export class TaskCommands {
     @Arg("taskId", { description: "Task ID" }) taskId: string,
     @Arg("body", { description: "Comment body" }) body: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--idempotency-key <key>",
+      description: "Apply this mutation once per key; a replay returns the previous result",
+    })
+    idempotencyKey?: string,
   ) {
+    const replay = readTaskMutationReplay<Record<string, unknown>>(taskId, idempotencyKey);
+    if (replay) {
+      printTaskMutationReplay(taskId, asJson, replay);
+      return replay;
+    }
     const trimmedBody = body.trim();
     if (!trimmedBody) {
       fail("Comment body cannot be empty.");
@@ -1693,6 +1784,7 @@ export class TaskCommands {
       authorSessionName: actor.sessionName,
       body: trimmedBody,
     });
+    rememberTaskMutation(taskId, idempotencyKey, result);
     await emitMutationEvents(result);
 
     if (asJson) {
@@ -1952,7 +2044,22 @@ export class TaskCommands {
     @Option({ flags: "--message <text>", description: "Progress update message" }) message?: string,
     @Option({ flags: "--progress <n>", description: "Progress percentage 0-100" }) progress?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--idempotency-key <key>",
+      description: "Apply this mutation once per key; a replay returns the previous result",
+    })
+    idempotencyKey?: string,
+    @Option({
+      flags: "--checklist <json>",
+      description: 'Observer checklist as a JSON array of {"item": string, "done": boolean}',
+    })
+    checklist?: string,
   ) {
+    const replay = readTaskMutationReplay<{ task: TaskRecord; event: TaskEvent }>(taskId, idempotencyKey);
+    if (replay) {
+      printTaskMutationReplay(taskId, asJson, replay);
+      return replay;
+    }
     const details = getTaskDetails(taskId);
     if (!details.task) {
       fail(`Task not found: ${taskId}`);
@@ -1980,12 +2087,21 @@ export class TaskCommands {
     }
     const cliProgressValue = progress !== undefined ? Number.parseInt(progress, 10) : undefined;
     const progressValue = Number.isFinite(cliProgressValue) ? cliProgressValue : docState.progress;
+    const checklistInput = parseTaskChecklistOption(checklist);
+    if (checklistInput !== undefined && !Array.isArray(checklistInput)) {
+      fail("--checklist must be a JSON array of {item, done} objects.");
+    }
+    const checklistItems = checklistInput === undefined ? undefined : normalizeTaskObserverChecklist(checklistInput);
 
+    // Write the checklist before the progress mutation: if the checklist save
+    // throws, no progress event exists yet and a retry cannot duplicate it.
+    if (checklistItems) saveTaskObserverChecklist(taskId, checklistItems);
     const result = reportTaskProgress(taskId, {
       ...actor,
       message: finalMessage,
       ...(Number.isFinite(progressValue) ? { progress: progressValue } : {}),
     });
+    rememberTaskMutation(taskId, idempotencyKey, result);
     await emitMutationEvents(result);
 
     if (asJson) {
@@ -2011,7 +2127,17 @@ export class TaskCommands {
     @Arg("taskId", { description: "Task ID" }) taskId: string,
     @Option({ flags: "--summary <text>", description: "Completion summary" }) summary?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--idempotency-key <key>",
+      description: "Apply this mutation once per key; a replay returns the previous result",
+    })
+    idempotencyKey?: string,
   ) {
+    const replay = readTaskMutationReplay<Record<string, unknown>>(taskId, idempotencyKey);
+    if (replay) {
+      printTaskMutationReplay(taskId, asJson, replay);
+      return replay;
+    }
     const details = getTaskDetails(taskId);
     if (!details.task) {
       fail(`Task not found: ${taskId}`);
@@ -2034,6 +2160,7 @@ export class TaskCommands {
       ...actor,
       message: finalSummary,
     });
+    rememberTaskMutation(taskId, idempotencyKey, result);
     await emitMutationEvents(result);
 
     if (asJson) {
@@ -2060,7 +2187,17 @@ export class TaskCommands {
     @Arg("taskId", { description: "Task ID" }) taskId: string,
     @Option({ flags: "--reason <text>", description: "Concrete blocker reason" }) reason?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--idempotency-key <key>",
+      description: "Apply this mutation once per key; a replay returns the previous result",
+    })
+    idempotencyKey?: string,
   ) {
+    const replay = readTaskMutationReplay<Record<string, unknown>>(taskId, idempotencyKey);
+    if (replay) {
+      printTaskMutationReplay(taskId, asJson, replay);
+      return replay;
+    }
     const details = getTaskDetails(taskId);
     if (!details.task) {
       fail(`Task not found: ${taskId}`);
@@ -2081,6 +2218,7 @@ export class TaskCommands {
       message: finalReason,
       ...(typeof progressValue === "number" ? { progress: progressValue } : {}),
     });
+    rememberTaskMutation(taskId, idempotencyKey, result);
     await emitMutationEvents(result);
 
     if (asJson) {
@@ -2109,7 +2247,17 @@ export class TaskCommands {
     @Arg("taskId", { description: "Task ID" }) taskId: string,
     @Option({ flags: "--reason <text>", description: "Failure reason" }) reason?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--idempotency-key <key>",
+      description: "Apply this mutation once per key; a replay returns the previous result",
+    })
+    idempotencyKey?: string,
   ) {
+    const replay = readTaskMutationReplay<Record<string, unknown>>(taskId, idempotencyKey);
+    if (replay) {
+      printTaskMutationReplay(taskId, asJson, replay);
+      return replay;
+    }
     const details = getTaskDetails(taskId);
     if (!details.task) {
       fail(`Task not found: ${taskId}`);
@@ -2132,6 +2280,7 @@ export class TaskCommands {
       ...actor,
       message: finalReason,
     });
+    rememberTaskMutation(taskId, idempotencyKey, result);
     await emitMutationEvents(result);
 
     if (asJson) {
@@ -2141,6 +2290,179 @@ export class TaskCommands {
       console.log(`  ${finalReason}`);
     }
     return result;
+  }
+
+  @Command({
+    name: "decide",
+    description: "Open (or re-ask) a decision with an owner and a stable key on a task",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "tasks",
+    action: "decide",
+    risk: "medium",
+    resourceId: "taskId",
+    input: ["taskId"],
+  })
+  @Returns(taskDecisionMutationReturnSchema)
+  async decide(
+    @Arg("taskId", { description: "Task ID" }) taskId: string,
+    @Option({ flags: "--key <key>", description: "Stable decision slug, unique while open per task" }) key?: string,
+    @Option({ flags: "--ask <text>", description: "The pending question" }) ask?: string,
+    @Option({ flags: "--owner <owner>", description: "human:<contact>|agent:<id>|unassigned (default: unassigned)" })
+    owner?: string,
+    @Option({ flags: "--blocks", description: "Park the task on this decision" }) blocks?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const op = "tasks decide";
+    if (!key?.trim()) {
+      contractFail(op, "USAGE_ERROR", "--key is required.", { asJson, exitCode: 2 });
+    }
+    if (!ask?.trim()) {
+      contractFail(op, "USAGE_ERROR", "--ask is required and must describe the pending question.", {
+        asJson,
+        exitCode: 2,
+      });
+    }
+
+    try {
+      const normalizedKey = normalizeTaskDecisionKey(key);
+      const ownerInput = parseTaskDecisionOwner(owner);
+      const actor = getTaskActor();
+      const result = decideTask(taskId, {
+        key: normalizedKey,
+        ask: ask.trim(),
+        ownerType: ownerInput.ownerType,
+        ownerId: ownerInput.ownerId,
+        blocks: blocks === true,
+        ...actor,
+      });
+      await emitTaskEvent(result.task, result.event);
+
+      const decision = result.decision;
+      if (asJson) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(`${result.created ? "◇ New decision on" : "◇ Re-asked decision on"} ${taskId} [${decision.key}]`);
+        console.log(`  Owner: ${formatTaskDecisionOwner(decision)}${decision.blocks ? " (blocks)" : ""}`);
+        console.log(`  Ask:   ${decision.ask}`);
+      }
+      return result;
+    } catch (error) {
+      handleTaskDecisionError(op, error, asJson);
+    }
+  }
+
+  @Command({ name: "answer", description: "Answer (close) an open decision on a task" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "tasks",
+    action: "answer",
+    risk: "medium",
+    resourceId: "taskId",
+    input: ["taskId"],
+  })
+  @Returns(taskDecisionMutationReturnSchema)
+  async answer(
+    @Arg("taskId", { description: "Task ID" }) taskId: string,
+    @Option({ flags: "--key <key>", description: "Decision key to answer" }) key?: string,
+    @Option({ flags: "--text <text>", description: "The decision outcome" }) text?: string,
+    @Option({ flags: "--by <actor>", description: "Who is answering, recorded as provenance" }) by?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const op = "tasks answer";
+    if (!key?.trim()) {
+      contractFail(op, "USAGE_ERROR", "--key is required.", { asJson, exitCode: 2 });
+    }
+    if (!text?.trim()) {
+      contractFail(op, "USAGE_ERROR", "--text is required and must carry the decision outcome.", {
+        asJson,
+        exitCode: 2,
+      });
+    }
+
+    try {
+      const normalizedKey = normalizeTaskDecisionKey(key);
+      const actor = getTaskActor();
+      const answerActor = by?.trim() || actor.actor;
+      const result = answerTaskDecision(taskId, {
+        key: normalizedKey,
+        answer: text.trim(),
+        ...(answerActor ? { actor: answerActor } : {}),
+        ...(actor.agentId ? { agentId: actor.agentId } : {}),
+        ...(actor.sessionName ? { sessionName: actor.sessionName } : {}),
+      });
+      await emitTaskEvent(result.task, result.event);
+
+      const decision = result.decision;
+      if (asJson) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(`✓ Task ${taskId} decision [${decision.key}] answered`);
+        console.log(`  By:     ${decision.answeredBy ?? answerActor ?? "cli"}`);
+        console.log(`  Answer: ${decision.answer}`);
+      }
+      return result;
+    } catch (error) {
+      handleTaskDecisionError(op, error, asJson);
+    }
+  }
+
+  @Command({
+    name: "attention",
+    description: "Deterministic read of open decisions waiting on humans, agents or nobody",
+  })
+  @CommandAccess({ kind: "read", resource: "tasks", action: "attention", risk: "low" })
+  @Returns(taskDecisionAttentionReturnSchema)
+  attention(
+    @Option({ flags: "--agent <id>", description: "Only tasks assigned to this agent" }) agentId?: string,
+    @Option({ flags: "--owner <type>", description: "human|agent|unassigned" }) owner?: string,
+    @Option({ flags: "--task <id>", description: "Only decisions of this task" }) taskId?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const op = "tasks attention";
+    const ownerType = owner?.trim() as TaskDecisionOwnerType | undefined;
+    if (ownerType && !["human", "agent", "unassigned"].includes(ownerType)) {
+      contractFail(op, "USAGE_ERROR", `Invalid --owner ${JSON.stringify(owner)}: use human, agent or unassigned.`, {
+        asJson,
+        exitCode: 2,
+      });
+    }
+
+    const report = listTaskDecisionAttention({
+      ...(agentId?.trim() ? { agentId: agentId.trim() } : {}),
+      ...(ownerType ? { ownerType } : {}),
+      ...(taskId?.trim() ? { taskId: taskId.trim() } : {}),
+    });
+
+    if (asJson) {
+      console.log(JSON.stringify(report, null, 2));
+      return report;
+    }
+
+    if (report.total === 0) {
+      console.log("No open decisions.");
+      return report;
+    }
+
+    console.log(
+      `Open decisions: ${report.total} task(s), ${report.decisionCount} decision(s), ${report.parkedCount} parked`,
+    );
+    for (const entry of report.entries) {
+      const parked = entry.parked ? " :: parked" : "";
+      console.log(`\n${entry.taskId} :: ${formatTaskStatus(entry.taskStatus)} :: ${entry.taskTitle}${parked}`);
+      console.log(`  Waiting on: ${entry.waitingFor} :: oldest ${formatDurationMs(entry.ageSeconds * 1000)}`);
+      for (const decision of entry.decisions) {
+        const ownerLabel =
+          decision.ownerType === "unassigned" || !decision.ownerId
+            ? "unassigned"
+            : `${decision.ownerType}:${decision.ownerId}`;
+        console.log(
+          `  - [${decision.key}] ${ownerLabel}${decision.blocks ? " (blocks)" : ""} :: ${formatDurationMs(decision.ageSeconds * 1000)} :: ${decision.ask}`,
+        );
+      }
+    }
+    return report;
   }
 
   @Command({ name: "watch", description: "Watch task events live" })

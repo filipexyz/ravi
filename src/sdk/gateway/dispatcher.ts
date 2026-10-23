@@ -108,6 +108,7 @@ export async function dispatch(
     const error = permissionDeniedToContractError(
       commandOperation(group, cmd.command),
       "Gateway access to this command was denied.",
+      { stage: "command_access" },
     );
     const response = contractErrorResponse(error, 403, "denied");
     const audit = buildAuditEvent(cmd, tool, {}, "denied", startedAt, lineage, 1, "PERMISSION_DENIED");
@@ -143,7 +144,13 @@ export async function dispatch(
     }),
   );
   if (!accessResult.allowed) {
-    const error = permissionDeniedToContractError(commandOperation(group, cmd.command), accessResult.errorMessage);
+    // Structured denial for the CLI: the same details the tool and local CLI
+    // surfaces carry, so op/code/details/outcome stay in parity.
+    const error = permissionDeniedToContractError(
+      commandOperation(group, cmd.command),
+      accessResult.errorMessage,
+      accessResult.denialDetails ?? {},
+    );
     const response = contractErrorResponse(error, 403, "denied");
     const audit = buildAuditEvent(cmd, tool, auditInput, "denied", startedAt, lineage, 1, "PERMISSION_DENIED");
     const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);

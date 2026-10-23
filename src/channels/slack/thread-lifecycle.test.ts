@@ -103,6 +103,9 @@ describe("Slack thread lifecycle", () => {
     expect(child).toMatchObject({
       name: "ravi-parent-t-1713000000000100",
       modelOverride: "gpt-5.6",
+      runtimeProviderOverride: "codex",
+      effortOverride: "high",
+      thinkingLevel: "verbose",
       lastChannel: "slack",
       lastTo: "C123",
       lastAccountId: "ravi-slack",
@@ -549,9 +552,26 @@ describe("Slack thread orchestration", () => {
 
     // A repeated close and a send to an open thread leave the card as it is.
     expect(jobs.map((job) => (job.request.content as { threadCard?: unknown }).threadCard)).toEqual([
-      { status: "open", note: "Found the failing commit", updatedAt: expect.any(Number), requestedBy: "Ana Souza" },
-      { status: "closed", note: "The branch is fixed", updatedAt: expect.any(Number), requestedBy: "Ana Souza" },
-      { status: "reopened", updatedAt: expect.any(Number), requestedBy: "Ana Souza" },
+      {
+        status: "open",
+        note: "Found the failing commit",
+        updatedAt: expect.any(Number),
+        requestedBy: "Ana Souza",
+        runtime: "codex · gpt-5.6 · high · verbose",
+      },
+      {
+        status: "closed",
+        note: "The branch is fixed",
+        updatedAt: expect.any(Number),
+        requestedBy: "Ana Souza",
+        runtime: "codex · gpt-5.6 · high · verbose",
+      },
+      {
+        status: "reopened",
+        updatedAt: expect.any(Number),
+        requestedBy: "Ana Souza",
+        runtime: "codex · gpt-5.6 · high · verbose",
+      },
     ]);
     expect(jobs[0]!.request).toMatchObject({
       origin: { sessionName: "ravi-parent", responsePhase: "chat_action" },
@@ -648,6 +668,9 @@ function seedPendingCreation(
     initialPrompt: "Investigate the branch",
     ...(input.requestedBy ? { requestedBy: input.requestedBy } : {}),
     modelOverride: "gpt-5.6",
+    providerOverride: "codex",
+    effortOverride: "high",
+    thinkingLevel: "verbose",
   });
   markSlackThreadRootDelivered({
     requestId,

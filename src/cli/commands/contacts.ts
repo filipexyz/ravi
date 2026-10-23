@@ -7,7 +7,11 @@ import { Group, Command, CommandAccess, Scope, Arg, Option } from "../decorators
 import { fail } from "../context.js";
 import { ContractError, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { buildCliOffsetPagination, paginateCliItems, parseCliListLimit, parseCliListOffset } from "../pagination.js";
-import { commandEnvelopeReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
+import {
+  commandEnvelopeReturnSchema,
+  declareCommandReturns,
+  platformIdentityLinkReturnSchema,
+} from "./operational-return-schemas.js";
 import { nats } from "../../nats.js";
 
 /** Notify gateway that config changed */
@@ -36,6 +40,7 @@ import {
   setOptOut,
   linkContactIdentity,
   unlinkContactIdentity,
+  upsertAgentPlatformIdentity,
   mergeContacts,
   getContactDetails,
   listContactEvents,
@@ -60,8 +65,10 @@ import {
   listAccountPendingChats,
 } from "../../contacts.js";
 import {
+  dbGetAgent,
   dbGetInstance,
   dbGetInstanceByInstanceId,
+  dbListAgents,
   dbListMessageMetaByContactId,
   dbListRoutes,
   type MessageMetadata,
@@ -73,7 +80,14 @@ import {
   type ContactSessionSummary,
 } from "../../session-trace/session-trace-db.js";
 import type { SessionEventRecord } from "../../session-trace/types.js";
-import { getScopeContext, isScopeEnforced, canAccessContact, canWriteContacts } from "../../permissions/scope.js";
+import {
+  getScopeContext,
+  isScopeEnforced,
+  canAccessContact,
+  canViewAgent,
+  canWriteContacts,
+  filterVisibleAgents,
+} from "../../permissions/scope.js";
 import { printInspectionBlock, printInspectionField } from "../inspection-output.js";
 
 const CONTACT_DB_META = { source: "contact-db", freshness: "persisted" } as const;
@@ -1739,6 +1753,77 @@ export class ContactsCommands {
   }
 
   @Scope("writeContacts")
+  @Command({
+    name: "link-agent",
+    description: "Link a platform identity to an agent (bot senders resolve to an agent actor)",
+  })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "link-agent", risk: "medium" })
+  linkAgent(
+    @Arg("agent", { description: "Agent ID that owns the platform identity" }) agentId: string,
+    @Option({ flags: "--channel <channel>", description: "Channel, e.g. slack, telegram, discord" })
+    channel?: string,
+    @Option({ flags: "--id <platformUserId>", description: "Platform user ID" })
+    platformUserId?: string,
+    @Option({ flags: "--instance <id>", description: "Channel instance ID" }) instanceId?: string,
+    @Option({ flags: "--name <text>", description: "Platform display name" }) platformDisplayName?: string,
+    @Option({ flags: "--reason <text>", description: "Reason for the link audit event" }) reason?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    if (!channel) {
+      contractFail("contacts link-agent", "USAGE_ERROR", "--channel is required", { asJson, exitCode: 2 });
+    }
+    if (!platformUserId) {
+      contractFail("contacts link-agent", "USAGE_ERROR", "--id is required", { asJson, exitCode: 2 });
+    }
+    const scopeCtx = getScopeContext();
+    const targetAgent = dbGetAgent(agentId);
+    // A caller scoped to one agent must not link an identity to an agent it
+    // cannot see, nor learn about agents outside its scope through suggestions.
+    const targetVisible = Boolean(targetAgent) && (!isScopeEnforced(scopeCtx) || canViewAgent(scopeCtx, agentId));
+    if (!targetVisible) {
+      const candidates = filterVisibleAgents(scopeCtx, dbListAgents()).flatMap((agent) => [agent.id, agent.name]);
+      contractFail("contacts link-agent", "AGENT_NOT_FOUND", `Agent not found: ${agentId}`, {
+        asJson,
+        details: { suggestions: suggestSimilar(agentId, candidates, 3) },
+      });
+    }
+
+    try {
+      const identity = upsertAgentPlatformIdentity({
+        agentId,
+        channel,
+        instanceId: instanceId ?? null,
+        platformUserId,
+        platformDisplayName: platformDisplayName ?? null,
+        linkedBy: "cli",
+        linkReason: reason ?? "cli_link_agent",
+      });
+      const payload = {
+        status: "linked" as const,
+        agent: agentId,
+        identity: {
+          id: identity.id,
+          channel: identity.channel,
+          instanceId: identity.instanceId,
+          platformUserId: identity.platformUserId,
+          ownerType: identity.ownerType,
+          ownerId: identity.ownerId,
+        },
+      };
+      if (asJson) {
+        printJson(payload);
+      } else {
+        console.log(
+          `✓ Identity linked to agent ${agentId}: ${platformIcon(channel)} ${platformUserId} (${identity.id})`,
+        );
+      }
+      return payload;
+    } catch (err: any) {
+      fail(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  @Scope("writeContacts")
   @Command({ name: "unlink", description: "Unlink a platform identity from its contact" })
   @CommandAccess({ kind: "mutate", resource: "contacts", action: "unlink", risk: "medium" })
   unlink(
@@ -2018,6 +2103,7 @@ declareCommandReturns(ContactsCommands, {
   get: commandEnvelopeReturnSchema,
   info: commandEnvelopeReturnSchema,
   link: commandEnvelopeReturnSchema,
+  linkAgent: platformIdentityLinkReturnSchema,
   list: commandEnvelopeReturnSchema,
   merge: commandEnvelopeReturnSchema,
   messages: commandEnvelopeReturnSchema,

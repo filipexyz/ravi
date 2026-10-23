@@ -67,6 +67,7 @@ import {
   syncAgentSessionsToAgentRuntime,
 } from "../../runtime/agent-session-runtime-sync.js";
 import { createRuntimeProvider, listRegisteredRuntimeProviderIds } from "../../runtime/provider-registry.js";
+import { modelProviderMismatch } from "../../runtime/model-catalog.js";
 import { resolveEffectiveSessionRuntime } from "../../runtime/runtime-selection.js";
 import type { ChannelContext, ResponseMessage, SessionRelayAction } from "../../runtime/message-types.js";
 import { buildSessionRelayTurnOrigin } from "../../runtime/turn-origin.js";
@@ -95,6 +96,7 @@ import {
   reportSlackThreadProgress,
   sendSlackThreadMessage,
   slackThreadParentSessionKey,
+  slackThreadRuntimeLabel,
   slackThreadTitle,
   splitSlackThreadPlatformChatId,
   summarizeSlackThread,
@@ -186,6 +188,7 @@ import type {
 } from "../../session-trace/types.js";
 
 const SEND_TIMEOUT_MS = 120000; // 2 minutes
+const SLACK_THREAD_THINKING_LEVELS = ["off", "normal", "verbose"] as const;
 const MESSAGE_DELETE_TOPIC = "ravi.outbound.message.delete";
 const MESSAGE_DELETE_TIMEOUT_MS = 15000;
 const MESSAGE_EDIT_TOPIC = "ravi.outbound.message.edit";
@@ -399,6 +402,9 @@ const sessionCreateThreadReturnSchema = z
     child: z.object({
       status: z.literal("pending_root_delivery"),
       modelOverride: z.string().nullable(),
+      providerOverride: z.string().nullable(),
+      effortOverride: z.string().nullable(),
+      thinkingLevel: z.string().nullable(),
     }),
   })
   .strict();
@@ -412,6 +418,24 @@ const slackThreadSummarySchema = z
     childSessionName: z.string().nullable(),
     slackThreadTs: z.string().nullable(),
     link: z.string().nullable(),
+    runtime: z
+      .object({
+        provider: z.string(),
+        providerSource: z.string(),
+        model: z.string().nullable(),
+        modelSource: z.string().nullable(),
+        effort: z.string(),
+        effortSource: z.string(),
+        thinking: z.string().nullable(),
+        thinkingSource: z.string().nullable(),
+        requested: z.object({
+          provider: z.string().nullable(),
+          model: z.string().nullable(),
+          effort: z.string().nullable(),
+          thinking: z.string().nullable(),
+        }),
+      })
+      .strict(),
     createdAt: z.number(),
     updatedAt: z.number(),
     closedAt: z.number().nullable(),
@@ -687,9 +711,11 @@ function buildSessionActionToolHints(): Record<string, Record<string, unknown>> 
         "Use only when thread.create is available on a Slack surface.",
         "The initial message is posted visibly as a new Slack channel root, shown as a card: its first line is the title, the rest a short summary.",
         "Slack threads are siblings; calling this inside a thread does not nest it.",
+        "--provider pins the runtime; without it the child inherits the parent's explicit provider override, else the agent default.",
+        "--effort and --thinking shape the whole thread; a model from another vendor needs --provider too.",
       ],
       promptHint:
-        'Use `ravi sessions create-thread "<initial-message>" --model <model>`; omit `--model` when the child should inherit the normal model.',
+        'Use `ravi sessions create-thread "<initial-message>" --model <model>`; omit `--model` when the child should inherit the normal model. Add `--provider`, `--effort` and `--thinking` when the thread needs a different runtime shape than the parent.',
     },
     closeThread: {
       id: "thread.close",
@@ -6345,6 +6371,21 @@ export class SessionCommands {
     })
     model?: string,
     @Option({
+      flags: "--provider <provider>",
+      description: `Runtime provider for the child (${listRegisteredRuntimeProviderIds().join("|")}); defaults to the parent's explicit provider override`,
+    })
+    provider?: string,
+    @Option({
+      flags: "--effort <level>",
+      description: `Reasoning effort for the child session: ${formatRuntimeEffortLevels()}`,
+    })
+    effort?: string,
+    @Option({
+      flags: "--thinking <level>",
+      description: "Thinking level for the child session: off|normal|verbose (claude and pi runtimes)",
+    })
+    thinking?: string,
+    @Option({
       flags: "--session <nameOrKey>",
       description: "Explicit initiating session (defaults to current session)",
     })
@@ -6375,7 +6416,46 @@ export class SessionCommands {
     const creationTarget = resolveSlackThreadCreationTarget(session);
     const requestId = `slack-thread:${randomUUID()}`;
     const normalizedModel = model?.trim() || undefined;
+    const normalizedProvider = provider?.trim().toLowerCase() || undefined;
+    if (normalizedProvider && !listRegisteredRuntimeProviderIds().includes(normalizedProvider as RuntimeProviderId)) {
+      fail(`Invalid provider: ${provider}. Valid providers: ${listRegisteredRuntimeProviderIds().join(", ")}`);
+      return;
+    }
+    const normalizedEffort = effort?.trim() ? parseRuntimeEffort(effort) : undefined;
+    const normalizedThinking = thinking?.trim().toLowerCase() || undefined;
+    if (normalizedThinking && !(SLACK_THREAD_THINKING_LEVELS as readonly string[]).includes(normalizedThinking)) {
+      fail(`Invalid thinking level: ${thinking}. Valid values: ${SLACK_THREAD_THINKING_LEVELS.join(", ")}`);
+      return;
+    }
+    // A thread is a fork of the parent's intent: an explicit provider override on
+    // the parent travels with it. Without this the child silently ran on the
+    // agent default while `--model` was measured against a different runtime.
+    const inheritedProvider = creationTarget.parentSession.runtimeProviderOverride?.trim() || undefined;
+    const resolvedProvider = normalizedProvider ?? inheritedProvider;
+    // The check needs the runtime the child will actually start on, which is the
+    // parent's effective provider when nothing was pinned. That value is used for
+    // validation only: storing it would pin a thread that should follow its agent.
+    const parentProvider =
+      resolvedProvider ??
+      resolveEffectiveSessionRuntime({
+        session: creationTarget.parentSession,
+        agent:
+          getAgent(creationTarget.parentSession.agentId) ??
+          loadRouterConfig().agents[creationTarget.parentSession.agentId] ??
+          null,
+      }).provider.value;
+    const providerMismatch = modelProviderMismatch(parentProvider, normalizedModel);
+    if (providerMismatch) {
+      fail(providerMismatch);
+      return;
+    }
     const requestedBy = resolveSlackThreadRequester();
+    const requestedRuntimeLabel = slackThreadRuntimeLabel({
+      ...(resolvedProvider ? { providerOverride: resolvedProvider } : {}),
+      ...(normalizedModel ? { modelOverride: normalizedModel } : {}),
+      ...(normalizedEffort ? { effortOverride: normalizedEffort } : {}),
+      ...(normalizedThinking ? { thinkingLevel: normalizedThinking } : {}),
+    });
     createSlackThreadLifecycle({
       requestId,
       parentSessionKey: creationTarget.parentSession.sessionKey,
@@ -6389,6 +6469,9 @@ export class SessionCommands {
       initialPrompt: initialMessage,
       requestedBy,
       modelOverride: normalizedModel,
+      providerOverride: resolvedProvider,
+      effortOverride: normalizedEffort,
+      thinkingLevel: normalizedThinking,
     });
     const job = buildChannelChatActionJob({
       sessionName: sessionActionRef(creationTarget.parentSession),
@@ -6405,6 +6488,7 @@ export class SessionCommands {
         actionId: "thread.create",
         text: initialMessage,
         ...(requestedBy ? { requestedBy } : {}),
+        ...(requestedRuntimeLabel ? { runtime: requestedRuntimeLabel } : {}),
       },
     });
     const published = await publishChannelOutboundJobDurably(job);
@@ -6436,6 +6520,9 @@ export class SessionCommands {
       child: {
         status: "pending_root_delivery",
         modelOverride: normalizedModel ?? null,
+        providerOverride: resolvedProvider ?? null,
+        effortOverride: normalizedEffort ?? null,
+        thinkingLevel: normalizedThinking ?? null,
       },
     };
     if (asJson) printJson(payload);
@@ -6574,7 +6661,10 @@ export class SessionCommands {
         const name = thread.childSessionName ?? thread.requestId;
         const title = thread.title ? ` — ${thread.title}` : "";
         const pending = thread.parentReturn.pending ? " (return pending)" : "";
-        console.log(`  [${thread.status}] ${name}${title}${pending}`);
+        const runtime = [thread.runtime.provider, thread.runtime.model, thread.runtime.effort]
+          .filter((value): value is string => Boolean(value))
+          .join(" · ");
+        console.log(`  [${thread.status}] ${name}${title}${pending}${runtime ? ` (${runtime})` : ""}`);
       }
     }
     return payload;

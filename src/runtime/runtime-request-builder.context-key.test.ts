@@ -259,3 +259,72 @@ describe("runtime request Building Solutions prompt", () => {
     expect(await buildSystemPromptAppend(source)).not.toContain("Building Solutions");
   });
 });
+
+describe("runtime request host tools", () => {
+  let stateDir: string | null = null;
+
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-runtime-request-host-tools-");
+    getOrCreateSession(SESSION_KEY, AGENT_ID, stateDir);
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  it("attaches the granted host tools and the Pi allowlist for observation turns", async () => {
+    const sessionCwd = stateDir!;
+    const hostCapabilities: RuntimeCapabilities = { ...capabilities, dynamicTools: { mode: "host" } };
+    const runtimeProvider: SessionRuntimeProvider = {
+      id: PROVIDER_ID,
+      getCapabilities: () => hostCapabilities,
+      startSession: () => emptyRuntimeSession(),
+    };
+    const { runtimeRequest } = await buildRuntimeStartRequest({
+      runId: "run-host-tools",
+      sessionName: SESSION_NAME,
+      prompt: {
+        prompt: "observe the worker turn",
+        source,
+        _observation: {
+          sourceSessionKey: SESSION_KEY,
+          sourceSessionName: "worker",
+          bindingId: "binding-host-tools",
+          ruleId: "rule-host-tools",
+          role: "task-observer",
+          mode: "report",
+          permissionGrants: ["use:tool:tasks_show", "read:tasks:show"],
+          eventIds: ["event-host-tools"],
+          deliveryId: "delivery-host-tools",
+        },
+      },
+      session: session(sessionCwd),
+      agent: agent(sessionCwd),
+      runtimeProviderId: PROVIDER_ID,
+      runtimeProvider,
+      runtimeCapabilities: hostCapabilities,
+      sessionCwd,
+      dbSessionKey: SESSION_KEY,
+      model: MODEL,
+      runtimeResolution: {
+        options: { model: MODEL },
+        sources: { model: "agent_default", effort: null, thinking: null },
+        hasTaskRuntimeContext: false,
+      },
+      storedRuntimeSessionParams: undefined,
+      canResumeStoredSession: false,
+      resolvedSource: source,
+      streamingSession: streamingSession("observe the worker turn"),
+      stashedMessages: new Map(),
+      defaultRuntimeProviderId: "claude",
+      crashRecovery: crashRecovery(),
+    });
+
+    const dynamicNames = (runtimeRequest.dynamicTools ?? []).map((tool) => tool.name);
+    expect(dynamicNames).toContain("tasks_show");
+    expect(dynamicNames).not.toContain("agents_list");
+    expect(runtimeRequest.allowedTools).toEqual(["tasks_show"]);
+    expect(typeof runtimeRequest.handleRuntimeToolCall).toBe("function");
+  });
+});

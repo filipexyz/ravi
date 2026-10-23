@@ -125,3 +125,30 @@ describe("triggers-db replySession update path", () => {
     expect(reloaded?.onError).toBeUndefined();
   });
 });
+
+describe("triggers-db cooldown and debounce", () => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-triggers-db-debounce-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  it("defaults to a 5s cooldown and no debounce", () => {
+    const trigger = dbCreateTrigger({ name: "defaults", topic: "x.y", message: "m" });
+    expect(trigger.cooldownMs).toBe(5000);
+    expect(trigger.debounceMs).toBe(0);
+  });
+
+  it("stores a disabled cooldown and a debounce window, and updates them", () => {
+    const trigger = dbCreateTrigger({ name: "bus", topic: "x.y", message: "m", cooldownMs: 0, debounceMs: 2000 });
+    expect(dbGetTrigger(trigger.id)?.cooldownMs).toBe(0);
+    expect(dbGetTrigger(trigger.id)?.debounceMs).toBe(2000);
+
+    dbUpdateTrigger(trigger.id, { debounceMs: 0, cooldownMs: 1000 });
+    expect(dbGetTrigger(trigger.id)?.debounceMs).toBe(0);
+    expect(dbGetTrigger(trigger.id)?.cooldownMs).toBe(1000);
+  });
+});

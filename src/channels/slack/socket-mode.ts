@@ -362,6 +362,7 @@ export class SlackChatActionDelivery implements NativeChatActionDelivery {
       const card = buildSlackThreadCard(action.text, {
         status: "open",
         ...(action.requestedBy ? { requestedBy: action.requestedBy } : {}),
+        ...(action.runtime ? { runtime: action.runtime } : {}),
       });
       const result = await withThreadCardFallback(card, (blocks) =>
         this.webClient.postMessage({

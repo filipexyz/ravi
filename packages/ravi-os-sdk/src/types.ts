@@ -10102,6 +10102,30 @@ export type ContactsLinkInput = {
 /** Return shape for `contacts.link`. */
 export type ContactsLinkReturn = Record<string, unknown>;
 
+/** Input shape for `contacts.link-agent`. */
+export type ContactsLinkAgentInput = {
+  agent: string;
+  channel?: string;
+  id?: string;
+  instance?: string;
+  name?: string;
+  reason?: string;
+};
+
+/** Return shape for `contacts.link-agent`. */
+export type ContactsLinkAgentReturn = {
+  agent: string;
+  identity: {
+    channel: string;
+    id: string;
+    instanceId: string;
+    ownerId: string | null;
+    ownerType: string | null;
+    platformUserId: string;
+  };
+  status: "linked";
+};
+
 /** Input shape for `contacts.list`. */
 export type ContactsListInput = {
   fields?: string;
@@ -18981,17 +19005,23 @@ export type SessionsCloseThreadReturn = {
 
 /** Input shape for `sessions.create-thread`. */
 export type SessionsCreateThreadInput = {
+  effort?: string;
   message: string;
   model?: string;
+  provider?: string;
   session?: string;
+  thinking?: string;
 };
 
 /** Return shape for `sessions.create-thread`. */
 export type SessionsCreateThreadReturn = {
   actionId: "thread.create";
   child: {
+    effortOverride: string | null;
     modelOverride: string | null;
+    providerOverride: string | null;
     status: "pending_root_delivery";
+    thinkingLevel: string | null;
   };
   executionMode: "durable";
   idempotencyKey: string;
@@ -20028,6 +20058,22 @@ export type SessionsThreadSendReturn = {
       requested: boolean;
     };
     requestId: string;
+    runtime: {
+      effort: string;
+      effortSource: string;
+      model: string | null;
+      modelSource: string | null;
+      provider: string;
+      providerSource: string;
+      requested: {
+        effort: string | null;
+        model: string | null;
+        provider: string | null;
+        thinking: string | null;
+      };
+      thinking: string | null;
+      thinkingSource: string | null;
+    };
     slackThreadTs: string | null;
     source: "action" | "inbound";
     status: "queued" | "root_delivered" | "starting" | "open" | "closed" | "failed";
@@ -20060,6 +20106,22 @@ export type SessionsThreadsReturn = {
       requested: boolean;
     };
     requestId: string;
+    runtime: {
+      effort: string;
+      effortSource: string;
+      model: string | null;
+      modelSource: string | null;
+      provider: string;
+      providerSource: string;
+      requested: {
+        effort: string | null;
+        model: string | null;
+        provider: string | null;
+        thinking: string | null;
+      };
+      thinking: string | null;
+      thinkingSource: string | null;
+    };
     slackThreadTs: string | null;
     source: "action" | "inbound";
     status: "queued" | "root_delivered" | "starting" | "open" | "closed" | "failed";
@@ -22639,6 +22701,56 @@ export type TagsShowReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `tasks.answer`. */
+export type TasksAnswerInput = {
+  by?: string;
+  key?: string;
+  taskId: string;
+  text?: string;
+};
+
+/** Return shape for `tasks.answer`. */
+export type TasksAnswerReturn = {
+  created?: boolean;
+  decision: {
+    answer: string | null;
+    answeredAt: number | null;
+    answeredBy: string | null;
+    ask: string;
+    askedAt: number;
+    askedBy: string | null;
+    blocks: boolean;
+    createdAt: number;
+    id: string;
+    key: string;
+    ownerId: string | null;
+    ownerType: "human" | "agent" | "unassigned";
+    status: "open" | "answered" | "superseded";
+    taskId: string;
+    updatedAt: number;
+  };
+  event: {
+    actor?: string;
+    agentId?: string;
+    createdAt: number;
+    id: number;
+    message?: string;
+    progress?: number;
+    sessionName?: string;
+    taskId: string;
+    type: "task.decision.open" | "task.decision.answered";
+  };
+  task: {
+    assigneeAgentId?: string | null;
+    assigneeSessionName?: string | null;
+    id: string;
+    priority: string;
+    progress: number;
+    status: string;
+    title: string;
+  };
+};
+
 /** Input shape for `tasks.archive`. */
 export type TasksArchiveInput = {
   reason?: string;
@@ -22650,6 +22762,50 @@ export type TasksArchiveReturn = {
   event: Record<string, unknown>;
   task: Record<string, unknown>;
   [k: string]: unknown;
+};
+
+/** Input shape for `tasks.attention`. */
+export type TasksAttentionInput = {
+  agent?: string;
+  owner?: string;
+  task?: string;
+};
+
+/** Return shape for `tasks.attention`. */
+export type TasksAttentionReturn = {
+  decisionCount: number;
+  entries: Array<{
+    ageSeconds: number;
+    assigneeAgentId: string | null;
+    assigneeSessionName: string | null;
+    decisionCount: number;
+    decisions: Array<{
+      ageSeconds: number;
+      ask: string;
+      askedAt: number;
+      askedBy: string | null;
+      blocks: boolean;
+      id: string;
+      key: string;
+      ownerId: string | null;
+      ownerType: "human" | "agent" | "unassigned";
+    }>;
+    parked: boolean;
+    taskId: string;
+    taskPriority: string;
+    taskStatus: string;
+    taskTitle: string;
+    waitingFor: "human" | "agent" | "unassigned";
+  }>;
+  filters: {
+    agentId?: string;
+    ownerType?: "human" | "agent" | "unassigned";
+    taskId?: string;
+  };
+  generatedAt: number;
+  kind: "task.decision.attention";
+  parkedCount: number;
+  total: number;
 };
 
 /** Input shape for `tasks.automations.add`. */
@@ -22783,6 +22939,7 @@ export type TasksAutomationsShowReturn = {
 
 /** Input shape for `tasks.block`. */
 export type TasksBlockInput = {
+  idempotencyKey?: string;
   reason?: string;
   taskId: string;
 };
@@ -22797,6 +22954,7 @@ export type TasksBlockReturn = {
 /** Input shape for `tasks.comment`. */
 export type TasksCommentInput = {
   body: string;
+  idempotencyKey?: string;
   taskId: string;
 };
 
@@ -22844,6 +23002,57 @@ export type TasksCreateReturn = {
   task: Record<string, unknown>;
   taskProfile: Record<string, unknown>;
   [k: string]: unknown;
+};
+
+/** Input shape for `tasks.decide`. */
+export type TasksDecideInput = {
+  ask?: string;
+  blocks?: boolean;
+  key?: string;
+  owner?: string;
+  taskId: string;
+};
+
+/** Return shape for `tasks.decide`. */
+export type TasksDecideReturn = {
+  created?: boolean;
+  decision: {
+    answer: string | null;
+    answeredAt: number | null;
+    answeredBy: string | null;
+    ask: string;
+    askedAt: number;
+    askedBy: string | null;
+    blocks: boolean;
+    createdAt: number;
+    id: string;
+    key: string;
+    ownerId: string | null;
+    ownerType: "human" | "agent" | "unassigned";
+    status: "open" | "answered" | "superseded";
+    taskId: string;
+    updatedAt: number;
+  };
+  event: {
+    actor?: string;
+    agentId?: string;
+    createdAt: number;
+    id: number;
+    message?: string;
+    progress?: number;
+    sessionName?: string;
+    taskId: string;
+    type: "task.decision.open" | "task.decision.answered";
+  };
+  task: {
+    assigneeAgentId?: string | null;
+    assigneeSessionName?: string | null;
+    id: string;
+    priority: string;
+    progress: number;
+    status: string;
+    title: string;
+  };
 };
 
 /** Input shape for `tasks.deps.add`. */
@@ -22931,6 +23140,7 @@ export type TasksDispatchReturn = {
 
 /** Input shape for `tasks.done`. */
 export type TasksDoneInput = {
+  idempotencyKey?: string;
   summary?: string;
   taskId: string;
 };
@@ -22944,6 +23154,7 @@ export type TasksDoneReturn = {
 
 /** Input shape for `tasks.fail`. */
 export type TasksFailInput = {
+  idempotencyKey?: string;
   reason?: string;
   taskId: string;
 };
@@ -23073,6 +23284,8 @@ export type TasksProfilesValidateReturn = {
 
 /** Input shape for `tasks.report`. */
 export type TasksReportInput = {
+  checklist?: string;
+  idempotencyKey?: string;
   message?: string;
   progress?: string;
   taskId: string;
@@ -24003,6 +24216,7 @@ export type TriggersAddInput = {
   account?: string;
   agent?: string;
   cooldown?: string;
+  debounce?: string;
   envFile?: string;
   exec?: string;
   filter?: string;

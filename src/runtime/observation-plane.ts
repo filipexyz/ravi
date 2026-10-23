@@ -8,15 +8,6 @@ import { getSession, getSessionByName, type AgentConfig, type SessionEntry } fro
 import { dbGetAgent, dbListSessionParticipants, getDb, getRaviDbPath } from "../router/router-db.js";
 import { canonicalTagSlugsForAsset, dbGetTagDefinition } from "../tags/index.js";
 import type { TagAssetType } from "../tags/types.js";
-import {
-  buildTaskObserverPromptInput,
-  buildTaskObserverRule,
-  isTaskObserverRuleId,
-  resolveTaskObserverPolicy,
-  TASK_OBSERVER_RULE_ID,
-} from "../tasks/observer-contract.js";
-import { dbGetTask, dbResolveActiveTaskBindingForSession } from "../tasks/task-db.js";
-import type { TaskRecord } from "../tasks/types.js";
 import { logger } from "../utils/logger.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import { validateRuntimeModelSelector } from "./model-validation.js";
@@ -53,6 +44,25 @@ const OBSERVER_TAG_TARGET_TYPES = new Set<ObserverTagTargetType>([
 ]);
 const DEFAULT_EVENT_TYPES = ["message.user", "message.assistant", "turn.complete", "turn.failed", "turn.interrupt"];
 const DEFAULT_DEBOUNCE_MS = 1000;
+
+/**
+ * Hard tool allowlist for one observation turn.
+ *
+ * Observer rules grant exact tools (`use:tool:tasks_show`, ...). The capability
+ * gate alone is not enough: a provider with native tools (Pi: bash/edit) can
+ * still call them when the agent ceiling allows it, which is how the task
+ * observer ended up shelling out instead of calling its granted tools.
+ * Returning the granted tool names lets the provider narrow its catalog.
+ */
+export function resolveObservationAllowedTools(permissionGrants: readonly string[] | undefined): string[] | undefined {
+  const tools = (permissionGrants ?? [])
+    .map((grant) => grant.trim())
+    .filter((grant) => grant.startsWith("use:tool:"))
+    .map((grant) => grant.slice("use:tool:".length).trim())
+    .filter((tool) => tool.length > 0 && !tool.includes("*"));
+  if (tools.length === 0) return undefined;
+  return [...new Set(tools)].sort();
+}
 
 export interface ObserverRule {
   id: string;
@@ -1118,8 +1128,8 @@ export function buildObservationSourceDescriptor(input: {
   prompt?: RuntimeLaunchPrompt;
 }): ObservationSourceDescriptor {
   const sourceSessionName = input.session.name ?? input.sessionName;
-  const activeTask = dbResolveActiveTaskBindingForSession(sourceSessionName, input.prompt?.taskBarrierTaskId);
-  const task = activeTask?.task;
+  // The task id is provenance carried by the prompt; the observer plane does not read task state.
+  const taskId = input.prompt?.taskBarrierTaskId?.trim() || undefined;
   const contactIds = resolveSessionContactIds(input.session);
   const promptSource = input.prompt?.source;
   const promptContext = input.prompt?.context;
@@ -1129,8 +1139,6 @@ export function buildObservationSourceDescriptor(input: {
       ? collectTagsForTarget("session", input.session.sessionKey)
       : []),
     ...collectTagsForTarget("agent", input.agentId ?? input.session.agentId, true),
-    ...collectTagsForTarget("task", task?.id, true),
-    ...collectTagsForTarget("profile", task?.profileId, true),
     ...contactIds.flatMap((contactId) => collectTagsForTarget("contact", contactId)),
   ]);
 
@@ -1138,8 +1146,7 @@ export function buildObservationSourceDescriptor(input: {
     sessionKey: input.session.sessionKey,
     sessionName: sourceSessionName,
     agentId: input.agentId ?? input.session.agentId,
-    ...(task?.id ? { taskId: task.id } : {}),
-    ...(task?.profileId ? { profileId: task.profileId } : {}),
+    ...(taskId ? { taskId } : {}),
     ...(contactIds.length > 0 ? { contactIds } : {}),
     ...((promptSource?.channel ?? input.session.channel ?? input.session.lastChannel)
       ? { channel: promptSource?.channel ?? input.session.channel ?? input.session.lastChannel }
@@ -1338,56 +1345,15 @@ export function ensureObserverBindingsForSession(input: {
     if (result.created) created.push(result.binding);
   }
 
-  const builtin = resolveBuiltinTaskObserverRule({ source, agent: input.agent, bindings, usedRoles });
-  if (builtin.rule) {
-    const result = upsertObserverBinding({
-      source,
-      rule: builtin.rule,
-      match: { matched: true, reason: "builtin_task_observer" },
-    });
-    bindings.push(result.binding);
-    if (result.created) created.push(result.binding);
-  } else {
-    // A session without a task has nothing to explain; one with a task says why it has no observer.
-    if (builtin.reason !== "no_active_task") skipped.push({ ruleId: TASK_OBSERVER_RULE_ID, reason: builtin.reason });
-    disableStaleBuiltinTaskObserverBinding(source.sessionKey);
-  }
-
   return { source, bindings, created, skipped };
 }
 
-/**
- * Every task whose profile turns the observer on gets one, without a stored
- * rule. A user rule in report mode already owns status for the session, so the
- * built-in observer stays out of its way instead of reporting twice.
- */
-function resolveBuiltinTaskObserverRule(input: {
-  source: ObservationSourceDescriptor;
-  agent?: AgentConfig;
-  bindings: ObserverBinding[];
-  usedRoles: Set<string>;
-}): { rule: ObserverRule; reason?: undefined } | { rule?: undefined; reason: string } {
-  if (!input.source.taskId) return { reason: "no_active_task" };
-  const task = dbGetTask(input.source.taskId);
-  if (!task) return { reason: "task_not_found" };
-  const agent = input.agent ?? dbGetAgent(input.source.agentId) ?? undefined;
-  const policy = resolveTaskObserverPolicy(task, agent);
-  if (!policy.enabled) return { reason: "task_profile_without_observer" };
-  if (input.bindings.some((binding) => binding.observerMode === "report")) {
-    return { reason: "user_report_observer" };
-  }
-  const rule = buildTaskObserverRule({ agentId: input.source.agentId, model: policy.model });
-  if (input.usedRoles.has(rule.observerRole)) return { reason: "duplicate_role" };
-  return { rule };
-}
-
-function disableStaleBuiltinTaskObserverBinding(sourceSessionKey: string): void {
-  for (const binding of dbListObserverBindings({ sourceSessionKey, enabled: true })) {
-    if (!isTaskObserverRuleId(binding.ruleId)) continue;
-    getDb()
-      .prepare("UPDATE observer_bindings SET enabled = 0, updated_at = ? WHERE id = ?")
-      .run(Date.now(), binding.id);
-  }
+/** Disable every binding a rule created, e.g. when an observed task reaches a terminal state. */
+export function dbDisableObserverBindingsForRule(ruleId: string): number {
+  ensureObservationSchema();
+  return getDb()
+    .prepare("UPDATE observer_bindings SET enabled = 0, updated_at = ? WHERE rule_id = ? AND enabled = 1")
+    .run(Date.now(), ruleId.trim()).changes;
 }
 
 /** Reconcile durable bindings against the current rule/profile desired state. */
@@ -1498,6 +1464,7 @@ function composeObservationPrompt(input: {
   source: ObservationSourceDescriptor;
   events: ObservationEvent[];
   runId?: string;
+  deliveryId?: string;
   input?: Record<string, unknown>;
 }): string {
   const profile = input.binding.observerProfileSnapshotMarkdown
@@ -1509,7 +1476,8 @@ function composeObservationPrompt(input: {
     binding: input.binding,
     events: input.events,
     deliveryPolicy: input.binding.deliveryPolicy,
-    runId: input.runId,
+    ...(input.runId ? { runId: input.runId } : {}),
+    ...(input.deliveryId ? { deliveryId: input.deliveryId } : {}),
     ...(input.input ? { input: input.input } : {}),
   });
 }
@@ -1597,11 +1565,6 @@ export async function deliverObservationEvents(input: {
   const skipped: Array<{ bindingId: string; reason: string }> = [];
   const deliveryPolicies = input.deliveryPolicies ? new Set(input.deliveryPolicies) : undefined;
   const pulse = input.pulse === true;
-  let sourceTask: TaskRecord | null | undefined;
-  const loadSourceTask = (): TaskRecord | null => {
-    if (sourceTask === undefined) sourceTask = source.taskId ? dbGetTask(source.taskId) : null;
-    return sourceTask;
-  };
 
   for (const binding of bindings) {
     if (pulse && bindingPulseMs(binding) === null) {
@@ -1612,19 +1575,6 @@ export async function deliverObservationEvents(input: {
     if (exclusionReason) {
       skipped.push({ bindingId: binding.id, reason: exclusionReason });
       continue;
-    }
-    const builtinTaskObserver = isTaskObserverRuleId(binding.ruleId);
-    if (builtinTaskObserver) {
-      // The binding outlives the task on its session; it reads only while an observed task is active.
-      const task = loadSourceTask();
-      if (!task) {
-        skipped.push({ bindingId: binding.id, reason: "no_active_task" });
-        continue;
-      }
-      if (!resolveTaskObserverPolicy(task).enabled) {
-        skipped.push({ bindingId: binding.id, reason: "task_profile_without_observer" });
-        continue;
-      }
     }
     const selected = input.events.filter((event) => bindingAllowsEvent(binding, source, event, deliveryPolicies));
     if (selected.length === 0) {
@@ -1642,15 +1592,14 @@ export async function deliverObservationEvents(input: {
     }
 
     const trigger = resolveDeliveryTrigger(binding, deliveryPolicies, pulse);
-    const task = loadSourceTask();
+    const deliveryId = `od_${hashParts([binding.id, trigger, input.runId, ...claimed.map((event) => event.id)], 24)}`;
     const prompt = composeObservationPrompt({
       binding,
       source,
       events: bindingReadsDetail(binding) ? claimed : stripObservationDetail(claimed),
-      runId: input.runId,
-      ...(task ? { input: buildTaskObserverPromptInput(task, trigger) } : {}),
+      ...(input.runId ? { runId: input.runId } : {}),
+      deliveryId,
     });
-    const deliveryId = `od_${hashParts([binding.id, trigger, input.runId, ...claimed.map((event) => event.id)], 24)}`;
     const sourceTurnIds = [
       ...new Set(claimed.map((event) => event.turnId).filter((id): id is string => Boolean(id))),
     ].sort();

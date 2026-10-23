@@ -9803,6 +9803,56 @@ typedef ContactsLinkReturn = Map<String, RaviJson>;
 
 ContactsLinkReturn contactsLinkReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
 
+class ContactsLinkAgentOptions {
+  const ContactsLinkAgentOptions({this.channel, this.id, this.instance, this.name, this.reason});
+
+  final String? channel;
+  final String? id;
+  final String? instance;
+  final String? name;
+  final String? reason;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (channel != null) {
+      into["channel"] = RaviJson.from(channel);
+    }
+    if (id != null) {
+      into["id"] = RaviJson.from(id);
+    }
+    if (instance != null) {
+      into["instance"] = RaviJson.from(instance);
+    }
+    if (name != null) {
+      into["name"] = RaviJson.from(name);
+    }
+    if (reason != null) {
+      into["reason"] = RaviJson.from(reason);
+    }
+  }
+}
+
+class ContactsLinkAgentReturn {
+  const ContactsLinkAgentReturn({required this.agent, required this.identity, required this.status});
+
+  final String agent;
+  final RaviJson identity;
+  final String status;
+
+  factory ContactsLinkAgentReturn.fromJson(Map<String, Object?> json) {
+    return ContactsLinkAgentReturn(
+      agent: raviJsonAsString(json["agent"]),
+      identity: RaviJson.from(json["identity"]),
+      status: raviJsonAsString(json["status"]),
+    );
+  }
+
+  static ContactsLinkAgentReturn fromJsonValue(Object? json) {
+    return ContactsLinkAgentReturn.fromJson(raviJsonObject(json, "ContactsLinkAgentReturn"));
+  }
+}
+
+ContactsLinkAgentReturn contactsLinkAgentReturnFromJson(Object? json) => ContactsLinkAgentReturn.fromJsonValue(json);
+
 class ContactsListOptions {
   const ContactsListOptions({this.fields, this.limit, this.offset, this.status});
 
@@ -23290,17 +23340,29 @@ class SessionsCloseThreadReturn {
 SessionsCloseThreadReturn sessionsCloseThreadReturnFromJson(Object? json) => SessionsCloseThreadReturn.fromJsonValue(json);
 
 class SessionsCreateThreadOptions {
-  const SessionsCreateThreadOptions({this.model, this.session});
+  const SessionsCreateThreadOptions({this.effort, this.model, this.provider, this.session, this.thinking});
 
+  final String? effort;
   final String? model;
+  final String? provider;
   final String? session;
+  final String? thinking;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (effort != null) {
+      into["effort"] = RaviJson.from(effort);
+    }
     if (model != null) {
       into["model"] = RaviJson.from(model);
     }
+    if (provider != null) {
+      into["provider"] = RaviJson.from(provider);
+    }
     if (session != null) {
       into["session"] = RaviJson.from(session);
+    }
+    if (thinking != null) {
+      into["thinking"] = RaviJson.from(thinking);
     }
   }
 }
@@ -29273,6 +29335,50 @@ class TagsShowReturn {
 
 TagsShowReturn tagsShowReturnFromJson(Object? json) => TagsShowReturn.fromJsonValue(json);
 
+class TasksAnswerOptions {
+  const TasksAnswerOptions({this.by, this.key, this.text});
+
+  final String? by;
+  final String? key;
+  final String? text;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (by != null) {
+      into["by"] = RaviJson.from(by);
+    }
+    if (key != null) {
+      into["key"] = RaviJson.from(key);
+    }
+    if (text != null) {
+      into["text"] = RaviJson.from(text);
+    }
+  }
+}
+
+class TasksAnswerReturn {
+  const TasksAnswerReturn({this.created, required this.decision, required this.event, required this.task});
+
+  final bool? created;
+  final RaviJson decision;
+  final RaviJson event;
+  final RaviJson task;
+
+  factory TasksAnswerReturn.fromJson(Map<String, Object?> json) {
+    return TasksAnswerReturn(
+      created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
+      decision: RaviJson.from(json["decision"]),
+      event: RaviJson.from(json["event"]),
+      task: RaviJson.from(json["task"]),
+    );
+  }
+
+  static TasksAnswerReturn fromJsonValue(Object? json) {
+    return TasksAnswerReturn.fromJson(raviJsonObject(json, "TasksAnswerReturn"));
+  }
+}
+
+TasksAnswerReturn tasksAnswerReturnFromJson(Object? json) => TasksAnswerReturn.fromJsonValue(json);
+
 class TasksArchiveOptions {
   const TasksArchiveOptions({this.reason});
 
@@ -29304,6 +29410,56 @@ class TasksArchiveReturn {
 }
 
 TasksArchiveReturn tasksArchiveReturnFromJson(Object? json) => TasksArchiveReturn.fromJsonValue(json);
+
+class TasksAttentionOptions {
+  const TasksAttentionOptions({this.agent, this.owner, this.task});
+
+  final String? agent;
+  final String? owner;
+  final String? task;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (agent != null) {
+      into["agent"] = RaviJson.from(agent);
+    }
+    if (owner != null) {
+      into["owner"] = RaviJson.from(owner);
+    }
+    if (task != null) {
+      into["task"] = RaviJson.from(task);
+    }
+  }
+}
+
+class TasksAttentionReturn {
+  const TasksAttentionReturn({required this.decisionCount, required this.entries, required this.filters, required this.generatedAt, required this.kind, required this.parkedCount, required this.total});
+
+  final double decisionCount;
+  final List<RaviJson> entries;
+  final RaviJson filters;
+  final double generatedAt;
+  final String kind;
+  final double parkedCount;
+  final double total;
+
+  factory TasksAttentionReturn.fromJson(Map<String, Object?> json) {
+    return TasksAttentionReturn(
+      decisionCount: raviJsonAsDouble(json["decisionCount"]),
+      entries: raviJsonAsList(json["entries"], RaviJson.from),
+      filters: RaviJson.from(json["filters"]),
+      generatedAt: raviJsonAsDouble(json["generatedAt"]),
+      kind: raviJsonAsString(json["kind"]),
+      parkedCount: raviJsonAsDouble(json["parkedCount"]),
+      total: raviJsonAsDouble(json["total"]),
+    );
+  }
+
+  static TasksAttentionReturn fromJsonValue(Object? json) {
+    return TasksAttentionReturn.fromJson(raviJsonObject(json, "TasksAttentionReturn"));
+  }
+}
+
+TasksAttentionReturn tasksAttentionReturnFromJson(Object? json) => TasksAttentionReturn.fromJsonValue(json);
 
 class TasksAutomationsAddOptions {
   const TasksAutomationsAddOptions({this.agent, this.checkpoint, this.detached, this.disabled, this.filter, this.freshCheckpoint, this.freshReportEvents, this.freshReportTo, this.freshWorktree, this.input, this.instructions, this.on, this.priority, this.profile, this.reportEvents, this.reportTo, this.session, this.title});
@@ -29560,11 +29716,15 @@ class TasksAutomationsShowReturn {
 TasksAutomationsShowReturn tasksAutomationsShowReturnFromJson(Object? json) => TasksAutomationsShowReturn.fromJsonValue(json);
 
 class TasksBlockOptions {
-  const TasksBlockOptions({this.reason});
+  const TasksBlockOptions({this.idempotencyKey, this.reason});
 
+  final String? idempotencyKey;
   final String? reason;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
+    }
     if (reason != null) {
       into["reason"] = RaviJson.from(reason);
     }
@@ -29590,6 +29750,18 @@ class TasksBlockReturn {
 }
 
 TasksBlockReturn tasksBlockReturnFromJson(Object? json) => TasksBlockReturn.fromJsonValue(json);
+
+class TasksCommentOptions {
+  const TasksCommentOptions({this.idempotencyKey});
+
+  final String? idempotencyKey;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
+    }
+  }
+}
 
 class TasksCommentReturn {
   const TasksCommentReturn({required this.comment, required this.event, required this.task});
@@ -29730,6 +29902,54 @@ class TasksCreateReturn {
 }
 
 TasksCreateReturn tasksCreateReturnFromJson(Object? json) => TasksCreateReturn.fromJsonValue(json);
+
+class TasksDecideOptions {
+  const TasksDecideOptions({this.ask, this.blocks, this.key, this.owner});
+
+  final String? ask;
+  final bool? blocks;
+  final String? key;
+  final String? owner;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (ask != null) {
+      into["ask"] = RaviJson.from(ask);
+    }
+    if (blocks != null) {
+      into["blocks"] = RaviJson.from(blocks);
+    }
+    if (key != null) {
+      into["key"] = RaviJson.from(key);
+    }
+    if (owner != null) {
+      into["owner"] = RaviJson.from(owner);
+    }
+  }
+}
+
+class TasksDecideReturn {
+  const TasksDecideReturn({this.created, required this.decision, required this.event, required this.task});
+
+  final bool? created;
+  final RaviJson decision;
+  final RaviJson event;
+  final RaviJson task;
+
+  factory TasksDecideReturn.fromJson(Map<String, Object?> json) {
+    return TasksDecideReturn(
+      created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
+      decision: RaviJson.from(json["decision"]),
+      event: RaviJson.from(json["event"]),
+      task: RaviJson.from(json["task"]),
+    );
+  }
+
+  static TasksDecideReturn fromJsonValue(Object? json) {
+    return TasksDecideReturn.fromJson(raviJsonObject(json, "TasksDecideReturn"));
+  }
+}
+
+TasksDecideReturn tasksDecideReturnFromJson(Object? json) => TasksDecideReturn.fromJsonValue(json);
 
 class TasksDepsAddReturn {
   const TasksDepsAddReturn({required this.event, required this.task});
@@ -29916,11 +30136,15 @@ class TasksDispatchReturn {
 TasksDispatchReturn tasksDispatchReturnFromJson(Object? json) => TasksDispatchReturn.fromJsonValue(json);
 
 class TasksDoneOptions {
-  const TasksDoneOptions({this.summary});
+  const TasksDoneOptions({this.idempotencyKey, this.summary});
 
+  final String? idempotencyKey;
   final String? summary;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
+    }
     if (summary != null) {
       into["summary"] = RaviJson.from(summary);
     }
@@ -29948,11 +30172,15 @@ class TasksDoneReturn {
 TasksDoneReturn tasksDoneReturnFromJson(Object? json) => TasksDoneReturn.fromJsonValue(json);
 
 class TasksFailOptions {
-  const TasksFailOptions({this.reason});
+  const TasksFailOptions({this.idempotencyKey, this.reason});
 
+  final String? idempotencyKey;
   final String? reason;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
+    }
     if (reason != null) {
       into["reason"] = RaviJson.from(reason);
     }
@@ -30264,12 +30492,20 @@ class TasksProfilesValidateReturn {
 TasksProfilesValidateReturn tasksProfilesValidateReturnFromJson(Object? json) => TasksProfilesValidateReturn.fromJsonValue(json);
 
 class TasksReportOptions {
-  const TasksReportOptions({this.message, this.progress});
+  const TasksReportOptions({this.checklist, this.idempotencyKey, this.message, this.progress});
 
+  final String? checklist;
+  final String? idempotencyKey;
   final String? message;
   final String? progress;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (checklist != null) {
+      into["checklist"] = RaviJson.from(checklist);
+    }
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
+    }
     if (message != null) {
       into["message"] = RaviJson.from(message);
     }
@@ -31432,11 +31668,12 @@ class TranscribeFileReturn {
 TranscribeFileReturn transcribeFileReturnFromJson(Object? json) => TranscribeFileReturn.fromJsonValue(json);
 
 class TriggersAddOptions {
-  const TriggersAddOptions({this.account, this.agent, this.cooldown, this.envFile, this.exec, this.filter, this.message, this.onError, this.replySession, this.session, this.shell, this.timeout, this.topic});
+  const TriggersAddOptions({this.account, this.agent, this.cooldown, this.debounce, this.envFile, this.exec, this.filter, this.message, this.onError, this.replySession, this.session, this.shell, this.timeout, this.topic});
 
   final String? account;
   final String? agent;
   final String? cooldown;
+  final String? debounce;
   final String? envFile;
   final String? exec;
   final String? filter;
@@ -31457,6 +31694,9 @@ class TriggersAddOptions {
     }
     if (cooldown != null) {
       into["cooldown"] = RaviJson.from(cooldown);
+    }
+    if (debounce != null) {
+      into["debounce"] = RaviJson.from(debounce);
     }
     if (envFile != null) {
       into["envFile"] = RaviJson.from(envFile);
