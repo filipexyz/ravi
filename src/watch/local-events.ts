@@ -119,6 +119,9 @@ export const PULL_REQUEST_COMMENT_EVENT = "pull_request_comment.created";
 /** Corpo de comentário não é canal de transporte: o evento carrega o suficiente. */
 const MAX_COMMENT_BODY_CHARS = 1_200;
 
+/** Teto do mapa de comentários já vistos, podado pelos mais antigos. */
+const MAX_COMMENT_STATE_ENTRIES = 500;
+
 const WORKFLOW_OUTCOME_EVENTS: Record<string, string> = {
   success: "workflow_run.succeeded",
   failure: "workflow_run.failed",
@@ -276,15 +279,25 @@ export function deriveLocalGitHubEvents(repo: string, input: DeriveLocalEventsIn
  * Estado de comentários do próximo snapshot.
  *
  * Sem leitura neste tick, o mapa anterior fica: apagar faria o próximo tick ler
- * tudo como novo. O mapa é substituído (não acumulado) porque a leitura é uma
- * janela recente: guardar além dela só cresceria o arquivo sem servir pra nada.
+ * tudo como novo. A leitura é uma janela recente, mas o mapa é acumulado
+ * (não substituído): um comentário que sai da janela — PR fechado, por exemplo —
+ * voltaria como novo quando reaparecesse. Para não crescer sem limite, o mapa é
+ * podado pelos mais antigos.
  */
 function commentState(
   observed: LocalCommentObservation[] | undefined,
   previous: Record<string, LocalCommentState> | undefined,
 ): Pick<LocalWatchSnapshot, "comments"> {
   if (!observed) return previous ? { comments: previous } : {};
-  const comments: Record<string, LocalCommentState> = {};
+  const comments: Record<string, LocalCommentState> = { ...previous };
   for (const comment of observed) comments[comment.key] = { updatedAt: comment.updatedAt };
-  return { comments };
+  return { comments: pruneCommentState(comments) };
+}
+
+/** Mantém os N comentários mais recentes: o resto já não pode reaparecer na janela. */
+function pruneCommentState(comments: Record<string, LocalCommentState>): Record<string, LocalCommentState> {
+  const entries = Object.entries(comments);
+  if (entries.length <= MAX_COMMENT_STATE_ENTRIES) return comments;
+  entries.sort((left, right) => (right[1].updatedAt ?? "").localeCompare(left[1].updatedAt ?? ""));
+  return Object.fromEntries(entries.slice(0, MAX_COMMENT_STATE_ENTRIES));
 }

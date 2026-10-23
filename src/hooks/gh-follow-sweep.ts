@@ -300,7 +300,14 @@ export async function runGhFollowMaintenance(deps: GhFollowMaintenanceDeps = {})
   // eventos chegar em acompanhamentos antigos.
   for (const repo of inUseRepos) {
     try {
-      await ensureWatches(repo);
+      const ensured = (await ensureWatches(repo)) as { ciWatchId?: string | null } | undefined;
+      // Criar o watch pode falhar sem lançar (o reconciliador engole o erro e
+      // devolve ciWatchId nulo). Contar isso como sucesso esconderia o repo mudo.
+      if (ensured && "ciWatchId" in ensured && !ensured.ciWatchId) {
+        log.warn("Repo follow still has no local watch", { repo });
+        result.errors += 1;
+        continue;
+      }
       result.watchesEnsured += 1;
     } catch (error) {
       log.warn("Could not ensure watches for followed repo", { repo, error });

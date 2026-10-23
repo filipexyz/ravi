@@ -349,6 +349,31 @@ describe("gh watch follow", () => {
     expect(removed).toEqual([]);
   });
 
+  it("does not reactivate a disabled local watch that belongs to the user", async () => {
+    const created: string[] = [];
+    const disabled = watch({
+      id: "local_user_off",
+      placement: "local",
+      status: "disabled",
+      eventTypes: LOCAL_TYPES,
+      filters: {},
+    });
+
+    const result = await ensureRepoWatch("o/r", {
+      // O id do watch local é derivado de repo + eventos: criar aqui encontraria
+      // essa mesma linha e a traria de volta como ativa.
+      listWatches: (input) => ({ items: input?.status === "all" ? [disabled] : [], total: 1 }) as never,
+      localEventTypes: () => LOCAL_TYPES,
+      createWatch: async (input) => {
+        if (input.placement === "local") created.push("local");
+        return { watch: watch({ id: "local_new", placement: "local" }), createdRemote: false };
+      },
+    });
+
+    expect(created).toEqual([]);
+    expect(result.ciWatchId).toBeNull();
+  });
+
   it("requests exactly the locally supported event types for the CI watch", async () => {
     const requested: string[][] = [];
     await ensureRepoWatch("o/r", {
@@ -465,6 +490,30 @@ describe("gh watch follow", () => {
     );
     expect(second.triggerReused).toBe(true);
     expect(created).toHaveLength(1);
+  });
+
+  it("refreshes the instructions of an existing follow", async () => {
+    const updates: Array<{ id: string; patch: Record<string, unknown> }> = [];
+    const stale = trigger({ message: "Activity on o/r#7. Tell the user what changed.", filter: "old" });
+
+    const result = await ensureGhWatchFollow(
+      { repo: "o/r", prNumber: 7, context: { sessionName: "dev" } },
+      {
+        listWatches: () => ({ items: [watch()] }) as never,
+        listTriggers: () => [stale],
+        updateTrigger: (id, patch) => {
+          updates.push({ id, patch: patch as Record<string, unknown> });
+          return true;
+        },
+      },
+    );
+
+    // Sem isso, acompanhamentos antigos seguem com o texto velho e nunca passam a
+    // considerar comentário, mesmo recebendo o evento.
+    expect(result.triggerRepaired).toBe(true);
+    expect(updates).toHaveLength(1);
+    expect(String(updates[0].patch.message)).toContain("comment");
+    expect(updates[0].patch.filter).toBe(ghFollowFilter("o/r", 7));
   });
 
   it("does not create a trigger without a PR number", async () => {

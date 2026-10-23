@@ -457,4 +457,19 @@ describe("gh follow maintenance", () => {
     expect(result.triggersRemoved).toBe(0);
     expect(result.errors).toBe(1);
   });
+
+  it("does not count a repair that produced no watch as ensured", async () => {
+    const result = await runMaintenance({
+      readPending: () => [],
+      listTriggers: () => [trigger("gh-follow:o/r#1", "t1")],
+      listPrStates: () => new Map(),
+      listWatches: () => [],
+      // O reconciliador engole a falha de criação e devolve ciWatchId nulo; sem
+      // isso o sweep diria que garantiu o watch e o repo seguiria mudo.
+      ensureWatches: async () => ({ ciWatchId: null, ciWatchReused: false }),
+    });
+
+    expect(result.watchesEnsured).toBe(0);
+    expect(result.errors).toBe(1);
+  });
 });

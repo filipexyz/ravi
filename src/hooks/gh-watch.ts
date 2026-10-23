@@ -20,7 +20,13 @@ import { execFileSync } from "node:child_process";
 import { isAbsolute, resolve as resolvePath } from "node:path";
 import { dbGetAgent } from "../router/router-db.js";
 import type { ContextSource } from "../router/router-db.js";
-import { dbCreateTrigger, dbListTriggers, type Trigger, type TriggerInput } from "../triggers/index.js";
+import {
+  dbCreateTrigger,
+  dbListTriggers,
+  dbUpdateTrigger,
+  type Trigger,
+  type TriggerInput,
+} from "../triggers/index.js";
 import type { TriggerReplySource } from "../triggers/types.js";
 import { logger } from "../utils/logger.js";
 import {
@@ -119,6 +125,8 @@ export interface GhWatchFollowResult {
   ciWatchReused?: boolean;
   triggerId?: string;
   triggerReused?: boolean;
+  /** Acompanhamento antigo que recebeu instrução/filtro atualizados nesta passagem. */
+  triggerRepaired?: boolean;
   triggerSkipped?: "no_pr_number";
 }
 
@@ -127,6 +135,7 @@ export interface GhWatchFollowDeps {
   createWatch?: typeof createWatch;
   listTriggers?: () => Trigger[];
   createTrigger?: (input: TriggerInput) => Trigger;
+  updateTrigger?: (id: string, patch: Partial<TriggerInput>) => boolean | Trigger | null;
   emitTriggersRefresh?: () => Promise<void>;
   resolveAccountForAgent?: (agentId: string) => string | undefined;
 }
@@ -680,10 +689,39 @@ function listActiveRepoWatches(repo: string, listWatches: typeof listWatchRecord
   }
 }
 
+/**
+ * Watch local desativado do mesmo repo que cobre os mesmos eventos e não é do
+ * follow.
+ *
+ * Criar o watch aqui o traria de volta como `active` e trocaria os filtros dele:
+ * o id local é derivado de repo + eventos, então o upsert encontra essa linha.
+ * Depois o sweep de órfãos poderia apagá-la. Desativado por outra pessoa não é
+ * nosso para religar.
+ */
+function findForeignInactiveLocalWatch(
+  repo: string,
+  localEventTypes: string[],
+  listWatches: typeof listWatchRecords,
+): WatchRecord | undefined {
+  try {
+    return listWatches({ provider: "github", status: "all", limit: 200 }).items.find(
+      (watch) =>
+        watch.resourceRef === repo &&
+        watch.placement === "local" &&
+        watch.status !== "active" &&
+        !isGhFollowManagedWatch(watch) &&
+        coversLocalEventTypes(watch, localEventTypes),
+    );
+  } catch (error) {
+    log.warn("Could not list watches while checking disabled local watches", { repo, error });
+    return undefined;
+  }
+}
+
 async function reconcileLocalWatch(
   repo: string,
   activeWatches: WatchRecord[],
-  deps: Pick<GhWatchFollowDeps, "createWatch"> & {
+  deps: Pick<GhWatchFollowDeps, "createWatch" | "listWatches"> & {
     localEventTypes?: () => string[];
     removeWatch?: (id: string) => Promise<boolean>;
   },
@@ -707,6 +745,22 @@ async function reconcileLocalWatch(
   let ciWatchReused = Boolean(reusableLocal);
   if (!reusableLocal) {
     if (localEventTypes.length > 0) {
+      // O id do watch local é derivado de repo + eventos, então criar aqui
+      // reativaria uma linha desativada de outra pessoa e trocaria os filtros
+      // dela: o sweep de órfãos poderia apagar em seguida. Watch desativado que
+      // não carrega a nossa marca não é nosso para religar.
+      const foreignInactive = findForeignInactiveLocalWatch(
+        repo,
+        localEventTypes,
+        deps.listWatches ?? listWatchRecords,
+      );
+      if (foreignInactive) {
+        log.warn("Local watch for this repo is disabled and belongs to the user; not taking it over", {
+          repo,
+          watchId: foreignInactive.id,
+        });
+        return { ciWatchId: null, ciWatchReused: false };
+      }
       try {
         const created = await create({
           provider: "github",
@@ -762,6 +816,18 @@ export async function ensureGhWatchFollow(
   if (existing) {
     result.triggerId = existing.id;
     result.triggerReused = true;
+    // A instrução envelhece: quando a declaração de eventos cresce (comentário),
+    // o trigger antigo continua mandando o agente ler só ciclo de vida e CI. Sem
+    // atualizar aqui, acompanhamentos existentes nunca recebem o texto novo.
+    const desired = buildGhFollowTriggerInput(input.repo, input.prNumber, context);
+    if (existing.message !== desired.message || existing.filter !== desired.filter) {
+      try {
+        (deps.updateTrigger ?? dbUpdateTrigger)(existing.id, { message: desired.message, filter: desired.filter });
+        result.triggerRepaired = true;
+      } catch (error) {
+        log.warn("Could not refresh gh follow instructions", { triggerId: existing.id, error });
+      }
+    }
     return result;
   }
 

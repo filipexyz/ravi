@@ -263,4 +263,57 @@ describe("local github watch events", () => {
     expect(result.events).toEqual([]);
     expect(result.snapshot.comments).toEqual({ "issue:9": { updatedAt: "x" } });
   });
+
+  it("does not replay a comment that left the recent window and came back", () => {
+    const current = snapshotWith({ pullRequests: [{ number: 1 }] });
+    const baseline = deriveLocalGitHubEvents("o/r", {
+      previous: null,
+      current,
+      departed: {},
+      comments: [comment()],
+    });
+
+    // PR fecha: o comentário sai da janela recente e o próximo snapshot não o vê.
+    const withoutComments = deriveLocalGitHubEvents("o/r", {
+      previous: baseline.snapshot,
+      current,
+      departed: {},
+      comments: [],
+    });
+    expect(Object.keys(withoutComments.snapshot.comments ?? {})).toEqual(["issue:9"]);
+
+    // PR reabre e o mesmo comentário reaparece na janela: não é comentário novo.
+    const reopened = deriveLocalGitHubEvents("o/r", {
+      previous: withoutComments.snapshot,
+      current,
+      departed: {},
+      comments: [comment({ updatedAt: "2026-10-22T21:00:00Z" })],
+    });
+    expect(reopened.events).toEqual([]);
+  });
+
+  it("bounds the comment state by dropping the oldest entries", () => {
+    const current = snapshotWith({ pullRequests: [{ number: 1 }] });
+    const previous: LocalWatchSnapshot = {
+      ...current,
+      comments: Object.fromEntries(
+        Array.from({ length: 520 }, (_, index) => [
+          `issue:${1000 + index}`,
+          { updatedAt: `2026-10-22T00:00:${String(index % 60).padStart(2, "0")}Z` },
+        ]),
+      ),
+    };
+
+    const result = deriveLocalGitHubEvents("o/r", {
+      previous,
+      current,
+      departed: {},
+      comments: [comment({ updatedAt: "2026-10-22T23:00:00Z" })],
+    });
+
+    const keys = Object.keys(result.snapshot.comments ?? {});
+    expect(keys.length).toBe(500);
+    // O recém-visto sobrevive à poda.
+    expect(keys).toContain("issue:9");
+  });
 });
