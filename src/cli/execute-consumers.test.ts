@@ -38,6 +38,20 @@ const executeConsumers: readonly ExecuteConsumer[] = [
     matches: 1,
   },
   {
+    name: "cloud run question hint in run show and follow",
+    path: "src/cli/commands/cloud-agents.ts",
+    marker: "Answer:  ravi cloud runs answer",
+    expected: "--execute",
+    matches: 1,
+  },
+  {
+    name: "cloud run question relayed to a delivery session",
+    path: "src/cloud-agents/chat-copy.ts",
+    marker: "ravi cloud runs answer",
+    expected: "--execute",
+    matches: 1,
+  },
+  {
     name: "cloud deploy next-step hint",
     path: "src/cli/commands/cloud-agents.ts",
     marker: "Run it: ravi cloud runs start",
@@ -644,6 +658,11 @@ const executeInstructions = [
     name: "Cloud runs approve help",
     path: "src/cli/commands/cloud-agents.ts",
     instruction: "ravi cloud runs approve <run> <approval> --execute",
+  },
+  {
+    name: "Cloud runs answer help",
+    path: "src/cli/commands/cloud-agents.ts",
+    instruction: 'ravi cloud runs answer <run> <question> "<answer>" --execute',
   },
   {
     name: "Cloud schedules add skill",
