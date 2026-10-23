@@ -1456,6 +1456,7 @@ process.on("SIGTERM", () => {
     expect(codexStderrTail("")).toBeUndefined();
     expect(codexStderrTail("\u001b[2m \u001b[0m\n")).toBeUndefined();
     expect(codexStderrTail("\u001b[33mWARN\u001b[0m a\u0007b\n")).toBe("WARN ab");
+    expect(codexStderrTail("WARN a\u0085b\u202Ec\n")).toBe("WARN abc");
     const tail = codexStderrTail(`${"x".repeat(5_000)}END`) ?? "";
     expect(tail.startsWith("...")).toBe(true);
     expect(tail.endsWith("END")).toBe(true);

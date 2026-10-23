@@ -2,7 +2,6 @@ import type { RuntimeGoal, RuntimeGoalStatus } from "./types.js";
 import { spawn } from "node:child_process";
 import { basename, dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
-import { stripVTControlCharacters } from "node:util";
 import { syncCodexSkills } from "../plugins/codex-skills.js";
 import {
   getAgentRuntimePermissionsConfigFromDefaults,
@@ -21,6 +20,7 @@ import {
 
 const log = logger.child("codex");
 import { ensureAgentInstructionFiles, loadAgentWorkspaceInstructions } from "./agent-instructions.js";
+import { stripControlCharacters } from "./public-failure.js";
 import { buildRaviRulesPromptSection } from "./ravi-rules.js";
 import {
   buildCodexSkillVisibilitySnapshot,
@@ -1149,9 +1149,7 @@ export class CodexAppServerTransportError extends Error {
 
 /** The last part of native stderr, without terminal escapes, for logs and traces only. */
 export function codexStderrTail(stderr: string): string | undefined {
-  const clean = stripVTControlCharacters(stderr)
-    .replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, "")
-    .trim();
+  const clean = stripControlCharacters(stderr).trim();
   if (!clean) return undefined;
   return clean.length > CODEX_STDERR_TAIL_MAX ? `...${clean.slice(-CODEX_STDERR_TAIL_MAX)}` : clean;
 }

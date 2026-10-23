@@ -171,9 +171,15 @@ export function shouldEmitUserFacingTurnFailure(input: {
   return !isRecoverableOpenToolsOrInterruptFailure(input);
 }
 
-/** Removes ANSI escapes and control characters other than tab and newline. */
-function stripControlCharacters(text: string): string {
-  return stripVTControlCharacters(text).replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, "");
+/**
+ * Removes ANSI escapes, C0/C1 control characters (except tab and newline) and
+ * bidi formatting characters, which could reorder or spoof visible text.
+ */
+export function stripControlCharacters(text: string): string {
+  return stripVTControlCharacters(text).replace(
+    /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/g,
+    "",
+  );
 }
 
 function runtimeFailureText(error: unknown): string | null {

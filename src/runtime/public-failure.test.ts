@@ -224,6 +224,9 @@ describe("public runtime failures", () => {
     expect(
       formatUserFacingTurnFailure("Conversation 019a0000-1111-7222-8333-444455556666 is busy. Try again later."),
     ).toBe("Error: Conversation <id> is busy. Try again later.");
+    expect(formatUserFacingTurnFailure("Usage\u0085 limit\u202E reached.\u2066 Try\u200F again later.")).toBe(
+      "Error: Usage limit reached. Try again later.",
+    );
   });
 
   it("avoids a duplicate Error prefix and bounds long details", () => {
