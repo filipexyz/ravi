@@ -1,6 +1,13 @@
 import { actorCanGrantRequestedPermission } from "./grantor.js";
-import { slackApprovalDecisionFromActionId } from "./slack-blocks.js";
+import { grantAllowsIntent, readPermissionGrantMetadata, resolveClickScope } from "./grant-metadata.js";
 import {
+  parseSlackGrantActionValue,
+  slackApprovalDecisionFromActionId,
+  slackPermissionGrantClickFromActionId,
+  type SlackPermissionGrantClick,
+} from "./slack-blocks.js";
+import {
+  getApprovalCardScope,
   getApprovalRequest,
   getApprovalRequestByMessageId,
   isApprovalRequestOpen,
@@ -8,6 +15,7 @@ import {
   type ApprovalDecisionValue,
   type ApprovalRequestRecord,
 } from "./store.js";
+import type { PermissionGrantIntent, PermissionGrantScopeValue } from "../permissions/apply-grant.js";
 import { isApprovalReactionEmoji } from "../utils/reaction-emoji.js";
 
 export type ApprovalInboundIgnoreReason =
@@ -19,7 +27,15 @@ export type ApprovalInboundIgnoreReason =
   | "wrong_chat"
   | "wrong_channel"
   | "unauthorized_grantor"
-  | "missing_actor";
+  | "missing_actor"
+  | "grant_not_allowed"
+  | "scope_not_allowed";
+
+export interface ApprovalGrantDecision {
+  readonly intent: PermissionGrantIntent;
+  /** Validated against the scopes stored on the request; null for an agent-only grant. */
+  readonly scope: PermissionGrantScopeValue | null;
+}
 
 export type ApprovalInboundEvaluation =
   | { readonly kind: "ignore"; readonly reason: ApprovalInboundIgnoreReason }
@@ -30,6 +46,16 @@ export type ApprovalInboundEvaluation =
       readonly actorId: string;
       readonly reason?: string;
       /** Handle to answer the click privately (Slack `response_url`), when there is one. */
+      readonly responseUrlId?: string;
+      /** Set when the click picked a grant, not the legacy one-shot approval. */
+      readonly grant?: ApprovalGrantDecision;
+    }
+  | {
+      /** A scope selection. Not a decision: the caller persists it and re-renders the card. */
+      readonly kind: "scope";
+      readonly request: ApprovalRequestRecord;
+      readonly actorId: string;
+      readonly scope: PermissionGrantScopeValue;
       readonly responseUrlId?: string;
     };
 
@@ -89,6 +115,11 @@ export function evaluateApprovalInboundEvent(event: ApprovalInboundEvent, now: n
   if (candidate.requestId && candidate.requestId !== request.id) {
     return { kind: "ignore", reason: "unknown_request" };
   }
+  if (!candidate.actorId) return { kind: "ignore", reason: "missing_actor" };
+
+  if (candidate.grantClick) {
+    return evaluateGrantClick(request, candidate);
+  }
 
   const grantor = actorCanGrantRequestedPermission({
     channel: request.channel,
@@ -99,7 +130,6 @@ export function evaluateApprovalInboundEvent(event: ApprovalInboundEvent, now: n
     objectType: request.objectType,
     objectId: request.objectId,
   });
-  if (!candidate.actorId) return { kind: "ignore", reason: "missing_actor" };
   if (!grantor.allowed) return { kind: "ignore", reason: "unauthorized_grantor" };
 
   return {
@@ -109,6 +139,82 @@ export function evaluateApprovalInboundEvent(event: ApprovalInboundEvent, now: n
     actorId: candidate.actorId,
     ...(candidate.reason ? { reason: candidate.reason } : {}),
     ...(candidate.responseUrlId ? { responseUrlId: candidate.responseUrlId } : {}),
+  };
+}
+
+/**
+ * Grant card clicks. The intent comes from the action id and the scope from the
+ * click value; both are untrusted. The scope must be one the request recorded,
+ * `full access` must come from a recipient that is an admin of this instance,
+ * and every intent still passes the server-side grantor gate.
+ */
+function evaluateGrantClick(request: ApprovalRequestRecord, candidate: ApprovalCandidate): ApprovalInboundEvaluation {
+  const click = candidate.grantClick as SlackPermissionGrantClick;
+  const grant = readPermissionGrantMetadata(request);
+  if (!grant) return { kind: "ignore", reason: "grant_not_allowed" };
+
+  const actorId = candidate.actorId as string;
+  const grantor = (permission = request.permission, objectType = request.objectType, objectId = request.objectId) =>
+    actorCanGrantRequestedPermission({
+      channel: request.channel,
+      accountId: request.accountId,
+      instanceId: request.instanceId ?? candidate.instanceId ?? request.accountId,
+      senderId: actorId,
+      permission,
+      objectType,
+      objectId,
+    }).allowed;
+
+  if (click === "scope") {
+    const resolved = resolveClickScope(grant, candidate.scopeValue);
+    if (!resolved) return { kind: "ignore", reason: "scope_not_allowed" };
+    if (!grantor()) return { kind: "ignore", reason: "unauthorized_grantor" };
+    return {
+      kind: "scope",
+      request,
+      actorId,
+      scope: resolved.scopeValue,
+      ...(candidate.responseUrlId ? { responseUrlId: candidate.responseUrlId } : {}),
+    };
+  }
+
+  if (click === "ignore") {
+    if (!grantor()) return { kind: "ignore", reason: "unauthorized_grantor" };
+    return {
+      kind: "decide",
+      request,
+      decision: "rejected",
+      actorId,
+      reason: "ignored",
+      ...(candidate.responseUrlId ? { responseUrlId: candidate.responseUrlId } : {}),
+    };
+  }
+
+  if (!grantAllowsIntent(grant, click)) {
+    return { kind: "ignore", reason: "grant_not_allowed" };
+  }
+
+  if (click === "full-access") {
+    const isAdminRecipient = grant.adminUserIds.some((id) => id.toUpperCase() === actorId.toUpperCase());
+    if (!isAdminRecipient) return { kind: "ignore", reason: "unauthorized_grantor" };
+    if (!grantor("admin", "system", "*")) return { kind: "ignore", reason: "unauthorized_grantor" };
+  } else if (!grantor()) {
+    return { kind: "ignore", reason: "unauthorized_grantor" };
+  }
+
+  const scopeValue = candidate.scopeValue ?? getApprovalCardScope(request.id, actorId) ?? undefined;
+  const resolved = grant.scopes.length > 0 ? resolveClickScope(grant, scopeValue ?? undefined) : null;
+  if (grant.scopes.length > 0 && !resolved) {
+    return { kind: "ignore", reason: "scope_not_allowed" };
+  }
+
+  return {
+    kind: "decide",
+    request,
+    decision: "approved",
+    actorId,
+    ...(candidate.responseUrlId ? { responseUrlId: candidate.responseUrlId } : {}),
+    grant: { intent: click, scope: resolved?.scopeValue ?? null },
   };
 }
 
@@ -123,11 +229,33 @@ interface ApprovalCandidate {
   readonly decision: ApprovalDecisionValue;
   readonly reason?: string;
   readonly responseUrlId?: string;
+  readonly grantClick?: SlackPermissionGrantClick;
+  readonly scopeValue?: string;
 }
 
 function parseApprovalCandidate(event: ApprovalInboundEvent): ApprovalCandidate | null {
   if (event.topic === "ravi.inbound.interaction") {
     const actionId = stringField(event.data, "actionId");
+    const grantClick = slackPermissionGrantClickFromActionId(actionId);
+    if (grantClick) {
+      const value = stringField(event.data, "value");
+      const selectedOption = stringField(event.data, "selectedOption");
+      const parsed = parseSlackGrantActionValue(selectedOption ?? value);
+      return {
+        requestId: parsed.requestId,
+        messageId: stringField(event.data, "messageTs"),
+        accountId: stringField(event.data, "accountId"),
+        chatId: stringField(event.data, "channelId"),
+        instanceId: stringField(event.data, "instanceId"),
+        actorId: stringField(event.data, "userId"),
+        channel: SLACK_CHANNEL,
+        decision: grantClick === "ignore" ? "rejected" : "approved",
+        grantClick,
+        ...(parsed.scope ? { scopeValue: parsed.scope } : {}),
+        responseUrlId: stringField(event.data, "responseUrlId"),
+      };
+    }
+
     const decision = slackApprovalDecisionFromActionId(actionId);
     if (!decision) return null;
     return {
