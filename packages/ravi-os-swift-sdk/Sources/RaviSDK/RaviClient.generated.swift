@@ -227,6 +227,10 @@ public final class RaviClient {
     SettingsNamespace(transport: transport)
   }
 
+  public var signals: SignalsNamespace {
+    SignalsNamespace(transport: transport)
+  }
+
   public var skillGates: SkillGatesNamespace {
     SkillGatesNamespace(transport: transport)
   }
@@ -5817,6 +5821,97 @@ public struct SettingsNamespace: Sendable {
     requestBody["key"] = try RaviJSON.fromEncodable(key)
     requestBody["value"] = try RaviJSON.fromEncodable(value)
     return try await transport.call(groupSegments: ["settings"], command: "set", body: requestBody, as: SettingsSetReturn.self)
+  }
+}
+
+public struct SignalsNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func ack(_ idOrKey: String, _ options: SignalsAckOptions = .init()) async throws -> SignalsAckReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["idOrKey"] = try RaviJSON.fromEncodable(idOrKey)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["signals"], command: "ack", body: requestBody, as: SignalsAckReturn.self)
+  }
+
+  public func budget() async throws -> SignalsBudgetReturn {
+    let requestBody: [String: RaviJSON] = [:]
+    return try await transport.call(groupSegments: ["signals"], command: "budget", body: requestBody, as: SignalsBudgetReturn.self)
+  }
+
+  public func explain(_ idOrKey: String) async throws -> SignalsExplainReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["idOrKey"] = try RaviJSON.fromEncodable(idOrKey)
+    return try await transport.call(groupSegments: ["signals"], command: "explain", body: requestBody, as: SignalsExplainReturn.self)
+  }
+
+  public func list(_ options: SignalsListOptions = .init()) async throws -> SignalsListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["signals"], command: "list", body: requestBody, as: SignalsListReturn.self)
+  }
+
+  public func mute(_ idOrKey: String, _ options: SignalsMuteOptions = .init()) async throws -> SignalsMuteReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["idOrKey"] = try RaviJSON.fromEncodable(idOrKey)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["signals"], command: "mute", body: requestBody, as: SignalsMuteReturn.self)
+  }
+
+  public func muteKey(_ key: String, _ options: SignalsMuteKeyOptions = .init()) async throws -> SignalsMuteKeyReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["key"] = try RaviJSON.fromEncodable(key)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["signals"], command: "mute-key", body: requestBody, as: SignalsMuteKeyReturn.self)
+  }
+
+  public func raise(_ key: String, _ options: SignalsRaiseOptions = .init()) async throws -> SignalsRaiseReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["key"] = try RaviJSON.fromEncodable(key)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["signals"], command: "raise", body: requestBody, as: SignalsRaiseReturn.self)
+  }
+
+  public func resolve(_ idOrKey: String, _ options: SignalsResolveOptions = .init()) async throws -> SignalsResolveReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["idOrKey"] = try RaviJSON.fromEncodable(idOrKey)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["signals"], command: "resolve", body: requestBody, as: SignalsResolveReturn.self)
+  }
+
+  public func show(_ idOrKey: String) async throws -> SignalsShowReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["idOrKey"] = try RaviJSON.fromEncodable(idOrKey)
+    return try await transport.call(groupSegments: ["signals"], command: "show", body: requestBody, as: SignalsShowReturn.self)
+  }
+
+  public func tick(_ options: SignalsTickOptions = .init()) async throws -> SignalsTickReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["signals"], command: "tick", body: requestBody, as: SignalsTickReturn.self)
+  }
+
+  public func unmute(_ idOrKey: String) async throws -> SignalsUnmuteReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["idOrKey"] = try RaviJSON.fromEncodable(idOrKey)
+    return try await transport.call(groupSegments: ["signals"], command: "unmute", body: requestBody, as: SignalsUnmuteReturn.self)
+  }
+
+  public func unmuteKey(_ key: String) async throws -> SignalsUnmuteKeyReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["key"] = try RaviJSON.fromEncodable(key)
+    return try await transport.call(groupSegments: ["signals"], command: "unmute-key", body: requestBody, as: SignalsUnmuteKeyReturn.self)
+  }
+
+  public func update(_ idOrKey: String, _ options: SignalsUpdateOptions = .init()) async throws -> SignalsUpdateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["idOrKey"] = try RaviJSON.fromEncodable(idOrKey)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["signals"], command: "update", body: requestBody, as: SignalsUpdateReturn.self)
   }
 }
 
