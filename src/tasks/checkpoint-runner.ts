@@ -51,6 +51,9 @@ export function listTaskCheckpointSweepTasks(): TaskRecord[] {
   ];
 }
 
+/** When this process started; the checkpoint runner runs inside the daemon. */
+const PROCESS_STARTED_AT = Date.now() - Math.round(process.uptime() * 1000);
+
 /**
  * What an observed task's silence means, from the worker's persisted turns.
  *
@@ -58,12 +61,14 @@ export function listTaskCheckpointSweepTasks(): TaskRecord[] {
  * recorded nothing, not that the worker stopped. The session trace survives a
  * daemon restart, unlike the in-memory runtime session map, so it is what
  * tells a hung or missing worker apart from a worker that answered and an
- * observer that never wrote it down.
+ * observer that never wrote it down. A turn left `running` by a process that
+ * has since exited is not running.
  */
 export function describeObservedTaskSilence(
-  assignment: Pick<TaskAssignment, "sessionName" | "assignedAt">,
+  assignment: Pick<TaskAssignment, "sessionName" | "assignedAt" | "checkpointLastReportAt">,
   silentForMinutes: number,
   now = Date.now(),
+  processStartedAt = PROCESS_STARTED_AT,
 ): string {
   const fallback = `No worker activity seen for ${silentForMinutes} min; the turn may be hung or the session gone.`;
   try {
@@ -72,10 +77,16 @@ export function describeObservedTaskSilence(
     const turn = getLatestSessionTurn(session.sessionKey, assignment.assignedAt);
     if (!turn) return fallback;
     if (turn.status === "running" || !turn.completedAt) {
+      if (turn.startedAt < processStartedAt) {
+        return `The worker turn started before the last daemon restart and has no recorded end; it may have died with the daemon.`;
+      }
       return `The worker turn is still running, but the task has recorded no status for ${silentForMinutes} min; the task observer may not be reading the worker.`;
     }
     const agoMinutes = Math.max(0, Math.round((now - turn.completedAt) / 60000));
-    return `The worker turn ended (${turn.status}) ${agoMinutes} min ago, but no task status was recorded after dispatch; the task observer may not be reading the worker.`;
+    const silence = assignment.checkpointLastReportAt
+      ? `no task status was recorded since the last report ${Math.max(0, Math.round((now - assignment.checkpointLastReportAt) / 60000))} min ago`
+      : "no task status was recorded after dispatch";
+    return `The worker turn ended (${turn.status}) ${agoMinutes} min ago, but ${silence}; the task observer may not be reading the worker.`;
   } catch (error) {
     log.warn("Could not read the worker turn for an observed task stall", {
       sessionName: assignment.sessionName,

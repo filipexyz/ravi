@@ -48,6 +48,7 @@ const { dbCreateAgent } = await import("../router/router-db.js");
 const { initTaskProfileScaffold, invalidateTaskProfileCatalogCache } = await import("./profiles.js");
 const { setTaskSessionPromptPublisherForTests } = await import("./session-publisher.js");
 const { upsertSessionTurn } = await import("../session-trace/session-trace-db.js");
+const { describeObservedTaskSilence } = await import("./checkpoint-runner.js");
 
 const createdTaskIds: string[] = [];
 let stateDir: string | null = null;
@@ -222,6 +223,38 @@ describe("observed task stall wording", () => {
 
     const stalled = dbListTaskEvents(taskId).filter((event) => event.type === "task.stalled");
     expect(stalled[0]?.message).toContain("The worker turn is still running");
+  });
+
+  it("does not call a turn left running by a previous daemon still running", () => {
+    const { taskId, sessionKey, assignment } = dispatchObservedTask("Worker died with the daemon");
+    const startedAt = assignment.assignedAt + 1000;
+    upsertSessionTurn({ turnId: `${taskId}-turn-1`, sessionKey, status: "running", startedAt, updatedAt: startedAt });
+
+    const message = describeObservedTaskSilence(assignment, 30, startedAt + 60_000, startedAt + 1);
+    expect(message).toContain("started before the last daemon restart");
+    expect(message).not.toContain("still running");
+  });
+
+  it("measures silence from the last report when the observer already reported", () => {
+    const { taskId, sessionKey, assignment } = dispatchObservedTask("Observer reported once");
+    const completedAt = assignment.assignedAt + 5 * 60 * 1000;
+    upsertSessionTurn({
+      turnId: `${taskId}-turn-1`,
+      sessionKey,
+      status: "complete",
+      startedAt: assignment.assignedAt + 1000,
+      completedAt,
+      updatedAt: completedAt,
+    });
+    const reportedAt = assignment.assignedAt + 10 * 60 * 1000;
+
+    const message = describeObservedTaskSilence(
+      { ...assignment, checkpointLastReportAt: reportedAt },
+      30,
+      reportedAt + 30 * 60 * 1000,
+    );
+    expect(message).toContain("no task status was recorded since the last report 30 min ago");
+    expect(message).not.toContain("after dispatch");
   });
 
   it("keeps the hung-or-gone wording when the worker has no turn since dispatch", async () => {
