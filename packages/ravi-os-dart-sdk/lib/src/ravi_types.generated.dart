@@ -24125,6 +24125,570 @@ class SettingsSetReturn {
 
 SettingsSetReturn settingsSetReturnFromJson(Object? json) => SettingsSetReturn.fromJsonValue(json);
 
+class SignalsAckOptions {
+  const SignalsAckOptions({this.by, this.note});
+
+  final String? by;
+  final String? note;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (by != null) {
+      into["by"] = RaviJson.from(by);
+    }
+    if (note != null) {
+      into["note"] = RaviJson.from(note);
+    }
+  }
+}
+
+class SignalsAckReturn {
+  const SignalsAckReturn({this.created, required this.signal, required this.status, this.suppressed, this.updated});
+
+  final bool? created;
+  final RaviJson signal;
+  final String status;
+  final String? suppressed;
+  final bool? updated;
+
+  factory SignalsAckReturn.fromJson(Map<String, Object?> json) {
+    return SignalsAckReturn(
+      created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
+      signal: RaviJson.from(json["signal"]),
+      status: raviJsonAsString(json["status"]),
+      suppressed: json["suppressed"] == null ? null : raviJsonAsString(json["suppressed"]),
+      updated: json["updated"] == null ? null : raviJsonAsBool(json["updated"]),
+    );
+  }
+
+  static SignalsAckReturn fromJsonValue(Object? json) {
+    return SignalsAckReturn.fromJson(raviJsonObject(json, "SignalsAckReturn"));
+  }
+}
+
+SignalsAckReturn signalsAckReturnFromJson(Object? json) => SignalsAckReturn.fromJsonValue(json);
+
+class SignalsBudgetReturn {
+  const SignalsBudgetReturn({required this.budget});
+
+  final RaviJson budget;
+
+  factory SignalsBudgetReturn.fromJson(Map<String, Object?> json) {
+    return SignalsBudgetReturn(
+      budget: RaviJson.from(json["budget"]),
+    );
+  }
+
+  static SignalsBudgetReturn fromJsonValue(Object? json) {
+    return SignalsBudgetReturn.fromJson(raviJsonObject(json, "SignalsBudgetReturn"));
+  }
+}
+
+SignalsBudgetReturn signalsBudgetReturnFromJson(Object? json) => SignalsBudgetReturn.fromJsonValue(json);
+
+class SignalsExplainReturn {
+  const SignalsExplainReturn({required this.budget, required this.clearRule, required this.effectiveSeverity, required this.events, required this.keyMute, required this.lastEvaluation, required this.lastOobAt, required this.lastSurfaceAt, required this.signal, required this.targetSessions});
+
+  final RaviJson budget;
+  final String clearRule;
+  final String effectiveSeverity;
+  final List<RaviJson> events;
+  final RaviJson keyMute;
+  final RaviJson lastEvaluation;
+  final RaviJson lastOobAt;
+  final RaviJson lastSurfaceAt;
+  final RaviJson signal;
+  final List<String> targetSessions;
+
+  factory SignalsExplainReturn.fromJson(Map<String, Object?> json) {
+    return SignalsExplainReturn(
+      budget: RaviJson.from(json["budget"]),
+      clearRule: raviJsonAsString(json["clearRule"]),
+      effectiveSeverity: raviJsonAsString(json["effectiveSeverity"]),
+      events: raviJsonAsList(json["events"], RaviJson.from),
+      keyMute: RaviJson.from(json["keyMute"]),
+      lastEvaluation: RaviJson.from(json["lastEvaluation"]),
+      lastOobAt: RaviJson.from(json["lastOobAt"]),
+      lastSurfaceAt: RaviJson.from(json["lastSurfaceAt"]),
+      signal: RaviJson.from(json["signal"]),
+      targetSessions: raviJsonAsList(json["targetSessions"], raviJsonAsString),
+    );
+  }
+
+  static SignalsExplainReturn fromJsonValue(Object? json) {
+    return SignalsExplainReturn.fromJson(raviJsonObject(json, "SignalsExplainReturn"));
+  }
+}
+
+SignalsExplainReturn signalsExplainReturnFromJson(Object? json) => SignalsExplainReturn.fromJsonValue(json);
+
+class SignalsListOptions {
+  const SignalsListOptions({this.key, this.limit, this.offset, this.scope, this.state});
+
+  final String? key;
+  final String? limit;
+  final String? offset;
+  final String? scope;
+  final String? state;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (key != null) {
+      into["key"] = RaviJson.from(key);
+    }
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+    if (scope != null) {
+      into["scope"] = RaviJson.from(scope);
+    }
+    if (state != null) {
+      into["state"] = RaviJson.from(state);
+    }
+  }
+}
+
+class SignalsListReturn {
+  const SignalsListReturn({required this.items, required this.total});
+
+  final List<RaviJson> items;
+  final double total;
+
+  factory SignalsListReturn.fromJson(Map<String, Object?> json) {
+    return SignalsListReturn(
+      items: raviJsonAsList(json["items"], RaviJson.from),
+      total: raviJsonAsDouble(json["total"]),
+    );
+  }
+
+  static SignalsListReturn fromJsonValue(Object? json) {
+    return SignalsListReturn.fromJson(raviJsonObject(json, "SignalsListReturn"));
+  }
+}
+
+SignalsListReturn signalsListReturnFromJson(Object? json) => SignalsListReturn.fromJsonValue(json);
+
+class SignalsMuteOptions {
+  const SignalsMuteOptions({this.by, this.for_, this.reason});
+
+  final String? by;
+  final String? for_;
+  final String? reason;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (by != null) {
+      into["by"] = RaviJson.from(by);
+    }
+    if (for_ != null) {
+      into["for"] = RaviJson.from(for_);
+    }
+    if (reason != null) {
+      into["reason"] = RaviJson.from(reason);
+    }
+  }
+}
+
+class SignalsMuteReturn {
+  const SignalsMuteReturn({this.created, required this.signal, required this.status, this.suppressed, this.updated});
+
+  final bool? created;
+  final RaviJson signal;
+  final String status;
+  final String? suppressed;
+  final bool? updated;
+
+  factory SignalsMuteReturn.fromJson(Map<String, Object?> json) {
+    return SignalsMuteReturn(
+      created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
+      signal: RaviJson.from(json["signal"]),
+      status: raviJsonAsString(json["status"]),
+      suppressed: json["suppressed"] == null ? null : raviJsonAsString(json["suppressed"]),
+      updated: json["updated"] == null ? null : raviJsonAsBool(json["updated"]),
+    );
+  }
+
+  static SignalsMuteReturn fromJsonValue(Object? json) {
+    return SignalsMuteReturn.fromJson(raviJsonObject(json, "SignalsMuteReturn"));
+  }
+}
+
+SignalsMuteReturn signalsMuteReturnFromJson(Object? json) => SignalsMuteReturn.fromJsonValue(json);
+
+class SignalsMuteKeyOptions {
+  const SignalsMuteKeyOptions({this.for_, this.reason});
+
+  final String? for_;
+  final String? reason;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (for_ != null) {
+      into["for"] = RaviJson.from(for_);
+    }
+    if (reason != null) {
+      into["reason"] = RaviJson.from(reason);
+    }
+  }
+}
+
+class SignalsMuteKeyReturn {
+  const SignalsMuteKeyReturn({required this.key, required this.mutedUntil, this.reason, required this.status});
+
+  final String key;
+  final double mutedUntil;
+  final String? reason;
+  final String status;
+
+  factory SignalsMuteKeyReturn.fromJson(Map<String, Object?> json) {
+    return SignalsMuteKeyReturn(
+      key: raviJsonAsString(json["key"]),
+      mutedUntil: raviJsonAsDouble(json["mutedUntil"]),
+      reason: json["reason"] == null ? null : raviJsonAsString(json["reason"]),
+      status: raviJsonAsString(json["status"]),
+    );
+  }
+
+  static SignalsMuteKeyReturn fromJsonValue(Object? json) {
+    return SignalsMuteKeyReturn.fromJson(raviJsonObject(json, "SignalsMuteKeyReturn"));
+  }
+}
+
+SignalsMuteKeyReturn signalsMuteKeyReturnFromJson(Object? json) => SignalsMuteKeyReturn.fromJsonValue(json);
+
+class SignalsRaiseOptions {
+  const SignalsRaiseOptions({this.clearDecay, this.clearExpr, this.clearManual, this.clearMetric, this.clearProbe, this.clearProducerResolve, this.cooldown, this.dedupeKey, this.detail, this.escalateAfter, this.evidence, this.grace, this.kind, this.maxSurfaces, this.recheck, this.renotifyAfter, this.reopenAfter, this.scope, this.severity, this.source, this.subject, this.targetSession, this.title, this.ttl});
+
+  final String? clearDecay;
+  final String? clearExpr;
+  final bool? clearManual;
+  final String? clearMetric;
+  final String? clearProbe;
+  final bool? clearProducerResolve;
+  final String? cooldown;
+  final String? dedupeKey;
+  final String? detail;
+  final String? escalateAfter;
+  final String? evidence;
+  final String? grace;
+  final String? kind;
+  final String? maxSurfaces;
+  final String? recheck;
+  final String? renotifyAfter;
+  final String? reopenAfter;
+  final String? scope;
+  final String? severity;
+  final String? source;
+  final String? subject;
+  final String? targetSession;
+  final String? title;
+  final String? ttl;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (clearDecay != null) {
+      into["clearDecay"] = RaviJson.from(clearDecay);
+    }
+    if (clearExpr != null) {
+      into["clearExpr"] = RaviJson.from(clearExpr);
+    }
+    if (clearManual != null) {
+      into["clearManual"] = RaviJson.from(clearManual);
+    }
+    if (clearMetric != null) {
+      into["clearMetric"] = RaviJson.from(clearMetric);
+    }
+    if (clearProbe != null) {
+      into["clearProbe"] = RaviJson.from(clearProbe);
+    }
+    if (clearProducerResolve != null) {
+      into["clearProducerResolve"] = RaviJson.from(clearProducerResolve);
+    }
+    if (cooldown != null) {
+      into["cooldown"] = RaviJson.from(cooldown);
+    }
+    if (dedupeKey != null) {
+      into["dedupeKey"] = RaviJson.from(dedupeKey);
+    }
+    if (detail != null) {
+      into["detail"] = RaviJson.from(detail);
+    }
+    if (escalateAfter != null) {
+      into["escalateAfter"] = RaviJson.from(escalateAfter);
+    }
+    if (evidence != null) {
+      into["evidence"] = RaviJson.from(evidence);
+    }
+    if (grace != null) {
+      into["grace"] = RaviJson.from(grace);
+    }
+    if (kind != null) {
+      into["kind"] = RaviJson.from(kind);
+    }
+    if (maxSurfaces != null) {
+      into["maxSurfaces"] = RaviJson.from(maxSurfaces);
+    }
+    if (recheck != null) {
+      into["recheck"] = RaviJson.from(recheck);
+    }
+    if (renotifyAfter != null) {
+      into["renotifyAfter"] = RaviJson.from(renotifyAfter);
+    }
+    if (reopenAfter != null) {
+      into["reopenAfter"] = RaviJson.from(reopenAfter);
+    }
+    if (scope != null) {
+      into["scope"] = RaviJson.from(scope);
+    }
+    if (severity != null) {
+      into["severity"] = RaviJson.from(severity);
+    }
+    if (source != null) {
+      into["source"] = RaviJson.from(source);
+    }
+    if (subject != null) {
+      into["subject"] = RaviJson.from(subject);
+    }
+    if (targetSession != null) {
+      into["targetSession"] = RaviJson.from(targetSession);
+    }
+    if (title != null) {
+      into["title"] = RaviJson.from(title);
+    }
+    if (ttl != null) {
+      into["ttl"] = RaviJson.from(ttl);
+    }
+  }
+}
+
+class SignalsRaiseReturn {
+  const SignalsRaiseReturn({this.created, required this.signal, required this.status, this.suppressed, this.updated});
+
+  final bool? created;
+  final RaviJson signal;
+  final String status;
+  final String? suppressed;
+  final bool? updated;
+
+  factory SignalsRaiseReturn.fromJson(Map<String, Object?> json) {
+    return SignalsRaiseReturn(
+      created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
+      signal: RaviJson.from(json["signal"]),
+      status: raviJsonAsString(json["status"]),
+      suppressed: json["suppressed"] == null ? null : raviJsonAsString(json["suppressed"]),
+      updated: json["updated"] == null ? null : raviJsonAsBool(json["updated"]),
+    );
+  }
+
+  static SignalsRaiseReturn fromJsonValue(Object? json) {
+    return SignalsRaiseReturn.fromJson(raviJsonObject(json, "SignalsRaiseReturn"));
+  }
+}
+
+SignalsRaiseReturn signalsRaiseReturnFromJson(Object? json) => SignalsRaiseReturn.fromJsonValue(json);
+
+class SignalsResolveOptions {
+  const SignalsResolveOptions({this.by, this.reason});
+
+  final String? by;
+  final String? reason;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (by != null) {
+      into["by"] = RaviJson.from(by);
+    }
+    if (reason != null) {
+      into["reason"] = RaviJson.from(reason);
+    }
+  }
+}
+
+class SignalsResolveReturn {
+  const SignalsResolveReturn({this.created, required this.signal, required this.status, this.suppressed, this.updated});
+
+  final bool? created;
+  final RaviJson signal;
+  final String status;
+  final String? suppressed;
+  final bool? updated;
+
+  factory SignalsResolveReturn.fromJson(Map<String, Object?> json) {
+    return SignalsResolveReturn(
+      created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
+      signal: RaviJson.from(json["signal"]),
+      status: raviJsonAsString(json["status"]),
+      suppressed: json["suppressed"] == null ? null : raviJsonAsString(json["suppressed"]),
+      updated: json["updated"] == null ? null : raviJsonAsBool(json["updated"]),
+    );
+  }
+
+  static SignalsResolveReturn fromJsonValue(Object? json) {
+    return SignalsResolveReturn.fromJson(raviJsonObject(json, "SignalsResolveReturn"));
+  }
+}
+
+SignalsResolveReturn signalsResolveReturnFromJson(Object? json) => SignalsResolveReturn.fromJsonValue(json);
+
+class SignalsShowReturn {
+  const SignalsShowReturn({required this.signal});
+
+  final RaviJson signal;
+
+  factory SignalsShowReturn.fromJson(Map<String, Object?> json) {
+    return SignalsShowReturn(
+      signal: RaviJson.from(json["signal"]),
+    );
+  }
+
+  static SignalsShowReturn fromJsonValue(Object? json) {
+    return SignalsShowReturn.fromJson(raviJsonObject(json, "SignalsShowReturn"));
+  }
+}
+
+SignalsShowReturn signalsShowReturnFromJson(Object? json) => SignalsShowReturn.fromJsonValue(json);
+
+class SignalsTickOptions {
+  const SignalsTickOptions({this.execute});
+
+  final bool? execute;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+  }
+}
+
+class SignalsTickReturn {
+  const SignalsTickReturn({required this.candidates, required this.errors, required this.escalated, required this.evaluated, required this.executed, required this.expired, required this.resolved, required this.watchers});
+
+  final List<RaviJson> candidates;
+  final List<RaviJson> errors;
+  final double escalated;
+  final double evaluated;
+  final bool executed;
+  final double expired;
+  final double resolved;
+  final List<RaviJson> watchers;
+
+  factory SignalsTickReturn.fromJson(Map<String, Object?> json) {
+    return SignalsTickReturn(
+      candidates: raviJsonAsList(json["candidates"], RaviJson.from),
+      errors: raviJsonAsList(json["errors"], RaviJson.from),
+      escalated: raviJsonAsDouble(json["escalated"]),
+      evaluated: raviJsonAsDouble(json["evaluated"]),
+      executed: raviJsonAsBool(json["executed"]),
+      expired: raviJsonAsDouble(json["expired"]),
+      resolved: raviJsonAsDouble(json["resolved"]),
+      watchers: raviJsonAsList(json["watchers"], RaviJson.from),
+    );
+  }
+
+  static SignalsTickReturn fromJsonValue(Object? json) {
+    return SignalsTickReturn.fromJson(raviJsonObject(json, "SignalsTickReturn"));
+  }
+}
+
+SignalsTickReturn signalsTickReturnFromJson(Object? json) => SignalsTickReturn.fromJsonValue(json);
+
+class SignalsUnmuteReturn {
+  const SignalsUnmuteReturn({this.created, required this.signal, required this.status, this.suppressed, this.updated});
+
+  final bool? created;
+  final RaviJson signal;
+  final String status;
+  final String? suppressed;
+  final bool? updated;
+
+  factory SignalsUnmuteReturn.fromJson(Map<String, Object?> json) {
+    return SignalsUnmuteReturn(
+      created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
+      signal: RaviJson.from(json["signal"]),
+      status: raviJsonAsString(json["status"]),
+      suppressed: json["suppressed"] == null ? null : raviJsonAsString(json["suppressed"]),
+      updated: json["updated"] == null ? null : raviJsonAsBool(json["updated"]),
+    );
+  }
+
+  static SignalsUnmuteReturn fromJsonValue(Object? json) {
+    return SignalsUnmuteReturn.fromJson(raviJsonObject(json, "SignalsUnmuteReturn"));
+  }
+}
+
+SignalsUnmuteReturn signalsUnmuteReturnFromJson(Object? json) => SignalsUnmuteReturn.fromJsonValue(json);
+
+class SignalsUnmuteKeyReturn {
+  const SignalsUnmuteKeyReturn({required this.key, required this.status});
+
+  final String key;
+  final String status;
+
+  factory SignalsUnmuteKeyReturn.fromJson(Map<String, Object?> json) {
+    return SignalsUnmuteKeyReturn(
+      key: raviJsonAsString(json["key"]),
+      status: raviJsonAsString(json["status"]),
+    );
+  }
+
+  static SignalsUnmuteKeyReturn fromJsonValue(Object? json) {
+    return SignalsUnmuteKeyReturn.fromJson(raviJsonObject(json, "SignalsUnmuteKeyReturn"));
+  }
+}
+
+SignalsUnmuteKeyReturn signalsUnmuteKeyReturnFromJson(Object? json) => SignalsUnmuteKeyReturn.fromJsonValue(json);
+
+class SignalsUpdateOptions {
+  const SignalsUpdateOptions({this.by, this.detail, this.evidence, this.severity, this.title});
+
+  final String? by;
+  final String? detail;
+  final String? evidence;
+  final String? severity;
+  final String? title;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (by != null) {
+      into["by"] = RaviJson.from(by);
+    }
+    if (detail != null) {
+      into["detail"] = RaviJson.from(detail);
+    }
+    if (evidence != null) {
+      into["evidence"] = RaviJson.from(evidence);
+    }
+    if (severity != null) {
+      into["severity"] = RaviJson.from(severity);
+    }
+    if (title != null) {
+      into["title"] = RaviJson.from(title);
+    }
+  }
+}
+
+class SignalsUpdateReturn {
+  const SignalsUpdateReturn({this.created, required this.signal, required this.status, this.suppressed, this.updated});
+
+  final bool? created;
+  final RaviJson signal;
+  final String status;
+  final String? suppressed;
+  final bool? updated;
+
+  factory SignalsUpdateReturn.fromJson(Map<String, Object?> json) {
+    return SignalsUpdateReturn(
+      created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
+      signal: RaviJson.from(json["signal"]),
+      status: raviJsonAsString(json["status"]),
+      suppressed: json["suppressed"] == null ? null : raviJsonAsString(json["suppressed"]),
+      updated: json["updated"] == null ? null : raviJsonAsBool(json["updated"]),
+    );
+  }
+
+  static SignalsUpdateReturn fromJsonValue(Object? json) {
+    return SignalsUpdateReturn.fromJson(raviJsonObject(json, "SignalsUpdateReturn"));
+  }
+}
+
+SignalsUpdateReturn signalsUpdateReturnFromJson(Object? json) => SignalsUpdateReturn.fromJsonValue(json);
+
 class SkillGatesDisableReturn {
   const SkillGatesDisableReturn({required this.rule, required this.success});
 

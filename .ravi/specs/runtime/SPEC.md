@@ -11,6 +11,7 @@ capabilities:
   - session-continuity
   - context-keys
   - observation-plane
+  - signals
   - traces
   - cloud-trace-export
 tags:
