@@ -602,7 +602,13 @@ export class SignalsCommands {
   }
 
   @Command({ name: "tick", description: "Evaluate signals and escalate due ones" })
-  @CommandAccess({ kind: "mutate", resource: "signals", action: "tick", risk: "medium" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "signals",
+    action: "tick",
+    risk: "medium",
+    requiresConfirmation: true,
+  })
   @Returns(signalTickReturnSchema)
   async tick(
     @Option({ flags: "--execute", description: "Actually deliver out-of-band signals" }) execute?: boolean,
