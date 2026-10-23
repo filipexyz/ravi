@@ -27,6 +27,7 @@ import { buildPluginSkillVisibilitySnapshot } from "./skill-visibility.js";
 import {
   createPiPermissionHooksReadyEvent,
   formatPiPermissionUiDecisionValue,
+  PI_DYNAMIC_TOOL_UI_TITLE,
   PI_PERMISSION_BRIDGE_UNAVAILABLE_MESSAGE,
   PI_PERMISSION_UI_TITLE,
 } from "./pi-tool-permissions.js";
@@ -540,6 +541,76 @@ describe("Pi runtime provider", () => {
         value: formatPiPermissionUiDecisionValue({ allowed: true }),
       },
     ]);
+  });
+
+  it("runs a Pi dynamic tool request end to end and answers it with the host result", async () => {
+    const transport = new FakePiRpcTransport();
+    // Pi RPC encodes ctx.ui.input(title, payload) with the payload in placeholder.
+    transport.pushEvent({
+      type: "extension_ui_request",
+      id: "ui-dyn",
+      method: "input",
+      title: PI_DYNAMIC_TOOL_UI_TITLE,
+      placeholder: JSON.stringify({
+        version: 1,
+        toolName: "tasks_show",
+        toolCallId: "call-1",
+        arguments: { taskId: "task-1" },
+      }),
+    });
+    transport.pushEvent({ type: "agent_end", messages: [assistantMessage("ok")] });
+    const calls: unknown[] = [];
+
+    await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport }).startSession(
+        createStartRequest("observa", {
+          handleRuntimeToolCall: async (call) => {
+            calls.push(call);
+            return { success: true, contentItems: [{ type: "inputText", text: "task-1 in_progress" }] };
+          },
+        }),
+      ).events,
+    );
+
+    expect(calls).toEqual([{ toolName: "tasks_show", callId: "call-1", arguments: { taskId: "task-1" } }]);
+    expect(transport.writes).toEqual([
+      {
+        type: "extension_ui_response",
+        id: "ui-dyn",
+        value: JSON.stringify({ success: true, contentItems: [{ type: "inputText", text: "task-1 in_progress" }] }),
+      },
+    ]);
+  });
+
+  it("answers an unreadable Pi dynamic tool request with a failure instead of cancelling it", async () => {
+    const transport = new FakePiRpcTransport();
+    transport.pushEvent({
+      type: "extension_ui_request",
+      id: "ui-dyn-bad",
+      method: "input",
+      title: PI_DYNAMIC_TOOL_UI_TITLE,
+      placeholder: "not json",
+    });
+    transport.pushEvent({ type: "agent_end", messages: [assistantMessage("ok")] });
+    let called = false;
+
+    await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport }).startSession(
+        createStartRequest("observa", {
+          handleRuntimeToolCall: async () => {
+            called = true;
+            return { success: true, contentItems: [] };
+          },
+        }),
+      ).events,
+    );
+
+    expect(called).toBe(false);
+    expect(transport.writes).toHaveLength(1);
+    const write = transport.writes[0] as { id: string; value: string; cancelled?: boolean };
+    expect(write.id).toBe("ui-dyn-bad");
+    expect(write.cancelled).toBeUndefined();
+    expect(JSON.parse(write.value)).toMatchObject({ success: false, reason: expect.stringContaining("dynamic tool") });
   });
 
   it("answers queued parallel permission UI requests with matching ids and host reasons", async () => {

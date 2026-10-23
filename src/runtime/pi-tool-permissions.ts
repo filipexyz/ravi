@@ -543,18 +543,27 @@ export interface PiDynamicToolUiRequest {
   arguments: Record<string, unknown>;
 }
 
-/** Detect the extension-UI call the Pi bridge makes to execute a host tool. */
+/** True when the extension-UI request carries the Pi bridge's host-tool title. */
+export function isPiDynamicToolUiTitle(event: Record<string, unknown>): boolean {
+  return event.title === PI_DYNAMIC_TOOL_UI_TITLE;
+}
+
+/**
+ * Detect the extension-UI call the Pi bridge makes to execute a host tool.
+ *
+ * Pi RPC sends `ctx.ui.input(title, placeholder)` as `{ method: "input", title,
+ * placeholder }`, so the payload is read from the same fields as a permission
+ * request (message, placeholder, prefill), not from `message` alone.
+ */
 export function parsePiDynamicToolUiRequest(event: Record<string, unknown>): PiDynamicToolUiRequest | null {
-  const title = typeof event.title === "string" ? event.title : "";
-  if (title !== PI_DYNAMIC_TOOL_UI_TITLE) {
+  if (!isPiDynamicToolUiTitle(event)) {
     return null;
   }
   const id = typeof event.id === "string" ? event.id : undefined;
   if (!id) {
     return null;
   }
-  const message = typeof event.message === "string" ? event.message : "";
-  const payload = parseJsonRecord(message);
+  const payload = parseJsonRecord(firstString(event.message, event.placeholder, event.prefill));
   const toolName = firstString(payload?.toolName);
   if (!toolName) {
     return null;

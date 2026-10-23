@@ -42,6 +42,7 @@ import {
   isPiPermissionHooksReadyEvent,
   materializePiPermissionExtensionFile,
   formatPiDynamicToolUiResponse,
+  isPiDynamicToolUiTitle,
   parsePiDynamicToolUiRequest,
   PI_PERMISSION_BRIDGE_UNAVAILABLE_MESSAGE,
   PI_PERMISSION_EXTENSION_FILENAME,
@@ -2074,6 +2075,28 @@ async function answerPiExtensionUiRequest(
       success: result.success,
     });
     await transport.writeMessage(formatPiDynamicToolUiResponse(dynamicRequest, result));
+    return;
+  }
+  if (isPiDynamicToolUiTitle(event) && typeof event.id === "string" && event.id) {
+    // A host-tool request we cannot read must still get an answer the bridge
+    // understands; cancelling it reads as "bridge did not answer" in the turn.
+    if (!transport.writeMessage) {
+      throw new Error("Pi RPC transport cannot answer extension UI dynamic tool requests");
+    }
+    log.warn("Unreadable Pi dynamic tool request", {
+      method: typeof event.method === "string" ? event.method : undefined,
+      fields: Object.keys(event).filter((key) => key !== "type" && key !== "id"),
+    });
+    await transport.writeMessage(
+      formatPiDynamicToolUiResponse(
+        { id: event.id, toolName: "unknown", arguments: {} },
+        {
+          success: false,
+          contentItems: [],
+          reason: "Ravi could not read this dynamic tool request (no toolName in the bridge payload).",
+        },
+      ),
+    );
     return;
   }
   const response = await resolvePiExtensionUiResponse(event, {
