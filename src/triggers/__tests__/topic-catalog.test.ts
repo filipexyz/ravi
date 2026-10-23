@@ -79,6 +79,24 @@ describe("trigger topic catalog", () => {
     });
   });
 
+  it("registers the permission grant audit subject with its payload schema", () => {
+    const entry = findTriggerTopicCatalogEntry("ravi.audit.permission_grant");
+    expect(entry).toMatchObject({
+      id: "audit.permission_grant",
+      category: "audit",
+      pattern: "ravi.audit.permission_grant",
+      schema: { version: 1 },
+    });
+    expect(entry?.payload).toContain("resolvedDenials");
+    const fields = new Map((entry?.schema?.fields ?? []).map((field) => [field.path, field]));
+    for (const path of ["type", "agentId", "requestId", "capability", "intent", "scope", "clicker"]) {
+      expect(fields.get(path)?.required).toBe(true);
+    }
+    expect(fields.get("resolvedDenials")).toMatchObject({ type: "number" });
+    // A registered catalog entry is a valid trigger topic: no diagnostic warning.
+    expect(getTriggerTopicDiagnostic("ravi.audit.permission_grant")).toBeUndefined();
+  });
+
   it("warns about inferred channel reaction aliases", () => {
     expect(getTriggerTopicDiagnostic("whatsapp.*.reaction")).toMatchObject({
       level: "warning",

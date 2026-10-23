@@ -161,6 +161,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/session-trace/": ["src/session-trace/session-trace.test.ts"],
   "src/triggers/": [
     "src/triggers/triggers.test.ts",
+    // Catalog entries: payload/schema shape for trigger-ready subjects.
+    "src/triggers/__tests__/topic-catalog.test.ts",
     // Runner lifecycle against a mocked NATS stream: filters, refresh, and
     // deleted triggers that must not fire on a removed topic.
     "src/triggers/__tests__/runner-filter.test.ts",
