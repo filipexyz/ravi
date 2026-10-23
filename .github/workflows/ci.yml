@@ -64,3 +64,8 @@ jobs:
         run: bun src/ci/run-quality-gate.ts
         env:
           GITHUB_BASE_REF: ${{ github.base_ref }}
+          # Reverts delete a feature and its focused tests, so the coverage gate
+          # would never see a test in the diff. This is an explicit signal, opt-in
+          # per PR via the `revert` label or a `revert` title prefix. It only
+          # exempts the focused-coverage check; every other gate is unchanged.
+          QUALITY_GATE_REVERT: ${{ contains(github.event.pull_request.labels.*.name, 'revert') || startsWith(github.event.pull_request.title, 'revert') }}
