@@ -62,6 +62,8 @@
 - Pi emits assistant message after interrupt.
 - Session file exists but cwd does not match.
 - Usage is missing on successful agent end.
+- A `ravi_dynamic_tool` input request carries its payload in `placeholder`: the host runs the tool and answers with its result (pi-provider.test).
+- A `ravi_dynamic_tool` request with an unreadable payload gets `{success:false, reason}`, not `cancelled`.
 
 ## E2E Smoke
 
@@ -69,6 +71,7 @@
 - Cold-start burst: send two or more messages quickly; trace should show first `dispatch.cold_start`, then `dispatch.native_steer` for subsequent interactive messages once the Pi handle exists, without Ravi generator concatenating them into one pending prompt.
 - Active-turn burst: send multiple messages while Pi is responding; trace should show repeated `dispatch.native_steer`, and Pi should process them through native steering rather than one Ravi-concatenated prompt.
 - Tool-using prompt emits tool start/end and then completes.
+- A task observer on Pi calls `tasks_show`; the daemon log shows "Answered Pi dynamic tool request" and no "bridge did not answer".
 - Interrupt during text streaming ends as interrupted, not failed.
 - Model switch changes subsequent execution metadata.
 - Restart/resume uses Pi session state only when cwd matches.
