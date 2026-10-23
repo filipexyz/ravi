@@ -57,6 +57,7 @@ import { startSyncRunner, stopSyncRunner } from "./sync/index.js";
 import { startLibraryPinRunner, stopLibraryPinRunner } from "./library/pin-runner.js";
 import { startLibraryRequestRunner, stopLibraryRequestRunner } from "./library/request-runner.js";
 import { startCloudTaskWatcher, stopCloudTaskWatcher } from "./cloud-agents/task-watcher.js";
+import { startCloudWorkerRunner, stopCloudWorkerRunner } from "./cloud-agents/worker-runner.js";
 import { startCalendarAssistantRunner, stopCalendarAssistantRunner } from "./calendar/assistant-runner.js";
 import { createSessionAdapterBus } from "./adapters/index.js";
 import { resolveOmniConnection } from "./omni-config.js";
@@ -263,6 +264,7 @@ async function shutdown(signal: string, exitCode = 0) {
     await stopLibraryPinRunner();
     await stopLibraryRequestRunner();
     await stopCloudTaskWatcher();
+    await stopCloudWorkerRunner();
     await stopCalendarAssistantRunner();
     await stopEphemeralRunner();
     await stopHookRunner();
@@ -495,6 +497,10 @@ export async function startDaemon() {
 
   await startCloudTaskWatcher();
   log.info("Cloud task watcher started");
+
+  // Idle until `ravi cloud worker enable --execute` (F4 self-hosted environments).
+  await startCloudWorkerRunner();
+  log.info("Cloud worker runner started");
 
   sessionAdapterBus = createSessionAdapterBus();
   await sessionAdapterBus.start();
