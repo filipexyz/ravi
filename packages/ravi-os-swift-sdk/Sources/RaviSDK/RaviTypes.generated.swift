@@ -9456,17 +9456,29 @@ public struct CloudCatalogInstallReturn: Codable, Sendable {
 }
 
 public struct CloudCatalogListOptions: Codable, Sendable {
+  public var limit: String?
+  public var offset: String?
   public var sector: String?
 
-  public init(sector: String? = nil) {
+  public init(limit: String? = nil, offset: String? = nil, sector: String? = nil) {
+    self.limit = limit
+    self.offset = offset
     self.sector = sector
   }
 
   enum CodingKeys: String, CodingKey {
+    case limit = "limit"
+    case offset = "offset"
     case sector = "sector"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.sector {
       body["sector"] = try RaviJSON.fromEncodable(value)
     }
@@ -9476,17 +9488,20 @@ public struct CloudCatalogListOptions: Codable, Sendable {
 public struct CloudCatalogListReturn: Codable, Sendable {
   public var entries: [RaviJSON]
   public var packs: [RaviJSON]
+  public var pagination: RaviJSON
   public var success: Bool
 
-  public init(entries: [RaviJSON], packs: [RaviJSON], success: Bool) {
+  public init(entries: [RaviJSON], packs: [RaviJSON], pagination: RaviJSON, success: Bool) {
     self.entries = entries
     self.packs = packs
+    self.pagination = pagination
     self.success = success
   }
 
   enum CodingKeys: String, CodingKey {
     case entries = "entries"
     case packs = "packs"
+    case pagination = "pagination"
     case success = "success"
   }
 }
@@ -10575,17 +10590,29 @@ public struct CloudScopeShowReturn: Codable, Sendable {
 }
 
 public struct CloudSecretsListOptions: Codable, Sendable {
+  public var limit: String?
+  public var offset: String?
   public var project: String?
 
-  public init(project: String? = nil) {
+  public init(limit: String? = nil, offset: String? = nil, project: String? = nil) {
+    self.limit = limit
+    self.offset = offset
     self.project = project
   }
 
   enum CodingKeys: String, CodingKey {
+    case limit = "limit"
+    case offset = "offset"
     case project = "project"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.project {
       body["project"] = try RaviJSON.fromEncodable(value)
     }
@@ -10593,17 +10620,20 @@ public struct CloudSecretsListOptions: Codable, Sendable {
 }
 
 public struct CloudSecretsListReturn: Codable, Sendable {
+  public var pagination: RaviJSON
   public var project: RaviJSON
   public var secrets: [RaviJSON]
   public var success: Bool
 
-  public init(project: RaviJSON, secrets: [RaviJSON], success: Bool) {
+  public init(pagination: RaviJSON, project: RaviJSON, secrets: [RaviJSON], success: Bool) {
+    self.pagination = pagination
     self.project = project
     self.secrets = secrets
     self.success = success
   }
 
   enum CodingKeys: String, CodingKey {
+    case pagination = "pagination"
     case project = "project"
     case secrets = "secrets"
     case success = "success"
@@ -10836,17 +10866,29 @@ public struct CloudTriggersCreateReturn: Codable, Sendable {
 }
 
 public struct CloudTriggersListOptions: Codable, Sendable {
+  public var limit: String?
+  public var offset: String?
   public var project: String?
 
-  public init(project: String? = nil) {
+  public init(limit: String? = nil, offset: String? = nil, project: String? = nil) {
+    self.limit = limit
+    self.offset = offset
     self.project = project
   }
 
   enum CodingKeys: String, CodingKey {
+    case limit = "limit"
+    case offset = "offset"
     case project = "project"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.project {
       body["project"] = try RaviJSON.fromEncodable(value)
     }
@@ -10854,17 +10896,20 @@ public struct CloudTriggersListOptions: Codable, Sendable {
 }
 
 public struct CloudTriggersListReturn: Codable, Sendable {
+  public var pagination: RaviJSON
   public var project: String
   public var success: Bool
   public var triggers: [RaviJSON]
 
-  public init(project: String, success: Bool, triggers: [RaviJSON]) {
+  public init(pagination: RaviJSON, project: String, success: Bool, triggers: [RaviJSON]) {
+    self.pagination = pagination
     self.project = project
     self.success = success
     self.triggers = triggers
   }
 
   enum CodingKeys: String, CodingKey {
+    case pagination = "pagination"
     case project = "project"
     case success = "success"
     case triggers = "triggers"
@@ -11069,17 +11114,43 @@ public struct CloudWorkerKeyRemoveReturn: Codable, Sendable {
   }
 }
 
+public struct CloudWorkerListOptions: Codable, Sendable {
+  public var limit: String?
+  public var offset: String?
+
+  public init(limit: String? = nil, offset: String? = nil) {
+    self.limit = limit
+    self.offset = offset
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case limit = "limit"
+    case offset = "offset"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
 public struct CloudWorkerListReturn: Codable, Sendable {
   public var enabled: Bool
   public var enabledAt: RaviJSON
   public var orphanKeys: [String]
+  public var pagination: RaviJSON
   public var success: Bool
   public var workers: [RaviJSON]
 
-  public init(enabled: Bool, enabledAt: RaviJSON, orphanKeys: [String], success: Bool, workers: [RaviJSON]) {
+  public init(enabled: Bool, enabledAt: RaviJSON, orphanKeys: [String], pagination: RaviJSON, success: Bool, workers: [RaviJSON]) {
     self.enabled = enabled
     self.enabledAt = enabledAt
     self.orphanKeys = orphanKeys
+    self.pagination = pagination
     self.success = success
     self.workers = workers
   }
@@ -11088,6 +11159,7 @@ public struct CloudWorkerListReturn: Codable, Sendable {
     case enabled = "enabled"
     case enabledAt = "enabledAt"
     case orphanKeys = "orphanKeys"
+    case pagination = "pagination"
     case success = "success"
     case workers = "workers"
   }

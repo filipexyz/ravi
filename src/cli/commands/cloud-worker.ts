@@ -34,7 +34,12 @@ import {
   writeCloudWorkerState,
 } from "../../cloud-agents/worker-store.js";
 import { CONTRACT_EXIT_USAGE, contractDryRun, contractFail } from "../agent-contract.js";
-import { usageError, withCloudAgentsContract } from "../cloud-agents-contract.js";
+import {
+  cloudPaginationReturnSchema,
+  pageCloudList,
+  usageError,
+  withCloudAgentsContract,
+} from "../cloud-agents-contract.js";
 import {
   type CloudProductCommandDeps,
   cloudWorkerReturnSchema,
@@ -116,6 +121,7 @@ const workerListSchema = z
     enabledAt: z.string().nullable(),
     workers: z.array(workerEntrySchema),
     orphanKeys: z.array(z.string()),
+    pagination: cloudPaginationReturnSchema,
   })
   .strict();
 
@@ -142,7 +148,11 @@ export class CloudWorkerCommands {
   })
   @CommandAccess({ kind: "read", resource: "cloud.agents", action: "worker.list", risk: "low" })
   @Returns(workerListSchema)
-  async list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+  async list(
+    @Option({ flags: "--limit <n>", description: "Page size (1-200, default 50)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Skip this many (default 0)" }) offset?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const op = "cloud worker list";
     const env = productDefaults(this.deps).env;
     return withCloudAgentsContract(op, asJson, async () => {
@@ -151,20 +161,23 @@ export class CloudWorkerCommands {
       const keys = new Set(listCloudWorkerKeyIds(env));
       const runtime = readCloudWorkerRuntime(env);
       const fresh = runtime !== null && Date.now() - Date.parse(runtime.updatedAt) <= RUNTIME_FRESH_MS;
-      const workers = (await listCloudWorkers(session.client)).map((worker) => ({
+      const all = await listCloudWorkers(session.client);
+      const page = pageCloudList(op, all, { limit, offset, command: "ravi cloud worker list" }, asJson);
+      const workers = page.items.map((worker) => ({
         ...worker,
         localKey: keys.has(worker.id),
         thisMachine: !worker.installationId || worker.installationId === session.installationId,
         workdir: cloudWorkerWorkdir(worker.agentId || worker.id, env),
         local: fresh ? (runtime.workers[worker.id] ?? null) : null,
       }));
-      const known = new Set(workers.map((worker) => worker.id));
+      const known = new Set(all.map((worker) => worker.id));
       const payload = {
         success: true as const,
         enabled: state.enabled,
         enabledAt: state.enabledAt,
         workers,
         orphanKeys: [...keys].filter((id) => !known.has(id)),
+        pagination: page.pagination,
       };
       if (asJson) {
         printJson(payload);

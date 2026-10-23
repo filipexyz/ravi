@@ -2766,8 +2766,9 @@ class CloudWorkerNamespace {
     );
   }
 
-  Future<CloudWorkerListReturn> list() async {
+  Future<CloudWorkerListReturn> list([CloudWorkerListOptions options = const CloudWorkerListOptions()]) async {
     final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
     return _transport.callJson(
       groupSegments: const ["cloud", "worker"],
       command: "list",

@@ -16,9 +16,14 @@ import {
   installCloudCatalogPack,
   listCloudCatalog,
 } from "../../cloud-agents/client-product.js";
-import type { CloudAgent, CloudCatalogEntry, CloudCatalogPack } from "../../cloud-agents/types.js";
+import type { CloudAgent, CloudCatalogEntry, CloudCatalogPack, CloudManifest } from "../../cloud-agents/types.js";
 import { contractDryRun, contractFail, suggestSimilar } from "../agent-contract.js";
-import { requireCloudProject, withCloudAgentsContract } from "../cloud-agents-contract.js";
+import {
+  cloudPaginationReturnSchema,
+  pageCloudList,
+  requireCloudProject,
+  withCloudAgentsContract,
+} from "../cloud-agents-contract.js";
 import {
   type CloudProductCommandDeps,
   cloudCatalogEntryReturnSchema,
@@ -61,10 +66,10 @@ function findByRef<T extends { id: string; slug: string; name: string }>(items: 
   );
 }
 
-function manifestSummary(manifest: Record<string, unknown> | null): Record<string, unknown> | null {
+function manifestSummary(manifest: CloudManifest | null) {
   if (!manifest) return null;
-  const keys = ["writes", "networking", "allowedHosts", "mcpServers", "raviOps", "secrets", "memory", "office"];
-  return Object.fromEntries(keys.filter((key) => manifest[key] !== undefined).map((key) => [key, manifest[key]]));
+  const { writes, networking, allowedHosts, mcpServers, raviOps, secrets, memory, office } = manifest;
+  return { writes, networking, allowedHosts, mcpServers, raviOps, secrets, memory, office };
 }
 
 function printInstalled(agents: readonly CloudAgent[]): void {
@@ -92,11 +97,15 @@ export class CloudCatalogCommands {
         success: z.literal(true),
         entries: z.array(cloudCatalogEntryReturnSchema),
         packs: z.array(cloudCatalogPackReturnSchema),
+        /** Pages the agents; packs are listed whole. */
+        pagination: cloudPaginationReturnSchema,
       })
       .strict(),
   )
   async list(
     @Option({ flags: "--sector <sector>", description: "Only this sector" }) sector?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (1-200, default 50)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Skip this many (default 0)" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     return withCloudAgentsContract("cloud catalog list", asJson, async () => {
@@ -105,7 +114,18 @@ export class CloudCatalogCommands {
       const wanted = sector?.trim().toLowerCase();
       const bySector = <T extends { sector: string | null }>(items: T[]) =>
         wanted ? items.filter((item) => item.sector?.toLowerCase() === wanted) : items;
-      const payload = { success: true as const, entries: bySector(catalog.entries), packs: bySector(catalog.packs) };
+      const page = pageCloudList(
+        "cloud catalog list",
+        bySector(catalog.entries),
+        { limit, offset, command: `ravi cloud catalog list${wanted ? ` --sector ${wanted}` : ""}` },
+        asJson,
+      );
+      const payload = {
+        success: true as const,
+        entries: page.items,
+        packs: bySector(catalog.packs),
+        pagination: page.pagination,
+      };
       if (asJson) {
         printJson(payload);
       } else if (payload.entries.length === 0 && payload.packs.length === 0) {

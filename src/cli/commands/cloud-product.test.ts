@@ -87,7 +87,9 @@ function expectSchema(target: Function, method: string, value: unknown) {
 describe("ravi cloud secrets", () => {
   it("list matches its schema and never shows a value", async () => {
     const fake = createFakeProductConsole();
-    const outcome = await capture(() => new CloudSecretsCommands(deps(fake)).list(undefined, true));
+    const outcome = await capture(() =>
+      new CloudSecretsCommands(deps(fake)).list(undefined, undefined, undefined, true),
+    );
     expectSchema(CloudSecretsCommands, "list", outcome.result);
     expect(fake.requests[0]!.query.get("project")).toBeNull();
   });
@@ -285,7 +287,9 @@ describe("ravi cloud triggers", () => {
 
   it("list matches its schema", async () => {
     const fake = createFakeProductConsole();
-    const outcome = await capture(() => new CloudTriggersCommands(deps(fake)).list("clinica", true));
+    const outcome = await capture(() =>
+      new CloudTriggersCommands(deps(fake)).list("clinica", undefined, undefined, true),
+    );
     expectSchema(CloudTriggersCommands, "list", outcome.result);
   });
 });
@@ -379,7 +383,9 @@ describe("ravi cloud catalog", () => {
 
   it("list filters by sector and matches its schema", async () => {
     const fake = createFakeProductConsole();
-    const outcome = await capture(() => new CloudCatalogCommands(deps(fake)).list("retail", true));
+    const outcome = await capture(() =>
+      new CloudCatalogCommands(deps(fake)).list("retail", undefined, undefined, true),
+    );
     expect(outcome.result).toMatchObject({ entries: [], packs: [] });
     expectSchema(CloudCatalogCommands, "list", outcome.result);
   });
@@ -535,7 +541,7 @@ describe("ravi cloud worker", () => {
       },
       env,
     );
-    const outcome = await capture(() => new CloudWorkerCommands(deps(fake, { env })).list(true));
+    const outcome = await capture(() => new CloudWorkerCommands(deps(fake, { env })).list(undefined, undefined, true));
     expect(outcome.result).toMatchObject({
       enabled: false,
       orphanKeys: ["wrk_gone"],
@@ -545,7 +551,7 @@ describe("ravi cloud worker", () => {
       ],
     });
     expectSchema(CloudWorkerCommands, "list", outcome.result);
-    const text = await capture(() => new CloudWorkerCommands(deps(fake, { env })).list(false));
+    const text = await capture(() => new CloudWorkerCommands(deps(fake, { env })).list(undefined, undefined, false));
     expect(text.lines.join("\n")).toContain("ravi cloud worker key set wrk_2 --stdin");
     expect(text.lines.join("\n")).not.toContain("env-key-1");
   });

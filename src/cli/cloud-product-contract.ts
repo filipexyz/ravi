@@ -290,6 +290,36 @@ export const cloudSettingsReturnSchema = z
   })
   .strict();
 
+const stringListSchema = z.array(z.string());
+
+/** What a deployed agent can do (the Console's capability manifest). */
+export const cloudManifestReturnSchema = z
+  .object({
+    model: z.string(),
+    provider: z.enum(["anthropic", "ravi"]),
+    placement: z.enum(["cloud", "installation"]),
+    writes: z.enum(["ask", "auto"]),
+    networking: z.enum(["limited", "unrestricted"]),
+    allowedHosts: stringListSchema,
+    mcpServers: stringListSchema,
+    raviOps: stringListSchema,
+    secrets: stringListSchema,
+    repositories: stringListSchema,
+    memory: z.enum(["agent", "person"]).nullable(),
+    office: stringListSchema,
+    web: z
+      .object({
+        search: z.boolean(),
+        fetch: z.boolean(),
+        allowedDomains: stringListSchema,
+        blockedDomains: stringListSchema,
+      })
+      .strict(),
+    askHuman: z.boolean(),
+    workflows: z.boolean(),
+  })
+  .strict();
+
 const publisherSchema = z.object({ id: z.string(), name: z.string().nullable() }).strict();
 
 export const cloudCatalogEntryReturnSchema = z
@@ -300,7 +330,7 @@ export const cloudCatalogEntryReturnSchema = z
     summary: z.string(),
     sector: z.string().nullable(),
     publisher: publisherSchema,
-    manifest: z.record(z.string(), z.unknown()).nullable(),
+    manifest: cloudManifestReturnSchema.nullable(),
     manifestHash: z.string().nullable(),
     status: z.enum(["listed", "unlisted"]),
     installed: z.boolean(),
@@ -356,7 +386,7 @@ export const cloudProductAgentReturnSchema = cloudAgentReturnSchema
         hash: z.string().nullable(),
         approved: z.boolean(),
         approvedAt: z.string().nullable(),
-        value: z.record(z.string(), z.unknown()).nullable(),
+        value: cloudManifestReturnSchema.nullable(),
       })
       .strict()
       .nullable()

@@ -7430,7 +7430,28 @@ export type CloudAgentsApproveReturn = {
       approved: boolean;
       approvedAt: string | null;
       hash: string | null;
-      value: (Record<string, unknown>) | null;
+      value: ({
+        allowedHosts: string[];
+        askHuman: boolean;
+        mcpServers: string[];
+        memory: ("agent" | "person") | null;
+        model: string;
+        networking: "limited" | "unrestricted";
+        office: string[];
+        placement: "cloud" | "installation";
+        provider: "anthropic" | "ravi";
+        raviOps: string[];
+        repositories: string[];
+        secrets: string[];
+        web: {
+          allowedDomains: string[];
+          blockedDomains: string[];
+          fetch: boolean;
+          search: boolean;
+        };
+        workflows: boolean;
+        writes: "ask" | "auto";
+      }) | null;
     }) | null;
     model: string | null;
     name: string;
@@ -7548,7 +7569,28 @@ export type CloudAgentsCapReturn = {
       approved: boolean;
       approvedAt: string | null;
       hash: string | null;
-      value: (Record<string, unknown>) | null;
+      value: ({
+        allowedHosts: string[];
+        askHuman: boolean;
+        mcpServers: string[];
+        memory: ("agent" | "person") | null;
+        model: string;
+        networking: "limited" | "unrestricted";
+        office: string[];
+        placement: "cloud" | "installation";
+        provider: "anthropic" | "ravi";
+        raviOps: string[];
+        repositories: string[];
+        secrets: string[];
+        web: {
+          allowedDomains: string[];
+          blockedDomains: string[];
+          fetch: boolean;
+          search: boolean;
+        };
+        workflows: boolean;
+        writes: "ask" | "auto";
+      }) | null;
     }) | null;
     model: string | null;
     name: string;
@@ -7781,7 +7823,28 @@ export type CloudCatalogInstallReturn = {
       approved: boolean;
       approvedAt: string | null;
       hash: string | null;
-      value: (Record<string, unknown>) | null;
+      value: ({
+        allowedHosts: string[];
+        askHuman: boolean;
+        mcpServers: string[];
+        memory: ("agent" | "person") | null;
+        model: string;
+        networking: "limited" | "unrestricted";
+        office: string[];
+        placement: "cloud" | "installation";
+        provider: "anthropic" | "ravi";
+        raviOps: string[];
+        repositories: string[];
+        secrets: string[];
+        web: {
+          allowedDomains: string[];
+          blockedDomains: string[];
+          fetch: boolean;
+          search: boolean;
+        };
+        workflows: boolean;
+        writes: "ask" | "auto";
+      }) | null;
     }) | null;
     model: string | null;
     name: string;
@@ -7801,6 +7864,8 @@ export type CloudCatalogInstallReturn = {
 
 /** Input shape for `cloud.catalog.list`. */
 export type CloudCatalogListInput = {
+  limit?: string;
+  offset?: string;
   sector?: string;
 };
 
@@ -7809,7 +7874,28 @@ export type CloudCatalogListReturn = {
   entries: Array<{
     id: string;
     installed: boolean;
-    manifest: (Record<string, unknown>) | null;
+    manifest: ({
+      allowedHosts: string[];
+      askHuman: boolean;
+      mcpServers: string[];
+      memory: ("agent" | "person") | null;
+      model: string;
+      networking: "limited" | "unrestricted";
+      office: string[];
+      placement: "cloud" | "installation";
+      provider: "anthropic" | "ravi";
+      raviOps: string[];
+      repositories: string[];
+      secrets: string[];
+      web: {
+        allowedDomains: string[];
+        blockedDomains: string[];
+        fetch: boolean;
+        search: boolean;
+      };
+      workflows: boolean;
+      writes: "ask" | "auto";
+    }) | null;
     manifestHash: string | null;
     name: string;
     publisher: {
@@ -7839,6 +7925,15 @@ export type CloudCatalogListReturn = {
     status: "listed" | "unlisted";
     summary: string;
   }>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
   success: true;
 };
 
@@ -7901,7 +7996,28 @@ export type CloudCatalogPacksInstallReturn = {
       approved: boolean;
       approvedAt: string | null;
       hash: string | null;
-      value: (Record<string, unknown>) | null;
+      value: ({
+        allowedHosts: string[];
+        askHuman: boolean;
+        mcpServers: string[];
+        memory: ("agent" | "person") | null;
+        model: string;
+        networking: "limited" | "unrestricted";
+        office: string[];
+        placement: "cloud" | "installation";
+        provider: "anthropic" | "ravi";
+        raviOps: string[];
+        repositories: string[];
+        secrets: string[];
+        web: {
+          allowedDomains: string[];
+          blockedDomains: string[];
+          fetch: boolean;
+          search: boolean;
+        };
+        workflows: boolean;
+        writes: "ask" | "auto";
+      }) | null;
     }) | null;
     model: string | null;
     name: string;
@@ -9347,11 +9463,22 @@ export type CloudScopeShowReturn = {
 
 /** Input shape for `cloud.secrets.list`. */
 export type CloudSecretsListInput = {
+  limit?: string;
+  offset?: string;
   project?: string;
 };
 
 /** Return shape for `cloud.secrets.list`. */
 export type CloudSecretsListReturn = {
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
   project: string | null;
   secrets: Array<{
     allowedHosts: string[];
@@ -9502,11 +9629,22 @@ export type CloudTriggersCreateReturn = {
 
 /** Input shape for `cloud.triggers.list`. */
 export type CloudTriggersListInput = {
+  limit?: string;
+  offset?: string;
   project?: string;
 };
 
 /** Return shape for `cloud.triggers.list`. */
 export type CloudTriggersListReturn = {
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
   project: string;
   success: true;
   triggers: Array<{
@@ -9695,13 +9833,25 @@ export type CloudWorkerKeyRemoveReturn = {
 };
 
 /** Input shape for `cloud.worker.list`. */
-export type CloudWorkerListInput = Record<string, never>;
+export type CloudWorkerListInput = {
+  limit?: string;
+  offset?: string;
+};
 
 /** Return shape for `cloud.worker.list`. */
 export type CloudWorkerListReturn = {
   enabled: boolean;
   enabledAt: string | null;
   orphanKeys: string[];
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
   success: true;
   workers: Array<{
     agentId: string;

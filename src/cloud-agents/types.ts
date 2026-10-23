@@ -80,12 +80,31 @@ export interface CloudAgentConfig {
   provider?: "anthropic" | "ravi";
 }
 
-/** What a deployed agent can do; an owner or admin approves it (F3). */
+/** What a deployed agent can do, as the Console computes it from the definition (F3). */
+export interface CloudManifest {
+  model: string;
+  provider: "anthropic" | "ravi";
+  placement: "cloud" | "installation";
+  writes: "ask" | "auto";
+  networking: "limited" | "unrestricted";
+  allowedHosts: string[];
+  mcpServers: string[];
+  raviOps: string[];
+  secrets: string[];
+  repositories: string[];
+  memory: "agent" | "person" | null;
+  office: string[];
+  web: { search: boolean; fetch: boolean; allowedDomains: string[]; blockedDomains: string[] };
+  askHuman: boolean;
+  workflows: boolean;
+}
+
+/** The agent's current manifest; an owner or admin approves it (F3). */
 export interface CloudManifestState {
   hash: string | null;
   approved: boolean;
   approvedAt: string | null;
-  value: Record<string, unknown> | null;
+  value: CloudManifest | null;
 }
 
 export interface CloudAgent {
@@ -393,7 +412,7 @@ export interface CloudCatalogEntry {
   sector: string | null;
   publisher: { id: string; name: string | null };
   /** The capability manifest snapshot (what an installed agent can do). */
-  manifest: Record<string, unknown> | null;
+  manifest: CloudManifest | null;
   manifestHash: string | null;
   status: "listed" | "unlisted";
   installed: boolean;

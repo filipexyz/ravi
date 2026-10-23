@@ -180,7 +180,16 @@ describe("cloud agents product client", () => {
     const detail = await getCloudProductAgentDetail(client, "ca_1");
     expect(detail.memory).toEqual({ scope: "person", storeCount: 4 });
     expect(detail.agent.config).toMatchObject({ memory: "person", secrets: ["CRM_TOKEN"], placement: "cloud" });
-    expect(detail.agent.manifest).toEqual({ hash: "h1", approved: false, approvedAt: null, value: { writes: "auto" } });
+    expect(detail.agent.manifest).toMatchObject({ hash: "h1", approved: false, approvedAt: null });
+    // A partial manifest takes the safe defaults for what it leaves out.
+    expect(detail.agent.manifest?.value).toMatchObject({
+      writes: "auto",
+      networking: "limited",
+      provider: "anthropic",
+      secrets: [],
+      web: { search: false, fetch: false, allowedDomains: [], blockedDomains: [] },
+      askHuman: true,
+    });
     expect((await approveCloudAgent(client, "ca_1")).status).toBe("ready");
     expect((await setCloudAgentCap(client, "ca_1", null)).cap?.monthlyCapUsd).toBeNull();
     expect(await resetCloudAgentMemory(client, "ca_1")).toEqual({

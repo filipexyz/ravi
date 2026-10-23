@@ -2229,6 +2229,8 @@ export class RaviClient {
       },
       /** List the catalog's agents and packs */
       list: async (options?: {
+        limit?: string;
+        offset?: string;
         sector?: string;
       }): Promise<CloudCatalogListReturn> => {
         return this.transport.call({
@@ -2535,6 +2537,8 @@ export class RaviClient {
     secrets: {
       /** List the organization's (or a project's) cloud secrets: names and hints */
       list: async (options?: {
+        limit?: string;
+        offset?: string;
         project?: string;
       }): Promise<CloudSecretsListReturn> => {
         return this.transport.call({
@@ -2604,6 +2608,8 @@ export class RaviClient {
       },
       /** List the cloud triggers of a Console project */
       list: async (options?: {
+        limit?: string;
+        offset?: string;
         project?: string;
       }): Promise<CloudTriggersListReturn> => {
         return this.transport.call({
@@ -2687,11 +2693,14 @@ export class RaviClient {
         }
       },
       /** List the workers assigned to this installation, with their key and the daemon's state */
-      list: async (): Promise<CloudWorkerListReturn> => {
+      list: async (options?: {
+        limit?: string;
+        offset?: string;
+      }): Promise<CloudWorkerListReturn> => {
         return this.transport.call({
           groupSegments: ["cloud","worker"],
           command: "list",
-          body: {},
+          body: { ...(options ?? {}) },
         });
       }
     }

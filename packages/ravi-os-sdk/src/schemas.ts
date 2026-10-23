@@ -39829,10 +39829,143 @@ export const CloudAgentsApproveReturnSchema = {
                 "value": {
                   "anyOf": [
                     {
-                      "additionalProperties": {},
-                      "propertyNames": {
-                        "type": "string"
+                      "additionalProperties": false,
+                      "properties": {
+                        "allowedHosts": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "askHuman": {
+                          "type": "boolean"
+                        },
+                        "mcpServers": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "memory": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "agent",
+                                "person"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "model": {
+                          "type": "string"
+                        },
+                        "networking": {
+                          "enum": [
+                            "limited",
+                            "unrestricted"
+                          ],
+                          "type": "string"
+                        },
+                        "office": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "placement": {
+                          "enum": [
+                            "cloud",
+                            "installation"
+                          ],
+                          "type": "string"
+                        },
+                        "provider": {
+                          "enum": [
+                            "anthropic",
+                            "ravi"
+                          ],
+                          "type": "string"
+                        },
+                        "raviOps": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "repositories": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "secrets": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "web": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "allowedDomains": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "blockedDomains": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "fetch": {
+                              "type": "boolean"
+                            },
+                            "search": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "search",
+                            "fetch",
+                            "allowedDomains",
+                            "blockedDomains"
+                          ],
+                          "type": "object"
+                        },
+                        "workflows": {
+                          "type": "boolean"
+                        },
+                        "writes": {
+                          "enum": [
+                            "ask",
+                            "auto"
+                          ],
+                          "type": "string"
+                        }
                       },
+                      "required": [
+                        "model",
+                        "provider",
+                        "placement",
+                        "writes",
+                        "networking",
+                        "allowedHosts",
+                        "mcpServers",
+                        "raviOps",
+                        "secrets",
+                        "repositories",
+                        "memory",
+                        "office",
+                        "web",
+                        "askHuman",
+                        "workflows"
+                      ],
                       "type": "object"
                     },
                     {
@@ -40506,10 +40639,143 @@ export const CloudAgentsCapReturnSchema = {
                 "value": {
                   "anyOf": [
                     {
-                      "additionalProperties": {},
-                      "propertyNames": {
-                        "type": "string"
+                      "additionalProperties": false,
+                      "properties": {
+                        "allowedHosts": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "askHuman": {
+                          "type": "boolean"
+                        },
+                        "mcpServers": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "memory": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "agent",
+                                "person"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "model": {
+                          "type": "string"
+                        },
+                        "networking": {
+                          "enum": [
+                            "limited",
+                            "unrestricted"
+                          ],
+                          "type": "string"
+                        },
+                        "office": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "placement": {
+                          "enum": [
+                            "cloud",
+                            "installation"
+                          ],
+                          "type": "string"
+                        },
+                        "provider": {
+                          "enum": [
+                            "anthropic",
+                            "ravi"
+                          ],
+                          "type": "string"
+                        },
+                        "raviOps": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "repositories": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "secrets": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "web": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "allowedDomains": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "blockedDomains": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "fetch": {
+                              "type": "boolean"
+                            },
+                            "search": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "search",
+                            "fetch",
+                            "allowedDomains",
+                            "blockedDomains"
+                          ],
+                          "type": "object"
+                        },
+                        "workflows": {
+                          "type": "boolean"
+                        },
+                        "writes": {
+                          "enum": [
+                            "ask",
+                            "auto"
+                          ],
+                          "type": "string"
+                        }
                       },
+                      "required": [
+                        "model",
+                        "provider",
+                        "placement",
+                        "writes",
+                        "networking",
+                        "allowedHosts",
+                        "mcpServers",
+                        "raviOps",
+                        "secrets",
+                        "repositories",
+                        "memory",
+                        "office",
+                        "web",
+                        "askHuman",
+                        "workflows"
+                      ],
                       "type": "object"
                     },
                     {
@@ -41743,10 +42009,143 @@ export const CloudCatalogInstallReturnSchema = {
                   "value": {
                     "anyOf": [
                       {
-                        "additionalProperties": {},
-                        "propertyNames": {
-                          "type": "string"
+                        "additionalProperties": false,
+                        "properties": {
+                          "allowedHosts": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "askHuman": {
+                            "type": "boolean"
+                          },
+                          "mcpServers": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "memory": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "agent",
+                                  "person"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "model": {
+                            "type": "string"
+                          },
+                          "networking": {
+                            "enum": [
+                              "limited",
+                              "unrestricted"
+                            ],
+                            "type": "string"
+                          },
+                          "office": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "placement": {
+                            "enum": [
+                              "cloud",
+                              "installation"
+                            ],
+                            "type": "string"
+                          },
+                          "provider": {
+                            "enum": [
+                              "anthropic",
+                              "ravi"
+                            ],
+                            "type": "string"
+                          },
+                          "raviOps": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "repositories": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "secrets": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "web": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "allowedDomains": {
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": "array"
+                              },
+                              "blockedDomains": {
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": "array"
+                              },
+                              "fetch": {
+                                "type": "boolean"
+                              },
+                              "search": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "search",
+                              "fetch",
+                              "allowedDomains",
+                              "blockedDomains"
+                            ],
+                            "type": "object"
+                          },
+                          "workflows": {
+                            "type": "boolean"
+                          },
+                          "writes": {
+                            "enum": [
+                              "ask",
+                              "auto"
+                            ],
+                            "type": "string"
+                          }
                         },
+                        "required": [
+                          "model",
+                          "provider",
+                          "placement",
+                          "writes",
+                          "networking",
+                          "allowedHosts",
+                          "mcpServers",
+                          "raviOps",
+                          "secrets",
+                          "repositories",
+                          "memory",
+                          "office",
+                          "web",
+                          "askHuman",
+                          "workflows"
+                        ],
                         "type": "object"
                       },
                       {
@@ -41863,6 +42262,14 @@ export const CloudCatalogInstallReturnSchema = {
 export const CloudCatalogListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (1-200, default 50)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Skip this many (default 0)",
+      "type": "string"
+    },
     "sector": {
       "description": "Only this sector",
       "type": "string"
@@ -41888,10 +42295,143 @@ export const CloudCatalogListReturnSchema = {
           "manifest": {
             "anyOf": [
               {
-                "additionalProperties": {},
-                "propertyNames": {
-                  "type": "string"
+                "additionalProperties": false,
+                "properties": {
+                  "allowedHosts": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "askHuman": {
+                    "type": "boolean"
+                  },
+                  "mcpServers": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "memory": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "agent",
+                          "person"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "networking": {
+                    "enum": [
+                      "limited",
+                      "unrestricted"
+                    ],
+                    "type": "string"
+                  },
+                  "office": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "placement": {
+                    "enum": [
+                      "cloud",
+                      "installation"
+                    ],
+                    "type": "string"
+                  },
+                  "provider": {
+                    "enum": [
+                      "anthropic",
+                      "ravi"
+                    ],
+                    "type": "string"
+                  },
+                  "raviOps": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "repositories": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "secrets": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "web": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "allowedDomains": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "blockedDomains": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "fetch": {
+                        "type": "boolean"
+                      },
+                      "search": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "search",
+                      "fetch",
+                      "allowedDomains",
+                      "blockedDomains"
+                    ],
+                    "type": "object"
+                  },
+                  "workflows": {
+                    "type": "boolean"
+                  },
+                  "writes": {
+                    "enum": [
+                      "ask",
+                      "auto"
+                    ],
+                    "type": "string"
+                  }
                 },
+                "required": [
+                  "model",
+                  "provider",
+                  "placement",
+                  "writes",
+                  "networking",
+                  "allowedHosts",
+                  "mcpServers",
+                  "raviOps",
+                  "secrets",
+                  "repositories",
+                  "memory",
+                  "office",
+                  "web",
+                  "askHuman",
+                  "workflows"
+                ],
                 "type": "object"
               },
               {
@@ -42073,6 +42613,56 @@ export const CloudCatalogListReturnSchema = {
       },
       "type": "array"
     },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
     "success": {
       "const": true,
       "type": "boolean"
@@ -42081,7 +42671,8 @@ export const CloudCatalogListReturnSchema = {
   "required": [
     "success",
     "entries",
-    "packs"
+    "packs",
+    "pagination"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -42432,10 +43023,143 @@ export const CloudCatalogPacksInstallReturnSchema = {
                   "value": {
                     "anyOf": [
                       {
-                        "additionalProperties": {},
-                        "propertyNames": {
-                          "type": "string"
+                        "additionalProperties": false,
+                        "properties": {
+                          "allowedHosts": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "askHuman": {
+                            "type": "boolean"
+                          },
+                          "mcpServers": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "memory": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "agent",
+                                  "person"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "model": {
+                            "type": "string"
+                          },
+                          "networking": {
+                            "enum": [
+                              "limited",
+                              "unrestricted"
+                            ],
+                            "type": "string"
+                          },
+                          "office": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "placement": {
+                            "enum": [
+                              "cloud",
+                              "installation"
+                            ],
+                            "type": "string"
+                          },
+                          "provider": {
+                            "enum": [
+                              "anthropic",
+                              "ravi"
+                            ],
+                            "type": "string"
+                          },
+                          "raviOps": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "repositories": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "secrets": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "web": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "allowedDomains": {
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": "array"
+                              },
+                              "blockedDomains": {
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": "array"
+                              },
+                              "fetch": {
+                                "type": "boolean"
+                              },
+                              "search": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "search",
+                              "fetch",
+                              "allowedDomains",
+                              "blockedDomains"
+                            ],
+                            "type": "object"
+                          },
+                          "workflows": {
+                            "type": "boolean"
+                          },
+                          "writes": {
+                            "enum": [
+                              "ask",
+                              "auto"
+                            ],
+                            "type": "string"
+                          }
                         },
+                        "required": [
+                          "model",
+                          "provider",
+                          "placement",
+                          "writes",
+                          "networking",
+                          "allowedHosts",
+                          "mcpServers",
+                          "raviOps",
+                          "secrets",
+                          "repositories",
+                          "memory",
+                          "office",
+                          "web",
+                          "askHuman",
+                          "workflows"
+                        ],
                         "type": "object"
                       },
                       {
@@ -51376,6 +52100,14 @@ export const CloudScopeShowReturnSchema = {
 export const CloudSecretsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (1-200, default 50)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Skip this many (default 0)",
+      "type": "string"
+    },
     "project": {
       "description": "Only this Console project's secrets",
       "type": "string"
@@ -51388,6 +52120,56 @@ export const CloudSecretsListInputSchema = {
 export const CloudSecretsListReturnSchema = {
   "additionalProperties": false,
   "properties": {
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
     "project": {
       "anyOf": [
         {
@@ -51507,7 +52289,8 @@ export const CloudSecretsListReturnSchema = {
   "required": [
     "success",
     "project",
-    "secrets"
+    "secrets",
+    "pagination"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -52154,6 +52937,14 @@ export const CloudTriggersCreateReturnSchema = {
 export const CloudTriggersListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (1-200, default 50)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Skip this many (default 0)",
+      "type": "string"
+    },
     "project": {
       "description": "Console project slug (default: the cwd's project)",
       "type": "string"
@@ -52166,6 +52957,56 @@ export const CloudTriggersListInputSchema = {
 export const CloudTriggersListReturnSchema = {
   "additionalProperties": false,
   "properties": {
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
     "project": {
       "type": "string"
     },
@@ -52415,7 +53256,8 @@ export const CloudTriggersListReturnSchema = {
   "required": [
     "success",
     "project",
-    "triggers"
+    "triggers",
+    "pagination"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -53041,7 +53883,16 @@ export const CloudWorkerKeyRemoveReturnSchema = {
 /** JSON Schema for the input body of `cloud.worker.list`. */
 export const CloudWorkerListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "limit": {
+      "description": "Page size (1-200, default 50)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Skip this many (default 0)",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -53067,6 +53918,56 @@ export const CloudWorkerListReturnSchema = {
         "type": "string"
       },
       "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
     },
     "success": {
       "const": true,
@@ -53204,7 +54105,8 @@ export const CloudWorkerListReturnSchema = {
     "enabled",
     "enabledAt",
     "workers",
-    "orphanKeys"
+    "orphanKeys",
+    "pagination"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;

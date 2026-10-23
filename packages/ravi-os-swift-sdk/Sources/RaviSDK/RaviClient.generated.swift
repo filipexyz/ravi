@@ -2128,8 +2128,9 @@ public struct CloudWorkerNamespace: Sendable {
     return try await transport.call(groupSegments: ["cloud","worker"], command: "disable", body: requestBody, as: CloudWorkerDisableReturn.self)
   }
 
-  public func list() async throws -> CloudWorkerListReturn {
-    let requestBody: [String: RaviJSON] = [:]
+  public func list(_ options: CloudWorkerListOptions = .init()) async throws -> CloudWorkerListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["cloud","worker"], command: "list", body: requestBody, as: CloudWorkerListReturn.self)
   }
 }

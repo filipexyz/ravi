@@ -7828,11 +7828,19 @@ class CloudCatalogInstallReturn {
 CloudCatalogInstallReturn cloudCatalogInstallReturnFromJson(Object? json) => CloudCatalogInstallReturn.fromJsonValue(json);
 
 class CloudCatalogListOptions {
-  const CloudCatalogListOptions({this.sector});
+  const CloudCatalogListOptions({this.limit, this.offset, this.sector});
 
+  final String? limit;
+  final String? offset;
   final String? sector;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
     if (sector != null) {
       into["sector"] = RaviJson.from(sector);
     }
@@ -7840,16 +7848,18 @@ class CloudCatalogListOptions {
 }
 
 class CloudCatalogListReturn {
-  const CloudCatalogListReturn({required this.entries, required this.packs, required this.success});
+  const CloudCatalogListReturn({required this.entries, required this.packs, required this.pagination, required this.success});
 
   final List<RaviJson> entries;
   final List<RaviJson> packs;
+  final RaviJson pagination;
   final bool success;
 
   factory CloudCatalogListReturn.fromJson(Map<String, Object?> json) {
     return CloudCatalogListReturn(
       entries: raviJsonAsList(json["entries"], RaviJson.from),
       packs: raviJsonAsList(json["packs"], RaviJson.from),
+      pagination: RaviJson.from(json["pagination"]),
       success: raviJsonAsBool(json["success"]),
     );
   }
@@ -8824,11 +8834,19 @@ class CloudScopeShowReturn {
 CloudScopeShowReturn cloudScopeShowReturnFromJson(Object? json) => CloudScopeShowReturn.fromJsonValue(json);
 
 class CloudSecretsListOptions {
-  const CloudSecretsListOptions({this.project});
+  const CloudSecretsListOptions({this.limit, this.offset, this.project});
 
+  final String? limit;
+  final String? offset;
   final String? project;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
     if (project != null) {
       into["project"] = RaviJson.from(project);
     }
@@ -8836,14 +8854,16 @@ class CloudSecretsListOptions {
 }
 
 class CloudSecretsListReturn {
-  const CloudSecretsListReturn({required this.project, required this.secrets, required this.success});
+  const CloudSecretsListReturn({required this.pagination, required this.project, required this.secrets, required this.success});
 
+  final RaviJson pagination;
   final RaviJson project;
   final List<RaviJson> secrets;
   final bool success;
 
   factory CloudSecretsListReturn.fromJson(Map<String, Object?> json) {
     return CloudSecretsListReturn(
+      pagination: RaviJson.from(json["pagination"]),
       project: RaviJson.from(json["project"]),
       secrets: raviJsonAsList(json["secrets"], RaviJson.from),
       success: raviJsonAsBool(json["success"]),
@@ -9048,11 +9068,19 @@ class CloudTriggersCreateReturn {
 CloudTriggersCreateReturn cloudTriggersCreateReturnFromJson(Object? json) => CloudTriggersCreateReturn.fromJsonValue(json);
 
 class CloudTriggersListOptions {
-  const CloudTriggersListOptions({this.project});
+  const CloudTriggersListOptions({this.limit, this.offset, this.project});
 
+  final String? limit;
+  final String? offset;
   final String? project;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
     if (project != null) {
       into["project"] = RaviJson.from(project);
     }
@@ -9060,14 +9088,16 @@ class CloudTriggersListOptions {
 }
 
 class CloudTriggersListReturn {
-  const CloudTriggersListReturn({required this.project, required this.success, required this.triggers});
+  const CloudTriggersListReturn({required this.pagination, required this.project, required this.success, required this.triggers});
 
+  final RaviJson pagination;
   final String project;
   final bool success;
   final List<RaviJson> triggers;
 
   factory CloudTriggersListReturn.fromJson(Map<String, Object?> json) {
     return CloudTriggersListReturn(
+      pagination: RaviJson.from(json["pagination"]),
       project: raviJsonAsString(json["project"]),
       success: raviJsonAsBool(json["success"]),
       triggers: raviJsonAsList(json["triggers"], RaviJson.from),
@@ -9283,12 +9313,29 @@ class CloudWorkerKeyRemoveReturn {
 
 CloudWorkerKeyRemoveReturn cloudWorkerKeyRemoveReturnFromJson(Object? json) => CloudWorkerKeyRemoveReturn.fromJsonValue(json);
 
+class CloudWorkerListOptions {
+  const CloudWorkerListOptions({this.limit, this.offset});
+
+  final String? limit;
+  final String? offset;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+  }
+}
+
 class CloudWorkerListReturn {
-  const CloudWorkerListReturn({required this.enabled, required this.enabledAt, required this.orphanKeys, required this.success, required this.workers});
+  const CloudWorkerListReturn({required this.enabled, required this.enabledAt, required this.orphanKeys, required this.pagination, required this.success, required this.workers});
 
   final bool enabled;
   final RaviJson enabledAt;
   final List<String> orphanKeys;
+  final RaviJson pagination;
   final bool success;
   final List<RaviJson> workers;
 
@@ -9297,6 +9344,7 @@ class CloudWorkerListReturn {
       enabled: raviJsonAsBool(json["enabled"]),
       enabledAt: RaviJson.from(json["enabledAt"]),
       orphanKeys: raviJsonAsList(json["orphanKeys"], raviJsonAsString),
+      pagination: RaviJson.from(json["pagination"]),
       success: raviJsonAsBool(json["success"]),
       workers: raviJsonAsList(json["workers"], RaviJson.from),
     );

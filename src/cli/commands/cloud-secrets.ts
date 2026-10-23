@@ -15,7 +15,12 @@ import { listCloudSecrets, removeCloudSecret, setCloudSecret } from "../../cloud
 import { CLOUD_SECRET_NAME_PATTERN } from "../../cloud-agents/definition.js";
 import type { CloudSecret } from "../../cloud-agents/types.js";
 import { contractDryRun, contractFail } from "../agent-contract.js";
-import { usageError, withCloudAgentsContract } from "../cloud-agents-contract.js";
+import {
+  cloudPaginationReturnSchema,
+  pageCloudList,
+  usageError,
+  withCloudAgentsContract,
+} from "../cloud-agents-contract.js";
 import {
   type CloudProductCommandDeps,
   cloudSecretReturnSchema,
@@ -52,7 +57,12 @@ EXAMPLES
 `;
 
 const secretsListSchema = z
-  .object({ success: z.literal(true), project: z.string().nullable(), secrets: z.array(cloudSecretReturnSchema) })
+  .object({
+    success: z.literal(true),
+    project: z.string().nullable(),
+    secrets: z.array(cloudSecretReturnSchema),
+    pagination: cloudPaginationReturnSchema,
+  })
   .strict();
 
 function secretLine(secret: CloudSecret): string {
@@ -73,14 +83,22 @@ export class CloudSecretsCommands {
   @Returns(secretsListSchema)
   async list(
     @Option({ flags: "--project <project>", description: "Only this Console project's secrets" }) project?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (1-200, default 50)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Skip this many (default 0)" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const op = "cloud secrets list";
     return withCloudAgentsContract(op, asJson, async () => {
       const session = await productSession(this.deps, project, false);
       const projectRef = project?.trim() || null;
-      const secrets = await listCloudSecrets(session.client, projectRef);
-      const payload = { success: true as const, project: projectRef, secrets };
+      const page = pageCloudList(
+        op,
+        await listCloudSecrets(session.client, projectRef),
+        { limit, offset, command: `ravi cloud secrets list${projectRef ? ` --project ${projectRef}` : ""}` },
+        asJson,
+      );
+      const secrets = page.items;
+      const payload = { success: true as const, project: projectRef, secrets, pagination: page.pagination };
       if (asJson) {
         printJson(payload);
       } else if (secrets.length === 0) {

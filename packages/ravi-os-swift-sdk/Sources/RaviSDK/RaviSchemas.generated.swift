@@ -40131,10 +40131,143 @@ public enum RaviSchemas {
                   "value": {
                     "anyOf": [
                       {
-                        "additionalProperties": {},
-                        "propertyNames": {
-                          "type": "string"
+                        "additionalProperties": false,
+                        "properties": {
+                          "allowedHosts": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "askHuman": {
+                            "type": "boolean"
+                          },
+                          "mcpServers": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "memory": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "agent",
+                                  "person"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "model": {
+                            "type": "string"
+                          },
+                          "networking": {
+                            "enum": [
+                              "limited",
+                              "unrestricted"
+                            ],
+                            "type": "string"
+                          },
+                          "office": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "placement": {
+                            "enum": [
+                              "cloud",
+                              "installation"
+                            ],
+                            "type": "string"
+                          },
+                          "provider": {
+                            "enum": [
+                              "anthropic",
+                              "ravi"
+                            ],
+                            "type": "string"
+                          },
+                          "raviOps": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "repositories": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "secrets": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "web": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "allowedDomains": {
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": "array"
+                              },
+                              "blockedDomains": {
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": "array"
+                              },
+                              "fetch": {
+                                "type": "boolean"
+                              },
+                              "search": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "search",
+                              "fetch",
+                              "allowedDomains",
+                              "blockedDomains"
+                            ],
+                            "type": "object"
+                          },
+                          "workflows": {
+                            "type": "boolean"
+                          },
+                          "writes": {
+                            "enum": [
+                              "ask",
+                              "auto"
+                            ],
+                            "type": "string"
+                          }
                         },
+                        "required": [
+                          "model",
+                          "provider",
+                          "placement",
+                          "writes",
+                          "networking",
+                          "allowedHosts",
+                          "mcpServers",
+                          "raviOps",
+                          "secrets",
+                          "repositories",
+                          "memory",
+                          "office",
+                          "web",
+                          "askHuman",
+                          "workflows"
+                        ],
                         "type": "object"
                       },
                       {
@@ -40812,10 +40945,143 @@ public enum RaviSchemas {
                   "value": {
                     "anyOf": [
                       {
-                        "additionalProperties": {},
-                        "propertyNames": {
-                          "type": "string"
+                        "additionalProperties": false,
+                        "properties": {
+                          "allowedHosts": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "askHuman": {
+                            "type": "boolean"
+                          },
+                          "mcpServers": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "memory": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "agent",
+                                  "person"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "model": {
+                            "type": "string"
+                          },
+                          "networking": {
+                            "enum": [
+                              "limited",
+                              "unrestricted"
+                            ],
+                            "type": "string"
+                          },
+                          "office": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "placement": {
+                            "enum": [
+                              "cloud",
+                              "installation"
+                            ],
+                            "type": "string"
+                          },
+                          "provider": {
+                            "enum": [
+                              "anthropic",
+                              "ravi"
+                            ],
+                            "type": "string"
+                          },
+                          "raviOps": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "repositories": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "secrets": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "web": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "allowedDomains": {
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": "array"
+                              },
+                              "blockedDomains": {
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": "array"
+                              },
+                              "fetch": {
+                                "type": "boolean"
+                              },
+                              "search": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "search",
+                              "fetch",
+                              "allowedDomains",
+                              "blockedDomains"
+                            ],
+                            "type": "object"
+                          },
+                          "workflows": {
+                            "type": "boolean"
+                          },
+                          "writes": {
+                            "enum": [
+                              "ask",
+                              "auto"
+                            ],
+                            "type": "string"
+                          }
                         },
+                        "required": [
+                          "model",
+                          "provider",
+                          "placement",
+                          "writes",
+                          "networking",
+                          "allowedHosts",
+                          "mcpServers",
+                          "raviOps",
+                          "secrets",
+                          "repositories",
+                          "memory",
+                          "office",
+                          "web",
+                          "askHuman",
+                          "workflows"
+                        ],
                         "type": "object"
                       },
                       {
@@ -42059,10 +42325,143 @@ public enum RaviSchemas {
                     "value": {
                       "anyOf": [
                         {
-                          "additionalProperties": {},
-                          "propertyNames": {
-                            "type": "string"
+                          "additionalProperties": false,
+                          "properties": {
+                            "allowedHosts": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "askHuman": {
+                              "type": "boolean"
+                            },
+                            "mcpServers": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "memory": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "agent",
+                                    "person"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "model": {
+                              "type": "string"
+                            },
+                            "networking": {
+                              "enum": [
+                                "limited",
+                                "unrestricted"
+                              ],
+                              "type": "string"
+                            },
+                            "office": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "placement": {
+                              "enum": [
+                                "cloud",
+                                "installation"
+                              ],
+                              "type": "string"
+                            },
+                            "provider": {
+                              "enum": [
+                                "anthropic",
+                                "ravi"
+                              ],
+                              "type": "string"
+                            },
+                            "raviOps": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "repositories": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "secrets": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "web": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "allowedDomains": {
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "blockedDomains": {
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "fetch": {
+                                  "type": "boolean"
+                                },
+                                "search": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "search",
+                                "fetch",
+                                "allowedDomains",
+                                "blockedDomains"
+                              ],
+                              "type": "object"
+                            },
+                            "workflows": {
+                              "type": "boolean"
+                            },
+                            "writes": {
+                              "enum": [
+                                "ask",
+                                "auto"
+                              ],
+                              "type": "string"
+                            }
                           },
+                          "required": [
+                            "model",
+                            "provider",
+                            "placement",
+                            "writes",
+                            "networking",
+                            "allowedHosts",
+                            "mcpServers",
+                            "raviOps",
+                            "secrets",
+                            "repositories",
+                            "memory",
+                            "office",
+                            "web",
+                            "askHuman",
+                            "workflows"
+                          ],
                           "type": "object"
                         },
                         {
@@ -42180,6 +42579,14 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "limit": {
+        "description": "Page size (1-200, default 50)",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Skip this many (default 0)",
+        "type": "string"
+      },
       "sector": {
         "description": "Only this sector",
         "type": "string"
@@ -42206,10 +42613,143 @@ public enum RaviSchemas {
             "manifest": {
               "anyOf": [
                 {
-                  "additionalProperties": {},
-                  "propertyNames": {
-                    "type": "string"
+                  "additionalProperties": false,
+                  "properties": {
+                    "allowedHosts": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "askHuman": {
+                      "type": "boolean"
+                    },
+                    "mcpServers": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "memory": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "agent",
+                            "person"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "model": {
+                      "type": "string"
+                    },
+                    "networking": {
+                      "enum": [
+                        "limited",
+                        "unrestricted"
+                      ],
+                      "type": "string"
+                    },
+                    "office": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "placement": {
+                      "enum": [
+                        "cloud",
+                        "installation"
+                      ],
+                      "type": "string"
+                    },
+                    "provider": {
+                      "enum": [
+                        "anthropic",
+                        "ravi"
+                      ],
+                      "type": "string"
+                    },
+                    "raviOps": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "repositories": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "secrets": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "web": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "allowedDomains": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "blockedDomains": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "fetch": {
+                          "type": "boolean"
+                        },
+                        "search": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "search",
+                        "fetch",
+                        "allowedDomains",
+                        "blockedDomains"
+                      ],
+                      "type": "object"
+                    },
+                    "workflows": {
+                      "type": "boolean"
+                    },
+                    "writes": {
+                      "enum": [
+                        "ask",
+                        "auto"
+                      ],
+                      "type": "string"
+                    }
                   },
+                  "required": [
+                    "model",
+                    "provider",
+                    "placement",
+                    "writes",
+                    "networking",
+                    "allowedHosts",
+                    "mcpServers",
+                    "raviOps",
+                    "secrets",
+                    "repositories",
+                    "memory",
+                    "office",
+                    "web",
+                    "askHuman",
+                    "workflows"
+                  ],
                   "type": "object"
                 },
                 {
@@ -42391,6 +42931,56 @@ public enum RaviSchemas {
         },
         "type": "array"
       },
+      "pagination": {
+        "additionalProperties": false,
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
       "success": {
         "const": true,
         "type": "boolean"
@@ -42399,7 +42989,8 @@ public enum RaviSchemas {
     "required": [
       "success",
       "entries",
-      "packs"
+      "packs",
+      "pagination"
     ],
     "type": "object"
   }
@@ -42752,10 +43343,143 @@ public enum RaviSchemas {
                     "value": {
                       "anyOf": [
                         {
-                          "additionalProperties": {},
-                          "propertyNames": {
-                            "type": "string"
+                          "additionalProperties": false,
+                          "properties": {
+                            "allowedHosts": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "askHuman": {
+                              "type": "boolean"
+                            },
+                            "mcpServers": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "memory": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "agent",
+                                    "person"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "model": {
+                              "type": "string"
+                            },
+                            "networking": {
+                              "enum": [
+                                "limited",
+                                "unrestricted"
+                              ],
+                              "type": "string"
+                            },
+                            "office": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "placement": {
+                              "enum": [
+                                "cloud",
+                                "installation"
+                              ],
+                              "type": "string"
+                            },
+                            "provider": {
+                              "enum": [
+                                "anthropic",
+                                "ravi"
+                              ],
+                              "type": "string"
+                            },
+                            "raviOps": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "repositories": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "secrets": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "web": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "allowedDomains": {
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "blockedDomains": {
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "fetch": {
+                                  "type": "boolean"
+                                },
+                                "search": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "search",
+                                "fetch",
+                                "allowedDomains",
+                                "blockedDomains"
+                              ],
+                              "type": "object"
+                            },
+                            "workflows": {
+                              "type": "boolean"
+                            },
+                            "writes": {
+                              "enum": [
+                                "ask",
+                                "auto"
+                              ],
+                              "type": "string"
+                            }
                           },
+                          "required": [
+                            "model",
+                            "provider",
+                            "placement",
+                            "writes",
+                            "networking",
+                            "allowedHosts",
+                            "mcpServers",
+                            "raviOps",
+                            "secrets",
+                            "repositories",
+                            "memory",
+                            "office",
+                            "web",
+                            "askHuman",
+                            "workflows"
+                          ],
                           "type": "object"
                         },
                         {
@@ -51743,6 +52467,14 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "limit": {
+        "description": "Page size (1-200, default 50)",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Skip this many (default 0)",
+        "type": "string"
+      },
       "project": {
         "description": "Only this Console project's secrets",
         "type": "string"
@@ -51756,6 +52488,56 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "pagination": {
+        "additionalProperties": false,
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
       "project": {
         "anyOf": [
           {
@@ -51875,7 +52657,8 @@ public enum RaviSchemas {
     "required": [
       "success",
       "project",
-      "secrets"
+      "secrets",
+      "pagination"
     ],
     "type": "object"
   }
@@ -52531,6 +53314,14 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "limit": {
+        "description": "Page size (1-200, default 50)",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Skip this many (default 0)",
+        "type": "string"
+      },
       "project": {
         "description": "Console project slug (default: the cwd's project)",
         "type": "string"
@@ -52544,6 +53335,56 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "pagination": {
+        "additionalProperties": false,
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
       "project": {
         "type": "string"
       },
@@ -52793,7 +53634,8 @@ public enum RaviSchemas {
     "required": [
       "success",
       "project",
-      "triggers"
+      "triggers",
+      "pagination"
     ],
     "type": "object"
   }
@@ -53434,7 +54276,16 @@ public enum RaviSchemas {
   public static let CloudWorkerListInputSchema = #"""
   {
     "additionalProperties": false,
-    "properties": {},
+    "properties": {
+      "limit": {
+        "description": "Page size (1-200, default 50)",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Skip this many (default 0)",
+        "type": "string"
+      }
+    },
     "type": "object"
   }
   """#
@@ -53461,6 +54312,56 @@ public enum RaviSchemas {
           "type": "string"
         },
         "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": false,
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
       },
       "success": {
         "const": true,
@@ -53598,7 +54499,8 @@ public enum RaviSchemas {
       "enabled",
       "enabledAt",
       "workers",
-      "orphanKeys"
+      "orphanKeys",
+      "pagination"
     ],
     "type": "object"
   }

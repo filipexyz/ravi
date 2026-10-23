@@ -39,6 +39,7 @@ import {
   type CloudCreditEntry,
   type CloudCredits,
   type CloudDelivery,
+  type CloudManifest,
   type CloudOrgSettings,
   type CloudOrgSettingsBody,
   type CloudSecret,
@@ -344,7 +345,7 @@ export function requireProductAgent(value: unknown): CloudAgent {
           hash: stringOrNull(manifest.hash),
           approved: manifest.approved === true,
           approvedAt: stringOrNull(manifest.approvedAt),
-          value: objectValue(manifest.value),
+          value: normalizeManifest(manifest.value),
         }
       : null,
     cap: cap
@@ -528,6 +529,35 @@ function requireSettings(value: unknown): CloudOrgSettings {
   };
 }
 
+/** The Console's capability manifest; unknown fields are dropped, missing ones take the safe default. */
+function normalizeManifest(value: unknown): CloudManifest | null {
+  const manifest = objectValue(value);
+  if (!manifest) return null;
+  const web = objectValue(manifest.web);
+  return {
+    model: stringOr(manifest.model, ""),
+    provider: manifest.provider === "ravi" ? "ravi" : "anthropic",
+    placement: manifest.placement === "installation" ? "installation" : "cloud",
+    writes: manifest.writes === "auto" ? "auto" : "ask",
+    networking: manifest.networking === "unrestricted" ? "unrestricted" : "limited",
+    allowedHosts: stringArray(manifest.allowedHosts),
+    mcpServers: stringArray(manifest.mcpServers),
+    raviOps: stringArray(manifest.raviOps),
+    secrets: stringArray(manifest.secrets),
+    repositories: stringArray(manifest.repositories),
+    memory: manifest.memory === "agent" || manifest.memory === "person" ? manifest.memory : null,
+    office: stringArray(manifest.office),
+    web: {
+      search: web?.search === true,
+      fetch: web?.fetch === true,
+      allowedDomains: stringArray(web?.allowedDomains),
+      blockedDomains: stringArray(web?.blockedDomains),
+    },
+    askHuman: manifest.askHuman !== false,
+    workflows: manifest.workflows === true,
+  };
+}
+
 function publisherOf(value: unknown): { id: string; name: string | null } {
   const publisher = objectValue(value);
   return { id: stringOr(publisher?.id, ""), name: stringOrNull(publisher?.name) };
@@ -543,7 +573,7 @@ function normalizeCatalogEntry(value: unknown): CloudCatalogEntry | null {
     summary: stringOr(entry.summary, ""),
     sector: stringOrNull(entry.sector),
     publisher: publisherOf(entry.publisher),
-    manifest: objectValue(entry.manifest),
+    manifest: normalizeManifest(entry.manifest),
     manifestHash: stringOrNull(entry.manifestHash),
     status: entry.status === "unlisted" ? "unlisted" : "listed",
     installed: entry.installed === true,

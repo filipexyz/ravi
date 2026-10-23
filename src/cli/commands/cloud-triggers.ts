@@ -23,7 +23,9 @@ import {
 import { CLOUD_TRIGGER_SOURCES, type CloudTrigger, type CloudTriggerSource } from "../../cloud-agents/types.js";
 import { contractDryRun, contractFail } from "../agent-contract.js";
 import {
+  cloudPaginationReturnSchema,
   formatUsd,
+  pageCloudList,
   requireCloudProject,
   requirePromptText,
   usageError,
@@ -124,19 +126,34 @@ export class CloudTriggersCommands {
   @Command({ name: "list", description: "List the cloud triggers of a Console project" })
   @CommandAccess({ kind: "read", resource: "cloud.agents", action: "triggers.list", risk: "low" })
   @Returns(
-    z.object({ success: z.literal(true), project: z.string(), triggers: z.array(cloudTriggerReturnSchema) }).strict(),
+    z
+      .object({
+        success: z.literal(true),
+        project: z.string(),
+        triggers: z.array(cloudTriggerReturnSchema),
+        pagination: cloudPaginationReturnSchema,
+      })
+      .strict(),
   )
   async list(
     @Option({ flags: "--project <project>", description: "Console project slug (default: the cwd's project)" })
     project?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (1-200, default 50)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Skip this many (default 0)" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const op = "cloud triggers list";
     return withCloudAgentsContract(op, asJson, async () => {
       const session = await productSession(this.deps, project);
       const projectRef = requireCloudProject(op, session, asJson);
-      const triggers = await listCloudTriggers(session.client, projectRef);
-      const payload = { success: true as const, project: projectRef, triggers };
+      const page = pageCloudList(
+        op,
+        await listCloudTriggers(session.client, projectRef),
+        { limit, offset, command: `ravi cloud triggers list --project ${projectRef}` },
+        asJson,
+      );
+      const triggers = page.items;
+      const payload = { success: true as const, project: projectRef, triggers, pagination: page.pagination };
       if (asJson) printJson(payload);
       else if (triggers.length === 0) console.log(`No cloud triggers in ${projectRef}.`);
       else for (const trigger of triggers) console.log(triggerLine(trigger));
