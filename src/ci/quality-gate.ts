@@ -44,6 +44,9 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     // Agent Markdown as Slack Block Kit: safe splits, documents as canvases or files, mrkdwn fallback.
     "src/channels/slack/markdown-layout.test.ts",
     "src/channels/slack/markdown-delivery.test.ts",
+    // Thread root card and its brief: shell-typed `\n` decoded into line breaks.
+    "src/channels/slack/thread-card.test.ts",
+    "src/channels/slack/thread-text.test.ts",
   ],
   "src/omni/": [
     "src/omni/consumer-context.test.ts",
