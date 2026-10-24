@@ -2482,6 +2482,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             // A turn whose model differs from the thread's (entering or leaving a
             // task with a model override) switches it here, without a relaunch.
             const turnModel = input.model ?? null;
+            const switchesModel = turnModel !== appliedTurnModel;
             await sendRequest(
               "turn/start",
               {
@@ -2497,7 +2498,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
                 cwd: null,
                 approvalPolicy: null,
                 sandboxPolicy: null,
-                model: turnModel !== appliedTurnModel ? turnModel : null,
+                model: switchesModel ? turnModel : null,
                 effort: input.effort ?? null,
                 summary: null,
                 personality: null,
@@ -2514,6 +2515,10 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
               },
             );
             appliedTurnModel = turnModel;
+            if (switchesModel && turnModel) {
+              // Usage and cost are reported against the model the turn ran on.
+              resolvedModel = turnModel;
+            }
           };
 
           try {

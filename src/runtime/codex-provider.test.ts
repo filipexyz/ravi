@@ -913,7 +913,7 @@ rl.on("line", (line) => {
       }),
     );
 
-    await collectEvents(session.events);
+    const events = await collectEvents(session.events);
     const requests = readFileSync(requestsPath, "utf8")
       .trim()
       .split("\n")
@@ -925,6 +925,13 @@ rl.on("line", (line) => {
       "turn/start",
       "turn/start",
       "turn/start",
+    ]);
+    // Usage is reported against the model each turn ran on.
+    expect(findEventsByType(events, "turn.complete").map((event) => event.execution?.model)).toEqual([
+      "gpt-5.5",
+      "gpt-5.4-mini",
+      "gpt-5.4-mini",
+      "gpt-5.5",
     ]);
     expect(requests[0]?.params.model).toBe("gpt-5.5");
     expect(requests.slice(1).map((request) => request.params.model)).toEqual([null, "gpt-5.4-mini", null, "gpt-5.5"]);

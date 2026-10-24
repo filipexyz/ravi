@@ -864,6 +864,8 @@ async function* runPiTurns(
   let appliedManagedEnvSignature: string | undefined;
   // Thinking level the live Pi process runs with.
   let appliedThinkingLevel = startInput.thinkingLevel;
+  // The model the live Pi process runs with, so a failed `set_model` is retried.
+  let appliedTurnModel: string | undefined;
 
   const takeNextPiEvent = async (): Promise<IteratorResult<PiRpcEvent>> => {
     if (pendingStartupEvents.length > 0) {
@@ -971,8 +973,7 @@ async function* runPiTurns(
       // starts with it, a live process switches with `set_model`.
       const turnModel =
         promptMessage.runtimeOptions?.model && !input.modelBroker ? promptMessage.runtimeOptions.model : undefined;
-      const turnModelChanged = Boolean(turnModel && turnModel !== (state.requestedModel ?? input.model));
-      if (turnModel && turnModelChanged) {
+      if (turnModel && turnModel !== (state.requestedModel ?? input.model)) {
         state.requestedModel = turnModel;
         input.model = turnModel;
         refreshPiStartInputModel(startInput, turnModel, input.modelBroker);
@@ -983,11 +984,23 @@ async function* runPiTurns(
       // which refreshRuntimeRequestContextForTurn then revokes.
       try {
         const spawned = await ensurePiRpcReady();
-        if (!spawned && turnModel && turnModelChanged) {
+        if (spawned) {
+          appliedTurnModel = state.requestedModel ?? input.model;
+        } else if (turnModel && turnModel !== appliedTurnModel) {
+          // A turn must not run on a model it did not ask for: a failed switch
+          // fails the turn and the next turn with this model retries it.
           try {
             await applyPiSetModel(transport, state, turnModel, input.modelBroker, { verify: true });
+            appliedTurnModel = turnModel;
           } catch (error) {
-            log.warn("pi model switch failed; keeping the current model", { model: turnModel, error });
+            log.warn("pi model switch failed; failing the turn", { model: turnModel, error });
+            yield {
+              type: "turn.failed",
+              error: `Pi could not switch to ${turnModel}: ${error instanceof Error ? error.message : String(error)}`,
+              recoverable: true,
+              rawEvent: { type: "model.switch_failed", model: turnModel },
+            };
+            continue;
           }
         }
         if (spawned) {
@@ -1023,6 +1036,10 @@ async function* runPiTurns(
           return;
         }
         continue;
+      }
+      // An abort during the switch above must not start this turn.
+      if (abortSignal.aborted) {
+        break;
       }
 
       const terminalTracker = createRuntimeTerminalEventTracker();
