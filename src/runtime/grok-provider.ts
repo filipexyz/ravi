@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { fileURLToPath } from "node:url";
+import { logger } from "../utils/logger.js";
 import type { RuntimeEffort } from "./effort.js";
 import { coalesceAssistantTextBlocks, splitEmptyJoinedAssistantUtterances } from "./assistant-transcript.js";
 import { createRuntimeTerminalEventTracker } from "./terminality.js";
@@ -42,6 +43,8 @@ import type {
 const DEFAULT_GROK_COMMAND = "grok";
 const DEFAULT_GROK_RPC_TIMEOUT_MS = 30_000;
 const GROK_INTERRUPT_GRACE_MS = 1_000;
+
+const log = logger.child("runtime:grok");
 const GROK_RUNTIME_CONTROL_OPERATIONS: RuntimeControlOperation[] = ["turn.interrupt"];
 const GROK_ACP_PROTOCOL_VERSION = 1;
 const GROK_ACP_CLIENT_NAME = "ravi";
@@ -278,6 +281,8 @@ interface CreateGrokAcpSubprocessTransportOptions {
 
 export interface CreateGrokRuntimeProviderOptions extends CreateGrokAcpSubprocessTransportOptions {
   transport?: GrokAcpTransport;
+  /** Builds a fresh transport for each spawn, so the session can respawn between turns. */
+  transportFactory?: () => GrokAcpTransport;
 }
 
 export interface GrokRuntimeProvider extends SessionRuntimeProvider {
@@ -357,8 +362,9 @@ export function createGrokRuntimeProvider(options: CreateGrokRuntimeProviderOpti
         interrupted: false,
         loadSessionSupported: false,
       };
-      const transport =
+      const createTransport = (): GrokAcpTransport =>
         options.transport ??
+        options.transportFactory?.() ??
         createGrokAcpSubprocessTransport({
           command: options.command,
           commandArgs: options.commandArgs,
@@ -371,15 +377,20 @@ export function createGrokRuntimeProvider(options: CreateGrokRuntimeProviderOpti
               interrupted: context.interrupted || state.interrupted,
             }),
         });
+      const transport = createTransport();
       state.transport = transport;
 
       return {
         provider: "grok",
-        events: runGrokTurns(input, transport, state),
+        events: runGrokTurns(input, transport, state, {
+          createTransport,
+          canRestartTransport: !options.transport,
+        }),
         interrupt: async () => {
           state.interrupted = true;
-          if (state.sessionId) {
-            await safeGrokNotify(transport, "session/cancel", { sessionId: state.sessionId });
+          const current = state.transport;
+          if (current && state.sessionId) {
+            await safeGrokNotify(current, "session/cancel", { sessionId: state.sessionId });
           }
         },
         close: async () => {
@@ -926,9 +937,11 @@ export async function authorizeGrokAcpPermission(
 
 async function* runGrokTurns(
   input: RuntimeStartRequest,
-  transport: GrokAcpTransport,
+  initialTransport: GrokAcpTransport,
   state: GrokSessionRuntimeState,
+  options: { createTransport: () => GrokAcpTransport; canRestartTransport: boolean },
 ): AsyncGenerator<RuntimeEvent> {
+  let transport = initialTransport;
   const abortSignal = input.abortController.signal;
   const toolAccess = await resolveGrokToolAccessRules(input.canUseTool);
   const startInput: GrokAcpStartInput = {
@@ -942,10 +955,41 @@ async function* runGrokTurns(
     allowRules: toolAccess.allowRules,
     allowSubagents: toolAccess.allowSubagents,
   };
-  const eventConsumer = createGrokEventConsumer(transport.events[Symbol.asyncIterator]());
+  let eventConsumer = createGrokEventConsumer(transport.events[Symbol.asyncIterator]());
+  let appliedSpawnSignature = buildGrokSpawnSignature(startInput.env, startInput.effort);
+
+  // Grok takes effort and env only at spawn. Effort and the task env are per
+  // turn, so a turn that changes them respawns the ACP process and reloads the
+  // same session; the conversation carries over.
+  const respawnForTurn = async (effort: RuntimeEffort | undefined, signature: string): Promise<void> => {
+    const sessionId = state.sessionId;
+    if (!sessionId || !options.canRestartTransport || !state.loadSessionSupported) {
+      log.warn("grok effort or task env changed but the session cannot respawn; keeping the running process", {
+        canRestartTransport: options.canRestartTransport,
+        loadSessionSupported: state.loadSessionSupported,
+      });
+      appliedSpawnSignature = signature;
+      return;
+    }
+    log.info("grok effort or task env changed; respawning", { effort: toGrokEffort(effort) ?? null });
+    await transport.close().catch(() => {});
+    transport = options.createTransport();
+    state.transport = transport;
+    eventConsumer = createGrokEventConsumer(transport.events[Symbol.asyncIterator]());
+    startInput.effort = effort;
+    await transport.start({ ...startInput });
+    // session/load replays the history as session/update notifications; they
+    // belong to past turns, so drain them before this turn's prompt.
+    for await (const _replayed of eventConsumer.untilSettled(
+      initializeGrokSession(transport, input, state, sessionId),
+    )) {
+      // discard
+    }
+    appliedSpawnSignature = signature;
+  };
 
   try {
-    await transport.start(startInput);
+    await transport.start({ ...startInput });
     await initializeGrokSession(transport, input, state);
 
     if (state.sessionId) {
@@ -968,6 +1012,12 @@ async function* runGrokTurns(
       }
       if (!state.sessionId) {
         throw new Error("Grok ACP session is not initialized");
+      }
+
+      const turnEffort = promptMessage.runtimeOptions ? promptMessage.runtimeOptions.effort : input.effort;
+      const turnSpawnSignature = buildGrokSpawnSignature(startInput.env, turnEffort);
+      if (turnSpawnSignature !== appliedSpawnSignature) {
+        await respawnForTurn(turnEffort, turnSpawnSignature);
       }
 
       const terminalTracker = createRuntimeTerminalEventTracker();
@@ -1194,6 +1244,7 @@ async function initializeGrokSession(
   transport: GrokAcpTransport,
   input: RuntimeStartRequest,
   state: GrokSessionRuntimeState,
+  reloadSessionId?: string,
 ): Promise<void> {
   const init = await transport.request("initialize", buildGrokAcpInitializeParams());
   const initRecord = isRecord(init) ? init : {};
@@ -1211,8 +1262,8 @@ async function initializeGrokSession(
     throw new Error("Run `grok login` first, or set XAI_API_KEY.");
   }
 
-  const resumeSessionId = readGrokResumeSessionId(input);
-  if (resumeSessionId && !input.forkSession) {
+  const resumeSessionId = reloadSessionId ?? readGrokResumeSessionId(input);
+  if (resumeSessionId && (reloadSessionId || !input.forkSession)) {
     if (!state.loadSessionSupported) {
       throw new Error("Grok ACP agent does not advertise session/load; cannot resume");
     }
@@ -1234,6 +1285,19 @@ async function initializeGrokSession(
     throw new Error("Grok ACP session/new did not return a sessionId");
   }
   state.sessionId = sessionId;
+}
+
+const GROK_TASK_ENV_PREFIX = "RAVI_TASK_";
+
+/** What a running Grok process baked in at spawn that may change per turn. */
+function buildGrokSpawnSignature(env: NodeJS.ProcessEnv, effort: RuntimeEffort | undefined): string {
+  return JSON.stringify({
+    effort: toGrokEffort(effort) ?? null,
+    taskEnv: Object.entries(env)
+      .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+      .filter(([key]) => key.startsWith(GROK_TASK_ENV_PREFIX))
+      .sort(([left], [right]) => left.localeCompare(right)),
+  });
 }
 
 function readGrokResumeSessionId(input: RuntimeStartRequest): string | undefined {

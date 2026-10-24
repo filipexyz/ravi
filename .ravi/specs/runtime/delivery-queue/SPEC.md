@@ -127,7 +127,7 @@ Within the same barrier lane, delivery SHOULD be FIFO.
 
 `after_response` and `after_task` prompt atoms MUST NOT request provider interruption while the session is generating text. They may wake an idle session after the current turn becomes terminal.
 
-A task binding, effort or thinking level never restarts the runtime: they belong to the turn. A prompt atom whose task binding, effort or thinking differs from the live turn is queued like any other atom under its own barrier, and the turn that delivers it resolves its own binding (`RAVI_TASK_*`, task capabilities) and effort/thinking, which the provider applies to that turn. Only agent, provider and model broker changes may relaunch the runtime.
+A task binding, effort or thinking level never restarts the runtime: they belong to the turn. A prompt atom whose task binding, effort or thinking differs from the live turn is queued like any other atom under its own barrier, and the turn that delivers it resolves its own binding (`RAVI_TASK_*`, task capabilities) and effort/thinking, which the provider applies to that turn. Only agent, provider and model broker changes may relaunch the runtime. A provider that takes effort or env only when its process spawns (Codex, Pi, Grok) respawns that process between turns and resumes the same provider session; that is not a runtime restart, and the conversation carries over.
 
 `after_tool` and `immediate_interrupt` prompt atoms MAY request interruption only through the session dispatcher's interrupt path, with trace events that explain the source, barrier, and safety state.
 
