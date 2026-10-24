@@ -279,4 +279,18 @@ describe("runtime control host typed refusals", () => {
       globalThis.setTimeout = originalSetTimeout;
     }
   });
+
+  it("does not mark a timed-out rollback retryable", async () => {
+    const originalSetTimeout = globalThis.setTimeout;
+    globalThis.setTimeout = ((fn: () => void) => originalSetTimeout(fn, 0)) as typeof setTimeout;
+    try {
+      const session = createStreamingSession(() => new Promise<RuntimeControlResult>(() => {}));
+
+      const result = await runControl(new Map([["session-a", session]]), { operation: "thread.rollback", numTurns: 1 });
+
+      expect(result).toMatchObject({ ok: false, code: RUNTIME_CONTROL_TIMEOUT, retryable: false });
+    } finally {
+      globalThis.setTimeout = originalSetTimeout;
+    }
+  });
 });

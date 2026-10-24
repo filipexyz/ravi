@@ -78,5 +78,11 @@ describe("runtime control subscription lanes", () => {
     releaseStuck({ ok: true, operation: "thread.list", data: {} });
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(calls).toEqual(["stuck:thread.list", "healthy:thread.list", "stuck:thread.read"]);
+
+    releaseStuck({ ok: true, operation: "thread.read", data: {} });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(replies.find((reply) => reply.topic === "reply.stuck.2")?.data).toMatchObject({
+      result: { ok: true, operation: "thread.read" },
+    });
   });
 });

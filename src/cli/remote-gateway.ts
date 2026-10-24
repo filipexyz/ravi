@@ -482,14 +482,21 @@ function sessionsRuntimeCatalogCopy(
 
 function projectSessionsRuntimeDetails(remote: Record<string, unknown>): ContractErrorDetails {
   const details: ContractErrorDetails = {};
-  if (typeof remote.code === "string" && isRetryableRuntimeControlCode(remote.code)) details.retryable = true;
+  const operation =
+    typeof remote.operation === "string" && RUNTIME_REMOTE_OPERATION_PATTERN.test(remote.operation)
+      ? remote.operation
+      : undefined;
+  if (
+    typeof remote.code === "string" &&
+    (remote.code === "RUNTIME_CONTROL_TIMEOUT" || remote.code === "RUNTIME_CONTROL_UNAVAILABLE")
+  ) {
+    details.retryable = isRetryableRuntimeControlCode(remote.code, operation);
+  }
   if (typeof remote.activeTurn === "boolean") details.activeTurn = remote.activeTurn;
   if (typeof remote.turnId === "string" && RUNTIME_REMOTE_TURN_ID_PATTERN.test(remote.turnId)) {
     details.turnId = remote.turnId;
   }
-  if (typeof remote.operation === "string" && RUNTIME_REMOTE_OPERATION_PATTERN.test(remote.operation)) {
-    details.operation = remote.operation;
-  }
+  if (operation) details.operation = operation;
   if (remote.disabledReason === RUNTIME_CONTROL_DISABLED_REASON) details.disabledReason = remote.disabledReason;
   return details;
 }

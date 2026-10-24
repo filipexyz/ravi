@@ -105,7 +105,7 @@ function runtimeControlContractError(op: string, result: RuntimeControlResult): 
   const code = result.code ?? RUNTIME_CONTROL_FAILED;
   const catalog = runtimeControlCatalogCopy(code);
   const details: Record<string, unknown> = {
-    retryable: result.retryable ?? isRetryableRuntimeControlCode(code),
+    retryable: result.retryable ?? isRetryableRuntimeControlCode(code, result.operation),
     suggestedAction: catalog?.suggestedAction ?? result.suggestedAction,
     operation: result.operation,
   };
@@ -173,7 +173,11 @@ async function requestRuntimeControl(
     const catalog = runtimeControlCatalogCopy(code);
     contractFail(op, code, catalog?.message ?? "Runtime control request failed.", {
       asJson,
-      details: { retryable: true, suggestedAction: catalog?.suggestedAction, operation: request.operation },
+      details: {
+        retryable: isRetryableRuntimeControlCode(code, request.operation),
+        suggestedAction: catalog?.suggestedAction,
+        operation: request.operation,
+      },
     });
   }
 

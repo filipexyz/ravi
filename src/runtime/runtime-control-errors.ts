@@ -88,7 +88,8 @@ const RUNTIME_CONTROL_CATALOG: Record<RuntimeControlErrorCode, { message: string
   },
   [RUNTIME_CONTROL_TIMEOUT]: {
     message: "The runtime did not answer the control request in time.",
-    suggestedAction: "Retry; if it keeps timing out, inspect the session with: ravi sessions trace <session> --explain",
+    suggestedAction:
+      "Check the runtime state with: ravi sessions runtime read <session> --json before retrying; the control may still have run",
   },
   [RUNTIME_CONTROL_UNAVAILABLE]: {
     message: "The daemon did not take the runtime control request.",
@@ -107,6 +108,24 @@ export function runtimeControlCatalogCopy(code: string): { message: string; sugg
     : undefined;
 }
 
-export function isRetryableRuntimeControlCode(code: string): boolean {
-  return code === RUNTIME_CONTROL_TIMEOUT || code === RUNTIME_CONTROL_UNAVAILABLE;
+/** Controls that are safe to send again after a timeout: reads and interrupt. */
+const IDEMPOTENT_RUNTIME_CONTROL_OPERATIONS: ReadonlySet<string> = new Set([
+  "thread.list",
+  "thread.read",
+  "session.read",
+  "goal.get",
+  "turn.interrupt",
+]);
+
+/**
+ * A timeout does not prove the control did not run, so only idempotent
+ * operations are retryable after one. An unavailable daemon never took the
+ * request, so that code is retryable for every operation.
+ */
+export function isRetryableRuntimeControlCode(code: string, operation?: string): boolean {
+  if (code === RUNTIME_CONTROL_UNAVAILABLE) return true;
+  if (code === RUNTIME_CONTROL_TIMEOUT) {
+    return operation !== undefined && IDEMPOTENT_RUNTIME_CONTROL_OPERATIONS.has(operation);
+  }
+  return false;
 }

@@ -8,6 +8,7 @@ import { logger } from "../utils/logger.js";
 import {
   handleRuntimeControlRequest as handleRuntimeControl,
   replyRuntimeControlError,
+  resolveRuntimeControlSession,
   type RuntimeControlNatsRequest,
 } from "./control-host.js";
 import type { RuntimeSafeEmit } from "./host-event-loop.js";
@@ -207,7 +208,13 @@ export class RuntimeHostSubscriptions {
    * a provider that never answers holds only its own lane, not the subscription.
    */
   private enqueueRuntimeControl(data: RuntimeControlNatsRequest): void {
-    const lane = data?.sessionName ?? data?.sessionKey ?? "";
+    // Canonicalize so a name and a key for the same live session share one lane.
+    const resolved = resolveRuntimeControlSession(
+      this.options.dispatcher.streamingSessions,
+      data?.sessionName,
+      data?.sessionKey,
+    );
+    const lane = resolved?.name ?? data?.sessionName ?? data?.sessionKey ?? "";
     const previous = this.runtimeControlLanes.get(lane) ?? Promise.resolve();
     const next = previous.then(() => this.runRuntimeControl(data));
     this.runtimeControlLanes.set(lane, next);

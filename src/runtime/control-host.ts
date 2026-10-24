@@ -7,6 +7,7 @@ import {
   RUNTIME_CONTROL_DISABLED_REASON,
   RUNTIME_CONTROL_FAILED,
   RUNTIME_CONTROL_TIMEOUT,
+  isRetryableRuntimeControlCode,
   RUNTIME_NO_ACTIVE_TURN,
   RUNTIME_OPERATION_UNSUPPORTED,
   RUNTIME_SESSION_NOT_ACTIVE,
@@ -141,7 +142,7 @@ function runtimeControlRefusal(
     error: catalog?.message,
     ...extra,
     code,
-    retryable: code === RUNTIME_CONTROL_TIMEOUT,
+    retryable: isRetryableRuntimeControlCode(code, operation),
     suggestedAction: catalog?.suggestedAction,
   };
 }

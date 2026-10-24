@@ -1805,6 +1805,7 @@ describe("sessions runtime remote relay", () => {
       new ContractError("sessions runtime interrupt", RUNTIME_CONTROL_TIMEOUT, "PRIVATE_8K2R", 1, {
         retryable: true,
         suggestedAction: "PRIVATE_ACTION_8K2R",
+        operation: "turn.interrupt",
         turnId: "turn with spaces and PRIVATE_8K2R",
         disabledReason: "PRIVATE_REASON_8K2R",
       }),
@@ -1818,6 +1819,18 @@ describe("sessions runtime remote relay", () => {
     expect(remote?.details.turnId).toBeUndefined();
     expect(remote?.details.disabledReason).toBeUndefined();
     expect(JSON.stringify(remote?.envelope())).not.toContain("PRIVATE");
+  });
+
+  it("does not mark a timed-out rollback retryable", async () => {
+    const remote = await relay(
+      "sessions runtime rollback",
+      new ContractError("sessions runtime rollback", RUNTIME_CONTROL_TIMEOUT, "x", 1, {
+        retryable: true,
+        operation: "thread.rollback",
+      }),
+    );
+
+    expect(remote).toMatchObject({ code: RUNTIME_CONTROL_TIMEOUT, details: { retryable: false } });
   });
 
   it("renders SESSION_NOT_FOUND without echoing the requested session", async () => {
