@@ -61,7 +61,7 @@ The MVP MUST use RPC JSONL. The SDK path MAY replace or complement RPC after the
 
 Initial advertised capabilities SHOULD be:
 
-- `runtimeControl`: supported with `turn.steer`, `turn.interrupt`, `turn.follow_up`, `model.set`, `thinking.set`, and read/state operations that are mapped safely.
+- `runtimeControl`: supported with `turn.steer`, `turn.interrupt`, `turn.follow_up`, `model.set`, `thinking.set`, and read/state operations that are mapped safely. Explicit host `turn.steer`/`turn.follow_up` stay disabled (`RUNTIME_CONTROL_DISABLED`) until the durable attempt-input journal exists; only the dispatcher's implicit native steer uses them.
 - `dynamicTools`: `host` (executed through the extension UI bridge above).
 - `execution`: `subprocess-rpc`.
 - `sessionState`: `file-backed` with cwd validation.

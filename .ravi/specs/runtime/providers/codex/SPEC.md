@@ -44,7 +44,7 @@ The Codex provider adapts the Codex app-server transport into Ravi's canonical r
 - Ravi CLI access: model-initiated Ravi operations MUST go through shell commands such as `ravi tasks ...` or `bin/ravi tasks ...` with `RAVI_CONTEXT_KEY` in the shell env.
 - Shell env bridge: the Codex app-server receives Ravi runtime env and is launched with an explicit `shell_environment_policy` that allows the shell to inherit only core shell env plus `RAVI_*`, including `RAVI_CONTEXT_KEY`.
 - Approvals: mapped into Ravi `RuntimeApprovalRequest`.
-- Runtime control: thread list/read/rollback/fork, turn steer/interrupt, and goal get/set/clear.
+- Runtime control: thread list/read/rollback/fork, turn interrupt, and goal get/set/clear through `ravi sessions runtime`. The provider also implements `turn.steer`, used only by the host dispatcher for implicit native steer; the host refuses an explicit `turn.steer`/`turn.follow_up` with `RUNTIME_CONTROL_DISABLED` until the durable attempt-input journal exists (`daemon/restart/crash-recovery`), and host-facing operation lists report them under `disabledOperations`.
 - Tool access requirement: `tool_surface`.
 - Host session hooks/plugins/spec server/remote spawn: not supported.
 

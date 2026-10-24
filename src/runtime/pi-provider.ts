@@ -25,6 +25,7 @@ import type {
   RuntimeUsage,
   SessionRuntimeProvider,
 } from "./types.js";
+import { RUNTIME_OPERATION_UNSUPPORTED } from "./runtime-control-errors.js";
 import { coalesceAssistantTextBlocks } from "./assistant-transcript.js";
 import { createRuntimeTerminalEventTracker } from "./terminality.js";
 import { buildPluginSkillVisibilitySnapshot } from "./skill-visibility.js";
@@ -1490,7 +1491,10 @@ async function controlPiRuntime(
           );
         }
       default:
-        return failControl(request, `Pi runtime does not support ${request.operation}`, buildState());
+        return {
+          ...failControl(request, `Pi runtime does not support ${request.operation}`, buildState()),
+          code: RUNTIME_OPERATION_UNSUPPORTED,
+        };
     }
   } catch (error) {
     return failControl(request, error instanceof Error ? error.message : String(error), buildState());

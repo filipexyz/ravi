@@ -1,4 +1,5 @@
 import type { RuntimeGoal, RuntimeGoalStatus } from "./types.js";
+import { RUNTIME_OPERATION_UNSUPPORTED } from "./runtime-control-errors.js";
 import { spawn } from "node:child_process";
 import { basename, dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
@@ -1823,7 +1824,10 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         }
 
         default:
-          return buildRuntimeControlError(request, `Unsupported Codex runtime control operation: ${request.operation}`);
+          return {
+            ...buildRuntimeControlError(request, `Unsupported Codex runtime control operation: ${request.operation}`),
+            code: RUNTIME_OPERATION_UNSUPPORTED,
+          };
       }
     } catch (error) {
       return buildRuntimeControlError(request, error);

@@ -1,5 +1,6 @@
 import type { RuntimeEffort } from "./effort.js";
 import type { RuntimeModelBrokerBinding, RuntimeModelBrokerCapabilities } from "./model-broker.js";
+import type { RuntimeControlErrorCode } from "./runtime-control-errors.js";
 
 export type { RuntimeEffort } from "./effort.js";
 
@@ -270,6 +271,8 @@ export interface RuntimeControlState {
   turnId?: string;
   activeTurn?: boolean;
   supportedOperations?: RuntimeControlOperation[];
+  /** Operations the provider implements but the host refuses (see runtime-control-errors.ts). */
+  disabledOperations?: RuntimeControlOperation[];
 }
 
 export interface RuntimeControlRequest {
@@ -301,6 +304,11 @@ export interface RuntimeControlResult {
   goal?: RuntimeGoal | null;
   state?: RuntimeControlState;
   error?: string;
+  /** Typed refusal code (RUNTIME_*), set on every host refusal. */
+  code?: RuntimeControlErrorCode;
+  retryable?: boolean;
+  suggestedAction?: string;
+  disabledReason?: string;
 }
 
 export interface RuntimeControlCapabilities {

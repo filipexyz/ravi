@@ -4,7 +4,7 @@ import { attachChatToSession, getOrCreateSession, updateSessionName } from "../r
 import { dbUpsertChat } from "../router/router-db.js";
 import { recordDeliveryTrace, recordResponseEmittedTrace } from "./channel-trace.js";
 import { querySessionTrace } from "./query.js";
-import { recordAdapterRequestTrace } from "./runtime-trace.js";
+import { recordAdapterRequestTrace, summarizeRuntimeCapabilities } from "./runtime-trace.js";
 import {
   getLatestSessionTurn,
   getSessionTraceBlob,
@@ -234,6 +234,23 @@ describe("session trace query", () => {
       canonicalChatId: chat.id,
       actorType: "agent",
       actorAgentId: "main",
+    });
+  });
+});
+
+describe("runtime capability summary", () => {
+  it("reports host-disabled runtime controls apart from the supported ones", () => {
+    const summary = summarizeRuntimeCapabilities({
+      runtimeControl: {
+        supported: true,
+        operations: ["thread.read", "turn.steer", "turn.follow_up", "turn.interrupt"],
+      },
+    } as unknown as Parameters<typeof summarizeRuntimeCapabilities>[0]);
+
+    expect(summary.runtimeControl).toEqual({
+      supported: true,
+      operations: ["thread.read", "turn.interrupt"],
+      disabledOperations: ["turn.steer", "turn.follow_up"],
     });
   });
 });
