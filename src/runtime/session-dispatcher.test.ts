@@ -4382,16 +4382,4 @@ describe("RuntimeSessionDispatcher task-bound live sessions", () => {
       expect(existing.pendingMessages.map((message) => message.taskBarrierTaskId)).toEqual([taskId]);
     });
   });
-
-  it("keeps a running task's binding when a task-less atom owns the stashed restart envelope", () => {
-    const taskAtom = createQueuedRuntimeUserMessage({
-      prompt: "task brief",
-      deliveryBarrier: "after_task",
-      taskBarrierTaskId: "task-running",
-    });
-    const inform = createQueuedRuntimeUserMessage({ prompt: "inform", deliveryBarrier: "after_response" });
-
-    expect(buildStashedRestartPrompt([taskAtom, inform], () => true)?.taskBarrierTaskId).toBe("task-running");
-    expect(buildStashedRestartPrompt([taskAtom, inform], () => false)?.taskBarrierTaskId).toBeUndefined();
-  });
 });

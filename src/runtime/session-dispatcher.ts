@@ -85,11 +85,7 @@ import {
   resolveRuntimePromptText,
   withSessionSurfaceHint,
 } from "./session-surface-hint.js";
-import {
-  isInheritableTaskBinding,
-  resolveInheritedTaskBindingTaskId,
-  resolveRuntimeForPrompt,
-} from "./task-runtime-context.js";
+import { resolveInheritedTaskBindingTaskId, resolveRuntimeForPrompt } from "./task-runtime-context.js";
 import {
   RUNTIME_SESSION_RECLAIM_INTERVAL_MS,
   buildRuntimeSessionPoolSnapshot,
@@ -3186,10 +3182,7 @@ function appendUniqueRuntimeMessagesToStash(
   return queued;
 }
 
-export function buildStashedRestartPrompt(
-  messages: RuntimeUserMessage[],
-  isTaskBindingActive: (taskId: string) => boolean = isInheritableTaskBinding,
-): RuntimeLaunchPrompt | null {
+export function buildStashedRestartPrompt(messages: RuntimeUserMessage[]): RuntimeLaunchPrompt | null {
   if (messages.length === 0) {
     return null;
   }
@@ -3213,18 +3206,6 @@ export function buildStashedRestartPrompt(
     .map((message) => message.message.content)
     .join("\n\n")
     .trim();
-  // The relaunched runtime keeps the task binding of a stashed task atom while
-  // that task is still running, even when a later task-less atom owns the envelope.
-  const envelopeTaskId = normalizePromptTaskBarrierTaskId(
-    (newestLaunchPrompt ?? { taskBarrierTaskId: first.taskBarrierTaskId }).taskBarrierTaskId,
-  );
-  const stashedTaskId = envelopeTaskId
-    ? undefined
-    : [...messages]
-        .reverse()
-        .map((message) => normalizePromptTaskBarrierTaskId(message.taskBarrierTaskId))
-        .find((taskId): taskId is string => Boolean(taskId) && isTaskBindingActive(taskId as string));
-  const taskBarrierTaskId = envelopeTaskId ?? stashedTaskId;
 
   return {
     ...(newestLaunchPrompt ?? {
@@ -3237,7 +3218,6 @@ export function buildStashedRestartPrompt(
     prompt: combinedPrompt || newestLaunchPrompt?.prompt || first.message.content,
     deliveryBarrier: delivery.barrier,
     deliveryBarrierSource: delivery.source,
-    ...(taskBarrierTaskId ? { taskBarrierTaskId } : {}),
     commands:
       launchPrompts.length > 0
         ? messages.flatMap((message) => message.commands ?? message.launchPrompt?.commands ?? [])
