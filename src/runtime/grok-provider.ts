@@ -1027,6 +1027,10 @@ async function* runGrokTurns(
       const turnSpawnSignature = buildGrokSpawnSignature(startInput.env, turnModel, turnEffort);
       if (turnSpawnSignature !== appliedSpawnSignature) {
         await respawnForTurn(turnModel, turnEffort, turnSpawnSignature);
+        // An abort or reset during the reload must not start this turn.
+        if (abortSignal.aborted || state.interrupted) {
+          break;
+        }
       }
 
       const terminalTracker = createRuntimeTerminalEventTracker();

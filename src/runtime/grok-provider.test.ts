@@ -1162,6 +1162,41 @@ describe("Grok Build runtime provider", () => {
     expect(transports.map((transport) => transport.starts[0]?.model)).toEqual(["grok-4", "grok-code-fast-1"]);
   });
 
+  it("does not prompt when the session is aborted during a respawn", async () => {
+    const transports: FakeGrokAcpTransport[] = [];
+    const abortController = new AbortController();
+    async function* prompts(): AsyncGenerator<RuntimePromptMessage> {
+      yield {
+        type: "user",
+        message: { role: "user", content: "task turn" },
+        session_id: "session",
+        parent_tool_use_id: null,
+        runtimeOptions: { effort: "low" },
+      };
+    }
+
+    await collectRuntimeEvents(
+      createGrokRuntimeProvider({
+        transportFactory: () => {
+          const transport = new FakeGrokAcpTransport();
+          if (transports.length > 0) {
+            transport.responseFor = (method) => {
+              if (method === "session/load") {
+                abortController.abort();
+              }
+              return defaultGrokResponse(method);
+            };
+          }
+          transports.push(transport);
+          return transport;
+        },
+      }).startSession(createStartRequest("unused", { prompt: prompts(), abortController })).events,
+    );
+
+    expect(transports).toHaveLength(2);
+    expect(transports[1]?.requests.map((request) => request.method)).not.toContain("session/prompt");
+  });
+
   it("keeps the given transport when it cannot respawn", async () => {
     const transport = new FakeGrokAcpTransport();
     async function* prompts(): AsyncGenerator<RuntimePromptMessage> {
