@@ -1,8 +1,9 @@
 import { homedir } from "node:os";
 import { DEFAULT_DELIVERY_BARRIER } from "../delivery-barriers.js";
-import type { AgentConfig, SessionEntry } from "../router/index.js";
+import { getSessionByName, type AgentConfig, type SessionEntry } from "../router/index.js";
 import { dbGetChat, dbGetSessionDefaultChatId, dbGetSetting } from "../router/router-db.js";
 import { configStore } from "../config-store.js";
+import { applyProviderModelRule } from "./model-catalog.js";
 import {
   buildRuntimeTracePromptSectionMetadata,
   createSessionTraceTurnId,
@@ -107,6 +108,8 @@ export interface RuntimeStartRequestBuildOptions {
   sessionCwd: string;
   dbSessionKey: string;
   model: string;
+  /** Global default model, the fallback when no layer sets one for a turn. */
+  configModel?: string;
   runtimeResolution: TaskRuntimeResolution;
   storedRuntimeSessionParams: Record<string, unknown> | undefined;
   storedProviderSessionId?: string;
@@ -878,9 +881,17 @@ async function buildRuntimeStartRequestInternal(
     }
     return { ...traceTurn, crashRecoveryAttemptId: attempt.attemptId };
   };
+  // Each turn resolves its runtime options from the current session row, so
+  // session overrides changed while the session runs apply on the next turn.
   const resolveTurnRuntimeResolution = (turnPrompt: RuntimeLaunchPrompt): TaskRuntimeResolution => {
     try {
-      return resolveRuntimeForPrompt({ sessionName, prompt: turnPrompt, session, agent });
+      return resolveRuntimeForPrompt({
+        sessionName,
+        prompt: turnPrompt,
+        session: getSessionByName(sessionName) ?? session,
+        agent,
+        configModel: options.configModel,
+      });
     } catch (error) {
       runtimeRequestLog.warn("Turn runtime options unavailable; keeping the session's", { sessionName, error });
       return runtimeResolution;
@@ -931,8 +942,18 @@ async function buildRuntimeStartRequestInternal(
         turnTaskBarrierTaskId && !turnPrompt.taskBarrierTaskId
           ? { ...turnPrompt, taskBarrierTaskId: turnTaskBarrierTaskId }
           : turnPrompt;
+      // The launch turn uses the resolution the launch just made.
       const turnRuntimeResolution =
         boundTurnPrompt === prompt ? runtimeResolution : resolveTurnRuntimeResolution(boundTurnPrompt);
+      // A model broker leases the model; otherwise the model follows the turn too.
+      if (!modelBroker) {
+        // A turn that resolves the launch's model keeps the launch model as given.
+        const turnModel =
+          turnRuntimeResolution.options.model === runtimeResolution.options.model
+            ? model
+            : (turnRuntimeResolution.options.model ?? options.configModel ?? model);
+        streamingSession.currentModel = applyProviderModelRule(runtimeProviderId, turnModel) ?? turnModel;
+      }
       streamingSession.currentTaskBarrierTaskId = turnTaskBarrierTaskId;
       streamingSession.currentEffort = turnRuntimeResolution.options.effort;
       streamingSession.currentThinking = turnRuntimeResolution.options.thinking;
@@ -951,7 +972,7 @@ async function buildRuntimeStartRequestInternal(
         agent,
         prompt: boundTurnPrompt,
         runtimeProviderId,
-        model: effectiveModel,
+        model: streamingSession.currentModel || effectiveModel,
         runtimeResolution: turnRuntimeResolution,
         resolvedSource: turnSource,
         approvalSource,

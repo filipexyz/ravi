@@ -31,8 +31,8 @@
 - `immediate_interrupt` still respects startup, compaction, and unsafe tool barriers.
 - An inform, send, ask, task comment or checkpoint reminder that reaches a live task turn is queued under its barrier and never restarts or interrupts the runtime, whatever its task binding, effort or thinking (`src/runtime/session-dispatcher.test.ts`, "task-bound live sessions").
 - A second task dispatched to a session whose task turn is still running waits for that turn to end on the same runtime.
-- Entering and leaving a task on one live runtime changes the turn's `RAVI_TASK_*` env and effort per turn (`src/bot.runtime-guards.fixture.ts`).
-- Grok respawns its ACP process and reloads the same session (`session/load`, history replay drained) when a turn changes effort or `RAVI_TASK_*` (`src/runtime/grok-provider.test.ts`).
+- Entering and leaving a task on one live runtime changes the turn's `RAVI_TASK_*` env, model and effort per turn (`src/bot.runtime-guards.fixture.ts`); Codex switches the model through `turn/start` and Pi through `set_model` (`codex-provider.test.ts`, `pi-provider.test.ts`).
+- Grok respawns its ACP process and reloads the same session (`session/load`, history replay drained) when a turn changes model, effort or `RAVI_TASK_*` (`src/runtime/grok-provider.test.ts`).
 
 - A transport-only scheduled followup ahead of a canonical human message from
   the same chat does not prevent the human message from interrupting.

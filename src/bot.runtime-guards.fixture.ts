@@ -1453,7 +1453,7 @@ describe("RaviBot runtime guards", () => {
     expect(runtimeStartCalls[1]?.env?.RAVI_TASK_ID).toBeUndefined();
   });
 
-  it("enters and leaves a task context on the live runtime, with per-turn task env and effort", async () => {
+  it("enters and leaves a task context on the live runtime, with per-turn task env, model and effort", async () => {
     const sessionKey = "agent:main:task-runtime-context-exit";
     sessions.set(sessionKey, {
       sessionKey,
@@ -1465,12 +1465,12 @@ describe("RaviBot runtime guards", () => {
     const dispatched = createDispatchedTaskForSession(sessionKey, {
       profileId: "task-doc-none",
       taskRuntimeOverride: {
-        model: "test-model",
+        model: "task-model",
         effort: "low",
       },
     });
     const setModelCalls: string[] = [];
-    const turns: Array<{ taskId?: string; effort?: string }> = [];
+    const turns: Array<{ taskId?: string; model?: string; effort?: string }> = [];
     let releaseRuntime: () => void = () => {};
     const lifetime = new Promise<void>((resolve) => {
       releaseRuntime = resolve;
@@ -1483,6 +1483,7 @@ describe("RaviBot runtime guards", () => {
           if (next.done) return;
           turns.push({
             taskId: request.env?.RAVI_TASK_ID,
+            model: (next.value as RuntimePromptMessage).runtimeOptions?.model,
             effort: (next.value as RuntimePromptMessage).runtimeOptions?.effort,
           });
           yield {
@@ -1515,9 +1516,9 @@ describe("RaviBot runtime guards", () => {
     expect(runtimeStartCalls).toHaveLength(1);
     expect(setModelCalls).toEqual([]);
     expect(turns).toEqual([
-      { taskId: dispatched.task.id, effort: "low" },
-      // Leaving the task drops its effort override back to the session default.
-      { taskId: undefined, effort: "xhigh" },
+      { taskId: dispatched.task.id, model: "task-model", effort: "low" },
+      // Leaving the task drops its model and effort overrides back to the session's.
+      { taskId: undefined, model: "test-model", effort: "xhigh" },
     ]);
 
     releaseRuntime();

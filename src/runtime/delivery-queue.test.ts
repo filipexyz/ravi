@@ -88,7 +88,7 @@ describe("runtime delivery queue", () => {
     await generator.return(undefined);
   });
 
-  it("yields the session's current effort and thinking with each turn", async () => {
+  it("yields the session's current model, effort and thinking with each turn", async () => {
     const session = makeStreamingSession({
       pendingMessages: [createQueuedRuntimeUserMessage({ prompt: "task turn" })],
       currentEffort: "low",
@@ -99,13 +99,16 @@ describe("runtime delivery queue", () => {
       session,
       stashedMessages: new Map(),
       beforeTurnStart: () => {
+        session.currentModel = "task-model";
         session.currentEffort = "xhigh";
       },
     });
 
     const result = await generator.next();
 
-    expect(result.value).toMatchObject({ runtimeOptions: { effort: "xhigh", thinking: "verbose" } });
+    expect(result.value).toMatchObject({
+      runtimeOptions: { model: "task-model", effort: "xhigh", thinking: "verbose" },
+    });
     session.done = true;
     session.onTurnComplete?.();
     await generator.return(undefined);

@@ -763,7 +763,10 @@ async function* normalizeCodexEvents(
         cwd: input.cwd,
         security: resolveCodexThreadSecurity(input.agentId),
         env: input.env ?? process.env,
-        model: resolveCodexModelArg(input.model, defaultModel),
+        model: resolveCodexModelArg(
+          promptMessage.runtimeOptions?.model && !input.modelBroker ? promptMessage.runtimeOptions.model : input.model,
+          defaultModel,
+        ),
         effort: promptMessage.runtimeOptions ? toCodexRuntimeEffort(promptMessage.runtimeOptions.effort) : effort,
         prompt: promptText,
         clientMessageId: promptMessage.clientMessageId,
@@ -1206,6 +1209,8 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   let currentInstructionSources: string[] = [];
   let currentGoalStatus: string | undefined;
   let resolvedModel: string | null = null;
+  // The model the thread runs with: set at thread start/resume, switched per turn by turn/start.
+  let appliedTurnModel: string | null = null;
   let resolvedModelProvider = "openai";
   let pendingRequests = new Map<string, PendingRequest>();
   const pendingDynamicToolResults = new Map<string, PendingDynamicToolResult>();
@@ -2246,6 +2251,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     }
     currentInstructionSources = stringArray(threadResponse.instructionSources);
     resolvedModel = firstString(threadResponse.model, input.model) ?? null;
+    appliedTurnModel = input.model ?? null;
     resolvedModelProvider = firstString(threadResponse.modelProvider, resolvedModelProvider) ?? "openai";
   }
 
@@ -2473,6 +2479,9 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             if (!turn.threadId) {
               throw new Error("Codex app-server did not initialize a thread");
             }
+            // A turn whose model differs from the thread's (entering or leaving a
+            // task with a model override) switches it here, without a relaunch.
+            const turnModel = input.model ?? null;
             await sendRequest(
               "turn/start",
               {
@@ -2488,7 +2497,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
                 cwd: null,
                 approvalPolicy: null,
                 sandboxPolicy: null,
-                model: null,
+                model: turnModel !== appliedTurnModel ? turnModel : null,
                 effort: input.effort ?? null,
                 summary: null,
                 personality: null,
@@ -2504,6 +2513,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
                 },
               },
             );
+            appliedTurnModel = turnModel;
           };
 
           try {

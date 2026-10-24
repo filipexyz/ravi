@@ -1275,6 +1275,46 @@ describe("Pi runtime provider", () => {
     expect(transport.commands).toEqual([expect.objectContaining({ type: "set_thinking_level", level: "xhigh" })]);
   });
 
+  it("switches the live Pi model per turn with set_model", async () => {
+    const transport = new FakePiRpcTransport();
+    transport.responseFor = (command) => {
+      if (command.type === "get_state") {
+        const setModel = [...transport.commands].reverse().find((sent) => sent.type === "set_model");
+        return piResponse(command, {
+          model: { provider: "openai", id: (setModel?.modelId as string | undefined) ?? "gpt-5.5" },
+        });
+      }
+      if (command.type === "prompt") {
+        transport.pushEvent({ type: "agent_end", messages: [assistantMessage("ok", { model: "gpt-5.5" })] });
+      }
+      return defaultResponse(command);
+    };
+
+    const turn = (text: string, model: string): RuntimePromptMessage => ({
+      ...promptMessage(text),
+      runtimeOptions: { model, effort: "high" },
+    });
+    await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport }).startSession(
+        createStartRequest("unused", {
+          prompt: (async function* () {
+            yield turn("agent turn", "openai/gpt-5.5");
+            yield turn("task turn", "openai/gpt-4.1");
+          })(),
+        }),
+      ).events,
+    );
+
+    expect(transport.starts).toHaveLength(1);
+    expect(transport.starts[0]?.modelArg).toBe("openai/gpt-5.5");
+    const types = transport.commands.map((command) => command.type);
+    expect(transport.commands.filter((command) => command.type === "set_model")).toEqual([
+      expect.objectContaining({ type: "set_model", provider: "openai", modelId: "gpt-4.1" }),
+    ]);
+    expect(types.indexOf("set_model")).toBeGreaterThan(types.indexOf("prompt"));
+    expect(types.indexOf("set_model")).toBeLessThan(types.lastIndexOf("prompt"));
+  });
+
   it("applies setModel before the first Pi prompt via spawn model without session reset", async () => {
     const transport = new FakePiRpcTransport();
     transport.responseFor = (command) => {

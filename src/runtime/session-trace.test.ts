@@ -583,6 +583,7 @@ describe("runtime session trace instrumentation", () => {
       sessionCwd: stateDir ?? "/tmp",
       dbSessionKey: SESSION_KEY,
       model: MODEL,
+      configModel: MODEL,
       runtimeResolution: {
         options: { model: MODEL, effort: "high", thinking: "normal" },
         sources: { model: "agent_default", effort: "task_override", thinking: "task_override" },

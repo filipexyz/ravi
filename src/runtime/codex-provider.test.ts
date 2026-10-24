@@ -13,7 +13,7 @@ import {
   isCodexRestrictedRuntimeProfile,
   resolveCodexThreadSecurity,
 } from "./codex-provider.js";
-import type { RuntimeEvent, RuntimeHostServices, RuntimeStartRequest } from "./types.js";
+import type { RuntimeEvent, RuntimeHostServices, RuntimePromptMessage, RuntimeStartRequest } from "./types.js";
 
 type TransportRequest = {
   cwd: string;
@@ -845,6 +845,89 @@ rl.on("line", (line) => {
         (event) => (event.rawEvent as { type?: string })?.type === "thread.resume_recovered",
       ),
     ).toBe(true);
+  });
+
+  it("switches the thread's model per turn through turn/start", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-turn-model-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const requestsPath = join(cwd, "requests.jsonl");
+
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+const requestsPath = ${JSON.stringify(requestsPath)};
+const rl = createInterface({ input: process.stdin });
+const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+let turns = 0;
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") return;
+  if (message.id && message.method === "thread/start") {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+    send({ id: message.id, result: { thread: { id: "thread_models" }, model: message.params.model, modelProvider: "openai" } });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+    turns += 1;
+    const turn = { id: "turn_" + turns, status: "inProgress" };
+    send({ id: message.id, result: { turn } });
+    send({ jsonrpc: "2.0", method: "turn/started", params: { threadId: "thread_models", turn } });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/completed",
+      params: { threadId: "thread_models", turn: { id: turn.id, status: "completed" } },
+    });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const turn = (text: string, model: string): RuntimePromptMessage => ({
+      type: "user",
+      message: { role: "user", content: text },
+      session_id: "",
+      parent_tool_use_id: null,
+      runtimeOptions: { model },
+    });
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest([], {
+        cwd,
+        model: "gpt-5.5",
+        prompt: (async function* () {
+          yield turn("agent turn", "gpt-5.5");
+          yield turn("task turn", "gpt-5.4-mini");
+          yield turn("task turn again", "gpt-5.4-mini");
+          yield turn("back to agent", "gpt-5.5");
+        })(),
+      }),
+    );
+
+    await collectEvents(session.events);
+    const requests = readFileSync(requestsPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+
+    expect(requests.map((request) => request.method)).toEqual([
+      "thread/start",
+      "turn/start",
+      "turn/start",
+      "turn/start",
+      "turn/start",
+    ]);
+    expect(requests[0]?.params.model).toBe("gpt-5.5");
+    expect(requests.slice(1).map((request) => request.params.model)).toEqual([null, "gpt-5.4-mini", null, "gpt-5.5"]);
   });
 
   it("keeps multi-agent child notifications from replacing the top-level thread", async () => {

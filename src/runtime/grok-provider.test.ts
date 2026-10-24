@@ -1132,6 +1132,36 @@ describe("Grok Build runtime provider", () => {
     expect(JSON.stringify(events)).not.toContain('"old"');
   });
 
+  it("respawns with the turn's model when a task changes it", async () => {
+    const transports: FakeGrokAcpTransport[] = [];
+    const turn = (text: string, model: string): RuntimePromptMessage => ({
+      type: "user",
+      message: { role: "user", content: text },
+      session_id: "session",
+      parent_tool_use_id: null,
+      runtimeOptions: { model, effort: "high" },
+    });
+
+    await collectRuntimeEvents(
+      createGrokRuntimeProvider({
+        transportFactory: () => {
+          const transport = new FakeGrokAcpTransport();
+          transports.push(transport);
+          return transport;
+        },
+      }).startSession(
+        createStartRequest("unused", {
+          prompt: (async function* () {
+            yield turn("agent turn", "grok-4");
+            yield turn("task turn", "grok-code-fast-1");
+          })(),
+        }),
+      ).events,
+    );
+
+    expect(transports.map((transport) => transport.starts[0]?.model)).toEqual(["grok-4", "grok-code-fast-1"]);
+  });
+
   it("keeps the given transport when it cannot respawn", async () => {
     const transport = new FakeGrokAcpTransport();
     async function* prompts(): AsyncGenerator<RuntimePromptMessage> {

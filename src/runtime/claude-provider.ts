@@ -251,9 +251,13 @@ async function* runClaudeTurns(
         {
           ...input,
           model: runtime.getModel(),
-          // Effort and thinking are per turn; a new query applies them without a relaunch.
+          // Model, effort and thinking are per turn; a new query applies them without a relaunch.
           ...(message.runtimeOptions
-            ? { effort: message.runtimeOptions.effort, thinking: message.runtimeOptions.thinking }
+            ? {
+                ...(message.runtimeOptions.model && !input.modelBroker ? { model: message.runtimeOptions.model } : {}),
+                effort: message.runtimeOptions.effort,
+                thinking: message.runtimeOptions.thinking,
+              }
             : {}),
         },
         env,

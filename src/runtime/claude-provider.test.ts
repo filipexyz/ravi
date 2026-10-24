@@ -812,7 +812,7 @@ describe("createClaudeRuntimeProvider", () => {
     expect(secondEnv).not.toBe(firstEnv);
   });
 
-  it("applies each turn's effort and thinking to its own query", async () => {
+  it("applies each turn's model, effort and thinking to its own query", async () => {
     nextMessages = [{ type: "result", subtype: "success", session_id: "claude-session-turn-options" }];
     const provider = createClaudeRuntimeProvider();
     const session = provider.startSession(
@@ -823,14 +823,14 @@ describe("createClaudeRuntimeProvider", () => {
             message: { role: "user" as const, content: "task turn" },
             session_id: "",
             parent_tool_use_id: null,
-            runtimeOptions: { effort: "low" as const, thinking: "verbose" as const },
+            runtimeOptions: { model: "opus", effort: "low" as const, thinking: "verbose" as const },
           };
           yield {
             type: "user" as const,
             message: { role: "user" as const, content: "normal turn" },
             session_id: "",
             parent_tool_use_id: null,
-            runtimeOptions: { effort: "xhigh" as const },
+            runtimeOptions: { model: "sonnet", effort: "xhigh" as const },
           };
         })(),
         { effort: "medium" },
@@ -839,6 +839,8 @@ describe("createClaudeRuntimeProvider", () => {
 
     await collectEvents(session.events);
     expect(queryCalls).toHaveLength(2);
+    expect(queryCalls[0]?.options.model).toBe("opus");
+    expect(queryCalls[1]?.options.model).toBe("sonnet");
     expect(queryCalls[0]?.options.effort).toBe("low");
     expect(queryCalls[0]?.options.thinking).toBeDefined();
     expect(queryCalls[1]?.options.effort).not.toBe(queryCalls[0]?.options.effort);

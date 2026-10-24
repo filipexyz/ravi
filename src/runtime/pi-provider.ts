@@ -967,12 +967,29 @@ async function* runPiTurns(
       if (turnThinkingLevel) {
         startInput.thinkingLevel = turnThinkingLevel;
       }
+      // The model is per turn too, unless a model broker leases it. A (re)spawn
+      // starts with it, a live process switches with `set_model`.
+      const turnModel =
+        promptMessage.runtimeOptions?.model && !input.modelBroker ? promptMessage.runtimeOptions.model : undefined;
+      const turnModelChanged = Boolean(turnModel && turnModel !== (state.requestedModel ?? input.model));
+      if (turnModel && turnModelChanged) {
+        state.requestedModel = turnModel;
+        input.model = turnModel;
+        refreshPiStartInputModel(startInput, turnModel, input.modelBroker);
+      }
 
       // Start (or respawn) after the host has applied this turn's runtime env.
       // Eager spawn at session open would bake the pre-rotation context key,
       // which refreshRuntimeRequestContextForTurn then revokes.
       try {
         const spawned = await ensurePiRpcReady();
+        if (!spawned && turnModel && turnModelChanged) {
+          try {
+            await applyPiSetModel(transport, state, turnModel, input.modelBroker, { verify: true });
+          } catch (error) {
+            log.warn("pi model switch failed; keeping the current model", { model: turnModel, error });
+          }
+        }
         if (spawned) {
           appliedThinkingLevel = startInput.thinkingLevel;
         } else if (turnThinkingLevel && turnThinkingLevel !== appliedThinkingLevel) {
