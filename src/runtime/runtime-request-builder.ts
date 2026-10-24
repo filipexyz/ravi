@@ -17,6 +17,8 @@ import { buildTurnReplyTarget } from "./turn-reply-target.js";
 import { resolveAgentSkills } from "./allowed-skills.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { createRuntimeMessageGenerator } from "./delivery-queue.js";
+import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
+import { markRuntimeTaskAcceptedForPrompt, resolveRuntimeForPrompt } from "./task-runtime-context.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
 import {
   resolveRuntimeToolEffectFence,
@@ -876,6 +878,14 @@ async function buildRuntimeStartRequestInternal(
     }
     return { ...traceTurn, crashRecoveryAttemptId: attempt.attemptId };
   };
+  const resolveTurnRuntimeResolution = (turnPrompt: RuntimeLaunchPrompt): TaskRuntimeResolution => {
+    try {
+      return resolveRuntimeForPrompt({ sessionName, prompt: turnPrompt, session, agent });
+    } catch (error) {
+      runtimeRequestLog.warn("Turn runtime options unavailable; keeping the session's", { sessionName, error });
+      return runtimeResolution;
+    }
+  };
   const messageGenerator = createRuntimeMessageGenerator({
     sessionName,
     session: streamingSession,
@@ -907,6 +917,28 @@ async function buildRuntimeStartRequestInternal(
         prompt: turnPrompt,
         source: turnSource,
       });
+      // Task binding, effort and thinking belong to the turn, not to the runtime
+      // process: each turn resolves its own and the provider applies them per
+      // turn, so entering or leaving a task never relaunches the session.
+      // A batched turn keeps the binding of its task atom when a task-less atom owns the envelope.
+      const turnTaskBarrierTaskId =
+        normalizePromptTaskBarrierTaskId(turnPrompt.taskBarrierTaskId) ??
+        [...input.deliverableMessages]
+          .reverse()
+          .map((message) => normalizePromptTaskBarrierTaskId(message.taskBarrierTaskId))
+          .find((taskId): taskId is string => Boolean(taskId));
+      const boundTurnPrompt =
+        turnTaskBarrierTaskId && !turnPrompt.taskBarrierTaskId
+          ? { ...turnPrompt, taskBarrierTaskId: turnTaskBarrierTaskId }
+          : turnPrompt;
+      const turnRuntimeResolution =
+        boundTurnPrompt === prompt ? runtimeResolution : resolveTurnRuntimeResolution(boundTurnPrompt);
+      streamingSession.currentTaskBarrierTaskId = turnTaskBarrierTaskId;
+      streamingSession.currentEffort = turnRuntimeResolution.options.effort;
+      streamingSession.currentThinking = turnRuntimeResolution.options.thinking;
+      if (boundTurnPrompt !== prompt && turnTaskBarrierTaskId) {
+        void markRuntimeTaskAcceptedForPrompt(sessionName, boundTurnPrompt);
+      }
       refreshRuntimeRequestContextForTurn({
         runtimeContext,
         toolContext,
@@ -917,10 +949,10 @@ async function buildRuntimeStartRequestInternal(
         sessionName,
         sessionCwd,
         agent,
-        prompt: turnPrompt,
+        prompt: boundTurnPrompt,
         runtimeProviderId,
         model: effectiveModel,
-        runtimeResolution,
+        runtimeResolution: turnRuntimeResolution,
         resolvedSource: turnSource,
         approvalSource,
         // Recorded so a connector call in this turn knows who reads the

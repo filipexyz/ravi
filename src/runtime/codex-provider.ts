@@ -764,7 +764,7 @@ async function* normalizeCodexEvents(
         security: resolveCodexThreadSecurity(input.agentId),
         env: input.env ?? process.env,
         model: resolveCodexModelArg(input.model, defaultModel),
-        effort,
+        effort: promptMessage.runtimeOptions ? toCodexRuntimeEffort(promptMessage.runtimeOptions.effort) : effort,
         prompt: promptText,
         clientMessageId: promptMessage.clientMessageId,
         replay: promptMessage.replay,

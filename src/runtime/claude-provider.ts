@@ -247,11 +247,22 @@ async function* runClaudeTurns(
     const env = buildClaudeCodeEnvironment(input.env);
     const queryResult = query({
       prompt,
-      options: buildClaudeQueryOptions({ ...input, model: runtime.getModel() }, env, {
-        resumeSessionId,
-        forkSession: useForkSession,
-        pathToClaudeCodeExecutable: resolveClaudeCodeExecutable(env),
-      }),
+      options: buildClaudeQueryOptions(
+        {
+          ...input,
+          model: runtime.getModel(),
+          // Effort and thinking are per turn; a new query applies them without a relaunch.
+          ...(message.runtimeOptions
+            ? { effort: message.runtimeOptions.effort, thinking: message.runtimeOptions.thinking }
+            : {}),
+        },
+        env,
+        {
+          resumeSessionId,
+          forkSession: useForkSession,
+          pathToClaudeCodeExecutable: resolveClaudeCodeExecutable(env),
+        },
+      ),
     });
     runtime.setActiveQuery(queryResult);
 

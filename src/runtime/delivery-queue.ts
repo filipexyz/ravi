@@ -490,11 +490,6 @@ export async function* createRuntimeMessageGenerator({
           session.pendingWake = false;
           resolve();
         };
-        const onIdleBoundary = session.onIdleBoundary;
-        if (onIdleBoundary) {
-          session.onIdleBoundary = null;
-          queueMicrotask(onIdleBoundary);
-        }
       });
       if (session.pendingMessages.length === 0 && session.done) break;
       continue;
@@ -590,6 +585,7 @@ export async function* createRuntimeMessageGenerator({
       clientMessageId,
       replay,
       terminalReplayAllowed,
+      runtimeOptions: { effort: session.currentEffort, thinking: session.currentThinking },
     };
 
     await turnCompleted;

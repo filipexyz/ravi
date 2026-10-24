@@ -1,3 +1,4 @@
+import type { RuntimePromptMessage } from "./runtime/types.js";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock, setDefaultTimeout } from "bun:test";
 import type { ApprovalServiceDependencies } from "./approval/service.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "./test/ravi-state.js";
@@ -1452,7 +1453,7 @@ describe("RaviBot runtime guards", () => {
     expect(runtimeStartCalls[1]?.env?.RAVI_TASK_ID).toBeUndefined();
   });
 
-  it("restarts when leaving a task context even if the live runtime can update models in place", async () => {
+  it("enters and leaves a task context on the live runtime, with per-turn task env and effort", async () => {
     const sessionKey = "agent:main:task-runtime-context-exit";
     sessions.set(sessionKey, {
       sessionKey,
@@ -1465,33 +1466,40 @@ describe("RaviBot runtime guards", () => {
       profileId: "task-doc-none",
       taskRuntimeOverride: {
         model: "test-model",
+        effort: "low",
       },
     });
     const setModelCalls: string[] = [];
-    const releaseRuntimes: Array<() => void> = [];
-    runtimeStartImpl = (providerId, request) => {
-      const lifetime = new Promise<void>((resolve) => {
-        releaseRuntimes.push(resolve);
-      });
-      return {
-        provider: providerId,
-        events: (async function* () {
-          await request.prompt.next();
+    const turns: Array<{ taskId?: string; effort?: string }> = [];
+    let releaseRuntime: () => void = () => {};
+    const lifetime = new Promise<void>((resolve) => {
+      releaseRuntime = resolve;
+    });
+    runtimeStartImpl = (providerId, request) => ({
+      provider: providerId,
+      events: (async function* () {
+        while (turns.length < 2) {
+          const next = await request.prompt.next();
+          if (next.done) return;
+          turns.push({
+            taskId: request.env?.RAVI_TASK_ID,
+            effort: (next.value as RuntimePromptMessage).runtimeOptions?.effort,
+          });
           yield {
             type: "turn.complete",
             providerSessionId: `${providerId}-session`,
             usage: { inputTokens: 1, outputTokens: 1 },
           };
-          await lifetime;
-        })(),
-        interrupt: async () => {
-          releaseRuntimes.shift()?.();
-        },
-        setModel: async (model: string) => {
-          setModelCalls.push(model);
-        },
-      };
-    };
+        }
+        await lifetime;
+      })(),
+      interrupt: async () => {
+        releaseRuntime();
+      },
+      setModel: async (model: string) => {
+        setModelCalls.push(model);
+      },
+    });
 
     const bot = createBot();
     await (bot as any).handlePromptImmediate(sessionKey, {
@@ -1504,14 +1512,15 @@ describe("RaviBot runtime guards", () => {
     await (bot as any).handlePromptImmediate(sessionKey, makePrompt("normal turn"));
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(runtimeStartCalls).toHaveLength(2);
+    expect(runtimeStartCalls).toHaveLength(1);
     expect(setModelCalls).toEqual([]);
-    expect(runtimeStartCalls[0]?.env?.RAVI_TASK_ID).toBe(dispatched.task.id);
-    expect(runtimeStartCalls[1]?.env?.RAVI_TASK_ID).toBeUndefined();
+    expect(turns).toEqual([
+      { taskId: dispatched.task.id, effort: "low" },
+      // Leaving the task drops its effort override back to the session default.
+      { taskId: undefined, effort: "xhigh" },
+    ]);
 
-    for (const release of releaseRuntimes.splice(0)) {
-      release();
-    }
+    releaseRuntime();
     await bot.stop();
   });
 

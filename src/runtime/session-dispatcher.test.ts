@@ -11,7 +11,6 @@ import {
   fenceRuntimeNativeSteerInput,
   runtimeModelBrokerConfigurationRequiresRestart,
   runtimeModelBrokerRouteRequiresRestart,
-  shouldDeferRuntimeRestartToTurnBoundary,
   shouldQueuePromptOnLiveSession,
   stashPromptForStartingSession,
 } from "./session-dispatcher.js";
@@ -2408,7 +2407,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     ).toBe(false);
   });
 
-  it("does not queue a send that leaves the live task context", () => {
+  it("queues a send that leaves the live task context: the binding is per turn", () => {
     const activeSession = createActiveSession({
       agentId: "main",
       turnActive: true,
@@ -2421,7 +2420,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
         { prompt: "normal turn", deliveryBarrier: "after_response" },
         "main",
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("does not queue an after_tool send that should interrupt the live turn", () => {
@@ -4244,7 +4243,6 @@ describe("RuntimeSessionDispatcher task-bound live sessions", () => {
       expect(existing.done).toBe(false);
       expect(existing.internalAbortReason).toBeUndefined();
       expect(startStreamingSession).not.toHaveBeenCalled();
-      expect(dispatcher.deferredRuntimeRestarts.has(sessionName)).toBe(false);
       expect(existing.pendingMessages).toHaveLength(1);
       expect(existing.pendingMessages[0]?.taskBarrierTaskId).toBe(taskId);
       expect(existing.pendingMessages[0]?.deliveryBarrier).toBe("after_response");
@@ -4278,12 +4276,34 @@ describe("RuntimeSessionDispatcher task-bound live sessions", () => {
     });
   });
 
-  it("defers the unbound relaunch of a blocked task session to the turn boundary", async () => {
+  it("queues a task comment steer on the running task turn without relaunching", async () => {
+    await withTaskSession("ravi-task-comment-", async ({ sessionName }) => {
+      const taskId = createRunningTask(sessionName);
+      const dispatcher = createDispatcher();
+      const startStreamingSession = mock(async () => {});
+      dispatcher.startStreamingSession = startStreamingSession;
+      const existing = createTaskBoundSession({ toolRunning: true, currentTaskBarrierTaskId: taskId });
+      dispatcher.streamingSessions.set(sessionName, existing);
+
+      await dispatcher.handlePromptImmediate(sessionName, {
+        prompt: `[System] Inform: New comment on task ${taskId}`,
+        deliveryBarrier: "after_response",
+        taskBarrierTaskId: taskId,
+      });
+
+      expect(existing.done).toBe(false);
+      expect(existing.internalAbortReason).toBeUndefined();
+      expect(startStreamingSession).not.toHaveBeenCalled();
+      expect(existing.pendingMessages.map((message) => message.taskBarrierTaskId)).toEqual([taskId]);
+    });
+  });
+
+  it("queues a task-less prompt on a blocked task's live session without relaunching", async () => {
     await withTaskSession("ravi-task-blocked-", async ({ sessionName }) => {
       const taskId = createRunningTask(sessionName);
       dbBlockTask(taskId, { actor: "test", agentId: "main", sessionName, message: "waiting on input" });
       const dispatcher = createDispatcher();
-      const startStreamingSession = mock(async (_sessionName: string, _prompt: RuntimeLaunchPrompt) => {});
+      const startStreamingSession = mock(async () => {});
       dispatcher.startStreamingSession = startStreamingSession;
       const existing = createTaskBoundSession({ currentTaskBarrierTaskId: taskId });
       dispatcher.streamingSessions.set(sessionName, existing);
@@ -4295,30 +4315,20 @@ describe("RuntimeSessionDispatcher task-bound live sessions", () => {
 
       expect(existing.done).toBe(false);
       expect(startStreamingSession).not.toHaveBeenCalled();
-      expect(dispatcher.deferredRuntimeRestarts.get(sessionName)).toHaveLength(1);
-      expect(typeof existing.onIdleBoundary).toBe("function");
-
-      existing.turnActive = false;
-      existing.pushMessage = () => {};
-      await dispatcher.flushDeferredRuntimeRestarts(sessionName);
-
-      expect(existing.done).toBe(true);
-      expect(existing.internalAbortReason).toBe("runtime_task_settings_change");
-      expect(startStreamingSession).toHaveBeenCalledTimes(1);
-      expect(startStreamingSession.mock.calls[0]?.[1]?.taskBarrierTaskId).toBeUndefined();
-      expect(dispatcher.deferredRuntimeRestarts.has(sessionName)).toBe(false);
+      expect(existing.pendingMessages).toHaveLength(1);
+      expect(existing.pendingMessages[0]?.taskBarrierTaskId).toBeUndefined();
     });
   });
 
-  it("drops the task binding only at the turn boundary after the task completes", async () => {
+  it("queues a task-less prompt after the task completes without relaunching", async () => {
     await withTaskSession("ravi-task-done-", async ({ sessionName }) => {
       const taskId = createRunningTask(sessionName);
+      dbCompleteTask(taskId, { actor: "test", agentId: "main", sessionName, message: "done" });
       const dispatcher = createDispatcher();
-      const startStreamingSession = mock(async (_sessionName: string, _prompt: RuntimeLaunchPrompt) => {});
+      const startStreamingSession = mock(async () => {});
       dispatcher.startStreamingSession = startStreamingSession;
       const existing = createTaskBoundSession({ currentTaskBarrierTaskId: taskId });
       dispatcher.streamingSessions.set(sessionName, existing);
-      dbCompleteTask(taskId, { actor: "test", agentId: "main", sessionName, message: "done" });
 
       await dispatcher.handlePromptImmediate(sessionName, {
         prompt: "checkpoint: como esta?",
@@ -4327,20 +4337,11 @@ describe("RuntimeSessionDispatcher task-bound live sessions", () => {
 
       expect(existing.done).toBe(false);
       expect(startStreamingSession).not.toHaveBeenCalled();
-      expect(dispatcher.deferredRuntimeRestarts.get(sessionName)).toHaveLength(1);
-
-      existing.turnActive = false;
-      existing.pushMessage = () => {};
-      existing.onIdleBoundary?.();
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      expect(existing.done).toBe(true);
-      expect(startStreamingSession).toHaveBeenCalledTimes(1);
-      expect(startStreamingSession.mock.calls[0]?.[1]?.taskBarrierTaskId).toBeUndefined();
+      expect(existing.pendingMessages.map((message) => message.taskBarrierTaskId)).toEqual([undefined]);
     });
   });
 
-  it("does not let a second task dispatch interrupt the task turn still running", async () => {
+  it("queues a second task dispatch behind the running task without relaunching", async () => {
     await withTaskSession("ravi-task-second-", async ({ sessionName }) => {
       const firstTaskId = createRunningTask(sessionName, "first task");
       const dispatcher = createDispatcher();
@@ -4357,93 +4358,29 @@ describe("RuntimeSessionDispatcher task-bound live sessions", () => {
 
       expect(existing.done).toBe(false);
       expect(startStreamingSession).not.toHaveBeenCalled();
-      expect(dispatcher.deferredRuntimeRestarts.get(sessionName)?.[0]?.taskBarrierTaskId).toBe("task-second");
+      expect(existing.pendingMessages.map((message) => message.taskBarrierTaskId)).toEqual(["task-second"]);
     });
   });
 
-  it("replays a deferred restart when its session ends before the turn boundary", async () => {
-    await withTaskSession("ravi-task-orphan-", async ({ sessionName }) => {
+  it("queues a prompt whose task asks for another effort without relaunching", async () => {
+    await withTaskSession("ravi-task-effort-", async ({ sessionName }) => {
+      const taskId = createRunningTask(sessionName);
       const dispatcher = createDispatcher();
       const startStreamingSession = mock(async () => {});
       dispatcher.startStreamingSession = startStreamingSession;
-      dispatcher.deferredRuntimeRestarts.set(sessionName, [
-        { prompt: "inform after crash", deliveryBarrier: "after_response" },
-      ]);
+      const existing = createTaskBoundSession({ currentEffort: "xhigh", currentThinking: "verbose" });
+      dispatcher.streamingSessions.set(sessionName, existing);
 
-      dispatcher.drainPendingStarts();
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      expect(dispatcher.deferredRuntimeRestarts.has(sessionName)).toBe(false);
-      expect(startStreamingSession).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  it("stashes deferred restarts on an explicit abort instead of starting a new turn", async () => {
-    await withTaskSession("ravi-task-abort-", async ({ sessionName }) => {
-      const dispatcher = createDispatcher();
-      const startStreamingSession = mock(async () => {});
-      dispatcher.startStreamingSession = startStreamingSession;
-      dispatcher.streamingSessions.set(sessionName, createTaskBoundSession({ currentTaskBarrierTaskId: "task-gone" }));
-      dispatcher.deferredRuntimeRestarts.set(sessionName, [
-        { prompt: "inform waiting for the boundary", deliveryBarrier: "after_response" },
-      ]);
-
-      expect(dispatcher.abortSession(sessionName)).toBe(true);
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      expect(startStreamingSession).not.toHaveBeenCalled();
-      expect(dispatcher.deferredRuntimeRestarts.has(sessionName)).toBe(false);
-      expect(dispatcher.stashedMessages.get(sessionName)?.map((message) => message.message.content)).toEqual([
-        "inform waiting for the boundary",
-      ]);
-    });
-  });
-
-  it("keeps deferred prompts tracked until their handoff and retains a failed one", async () => {
-    await withTaskSession("ravi-task-flush-", async ({ sessionName }) => {
-      const dispatcher = createDispatcher();
-      const seen: string[] = [];
-      let remainingDuringFirst: number | undefined;
-      (
-        dispatcher as unknown as { handlePromptImmediate: typeof dispatcher.handlePromptImmediate }
-      ).handlePromptImmediate = mock(async (_sessionName: string, prompt: RuntimeLaunchPrompt) => {
-        seen.push(prompt.prompt);
-        if (prompt.prompt === "first") {
-          remainingDuringFirst = dispatcher.deferredRuntimeRestarts.get(sessionName)?.length;
-          return;
-        }
-        throw new Error("launch failed");
+      await dispatcher.handlePromptImmediate(sessionName, {
+        prompt: "task brief",
+        deliveryBarrier: "after_task",
+        taskBarrierTaskId: taskId,
       });
-      dispatcher.deferredRuntimeRestarts.set(sessionName, [
-        { prompt: "first", deliveryBarrier: "after_response" },
-        { prompt: "second", deliveryBarrier: "after_response" },
-      ]);
 
-      await dispatcher.flushDeferredRuntimeRestarts(sessionName);
-
-      expect(seen).toEqual(["first", "second"]);
-      expect(remainingDuringFirst).toBe(1);
-      expect(dispatcher.deferredRuntimeRestarts.get(sessionName)?.map((prompt) => prompt.prompt)).toEqual(["second"]);
+      expect(existing.done).toBe(false);
+      expect(startStreamingSession).not.toHaveBeenCalled();
+      expect(existing.pendingMessages.map((message) => message.taskBarrierTaskId)).toEqual([taskId]);
     });
-  });
-
-  it("only defers restarts that would cut a live turn short", () => {
-    const busy = createTaskBoundSession({ currentTaskBarrierTaskId: "task-live" });
-    expect(shouldDeferRuntimeRestartToTurnBoundary(busy, { prompt: "x", deliveryBarrier: "after_response" })).toBe(
-      true,
-    );
-    expect(shouldDeferRuntimeRestartToTurnBoundary(busy, { prompt: "x", deliveryBarrier: "after_tool" })).toBe(true);
-    expect(shouldDeferRuntimeRestartToTurnBoundary(busy, { prompt: "x", deliveryBarrier: "immediate_interrupt" })).toBe(
-      false,
-    );
-    const idle = createTaskBoundSession({ turnActive: false, currentTaskBarrierTaskId: "task-live" });
-    expect(shouldDeferRuntimeRestartToTurnBoundary(idle, { prompt: "x", deliveryBarrier: "after_response" })).toBe(
-      false,
-    );
-    const unbound = createTaskBoundSession();
-    expect(shouldDeferRuntimeRestartToTurnBoundary(unbound, { prompt: "x", deliveryBarrier: "after_tool" })).toBe(
-      false,
-    );
   });
 
   it("keeps a running task's binding when a task-less atom owns the stashed restart envelope", () => {

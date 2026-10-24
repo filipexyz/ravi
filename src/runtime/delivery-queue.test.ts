@@ -88,36 +88,26 @@ describe("runtime delivery queue", () => {
     await generator.return(undefined);
   });
 
-  it("calls the idle boundary hook once when the turn ends with nothing deliverable", async () => {
-    const queuedMessage = createQueuedRuntimeUserMessage({ prompt: "task turn" });
-    let boundaryCalls = 0;
+  it("yields the session's current effort and thinking with each turn", async () => {
     const session = makeStreamingSession({
-      pendingMessages: [queuedMessage],
-      onIdleBoundary: () => {
-        boundaryCalls += 1;
-      },
+      pendingMessages: [createQueuedRuntimeUserMessage({ prompt: "task turn" })],
+      currentEffort: "low",
+      currentThinking: "verbose",
     });
     const generator = createRuntimeMessageGenerator({
       sessionName: "dev",
       session,
       stashedMessages: new Map(),
+      beforeTurnStart: () => {
+        session.currentEffort = "xhigh";
+      },
     });
 
-    await generator.next();
-    expect(boundaryCalls).toBe(0);
+    const result = await generator.next();
 
-    session.turnActive = false;
-    const next = generator.next();
-    session.onTurnComplete?.();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(boundaryCalls).toBe(1);
-    expect(session.onIdleBoundary).toBeNull();
-    expect(typeof session.pushMessage).toBe("function");
-
+    expect(result.value).toMatchObject({ runtimeOptions: { effort: "xhigh", thinking: "verbose" } });
     session.done = true;
-    session.pushMessage?.(null);
-    await next;
+    session.onTurnComplete?.();
     await generator.return(undefined);
   });
 

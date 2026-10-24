@@ -7,7 +7,6 @@ import { dbGetTask, dbMarkTaskAcceptedForSession, dbResolveActiveTaskBindingForS
 import type { TaskRuntimeOptionsSource, TaskRuntimeResolution } from "../tasks/types.js";
 import { logger } from "../utils/logger.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
-import type { RuntimeHostStreamingSession } from "./host-session.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import { resolveAgentModelSelection } from "./model-preset-resolver.js";
 import { resolveRuntimeDefaults } from "./runtime-defaults.js";
@@ -109,18 +108,6 @@ export function resolveRuntimeForPrompt(options: {
     configModelSource,
     configEffort: defaults.effort.source === "global_default" ? defaults.effort.value : undefined,
   });
-}
-
-export function runtimePromptRequiresRestart(
-  streaming: RuntimeHostStreamingSession,
-  runtime: TaskRuntimeResolution,
-  prompt: RuntimeLaunchPrompt,
-): boolean {
-  return (
-    streaming.currentTaskBarrierTaskId !== normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId) ||
-    streaming.currentEffort !== runtime.options.effort ||
-    streaming.currentThinking !== runtime.options.thinking
-  );
 }
 
 /** Task states whose binding a task-less prompt inherits. A blocked task waits for its own resume. */

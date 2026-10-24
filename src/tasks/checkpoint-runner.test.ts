@@ -392,6 +392,7 @@ describe.skip("task checkpoint runner", () => {
         sessionName: `${created.task.id}-work`,
         payload: expect.objectContaining({
           deliveryBarrier: "after_response",
+          taskBarrierTaskId: created.task.id,
         }),
       },
     ]);

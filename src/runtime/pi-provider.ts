@@ -862,6 +862,8 @@ async function* runPiTurns(
   // Last env that actually reached a live Pi process. Do not update this until
   // start/handshake succeeds — a failed respawn must retry the new key.
   let appliedManagedEnvSignature: string | undefined;
+  // Thinking level the live Pi process runs with.
+  let appliedThinkingLevel = startInput.thinkingLevel;
 
   const takeNextPiEvent = async (): Promise<IteratorResult<PiRpcEvent>> => {
     if (pendingStartupEvents.length > 0) {
@@ -957,11 +959,33 @@ async function* runPiTurns(
         continue;
       }
 
+      // Effort and thinking are per turn: a (re)spawn starts with this turn's
+      // level, a live process switches with `set_thinking_level`.
+      const turnThinkingLevel = promptMessage.runtimeOptions
+        ? toPiThinkingLevel(promptMessage.runtimeOptions.effort, promptMessage.runtimeOptions.thinking)
+        : undefined;
+      if (turnThinkingLevel) {
+        startInput.thinkingLevel = turnThinkingLevel;
+      }
+
       // Start (or respawn) after the host has applied this turn's runtime env.
       // Eager spawn at session open would bake the pre-rotation context key,
       // which refreshRuntimeRequestContextForTurn then revokes.
       try {
-        await ensurePiRpcReady();
+        const spawned = await ensurePiRpcReady();
+        if (spawned) {
+          appliedThinkingLevel = startInput.thinkingLevel;
+        } else if (turnThinkingLevel && turnThinkingLevel !== appliedThinkingLevel) {
+          try {
+            await sendPiCommand(transport, { type: "set_thinking_level", level: turnThinkingLevel });
+            appliedThinkingLevel = turnThinkingLevel;
+          } catch (error) {
+            log.warn("pi thinking level switch failed; keeping the current level", {
+              level: turnThinkingLevel,
+              error,
+            });
+          }
+        }
       } catch (error) {
         const firstStart = !state.started;
         if (!isPiPermissionBridgeError(error) && firstStart) {

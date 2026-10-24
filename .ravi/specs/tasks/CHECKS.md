@@ -6,6 +6,8 @@
   snapshot, and input payload before dispatch.
 - Dispatch MUST apply task-level model, effort, and thinking overrides without
   mutating the assigned session defaults.
+- Entering or leaving a task on a live session applies its effort and thinking
+  to that turn without relaunching the runtime.
 - A turn without task binding MUST NOT inherit stale `RAVI_TASK_*` environment
   from previous task work.
 - A task-less prompt that is not `after_task` and reaches a session with a
