@@ -8,6 +8,10 @@
   mutating the assigned session defaults.
 - A turn without task binding MUST NOT inherit stale `RAVI_TASK_*` environment
   from previous task work.
+- A task-less prompt that is not `after_task` and reaches a session with a
+  `dispatched` or `in_progress` assignment runs with that task's binding; a
+  `blocked`, done or failed task is not inherited
+  (`src/runtime/session-dispatcher.test.ts`, "task-bound live sessions").
 - `show` and `watch` MUST be side-effect free and MUST NOT materialize missing
   task artifacts.
 - `report`, `done`, `block`, and `fail` MUST update durable task state and task

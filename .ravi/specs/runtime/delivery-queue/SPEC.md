@@ -127,6 +127,8 @@ Within the same barrier lane, delivery SHOULD be FIFO.
 
 `after_response` and `after_task` prompt atoms MUST NOT request provider interruption while the session is generating text. They may wake an idle session after the current turn becomes terminal.
 
+A prompt atom that needs a different runtime than the live session (another task binding, effort, thinking or model broker route) MUST NOT restart the session while a turn is starting, generating, compacting or running a tool when its barrier is `after_response` or `after_task`, nor when the restart would take the session out of its live task binding (only `immediate_interrupt` may). The dispatcher MUST keep the atom and apply the restart at the next turn boundary, when the session has nothing deliverable left. A deferred restart MUST survive the loss of its session and MUST be traceable (`dispatch.restart_deferred`).
+
 `after_tool` and `immediate_interrupt` prompt atoms MAY request interruption only through the session dispatcher's interrupt path, with trace events that explain the source, barrier, and safety state.
 
 When a running tool's result has crossed its provider callback boundary, the

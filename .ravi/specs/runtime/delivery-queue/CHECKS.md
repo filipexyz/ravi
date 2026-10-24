@@ -29,6 +29,8 @@
 - A fatal in-process tool failure (SIGKILL / exit 137) terminalizes the turn, releases `after_tool`, wakes the generator, and drains queued atoms FIFO without a daemon restart. Ordinary tool errors stay non-terminal so the provider can continue.
 - A pending provider callback write blocks every interrupt lane, including `immediate_interrupt`.
 - `immediate_interrupt` still respects startup, compaction, and unsafe tool barriers.
+- A task-less inform, send, ask, task comment or checkpoint reminder that reaches a live task turn never restarts or interrupts it; a restart it needs (blocked or finished task, other effort) waits for the turn boundary (`src/runtime/session-dispatcher.test.ts`, "task-bound live sessions").
+- A second task dispatched to a session whose task turn is still running waits for that turn to end.
 
 - A transport-only scheduled followup ahead of a canonical human message from
   the same chat does not prevent the human message from interrupting.

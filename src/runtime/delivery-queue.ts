@@ -490,6 +490,11 @@ export async function* createRuntimeMessageGenerator({
           session.pendingWake = false;
           resolve();
         };
+        const onIdleBoundary = session.onIdleBoundary;
+        if (onIdleBoundary) {
+          session.onIdleBoundary = null;
+          queueMicrotask(onIdleBoundary);
+        }
       });
       if (session.pendingMessages.length === 0 && session.done) break;
       continue;

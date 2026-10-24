@@ -88,6 +88,39 @@ describe("runtime delivery queue", () => {
     await generator.return(undefined);
   });
 
+  it("calls the idle boundary hook once when the turn ends with nothing deliverable", async () => {
+    const queuedMessage = createQueuedRuntimeUserMessage({ prompt: "task turn" });
+    let boundaryCalls = 0;
+    const session = makeStreamingSession({
+      pendingMessages: [queuedMessage],
+      onIdleBoundary: () => {
+        boundaryCalls += 1;
+      },
+    });
+    const generator = createRuntimeMessageGenerator({
+      sessionName: "dev",
+      session,
+      stashedMessages: new Map(),
+    });
+
+    await generator.next();
+    expect(boundaryCalls).toBe(0);
+
+    session.turnActive = false;
+    const next = generator.next();
+    session.onTurnComplete?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(boundaryCalls).toBe(1);
+    expect(session.onIdleBoundary).toBeNull();
+    expect(typeof session.pushMessage).toBe("function");
+
+    session.done = true;
+    session.pushMessage?.(null);
+    await next;
+    await generator.return(undefined);
+  });
+
   it("cancels idle session eviction when a new turn starts", async () => {
     const idleTimer = setTimeout(() => {}, 60_000);
     const queuedMessage = createQueuedRuntimeUserMessage({ prompt: "voltei" });

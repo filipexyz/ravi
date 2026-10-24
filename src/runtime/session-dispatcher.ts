@@ -85,7 +85,12 @@ import {
   resolveRuntimePromptText,
   withSessionSurfaceHint,
 } from "./session-surface-hint.js";
-import { resolveRuntimeForPrompt, runtimePromptRequiresRestart } from "./task-runtime-context.js";
+import {
+  isInheritableTaskBinding,
+  resolveInheritedTaskBindingTaskId,
+  resolveRuntimeForPrompt,
+  runtimePromptRequiresRestart,
+} from "./task-runtime-context.js";
 import {
   RUNTIME_SESSION_RECLAIM_INTERVAL_MS,
   buildRuntimeSessionPoolSnapshot,
@@ -184,6 +189,8 @@ export class RuntimeSessionDispatcher {
   readonly streamingSessions = new Map<string, RuntimeHostStreamingSession>();
   readonly debounceStates = new Map<string, DebounceState>();
   readonly deferredAfterTaskStarts = new Map<string, RuntimeLaunchPrompt[]>();
+  /** Prompts whose runtime restart waits for the live turn to end. */
+  readonly deferredRuntimeRestarts = new Map<string, RuntimeLaunchPrompt[]>();
   readonly pendingStarts: PendingRuntimeSessionStart[] = [];
   readonly startReservations = new Set<string>();
   readonly stashedMessages = new Map<string, RuntimeUserMessage[]>();
@@ -395,6 +402,12 @@ export class RuntimeSessionDispatcher {
       }
     }
 
+    for (const [sessionName, prompts] of this.deferredRuntimeRestarts) {
+      for (const prompt of prompts) {
+        addPrompt(sessionName, prompt, "deferredRuntimeRestart");
+      }
+    }
+
     let recorded = 0;
     for (const snapshot of snapshots.values()) {
       if (!snapshot.nonIdle) continue;
@@ -457,6 +470,11 @@ export class RuntimeSessionDispatcher {
     if (this.deferredAfterTaskStarts.size > 0) {
       log.info("Clearing deferred after-task starts", { count: this.deferredAfterTaskStarts.size });
       this.deferredAfterTaskStarts.clear();
+    }
+
+    if (this.deferredRuntimeRestarts.size > 0) {
+      log.info("Clearing deferred runtime restarts", { count: this.deferredRuntimeRestarts.size });
+      this.deferredRuntimeRestarts.clear();
     }
 
     if (this.inFlightStartPrompts.size > 0) {
@@ -781,6 +799,136 @@ export class RuntimeSessionDispatcher {
     return "restart-next-turn";
   }
 
+  /**
+   * Keep a prompt that needs a different runtime (task binding, effort,
+   * thinking or model broker route) until the live turn ends, instead of
+   * interrupting it. The generator's idle hook replays it at the boundary.
+   */
+  private deferRuntimeRestartToTurnBoundary(
+    sessionName: string,
+    existing: RuntimeHostStreamingSession,
+    prompt: RuntimeLaunchPrompt,
+    sessionKey: string | undefined,
+    details: {
+      modelBrokerConfigurationChanged: boolean;
+      modelBrokerRouteChanged: boolean;
+      requestedEffort: string | null;
+      requestedThinking: string | null;
+    },
+  ): void {
+    const queued = this.deferredRuntimeRestarts.get(sessionName) ?? [];
+    queued.push(prompt);
+    this.deferredRuntimeRestarts.set(sessionName, queued);
+    existing.onIdleBoundary = () => {
+      void this.flushDeferredRuntimeRestarts(sessionName);
+    };
+    const barrier = getRuntimePromptDeliveryBarrier(prompt);
+    log.info("Streaming: deferring runtime restart until the live turn ends", {
+      sessionName,
+      queued: queued.length,
+      barrier: describeDeliveryBarrier(barrier),
+      currentTaskBarrierTaskId: existing.currentTaskBarrierTaskId ?? null,
+      requestedTaskBarrierTaskId: normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId) ?? null,
+    });
+    recordRuntimeTraceEvent({
+      sessionKey: sessionKey ?? sessionName,
+      sessionName,
+      agentId: existing.agentId,
+      runId: existing.traceRunId,
+      turnId: existing.currentTraceTurnId,
+      provider: existing.queryHandle.provider,
+      model: existing.currentModel,
+      eventType: "dispatch.restart_deferred",
+      eventGroup: "dispatch",
+      status: "deferred",
+      source: prompt.source ?? existing.currentSource,
+      messageId: prompt.context?.messageId,
+      payloadJson: {
+        reason: "runtime_task_settings_change",
+        queued: queued.length,
+        barrier: describeDeliveryBarrier(barrier),
+        barrierSource: prompt.deliveryBarrierSource ?? null,
+        currentTaskBarrierTaskId: existing.currentTaskBarrierTaskId ?? null,
+        requestedTaskBarrierTaskId: normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId) ?? null,
+        currentEffort: existing.currentEffort ?? null,
+        requestedEffort: details.requestedEffort,
+        currentThinking: existing.currentThinking ?? null,
+        requestedThinking: details.requestedThinking,
+        modelBrokerConfigurationChanged: details.modelBrokerConfigurationChanged,
+        modelBrokerRouteChanged: details.modelBrokerRouteChanged,
+        sessionState: describeSessionState(existing),
+      },
+    });
+    updateRuntimeLiveState(sessionName, {
+      activity: "thinking",
+      summary: `queued ${existing.pendingMessages.length + queued.length}`,
+      agentId: existing.agentId,
+      runId: existing.traceRunId,
+      provider: existing.queryHandle.provider,
+      model: existing.currentModel,
+      source: prompt.source ?? existing.currentSource,
+    });
+    this.options
+      .safeEmit(`ravi.session.${sessionName}.runtime`, {
+        type: "dispatch.queued",
+        provider: existing.queryHandle.provider,
+        reason: "runtime_restart_deferred",
+        barrier: describeDeliveryBarrier(barrier),
+        barrierSource: prompt.deliveryBarrierSource ?? null,
+        queueSize: existing.pendingMessages.length + queued.length,
+        sessionState: describeSessionState(existing),
+        timestamp: new Date().toISOString(),
+      })
+      .catch((error) => {
+        log.warn("Failed to emit dispatch.queued event", { sessionName, error });
+      });
+  }
+
+  /** Replay prompts whose runtime restart waited for the turn boundary, in arrival order. */
+  async flushDeferredRuntimeRestarts(sessionName: string): Promise<void> {
+    const queued = this.deferredRuntimeRestarts.get(sessionName);
+    if (!queued || queued.length === 0) {
+      this.deferredRuntimeRestarts.delete(sessionName);
+      return;
+    }
+    this.deferredRuntimeRestarts.delete(sessionName);
+    log.info("Streaming: applying deferred runtime restart at the turn boundary", {
+      sessionName,
+      queued: queued.length,
+    });
+    for (const prompt of queued) {
+      try {
+        await this.handlePromptImmediate(sessionName, prompt);
+      } catch (error) {
+        log.error("Deferred runtime restart failed", { sessionName, error });
+      }
+    }
+  }
+
+  /**
+   * A deferred restart must survive its session: when the live runtime is
+   * gone, or was replaced by one without the idle hook, replay or re-arm it.
+   */
+  private reconcileDeferredRuntimeRestarts(): void {
+    for (const sessionName of [...this.deferredRuntimeRestarts.keys()]) {
+      const current = this.streamingSessions.get(sessionName);
+      if (current && !current.done) {
+        if (current.pushMessage && !current.turnActive && !current.starting) {
+          void this.flushDeferredRuntimeRestarts(sessionName);
+        } else if (!current.onIdleBoundary) {
+          current.onIdleBoundary = () => {
+            void this.flushDeferredRuntimeRestarts(sessionName);
+          };
+        }
+        continue;
+      }
+      if (this.pendingStartSessions.has(sessionName) || this.startingSessions.has(sessionName)) {
+        continue;
+      }
+      void this.flushDeferredRuntimeRestarts(sessionName);
+    }
+  }
+
   async startDeferredAfterTaskSessionIfDeliverable(sessionName: string): Promise<void> {
     const queued = this.deferredAfterTaskStarts.get(sessionName);
     if (!queued || queued.length === 0) {
@@ -949,6 +1097,18 @@ export class RuntimeSessionDispatcher {
     if (!prompt._resumeStashedMessages) {
       prompt = withSessionSurfaceHint(prompt);
     }
+    const inheritedTaskBarrierTaskId = resolveInheritedTaskBindingTaskId({
+      sessionName,
+      prompt,
+      liveTaskBarrierTaskId: existing && !existing.done ? existing.currentTaskBarrierTaskId : undefined,
+    });
+    if (inheritedTaskBarrierTaskId) {
+      log.info("Prompt inherits the session's active task binding", {
+        sessionName,
+        taskBarrierTaskId: inheritedTaskBarrierTaskId,
+      });
+      prompt = { ...prompt, taskBarrierTaskId: inheritedTaskBarrierTaskId };
+    }
     if (classifyRuntimeSessionStartLane(sessionName, prompt) === "interactive") {
       this.dropQueuedObserverPendingStarts();
     }
@@ -1067,6 +1227,15 @@ export class RuntimeSessionDispatcher {
           modelBrokerRouteChanged ||
           runtimePromptRequiresRestart(existing, requestedRuntime, prompt)
         ) {
+          if (shouldDeferRuntimeRestartToTurnBoundary(existing, prompt)) {
+            this.deferRuntimeRestartToTurnBoundary(sessionName, existing, prompt, sessionEntry?.sessionKey, {
+              modelBrokerConfigurationChanged,
+              modelBrokerRouteChanged,
+              requestedEffort: requestedRuntime.options.effort ?? null,
+              requestedThinking: requestedRuntime.options.thinking ?? null,
+            });
+            return;
+          }
           log.info("Streaming: restarting session after runtime task settings change", {
             sessionName,
             modelBrokerConfigurationChanged,
@@ -2066,6 +2235,9 @@ export class RuntimeSessionDispatcher {
   }
 
   drainPendingStarts(): void {
+    if (this.deferredRuntimeRestarts.size > 0) {
+      this.reconcileDeferredRuntimeRestarts();
+    }
     while (this.pendingStarts.length > 0) {
       let nextIndex = this.findDrainablePendingStartIndex("interactive");
       if (nextIndex < 0) {
@@ -2981,6 +3153,32 @@ export function shouldQueuePromptOnLiveSession(
   return !shouldInterruptRuntimeForIncoming(sessionName, existing, barrier, prompt.taskBarrierTaskId).interrupt;
 }
 
+/**
+ * A runtime restart (task binding, effort, thinking) must not cut a live turn
+ * short when the incoming prompt's barrier waits for the response or the task,
+ * nor when it would take the session out of the task it is working on. Only an
+ * explicit `immediate_interrupt` may do that.
+ */
+export function shouldDeferRuntimeRestartToTurnBoundary(
+  existing: RuntimeHostStreamingSession,
+  prompt: RuntimeLaunchPrompt,
+): boolean {
+  if (existing.done) return false;
+  if (prompt._resumeStashedMessages || prompt._daemonRestartResume || prompt._observation) return false;
+  const busy =
+    existing.starting ||
+    existing.turnActive ||
+    existing.toolRunning ||
+    existing.compacting ||
+    existing.toolResultDeliveryPending;
+  if (!busy) return false;
+  const barrier = getRuntimePromptDeliveryBarrier(prompt);
+  if (barrier === "after_response" || barrier === "after_task") return true;
+  if (barrier === "immediate_interrupt") return false;
+  const liveTaskId = existing.currentTaskBarrierTaskId;
+  return Boolean(liveTaskId) && liveTaskId !== normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId);
+}
+
 export function runtimeModelBrokerConfigurationRequiresRestart(
   existing: Pick<RuntimeHostStreamingSession, "currentRuntimeCredential">,
   agent: Parameters<typeof resolveRequiredRuntimeModelBrokerSelection>[0],
@@ -3184,7 +3382,10 @@ function appendUniqueRuntimeMessagesToStash(
   return queued;
 }
 
-export function buildStashedRestartPrompt(messages: RuntimeUserMessage[]): RuntimeLaunchPrompt | null {
+export function buildStashedRestartPrompt(
+  messages: RuntimeUserMessage[],
+  isTaskBindingActive: (taskId: string) => boolean = isInheritableTaskBinding,
+): RuntimeLaunchPrompt | null {
   if (messages.length === 0) {
     return null;
   }
@@ -3208,6 +3409,18 @@ export function buildStashedRestartPrompt(messages: RuntimeUserMessage[]): Runti
     .map((message) => message.message.content)
     .join("\n\n")
     .trim();
+  // The relaunched runtime keeps the task binding of a stashed task atom while
+  // that task is still running, even when a later task-less atom owns the envelope.
+  const envelopeTaskId = normalizePromptTaskBarrierTaskId(
+    (newestLaunchPrompt ?? { taskBarrierTaskId: first.taskBarrierTaskId }).taskBarrierTaskId,
+  );
+  const stashedTaskId = envelopeTaskId
+    ? undefined
+    : [...messages]
+        .reverse()
+        .map((message) => normalizePromptTaskBarrierTaskId(message.taskBarrierTaskId))
+        .find((taskId): taskId is string => Boolean(taskId) && isTaskBindingActive(taskId as string));
+  const taskBarrierTaskId = envelopeTaskId ?? stashedTaskId;
 
   return {
     ...(newestLaunchPrompt ?? {
@@ -3220,6 +3433,7 @@ export function buildStashedRestartPrompt(messages: RuntimeUserMessage[]): Runti
     prompt: combinedPrompt || newestLaunchPrompt?.prompt || first.message.content,
     deliveryBarrier: delivery.barrier,
     deliveryBarrierSource: delivery.source,
+    ...(taskBarrierTaskId ? { taskBarrierTaskId } : {}),
     commands:
       launchPrompts.length > 0
         ? messages.flatMap((message) => message.commands ?? message.launchPrompt?.commands ?? [])

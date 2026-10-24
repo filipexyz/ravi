@@ -149,6 +149,12 @@ export interface RuntimeHostStreamingSession {
   turnActive: boolean;
   /** Signal from result handler to unblock generator after turn completes */
   onTurnComplete: (() => void) | null;
+  /**
+   * One-shot hook the message generator calls when the session is between
+   * turns with nothing deliverable. The dispatcher uses it to apply a runtime
+   * restart it deferred instead of interrupting the active turn.
+   */
+  onIdleBoundary?: (() => void) | null;
   /** Flag: SDK returned "Prompt is too long" - session needs reset */
   _promptTooLong?: boolean;
   /** Login / not-logged-in stub classified as an auth failure, not assistant text. */
