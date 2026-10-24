@@ -1211,7 +1211,9 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   let resolvedModel: string | null = null;
   // The model the thread runs with: set at thread start/resume, switched per turn by turn/start.
   let appliedTurnModel: string | null = null;
-  // The model the thread started with, restored by a turn that names none.
+  // The model the thread first started with, restored by a turn that names none.
+  // A resume after an app-server restart can report a task turn's model, so it
+  // does not overwrite this.
   let threadBaseModel: string | null = null;
   let resolvedModelProvider = "openai";
   let pendingRequests = new Map<string, PendingRequest>();
@@ -2253,8 +2255,8 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     }
     currentInstructionSources = stringArray(threadResponse.instructionSources);
     resolvedModel = firstString(threadResponse.model, input.model) ?? null;
-    threadBaseModel = resolvedModel;
-    appliedTurnModel = input.model ?? threadBaseModel;
+    threadBaseModel ??= resolvedModel;
+    appliedTurnModel = input.model ?? resolvedModel;
     resolvedModelProvider = firstString(threadResponse.modelProvider, resolvedModelProvider) ?? "openai";
   }
 

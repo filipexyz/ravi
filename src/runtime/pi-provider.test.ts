@@ -1315,6 +1315,43 @@ describe("Pi runtime provider", () => {
     expect(types.indexOf("set_model")).toBeLessThan(types.lastIndexOf("prompt"));
   });
 
+  it("switches back after a handle setModel moved the live Pi process off the turn's model", async () => {
+    const transport = new FakePiRpcTransport();
+    transport.responseFor = (command) => {
+      if (command.type === "get_state") {
+        const setModel = [...transport.commands].reverse().find((sent) => sent.type === "set_model");
+        return piResponse(command, {
+          model: { provider: "openai", id: (setModel?.modelId as string | undefined) ?? "gpt-5.5" },
+        });
+      }
+      if (command.type === "prompt") {
+        transport.pushEvent({ type: "agent_end", messages: [assistantMessage("ok", { model: "gpt-5.5" })] });
+      }
+      return defaultResponse(command);
+    };
+
+    const turn = (text: string, model: string): RuntimePromptMessage => ({
+      ...promptMessage(text),
+      runtimeOptions: { model },
+    });
+    const session: { handle?: RuntimeSessionHandle } = {};
+    session.handle = createPiRuntimeProvider({ transport }).startSession(
+      createStartRequest("unused", {
+        prompt: (async function* () {
+          yield turn("first turn", "openai/gpt-5.5");
+          await session.handle?.setModel?.("openai/gpt-4.1");
+          yield turn("second turn", "openai/gpt-5.5");
+        })(),
+      }),
+    );
+    await collectRuntimeEvents(session.handle!.events);
+
+    expect(transport.commands.filter((command) => command.type === "set_model")).toEqual([
+      expect.objectContaining({ type: "set_model", provider: "openai", modelId: "gpt-4.1" }),
+      expect.objectContaining({ type: "set_model", provider: "openai", modelId: "gpt-5.5" }),
+    ]);
+  });
+
   it("fails a turn whose model switch is rejected and retries the switch on the next turn", async () => {
     const transport = new FakePiRpcTransport();
     let setModelAttempts = 0;

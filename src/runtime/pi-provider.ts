@@ -209,6 +209,8 @@ interface PiSessionRuntimeState {
   currentState?: PiRpcSessionState;
   started: boolean;
   requestedModel?: string;
+  /** The model the live Pi process runs with, set after a spawn or a successful `set_model`. */
+  appliedModel?: string;
   transport?: PiRpcTransport;
   pendingSteers: string[];
   /** Latest context fill, used to rewrite a prompt timeout that is really saturation. */
@@ -864,8 +866,6 @@ async function* runPiTurns(
   let appliedManagedEnvSignature: string | undefined;
   // Thinking level the live Pi process runs with.
   let appliedThinkingLevel = startInput.thinkingLevel;
-  // The model the live Pi process runs with, so a failed `set_model` is retried.
-  let appliedTurnModel: string | undefined;
 
   const takeNextPiEvent = async (): Promise<IteratorResult<PiRpcEvent>> => {
     if (pendingStartupEvents.length > 0) {
@@ -985,13 +985,12 @@ async function* runPiTurns(
       try {
         const spawned = await ensurePiRpcReady();
         if (spawned) {
-          appliedTurnModel = state.requestedModel ?? input.model;
-        } else if (turnModel && turnModel !== appliedTurnModel) {
+          state.appliedModel = state.requestedModel ?? input.model;
+        } else if (turnModel && turnModel !== state.appliedModel) {
           // A turn must not run on a model it did not ask for: a failed switch
           // fails the turn and the next turn with this model retries it.
           try {
             await applyPiSetModel(transport, state, turnModel, input.modelBroker, { verify: true });
-            appliedTurnModel = turnModel;
           } catch (error) {
             log.warn("pi model switch failed; failing the turn", { model: turnModel, error });
             yield {
@@ -1499,11 +1498,9 @@ async function controlPiRuntime(
             buildState(),
           );
         }
-        return okControl(
-          request,
-          await sendPiCommand(transport, resolvePiSetModelCommand(model, modelBroker)),
-          buildState(),
-        );
+        const response = await sendPiCommand(transport, resolvePiSetModelCommand(model, modelBroker));
+        state.appliedModel = model;
+        return okControl(request, response, buildState());
       }
       case "thinking.set": {
         const level = normalizePiThinkingLevel(firstString(request.params?.level, request.text));
@@ -1823,6 +1820,7 @@ async function applyPiSetModel(
   ) {
     throw new Error(`Pi set_model did not apply ${model}`);
   }
+  state.appliedModel = model;
 }
 
 async function applyPiRequestedModelAfterStart(
