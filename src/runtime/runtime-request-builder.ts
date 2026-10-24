@@ -628,6 +628,8 @@ async function buildRuntimeStartRequestInternal(
   let initialModelBrokerAttemptAvailable = Boolean(modelBroker);
   let pendingModelBrokerTurnId = initialModelBrokerTurnId;
   let turnRuntimeContextActivated = false;
+  // The resolution the current turn runs with, recorded on its adapter trace.
+  let currentTurnRuntimeResolution = runtimeResolution;
   const reserveModelBrokerAttemptForTurn = async (
     turnId: string,
     planned?: ClaimedRuntimeModelBrokerPlan,
@@ -774,11 +776,11 @@ async function buildRuntimeStartRequestInternal(
       turnId,
       provider: runtimeProviderId,
       model: currentModel,
-      effort: runtimeResolution.options.effort ?? null,
-      thinking: runtimeResolution.options.thinking ?? null,
-      modelSource: runtimeResolution.sources.model,
-      effortSource: runtimeResolution.sources.effort,
-      thinkingSource: runtimeResolution.sources.thinking,
+      effort: currentTurnRuntimeResolution.options.effort ?? null,
+      thinking: currentTurnRuntimeResolution.options.thinking ?? null,
+      modelSource: currentTurnRuntimeResolution.sources.model,
+      effortSource: currentTurnRuntimeResolution.sources.effort,
+      thinkingSource: currentTurnRuntimeResolution.sources.thinking,
       prompt: input.combinedPrompt,
       systemPrompt: systemPromptAppend,
       systemPromptSectionMetadata,
@@ -945,6 +947,7 @@ async function buildRuntimeStartRequestInternal(
       // The launch turn uses the resolution the launch just made.
       const turnRuntimeResolution =
         boundTurnPrompt === prompt ? runtimeResolution : resolveTurnRuntimeResolution(boundTurnPrompt);
+      currentTurnRuntimeResolution = turnRuntimeResolution;
       // A model broker leases the model; otherwise the model follows the turn too.
       if (!modelBroker) {
         // A turn that resolves the launch's model keeps the launch model as given.
@@ -958,7 +961,9 @@ async function buildRuntimeStartRequestInternal(
       streamingSession.currentEffort = turnRuntimeResolution.options.effort;
       streamingSession.currentThinking = turnRuntimeResolution.options.thinking;
       if (boundTurnPrompt !== prompt && turnTaskBarrierTaskId) {
-        void markRuntimeTaskAcceptedForPrompt(sessionName, boundTurnPrompt);
+        void markRuntimeTaskAcceptedForPrompt(sessionName, boundTurnPrompt).catch((error) => {
+          runtimeRequestLog.warn("Failed to mark the task accepted for this turn", { sessionName, error });
+        });
       }
       refreshRuntimeRequestContextForTurn({
         runtimeContext,
