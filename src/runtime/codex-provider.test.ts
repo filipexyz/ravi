@@ -1167,6 +1167,75 @@ rl.on("line", (line) => {
     ]);
   });
 
+  it("switches a fork to the requested model on its first turn/start", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-fork-model-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const requestsPath = join(cwd, "requests.jsonl");
+
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+const requestsPath = ${JSON.stringify(requestsPath)};
+const rl = createInterface({ input: process.stdin });
+const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") return;
+  if (message.id && ["thread/fork", "thread/resume", "thread/start", "turn/start"].includes(message.method)) {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+  }
+  if (message.id && message.method === "thread/fork") {
+    send({ id: message.id, result: { thread: { id: "thread_child" }, model: "gpt-5", modelProvider: "openai" } });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    send({ id: message.id, result: {} });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/started",
+      params: { threadId: message.params.threadId, turn: { id: "turn_child", status: "inProgress" } },
+    });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/completed",
+      params: { threadId: message.params.threadId, turn: { id: "turn_child", status: "completed" } },
+    });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest(["child turn"], {
+        cwd,
+        model: "gpt-5.5",
+        resume: "thread_parent",
+        forkSession: true,
+      }),
+    );
+
+    await collectEvents(session.events);
+    const requests = readFileSync(requestsPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+
+    expect(requests.map((request) => request.method)).toEqual(["thread/fork", "turn/start"]);
+    expect(requests[0]?.params.model).toBeNull();
+    // The fork inherited gpt-5, so its first turn switches to the requested model.
+    expect(requests[1]?.params.model).toBe("gpt-5.5");
+  });
+
   it("passes max/ultra effort as model_reasoning_effort in app-server thread/start and thread/resume", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-effort-appserver-"));
     const command = join(cwd, "fake-codex-app-server.mjs");

@@ -2256,7 +2256,9 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     currentInstructionSources = stringArray(threadResponse.instructionSources);
     resolvedModel = firstString(threadResponse.model, input.model) ?? null;
     threadBaseModel ??= resolvedModel;
-    appliedTurnModel = input.model ?? resolvedModel;
+    // thread/fork does not take a model, so a fork runs on the inherited one
+    // until a turn/start switches it.
+    appliedTurnModel = forkThreadId ? resolvedModel : (input.model ?? resolvedModel);
     resolvedModelProvider = firstString(threadResponse.modelProvider, resolvedModelProvider) ?? "openai";
   }
 
