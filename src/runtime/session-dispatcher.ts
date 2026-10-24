@@ -191,6 +191,7 @@ export class RuntimeSessionDispatcher {
   readonly deferredAfterTaskStarts = new Map<string, RuntimeLaunchPrompt[]>();
   /** Prompts whose runtime restart waits for the live turn to end. */
   readonly deferredRuntimeRestarts = new Map<string, RuntimeLaunchPrompt[]>();
+  private readonly flushingDeferredRuntimeRestarts = new Set<string>();
   readonly pendingStarts: PendingRuntimeSessionStart[] = [];
   readonly startReservations = new Set<string>();
   readonly stashedMessages = new Map<string, RuntimeUserMessage[]>();
@@ -578,6 +579,7 @@ export class RuntimeSessionDispatcher {
       });
       session.internalAbortReason = `${abortReason}_deferred`;
       session.pendingAbort = true;
+      this.stashDeferredRuntimeRestarts(sessionName);
       recordRuntimeTraceEvent({
         sessionKey,
         sessionName,
@@ -616,6 +618,7 @@ export class RuntimeSessionDispatcher {
         crashRecovery: this.options.crashRecovery,
       });
     }
+    this.stashDeferredRuntimeRestarts(sessionName);
 
     if (cancelledTool) {
       log.info("Aborting streaming session - cancelling running tool", {
@@ -884,25 +887,68 @@ export class RuntimeSessionDispatcher {
       });
   }
 
-  /** Replay prompts whose runtime restart waited for the turn boundary, in arrival order. */
+  /**
+   * Replay prompts whose runtime restart waited for the turn boundary, in
+   * arrival order. Each prompt stays in the deferred queue (and so in restart
+   * snapshots) until its handoff starts; a failed handoff goes back to the
+   * front for the next boundary. Prompts deferred again during the flush wait
+   * for the following boundary.
+   */
   async flushDeferredRuntimeRestarts(sessionName: string): Promise<void> {
-    const queued = this.deferredRuntimeRestarts.get(sessionName);
-    if (!queued || queued.length === 0) {
+    if (this.flushingDeferredRuntimeRestarts.has(sessionName)) {
+      return;
+    }
+    const initial = this.deferredRuntimeRestarts.get(sessionName)?.length ?? 0;
+    if (initial === 0) {
       this.deferredRuntimeRestarts.delete(sessionName);
       return;
     }
-    this.deferredRuntimeRestarts.delete(sessionName);
+    this.flushingDeferredRuntimeRestarts.add(sessionName);
     log.info("Streaming: applying deferred runtime restart at the turn boundary", {
       sessionName,
-      queued: queued.length,
+      queued: initial,
     });
-    for (const prompt of queued) {
-      try {
-        await this.handlePromptImmediate(sessionName, prompt);
-      } catch (error) {
-        log.error("Deferred runtime restart failed", { sessionName, error });
+    try {
+      for (let index = 0; index < initial; index++) {
+        const queued = this.deferredRuntimeRestarts.get(sessionName);
+        const prompt = queued?.shift();
+        if (!queued || !prompt) {
+          break;
+        }
+        if (queued.length === 0) {
+          this.deferredRuntimeRestarts.delete(sessionName);
+        }
+        try {
+          await this.handlePromptImmediate(sessionName, prompt);
+        } catch (error) {
+          log.error("Deferred runtime restart failed; keeping it for the next boundary", { sessionName, error });
+          const retained = this.deferredRuntimeRestarts.get(sessionName) ?? [];
+          retained.unshift(prompt);
+          this.deferredRuntimeRestarts.set(sessionName, retained);
+          break;
+        }
       }
+    } finally {
+      this.flushingDeferredRuntimeRestarts.delete(sessionName);
     }
+  }
+
+  /**
+   * An explicit abort must not turn a deferred restart into a new turn: its
+   * prompts join the abort stash with the session's other pending atoms.
+   */
+  private stashDeferredRuntimeRestarts(sessionName: string): void {
+    const queued = this.deferredRuntimeRestarts.get(sessionName);
+    if (!queued || queued.length === 0) {
+      return;
+    }
+    this.deferredRuntimeRestarts.delete(sessionName);
+    log.info("Stashing deferred runtime restarts on abort", { sessionName, count: queued.length });
+    appendUniqueRuntimeMessagesToStash(
+      sessionName,
+      queued.map((prompt) => createQueuedRuntimeUserMessage(prompt)),
+      this.stashedMessages,
+    );
   }
 
   /**

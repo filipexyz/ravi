@@ -4378,6 +4378,55 @@ describe("RuntimeSessionDispatcher task-bound live sessions", () => {
     });
   });
 
+  it("stashes deferred restarts on an explicit abort instead of starting a new turn", async () => {
+    await withTaskSession("ravi-task-abort-", async ({ sessionName }) => {
+      const dispatcher = createDispatcher();
+      const startStreamingSession = mock(async () => {});
+      dispatcher.startStreamingSession = startStreamingSession;
+      dispatcher.streamingSessions.set(sessionName, createTaskBoundSession({ currentTaskBarrierTaskId: "task-gone" }));
+      dispatcher.deferredRuntimeRestarts.set(sessionName, [
+        { prompt: "inform waiting for the boundary", deliveryBarrier: "after_response" },
+      ]);
+
+      expect(dispatcher.abortSession(sessionName)).toBe(true);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(startStreamingSession).not.toHaveBeenCalled();
+      expect(dispatcher.deferredRuntimeRestarts.has(sessionName)).toBe(false);
+      expect(dispatcher.stashedMessages.get(sessionName)?.map((message) => message.message.content)).toEqual([
+        "inform waiting for the boundary",
+      ]);
+    });
+  });
+
+  it("keeps deferred prompts tracked until their handoff and retains a failed one", async () => {
+    await withTaskSession("ravi-task-flush-", async ({ sessionName }) => {
+      const dispatcher = createDispatcher();
+      const seen: string[] = [];
+      let remainingDuringFirst: number | undefined;
+      (
+        dispatcher as unknown as { handlePromptImmediate: typeof dispatcher.handlePromptImmediate }
+      ).handlePromptImmediate = mock(async (_sessionName: string, prompt: RuntimeLaunchPrompt) => {
+        seen.push(prompt.prompt);
+        if (prompt.prompt === "first") {
+          remainingDuringFirst = dispatcher.deferredRuntimeRestarts.get(sessionName)?.length;
+          return;
+        }
+        throw new Error("launch failed");
+      });
+      dispatcher.deferredRuntimeRestarts.set(sessionName, [
+        { prompt: "first", deliveryBarrier: "after_response" },
+        { prompt: "second", deliveryBarrier: "after_response" },
+      ]);
+
+      await dispatcher.flushDeferredRuntimeRestarts(sessionName);
+
+      expect(seen).toEqual(["first", "second"]);
+      expect(remainingDuringFirst).toBe(1);
+      expect(dispatcher.deferredRuntimeRestarts.get(sessionName)?.map((prompt) => prompt.prompt)).toEqual(["second"]);
+    });
+  });
+
   it("only defers restarts that would cut a live turn short", () => {
     const busy = createTaskBoundSession({ currentTaskBarrierTaskId: "task-live" });
     expect(shouldDeferRuntimeRestartToTurnBoundary(busy, { prompt: "x", deliveryBarrier: "after_response" })).toBe(
