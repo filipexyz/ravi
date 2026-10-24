@@ -1,6 +1,6 @@
 # Tema da org nas páginas
 
-Parte da skill pages. Tags `ravi-*`: `widgets.md`.
+Parte da skill pages. Tags `ravi-*`: `widgets.md`. Kit rk para página à mão: `design.md`.
 
 O tema é um item da Biblioteca do Console (tipo `theme`): as cores, fontes,
 espaços e raios da organização, no claro e no escuro. O `ravi pages ship`

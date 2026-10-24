@@ -275,5 +275,18 @@ describe("skill files", () => {
     expect(paths).toContain("references/views-access-forms.md");
     expect(readSkillFile(bases, "SKILL.md")?.content).toBe(bases.content);
     expect(readSkillFile(bases, "references/nope.md")).toBeNull();
+
+    const pages = listCatalogSkills().find((skill) => skill.name === "pages")!;
+    const pagesPaths = listSkillFilePaths(pages);
+    for (const path of [
+      "references/design.md",
+      "references/kit/kit.css.txt",
+      "references/kit/kit.js.txt",
+      "references/esqueletos/decisoes.html.txt",
+      "references/esqueletos/relatorio.html.txt",
+    ]) {
+      expect(pagesPaths).toContain(path);
+    }
+    expect(readSkillFile(pages, "./references/kit/kit.css.txt")?.path).toBe("references/kit/kit.css.txt");
   });
 });

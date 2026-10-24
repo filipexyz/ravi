@@ -8,7 +8,7 @@ Tabela, board, lista, galeria, calendário, formulário e gráfico saem prontos
 com `<ravi-view>`, `<ravi-form>` e `<ravi-chart>` (`widgets.md`): tema, campos
 por tipo, edição, teclado e `--uses` derivado. Escreva à mão só o que a tag
 não cobre. No HTML à mão, cor, fonte e espaço vêm das variáveis do tema com
-fallback (`theme.md`), nunca literais.
+fallback (`theme.md`), nunca literais. Desenho à mão (decisões, relatório, status): kit rk em `design.md`.
 
 ## Padrões por layout
 

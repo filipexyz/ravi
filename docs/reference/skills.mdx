@@ -40,7 +40,7 @@ ravi skills show pages --file references/esqueletos/_client.js.txt --raw > site/
 ravi skills show pages --file references/esqueletos/board.html.txt --raw > site/index.html
 ```
 
-The skeletons are `esqueletos/board.html.txt` (a table or board), `esqueletos/formulario.html.txt` (a form) and `esqueletos/_client.js.txt` (the client every data page uses). [Interactive pages with Bases](/console/bases) walks through using them.
+The skeletons are `esqueletos/board.html.txt` (a table or board), `esqueletos/formulario.html.txt` (a form), `esqueletos/_client.js.txt` (the client every data page uses), `esqueletos/decisoes.html.txt` (a queue of decisions agents ask a person to make) and `esqueletos/relatorio.html.txt` (a static report or status page). The last two carry the rk design kit inline; `references/design.md` explains it. [Interactive pages with Bases](/console/bases) walks through using them.
 
 `--file` takes a relative path from the skill's file list. Anything else fails with `SKILL_FILE_NOT_FOUND` (the error lists the valid files) or `SKILL_FILE_INVALID` (absolute path or `..`). With `--json`, `show` returns `{ skill, files[] }`, plus `file { path, content }` when you pass `--file`.
 

@@ -1,5 +1,5 @@
 // Cliente Ravi Pages → Bases, única cópia. Publique como client.js ao lado do index.html
-// (ship --dir) e carregue com <script src="client.js"></script>, relativo, antes do script
+// (ship --dir) e carregue com <script src="client.js">, relativo, antes do script
 // da página. A página tem <p id="banner" hidden></p>. Inputs: data-pages.md, "Connectors".
 function el(tag, props = {}, ...kids) {
   const node = Object.assign(document.createElement(tag), props);
@@ -55,22 +55,28 @@ const MESSAGES = {
 function showError(err) {
   const node = document.getElementById("banner");
   const code = err && err.code;
+  const close = el("button", { type: "button", textContent: "Fechar", onclick: clearError });
   node.className = "err";
   node.hidden = false;
   // Rota private: recarregar leva ao login. Em rota public ou com senha, não resolve.
   if (code === "connector_session_required" || code === "connector_unauthorized") {
-    return node.replaceChildren("Sua sessão expirou. ", el("a", { href: location.pathname + location.search, textContent: "Entrar de novo" }));
+    return node.replaceChildren("Sua sessão expirou. ", el("a", { href: location.pathname + location.search, textContent: "Entrar de novo" }), " ", close);
   }
   const text = MESSAGES[code] || "Algo deu errado. Tente de novo.";
-  node.replaceChildren(err && err.requestId ? `${text} (código ${err.requestId})` : text);
+  node.replaceChildren(err && err.requestId ? `${text} (código ${err.requestId}) ` : `${text} `, close);
+}
+// Esconde o aviso: o botão "Fechar" e a próxima releitura que der certo.
+function clearError() {
+  const node = document.getElementById("banner");
+  if (node) node.hidden = true;
 }
 // Sem push: releia com piso de 30 s (limite: 120 chamadas/min por viewer por site).
-// Pula a vez com a aba escondida. Devolve stop().
+// Pula a vez com a aba escondida; releitura que dá certo limpa o aviso. Devolve stop().
 function poll(fn, ms = 30000) {
   const every = Math.max(ms, 30000);
   let timer = null, stopped = false;
   const tick = async () => {
-    if (!document.hidden) { try { await fn(); } catch (err) { showError(err); } }
+    if (!document.hidden) { try { await fn(); clearError(); } catch (err) { showError(err); } }
     if (!stopped) timer = setTimeout(tick, every);
   };
   timer = setTimeout(tick, every);

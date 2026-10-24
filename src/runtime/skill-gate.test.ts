@@ -715,6 +715,12 @@ describe("soft gate solucoes footer", () => {
     expect(list).toStartWith("  ");
     expect(list).toContain("esqueletos/board.html.txt");
     expect(list).not.toContain("references/");
+    const files = list.trim().split(" · ");
+    expect(files).toContain("design.md");
+    expect(files).toContain("kit/kit.css.txt");
+    expect(files).toContain("kit/kit.js.txt");
+    expect(files).toContain("esqueletos/decisoes.html.txt");
+    expect(files).toContain("esqueletos/relatorio.html.txt");
   });
 
   it("adds only the solucoes line for triggers and cron, which ship no references", () => {

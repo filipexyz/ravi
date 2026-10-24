@@ -1,0 +1,779 @@
+<!doctype html>
+<!--
+  Esqueleto de Decisões: a fila do que os agentes pedem a uma pessoa decidir (layout Mesa, visual
+  Árvore). Um arquivo só: o kit rk vai inline entre os marcadores (references/design.md); não troque
+  por <link>/<script src>, e não edite o miolo dos marcadores aqui: a fonte é references/kit/.
+  Modo "exemplo" (dados do #rk-data, envio só local; vitrine e testes):
+    ravi pages ship --project <p> --title "Decisões" --route /decisoes --html <este arquivo salvo como index.html> --json
+  Modo "bases" (rota private; lê a view de Decisões e grava escolha + aprovação):
+    ravi pages ship --project <p> --title "Decisões" --route /decisoes --html index.html \
+      --uses ravi.bases.views.describe,ravi.bases.views.query,ravi.bases.views.rows.update --json
+  Link direto para uma decisão: <rota>#d=<id da linha>. Quem decide é membro; gente de fora usa a conversa.
+  Cores, fontes e espaços: variáveis do tema com fallback (references/theme.md), nunca literais.
+  Zonas: CONFIG (troque), FIXO (mude só com motivo), LIVRE (estilo e textos).
+-->
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Decisões</title>
+<style id="rk-kit">
+/* rk-kit:css v1 begin */
+/* rk 1 · kit das Pages (references/design.md); cor literal só em --rk-fb-* */
+:root{--rk-fb-bg:#fbfcfd;--rk-fb-bg2:#f3f5f8;--rk-fb-fg:#17202a;--rk-fb-fg2:#5f6f80;--rk-fb-line:#dfe4ea;--rk-fb-ctl:#838f9c;--rk-fb-ring:#14635a;--rk-fb-acc:#14635a;--rk-fb-onacc:#fff;--rk-fb-ok:#1d6537;--rk-fb-okbg:#dcf3e3;--rk-fb-warn:#7a4a00;--rk-fb-warnbg:#fdf3c7;--rk-fb-bad:#a1262b;--rk-fb-badbg:#fbdcdc;--rk-fb-info:#1d4f8f;--rk-fb-infobg:#dde9fb;--rk-fb-sh1:0 1px 2px #17202a14;--rk-fb-sh2:0 4px 10px -2px #17202a1f;--rk-fb-sh3:0 12px 24px -4px #17202a2e}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--rk-fb-bg:#11171d;--rk-fb-bg2:#18202a;--rk-fb-fg:#e6ebf0;--rk-fb-fg2:#a7b2be;--rk-fb-line:#2a3440;--rk-fb-ctl:#636f7d;--rk-fb-ring:#5ec2b3;--rk-fb-acc:#5ec2b3;--rk-fb-onacc:#0b1a18;--rk-fb-ok:#8fd3a5;--rk-fb-okbg:#16301f;--rk-fb-warn:#ecc86a;--rk-fb-warnbg:#352a0d;--rk-fb-bad:#f4a3a3;--rk-fb-badbg:#3d1c1e;--rk-fb-info:#9fc4f5;--rk-fb-infobg:#1a2b44}}
+:root[data-theme=dark]{color-scheme:dark;--rk-fb-bg:#11171d;--rk-fb-bg2:#18202a;--rk-fb-fg:#e6ebf0;--rk-fb-fg2:#a7b2be;--rk-fb-line:#2a3440;--rk-fb-ctl:#636f7d;--rk-fb-ring:#5ec2b3;--rk-fb-acc:#5ec2b3;--rk-fb-onacc:#0b1a18;--rk-fb-ok:#8fd3a5;--rk-fb-okbg:#16301f;--rk-fb-warn:#ecc86a;--rk-fb-warnbg:#352a0d;--rk-fb-bad:#f4a3a3;--rk-fb-badbg:#3d1c1e;--rk-fb-info:#9fc4f5;--rk-fb-infobg:#1a2b44}
+:root{color-scheme:light dark;--rk-bg:var(--color-background-primary,var(--rk-fb-bg));--rk-bg2:var(--color-background-secondary,var(--rk-fb-bg2));--rk-fg:var(--color-text-primary,var(--rk-fb-fg));--rk-fg2:var(--color-text-secondary,var(--rk-fb-fg2));--rk-line:var(--color-border-secondary,var(--rk-fb-line));--rk-ctl:var(--color-border-primary,var(--rk-fb-ctl));--rk-ring:var(--color-ring-primary,var(--rk-fb-ring));--rk-acc:var(--ravi-color-accent,var(--rk-fb-acc));--rk-onacc:var(--ravi-color-on-accent,var(--rk-fb-onacc));--rk-ok:var(--color-text-success,var(--rk-fb-ok));--rk-okbg:var(--color-background-success,var(--rk-fb-okbg));--rk-warn:var(--color-text-warning,var(--rk-fb-warn));--rk-warnbg:var(--color-background-warning,var(--rk-fb-warnbg));--rk-bad:var(--color-text-danger,var(--rk-fb-bad));--rk-badbg:var(--color-background-danger,var(--rk-fb-badbg));--rk-info:var(--color-text-info,var(--rk-fb-info));--rk-infobg:var(--color-background-info,var(--rk-fb-infobg));--rk-sh1:var(--shadow-sm,var(--rk-fb-sh1));--rk-sh2:var(--shadow-md,var(--rk-fb-sh2));--rk-sh3:var(--shadow-lg,var(--rk-fb-sh3));--rk-wire:color-mix(in srgb,var(--rk-ctl) 66%,var(--rk-bg2));--rk-sans:var(--font-sans,system-ui,sans-serif);--rk-mono:var(--font-mono,ui-monospace,monospace);--rk-xs:var(--font-text-xs-size,.75rem);--rk-sm:var(--font-text-sm-size,.875rem);--rk-md:var(--font-text-md-size,1rem);--rk-hmd:var(--font-heading-md-size,1.25rem);--rk-hlg:var(--font-heading-lg-size,1.5rem);--rk-w5:var(--font-weight-medium,500);--rk-w6:var(--font-weight-semibold,600);--rk-r2:var(--border-radius-md,6px);--rk-r3:var(--border-radius-lg,8px);--rk-r4:var(--border-radius-xl,12px);--rk-rf:var(--border-radius-full,9999px);--rk-bw:var(--border-width-regular,1px);--rk-s1:var(--ravi-space-1,.25rem);--rk-s2:var(--ravi-space-2,.5rem);--rk-s3:var(--ravi-space-3,.75rem);--rk-s4:var(--ravi-space-4,1rem);--rk-s5:var(--ravi-space-5,1.5rem);--rk-s6:var(--ravi-space-6,2rem);--rk-touch:var(--ravi-touch-target,24px);--rk-focus:var(--ravi-focus-width,2px);--rk-hl:var(--rk-bw) solid var(--rk-line);--rk-cl:var(--rk-bw) solid var(--rk-ctl)}
+:root[data-theme=light]{color-scheme:light}
+*,*::before,*::after{box-sizing:border-box}[hidden]{display:none!important}
+body{margin:0;font:var(--rk-md)/1.5 var(--rk-sans);color:var(--rk-fg);background:var(--rk-bg2)}
+button,textarea{font:inherit;color:inherit}button{cursor:pointer}
+:focus-visible{outline:var(--rk-focus) solid var(--rk-ring);outline-offset:2px}
+.rk-num,.rk-pos,.rk-age,.rk-big,.rk-delta{font-variant-numeric:tabular-nums}
+.rk-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.rk-ic{width:1rem;height:1rem;flex:none;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;vertical-align:-.2em}
+.rk-flip{transform:scaleX(-1)}.rk-spin{animation:rk-spin 1.1s linear infinite}@keyframes rk-spin{to{transform:rotate(1turn)}}
+.rk-risk,.rk-chip,.rk-sugm,.rk-more,.rk-delta,.rk-src,.rk-nh,.rk-cwarn{display:inline-flex;align-items:center;gap:var(--rk-s1)}
+.rk-head,.rk-strip,.rk-chips,.rk-mr,.rk-actions,.rk-wl,.rk-keys,.rk-hint,.rk-ttl,.rk-sh{display:flex;flex-wrap:wrap;align-items:center;gap:var(--rk-s1) var(--rk-s2)}
+.rk-qh,.rk-qr,.rk-sn,.rk-delta,.rk-src,.rk-keys,.rk-hint,.rk-sugm,.rk-facts dt,.rk-table caption,.rk-table th,.rk-tl time,.rk-foot,.rk-label,.rk-nh{font-size:var(--rk-xs);color:var(--rk-fg2)}
+.rk-count,.rk-left,.rk-pager,.rk-strip,.rk-byline,.rk-more,.rk-stat dt,.rk-mr,.rk-pv>span:not([class]),.rk-done .rk-qq,.rk-ghost,.rk-empty>p,.rk-sline{color:var(--rk-fg2)}
+.rk-btn,.rk-qi,.rk-qr b,.rk-opt,.rk-pv,.rk-conseq,.rk-note,.rk-cwarn,.rk-reply,.rk-compose textarea,.rk-recap li,.rk-table,.rk-count,.rk-left,.rk-pager,.rk-strip,.rk-byline,.rk-more,.rk-stat dt{font-size:var(--rk-sm)}
+.rk-btn,.rk-risk,.rk-brand,.rk-qr b,.rk-now b,.rk-wl b,.rk-title,.rk-facts dd,.rk-sh,.rk-cpath,.rk-sline b,.rk-empty h2,.rk-big,.rk-table th,.rk-tl time,.rk-label,.rk-nh{font-weight:var(--rk-w6)}
+.rk-sugm,.rk-go,.rk-pv b,.rk-chip,.rk-delta,.rk-sn{font-weight:var(--rk-w5)}
+.rk-label,.rk-nh{margin:0;letter-spacing:.06em;text-transform:uppercase}
+.rk-label{display:block;line-height:1.5}
+.rk-key{display:inline-grid;place-items:center;flex:none;min-width:1.5rem;height:1.5rem;padding:0 var(--rk-s1);font:var(--rk-w5) var(--rk-xs)/1 var(--rk-mono);color:var(--rk-fg2);background:var(--rk-bg2);border:var(--rk-hl);border-bottom-width:calc(2*var(--rk-bw));border-radius:var(--rk-r2)}
+.rk-keys .rk-key,.rk-hint .rk-key,.rk-btn .rk-key{min-width:1.25rem;height:1.25rem}
+.rk-btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--rk-s2);min-height:max(2.25rem,var(--rk-touch));padding:0 var(--rk-s3);background:var(--rk-bg);border:var(--rk-cl);border-radius:var(--rk-r2)}
+.rk-btn:disabled{cursor:default;color:var(--rk-fg2);background:var(--rk-bg2);border-color:var(--rk-line)}
+.rk-btn .rk-key{background:none;color:inherit;border-color:currentColor}
+.rk-pri{color:var(--rk-onacc);background:var(--rk-acc);border-color:var(--rk-acc)}
+.rk-risk{padding:0 var(--rk-s2) 0 var(--rk-s1);border-radius:var(--rk-rf);line-height:1.375rem;white-space:nowrap;font-size:var(--rk-xs)}
+.rk-risk .rk-ic,.rk-cwarn .rk-ic{width:.75rem;height:.75rem}
+.rk-r-alto{color:var(--rk-bad);background:var(--rk-badbg)}.rk-r-medio{color:var(--rk-warn);background:var(--rk-warnbg)}.rk-r-baixo{color:var(--rk-info);background:var(--rk-infobg)}.rk-r-ok{color:var(--rk-ok);background:var(--rk-okbg)}
+.rk-sigla,.rk-tool{display:inline-grid;place-items:center;flex:none;min-width:1.75rem;height:1.75rem;padding:0 var(--rk-s1);font:var(--rk-w6) var(--rk-xs)/1 var(--rk-sans);background:var(--rk-bg2);border:var(--rk-hl);border-radius:var(--rk-r2)}
+.rk-sigla.rk-lg{min-width:2.5rem;height:2.5rem;font-size:var(--rk-sm);border-radius:var(--rk-r3)}
+.rk-tools{display:inline-flex;gap:var(--rk-s1)}
+.rk-tool{height:1.375rem;color:var(--rk-fg2);border:0}
+.rk-desk{display:grid;grid-template-rows:auto minmax(0,1fr) auto;min-height:100dvh}
+.rk-head,.rk-strip{gap:var(--rk-s2) var(--rk-s5);padding:var(--rk-s3) var(--rk-s5);background:var(--rk-bg);border:0 solid var(--rk-line)}
+.rk-head{border-bottom-width:var(--rk-bw)}
+.rk-ttl{align-items:baseline;gap:0 var(--rk-s3);min-width:0}
+.rk-brand{margin:0;font-size:var(--rk-hmd);line-height:1.3}
+.rk-pager{display:flex;align-items:center;gap:var(--rk-s2);margin-left:auto;white-space:nowrap}
+.rk-bk{margin-right:auto}
+.rk-pos{min-width:3.5rem;text-align:center}
+.rk-body{display:grid;grid-template-columns:minmax(0,1fr);min-height:0}
+.rk-queue{min-width:0;padding:var(--rk-s4) var(--rk-s3);background:var(--rk-bg)}
+.rk-qh{margin:0 var(--rk-s2) var(--rk-s2) var(--rk-s4)}
+.rk-ql{display:grid;gap:var(--rk-s2);margin:0;padding:0;list-style:none}
+.rk-qi{position:relative;display:grid;gap:var(--rk-s1);width:100%;padding:var(--rk-s3) var(--rk-s3) var(--rk-s3) var(--rk-s4);line-height:1.4;text-align:left;background:var(--rk-bg);border:var(--rk-cl);border-radius:var(--rk-r3)}
+.rk-btn:not(.rk-pri):hover,button.rk-qi:hover,.rk-qi[aria-current=true]{background:var(--rk-bg2)}
+.rk-pri:hover{background:color-mix(in srgb,var(--rk-acc) 85%,var(--rk-fg))}
+.rk-qi[aria-current=true]::before{content:"";position:absolute;left:calc(-1*var(--rk-bw));top:var(--rk-s3);bottom:var(--rk-s3);border-left:calc(3*var(--rk-bw)) solid var(--rk-fg)}
+.rk-qr{display:flex;align-items:center;gap:var(--rk-s2);min-width:0}
+.rk-qr b{color:var(--rk-fg);white-space:nowrap}
+.rk-qr small{min-width:0;font-size:inherit;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rk-qr .rk-sigla{min-width:1.5rem;height:1.5rem}
+.rk-age{margin-left:auto;white-space:nowrap}
+.rk-qq{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
+.rk-panel{min-width:0;padding:var(--rk-s5) var(--rk-s4) var(--rk-s6);container:rk/inline-size}
+.rk-strip{border-top-width:var(--rk-bw)}
+.rk-now{display:flex;flex:1 1 24rem;flex-wrap:wrap;gap:var(--rk-s1) var(--rk-s5);min-width:0;margin:0;padding:0;list-style:none}
+.rk-now li{display:flex;align-items:baseline;gap:var(--rk-s2);min-width:0;overflow-wrap:anywhere}
+.rk-now .rk-ic{align-self:center;color:var(--rk-ok)}
+.rk-now .rk-e .rk-ic{color:var(--rk-bad)}
+.rk-now b{color:var(--rk-fg)}
+.rk-keys,.rk-hint{gap:var(--rk-s1);margin:0 0 0 auto}
+.rk-keys>span+span::before{content:"· "}
+@media (hover:none),(pointer:coarse){.rk-keys,.rk-hint{display:none}}
+@media (min-width:64rem){.rk-desk{height:100dvh}.rk-body{grid-template-columns:17.5rem minmax(0,1fr)}.rk-queue{overflow:auto;border-right:var(--rk-hl)}.rk-panel{overflow:auto;padding:var(--rk-s5) var(--rk-s6) var(--rk-s6)}.rk-bk{display:none}}
+@media (max-width:63.99rem){.rk-desk[data-rk-screen=queue] :is(.rk-panel,.rk-pager),.rk-desk[data-rk-screen=panel] .rk-queue{display:none}.rk-pager{flex-basis:100%}.rk-head,.rk-strip{padding:var(--rk-s3) var(--rk-s4)}.rk-ttl{display:grid}}
+.rk-page{display:grid;gap:var(--rk-s5);max-width:46rem;margin:0 auto;padding:var(--rk-s6) var(--rk-s4)}
+.rk-page>.rk-head{padding:0;background:none;border:0}
+.rk-page>.rk-strip{padding:var(--rk-s3) var(--rk-s4);border-width:var(--rk-bw);border-radius:var(--rk-r3)}
+.rk-page section{display:grid;gap:var(--rk-s3);min-width:0}
+.rk-sheet,.rk-recap li,.rk-stat,.rk-callout,.rk-badge{background:var(--rk-bg);border:var(--rk-hl);border-radius:var(--rk-r3)}
+.rk-sheet{min-width:0;padding:var(--rk-s5);border-radius:var(--rk-r4);box-shadow:var(--rk-sh1);overflow-wrap:anywhere}
+.rk-byline{display:flex;align-items:center;gap:var(--rk-s3);margin:0 0 var(--rk-s4)}
+.rk-who{display:grid;gap:.125rem;min-width:0;line-height:1.35}
+.rk-wl b{font-size:var(--rk-md);color:var(--rk-fg)}
+.rk-title{margin:0 0 var(--rk-s4);font-size:var(--rk-hmd);line-height:1.3;letter-spacing:-.01em;text-wrap:pretty}
+[tabindex="-1"]:focus{outline:0}
+.rk-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(6rem,1fr));gap:var(--rk-s3) var(--rk-s4);margin:0;padding-top:var(--rk-s4);border-top:var(--rk-hl)}
+.rk-facts>div{display:grid;grid-row:span 2;grid-template-rows:subgrid;row-gap:0}
+.rk-facts dd{margin:0}
+.rk-tree{--rk-y:calc(var(--rk-s3) + .75rem);--rk-r:var(--rk-r3);--rk-h:var(--rk-s4);max-width:42rem}
+.rk-root{position:relative}
+.rk-root::after,.rk-path::before,.rk-pc::before,.rk-path::after{content:"";position:absolute;left:0;border:0 solid var(--rk-o,var(--rk-wire))}
+.rk-root::after{left:calc(var(--rk-s5) - var(--rk-bw));top:100%;height:var(--rk-s4);border-left-width:var(--rk-bw)}
+.rk-paths{margin:var(--rk-s4) 0 0 var(--rk-s5);padding:0;list-style:none}
+.rk-path{position:relative;display:grid;gap:var(--rk-s2);padding:0 0 var(--rk-s3) var(--rk-h)}
+.rk-path::before{top:calc(var(--rk-y) - var(--rk-r));width:var(--rk-h);height:var(--rk-r);border-width:0 0 var(--rk-bw) var(--rk-bw);border-bottom-left-radius:var(--rk-r);border-color:var(--rk-e,var(--rk-wire))}
+.rk-pc{min-width:0}
+.rk-pc::before{top:0;height:calc(var(--rk-y) - var(--rk-r));border-left-width:var(--rk-bw);border-color:var(--rk-u,var(--rk-wire))}
+.rk-path::after{top:calc(var(--rk-y) - var(--rk-r));bottom:0;border-left-width:var(--rk-bw);border-color:var(--rk-d,var(--rk-wire))}
+.rk-path:last-child::after{content:none}
+.rk-then{position:relative;min-width:0;margin-left:var(--rk-s4)}
+.rk-then:empty{display:none}
+.rk-tree:has(.rk-path:is(:hover,:focus-within)),.rk-tree:has(.rk-sug):not(:has(.rk-path:is(:hover,:focus-within))),.rk-chosen{--rk-o:var(--rk-acc)}
+.rk-path:has(~.rk-path:is(:hover,:focus-within)),.rk-paths:not(:has(>.rk-path:is(:hover,:focus-within)))>.rk-path:has(~.rk-sug){--rk-u:var(--rk-acc);--rk-d:var(--rk-acc)}
+.rk-paths:not(:has(>.rk-path:is(:hover,:focus-within)))>.rk-sug{--rk-u:var(--rk-acc);--rk-e:var(--rk-acc);--rk-n:var(--rk-acc)}
+.rk-path:is(:hover,:focus-within),.rk-chosen .rk-path{--rk-u:var(--rk-acc);--rk-e:var(--rk-acc);--rk-n:var(--rk-acc)}
+.rk-path .rk-sec{--rk-o:var(--rk-n)}
+.rk-pre .rk-rail{display:none}
+@container rk (max-width:51.99rem){.rk-pre .rk-sh{display:block;padding:0;font:400 var(--rk-xs)/1.5 var(--rk-sans);color:var(--rk-fg2)}.rk-pre .rk-sh>*{display:inline;font-size:inherit}.rk-pre .rk-sh>.rk-label::after{content:": "}.rk-pre .rk-sn::before{content:" · "}}
+@container rk (min-width:52rem){
+.rk-pre .rk-rail{display:grid}
+.rk-path:has(.rk-compose)>.rk-pc{grid-column:1/-1}
+.rk-tree{display:grid;grid-template-columns:17rem minmax(0,1fr);align-items:start;column-gap:var(--rk-h);max-width:none;--rk-h:1.25rem}
+.rk-root::after{left:calc(100% + var(--rk-bw));top:calc(var(--rk-y) - var(--rk-bw));width:var(--rk-h);height:0;border-width:var(--rk-bw) 0 0}
+.rk-paths{margin:0}
+.rk-path{grid-template-columns:15rem minmax(0,1fr);align-items:start;column-gap:calc(2*var(--rk-h));padding-bottom:var(--rk-s4)}
+.rk-path:first-child::before{top:var(--rk-y);height:0;border-width:var(--rk-bw) 0 0;border-radius:0}
+.rk-path:first-child>.rk-pc::before{content:none}
+.rk-path:first-child::after{top:var(--rk-y)}
+.rk-then{margin:0}
+.rk-then::before{content:"";position:absolute;right:100%;top:var(--rk-y);width:calc(2*var(--rk-h));border-top:var(--rk-bw) solid var(--rk-n,var(--rk-wire))}
+}
+.rk-opt{position:relative;display:grid;grid-template-columns:1.5rem minmax(0,1fr);gap:var(--rk-s1) var(--rk-s3);padding:var(--rk-s3);line-height:1.4;background:var(--rk-bg);border:var(--rk-cl);border-radius:var(--rk-r3);box-shadow:var(--rk-sh1)}
+.rk-opt:hover,.rk-opt:focus-within,.rk-opt.rk-sug,.rk-opt.rk-on{border-color:var(--rk-acc)}
+.rk-opt:hover{box-shadow:var(--rk-sh2)}
+.rk-opt.rk-on{box-shadow:inset 0 0 0 var(--rk-bw) var(--rk-acc),var(--rk-sh1)}
+.rk-opt>*{grid-column:2}
+.rk-go{grid-column:1/-1;display:flex;align-items:flex-start;gap:var(--rk-s3);margin:0;padding:0;font-size:var(--rk-md);line-height:1.5rem;text-align:left;background:none;border:0}
+.rk-go::after{content:"";position:absolute;inset:0;border-radius:var(--rk-r3)}
+.rk-go:focus-visible{outline:0}
+.rk-go:focus-visible::after{outline:var(--rk-focus) solid var(--rk-ring);outline-offset:2px}
+.rk-ot{min-width:0;overflow-wrap:anywhere}
+.rk-others .rk-key{background:none;border-color:var(--rk-bg)}
+.rk-on .rk-key{color:var(--rk-onacc);background:var(--rk-acc);border-color:var(--rk-acc)}
+.rk-sugm .rk-ic,.rk-chip .rk-ic{width:.875rem;height:.875rem}
+.rk-sugm .rk-ic{color:var(--rk-acc)}
+.rk-mr{justify-content:space-between;gap:var(--rk-s1) var(--rk-s3)}
+.rk-ghost{background:none;border-style:dashed;box-shadow:none}
+[aria-disabled=true]{cursor:default}
+.rk-cw{position:relative;display:inline-flex}
+.rk-chip{position:relative;z-index:1;min-height:var(--rk-touch);margin:0;padding:0 var(--rk-s2);font-size:var(--rk-xs);line-height:1.3;text-align:left;border:0;border-radius:var(--rk-r2)}
+.rk-c-custo{color:var(--rk-fg);background:var(--rk-bg2)}.rk-c-alerta{color:var(--rk-warn);background:var(--rk-warnbg)}.rk-c-info{color:var(--rk-info);background:var(--rk-infobg)}
+button.rk-chip{cursor:help;border:var(--rk-cl);text-decoration:underline dotted;text-underline-offset:.2em}
+button.rk-chip:hover,.rk-chip[aria-expanded=true]{box-shadow:inset 0 0 0 var(--rk-bw) currentColor}
+.rk-note{position:absolute;z-index:20;overflow-wrap:anywhere;left:0;top:calc(100% + var(--rk-s1));display:none;gap:var(--rk-s2);width:max-content;max-width:19rem;padding:var(--rk-s3) var(--rk-s4);font-weight:400;line-height:1.5;color:var(--rk-fg);background:var(--rk-bg);border:var(--rk-cl);border-radius:var(--rk-r3);box-shadow:var(--rk-sh3);cursor:auto}
+.rk-open>.rk-note{display:grid}
+.rk-sec{display:grid;gap:var(--rk-s2);min-width:0}
+.rk-sec .rk-sec{margin-top:var(--rk-s3)}
+.rk-sh>.rk-label{flex-basis:100%}
+.rk-sh{align-items:baseline;gap:0 var(--rk-s2);margin:0;padding-top:calc(var(--rk-y) - .75rem);line-height:1.5rem}
+.rk-rail{display:grid;gap:var(--rk-s2);max-width:26rem;margin:0 0 0 var(--rk-s2);padding:0 0 0 var(--rk-s4);list-style:none;border-left:var(--rk-bw) solid var(--rk-o,var(--rk-wire))}
+.rk-rail .rk-rail{margin-top:var(--rk-s2)}
+.rk-rail .rk-conseq{margin-top:var(--rk-s2)}
+.rk-pv{display:grid;gap:.125rem;padding:var(--rk-s1) 0;line-height:1.4}
+.rk-conseq{display:grid;grid-template-columns:1rem minmax(0,1fr);gap:0 var(--rk-s2);max-width:26rem;padding:calc(var(--rk-s3) - var(--rk-bw)) var(--rk-s3) var(--rk-s3);border:var(--rk-bw) dashed var(--rk-ctl);border-radius:var(--rk-r3)}
+.rk-conseq>.rk-ic{margin-top:.25rem;color:var(--rk-fg2)}
+.rk-conseq>.rk-label{line-height:1.5rem}
+.rk-conseq>:not(.rk-ic,.rk-label){grid-column:2;margin:0}
+.rk-conseq>.rk-tools{margin-top:var(--rk-s2)}
+.rk-others{margin-top:var(--rk-s2)}
+.rk-others ul{display:grid;gap:var(--rk-s2);margin:var(--rk-s2) 0 0;padding:0;list-style:none}
+.rk-more{min-height:var(--rk-touch);padding:0 var(--rk-s2) 0 var(--rk-s1);background:var(--rk-bg);border:var(--rk-cl);border-radius:var(--rk-r2)}
+.rk-more[aria-expanded=true] .rk-ic{transform:rotate(90deg)}
+.rk-confirm,.rk-compose{display:grid;gap:var(--rk-s3);max-width:26rem;padding:var(--rk-s4);background:var(--rk-bg);border:var(--rk-bw) solid var(--rk-acc);border-radius:var(--rk-r4);box-shadow:var(--rk-sh2)}
+.rk-confirm{margin-top:var(--rk-s3)}
+.rk-status{grid-column:1/-1;display:grid;gap:var(--rk-s3);margin-top:var(--rk-s5);padding-top:var(--rk-s4);border-top:var(--rk-bw) solid var(--rk-ok)}
+.rk-status>*{max-width:42rem}
+.rk-st-erro{border-color:var(--rk-bad)}
+.rk-cpath{margin:0;overflow-wrap:anywhere}
+.rk-cwarn{gap:var(--rk-s2);margin:0;color:var(--rk-bad)}
+.rk-actions{gap:var(--rk-s2)}
+.rk-sline{margin:0}
+.rk-nw{white-space:nowrap}
+.rk-sline .rk-ic{margin-right:var(--rk-s2)}
+.rk-sline b,.rk-sline .rk-ic{color:var(--rk-ok)}
+.rk-st-erro .rk-sline b,.rk-st-erro .rk-sline .rk-ic,.rk-err{color:var(--rk-bad)}
+.rk-err{margin:0;overflow-wrap:anywhere}
+.rk-reply{display:flex;align-items:flex-start;gap:var(--rk-s3);padding:var(--rk-s3) var(--rk-s4);background:var(--rk-bg);border:var(--rk-hl);border-radius:var(--rk-r3)}
+.rk-reply p{margin:var(--rk-s1) 0 0}
+.rk-compose{gap:var(--rk-s2);padding:var(--rk-s3);border-radius:var(--rk-r3)}
+.rk-compose textarea{width:100%;min-height:5rem;padding:var(--rk-s2) var(--rk-s3);background:var(--rk-bg);border:var(--rk-cl);border-radius:var(--rk-r2);resize:vertical}
+.rk-compose textarea::placeholder{color:var(--rk-fg2)}
+.rk-empty{display:grid;justify-items:center;gap:var(--rk-s2);max-width:30rem;margin:var(--rk-s6) auto;text-align:center}
+.rk-empty h2{margin:0;font-size:var(--rk-hmd)}
+.rk-empty>p{margin:0;text-wrap:balance}
+.rk-empty>.rk-label{margin-top:var(--rk-s5)}
+.rk-badge{display:grid;place-items:center;width:3.5rem;height:3.5rem;margin-bottom:var(--rk-s2);color:var(--rk-ok);border-radius:var(--rk-r4);box-shadow:var(--rk-sh2)}
+.rk-badge .rk-ic{width:1.5rem;height:1.5rem}
+.rk-recap{display:grid;gap:var(--rk-s2);width:100%;margin:0;padding:0;list-style:none;text-align:left}
+.rk-recap li{display:flex;align-items:flex-start;gap:var(--rk-s3);padding:var(--rk-s3)}
+.rk-recap li>span:nth-child(2){display:grid;flex:1;min-width:0}
+.rk-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr));gap:var(--rk-s3);margin:0}
+.rk-stat{display:grid;grid-row:span 2;grid-template-rows:subgrid;gap:var(--rk-s1);min-width:0;padding:var(--rk-s3) var(--rk-s4)}
+.rk-stat dd{display:grid;gap:var(--rk-s1);margin:0}
+.rk-big{font-size:var(--rk-hlg);line-height:1.2}
+.rk-delta .rk-ic{transform:rotate(-90deg)}.rk-down .rk-ic{transform:rotate(90deg)}
+.rk-good{color:var(--rk-ok)}.rk-poor{color:var(--rk-bad)}
+.rk-tw{overflow-x:auto}
+.rk-table{width:100%;border-collapse:collapse;overflow-wrap:normal}
+.rk-table caption{padding-bottom:var(--rk-s2);text-align:left}
+.rk-table th{padding:var(--rk-s2);text-align:left;border-bottom:var(--rk-cl)}
+.rk-table td{padding:var(--rk-s3) var(--rk-s2);vertical-align:top;border-bottom:var(--rk-hl)}
+.rk-table :is(th,td):first-child{padding-left:0}
+.rk-table .rk-num{text-align:right}
+.rk-table td.rk-num{white-space:nowrap}
+.rk-table .rk-chips{margin-top:var(--rk-s1)}
+.rk-callout{display:grid;grid-template-columns:1rem minmax(0,1fr);gap:var(--rk-s3);padding:var(--rk-s3) var(--rk-s4)}
+.rk-callout>.rk-ic{margin-top:.25rem}
+.rk-callout>.rk-ic,.rk-callout b{color:var(--rk-cc,var(--rk-info))}
+.rk-callout>div{display:grid;gap:var(--rk-s1);min-width:0}
+.rk-callout p{margin:0}
+.rk-k-warn{--rk-cc:var(--rk-warn)}.rk-k-bad{--rk-cc:var(--rk-bad)}.rk-k-ok{--rk-cc:var(--rk-ok)}
+.rk-tl{max-width:none;gap:var(--rk-s3);margin-left:var(--rk-s1)}
+.rk-tl>li{position:relative;display:grid;gap:.125rem}
+.rk-tl>li::before{content:"";position:absolute;left:calc(-1*var(--rk-s4) - .3125rem);top:.375rem;width:.625rem;height:.625rem;background:var(--rk-bg);border:calc(2*var(--rk-bw)) solid var(--rk-ctl);border-radius:var(--rk-rf)}
+@media (max-width:40rem){.rk-sheet{padding:var(--rk-s4)}.rk-table :is(th,td){padding-inline:var(--rk-s1)}.rk-panel{padding:var(--rk-s4) var(--rk-s3) var(--rk-s5)}.rk-page{padding:var(--rk-s5) var(--rk-s3)}}
+@media (max-width:40rem),print{.rk-cw{flex-wrap:wrap}.rk-cw.rk-open{flex-basis:100%}.rk-note{position:static;width:auto;max-width:none;margin-top:var(--rk-s1);box-shadow:none}}
+@media screen and (max-width:40rem){.rk-table .rk-note{position:fixed;z-index:40;inset:auto var(--rk-s3) var(--rk-s3);box-shadow:var(--rk-sh3)}}
+@media (max-width:22.5rem){.rk-table td.rk-num{white-space:normal}}
+@media (prefers-reduced-motion:reduce){.rk-spin{animation:none}}
+@media print{body{background:none}.rk-desk,.rk-body{display:block;height:auto}.rk-queue,.rk-pager,.rk-keys,.rk-hint,.rk-btn,.rk-more,.rk-ghost{display:none!important}.rk-panel{overflow:visible;padding:0}*{box-shadow:none!important}.rk-pre .rk-rail,.rk-note{display:grid!important}.rk-sheet,.rk-opt,.rk-conseq,.rk-stat,.rk-callout,.rk-table tr,.rk-recap li{break-inside:avoid}.rk-sheet:has(.rk-table){break-inside:auto}.rk-label{break-after:avoid}.rk-tw{overflow:visible}}
+/* rk-kit:css v1 end */
+</style>
+<!-- LIVRE: estilo da página (o kit já pinta tudo; aqui só o aviso de erro do cliente) -->
+<style>
+  #banner { position: fixed; z-index: 30; left: var(--rk-s4); right: var(--rk-s4); bottom: var(--rk-s4); max-width: 32rem; margin: 0 auto;
+    padding: var(--rk-s3) var(--rk-s4); font-size: var(--rk-sm); color: var(--rk-bad); background: var(--rk-badbg);
+    border: var(--rk-bw) solid var(--rk-bad); border-radius: var(--rk-r3); box-shadow: var(--rk-sh3); }
+  #banner a { color: inherit; }
+  #banner button { min-height: var(--rk-touch); margin-left: var(--rk-s2); padding: 0 var(--rk-s2); background: none; border: var(--rk-bw) solid currentColor; border-radius: var(--rk-r2); }
+</style>
+</head>
+<body>
+<div class="rk-desk" id="rk-app" aria-busy="true"><p class="rk-empty">Carregando decisões…</p></div>
+<p id="banner" role="alert" hidden></p>
+<!-- LIVRE: dados do modo exemplo (formato em references/design.md). No modo bases só "ferramentas" é lido. -->
+<script type="application/json" id="rk-data">
+{
+ "ferramentas": {
+  "whatsapp": { "rotulo": "WhatsApp", "sigla": "WA" },
+  "crm": { "rotulo": "Cadastro de clientes", "sigla": "CC" },
+  "pagamentos": { "rotulo": "Pagamentos", "sigla": "PG" },
+  "email": { "rotulo": "E-mail", "sigla": "EM" }
+ },
+ "agora": [
+  { "agente": "Cobrança", "texto": "enviando 38 lembretes de boleto", "estado": "rodando" },
+  { "agente": "Estoque", "texto": "conferiu 1.204 itens com a planilha do fornecedor", "estado": "feito" }
+ ],
+ "decisoes": [
+  {
+   "id": "campanha-reativacao", "risco": "alto", "pedidaEm": "2026-10-23T17:52:00-03:00",
+   "agente": { "nome": "Campanhas", "sigla": "CA", "runtime": "codex" },
+   "pergunta": "Disparo hoje às 18h a campanha de reativação para 4.200 contatos?",
+   "fatos": [
+    { "rotulo": "Contatos", "valor": "4.200" },
+    { "rotulo": "Custo estimado", "valor": "R$ 1.890" },
+    { "rotulo": "Último envio", "valor": "há 41 dias" },
+    { "rotulo": "Saídas no último envio", "valor": "2,1%" }
+   ],
+   "caminhos": [
+    {
+     "id": "todos", "rotulo": "Disparar para todos às 18h", "meta": "Modelo de mensagem já aprovado",
+     "chips": [
+      { "tipo": "custo", "texto": "R$ 1.890", "nota": "Tarifa de conversa de marketing vezes 4.200 contatos, sem desconto de volume.", "fonte": "tabela de tarifas do canal, outubro" },
+      { "tipo": "alerta", "texto": "612 parados há 6 meses", "nota": "Quem não interage há mais de 180 dias costuma marcar a mensagem como spam, e isso derruba a nota de qualidade do número.", "fonte": "painel de qualidade do número" }
+     ],
+     "ferramentas": ["whatsapp", "crm"],
+     "consequencia": "O agente agenda o envio para 18h, acompanha entregas e respostas por 2 horas e te manda o resumo."
+    },
+    {
+     "id": "amostra", "rotulo": "Testar antes com 300 contatos", "meta": "Mede a resposta antes do resto", "sugestao": true,
+     "chips": [{ "tipo": "custo", "texto": "R$ 135 no teste" }],
+     "ferramentas": ["whatsapp"],
+     "pergunta": "Se o teste for bem, o que faço com os outros 3.900?",
+     "caminhos": [
+      {
+       "id": "seguir", "rotulo": "Seguir sozinho se a resposta passar de 8%", "meta": "Decide em 2 horas", "sugestao": true,
+       "consequencia": "O agente manda para 300 contatos às 18h, mede por 2 horas e só segue para os outros 3.900 se a taxa de resposta passar de 8%. Se não passar, para e te avisa.",
+       "respostaExemplo": "Teste agendado para 18h com 300 contatos. Às 20h sigo ou paro pela regra dos 8%."
+      },
+      {
+       "id": "perguntar", "rotulo": "Me trazer os números antes de seguir",
+       "consequencia": "O agente manda o teste, junta resposta, saídas e custo e abre uma nova decisão para você."
+      }
+     ]
+    },
+    {
+     "id": "sem-inativos", "rotulo": "Tirar os 612 parados e disparar", "meta": "3.588 contatos",
+     "chips": [{ "tipo": "custo", "texto": "R$ 1.615" }],
+     "ferramentas": ["whatsapp", "crm"],
+     "pergunta": "Quando disparo para os 3.588?",
+     "caminhos": [
+      { "id": "hoje", "rotulo": "Hoje às 18h", "consequencia": "O agente filtra os 612 parados no cadastro e dispara às 18h para os 3.588 restantes." },
+      { "id": "amanha", "rotulo": "Amanhã às 10h", "meta": "Melhor horário das últimas 3 campanhas", "consequencia": "O agente filtra os parados hoje e dispara amanhã às 10h." }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "fatura-transportadora", "risco": "medio", "pedidaEm": "2026-10-23T17:31:00-03:00",
+   "agente": { "nome": "Financeiro", "sigla": "FI", "runtime": "claude" },
+   "pergunta": "A fatura da transportadora veio R$ 540 acima do contrato e vence sexta. Pago assim?",
+   "fatos": [
+    { "rotulo": "Fatura", "valor": "R$ 3.180" },
+    { "rotulo": "Pelo contrato", "valor": "R$ 2.640" },
+    { "rotulo": "Vence", "valor": "sexta, 31/10" },
+    { "rotulo": "Entregas na fatura", "valor": "212" }
+   ],
+   "caminhos": [
+    {
+     "id": "explicar", "rotulo": "Pedir o detalhe da cobrança antes", "meta": "Dá tempo até sexta", "sugestao": true,
+     "ferramentas": ["email"],
+     "pergunta": "E se não responderem até quinta?",
+     "caminhos": [
+      { "id": "pagar-contrato", "rotulo": "Pagar na sexta o valor do contrato", "sugestao": true, "consequencia": "O agente pede hoje o detalhe da cobrança. Sem resposta até quinta, paga R$ 2.640 na sexta e deixa a diferença em aberto.", "respostaExemplo": "Pedi o detalhe por e-mail. Se não vier até quinta, pago R$ 2.640 na sexta." },
+      { "id": "me-chamar", "rotulo": "Me chamar de novo na quinta", "consequencia": "O agente pede hoje o detalhe e abre outra decisão na quinta com o que tiver chegado." }
+     ]
+    },
+    {
+     "id": "pagar-tudo", "rotulo": "Pagar os R$ 3.180 hoje",
+     "chips": [
+      { "tipo": "alerta", "texto": "12 reentregas sem registro", "nota": "A diferença são 12 taxas de reentrega, mas nenhum desses pedidos teve segunda tentativa no rastreio.", "fonte": "rastreio dos pedidos de outubro" }
+     ],
+     "ferramentas": ["pagamentos"],
+     "consequencia": "O agente paga a fatura inteira hoje e guarda o comprovante."
+    },
+    {
+     "id": "segurar", "rotulo": "Segurar o pagamento", "meta": "Até a transportadora explicar",
+     "chips": [{ "tipo": "custo", "texto": "Multa de 2% depois de sexta" }],
+     "ferramentas": ["email"],
+     "consequencia": "O agente não paga e cobra a explicação. Se passar de sexta, entra a multa."
+    }
+   ]
+  },
+  {
+   "id": "fornecedor-atraso", "risco": "alto", "pedidaEm": "2026-10-23T17:58:00-03:00",
+   "agente": { "nome": "Estoque", "sigla": "ES", "runtime": "pi" },
+   "pergunta": "O fornecedor do tênis Trilha atrasou 3 dias e 86 pedidos vencem amanhã. Como sigo?",
+   "fatos": [
+    { "rotulo": "Pedidos afetados", "valor": "86" },
+    { "rotulo": "Pares em estoque", "valor": "11" },
+    { "rotulo": "Nova entrega", "valor": "27/10" },
+    { "rotulo": "Fornecedor reserva", "valor": "entrega em 1 dia" }
+   ],
+   "caminhos": [
+    {
+     "id": "avisar", "rotulo": "Avisar os 86 do novo prazo", "meta": "Com a opção de cancelar sem custo", "sugestao": true,
+     "ferramentas": ["whatsapp", "email"],
+     "consequencia": "O agente manda o novo prazo a cada cliente pelo canal da compra, oferece o cancelamento sem custo e te passa a lista de quem cancelou.",
+     "respostaExemplo": "Avisei os 86. Até agora 4 cancelaram e 31 confirmaram o novo prazo."
+    },
+    {
+     "id": "reserva", "rotulo": "Comprar do fornecedor reserva", "meta": "Chega amanhã",
+     "chips": [
+      { "tipo": "custo", "texto": "+ R$ 1.720" },
+      { "tipo": "alerta", "texto": "Forma menor", "nota": "No último lote dele, 9 de 40 clientes trocaram por um número acima.", "fonte": "motivos de troca de setembro" }
+     ],
+     "ferramentas": ["pagamentos", "crm"],
+     "pergunta": "E os 11 pares que já estão aqui?",
+     "caminhos": [
+      { "id": "primeiros", "rotulo": "Mandar hoje para os 11 pedidos mais antigos", "consequencia": "O agente compra 75 pares do reserva e despacha hoje os 11 do estoque para os pedidos mais antigos." },
+      { "id": "guardar", "rotulo": "Guardar para trocas de número", "consequencia": "O agente compra 86 pares do reserva e separa os 11 do estoque para as trocas." }
+     ]
+    },
+    {
+     "id": "parcial", "rotulo": "Mandar os 11 hoje e avisar o resto",
+     "chips": [{ "tipo": "info", "texto": "75 esperam até 27/10" }],
+     "ferramentas": ["whatsapp", "email"],
+     "consequencia": "O agente despacha os 11 pares para os pedidos mais antigos e avisa os outros 75 do novo prazo."
+    }
+   ]
+  },
+  {
+   "id": "avaliacoes", "risco": "baixo", "pedidaEm": "2026-10-23T16:40:00-03:00",
+   "agente": { "nome": "Suporte", "sigla": "SU", "runtime": "claude" },
+   "pergunta": "Respondo as 23 avaliações de 3 estrelas da semana com o texto de agradecimento?",
+   "fatos": [{ "rotulo": "Avaliações", "valor": "23" }, { "rotulo": "Com reclamação", "valor": "5" }],
+   "caminhos": [
+    { "id": "padrao", "rotulo": "Responder todas com o texto de sempre", "sugestao": true, "consequencia": "O agente responde as 23 com o texto de agradecimento." },
+    { "id": "personalizar", "rotulo": "Escrever à mão as 5 com reclamação", "consequencia": "O agente responde 18 com o texto e prepara 5 rascunhos para você revisar." }
+   ],
+   "decidida": { "caminho": ["padrao"], "status": "feito", "resposta": "Respondi as 23 avaliações. Duas clientes já curtiram a resposta." }
+  }
+ ]
+}
+</script>
+<script id="rk-kit-js">
+/* rk-kit:js v1 begin */
+/* rk 1 · window.rk (references/design.md): ícones, notas e rk.decisions. Dado de fora entra só por textContent/setAttribute. */
+(()=>{
+if(window.rk)return;
+const D=document,P=(d,f)=>`<path${f?' fill="currentColor" stroke="none"':''} d="${d}"/>`,
+SP={tri:P('M8 2l7 12H1z',1),dia:P('M8 1l7 7-7 7-7-7z',1),dot:P('M8 3.4a4.6 4.6 0 1 1 0 9.2 4.6 4.6 0 0 1 0-9.2',1),spark:P('M5 8.8a2.2 2.2 0 1 1 0 4.4 2.2 2.2 0 0 1 0-4.4',1)+P('M5 6.5V2.5M7.8 8.2l2.9-2.9M9.5 11h4'),
+ info:P('M8 2a6 6 0 1 1 0 12A6 6 0 0 1 8 2M8 7.5V11M8 5v.1'),swap:P('M3 5.5h9.5M10 3l2.5 2.5L10 8M13 10.5H3.5M6 8l-2.5 2.5L6 13'),
+ alert:P('M8 2.5l6 11H2zM8 6.5v3m0 2v.1'),check:P('M3 8.5l3 3 7-7'),next:P('M3 8h10M9 4l4 4-4 4'),run:P('M8 2.5A5.5 5.5 0 1 1 2.5 8')},
+rk=window.rk={},
+/* h('div.opt.sug',{attr},...filhos): classes ganham rk-; texto vira nó de texto; k vira data-rk-k */
+h=rk.h=(s,a,...k)=>{const[t,...c]=s.split('.'),e=D.createElement(t||'span');t=='button'&&(e.type='button');if(c[0])e.className=c.map(x=>'rk-'+x).join(' ');
+ for(const x in a){const v=a[x];v==null||v===false||(typeof v=='function'?e.addEventListener(x,v):e.setAttribute(x=='k'?'data-rk-k':x,v))}
+ e.append(...k.flat(9).filter(v=>v!=null&&v!==false&&v!==''));return e},
+I=rk.icon=(n,c)=>{const N='http://www.w3.org/2000/svg',s=D.createElementNS(N,'svg'),u=D.createElementNS(N,'use');s.setAttribute('class','rk-ic'+(c?' rk-'+c:''));s.setAttribute('aria-hidden','true');u.setAttribute('href','#rk-i-'+n);s.append(u);return s},
+K=t=>h('kbd.key',0,t);
+rk.icons=()=>D.getElementById('rk-sprite')||D.body.insertAdjacentHTML('afterbegin','<svg id="rk-sprite" class="rk-sr" aria-hidden="true">'+Object.keys(SP).map(k=>`<symbol id="rk-i-${k}" viewBox="0 0 16 16">${SP[k]}</symbol>`).join('')+'</svg>');
+D.readyState=='loading'?D.addEventListener('DOMContentLoaded',rk.icons):rk.icons();
+/* nota de chip: abre com mouse em cima, foco ou toque (fixa); aria-expanded acompanha; Esc fecha */
+let pin,sq=0;
+const ns=(w,v)=>{const b=w.querySelector('button');w.classList.toggle('rk-open',v);b&&b.setAttribute('aria-expanded',v)},
+nc=x=>{D.querySelectorAll('.rk-open').forEach(w=>w!=x&&ns(w,false));pin!=x&&(pin=0)},
+cw=e=>e.target.closest&&e.target.closest('.rk-cw'),on=(t,f,c)=>D.addEventListener(t,f,c);
+on('pointerover',e=>{const w=cw(e);w&&e.pointerType=='mouse'&&!matchMedia('(max-width:40rem)').matches&&(nc(w),ns(w,true))});
+on('pointerout',e=>{const w=cw(e);w&&e.pointerType=='mouse'&&w!=pin&&!w.contains(e.relatedTarget)&&!w.contains(D.activeElement)&&ns(w,false)});
+on('focusin',e=>{const w=cw(e);nc(w);w&&e.target.matches(':focus-visible')&&ns(w,true)});
+on('focusout',e=>{const w=cw(e);w&&w!=pin&&!w.contains(e.relatedTarget)&&ns(w,false)});
+/* clique do mouse ou toque fixa e solta; Enter/Espaço (detail 0) alterna o que está à vista */
+on('click',e=>{const w=cw(e);if(w&&e.target.closest('.rk-chip')){const o=e.detail?pin==w:w.classList.contains('rk-open');nc(w);pin=o?0:w;ns(w,!o)}else w||nc(0)});
+on('keydown',e=>{e.key=='Escape'&&D.querySelector('.rk-open')&&(nc(0),e.preventDefault())},true);
+/* dados: tudo validado e cortado; caminho inválido vira estado de erro */
+const S=(v,n=400)=>typeof v=='string'?v.trim().slice(0,n).replace(/R\$ (?=\d)/g,'R$ '):typeof v=='number'?''+v:'',A=v=>Array.isArray(v)?v:[],
+RK={alto:['tri','alto'],medio:['dia','médio'],baixo:['dot','baixo']},
+risk=(r,t,ic)=>h('.risk.r-'+r,0,I(ic||(RK[r]?RK[r][0]:'check')),t||'Risco '+RK[r][1]),
+sig=(a,c='')=>h('.sigla'+c,{'aria-hidden':'true'},a.sigla),
+age=t=>{const d=new Date(t),m=(Date.now()-d)/6e4;return!t||!(m>-2)?'':m<1?'agora':m<60?'há '+(m|0)+' min':m<1440?'há '+(m/60|0)+' h':d.toLocaleDateString('pt-BR',{day:'numeric',month:'short'})},
+/* ids ASCII, únicos entre irmãos, nunca "livre"; mais de 5 níveis vira erro; o resto do excesso é cortado */
+kids=(l,n)=>{const q=new Set;return A(l).slice(0,9).map(x=>{const c=cam(x,n);if(q.has(c.id))throw 0;q.add(c.id);return c})},
+cam=(c,n)=>{const id=S(c&&c.id,40);if(n>5||!/^[\w-]+$/.test(id)||id=='livre')throw 0;
+ return{id,rotulo:S(c.rotulo,200)||id,meta:S(c.meta),sugestao:c.sugestao===true,consequencia:S(c.consequencia),pergunta:S(c.pergunta,200),ferramentas:A(c.ferramentas).slice(0,4).map(f=>S(f,40)).filter(f=>f),
+  chips:A(c.chips).filter(k=>k).slice(0,4).map(k=>({tipo:/^(custo|alerta)$/.test(k.tipo)?k.tipo:'info',texto:S(k.texto,90),nota:S(k.nota),fonte:S(k.fonte,120)})).filter(k=>k.texto),caminhos:kids(c.caminhos,n+1)}},
+clean=(x,i)=>{x=x||{};const a=x.agente||{},nome=S(a.nome,60)||'Agente',r=S(x.risco,9).normalize('NFD').replace(/\W/g,'').toLowerCase(),z=x.decidida,
+ d={id:S(x.id,80)||'d'+i,risco:RK[r]?r:'medio',pedidaEm:S(x.pedidaEm,40),pergunta:S(x.pergunta),agente:{nome,sigla:(S(a.sigla,2)||nome.slice(0,2)).toUpperCase(),runtime:S(a.runtime,60)},
+  fatos:A(x.fatos).filter(f=>f).slice(0,8).map(f=>[S(f.rotulo,40),S(f.valor,60)]).filter(f=>f[0]&&f[1])};
+ try{d.caminhos=kids(x.caminhos,1);d.erro=!d.caminhos[0]||!d.pergunta}catch(e){d.caminhos=[];d.erro=1}
+ if(z&&typeof z=='object')d.s0={sel:A(z.caminho).map(v=>S(v,40)),free:S(z.texto,1000),sent:1,st:/^(feito|erro)$/.test(z.status)?z.status:'rodando',reply:S(z.resposta,1000),por:S(z.por,60),ex:{}};
+ return d};
+/* rk.decisions: Mesa (fila, painel, faixa Agora) com a árvore alinhada pelo topo; onChoose só depois de "Enviar ao agente" */
+rk.decisions=(el,data,o={})=>{
+ rk.icons();
+ let cur,scr,ag,T,js;
+ const L=[],st=d=>d.s||(d.s={sel:[],ex:{}}),fd=d=>st(d).sent&&st(d).st!='erro',opn=d=>!fd(d),say=t=>live.textContent=t,hi=d=>d.risco=='alto',
+ nar=()=>matchMedia('(max-width:63.99rem)').matches,vis=()=>scr=='panel'||!nar(),
+ put=nd=>{const old=new Map(L.map(d=>[d.id,d.s]));L.length=0;A(nd&&nd.decisoes).forEach((x,i)=>{const d=clean(x,i+1);d.s=d.s0||old.get(d.id);L.push(d)});ag=A(nd&&nd.agora||o.agora).filter(r=>r&&typeof r=='object');T=nd&&nd.ferramentas||{}},
+ node=(d,n)=>{let ls=d.caminhos,c;for(const id of st(d).sel.slice(0,n)){c=ls.find(x=>x.id==id);if(!c)return;ls=c.caminhos}return c},
+ labels=d=>st(d).sel.map((_,i)=>(node(d,i+1)||{}).rotulo).filter(x=>x),
+ summ=d=>st(d).free?'“'+st(d).free+'”':labels(d).join(' → '),
+ leaf=d=>{const c=node(d);return c&&!c.caminhos[0]},
+ tl=x=>S((T[x]||{}).rotulo,40)||x,
+ tools=f=>f[0]&&h('.tools',{role:'img','aria-label':'Usa '+f.map(tl).join(', ')},f.map(x=>h('.tool',{title:tl(x)},(S((T[x]||{}).sigla,2)||x.slice(0,2)).toUpperCase()))),
+ B=(t,f,c,k,...x)=>h('button.btn'+c,{k,click:f},t,x),
+ cnt=h('.count'),chips=h('.chips'),pos=h('.pos'),ql=h('ol.ql'),pn=h('main.panel'),now=h('ul.now'),keys=h('p.keys',{'aria-hidden':'true'}),live=h('p.sr',{role:'status'}),
+ pv=h('button.btn',{'aria-label':'Decisão anterior',click:()=>nav(-1)},I('next','flip')),nx=h('button.btn',{'aria-label':'Próxima decisão',click:()=>nav(1)},I('next')),
+ bk=h('button.btn.bk',{k:'bk',click:()=>{scr='queue';draw('q'+cur)}}),
+ /* n: tecla do atalho; sem n, a alternativa ganha o glifo de troca */
+ card=(d,c,n,fn,k,on)=>{const m='rk-m'+ ++sq,x=st(d).sent;
+  return h('div.opt'+(c.sugestao?'.sug':'')+(on?'.on':''),0,
+   h('button.go',{k,'aria-describedby':m,'aria-pressed':on&&'true','aria-disabled':x&&'true',click:()=>x||fn()},h('.key',{'aria-hidden':'true'},on?I('check'):n||I('swap')),n||on?'':h('.sr',0,'Trocar para: '),h('.ot',0,c.rotulo)),
+   h('.mr',{id:m},c.sugestao&&h('.sugm',0,I('spark'),'Sugestão do agente'),c.meta,tools(c.ferramentas)),
+   c.chips[0]&&h('.chips',0,c.chips.map((x,j)=>chip(x,0,k+'c'+j))))},
+ chip=(x,z,k,id='rk-n'+ ++sq)=>{const c='.chip.c-'+x.tipo,ic=x.tipo=='alerta'&&I('alert');return!x.nota||z?h(c,0,ic,x.texto):
+  h('.cw',0,h('button'+c,{k,'aria-expanded':'false','aria-controls':id},ic,x.texto),h('.note',{id,role:'note'},h('.nh',0,'Por que o agente avisa'),h('',0,x.nota),x.fonte&&h('.src',0,'Fonte: '+x.fonte)))},
+ conseq=c=>c.consequencia&&h('div.conseq',0,I('next'),h('.label',0,'O que acontece'),h('p',0,c.consequencia),tools(c.ferramentas)),
+ others=(d,ls,i,dep,lb)=>{const s=st(d),r=ls.filter((_,j)=>j!=i),ex=!!s.ex[dep],id='rk-x'+ ++sq;return r[0]&&!s.sent&&h('div.others',0,
+  h('button.more',{'aria-expanded':''+ex,'aria-controls':id,k:'x'+dep,click:()=>{s.ex[dep]=!ex;draw('x'+dep)}},I('next'),lb+' ('+r.length+')',h('.sr',0,': '+r.map(x=>x.rotulo).join('; '))),
+  h('ul',{id,hidden:!ex},r.map(x=>{const j=ls.indexOf(x);return h('li',0,card(d,x,0,()=>pick(d,dep,x.id),'s'+dep+'-'+j))})))},
+ sec=(d,c,dep,pre)=>{const s=st(d),ls=c.caminhos,i=pre?-1:ls.findIndex(x=>x.id==s.sel[dep]),cc=ls[i];
+  return h('section.sec'+(pre?'.pre':''),{'aria-label':c.pergunta||'Próximo passo'},h('p.sh',0,h('.label',0,pre?'Depois':'Próximo passo'),c.pergunta||'Escolha uma opção',pre&&h('.sn',0,ls.length+' opções')),
+   h('ol.rail',0,pre?ls.map(x=>h('li.pv',0,h('b',0,x.rotulo),x.sugestao&&h('.sugm',0,I('spark'),'Sugestão do agente'),x.meta&&h('',0,x.meta),x.chips[0]&&h('.chips',0,x.chips.map(k=>chip(k,1))))):
+    cc?h('li',0,card(d,cc,0,()=>back(d,dep),'o'+dep+'-'+i,1),others(d,ls,i,dep,'Outras opções'),cc.caminhos[0]?sec(d,cc,dep+1):[conseq(cc),fin(d)]):
+    ls.map((x,j)=>h('li',0,card(d,x,j+1,()=>pick(d,dep,x.id),'o'+dep+'-'+j)))))},
+ fin=d=>{const z=hi(d);return!st(d).sent&&h('div.confirm',{tabindex:'-1',k:'c',role:'group','aria-label':'Confirmar envio'},h('.label',0,'Confirme o caminho'),h('p.cpath',0,summ(d)),
+  z&&h('p.cwarn',0,I('tri'),'Risco alto: o envio pede o clique no botão.'),h('div.actions',0,B('Enviar ao agente',()=>send(d),'.pri','send',!z&&K('Enter')),B('Mudar',()=>back(d),'','chg',K('Esc'))))},
+ /* depois do envio: faixa embaixo da árvore inteira, com o caminho completo */
+ status=d=>{const s=st(d),e=s.st=='erro',f=s.st=='feito',n=L.filter(x=>x!=d&&opn(x)).length;
+  return h('div.status.st-'+s.st,{tabindex:'-1',k:'st'},h('p.sline',0,h('.nw',0,I(e?'alert':f?'check':'run',!e&&!f&&'spin'),h('b',0,e?'Não chegou ao agente':s.por?s.por+' decidiu':'Você decidiu')),e?'':f?' · o agente concluiu':' · o agente está fazendo'),
+   h('p.cpath',0,summ(d)),e&&s.msg&&h('p.err',0,s.msg),s.reply&&h('div.reply',0,sig(d.agente),h('div',0,h('b',0,d.agente.nome+' respondeu'),h('p',0,s.reply))),
+   h('div.actions',0,e&&B('Tentar de novo',()=>{s.sent=0;s.comp=!!s.free;draw(s.free?'t':'c')},'','re'),B(n?'Próxima decisão':'Ver resumo',ctl.next,'.pri','nx',I('next')),h('.left',0,n?n+' na fila':'fila vazia')))},
+ form=d=>{const s=st(d),ta=h('textarea',{id:'rk-ta',rows:3,maxlength:1000,k:'t',placeholder:'Diga ao agente o que fazer…',input:()=>s.draft=ta.value});ta.value=s.draft||'';
+  return h('form.compose',{submit:e=>{e.preventDefault();const v=ta.value.trim();v?(s.free=v,send(d)):ta.focus()}},h('label.label',{for:'rk-ta'},'Responder do meu jeito'),ta,
+   h('div.actions',0,h('button.btn.pri',{type:'submit',k:'ts'},'Enviar ao agente'),B('Cancelar',()=>{s.comp=0;draw('w')},'','tc'),h('.hint',0,K('Ctrl'),'+',K('Enter'),' envia')))},
+ tree=d=>{const s=st(d),pc=x=>h('div.pc',0,x),i=d.caminhos.findIndex(x=>x.id==s.sel[0]),c=d.caminhos[i],fr=s.sent&&!c,root=h('article.sheet.root',0,
+   h('div.byline',0,sig(d.agente,'.lg'),h('.who',0,h('.wl',0,h('b',0,d.agente.nome),risk(d.risco)),h('',0,[d.agente.runtime,age(d.pedidaEm)&&'pedida '+age(d.pedidaEm)].filter(x=>x).join(' · ')))),
+   h('h2.title',{tabindex:'-1',k:'h'},d.pergunta||'Decisão sem pergunta'),d.fatos[0]&&h('dl.facts',0,d.fatos.map(f=>h('div',0,h('dt',0,f[0]),h('dd',0,f[1])))));
+  return d.erro?h('div.tree',0,root,h('div.callout.k-bad',0,I('alert'),h('div',0,h('b',0,'Não dá para mostrar os caminhos desta decisão.'),h('p',0,'Os dados chegaram incompletos ou fora do formato. Peça ao agente para refazer a pergunta.')))):
+   h('div.tree'+(c||fr?'.chosen':''),0,root,h('ol.paths',{'aria-label':'Caminhos'},
+   fr?h('li.path',0,pc(h('div.opt.on',0,h('.go',0,h('.key',0,I('check')),'Sua resposta')))):
+   c?h('li.path',0,pc([card(d,c,0,()=>back(d,0),'p'+i,1),others(d,d.caminhos,i,0,'Outros caminhos')]),h('div.then',0,c.caminhos[0]?sec(d,c,1):[conseq(c),fin(d)])):
+   [d.caminhos.map((c,i)=>h('li.path'+(c.sugestao?'.sug':''),0,pc(card(d,c,i+1,()=>pick(d,0,c.id),'p'+i)),h('div.then',0,c.caminhos[0]?sec(d,c,1,1):conseq(c)))),
+    h('li.path',0,pc(s.comp?form(d):h('div.opt.ghost',0,h('button.go',{k:'w',click:()=>comp(d)},h('.key',{'aria-hidden':'true'},d.caminhos.length+1),'Responder do meu jeito…'))))]),s.sent&&status(d))},
+ /* sem decisão aberta no painel: vazio com o resumo, ou o erro de carga com "Tentar de novo" */
+ empty=()=>{const dn=L.filter(fd),k=L.length-dn.length;return o.erro?h('div.empty',0,h('.badge.poor',0,I('alert')),h('h2',{tabindex:'-1',k:'h'},'Não deu para carregar as decisões'),h('p',0,S(o.erro,300)),o.tentar&&B('Tentar de novo',o.tentar,'','re')):
+  h('div.empty',0,!k&&h('.badge',0,I('check')),h('h2',{tabindex:'-1',k:'h'},k?'O que você decidiu':'Nada esperando por você'),h('p',0,k?'Ainda há '+k+(k>1?' pendentes.':' pendente.'):'Quando um agente precisar de uma decisão sua, ela aparece aqui.'),k>0&&B('Próxima decisão',ctl.next,'.pri','nx',I('next')),
+  dn[0]&&[!k&&h('.label',0,'O que você decidiu'),h('ul.recap',0,dn.map(x=>{const v=st(x).st;return h('li',0,sig(x.agente),h('',0,h('b',0,x.agente.nome),summ(x)),v=='feito'?risk('ok','Feito'):risk('ok','Fazendo','run'))}))])},
+ nowi=(v,who,what,tag)=>{const ic={feito:'check',erro:'alert'}[v];return h('li'+(ic=='alert'?'.e':''),0,I(ic||'run',!ic&&'spin'),h('',0,h('b',0,who),' ',what,' · '+(tag||(ic?v=='erro'?'com erro':'feito':'rodando'))))};
+ /* q: redesenho por dado novo; o foco volta sem rolar a tela */
+ function draw(fk,np,q){const a=D.activeElement,op=L.filter(opn),n=L.length,d=L[cur],s=d&&st(d),z=s&&!s.sent&&!d.erro&&!s.comp&&vis(),c=z&&node(d),
+  g=c&&!c.caminhos[0]?[hi(d)?['clique em Enviar']:[K('Enter'),' enviar'],[K('Esc'),' mudar']]:z?[[K('1'),'–',K((c||d).caminhos.length),' escolher'],[K('/'),' responder'],c&&[K('Esc'),' voltar']]:[],
+  sel=a&&a.id=='rk-ta'&&[a.selectionStart,a.selectionEnd],pb=pin&&el.contains(pin)&&pin.querySelector('button'),pk=pb&&pb.getAttribute('data-rk-k'),
+  dl=L.filter(fd).sort((x,y)=>(st(y).t|0)-(st(x).t|0));
+  fk=fk||a&&el.contains(a)&&a.getAttribute('data-rk-k');
+  cnt.textContent=o.erro?'':op[0]?op.length+(op[1]?' pendentes':' pendente'):'nenhuma pendente';
+  chips.replaceChildren(...Object.keys(RK).map(r=>{const k=op.filter(x=>x.risco==r).length;return k?risk(r,k+' '+RK[r][1]):''}));
+  pos.textContent=d?cur+1+' de '+n:'';pv.disabled=!cur;nx.disabled=cur==n-1;[pv,pos,nx].forEach(x=>x.hidden=!d);bk.replaceChildren(I('next','flip'),'Fila ('+op.length+')');
+  ql.replaceChildren(...L.map((x,i)=>{const t=st(x),v=fd(x);return h('li',0,h('button.qi'+(v?'.done':''),{k:'q'+i,'aria-current':i==cur&&'true',click:()=>show(i)},
+   h('.qr',0,v?risk('ok',t.por?'Decidida':'Você decidiu'):risk(x.risco),h('.age',0,age(x.pedidaEm))),h('.qr',0,sig(x.agente),h('b',0,x.agente.nome),h('small',0,x.agente.runtime)),h('.qq',0,x.pergunta||'Decisão sem pergunta')))}));
+  now.replaceChildren(...ag.slice(0,3).map(r=>nowi(S(r.estado,20),S(r.agente,60),S(r.texto,160))),...dl.slice(0,2).map(x=>nowi(st(x).st,x.agente.nome,summ(x),'você decidiu')),
+   ...dl.slice(2,3).map(()=>h('li',0,h('button.more',{k:'mr',click:()=>show(-1)},'e mais '+(dl.length-2)+(dl[3]?' decididas':' decidida')))));
+  now.firstChild||now.append(h('li',0,'Nada rodando agora.'));
+  keys.replaceChildren(...g.concat([n>1&&[K('←'),K('→'),' trocar']]).filter(x=>x).map(x=>h('',0,x)));
+  np||pn.replaceChildren(d?tree(d):empty());
+  el.setAttribute('data-rk-screen',scr);
+  if(pk){const b=el.querySelector('[data-rk-k="'+pk+'"]');b&&ns(pin=b.parentNode,true)}
+  const f=fk&&el.querySelector('[data-rk-k="'+fk+'"]');f&&(f.focus({preventScroll:q||fk=='h'}),sel&&f.id=='rk-ta'&&f.setSelectionRange(...sel))}
+ const show=i=>{cur=i;scr='panel';draw('h');pn.scrollTop=0;el.getBoundingClientRect().top<0&&el.scrollIntoView();try{history.replaceState(null,'',i<0?location.pathname+location.search:'#d='+encodeURIComponent(L[i].id))}catch(e){}},
+ nav=x=>{const n=L.length;n&&show(cur<0?(x>0?0:n-1):Math.max(0,Math.min(n-1,cur+x)))},
+ comp=d=>{const s=st(d);s.sent||(s.sel=[],s.comp=1,draw('t'),el.querySelector('.rk-compose').scrollIntoView({block:'nearest'}))},
+ pick=(d,dep,id)=>{const s=st(d);if(s.sent)return;s.sel=s.sel.slice(0,dep).concat(id);s.ex={};s.comp=0;s.free='';const c=node(d),k=c.caminhos.length;
+  draw(k?'o'+(dep+1)+'-0':'c');say(c.rotulo+'. '+(k?c.pergunta+' '+k+' opções.':'Confirme para enviar ao agente.'))},
+ back=(d,dep)=>{const s=st(d);dep=dep??s.sel.length-1;if(s.sent||dep<0)return;const j=(dep?node(d,dep).caminhos:d.caminhos).findIndex(x=>x.id==s.sel[dep]);
+  s.sel=s.sel.slice(0,dep);s.ex={};draw(dep?'o'+dep+'-'+j:'p'+j)},
+ send=d=>{const s=st(d);if(s.sent)return;const lb=labels(d);s.sent=1;s.t=++sq;s.st='rodando';s.comp=0;s.por='';draw('st');say('Enviado ao agente '+d.agente.nome+'.');
+  try{o.onChoose&&o.onChoose({decisao:d.id,caminho:s.sel.slice(),rotulos:lb,texto:s.free||void 0})}catch(e){ctl.setStatus(d.id,'erro','Não deu para enviar.')}},
+ /* teclas só valem para o que está à vista; tecla presa não passa da confirmação */
+ kd=e=>{const t=e.target,k=e.key,d=L[cur],s=d&&st(d),n=+k;
+  if(e.repeat&&!/^Arrow/.test(k))return;
+  if(t.id=='rk-ta'){k=='Escape'?(s.comp=0,draw('w')):k=='Enter'&&(e.ctrlKey||e.metaKey)&&(e.preventDefault(),t.form.requestSubmit());return}
+  if(e.defaultPrevented||e.ctrlKey||e.metaKey||e.altKey||t.closest&&t.closest('input,textarea,select,[contenteditable]'))return;
+  if(k=='ArrowLeft'||k=='ArrowRight'){e.preventDefault();nav(k<'ArrowR'?-1:1)}
+  else if(!vis());
+  else if(k=='Escape'){s&&!s.sent&&(s.comp||s.sel[0])?s.comp?(s.comp=0,draw('w')):back(d):nar()&&(scr='queue',draw('q'+cur))}
+  else if(!s||s.sent||d.erro||s.comp);
+  else if(k=='/'){e.preventDefault();comp(d)}
+  else if(k=='Enter'){leaf(d)&&!hi(d)&&!t.closest('button,a')&&(e.preventDefault(),send(d))}
+  else if(n>0&&!leaf(d)){const c=node(d),ls=c?c.caminhos:d.caminhos;ls[n-1]?pick(d,s.sel.length,ls[n-1].id):!c&&n==ls.length+1&&comp(d)}},
+ hd=()=>{const m=/^#d=(.+)/.exec(location.hash);return m?L.findIndex(x=>encodeURIComponent(x.id)==m[1]):-1},
+ ctl={next:()=>{const ix=L.map((x,i)=>opn(x)?i:-1).filter(i=>i>=0);show(ix.find(i=>i>cur)??ix[0]??-1)},
+  open:id=>{const i=L.findIndex(x=>x.id==id);i<0||show(i)},
+  setStatus:(id,v,r)=>{const d=L.find(x=>x.id==id);if(!d)return;const s=st(d),e=v=='erro';s.sent=1;s.st=/^(feito|erro)$/.test(v)?v:'rodando';e?s.msg=S(r,300):r&&(s.reply=S(r,1000));
+   draw(0,L[cur]!=d,1);say(e?'Não chegou ao agente '+d.agente.nome+'. '+s.msg:r?d.agente.nome+' respondeu: '+s.reply:'')},
+  /* dado igual não redesenha (a releitura a cada 30 s não tira o foco nem fecha a nota) */
+  set:nd=>{const j=JSON.stringify(nd);if(j==js)return;js=j;const id=L[cur]&&L[cur].id;put(nd);cur=id==null?cur:L.findIndex(x=>x.id==id);cur<0&&id!=null&&(cur=L.findIndex(opn));draw(0,0,1)}};
+ put(data);js=JSON.stringify(data);
+ el.classList.add('rk-desk');el.removeAttribute('aria-busy');
+ el.replaceChildren(h('header.head',0,h('div.ttl',0,h('h1.brand',0,o.titulo||'Decisões'),cnt),chips,h('nav.pager',{'aria-label':'Navegar entre decisões'},bk,pv,pos,nx)),
+  h('div.body',0,h('nav.queue',{'aria-label':'Fila de decisões'},h('p.qh',0,h('.label',0,'Fila')),ql),pn),h('footer.strip',0,h('.label',0,'Agora'),now,keys),live);
+ D.removeEventListener('keydown',el._rk);D.addEventListener('keydown',el._rk=kd);
+ removeEventListener('hashchange',el._rh);addEventListener('hashchange',el._rh=()=>{const i=hd();i<0||i==cur||show(i)});
+ const i0=hd();cur=i0>=0?i0:L.findIndex(opn);scr=i0>=0?'panel':'queue';draw();
+ return ctl};
+})();
+/* rk-kit:js v1 end */
+</script>
+<script id="rk-client">
+/* rk-client v1 begin */
+// Cliente Ravi Pages → Bases, única cópia. Publique como client.js ao lado do index.html
+// (ship --dir) e carregue com <script src="client.js">, relativo, antes do script
+// da página. A página tem <p id="banner" hidden></p>. Inputs: data-pages.md, "Connectors".
+function el(tag, props = {}, ...kids) {
+  const node = Object.assign(document.createElement(tag), props);
+  node.append(...kids.filter((k) => k !== null && k !== undefined && k !== ""));
+  return node;
+}
+class ExecError extends Error {
+  constructor(code, status, body, requestId) {
+    super(code);
+    Object.assign(this, { code, status, requestId });
+    this.fieldErrors = body && typeof body.fieldErrors === "object" ? body.fieldErrors : null;
+    this.current = body && typeof body.current === "object" ? body.current : null; // version_conflict
+  }
+}
+// POST same-origin { id, input }. 429: espera 2, 4, 8 s e repete o mesmo input (mesma chave).
+async function exec(id, input, retries = 3) {
+  for (let attempt = 0; ; attempt++) {
+    let res;
+    try {
+      res = await fetch("/_ravi/connectors/exec", { method: "POST", credentials: "same-origin",
+        headers: { "content-type": "application/json" }, body: JSON.stringify({ id, input }) });
+    } catch { throw new ExecError("network_error", 0, null, null); }
+    if (res.status === 429 && attempt < retries) { await new Promise((r) => setTimeout(r, 2000 * 2 ** attempt)); continue; }
+    let body = null;
+    try { body = await res.json(); } catch { /* não JSON */ }
+    if (res.ok && body && body.ok === true) return body.output;
+    const code = body && typeof body.error === "string" ? body.error : "connector_unavailable";
+    throw new ExecError(code, res.status, body, res.headers.get("x-request-id"));
+  }
+}
+// Chave nova por escrita; a mesma só para reenviar o mesmo input.
+const newKey = () => crypto.randomUUID();
+const describe = (viewId) => exec("ravi.bases.views.describe", { viewId });
+function query(viewId, { filter, sort, limit, cursor } = {}) {
+  const input = { viewId };
+  Object.entries({ filter, sort, limit, cursor }).forEach(([k, v]) => { if (v) input[k] = v; });
+  return exec("ravi.bases.views.query", input);
+}
+const update = (viewId, rowId, values, expectedVersion, idempotencyKey = newKey()) =>
+  exec("ravi.bases.views.rows.update", { viewId, rowId, values, expectedVersion, idempotencyKey });
+const create = (viewId, values, idempotencyKey = newKey(), body) =>
+  exec("ravi.bases.views.rows.create", { viewId, values, idempotencyKey, ...(body === undefined ? {} : { body }) });
+const MESSAGES = {
+  connector_not_allowlisted: "O host não liberou esta ação. Quem publica: ship desta rota com o id no --uses.",
+  version_conflict: "Alguém mudou esta linha antes. Ela foi recarregada; refaça a mudança.",
+  connector_rate_limited: "Muitas ações seguidas. Espere alguns segundos.",
+  not_found: "Indisponível para você, ou saiu desta lista.",
+  base_forbidden: "Esta tela não permite essa ação.",
+  view_invalid: "Tela em manutenção. Avise quem cuida da base.",
+  write_escapes_view: "Essa mudança tiraria a linha desta lista.",
+  network_error: "Sem conexão. Tente de novo.",
+};
+function showError(err) {
+  const node = document.getElementById("banner");
+  const code = err && err.code;
+  const close = el("button", { type: "button", textContent: "Fechar", onclick: clearError });
+  node.className = "err";
+  node.hidden = false;
+  // Rota private: recarregar leva ao login. Em rota public ou com senha, não resolve.
+  if (code === "connector_session_required" || code === "connector_unauthorized") {
+    return node.replaceChildren("Sua sessão expirou. ", el("a", { href: location.pathname + location.search, textContent: "Entrar de novo" }), " ", close);
+  }
+  const text = MESSAGES[code] || "Algo deu errado. Tente de novo.";
+  node.replaceChildren(err && err.requestId ? `${text} (código ${err.requestId}) ` : `${text} `, close);
+}
+// Esconde o aviso: o botão "Fechar" e a próxima releitura que der certo.
+function clearError() {
+  const node = document.getElementById("banner");
+  if (node) node.hidden = true;
+}
+// Sem push: releia com piso de 30 s (limite: 120 chamadas/min por viewer por site).
+// Pula a vez com a aba escondida; releitura que dá certo limpa o aviso. Devolve stop().
+function poll(fn, ms = 30000) {
+  const every = Math.max(ms, 30000);
+  let timer = null, stopped = false;
+  const tick = async () => {
+    if (!document.hidden) { try { await fn(); clearError(); } catch (err) { showError(err); } }
+    if (!stopped) timer = setTimeout(tick, every);
+  };
+  timer = setTimeout(tick, every);
+  return () => { stopped = true; clearTimeout(timer); };
+}
+/* rk-client v1 end */
+</script>
+<script>
+// CONFIG ----------------------------------------------------------------------
+const CONFIG = {
+  modo: "exemplo",            // "exemplo": dados do #rk-data, envio só local | "bases": view de Decisões
+  titulo: "Decisões",
+  viewId: "00000000-0000-0000-0000-000000000000", // view de Decisões (ravi bases views create --json)
+  colunas: {                  // chave de cada coluna na view
+    pergunta: "pergunta", agente: "agente", sigla: "sigla", runtime: "runtime", risco: "risco",
+    pedidaEm: "pedida_em", opcoes: "opcoes", escolha: "escolha", aprovacao: "aprovacao", resposta: "resposta",
+  },
+  atrasoResposta: 2500,       // modo exemplo: ms até a resposta simulada do agente
+};
+
+// FIXO --------------------------------------------------------------------------
+const app = document.getElementById("rk-app");
+function lerDados() {
+  try { return JSON.parse(document.getElementById("rk-data").textContent) || {}; } catch { return null; }
+}
+const falha = (texto, tentar) => rk.decisions(app, { decisoes: [] }, { titulo: CONFIG.titulo, erro: texto, tentar });
+
+// Exemplo: as datas andam junto com o relógio (a mais nova fica "há 6 min") e a resposta é simulada.
+function iniciarExemplo(dados) {
+  const ds = Array.isArray(dados.decisoes) ? dados.decisoes : [];
+  const t = ds.map((d) => Date.parse(d.pedidaEm)).filter((n) => n > 0);
+  const delta = t.length ? Date.now() - 6 * 60000 - Math.max(...t) : 0;
+  ds.forEach((d) => { const n = Date.parse(d.pedidaEm); if (n > 0) d.pedidaEm = new Date(n + delta).toISOString(); });
+  const pagina = (window.rkPagina = { enviadas: [] });
+  pagina.ctl = rk.decisions(app, dados, {
+    titulo: CONFIG.titulo,
+    onChoose(e) {
+      pagina.enviadas.push(e);
+      const d = ds.find((x) => x.id === e.decisao) || {};
+      let c = d;
+      for (const id of e.caminho) c = (Array.isArray(c.caminhos) && c.caminhos.find((x) => x.id === id)) || {};
+      const r = e.texto ? "Combinado. Faço do jeito que você escreveu e te aviso no fim."
+        : c.respostaExemplo || `Feito: ${e.rotulos[e.rotulos.length - 1]}. Te aviso se algo sair do previsto.`;
+      setTimeout(() => pagina.ctl.setStatus(e.decisao, "feito", r), CONFIG.atrasoResposta);
+    },
+  });
+}
+
+// Bases: linha da view vira decisão. "opcoes" é JSON em texto (até 16 KB) com { fatos, caminhos };
+// "escolha" guarda os ids do caminho ("a/a2") ou "livre"; a aprovação leva a nota com o texto.
+// Só a aprovação "approved" conta como decidida: pendente (também depois de um --reset-on) fica aberta.
+async function iniciarBases(dados) {
+  const C = CONFIG.colunas, versoes = new Map(), nomes = {}, pessoas = {}, chaves = new Map();
+  let eu = ""; // id de quem vê: vem na primeira escrita; antes disso, cada decidida mostra o nome
+  const view = await describe(CONFIG.viewId);
+  for (const col of view.columns || []) {
+    const ops = (col.config && col.config.options) || [];
+    nomes[col.key] = Object.fromEntries(ops.map((o) => [o.id, o.name]));
+  }
+  const linha = (r) => {
+    const v = r.values || {}, txt = (k) => (typeof v[C[k]] === "string" ? v[C[k]] : "");
+    let op = {};
+    try { if (txt("opcoes").length <= 16000) op = JSON.parse(txt("opcoes")) || {}; } catch { op = {}; }
+    const esc = txt("escolha"), ap = v[C.aprovacao] || {}, resp = txt("resposta"), quando = v[C.pedidaEm];
+    const livre = !esc || esc === "livre", por = ap.decidedBy && ap.decidedBy !== eu;
+    return {
+      id: r.rowId, risco: (nomes[C.risco] || {})[v[C.risco]] || v[C.risco],
+      pedidaEm: typeof quando === "string" ? quando : quando && quando.start,
+      agente: { nome: txt("agente"), sigla: txt("sigla"), runtime: txt("runtime") },
+      pergunta: txt("pergunta"), fatos: op.fatos, caminhos: op.caminhos,
+      decidida: ap.state === "approved" ? { caminho: livre ? [] : esc.split("/"), texto: livre ? ap.note : "",
+        status: resp ? "feito" : "rodando", resposta: resp, por: por ? (pessoas[ap.decidedBy] || {}).displayName || "Outra pessoa" : "" } : undefined,
+    };
+  };
+  const carregar = async () => {
+    const rows = [];
+    let cursor;
+    do { // segue o nextCursor até 200 linhas
+      const out = await query(CONFIG.viewId, { limit: 100, cursor });
+      Object.assign(pessoas, out.users || {});
+      rows.push(...(out.rows || []));
+      cursor = out.nextCursor;
+    } while (cursor && rows.length < 200);
+    rows.forEach((r) => versoes.set(r.rowId, r.version));
+    return { ferramentas: dados.ferramentas, decisoes: rows.map(linha) };
+  };
+  const ctl = rk.decisions(app, await carregar(), {
+    titulo: CONFIG.titulo,
+    async onChoose(e) {
+      const values = {
+        [C.escolha]: e.caminho.length ? e.caminho.join("/") : "livre",
+        [C.aprovacao]: { state: "approved", note: (e.texto || e.rotulos.join(" → ")).slice(0, 1000) },
+      };
+      // "Tentar de novo" com o mesmo input e a mesma versão repete a chave: escrita que passou vira replay.
+      const pedido = JSON.stringify([e.decisao, values, versoes.get(e.decisao)]);
+      if (!chaves.has(pedido)) chaves.set(pedido, newKey());
+      try {
+        const r = await update(CONFIG.viewId, e.decisao, values, versoes.get(e.decisao), chaves.get(pedido));
+        if (r && r.version) versoes.set(e.decisao, r.version);
+        eu = (r && r.values && r.values[C.aprovacao] && r.values[C.aprovacao].decidedBy) || eu;
+        clearError();
+        ctl.setStatus(e.decisao, "rodando");
+      } catch (err) {
+        showError(err);
+        ctl.setStatus(e.decisao, "erro", MESSAGES[err && err.code] || "Não deu para gravar a escolha. Tente de novo.");
+        if (err && err.code === "version_conflict") ctl.set(await carregar());
+      }
+    },
+  });
+  poll(async () => ctl.set(await carregar()));
+}
+
+// Falha ao abrir: estado de erro com "Tentar de novo"; queda de rede tenta sozinha a cada 30 s.
+let espera = 0, abrindo = false;
+function abrirBases(dados) {
+  if (abrindo) return;
+  abrindo = true;
+  clearTimeout(espera);
+  iniciarBases(dados).catch((err) => {
+    const code = err && err.code;
+    if (/session|unauthorized/.test(code)) showError(err);
+    falha(MESSAGES[code] || "A view de Decisões não respondeu.", () => abrirBases(dados));
+    if (/network|unavailable|timeout|rate_limited/.test(code)) espera = setTimeout(() => abrirBases(dados), 30000);
+  }).finally(() => { abrindo = false; });
+}
+
+const dados = lerDados();
+if (!dados || typeof dados !== "object") falha("Os dados desta página estão fora do formato. Peça ao agente para publicar de novo.");
+else if (CONFIG.modo === "bases") abrirBases(dados);
+else iniciarExemplo(dados);
+</script>
+</body>
+</html>

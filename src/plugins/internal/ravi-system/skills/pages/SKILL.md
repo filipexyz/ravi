@@ -10,7 +10,7 @@ description: |
   - dar à página a asserção do viewer para chamar a sua própria API
   - ligar ou ajustar o Page Chat (agente de voz da página) e registrar ações que ele pode executar
   - ligar ou ajustar o chat de texto do Ravi na página (painel "Fale com o Ravi" e a tag `<ravi-chat>`)
-  page, pages, HTML, rota, URL, publicar, hospedar, landing, snapshot, site, tema, widget
+  page, pages, HTML, rota, URL, publicar, hospedar, landing, snapshot, site, tema, widget, design, kit, componente, decisões, relatório
   Página de dados só funciona para membros logados da org, em rota private ou protected_link; gente de fora recebe snapshot ou mensagem (skill solucoes).
   Não use para o ledger de artifacts (skill artifacts). Não crie um host *.ravi.page por página.
 ---
@@ -78,6 +78,7 @@ Prefixos reservados de host: `ravi` e `ravi-*`. O CLI não cria esses slugs.
 O ship aplica o tema ativo (do projeto, senão da org) a todo HTML e transforma as tags `<ravi-view>`, `<ravi-widget>`, `<ravi-form>` e `<ravi-chart>` em telas prontas, com os widgets da Biblioteca e o `--uses` que elas pedem. `--theme <ref>` troca o tema desse ship; `--theme none` tira. Erro de tag sai com exit 2, uma linha `arquivo:linha:coluna` por problema, e nada sobe.
 
 - HTML escrito à mão: cor, fonte e espaço por variável do tema com fallback (`var(--color-text-primary, #17202a)`), nunca literais. `references/theme.md`.
+- Página à mão (decisões, relatório, status, lista): parta de um esqueleto com o kit rk inline, que já segue o tema. `references/design.md`.
 - Tela sobre uma view: tag antes de cliente à mão; `ravi widgets search` antes de criar widget. `references/widgets.md`.
 - `ravi pages outdated` lista rotas publicadas com tema, widget ou runtime antigo; ship de novo para atualizar.
 
@@ -304,11 +305,14 @@ Abra só o que precisar com `ravi skills show pages --file references/<arquivo>`
 - `widgets.md`: tags `<ravi-view>`, `<ravi-widget>`, `<ravi-form>` e `<ravi-chart>`, busca de widget, o que o ship faz, criar e propor widget, acessibilidade.
 - `chat.md`: chat de texto, blocos `ravi.ui/v1` das respostas, o que o autor da página controla.
 - `theme.md`: tema ativo, `--theme`, variáveis CSS, claro e escuro, contraste.
+- `design.md`: kit rk para página à mão (regras, variáveis, componentes, Decisões ligada a Bases).
 - `data-pages.md`: site → view → ship, `--uses`, quem passa, connectors, erros, valores, segurança.
 - `layouts.md`: tabela, board, lista, calendário, formulário, gráficos e dashboards.
 - `exemplo-board.md`: página completa (tabela com formulário), cliente inline.
-- `esqueletos/_client.js.txt`: a única cópia do cliente (`exec`, `describe`, `query`, `update`, `create`, `poll`).
+- `esqueletos/_client.js.txt`: a única cópia do cliente (`exec`, `describe`, `query`, `update`, `create`, `poll`, `showError`, `clearError`).
 - `esqueletos/board.html.txt`, `esqueletos/formulario.html.txt`: zonas CONFIG, FIXO e LIVRE.
+- `esqueletos/decisoes.html.txt`, `esqueletos/relatorio.html.txt`: fila de Decisões e relatório com o kit rk inline.
+- `kit/kit.css.txt`, `kit/kit.js.txt`: a fonte do kit rk (os esqueletos já trazem a cópia).
 
 ## Host legado
 

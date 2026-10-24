@@ -1,0 +1,159 @@
+/* rk 1 · window.rk (references/design.md): ícones, notas e rk.decisions. Dado de fora entra só por textContent/setAttribute. */
+(()=>{
+if(window.rk)return;
+const D=document,P=(d,f)=>`<path${f?' fill="currentColor" stroke="none"':''} d="${d}"/>`,
+SP={tri:P('M8 2l7 12H1z',1),dia:P('M8 1l7 7-7 7-7-7z',1),dot:P('M8 3.4a4.6 4.6 0 1 1 0 9.2 4.6 4.6 0 0 1 0-9.2',1),spark:P('M5 8.8a2.2 2.2 0 1 1 0 4.4 2.2 2.2 0 0 1 0-4.4',1)+P('M5 6.5V2.5M7.8 8.2l2.9-2.9M9.5 11h4'),
+ info:P('M8 2a6 6 0 1 1 0 12A6 6 0 0 1 8 2M8 7.5V11M8 5v.1'),swap:P('M3 5.5h9.5M10 3l2.5 2.5L10 8M13 10.5H3.5M6 8l-2.5 2.5L6 13'),
+ alert:P('M8 2.5l6 11H2zM8 6.5v3m0 2v.1'),check:P('M3 8.5l3 3 7-7'),next:P('M3 8h10M9 4l4 4-4 4'),run:P('M8 2.5A5.5 5.5 0 1 1 2.5 8')},
+rk=window.rk={},
+/* h('div.opt.sug',{attr},...filhos): classes ganham rk-; texto vira nó de texto; k vira data-rk-k */
+h=rk.h=(s,a,...k)=>{const[t,...c]=s.split('.'),e=D.createElement(t||'span');t=='button'&&(e.type='button');if(c[0])e.className=c.map(x=>'rk-'+x).join(' ');
+ for(const x in a){const v=a[x];v==null||v===false||(typeof v=='function'?e.addEventListener(x,v):e.setAttribute(x=='k'?'data-rk-k':x,v))}
+ e.append(...k.flat(9).filter(v=>v!=null&&v!==false&&v!==''));return e},
+I=rk.icon=(n,c)=>{const N='http://www.w3.org/2000/svg',s=D.createElementNS(N,'svg'),u=D.createElementNS(N,'use');s.setAttribute('class','rk-ic'+(c?' rk-'+c:''));s.setAttribute('aria-hidden','true');u.setAttribute('href','#rk-i-'+n);s.append(u);return s},
+K=t=>h('kbd.key',0,t);
+rk.icons=()=>D.getElementById('rk-sprite')||D.body.insertAdjacentHTML('afterbegin','<svg id="rk-sprite" class="rk-sr" aria-hidden="true">'+Object.keys(SP).map(k=>`<symbol id="rk-i-${k}" viewBox="0 0 16 16">${SP[k]}</symbol>`).join('')+'</svg>');
+D.readyState=='loading'?D.addEventListener('DOMContentLoaded',rk.icons):rk.icons();
+/* nota de chip: abre com mouse em cima, foco ou toque (fixa); aria-expanded acompanha; Esc fecha */
+let pin,sq=0;
+const ns=(w,v)=>{const b=w.querySelector('button');w.classList.toggle('rk-open',v);b&&b.setAttribute('aria-expanded',v)},
+nc=x=>{D.querySelectorAll('.rk-open').forEach(w=>w!=x&&ns(w,false));pin!=x&&(pin=0)},
+cw=e=>e.target.closest&&e.target.closest('.rk-cw'),on=(t,f,c)=>D.addEventListener(t,f,c);
+on('pointerover',e=>{const w=cw(e);w&&e.pointerType=='mouse'&&!matchMedia('(max-width:40rem)').matches&&(nc(w),ns(w,true))});
+on('pointerout',e=>{const w=cw(e);w&&e.pointerType=='mouse'&&w!=pin&&!w.contains(e.relatedTarget)&&!w.contains(D.activeElement)&&ns(w,false)});
+on('focusin',e=>{const w=cw(e);nc(w);w&&e.target.matches(':focus-visible')&&ns(w,true)});
+on('focusout',e=>{const w=cw(e);w&&w!=pin&&!w.contains(e.relatedTarget)&&ns(w,false)});
+/* clique do mouse ou toque fixa e solta; Enter/Espaço (detail 0) alterna o que está à vista */
+on('click',e=>{const w=cw(e);if(w&&e.target.closest('.rk-chip')){const o=e.detail?pin==w:w.classList.contains('rk-open');nc(w);pin=o?0:w;ns(w,!o)}else w||nc(0)});
+on('keydown',e=>{e.key=='Escape'&&D.querySelector('.rk-open')&&(nc(0),e.preventDefault())},true);
+/* dados: tudo validado e cortado; caminho inválido vira estado de erro */
+const S=(v,n=400)=>typeof v=='string'?v.trim().slice(0,n).replace(/R\$ (?=\d)/g,'R$ '):typeof v=='number'?''+v:'',A=v=>Array.isArray(v)?v:[],
+RK={alto:['tri','alto'],medio:['dia','médio'],baixo:['dot','baixo']},
+risk=(r,t,ic)=>h('.risk.r-'+r,0,I(ic||(RK[r]?RK[r][0]:'check')),t||'Risco '+RK[r][1]),
+sig=(a,c='')=>h('.sigla'+c,{'aria-hidden':'true'},a.sigla),
+age=t=>{const d=new Date(t),m=(Date.now()-d)/6e4;return!t||!(m>-2)?'':m<1?'agora':m<60?'há '+(m|0)+' min':m<1440?'há '+(m/60|0)+' h':d.toLocaleDateString('pt-BR',{day:'numeric',month:'short'})},
+/* ids ASCII, únicos entre irmãos, nunca "livre"; mais de 5 níveis vira erro; o resto do excesso é cortado */
+kids=(l,n)=>{const q=new Set;return A(l).slice(0,9).map(x=>{const c=cam(x,n);if(q.has(c.id))throw 0;q.add(c.id);return c})},
+cam=(c,n)=>{const id=S(c&&c.id,40);if(n>5||!/^[\w-]+$/.test(id)||id=='livre')throw 0;
+ return{id,rotulo:S(c.rotulo,200)||id,meta:S(c.meta),sugestao:c.sugestao===true,consequencia:S(c.consequencia),pergunta:S(c.pergunta,200),ferramentas:A(c.ferramentas).slice(0,4).map(f=>S(f,40)).filter(f=>f),
+  chips:A(c.chips).filter(k=>k).slice(0,4).map(k=>({tipo:/^(custo|alerta)$/.test(k.tipo)?k.tipo:'info',texto:S(k.texto,90),nota:S(k.nota),fonte:S(k.fonte,120)})).filter(k=>k.texto),caminhos:kids(c.caminhos,n+1)}},
+clean=(x,i)=>{x=x||{};const a=x.agente||{},nome=S(a.nome,60)||'Agente',r=S(x.risco,9).normalize('NFD').replace(/\W/g,'').toLowerCase(),z=x.decidida,
+ d={id:S(x.id,80)||'d'+i,risco:RK[r]?r:'medio',pedidaEm:S(x.pedidaEm,40),pergunta:S(x.pergunta),agente:{nome,sigla:(S(a.sigla,2)||nome.slice(0,2)).toUpperCase(),runtime:S(a.runtime,60)},
+  fatos:A(x.fatos).filter(f=>f).slice(0,8).map(f=>[S(f.rotulo,40),S(f.valor,60)]).filter(f=>f[0]&&f[1])};
+ try{d.caminhos=kids(x.caminhos,1);d.erro=!d.caminhos[0]||!d.pergunta}catch(e){d.caminhos=[];d.erro=1}
+ if(z&&typeof z=='object')d.s0={sel:A(z.caminho).map(v=>S(v,40)),free:S(z.texto,1000),sent:1,st:/^(feito|erro)$/.test(z.status)?z.status:'rodando',reply:S(z.resposta,1000),por:S(z.por,60),ex:{}};
+ return d};
+/* rk.decisions: Mesa (fila, painel, faixa Agora) com a árvore alinhada pelo topo; onChoose só depois de "Enviar ao agente" */
+rk.decisions=(el,data,o={})=>{
+ rk.icons();
+ let cur,scr,ag,T,js;
+ const L=[],st=d=>d.s||(d.s={sel:[],ex:{}}),fd=d=>st(d).sent&&st(d).st!='erro',opn=d=>!fd(d),say=t=>live.textContent=t,hi=d=>d.risco=='alto',
+ nar=()=>matchMedia('(max-width:63.99rem)').matches,vis=()=>scr=='panel'||!nar(),
+ put=nd=>{const old=new Map(L.map(d=>[d.id,d.s]));L.length=0;A(nd&&nd.decisoes).forEach((x,i)=>{const d=clean(x,i+1);d.s=d.s0||old.get(d.id);L.push(d)});ag=A(nd&&nd.agora||o.agora).filter(r=>r&&typeof r=='object');T=nd&&nd.ferramentas||{}},
+ node=(d,n)=>{let ls=d.caminhos,c;for(const id of st(d).sel.slice(0,n)){c=ls.find(x=>x.id==id);if(!c)return;ls=c.caminhos}return c},
+ labels=d=>st(d).sel.map((_,i)=>(node(d,i+1)||{}).rotulo).filter(x=>x),
+ summ=d=>st(d).free?'“'+st(d).free+'”':labels(d).join(' → '),
+ leaf=d=>{const c=node(d);return c&&!c.caminhos[0]},
+ tl=x=>S((T[x]||{}).rotulo,40)||x,
+ tools=f=>f[0]&&h('.tools',{role:'img','aria-label':'Usa '+f.map(tl).join(', ')},f.map(x=>h('.tool',{title:tl(x)},(S((T[x]||{}).sigla,2)||x.slice(0,2)).toUpperCase()))),
+ B=(t,f,c,k,...x)=>h('button.btn'+c,{k,click:f},t,x),
+ cnt=h('.count'),chips=h('.chips'),pos=h('.pos'),ql=h('ol.ql'),pn=h('main.panel'),now=h('ul.now'),keys=h('p.keys',{'aria-hidden':'true'}),live=h('p.sr',{role:'status'}),
+ pv=h('button.btn',{'aria-label':'Decisão anterior',click:()=>nav(-1)},I('next','flip')),nx=h('button.btn',{'aria-label':'Próxima decisão',click:()=>nav(1)},I('next')),
+ bk=h('button.btn.bk',{k:'bk',click:()=>{scr='queue';draw('q'+cur)}}),
+ /* n: tecla do atalho; sem n, a alternativa ganha o glifo de troca */
+ card=(d,c,n,fn,k,on)=>{const m='rk-m'+ ++sq,x=st(d).sent;
+  return h('div.opt'+(c.sugestao?'.sug':'')+(on?'.on':''),0,
+   h('button.go',{k,'aria-describedby':m,'aria-pressed':on&&'true','aria-disabled':x&&'true',click:()=>x||fn()},h('.key',{'aria-hidden':'true'},on?I('check'):n||I('swap')),n||on?'':h('.sr',0,'Trocar para: '),h('.ot',0,c.rotulo)),
+   h('.mr',{id:m},c.sugestao&&h('.sugm',0,I('spark'),'Sugestão do agente'),c.meta,tools(c.ferramentas)),
+   c.chips[0]&&h('.chips',0,c.chips.map((x,j)=>chip(x,0,k+'c'+j))))},
+ chip=(x,z,k,id='rk-n'+ ++sq)=>{const c='.chip.c-'+x.tipo,ic=x.tipo=='alerta'&&I('alert');return!x.nota||z?h(c,0,ic,x.texto):
+  h('.cw',0,h('button'+c,{k,'aria-expanded':'false','aria-controls':id},ic,x.texto),h('.note',{id,role:'note'},h('.nh',0,'Por que o agente avisa'),h('',0,x.nota),x.fonte&&h('.src',0,'Fonte: '+x.fonte)))},
+ conseq=c=>c.consequencia&&h('div.conseq',0,I('next'),h('.label',0,'O que acontece'),h('p',0,c.consequencia),tools(c.ferramentas)),
+ others=(d,ls,i,dep,lb)=>{const s=st(d),r=ls.filter((_,j)=>j!=i),ex=!!s.ex[dep],id='rk-x'+ ++sq;return r[0]&&!s.sent&&h('div.others',0,
+  h('button.more',{'aria-expanded':''+ex,'aria-controls':id,k:'x'+dep,click:()=>{s.ex[dep]=!ex;draw('x'+dep)}},I('next'),lb+' ('+r.length+')',h('.sr',0,': '+r.map(x=>x.rotulo).join('; '))),
+  h('ul',{id,hidden:!ex},r.map(x=>{const j=ls.indexOf(x);return h('li',0,card(d,x,0,()=>pick(d,dep,x.id),'s'+dep+'-'+j))})))},
+ sec=(d,c,dep,pre)=>{const s=st(d),ls=c.caminhos,i=pre?-1:ls.findIndex(x=>x.id==s.sel[dep]),cc=ls[i];
+  return h('section.sec'+(pre?'.pre':''),{'aria-label':c.pergunta||'Próximo passo'},h('p.sh',0,h('.label',0,pre?'Depois':'Próximo passo'),c.pergunta||'Escolha uma opção',pre&&h('.sn',0,ls.length+' opções')),
+   h('ol.rail',0,pre?ls.map(x=>h('li.pv',0,h('b',0,x.rotulo),x.sugestao&&h('.sugm',0,I('spark'),'Sugestão do agente'),x.meta&&h('',0,x.meta),x.chips[0]&&h('.chips',0,x.chips.map(k=>chip(k,1))))):
+    cc?h('li',0,card(d,cc,0,()=>back(d,dep),'o'+dep+'-'+i,1),others(d,ls,i,dep,'Outras opções'),cc.caminhos[0]?sec(d,cc,dep+1):[conseq(cc),fin(d)]):
+    ls.map((x,j)=>h('li',0,card(d,x,j+1,()=>pick(d,dep,x.id),'o'+dep+'-'+j)))))},
+ fin=d=>{const z=hi(d);return!st(d).sent&&h('div.confirm',{tabindex:'-1',k:'c',role:'group','aria-label':'Confirmar envio'},h('.label',0,'Confirme o caminho'),h('p.cpath',0,summ(d)),
+  z&&h('p.cwarn',0,I('tri'),'Risco alto: o envio pede o clique no botão.'),h('div.actions',0,B('Enviar ao agente',()=>send(d),'.pri','send',!z&&K('Enter')),B('Mudar',()=>back(d),'','chg',K('Esc'))))},
+ /* depois do envio: faixa embaixo da árvore inteira, com o caminho completo */
+ status=d=>{const s=st(d),e=s.st=='erro',f=s.st=='feito',n=L.filter(x=>x!=d&&opn(x)).length;
+  return h('div.status.st-'+s.st,{tabindex:'-1',k:'st'},h('p.sline',0,h('.nw',0,I(e?'alert':f?'check':'run',!e&&!f&&'spin'),h('b',0,e?'Não chegou ao agente':s.por?s.por+' decidiu':'Você decidiu')),e?'':f?' · o agente concluiu':' · o agente está fazendo'),
+   h('p.cpath',0,summ(d)),e&&s.msg&&h('p.err',0,s.msg),s.reply&&h('div.reply',0,sig(d.agente),h('div',0,h('b',0,d.agente.nome+' respondeu'),h('p',0,s.reply))),
+   h('div.actions',0,e&&B('Tentar de novo',()=>{s.sent=0;s.comp=!!s.free;draw(s.free?'t':'c')},'','re'),B(n?'Próxima decisão':'Ver resumo',ctl.next,'.pri','nx',I('next')),h('.left',0,n?n+' na fila':'fila vazia')))},
+ form=d=>{const s=st(d),ta=h('textarea',{id:'rk-ta',rows:3,maxlength:1000,k:'t',placeholder:'Diga ao agente o que fazer…',input:()=>s.draft=ta.value});ta.value=s.draft||'';
+  return h('form.compose',{submit:e=>{e.preventDefault();const v=ta.value.trim();v?(s.free=v,send(d)):ta.focus()}},h('label.label',{for:'rk-ta'},'Responder do meu jeito'),ta,
+   h('div.actions',0,h('button.btn.pri',{type:'submit',k:'ts'},'Enviar ao agente'),B('Cancelar',()=>{s.comp=0;draw('w')},'','tc'),h('.hint',0,K('Ctrl'),'+',K('Enter'),' envia')))},
+ tree=d=>{const s=st(d),pc=x=>h('div.pc',0,x),i=d.caminhos.findIndex(x=>x.id==s.sel[0]),c=d.caminhos[i],fr=s.sent&&!c,root=h('article.sheet.root',0,
+   h('div.byline',0,sig(d.agente,'.lg'),h('.who',0,h('.wl',0,h('b',0,d.agente.nome),risk(d.risco)),h('',0,[d.agente.runtime,age(d.pedidaEm)&&'pedida '+age(d.pedidaEm)].filter(x=>x).join(' · ')))),
+   h('h2.title',{tabindex:'-1',k:'h'},d.pergunta||'Decisão sem pergunta'),d.fatos[0]&&h('dl.facts',0,d.fatos.map(f=>h('div',0,h('dt',0,f[0]),h('dd',0,f[1])))));
+  return d.erro?h('div.tree',0,root,h('div.callout.k-bad',0,I('alert'),h('div',0,h('b',0,'Não dá para mostrar os caminhos desta decisão.'),h('p',0,'Os dados chegaram incompletos ou fora do formato. Peça ao agente para refazer a pergunta.')))):
+   h('div.tree'+(c||fr?'.chosen':''),0,root,h('ol.paths',{'aria-label':'Caminhos'},
+   fr?h('li.path',0,pc(h('div.opt.on',0,h('.go',0,h('.key',0,I('check')),'Sua resposta')))):
+   c?h('li.path',0,pc([card(d,c,0,()=>back(d,0),'p'+i,1),others(d,d.caminhos,i,0,'Outros caminhos')]),h('div.then',0,c.caminhos[0]?sec(d,c,1):[conseq(c),fin(d)])):
+   [d.caminhos.map((c,i)=>h('li.path'+(c.sugestao?'.sug':''),0,pc(card(d,c,i+1,()=>pick(d,0,c.id),'p'+i)),h('div.then',0,c.caminhos[0]?sec(d,c,1,1):conseq(c)))),
+    h('li.path',0,pc(s.comp?form(d):h('div.opt.ghost',0,h('button.go',{k:'w',click:()=>comp(d)},h('.key',{'aria-hidden':'true'},d.caminhos.length+1),'Responder do meu jeito…'))))]),s.sent&&status(d))},
+ /* sem decisão aberta no painel: vazio com o resumo, ou o erro de carga com "Tentar de novo" */
+ empty=()=>{const dn=L.filter(fd),k=L.length-dn.length;return o.erro?h('div.empty',0,h('.badge.poor',0,I('alert')),h('h2',{tabindex:'-1',k:'h'},'Não deu para carregar as decisões'),h('p',0,S(o.erro,300)),o.tentar&&B('Tentar de novo',o.tentar,'','re')):
+  h('div.empty',0,!k&&h('.badge',0,I('check')),h('h2',{tabindex:'-1',k:'h'},k?'O que você decidiu':'Nada esperando por você'),h('p',0,k?'Ainda há '+k+(k>1?' pendentes.':' pendente.'):'Quando um agente precisar de uma decisão sua, ela aparece aqui.'),k>0&&B('Próxima decisão',ctl.next,'.pri','nx',I('next')),
+  dn[0]&&[!k&&h('.label',0,'O que você decidiu'),h('ul.recap',0,dn.map(x=>{const v=st(x).st;return h('li',0,sig(x.agente),h('',0,h('b',0,x.agente.nome),summ(x)),v=='feito'?risk('ok','Feito'):risk('ok','Fazendo','run'))}))])},
+ nowi=(v,who,what,tag)=>{const ic={feito:'check',erro:'alert'}[v];return h('li'+(ic=='alert'?'.e':''),0,I(ic||'run',!ic&&'spin'),h('',0,h('b',0,who),' ',what,' · '+(tag||(ic?v=='erro'?'com erro':'feito':'rodando'))))};
+ /* q: redesenho por dado novo; o foco volta sem rolar a tela */
+ function draw(fk,np,q){const a=D.activeElement,op=L.filter(opn),n=L.length,d=L[cur],s=d&&st(d),z=s&&!s.sent&&!d.erro&&!s.comp&&vis(),c=z&&node(d),
+  g=c&&!c.caminhos[0]?[hi(d)?['clique em Enviar']:[K('Enter'),' enviar'],[K('Esc'),' mudar']]:z?[[K('1'),'–',K((c||d).caminhos.length),' escolher'],[K('/'),' responder'],c&&[K('Esc'),' voltar']]:[],
+  sel=a&&a.id=='rk-ta'&&[a.selectionStart,a.selectionEnd],pb=pin&&el.contains(pin)&&pin.querySelector('button'),pk=pb&&pb.getAttribute('data-rk-k'),
+  dl=L.filter(fd).sort((x,y)=>(st(y).t|0)-(st(x).t|0));
+  fk=fk||a&&el.contains(a)&&a.getAttribute('data-rk-k');
+  cnt.textContent=o.erro?'':op[0]?op.length+(op[1]?' pendentes':' pendente'):'nenhuma pendente';
+  chips.replaceChildren(...Object.keys(RK).map(r=>{const k=op.filter(x=>x.risco==r).length;return k?risk(r,k+' '+RK[r][1]):''}));
+  pos.textContent=d?cur+1+' de '+n:'';pv.disabled=!cur;nx.disabled=cur==n-1;[pv,pos,nx].forEach(x=>x.hidden=!d);bk.replaceChildren(I('next','flip'),'Fila ('+op.length+')');
+  ql.replaceChildren(...L.map((x,i)=>{const t=st(x),v=fd(x);return h('li',0,h('button.qi'+(v?'.done':''),{k:'q'+i,'aria-current':i==cur&&'true',click:()=>show(i)},
+   h('.qr',0,v?risk('ok',t.por?'Decidida':'Você decidiu'):risk(x.risco),h('.age',0,age(x.pedidaEm))),h('.qr',0,sig(x.agente),h('b',0,x.agente.nome),h('small',0,x.agente.runtime)),h('.qq',0,x.pergunta||'Decisão sem pergunta')))}));
+  now.replaceChildren(...ag.slice(0,3).map(r=>nowi(S(r.estado,20),S(r.agente,60),S(r.texto,160))),...dl.slice(0,2).map(x=>nowi(st(x).st,x.agente.nome,summ(x),'você decidiu')),
+   ...dl.slice(2,3).map(()=>h('li',0,h('button.more',{k:'mr',click:()=>show(-1)},'e mais '+(dl.length-2)+(dl[3]?' decididas':' decidida')))));
+  now.firstChild||now.append(h('li',0,'Nada rodando agora.'));
+  keys.replaceChildren(...g.concat([n>1&&[K('←'),K('→'),' trocar']]).filter(x=>x).map(x=>h('',0,x)));
+  np||pn.replaceChildren(d?tree(d):empty());
+  el.setAttribute('data-rk-screen',scr);
+  if(pk){const b=el.querySelector('[data-rk-k="'+pk+'"]');b&&ns(pin=b.parentNode,true)}
+  const f=fk&&el.querySelector('[data-rk-k="'+fk+'"]');f&&(f.focus({preventScroll:q||fk=='h'}),sel&&f.id=='rk-ta'&&f.setSelectionRange(...sel))}
+ const show=i=>{cur=i;scr='panel';draw('h');pn.scrollTop=0;el.getBoundingClientRect().top<0&&el.scrollIntoView();try{history.replaceState(null,'',i<0?location.pathname+location.search:'#d='+encodeURIComponent(L[i].id))}catch(e){}},
+ nav=x=>{const n=L.length;n&&show(cur<0?(x>0?0:n-1):Math.max(0,Math.min(n-1,cur+x)))},
+ comp=d=>{const s=st(d);s.sent||(s.sel=[],s.comp=1,draw('t'),el.querySelector('.rk-compose').scrollIntoView({block:'nearest'}))},
+ pick=(d,dep,id)=>{const s=st(d);if(s.sent)return;s.sel=s.sel.slice(0,dep).concat(id);s.ex={};s.comp=0;s.free='';const c=node(d),k=c.caminhos.length;
+  draw(k?'o'+(dep+1)+'-0':'c');say(c.rotulo+'. '+(k?c.pergunta+' '+k+' opções.':'Confirme para enviar ao agente.'))},
+ back=(d,dep)=>{const s=st(d);dep=dep??s.sel.length-1;if(s.sent||dep<0)return;const j=(dep?node(d,dep).caminhos:d.caminhos).findIndex(x=>x.id==s.sel[dep]);
+  s.sel=s.sel.slice(0,dep);s.ex={};draw(dep?'o'+dep+'-'+j:'p'+j)},
+ send=d=>{const s=st(d);if(s.sent)return;const lb=labels(d);s.sent=1;s.t=++sq;s.st='rodando';s.comp=0;s.por='';draw('st');say('Enviado ao agente '+d.agente.nome+'.');
+  try{o.onChoose&&o.onChoose({decisao:d.id,caminho:s.sel.slice(),rotulos:lb,texto:s.free||void 0})}catch(e){ctl.setStatus(d.id,'erro','Não deu para enviar.')}},
+ /* teclas só valem para o que está à vista; tecla presa não passa da confirmação */
+ kd=e=>{const t=e.target,k=e.key,d=L[cur],s=d&&st(d),n=+k;
+  if(e.repeat&&!/^Arrow/.test(k))return;
+  if(t.id=='rk-ta'){k=='Escape'?(s.comp=0,draw('w')):k=='Enter'&&(e.ctrlKey||e.metaKey)&&(e.preventDefault(),t.form.requestSubmit());return}
+  if(e.defaultPrevented||e.ctrlKey||e.metaKey||e.altKey||t.closest&&t.closest('input,textarea,select,[contenteditable]'))return;
+  if(k=='ArrowLeft'||k=='ArrowRight'){e.preventDefault();nav(k<'ArrowR'?-1:1)}
+  else if(!vis());
+  else if(k=='Escape'){s&&!s.sent&&(s.comp||s.sel[0])?s.comp?(s.comp=0,draw('w')):back(d):nar()&&(scr='queue',draw('q'+cur))}
+  else if(!s||s.sent||d.erro||s.comp);
+  else if(k=='/'){e.preventDefault();comp(d)}
+  else if(k=='Enter'){leaf(d)&&!hi(d)&&!t.closest('button,a')&&(e.preventDefault(),send(d))}
+  else if(n>0&&!leaf(d)){const c=node(d),ls=c?c.caminhos:d.caminhos;ls[n-1]?pick(d,s.sel.length,ls[n-1].id):!c&&n==ls.length+1&&comp(d)}},
+ hd=()=>{const m=/^#d=(.+)/.exec(location.hash);return m?L.findIndex(x=>encodeURIComponent(x.id)==m[1]):-1},
+ ctl={next:()=>{const ix=L.map((x,i)=>opn(x)?i:-1).filter(i=>i>=0);show(ix.find(i=>i>cur)??ix[0]??-1)},
+  open:id=>{const i=L.findIndex(x=>x.id==id);i<0||show(i)},
+  setStatus:(id,v,r)=>{const d=L.find(x=>x.id==id);if(!d)return;const s=st(d),e=v=='erro';s.sent=1;s.st=/^(feito|erro)$/.test(v)?v:'rodando';e?s.msg=S(r,300):r&&(s.reply=S(r,1000));
+   draw(0,L[cur]!=d,1);say(e?'Não chegou ao agente '+d.agente.nome+'. '+s.msg:r?d.agente.nome+' respondeu: '+s.reply:'')},
+  /* dado igual não redesenha (a releitura a cada 30 s não tira o foco nem fecha a nota) */
+  set:nd=>{const j=JSON.stringify(nd);if(j==js)return;js=j;const id=L[cur]&&L[cur].id;put(nd);cur=id==null?cur:L.findIndex(x=>x.id==id);cur<0&&id!=null&&(cur=L.findIndex(opn));draw(0,0,1)}};
+ put(data);js=JSON.stringify(data);
+ el.classList.add('rk-desk');el.removeAttribute('aria-busy');
+ el.replaceChildren(h('header.head',0,h('div.ttl',0,h('h1.brand',0,o.titulo||'Decisões'),cnt),chips,h('nav.pager',{'aria-label':'Navegar entre decisões'},bk,pv,pos,nx)),
+  h('div.body',0,h('nav.queue',{'aria-label':'Fila de decisões'},h('p.qh',0,h('.label',0,'Fila')),ql),pn),h('footer.strip',0,h('.label',0,'Agora'),now,keys),live);
+ D.removeEventListener('keydown',el._rk);D.addEventListener('keydown',el._rk=kd);
+ removeEventListener('hashchange',el._rh);addEventListener('hashchange',el._rh=()=>{const i=hd();i<0||i==cur||show(i)});
+ const i0=hd();cur=i0>=0?i0:L.findIndex(opn);scr=i0>=0?'panel':'queue';draw();
+ return ctl};
+})();

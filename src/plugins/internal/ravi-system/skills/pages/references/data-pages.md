@@ -250,11 +250,12 @@ Nenhum outro campo vem no erro. O header `x-request-id` identifica a chamada
 para suporte.
 
 O código mora numa cópia só, `esqueletos/_client.js.txt` (`exec`,
-`describe`, `query`, `update`, `create`, `poll`, `showError`, `el`).
+`describe`, `query`, `update`, `create`, `poll`, `showError`, `clearError`, `el`).
 Publique como `client.js` ao lado do `index.html` (`ship --dir`) e carregue
 com `<script src="client.js"></script>`, relativo, antes do script da página
 (a rota vira `/<rota>/`; inferido do Worker). Com `--html`, cole o conteúdo
-num `<script>`. As mensagens saem num `<p id="banner" hidden></p>`.
+num `<script>`. As mensagens saem num `<p id="banner" hidden></p>`, com um
+botão "Fechar"; `clearError()` e a próxima releitura do `poll` que der certo o escondem.
 
 Não há push: releia a view com `poll(fn, ms)`, piso de 30 s. Com
 `ravi.bases.views.version` no `--uses`, dá para consultar a impressão digital a

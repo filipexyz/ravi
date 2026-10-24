@@ -360,6 +360,16 @@ const executeInstructions = [
     instruction: 'ravi themes propose ./tema-acme --scope org --note "cores da marca" --execute',
   },
   {
+    name: "WhatsApp group send in the pages design reference",
+    path: "src/plugins/internal/ravi-system/skills/pages/references/design.md",
+    instruction: 'ravi whatsapp group send <grupo> "<texto>" --json --execute',
+  },
+  {
+    name: "Slack blocks send in the pages design reference",
+    path: "src/plugins/internal/ravi-system/skills/pages/references/design.md",
+    instruction: "ravi slack blocks-send <canal> <blocos.json> --execute",
+  },
+  {
     name: "themes publish documentation",
     path: "docs/console/widgets.mdx",
     instruction: "ravi themes publish ./acme --scope org --execute",
@@ -1033,6 +1043,22 @@ const obsoleteExecuteConsumers = [
     path: "src/plugins/internal/ravi-system/skills/pages/references/theme.md",
     obsolete: "ravi themes check ./tema-acme --execute",
     current: "ravi themes check ./tema-acme",
+  },
+  {
+    name: "Pages ship in the pages design reference",
+    path: "src/plugins/internal/ravi-system/skills/pages/references/design.md",
+    obsolete:
+      'ravi pages ship --project <p> --title "Semana do Atendimento" --route /semana --html site/index.html --json --execute',
+    current:
+      'ravi pages ship --project <p> --title "Semana do Atendimento" --route /semana --html site/index.html --json',
+  },
+  {
+    name: "request-approval in the pages design reference: asking applies at once",
+    path: "src/plugins/internal/ravi-system/skills/pages/references/design.md",
+    obsolete:
+      'ravi bases rows request-approval decisoes <row> aprovacao --note "Campanha de reativação" --idempotency-key decisoes:<row>:pedir:<id-do-pedido> --json --execute',
+    current:
+      'ravi bases rows request-approval decisoes <row> aprovacao --note "Campanha de reativação" --idempotency-key decisoes:<row>:pedir:<id-do-pedido> --json',
   },
 ] as const;
 
