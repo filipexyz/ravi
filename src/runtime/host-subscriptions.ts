@@ -38,6 +38,8 @@ interface RuntimeTaskEventPayload {
 const TASK_RUNTIME_RELEASE_EVENTS = new Set(["task.done", "task.failed", "task.blocked"]);
 
 export class RuntimeHostSubscriptions {
+  private readonly runtimeControlLanes = new Map<string, Promise<void>>();
+
   constructor(private readonly options: RuntimeHostSubscriptionsOptions) {}
 
   startAll(): void {
@@ -200,20 +202,37 @@ export class RuntimeHostSubscriptions {
     }
   }
 
+  /**
+   * One lane per session: controls for the same session keep their order, and
+   * a provider that never answers holds only its own lane, not the subscription.
+   */
+  private enqueueRuntimeControl(data: RuntimeControlNatsRequest): void {
+    const lane = data?.sessionName ?? data?.sessionKey ?? "";
+    const previous = this.runtimeControlLanes.get(lane) ?? Promise.resolve();
+    const next = previous.then(() => this.runRuntimeControl(data));
+    this.runtimeControlLanes.set(lane, next);
+    void next.finally(() => {
+      if (this.runtimeControlLanes.get(lane) === next) this.runtimeControlLanes.delete(lane);
+    });
+  }
+
+  private async runRuntimeControl(data: RuntimeControlNatsRequest): Promise<void> {
+    try {
+      await this.handleRuntimeControlRequest(data);
+    } catch (error) {
+      await this.replyRuntimeControlError(
+        data?.replyTopic,
+        error instanceof Error ? error.message : String(error),
+      ).catch((replyError) => log.warn("Failed to reply to runtime control request", { error: replyError }));
+    }
+  }
+
   private async subscribeToRuntimeControls(): Promise<void> {
     while (this.options.isRunning()) {
       try {
         for await (const event of nats.subscribe("ravi.session.runtime.control")) {
           if (!this.options.isRunning()) break;
-          try {
-            await this.handleRuntimeControlRequest(event.data as RuntimeControlNatsRequest);
-          } catch (error) {
-            const data = event.data as RuntimeControlNatsRequest;
-            await this.replyRuntimeControlError(
-              data?.replyTopic,
-              error instanceof Error ? error.message : String(error),
-            );
-          }
+          this.enqueueRuntimeControl(event.data as RuntimeControlNatsRequest);
         }
       } catch (err) {
         if (!this.options.isRunning()) break;

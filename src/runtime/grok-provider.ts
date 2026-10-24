@@ -38,6 +38,7 @@ import type {
   RuntimeUsage,
   SessionRuntimeProvider,
 } from "./types.js";
+import { RUNTIME_OPERATION_UNSUPPORTED } from "./runtime-control-errors.js";
 
 const DEFAULT_GROK_COMMAND = "grok";
 const DEFAULT_GROK_RPC_TIMEOUT_MS = 30_000;
@@ -1605,6 +1606,7 @@ async function controlGrokRuntime(
       operation: request.operation,
       state: controlState(),
       error: `Grok runtime does not support ${request.operation}`,
+      code: RUNTIME_OPERATION_UNSUPPORTED,
     };
   }
 

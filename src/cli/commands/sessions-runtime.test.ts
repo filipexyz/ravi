@@ -10,6 +10,7 @@ type RequestReplyCall = {
 
 let requestReplyCalls: RequestReplyCall[] = [];
 let requestReplyResult: Record<string, unknown> = {};
+let requestReplyError: Error | null = null;
 let resolvedSession: Record<string, unknown> | null = null;
 let scopeEnforced = false;
 let canAccess = true;
@@ -36,6 +37,7 @@ mock.module("../context.js", () => ({
 mock.module("../../utils/request-reply.js", () => ({
   requestReply: mock(async (topic: string, data: Record<string, unknown>, timeoutMs?: number) => {
     requestReplyCalls.push({ topic, data, timeoutMs });
+    if (requestReplyError) throw requestReplyError;
     return requestReplyResult;
   }),
 }));
@@ -73,6 +75,7 @@ async function captureLogs<T>(run: () => Promise<T>): Promise<{ result: T; outpu
 describe("SessionRuntimeCommands", () => {
   beforeEach(() => {
     requestReplyCalls = [];
+    requestReplyError = null;
     requestReplyResult = {
       result: {
         ok: true,
@@ -299,5 +302,100 @@ describe("SessionRuntimeCommands", () => {
 
     expect(requestReplyCalls).toHaveLength(1);
     expect(requestReplyCalls[0]?.data).toMatchObject({ request: { operation: "turn.interrupt" } });
+  });
+
+  async function captureError(run: () => Promise<unknown>): Promise<InstanceType<typeof ContractError>> {
+    const originalLog = console.log;
+    const originalError = console.error;
+    console.log = () => {};
+    console.error = () => {};
+    try {
+      await run();
+    } catch (error) {
+      return error as InstanceType<typeof ContractError>;
+    } finally {
+      console.log = originalLog;
+      console.error = originalError;
+    }
+    throw new Error("expected the command to fail");
+  }
+
+  it("turns a disabled steer into a typed contract error instead of COMMAND_FAILED", async () => {
+    requestReplyResult = {
+      result: {
+        ok: false,
+        operation: "turn.steer",
+        code: "RUNTIME_CONTROL_DISABLED",
+        retryable: false,
+        disabledReason: "durable_input_journal_unavailable",
+        error: "Runtime control 'turn.steer' is disabled: durable prompt input journaling is not available yet.",
+        state: { provider: "codex", activeTurn: true, turnId: "turn_1" },
+      },
+    };
+
+    const error = await captureError(() => new SessionRuntimeCommands().steer("dev-main", "corrige isso"));
+
+    expect(error).toBeInstanceOf(ContractError);
+    expect(error.op).toBe("sessions runtime steer");
+    expect(error.code).toBe("RUNTIME_CONTROL_DISABLED");
+    expect(error.exitCode).toBe(1);
+    expect(error.message).toContain("is disabled");
+    expect(error.envelope().error).toMatchObject({
+      retryable: false,
+      operation: "turn.steer",
+      activeTurn: true,
+      turnId: "turn_1",
+      disabledReason: "durable_input_journal_unavailable",
+      suggestedAction: expect.stringContaining("sessions send"),
+    });
+  });
+
+  it("keeps --json printing the typed result", async () => {
+    requestReplyResult = {
+      result: { ok: false, operation: "turn.steer", code: "RUNTIME_CONTROL_DISABLED", error: "disabled" },
+    };
+
+    const { result, output } = await captureLogs(() =>
+      new SessionRuntimeCommands().steer("dev-main", "x", undefined, undefined, undefined, true),
+    );
+
+    expect(result).toMatchObject({ ok: false, code: "RUNTIME_CONTROL_DISABLED" });
+    expect(output).toContain('"code": "RUNTIME_CONTROL_DISABLED"');
+  });
+
+  it("maps a reply timeout to RUNTIME_CONTROL_TIMEOUT (retryable) without raw text", async () => {
+    requestReplyError = new Error("Request timeout (15000ms) on ravi.session.runtime.control");
+
+    const error = await captureError(() => new SessionRuntimeCommands().interrupt("dev-main"));
+
+    expect(error).toBeInstanceOf(ContractError);
+    expect(error.code).toBe("RUNTIME_CONTROL_TIMEOUT");
+    expect(error.envelope().error.retryable).toBe(true);
+    expect(error.message).not.toContain("ravi.session.runtime.control");
+  });
+
+  it("maps any other reply rejection to RUNTIME_CONTROL_UNAVAILABLE instead of an unhandled error", async () => {
+    requestReplyError = new Error("PRIVATE_DAEMON_TEXT");
+
+    const error = await captureError(() => new SessionRuntimeCommands().read("dev-main"));
+
+    expect(error).toBeInstanceOf(ContractError);
+    expect(error.code).toBe("RUNTIME_CONTROL_UNAVAILABLE");
+    expect(JSON.stringify(error.envelope())).not.toContain("PRIVATE_DAEMON_TEXT");
+  });
+
+  it("answers a missing session and a session without modify access with the same typed code", async () => {
+    resolvedSession = null;
+    const missing = await captureError(() => new SessionRuntimeCommands().steer("other", "x"));
+
+    resolvedSession = { sessionKey: "agent:dev:main", name: "other", agentId: "dev" };
+    scopeEnforced = true;
+    canModify = false;
+    const hidden = await captureError(() => new SessionRuntimeCommands().steer("other", "x"));
+
+    expect(missing.code).toBe("SESSION_NOT_FOUND");
+    expect(hidden.code).toBe("SESSION_NOT_FOUND");
+    expect(hidden.envelope()).toEqual(missing.envelope());
+    expect(requestReplyCalls).toHaveLength(0);
   });
 });
