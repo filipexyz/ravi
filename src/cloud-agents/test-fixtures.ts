@@ -21,6 +21,8 @@ export interface FakeCloudRequest {
   query: URLSearchParams;
   body: Json | null;
   authorization: string | null;
+  /** `x-ravi-actor-contact`: the local contact the call acts for, if any. */
+  actorContact: string | null;
 }
 
 export interface FakeCloudFailure {
@@ -231,6 +233,11 @@ export function createFakeCloudConsole(
           "trigger",
           "origin",
           "idempotencyKey",
+          "delivery",
+          "threadKey",
+          "files",
+          "outcome",
+          "rows",
         ];
         const origin = (body?.origin ?? null) as Json | null;
         const trigger = body?.trigger ?? (origin?.kind === "task" ? "task" : "manual");
@@ -270,10 +277,19 @@ export function createFakeCloudConsole(
                 }
               : null,
           url: `/acme/p/p-clinica/cloud/runs/run_${runSeq}`,
+          ...(body?.delivery ? { delivery: body.delivery } : {}),
+          ...(body?.threadKey ? { threadKey: body.threadKey } : {}),
         });
         state.runs.set(String(run.id), run);
         if (key) runsByKey.set(key, run);
         return json(201, { run });
+      }
+      if (parts[1] === "by-thread") {
+        const key = method === "GET" ? request.query.get("key") : String(body?.key ?? "");
+        const bound = [...state.runs.values()].find((entry) => entry.threadKey === key);
+        if (!bound) return notFound("bound run");
+        if (method === "GET" && parts.length === 2) return json(200, { run: bound });
+        if (method === "POST" && parts[2] === "messages") return json(200, { run: bound });
       }
       if (method === "GET" && parts.length === 1) {
         const limit = Math.min(Math.max(Number(request.query.get("limit") ?? 25), 1), 100);
@@ -311,6 +327,19 @@ export function createFakeCloudConsole(
         run.status = "running";
         return json(200, { run });
       }
+      if (method === "POST" && parts[2] === "questions") {
+        const questions = (run.questions as Json[] | undefined) ?? [];
+        const question = questions.find((entry) => entry.id === parts[3]);
+        if (!question) return notFound("question");
+        if (question.status !== "pending") {
+          return json(409, { error: { code: "conflict", message: "The question is no longer pending." } });
+        }
+        question.status = "answered";
+        question.answer = body?.answer ?? null;
+        question.answeredAt = "2026-10-18T10:07:00.000Z";
+        run.status = "running";
+        return json(200, { run });
+      }
       if (method === "POST" && parts[2] === "delivered") {
         run.origin = {
           ...((run.origin as Json | null) ?? {}),
@@ -333,6 +362,7 @@ export function createFakeCloudConsole(
           prompt: body?.prompt ?? null,
           budgetUsd: body?.budgetUsd ?? null,
           enabled: body?.enabled !== false,
+          ...(body?.delivery ? { delivery: body.delivery } : {}),
         });
         state.schedules.push(schedule);
         return json(201, { schedule });
@@ -345,7 +375,11 @@ export function createFakeCloudConsole(
       }
       if (method === "POST" && parts.length === 2) {
         const changes = body ?? {};
-        if (Object.keys(changes).some((key) => !["cron", "timezone", "prompt", "budgetUsd", "enabled"].includes(key))) {
+        if (
+          Object.keys(changes).some(
+            (key) => !["cron", "timezone", "prompt", "budgetUsd", "enabled", "delivery"].includes(key),
+          )
+        ) {
           return json(400, { error: { code: "validation_failed", message: "Unknown schedule field." } });
         }
         Object.assign(schedule, changes);
@@ -368,6 +402,7 @@ export function createFakeCloudConsole(
       query: parsed.searchParams,
       body: init?.body ? (JSON.parse(String(init.body)) as Json) : null,
       authorization: new Headers(init?.headers).get("authorization"),
+      actorContact: new Headers(init?.headers).get("x-ravi-actor-contact"),
     };
     state.requests.push(request);
     if (state.validToken !== null && request.authorization !== `Bearer ${state.validToken}`) {
@@ -399,9 +434,14 @@ export function createFakeCloudConsole(
 export function fakeCloudClient(
   fake: FakeCloudConsole,
   credentials: CloudCredentials = fakeCredentials(),
+  actorContactId: string | null = null,
 ): CloudAgentsClient {
   return new CloudAgentsClient({
-    client: new ConsoleApiClient({ consoleUrl: FAKE_CONSOLE_URL, fetch: fake.fetch, actorContact: () => null }),
+    client: new ConsoleApiClient({
+      consoleUrl: FAKE_CONSOLE_URL,
+      fetch: fake.fetch,
+      actorContact: () => actorContactId,
+    }),
     credentials,
     write: () => {},
     delete: () => {},
@@ -417,6 +457,7 @@ export function fakeCloudSessionOpener(
     loggedIn?: boolean;
     installationId?: string;
     organizationId?: string;
+    userId?: string | null;
   } = {},
 ): ((options: CloudAgentsSessionOptions) => Promise<CloudAgentsSession | null>) & {
   calls: CloudAgentsSessionOptions[];
@@ -430,13 +471,14 @@ export function fakeCloudSessionOpener(
       explicit ??
       (options.resolveProject === false ? null : input.defaultProject === undefined ? "clinica" : input.defaultProject);
     return {
-      client: fakeCloudClient(fake),
+      client: fakeCloudClient(fake, fakeCredentials(), options.actorContactId ?? null),
       consoleUrl: FAKE_CONSOLE_URL,
       installationId: input.installationId ?? "inst-1",
       project,
       projectSource: explicit ? "explicit" : project ? "cwd" : null,
       organization: "acme",
       organizationId: input.organizationId ?? "org-1",
+      userId: input.userId === undefined ? "user-1" : input.userId,
     };
   };
   return Object.assign(open, { calls });

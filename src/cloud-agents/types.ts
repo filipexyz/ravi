@@ -8,6 +8,7 @@ export const CLOUD_RUN_STATUSES = [
   "starting",
   "running",
   "waiting_approval",
+  "waiting_input",
   "completed",
   "failed",
   "stopped",
@@ -28,7 +29,17 @@ export function isTerminalCloudRunStatus(status: string): boolean {
   return CLOUD_RUN_TERMINAL_STATUSES.has(status);
 }
 
-export const CLOUD_RUN_EVENT_TYPES = ["message", "tool_call", "tool_result", "status", "approval", "error"] as const;
+export const CLOUD_RUN_EVENT_TYPES = [
+  "message",
+  "tool_call",
+  "tool_result",
+  "status",
+  "approval",
+  "question",
+  "outcome",
+  "workflow",
+  "error",
+] as const;
 
 export type CloudRunEventType = (typeof CLOUD_RUN_EVENT_TYPES)[number];
 
@@ -57,6 +68,43 @@ export interface CloudAgentConfig {
   mcpServers: string[];
   repositories: string[];
   schedule: { cron: string; timezone: string } | null;
+  /** Product additions (Console 0070); older Consoles omit them. */
+  webFetch?: boolean;
+  office?: string[];
+  askHuman?: boolean;
+  workflows?: boolean;
+  secrets?: string[];
+  memory?: "agent" | "person" | null;
+  outcome?: { rubric: string; maxIterations: number } | null;
+  placement?: "cloud" | "installation";
+  provider?: "anthropic" | "ravi";
+}
+
+/** What a deployed agent can do, as the Console computes it from the definition (F3). */
+export interface CloudManifest {
+  model: string;
+  provider: "anthropic" | "ravi";
+  placement: "cloud" | "installation";
+  writes: "ask" | "auto";
+  networking: "limited" | "unrestricted";
+  allowedHosts: string[];
+  mcpServers: string[];
+  raviOps: string[];
+  secrets: string[];
+  repositories: string[];
+  memory: "agent" | "person" | null;
+  office: string[];
+  web: { search: boolean; fetch: boolean; allowedDomains: string[]; blockedDomains: string[] };
+  askHuman: boolean;
+  workflows: boolean;
+}
+
+/** The agent's current manifest; an owner or admin approves it (F3). */
+export interface CloudManifestState {
+  hash: string | null;
+  approved: boolean;
+  approvedAt: string | null;
+  value: CloudManifest | null;
 }
 
 export interface CloudAgent {
@@ -71,6 +119,16 @@ export interface CloudAgent {
   deployedBy: CloudUserRef | null;
   lastError: string | null;
   config: CloudAgentConfig;
+  manifest?: CloudManifestState | null;
+  /** Monthly cap in USD and the pause it caused, when set. */
+  cap?: {
+    monthlyCapUsd: number | null;
+    monthSpentUsd: number;
+    pausedAt: string | null;
+    pausedReason: string | null;
+  } | null;
+  placementInstallationId?: string | null;
+  catalogEntryId?: string | null;
 }
 
 export interface CloudApproval {
@@ -102,6 +160,42 @@ export interface CloudRunOrigin {
   deliveredAt: string | null;
 }
 
+/** Where a run's result, approvals and questions go (contract "Delivery target"). */
+export interface CloudDelivery {
+  kind: "session" | "page_room" | "none";
+  installationId?: string;
+  sessionName?: string;
+  chat?: { channel: string; chatId: string; threadId?: string | null; instanceId?: string | null } | null;
+  roomId?: string;
+  siteId?: string;
+}
+
+/** A question the agent asked the run's person (`ask_human`). */
+export interface CloudQuestion {
+  id: string;
+  question: string;
+  options: string[];
+  status: "pending" | "answered" | "expired";
+  answer: string | null;
+  askedAt: string | null;
+  answeredAt: string | null;
+  answeredBy: CloudUserRef | null;
+}
+
+export interface CloudRunFile {
+  fileId: string;
+  name: string;
+  size: number;
+}
+
+export interface CloudRunOutcome {
+  rubric: string;
+  maxIterations: number;
+  iterations: number;
+  lastResult: string | null;
+  feedback: string | null;
+}
+
 export interface CloudRun {
   id: string;
   agentId: string;
@@ -123,6 +217,17 @@ export interface CloudRun {
   error: { code: string; message: string } | null;
   origin: CloudRunOrigin | null;
   url: string | null;
+  /** Product additions (Console 0070); older Consoles omit them. */
+  questions?: CloudQuestion[];
+  delivery?: CloudDelivery | null;
+  deliveredAt?: string | null;
+  files?: CloudRunFile[];
+  outcome?: CloudRunOutcome | null;
+  threadKey?: string | null;
+  triggerId?: string | null;
+  billingMode?: "byok" | "credits";
+  chargedBrl?: number | null;
+  costBrl?: number | null;
 }
 
 export interface CloudRunEvent {
@@ -148,6 +253,7 @@ export interface CloudSchedule {
   nextRunAt: string | null;
   lastRunAt: string | null;
   lastRunId: string | null;
+  delivery?: CloudDelivery | null;
 }
 
 export interface CloudRunStartBody {
@@ -160,6 +266,13 @@ export interface CloudRunStartBody {
   /** The Console takes the installation from the `ravi login` session, never from the body. */
   origin?: { kind: "task"; sessionName: string; taskId: string };
   idempotencyKey?: string;
+  /** `{ kind: "session", sessionName }`: the Console adds the installation from the login. */
+  delivery?: { kind: "session" | "none"; sessionName?: string; chat?: CloudDelivery["chat"] };
+  /** `slack:<instanceId>:<channelId>:<threadTs>` or `whatsapp:<instanceId>:<groupId>`. */
+  threadKey?: string;
+  files?: Array<{ name: string; contentBase64: string; mimeType?: string }>;
+  outcome?: { rubric: string; maxIterations?: number };
+  rows?: { viewId: string; limit?: number };
 }
 
 /** `POST schedules/<id>` (partial update; the Console refuses other keys). */
@@ -169,4 +282,192 @@ export interface CloudScheduleBody {
   prompt?: string | null;
   budgetUsd?: number | null;
   enabled?: boolean;
+  delivery?: CloudRunStartBody["delivery"] | null;
+}
+
+// ---------------------------------------------------------------------------
+// Product shapes (F1-F4). Transport only: the Console decides what they hold.
+// Dates are ISO strings (null when the Console omits them).
+
+export interface CloudSecret {
+  id: string;
+  /** Null for an organization-wide secret. */
+  projectId: string | null;
+  name: string;
+  /** Last characters only; the value never leaves the Console. */
+  valueHint: string | null;
+  allowedHosts: string[];
+  updatedAt: string | null;
+  updatedBy: CloudUserRef | null;
+  lastUsedAt: string | null;
+}
+
+export const CLOUD_TRIGGER_SOURCES = ["bases", "mail", "meetings", "pages_comments"] as const;
+export type CloudTriggerSource = (typeof CLOUD_TRIGGER_SOURCES)[number];
+
+export interface CloudTriggerFilter {
+  baseId?: string;
+  viewId?: string;
+  events?: string[];
+  mailboxId?: string;
+  siteId?: string;
+}
+
+export interface CloudTrigger {
+  id: string;
+  projectId: string;
+  agentId: string;
+  agentName: string;
+  actor: CloudUserRef;
+  source: CloudTriggerSource;
+  filter: CloudTriggerFilter;
+  /** Template; `{{event}}` is replaced by the quoted, neutralized event summary. */
+  prompt: string;
+  delivery: CloudDelivery | null;
+  enabled: boolean;
+  dailyCap: number;
+  batchWindowSeconds: number;
+  dedupeWindowSeconds: number;
+  budgetUsd: number | null;
+  firedToday: number;
+  lastFiredAt: string | null;
+  lastRunId: string | null;
+  pausedReason: string | null;
+  pendingEvents: number;
+}
+
+/** `POST triggers/<id>/test`: what the trigger would send now; no run starts. */
+export interface CloudTriggerTest {
+  prompt: string | null;
+  eventCount: number;
+  /** True when no event is pending and the prompt was built from a sample event. */
+  sample: boolean;
+  /** Why it would not start a run now (cap, pause), or null. */
+  blockedBy: string | null;
+}
+
+/** `GET agents/<id>` only: the agent's memory scope and its active store count. */
+export interface CloudAgentMemorySummary {
+  scope: "agent" | "person" | null;
+  storeCount: number;
+}
+
+export type CloudBillingMode = "byok" | "credits";
+
+export interface CloudWebhook {
+  /** The provider webhook URL to paste in the provider console; null until the Console has one. */
+  url: string | null;
+  configured: boolean;
+  lastEventAt: string | null;
+}
+
+export interface CloudOrgSettings {
+  billingMode: CloudBillingMode;
+  monthlyCapUsd: number | null;
+  monthSpentUsd: number;
+  pausedAt: string | null;
+  pausedReason: string | null;
+  dailyEventRunsCap: number;
+  webhook: CloudWebhook;
+  /** Whether credits mode is available (the Ravi gateway is configured). */
+  gatewayAvailable: boolean;
+}
+
+/** `POST settings` (owner/admin; the Console refuses other keys). */
+export interface CloudOrgSettingsBody {
+  billingMode?: CloudBillingMode;
+  monthlyCapUsd?: number | null;
+  dailyEventRunsCap?: number;
+}
+
+export interface CloudCreditEntry {
+  id: string;
+  kind: "topup" | "run" | "adjustment" | "refund";
+  /** Signed: a top-up adds, a run subtracts. */
+  amountBrl: number;
+  usd: number | null;
+  /** The USD-BRL rate used, as the Console writes it (decimal string). */
+  fxRate: string | null;
+  runId: string | null;
+  status: "pending" | "posted" | "void";
+  paymentUrl: string | null;
+  pixCopyPaste: string | null;
+  createdAt: string | null;
+  postedAt: string | null;
+}
+
+export interface CloudCredits {
+  mode: CloudBillingMode;
+  balanceBrl: number;
+  fxRate: string | null;
+  monthSpentBrl: number;
+  entries: CloudCreditEntry[];
+}
+
+export interface CloudCatalogEntry {
+  id: string;
+  slug: string;
+  name: string;
+  summary: string;
+  sector: string | null;
+  publisher: { id: string; name: string | null };
+  /** The capability manifest snapshot (what an installed agent can do). */
+  manifest: CloudManifest | null;
+  manifestHash: string | null;
+  status: "listed" | "unlisted";
+  installed: boolean;
+}
+
+export interface CloudCatalogPack {
+  id: string;
+  slug: string;
+  name: string;
+  summary: string;
+  sector: string | null;
+  publisher: { id: string; name: string | null };
+  entries: Array<{ id: string; slug: string; name: string }>;
+  revenueShareBps: number;
+  status: "listed" | "unlisted";
+}
+
+export const CLOUD_WORKER_STATUSES = ["waiting_key", "online", "offline", "disabled"] as const;
+export type CloudWorkerStatus = (typeof CLOUD_WORKER_STATUSES)[number];
+
+/** A self-hosted environment this installation serves (agent placement `installation`). */
+export interface CloudWorker {
+  id: string;
+  agentId: string;
+  agentName: string;
+  projectId: string;
+  installationId: string;
+  providerEnvironmentId: string;
+  status: CloudWorkerStatus;
+  lastSeenAt: string | null;
+  lastError: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Console -> OSS inbox events of category `cloud_agents` (contract F1/F3).
+// Transport only: the Console decides who gets them; this side renders and acks.
+
+export const CLOUD_INBOX_CATEGORY = "cloud_agents";
+
+export const CLOUD_DELIVERY_EVENT_TYPES = [
+  "cloud_agents.run.result",
+  "cloud_agents.approval.requested",
+  "cloud_agents.question.asked",
+  "cloud_agents.delivery.message",
+  "cloud_agents.run.thread",
+] as const;
+
+export type CloudDeliveryEventType = (typeof CLOUD_DELIVERY_EVENT_TYPES)[number];
+
+export function isCloudDeliveryEventType(value: string): value is CloudDeliveryEventType {
+  return (CLOUD_DELIVERY_EVENT_TYPES as readonly string[]).includes(value);
+}
+
+/** The person a run acts as, as the Console names them for the chat. */
+export interface CloudActorContact {
+  email?: string;
+  name: string;
 }

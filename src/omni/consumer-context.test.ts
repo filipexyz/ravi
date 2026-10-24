@@ -1260,6 +1260,77 @@ describe("OmniConsumer channel context", () => {
     expect(commitMatchedRouteCalls).toHaveLength(0);
   });
 
+  it("hands a cloud run's person's reply to the run, before any route or agent turn", async () => {
+    contactByRef.set("contact_luis", { id: "contact_luis", status: "allowed", name: "Luis" });
+    platformIdentityByUser.set("5511947879044", {
+      id: "pi_luis",
+      ownerType: "contact",
+      ownerId: "contact_luis",
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformUserId: "5511947879044@s.whatsapp.net",
+      normalizedPlatformUserId: "5511947879044",
+      confidence: 1,
+    });
+    const intercepted: Array<Record<string, unknown>> = [];
+    let takes = true;
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+      answerLinkingDm: async () => false,
+      interceptCloudChat: async (message, reply) => {
+        intercepted.push({ ...message });
+        if (takes) await reply("Aprovado: create_issue na run run_1.");
+        return takes;
+      },
+    });
+    const send = (id: string, text: string) =>
+      consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+        id: `evt-${id}`,
+        type: "message.received",
+        payload: {
+          externalId: `msg-${id}`,
+          chatId: "5511947879044@s.whatsapp.net",
+          from: "5511947879044@s.whatsapp.net",
+          content: { type: "text", text },
+          rawPayload: { pushName: "Luis Filipe", isGroup: false },
+        },
+        metadata: { instanceId: "instance-1", channelType: "whatsapp-baileys", ingestMode: "realtime" },
+        timestamp: Date.now(),
+      });
+
+    await send("cloud-approve", "aprovar ab12cd");
+    expect(intercepted).toEqual([
+      {
+        channel: "whatsapp",
+        accountId: "main",
+        instanceId: "instance-1",
+        chatId: "5511947879044@s.whatsapp.net",
+        isGroup: false,
+        contactId: "contact_luis",
+        text: "aprovar ab12cd",
+        replyToId: null,
+      },
+    ]);
+    expect(sender.send).toHaveBeenCalledWith(
+      "instance-1",
+      "5511947879044@s.whatsapp.net",
+      "Aprovado: create_issue na run run_1.",
+    );
+    expect(promptCalls).toHaveLength(0);
+    expect(commitMatchedRouteCalls).toHaveLength(0);
+
+    // A message the run does not take follows the normal route.
+    takes = false;
+    await send("cloud-other", "oi");
+    expect(intercepted).toHaveLength(2);
+    expect(commitMatchedRouteCalls).toHaveLength(1);
+  });
+
   it("routes unresolved WhatsApp LID DMs by lid: identity instead of falling through to main", async () => {
     const lidRoute: RouteConfig = {
       pattern: "lid:224420715061374",

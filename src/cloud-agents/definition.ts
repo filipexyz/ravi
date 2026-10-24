@@ -5,8 +5,13 @@
  *
  * Every key is optional. The block never carries credentials, routes or
  * contacts: a key that looks like a secret (token, secret, password, apikey,
- * authorization, cookie) is refused anywhere in it, and so is a URL with
- * userinfo or a query string.
+ * authorization, cookie, credential) is refused anywhere in it, and so is a
+ * URL with userinfo or a query string. `secrets` only names Console secrets
+ * (their values stay in the Console).
+ *
+ * The product fields (packages for cargo, gem and go, placement, webFetch, web
+ * filters, office, askHuman, workflows, secrets, memory, outcome,
+ * monthlyCapUsd, provider) follow the Console's `definition.ts` rules exactly.
  */
 
 export const CLOUD_AGENT_DEFINITION_INVALID = "CLOUD_AGENT_DEFINITION_INVALID";
@@ -18,19 +23,34 @@ export const CLOUD_WRITES = ["ask", "auto"] as const;
 export const CLOUD_BUDGET_MIN_USD = 0.5;
 export const CLOUD_BUDGET_MAX_USD = 200;
 export const CLOUD_BUDGET_DEFAULT_USD = 5;
+export const CLOUD_PACKAGE_MANAGERS = ["apt", "pip", "npm", "cargo", "gem", "go"] as const;
+export const CLOUD_PLACEMENTS = ["cloud", "installation"] as const;
+export const CLOUD_OFFICE_SKILLS = ["xlsx", "docx", "pptx", "pdf"] as const;
+export const CLOUD_MEMORY_SCOPES = ["agent", "person"] as const;
+export const CLOUD_PROVIDERS = ["anthropic", "ravi"] as const;
+export const CLOUD_OUTCOME_MAX_ITERATIONS = 5;
+export const CLOUD_OUTCOME_RUBRIC_MAX_CHARS = 8000;
+export const CLOUD_MONTHLY_CAP_MAX_USD = 100_000;
+/** A Console secret name: what `cloud.secrets` lists and `ravi cloud secrets set` takes. */
+export const CLOUD_SECRET_NAME_PATTERN = /^[A-Z][A-Z0-9_]{1,63}$/;
 
 const MAX_HOSTS = 25;
 const MAX_PACKAGES = 50;
 const MAX_MCP_SERVERS = 10;
 const MAX_REPOSITORIES = 10;
-const SECRET_KEY = /(token|secret|password|passwd|api[-_]?key|authorization|cookie)/i;
+const MAX_WEB_DOMAINS = 50;
+const MAX_SECRETS = 20;
+const SECRET_KEY = /(token|secret|password|passwd|api[-_]?key|authorization|cookie|credential)/i;
 const HOSTNAME = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i;
-const PACKAGE_NAME = /^[A-Za-z0-9@][A-Za-z0-9@/._+:=<>~^!-]{0,199}$/;
+const PACKAGE_NAME = /^[A-Za-z0-9@][A-Za-z0-9@._/+=<>~^:-]{0,213}$/;
 const MCP_NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const REPO = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/;
 const BRANCH = /^[A-Za-z0-9._/-]{1,200}$/;
 const CRON_FIELD = /^[0-9*/,\-A-Za-z?LW#]+$/;
 const TIMEZONE = /^[A-Za-z_]+(?:\/[A-Za-z0-9_+-]+){0,2}$|^UTC$/;
+const WEB_DOMAIN = /^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}(?:\/[A-Za-z0-9._~%/-]{0,200})?$/;
+
+type CloudPackageManager = (typeof CLOUD_PACKAGE_MANAGERS)[number];
 
 export interface CloudAgentBlock {
   model?: string;
@@ -39,12 +59,31 @@ export interface CloudAgentBlock {
   environment?: {
     networking?: (typeof CLOUD_NETWORKING)[number];
     allowedHosts?: string[];
-    packages?: { apt?: string[]; pip?: string[]; npm?: string[] };
+    packages?: Partial<Record<CloudPackageManager, string[]>>;
+    /** `cloud`: the provider's container. `installation`: a Ravi daemon runs the tools. */
+    placement?: (typeof CLOUD_PLACEMENTS)[number];
   };
   mcp?: { ravi?: boolean; servers?: Array<{ name: string; url: string }> };
-  tools?: { webSearch?: boolean; writes?: (typeof CLOUD_WRITES)[number] };
+  tools?: {
+    webSearch?: boolean;
+    /** Defaults to webSearch. */
+    webFetch?: boolean;
+    /** At most one list is non-empty. */
+    web?: { allowedDomains?: string[]; blockedDomains?: string[] };
+    writes?: (typeof CLOUD_WRITES)[number];
+    /** Anthropic's prebuilt Office and PDF skills; `true` in agent.json means all four. */
+    office?: Array<(typeof CLOUD_OFFICE_SKILLS)[number]>;
+    askHuman?: boolean;
+    workflows?: boolean;
+  };
   repositories?: Array<{ repo: string; branch?: string }>;
   schedule?: { cron: string; timezone?: string };
+  /** Names of Console secrets the run may use at egress. */
+  secrets?: string[];
+  memory?: (typeof CLOUD_MEMORY_SCOPES)[number] | null;
+  outcome?: { rubric: string; maxIterations: number } | null;
+  monthlyCapUsd?: number | null;
+  provider?: (typeof CLOUD_PROVIDERS)[number];
 }
 
 export interface CloudBlockIssue {
@@ -104,7 +143,21 @@ export function validateCloudBlock(value: unknown): CloudBlockValidation {
   const cloud: CloudAgentBlock = {};
   unknownKeys(
     root,
-    ["model", "effort", "budgetUsd", "environment", "mcp", "tools", "repositories", "schedule"],
+    [
+      "model",
+      "effort",
+      "budgetUsd",
+      "environment",
+      "mcp",
+      "tools",
+      "repositories",
+      "schedule",
+      "secrets",
+      "memory",
+      "outcome",
+      "monthlyCapUsd",
+      "provider",
+    ],
     [],
     add,
   );
@@ -137,7 +190,7 @@ export function validateCloudBlock(value: unknown): CloudBlockValidation {
       add(["environment"], "environment must be an object.");
     } else {
       const out: NonNullable<CloudAgentBlock["environment"]> = {};
-      unknownKeys(environment, ["networking", "allowedHosts", "packages"], ["environment"], add);
+      unknownKeys(environment, ["networking", "allowedHosts", "packages", "placement"], ["environment"], add);
       if (environment.networking !== undefined) {
         if (
           typeof environment.networking !== "string" ||
@@ -165,11 +218,14 @@ export function validateCloudBlock(value: unknown): CloudBlockValidation {
       if (environment.packages !== undefined) {
         const packages = record(environment.packages);
         if (!packages) {
-          add(["environment", "packages"], "packages must be an object with apt, pip and npm lists.");
+          add(
+            ["environment", "packages"],
+            `packages must be an object with ${CLOUD_PACKAGE_MANAGERS.join(", ")} lists.`,
+          );
         } else {
-          unknownKeys(packages, ["apt", "pip", "npm"], ["environment", "packages"], add);
+          unknownKeys(packages, CLOUD_PACKAGE_MANAGERS, ["environment", "packages"], add);
           const outPackages: NonNullable<NonNullable<CloudAgentBlock["environment"]>["packages"]> = {};
-          for (const manager of ["apt", "pip", "npm"] as const) {
+          for (const manager of CLOUD_PACKAGE_MANAGERS) {
             if (packages[manager] === undefined) continue;
             const names = stringList(packages[manager], MAX_PACKAGES, ["environment", "packages", manager], add);
             if (!names) continue;
@@ -181,6 +237,13 @@ export function validateCloudBlock(value: unknown): CloudBlockValidation {
             outPackages[manager] = names;
           }
           out.packages = outPackages;
+        }
+      }
+      if (environment.placement !== undefined) {
+        if (!(CLOUD_PLACEMENTS as readonly unknown[]).includes(environment.placement)) {
+          add(["environment", "placement"], "placement must be cloud or installation.");
+        } else {
+          out.placement = environment.placement as (typeof CLOUD_PLACEMENTS)[number];
         }
       }
       cloud.environment = out;
@@ -235,11 +298,54 @@ export function validateCloudBlock(value: unknown): CloudBlockValidation {
     if (!tools) {
       add(["tools"], "tools must be an object.");
     } else {
-      unknownKeys(tools, ["webSearch", "writes"], ["tools"], add);
+      unknownKeys(tools, ["webSearch", "webFetch", "web", "writes", "office", "askHuman", "workflows"], ["tools"], add);
       const out: NonNullable<CloudAgentBlock["tools"]> = {};
-      if (tools.webSearch !== undefined) {
-        if (typeof tools.webSearch !== "boolean") add(["tools", "webSearch"], "tools.webSearch must be true or false.");
-        else out.webSearch = tools.webSearch;
+      for (const flag of ["webSearch", "webFetch", "askHuman", "workflows"] as const) {
+        const value = tools[flag];
+        if (value === undefined) continue;
+        if (typeof value !== "boolean") add(["tools", flag], `tools.${flag} must be true or false.`);
+        else out[flag] = value;
+      }
+      if (tools.web !== undefined) {
+        const web = record(tools.web);
+        if (!web) {
+          add(["tools", "web"], "tools.web must be an object with allowedDomains or blockedDomains.");
+        } else {
+          unknownKeys(web, ["allowedDomains", "blockedDomains"], ["tools", "web"], add);
+          const outWeb: NonNullable<NonNullable<CloudAgentBlock["tools"]>["web"]> = {};
+          for (const list of ["allowedDomains", "blockedDomains"] as const) {
+            if (web[list] === undefined || web[list] === null) continue;
+            const domains = stringList(web[list], MAX_WEB_DOMAINS, ["tools", "web", list], add);
+            if (!domains) continue;
+            domains.forEach((domain, index) => {
+              if (!WEB_DOMAIN.test(domain)) {
+                add(["tools", "web", list, index], "Each entry is a lowercase domain (optionally *. and a path).");
+              }
+            });
+            outWeb[list] = domains;
+          }
+          if ((outWeb.allowedDomains?.length ?? 0) > 0 && (outWeb.blockedDomains?.length ?? 0) > 0) {
+            add(["tools", "web"], "tools.web takes allowedDomains or blockedDomains, not both.");
+          }
+          out.web = outWeb;
+        }
+      }
+      if (tools.office !== undefined && tools.office !== null) {
+        if (tools.office === true) {
+          out.office = [...CLOUD_OFFICE_SKILLS];
+        } else if (tools.office === false) {
+          out.office = [];
+        } else {
+          const skills = stringList(tools.office, CLOUD_OFFICE_SKILLS.length, ["tools", "office"], add);
+          if (skills) {
+            skills.forEach((skill, index) => {
+              if (!(CLOUD_OFFICE_SKILLS as readonly string[]).includes(skill)) {
+                add(["tools", "office", index], `office lists ${CLOUD_OFFICE_SKILLS.join(", ")} (or is true).`);
+              }
+            });
+            out.office = skills as Array<(typeof CLOUD_OFFICE_SKILLS)[number]>;
+          }
+        }
       }
       if (tools.writes !== undefined) {
         if (typeof tools.writes !== "string" || !(CLOUD_WRITES as readonly string[]).includes(tools.writes)) {
@@ -300,6 +406,87 @@ export function validateCloudBlock(value: unknown): CloudBlockValidation {
     }
   }
 
+  if (root.secrets !== undefined && root.secrets !== null) {
+    const names = stringList(root.secrets, MAX_SECRETS, ["secrets"], add);
+    if (names) {
+      names.forEach((name, index) => {
+        if (!CLOUD_SECRET_NAME_PATTERN.test(name)) {
+          add(["secrets", index], "Each secret is a name such as STRIPE_API_KEY (A-Z, 0-9 and _), never a value.");
+        }
+      });
+      cloud.secrets = names;
+    }
+  }
+
+  if (root.memory !== undefined) {
+    if (root.memory !== null && !(CLOUD_MEMORY_SCOPES as readonly unknown[]).includes(root.memory)) {
+      add(["memory"], "memory must be agent, person or null.");
+    } else {
+      cloud.memory = root.memory as CloudAgentBlock["memory"];
+    }
+  }
+
+  if (root.outcome !== undefined) {
+    if (root.outcome === null) {
+      cloud.outcome = null;
+    } else {
+      const outcome = record(root.outcome);
+      if (!outcome) {
+        add(["outcome"], "outcome must be an object with rubric and an optional maxIterations.");
+      } else {
+        unknownKeys(outcome, ["rubric", "maxIterations"], ["outcome"], add);
+        const rubric = typeof outcome.rubric === "string" ? outcome.rubric.trim() : "";
+        if (!rubric || (outcome.rubric as string).length > CLOUD_OUTCOME_RUBRIC_MAX_CHARS) {
+          add(
+            ["outcome", "rubric"],
+            `rubric is the text that says what a finished result looks like (at most ${CLOUD_OUTCOME_RUBRIC_MAX_CHARS} characters).`,
+          );
+        }
+        let maxIterations = 3;
+        if (outcome.maxIterations !== undefined) {
+          const value = outcome.maxIterations;
+          if (
+            typeof value !== "number" ||
+            !Number.isInteger(value) ||
+            value < 1 ||
+            value > CLOUD_OUTCOME_MAX_ITERATIONS
+          ) {
+            add(
+              ["outcome", "maxIterations"],
+              `maxIterations is a whole number from 1 to ${CLOUD_OUTCOME_MAX_ITERATIONS}.`,
+            );
+          } else {
+            maxIterations = value;
+          }
+        }
+        cloud.outcome = { rubric, maxIterations };
+      }
+    }
+  }
+
+  if (root.monthlyCapUsd !== undefined) {
+    const cap = root.monthlyCapUsd;
+    if (cap === null) {
+      cloud.monthlyCapUsd = null;
+    } else if (typeof cap !== "number" || !Number.isFinite(cap) || cap <= 0 || cap > CLOUD_MONTHLY_CAP_MAX_USD) {
+      add(["monthlyCapUsd"], `monthlyCapUsd is a number of US$ above 0 and at most ${CLOUD_MONTHLY_CAP_MAX_USD}.`);
+    } else {
+      cloud.monthlyCapUsd = Math.round(cap * 100) / 100;
+    }
+  }
+
+  if (root.provider !== undefined && root.provider !== null) {
+    if (!(CLOUD_PROVIDERS as readonly unknown[]).includes(root.provider)) {
+      add(["provider"], "provider must be anthropic or ravi.");
+    } else {
+      cloud.provider = root.provider as (typeof CLOUD_PROVIDERS)[number];
+    }
+  }
+
+  if (cloud.tools?.workflows === true && cloud.environment?.placement === "installation") {
+    add(["tools", "workflows"], "Dynamic workflows run on the provider's containers; use placement cloud.");
+  }
+
   return issues.length > 0 ? { ok: false, issues } : { ok: true, cloud };
 }
 
@@ -350,6 +537,8 @@ function scanSecrets(
   const object = record(value);
   if (object) {
     for (const [key, entry] of Object.entries(object)) {
+      // The root `secrets` list names Console secrets (checked by name); it holds no values.
+      if (path.length === 0 && key === "secrets") continue;
       if (SECRET_KEY.test(key)) {
         add([...path, key], "The cloud block never carries credentials.", "credential_refused");
         continue;

@@ -3,5 +3,5 @@
 // Drift is detected by `ravi sdk dart check`.
 
 const raviSdkVersion = "0.1.0";
-const raviRegistryHash = "sha256:dc1ffbd09d5b50ce84404533c714604d1d41343621483c28ca7ff15679705b72";
-const raviGitSha = "de9999d3957f";
+const raviRegistryHash = "sha256:707ea551092450ba0e21455b6b44bef15dba244878fb8c66c9fc2551ed69c566";
+const raviGitSha = "9da1b62ab713";

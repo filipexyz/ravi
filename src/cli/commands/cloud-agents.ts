@@ -12,13 +12,25 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { z } from "zod";
 
+import { dbMarkCloudChatQuestionAnswered } from "../../cloud-agents/chat-db.js";
+import { currentTurnPerson } from "../../cloud-agents/chat-people.js";
 import type { CloudAgentsClient } from "../../cloud-agents/client.js";
 import { isCloudCron, isCloudTimezone } from "../../cloud-agents/definition.js";
+import { prepareCloudRunFiles } from "../../cloud-agents/run-inputs.js";
+import {
+  bindCloudThread,
+  type CloudChatSource,
+  type CloudThreadDeps,
+  editCloudThreadRoot,
+  openCloudThreadRoot,
+  planCloudThread,
+} from "../../cloud-agents/thread-binding.js";
 import {
   isTerminalCloudRunStatus,
   type CloudAgent,
   type CloudRun,
   type CloudRunEvent,
+  type CloudRunStartBody,
   type CloudSchedule,
 } from "../../cloud-agents/types.js";
 import { isOperatorOwnTurn } from "../../library/turn.js";
@@ -35,6 +47,7 @@ import {
   cloudApprovalReturnSchema,
   cloudCredentialReturnSchema,
   cloudPaginationReturnSchema,
+  cloudQuestionReturnSchema,
   cloudRunReturnSchema,
   cloudScheduleReturnSchema,
   formatDuration,
@@ -50,7 +63,8 @@ import {
   type OpenCloudAgentsSession,
 } from "../cloud-agents-contract.js";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
-import { runtimeLibraryCaller } from "../library-contract.js";
+import { getContext } from "../context.js";
+import { runtimeLibraryCaller, runtimeLibrarySession } from "../library-contract.js";
 import { readNonInteractiveSecret } from "../secret-input.js";
 
 export interface CloudAgentsCommandDeps {
@@ -63,6 +77,60 @@ export interface CloudAgentsCommandDeps {
   operatorOwnTurn?: () => boolean;
   /** Default timezone of a new schedule. */
   localTimezone?: () => string;
+  /** The agent session this call runs in and the chat its turn came from; null in a terminal. */
+  chatContext?: () => CloudCliChatContext | null;
+  /** The turn's person (their contact and name), the run's person in a bound thread. */
+  turnPerson?: () => { contactId: string | null; name: string | null };
+  /** Reads a `--file` and its size (tests replace them). */
+  readFile?: (path: string) => Uint8Array;
+  fileSize?: (path: string) => number | null;
+  /** How the run card reaches the chat (tests replace it). */
+  threadDeps?: CloudThreadDeps;
+}
+
+export interface CloudCliChatContext {
+  sessionName: string;
+  source: CloudChatSource | null;
+  /** The turn's working directory (relative `--file` paths). */
+  cwd: string | null;
+}
+
+function defaultChatContext(): CloudCliChatContext | null {
+  const session = runtimeLibrarySession();
+  if (!session?.name) return null;
+  const context = getContext();
+  return {
+    sessionName: session.name,
+    source: context?.source ?? null,
+    cwd: typeof context?.cwd === "string" && context.cwd ? context.cwd : null,
+  };
+}
+
+type CloudDeliveryBody = NonNullable<CloudRunStartBody["delivery"]>;
+
+/** Where a run or schedule delivers: this session when inside one, nowhere with `--no-deliver`. */
+function deliveryFor(chat: CloudCliChatContext | null, noDeliver: boolean | undefined): CloudDeliveryBody | undefined {
+  if (noDeliver) return { kind: "none" };
+  if (!chat) return undefined;
+  const source = chat.source;
+  return {
+    kind: "session",
+    sessionName: chat.sessionName,
+    ...(source
+      ? {
+          chat: {
+            channel: source.channel.slice(0, 40),
+            chatId: source.chatId.slice(0, 300),
+            threadId: source.threadId ?? null,
+            instanceId: source.instanceId ?? null,
+          },
+        }
+      : {}),
+  };
+}
+
+function formatBrl(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value) ? `R$ ${value.toFixed(2)}` : "-";
 }
 
 function printJson(payload: unknown): void {
@@ -76,6 +144,8 @@ function defaultsOf(deps: CloudAgentsCommandDeps) {
     inAgentRuntime: deps.inAgentRuntime ?? (() => runtimeLibraryCaller() !== null),
     operatorOwnTurn: deps.operatorOwnTurn ?? (() => isOperatorOwnTurn()),
     localTimezone: deps.localTimezone ?? (() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"),
+    chatContext: deps.chatContext ?? defaultChatContext,
+    turnPerson: deps.turnPerson ?? currentTurnPerson,
   };
 }
 
@@ -151,7 +221,22 @@ function printRun(run: CloudRun): void {
   console.log(
     `  Tokens:  in ${run.tokens.input}, out ${run.tokens.output}, cache read ${run.tokens.cacheRead}, cache write ${run.tokens.cacheWrite}`,
   );
+  if (typeof run.costBrl === "number" || typeof run.chargedBrl === "number") {
+    const charged = typeof run.chargedBrl === "number" ? `, charged ${formatBrl(run.chargedBrl)} in credits` : "";
+    console.log(`  In BRL:  ${formatBrl(run.costBrl)}${charged}`);
+  }
+  if (run.delivery)
+    console.log(`  Delivery: ${deliveryLine(run.delivery)}${run.deliveredAt ? `, delivered ${run.deliveredAt}` : ""}`);
+  if (run.threadKey) console.log(`  Thread:  ${run.threadKey}`);
+  if (run.outcome) {
+    console.log(
+      `  Outcome: ${run.outcome.lastResult ?? "not evaluated yet"} after ${run.outcome.iterations} of ${run.outcome.maxIterations} iterations`,
+    );
+    if (run.outcome.feedback) console.log(`    ${run.outcome.feedback.slice(0, 300)}`);
+  }
+  for (const file of run.files ?? []) console.log(`  Input:   ${file.name} (${file.size} bytes)`);
   if (run.error) console.log(`  Error:   ${run.error.code} ${run.error.message}`);
+  for (const question of run.questions ?? []) printQuestion(run, question);
   for (const approval of run.approvals) {
     console.log(
       `  Approval ${approval.id}: ${approval.status} ${approval.server ? `${approval.server}/` : ""}${approval.tool}`,
@@ -164,6 +249,22 @@ function printRun(run: CloudRun): void {
   for (const output of run.outputs) console.log(`  Output:  ${output.name} (${output.size} bytes)`);
   if (run.url) console.log(`  Console: ${run.url}`);
   if (run.result) console.log(`\n${run.result}`);
+}
+
+function deliveryLine(delivery: NonNullable<CloudRun["delivery"]>): string {
+  if (delivery.kind === "session") return `session ${delivery.sessionName ?? "-"}`;
+  if (delivery.kind === "page_room") return `page chat room ${delivery.roomId ?? "-"}`;
+  return "none";
+}
+
+function printQuestion(run: CloudRun, question: NonNullable<CloudRun["questions"]>[number]): void {
+  console.log(`  Question ${question.id}: ${question.status} ${question.question.replace(/\s+/g, " ").slice(0, 200)}`);
+  for (const [index, option] of question.options.entries()) console.log(`    ${index + 1}. ${option.slice(0, 120)}`);
+  if (question.status === "pending") {
+    console.log(`    Answer:  ravi cloud runs answer ${run.id} ${question.id} "<answer>" --execute`);
+  } else if (question.answer) {
+    console.log(`    Answered: ${question.answer.replace(/\s+/g, " ").slice(0, 200)}`);
+  }
 }
 
 function scheduleLine(schedule: CloudSchedule): string {
@@ -579,17 +680,87 @@ a person's approval (unless the agent was deployed with writes: auto). It stops
 at its budget (default the agent's, US$ 5 unless agent.json says otherwise).
 An agent never deployed in the project is deployed first.
 
+INSIDE A CONVERSATION
+  Started from an agent's session, the run reports back to it: its result
+  (with the cost), the approvals it waits on and the questions it asks come to
+  this conversation. Only the run's person approves or answers: on Slack with
+  private Approve/Deny buttons, elsewhere by replying "aprovar <código>" or
+  "negar <código>". --no-deliver keeps the result in the Console only.
+  --bind-thread (a Slack thread or a WhatsApp group) also makes the
+  conversation the run's: a run card shows its status, and the run's person
+  talks to the run there (on WhatsApp, starting with @run or replying to the card).
+
 EXAMPLES
   ravi cloud runs start triage "Summarize yesterday's open tickets" --project clinica            # plan (exit 3)
   ravi cloud runs start triage "Summarize yesterday's open tickets" --project clinica --execute
   ravi cloud runs start dev-helper "Fix the flaky test" --repo acme/api@dev --budget 10 --execute
+  ravi cloud runs start analyst "Compare the two quotes" --file quote-a.pdf --file quote-b.pdf --execute
+  ravi cloud runs start writer "Draft the release notes" --outcome "Covers every merged PR" --max-iterations 3 --execute
 
 NEXT
   ravi cloud runs follow <run>        # live events until it ends
   ravi cloud runs approve <run> <approval> --execute
+  ravi cloud runs answer <run> <question> "<answer>" --execute
 `;
 
 const runPayloadSchema = z.object({ success: z.literal(true), run: cloudRunReturnSchema }).strict();
+
+const startPayloadSchema = z
+  .object({
+    success: z.literal(true),
+    run: cloudRunReturnSchema,
+    /** The conversation bound to the run (`--bind-thread`). */
+    thread: z
+      .object({ threadKey: z.string(), channel: z.enum(["slack", "whatsapp"]), cardMessageId: z.string().nullable() })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+const OUTCOME_RUBRIC_MAX = 8_000;
+const ROWS_VIEW_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+
+function parseOutcome(
+  op: string,
+  rubric: string | undefined,
+  maxIterations: string | undefined,
+  asJson?: boolean,
+): CloudRunStartBody["outcome"] | undefined {
+  if (rubric === undefined) {
+    if (maxIterations !== undefined) usageError(op, "--max-iterations goes with --outcome.", asJson);
+    return undefined;
+  }
+  const text = rubric.trim();
+  if (!text || text.length > OUTCOME_RUBRIC_MAX) {
+    usageError(op, `--outcome takes a rubric of 1-${OUTCOME_RUBRIC_MAX} characters.`, asJson);
+  }
+  if (maxIterations === undefined) return { rubric: text };
+  const iterations = Number(maxIterations);
+  if (!Number.isInteger(iterations) || iterations < 1 || iterations > 5) {
+    usageError(op, "--max-iterations must be an integer from 1 to 5.", asJson);
+  }
+  return { rubric: text, maxIterations: iterations };
+}
+
+function parseRows(
+  op: string,
+  viewId: string | undefined,
+  limit: string | undefined,
+  asJson?: boolean,
+): CloudRunStartBody["rows"] | undefined {
+  if (viewId === undefined) {
+    if (limit !== undefined) usageError(op, "--rows-limit goes with --rows-view.", asJson);
+    return undefined;
+  }
+  const id = viewId.trim();
+  if (!ROWS_VIEW_PATTERN.test(id)) usageError(op, "--rows-view takes a Base view id.", asJson);
+  if (limit === undefined) return { viewId: id };
+  const rows = Number(limit);
+  if (!Number.isInteger(rows) || rows < 1 || rows > 500) {
+    usageError(op, "--rows-limit must be an integer from 1 to 500.", asJson);
+  }
+  return { viewId: id, limit: rows };
+}
 
 @Group({
   name: "cloud.runs",
@@ -611,7 +782,7 @@ export class CloudRunsCommands {
     risk: "high",
     requiresConfirmation: true,
   })
-  @Returns(runPayloadSchema)
+  @Returns(startPayloadSchema)
   async start(
     @Arg("agent", { description: "Library agent slug, or a cloud agent id or name" }) agentRef: string,
     @Arg("prompt", { description: "What the agent should do" }) prompt: string,
@@ -622,6 +793,25 @@ export class CloudRunsCommands {
     project?: string,
     @Option({ flags: "--idempotency-key <key>", description: "Same key, same run: a retry never starts a second run" })
     idempotencyKey?: string,
+    @Option({
+      flags: "--file <path...>",
+      description: "A file the run reads at /mnt/session/inputs/<name>, repeatable (10 files, 3 MB in all)",
+    })
+    files?: string[],
+    @Option({ flags: "--outcome <rubric>", description: "What the result must satisfy; the run revises until it does" })
+    outcome?: string,
+    @Option({ flags: "--max-iterations <n>", description: "Revisions for --outcome (1-5, default 1)" })
+    maxIterations?: string,
+    @Option({ flags: "--rows-view <id>", description: "Work through the rows of this Base view (needs a budget)" })
+    rowsView?: string,
+    @Option({ flags: "--rows-limit <n>", description: "How many rows of --rows-view (1-500)" }) rowsLimit?: string,
+    @Option({
+      flags: "--bind-thread",
+      description: "Make this Slack thread or WhatsApp group the run's conversation (run card, replies go to the run)",
+    })
+    bindThread?: boolean,
+    @Option({ flags: "--no-deliver", description: "Do not bring the result back to this conversation" })
+    noDeliver?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--execute", description: "Start the run (without it, print the plan and exit 3)" })
     execute?: boolean,
@@ -636,6 +826,27 @@ export class CloudRunsCommands {
     if (key !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/.test(key)) {
       usageError(op, "--idempotency-key must be 8-128 characters of letters, digits, '.', '_', ':' and '-'.", asJson);
     }
+    const outcomeBody = parseOutcome(op, outcome, maxIterations, asJson);
+    const rows = parseRows(op, rowsView, rowsLimit, asJson);
+    const chat = d.chatContext();
+    const delivery = deliveryFor(chat, noDeliver);
+    let plan: ReturnType<typeof planCloudThread> | null = null;
+    if (bindThread) {
+      if (noDeliver) usageError(op, "--bind-thread brings the run to this conversation; drop --no-deliver.", asJson);
+      plan = planCloudThread(chat?.source);
+      if ("error" in plan) usageError(op, plan.error, asJson);
+    }
+    const threadPlan = plan && !("error" in plan) ? plan : null;
+    const inputs =
+      files && files.length > 0
+        ? prepareCloudRunFiles(files, {
+            cwd: chat?.cwd ?? process.cwd(),
+            insideCwdOnly: d.inAgentRuntime() && !d.operatorOwnTurn(),
+            ...(this.deps.readFile ? { readFile: this.deps.readFile } : {}),
+            ...(this.deps.fileSize ? { fileSize: this.deps.fileSize } : {}),
+          })
+        : null;
+    if (typeof inputs === "string") usageError(op, inputs, asJson);
     return withCloudAgentsContract(
       op,
       asJson,
@@ -654,27 +865,115 @@ export class CloudRunsCommands {
               budgetUsd: budgetUsd ?? deployed?.config.budgetUsd ?? null,
               repositories: (repositories ?? []).map((entry) => entry.repo),
               promptChars: text.length,
+              files: inputs?.summary ?? [],
+              outcome: outcomeBody
+                ? { rubricChars: outcomeBody.rubric.length, maxIterations: outcomeBody.maxIterations ?? 1 }
+                : null,
+              rows: rows ?? null,
+              delivery: delivery
+                ? { kind: delivery.kind, ...(delivery.sessionName ? { sessionName: delivery.sessionName } : {}) }
+                : null,
+              thread: threadPlan
+                ? { channel: threadPlan.channel, threadKey: threadPlan.threadKey ?? "a new thread on the run card" }
+                : null,
               effect: `start a paid cloud run of ${agent} with the organization's Anthropic key${deployed ? "" : " (deploys the latest Library version first)"}`,
             },
             { asJson },
           );
         }
-        const run = await session.client.startRun({
-          project: projectRef,
-          agent,
+        const person = threadPlan ? d.turnPerson() : null;
+        const card = {
+          runId: "",
+          agentName: deployed?.name ?? agent,
           prompt: text,
-          trigger: d.inAgentRuntime() ? "agent" : "manual",
-          ...(budgetUsd !== undefined ? { budgetUsd } : {}),
-          ...(repositories ? { repositories } : {}),
-          ...(key ? { idempotencyKey: key } : {}),
-        });
-        const payload = { success: true as const, run };
+          status: "starting",
+          personName: person?.name ?? null,
+        };
+        let threadKey = threadPlan?.threadKey ?? null;
+        let rootCard: string | null = null;
+        if (threadPlan?.channel === "slack" && !threadKey) {
+          try {
+            const root = await openCloudThreadRoot(threadPlan, card, this.deps.threadDeps);
+            threadKey = root.threadKey;
+            rootCard = root.cardMessageId;
+          } catch (error) {
+            contractFail(
+              op,
+              "CLOUD_THREAD_CARD_FAILED",
+              `Could not post the run card in this chat: ${(error instanceof Error ? error.message : String(error)).slice(0, 200)}`,
+              {
+                asJson,
+                details: { suggestedAction: "Start it without --bind-thread, or from inside a Slack thread." },
+              },
+            );
+          }
+        }
+        let run: CloudRun;
+        try {
+          run = await session.client.startRun({
+            project: projectRef,
+            agent,
+            prompt: text,
+            trigger: d.inAgentRuntime() ? "agent" : "manual",
+            ...(budgetUsd !== undefined ? { budgetUsd } : {}),
+            ...(repositories ? { repositories } : {}),
+            ...(key ? { idempotencyKey: key } : {}),
+            ...(delivery ? { delivery } : {}),
+            ...(threadKey ? { threadKey } : {}),
+            ...(inputs ? { files: inputs.files } : {}),
+            ...(outcomeBody ? { outcome: outcomeBody } : {}),
+            ...(rows ? { rows } : {}),
+          });
+        } catch (error) {
+          if (threadPlan?.channel === "slack" && rootCard) {
+            await editCloudThreadRoot(
+              threadPlan,
+              rootCard,
+              { ...card, status: "failed", summary: "A run não começou." },
+              this.deps.threadDeps,
+            ).catch(() => {});
+          }
+          throw error;
+        }
+        const thread =
+          threadPlan && threadKey
+            ? await bindCloudThread(
+                {
+                  plan: threadPlan,
+                  threadKey,
+                  cardMessageId: rootCard,
+                  runId: run.id,
+                  status: run.status,
+                  agentName: run.agentName,
+                  prompt: text,
+                  sessionName: chat?.sessionName ?? null,
+                  actorUserId: run.actor.id,
+                  actorContactId: person?.contactId ?? null,
+                  personName: person?.name ?? run.actor.name,
+                },
+                this.deps.threadDeps,
+              )
+            : null;
+        const payload = {
+          success: true as const,
+          run,
+          ...(thread
+            ? { thread: { threadKey: thread.threadKey, channel: thread.channel, cardMessageId: thread.cardMessageId } }
+            : {}),
+        };
         if (asJson) {
           printJson(payload);
         } else {
           console.log(
             `✓ Started cloud run ${run.id} of ${run.agentName} (${run.status}), budget ${formatUsd(run.budgetUsd)}`,
           );
+          if (delivery?.kind === "session")
+            console.log(`  Reports back to this conversation (${delivery.sessionName}).`);
+          if (thread) {
+            console.log(
+              `  Bound to this ${thread.channel === "slack" ? "Slack thread" : "WhatsApp group"}: ${thread.actorName ?? "the run's person"} talks to the run here${thread.channel === "whatsapp" ? " (start with @run or reply to the card)" : ""}.`,
+            );
+          }
           console.log(`  Follow: ravi cloud runs follow ${run.id}`);
           if (run.url) console.log(`  Console: ${run.url}`);
         }
@@ -815,6 +1114,11 @@ export class CloudRunsCommands {
               console.log(`    Approve: ravi cloud runs approve ${run.id} ${approval.id} --execute`);
               console.log(`    Deny:    ravi cloud runs deny ${run.id} ${approval.id}`);
             }
+            for (const question of run.questions ?? []) {
+              if (question.status !== "pending" || printed.has(question.id)) continue;
+              printed.add(question.id);
+              printQuestion(run, question);
+            }
           }
           if (isTerminalCloudRunStatus(run.status)) {
             await drain();
@@ -906,7 +1210,7 @@ export class CloudRunsCommands {
 
   @Command({
     name: "approve",
-    description: "Approve a write a cloud run is waiting on. Requires --execute.",
+    description: "Approve a write a cloud run is waiting on (only the run's person can). Requires --execute.",
   })
   @CommandAccess({
     kind: "mutate",
@@ -925,18 +1229,10 @@ export class CloudRunsCommands {
     @Option({ flags: "--execute", description: "Approve (without it, print the plan and exit 3)" }) execute?: boolean,
   ) {
     const op = "cloud runs approve";
-    const d = defaultsOf(this.deps);
     const id = requireText(op, "<run>", runId, asJson);
     const approvalRef = requireText(op, "<approval>", approvalId, asJson);
-    if (d.inAgentRuntime() && !d.operatorOwnTurn()) {
-      contractFail(op, "CLOUD_APPROVAL_NOT_OPERATOR", "Only the operator approves a cloud run's writes.", {
-        asJson,
-        exitCode: CONTRACT_EXIT_POLICY,
-        details: {
-          suggestedAction: `Ask the operator to run: ravi cloud runs approve ${id} ${approvalRef} --execute (or approve it in the Console)`,
-        },
-      });
-    }
+    // Only the run's person approves: in a person's turn this call acts as them
+    // (their `ravi link`), and the Console refuses anyone else.
     return withCloudAgentsContract(
       op,
       asJson,
@@ -1007,7 +1303,8 @@ export class CloudRunsCommands {
           tool: approval.tool,
           server: approval.server,
           inputPreview: approval.inputPreview ? approval.inputPreview.slice(0, 200) : null,
-          effect: "the cloud run performs this write as you",
+          person: current.actor.name ?? current.actor.id,
+          effect: `the cloud run performs this write as ${current.actor.name ?? "its person"}; only the run's person can approve it`,
         },
         { asJson },
       );
@@ -1027,6 +1324,101 @@ export class CloudRunsCommands {
     else
       console.log(`✓ ${decision === "approve" ? "Approved" : "Denied"} ${approval.tool} on ${run.id} (${run.status})`);
     return payload;
+  }
+
+  @Command({
+    name: "answer",
+    description: "Answer a question a cloud run asked its person (only that person can). Requires --execute.",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "cloud.agents",
+    action: "runs.answer",
+    risk: "high",
+    requiresConfirmation: true,
+  })
+  @Returns(
+    z.object({ success: z.literal(true), run: cloudRunReturnSchema, question: cloudQuestionReturnSchema }).strict(),
+  )
+  async answer(
+    @Arg("run", { description: "Run id" }) runId: string,
+    @Arg("question", { description: "Question id (ravi cloud runs show <run>)" }) questionId: string,
+    @Arg("text", { description: "The answer, in the person's words" }) text: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--execute", description: "Send the answer (without it, print the plan and exit 3)" })
+    execute?: boolean,
+  ) {
+    const op = "cloud runs answer";
+    const id = requireText(op, "<run>", runId, asJson);
+    const questionRef = requireText(op, "<question>", questionId, asJson);
+    const answerText = requireText(op, "<text>", text, asJson);
+    if (answerText.length > 4_000) usageError(op, "<text> takes at most 4000 characters.", asJson);
+    return withCloudAgentsContract(
+      op,
+      asJson,
+      async () => {
+        const session = await sessionFor(this.deps, undefined, false);
+        const current = await session.client.getRun(id);
+        const questions = current.questions ?? [];
+        const question = questions.find((entry) => entry.id === questionRef);
+        if (!question) {
+          contractFail(
+            op,
+            "CLOUD_QUESTION_NOT_FOUND",
+            `Run ${current.id} has no question ${questionRef.slice(0, 80)}.`,
+            {
+              asJson,
+              details: {
+                suggestedAction: `Read the run's questions with: ravi cloud runs show ${current.id} --json`,
+                suggestions: suggestSimilar(
+                  questionRef,
+                  questions.map((entry) => entry.id),
+                ),
+              },
+            },
+          );
+        }
+        if (question.status !== "pending") {
+          contractFail(op, "CLOUD_QUESTION_NOT_PENDING", `Question ${question.id} is already ${question.status}.`, {
+            asJson,
+            exitCode: CONTRACT_EXIT_ERROR,
+            details: { suggestedAction: `Read the run with: ravi cloud runs show ${current.id}` },
+          });
+        }
+        if (execute !== true) {
+          contractDryRun(
+            op,
+            {
+              run: current.id,
+              question: question.id,
+              asked: question.question.slice(0, 200),
+              answerChars: answerText.length,
+              person: current.actor.name ?? current.actor.id,
+              effect: `the run continues with this answer, as ${current.actor.name ?? "its person"}; only the run's person can answer`,
+            },
+            { asJson },
+          );
+        }
+        const run =
+          (await session.client.answerQuestion(current.id, question.id, answerText)) ??
+          (await session.client.getRun(current.id));
+        try {
+          dbMarkCloudChatQuestionAnswered(question.id);
+        } catch {
+          // The local note only keeps a bound thread from answering it again.
+        }
+        const after = (run.questions ?? []).find((entry) => entry.id === question.id) ?? {
+          ...question,
+          status: "answered" as const,
+          answer: answerText,
+        };
+        const payload = { success: true as const, run, question: after };
+        if (asJson) printJson(payload);
+        else console.log(`✓ Answered ${question.id} on ${run.id} (${run.status})`);
+        return payload;
+      },
+      { notFoundCode: "CLOUD_RUN_NOT_FOUND" },
+    );
   }
 
   @Command({ name: "outputs", description: "List a cloud run's output files, or download them with --download <dir>" })
@@ -1151,7 +1543,10 @@ export class CloudRunsCommands {
 
 const SCHEDULES_HELP_AFTER = `
 Schedules start cloud runs on a cron, as the person who scheduled them, with
-the schedule's prompt (default: the agent's HEARTBEAT.md) and budget.
+the schedule's prompt (default: the agent's HEARTBEAT.md) and budget. Added or
+updated from an agent's session, each run reports back to that conversation
+(its result with the cost, approvals and questions); --no-deliver keeps the
+results in the Console only.
 
 BRAKE
   add and update are braked (exit 3 without --execute) when the schedule ends
@@ -1241,12 +1636,15 @@ export class CloudSchedulesCommands {
     @Option({ flags: "--disabled", description: "Create it disabled (applies at once)" }) disabled?: boolean,
     @Option({ flags: "--project <project>", description: "Console project slug (default: the cwd's project)" })
     project?: string,
+    @Option({ flags: "--no-deliver", description: "Do not bring each run's result back to this conversation" })
+    noDeliver?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--execute", description: "Create an enabled schedule (without it, print the plan and exit 3)" })
     execute?: boolean,
   ) {
     const op = "cloud schedules add";
     const d = defaultsOf(this.deps);
+    const delivery = deliveryFor(d.chatContext(), noDeliver);
     const ref = requireText(op, "<agent>", agentRef, asJson);
     const cronExpr = requireText(op, "--cron", cron, asJson);
     if (!isCloudCron(cronExpr)) usageError(op, "--cron must have five fields (minute hour day month weekday).", asJson);
@@ -1275,6 +1673,9 @@ export class CloudSchedulesCommands {
               promptSource: promptText === null ? "HEARTBEAT.md" : "custom",
               promptChars: promptText?.length ?? null,
               enabled,
+              delivery: delivery
+                ? { kind: delivery.kind, ...(delivery.sessionName ? { sessionName: delivery.sessionName } : {}) }
+                : null,
               effect: "start a paid cloud run on every tick, as you",
             },
             { asJson },
@@ -1288,6 +1689,7 @@ export class CloudSchedulesCommands {
           enabled,
           ...(promptText !== null ? { prompt: promptText } : {}),
           ...(budgetUsd !== undefined ? { budgetUsd } : {}),
+          ...(delivery ? { delivery } : {}),
         });
         const payload = { success: true as const, schedule };
         if (asJson) printJson(payload);
@@ -1326,6 +1728,8 @@ export class CloudSchedulesCommands {
     @Option({ flags: "--disable", description: "Disable it (applies at once)" }) disable?: boolean,
     @Option({ flags: "--project <project>", description: "Console project slug (default: the cwd's project)" })
     project?: string,
+    @Option({ flags: "--no-deliver", description: "Stop bringing each run's result back to a conversation" })
+    noDeliver?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({
       flags: "--execute",
@@ -1334,6 +1738,7 @@ export class CloudSchedulesCommands {
     execute?: boolean,
   ) {
     const op = "cloud schedules update";
+    const d = defaultsOf(this.deps);
     const id = requireText(op, "<id>", scheduleId, asJson);
     if (enable && disable) usageError(op, "Pass --enable or --disable, not both.", asJson);
     if (prompt !== undefined && heartbeat) usageError(op, "Pass --prompt or --heartbeat, not both.", asJson);
@@ -1343,6 +1748,7 @@ export class CloudSchedulesCommands {
       prompt?: string | null;
       budgetUsd?: number;
       enabled?: boolean;
+      delivery?: CloudDeliveryBody;
     } = {};
     if (cron !== undefined) {
       if (!isCloudCron(cron)) usageError(op, "--cron must have five fields (minute hour day month weekday).", asJson);
@@ -1358,14 +1764,18 @@ export class CloudSchedulesCommands {
     if (budgetUsd !== undefined) body.budgetUsd = budgetUsd;
     if (enable) body.enabled = true;
     if (disable) body.enabled = false;
+    if (noDeliver) body.delivery = { kind: "none" };
     if (Object.keys(body).length === 0) {
       usageError(
         op,
         "Nothing to change.",
         asJson,
-        "Pass --cron, --timezone, --prompt, --heartbeat, --budget, --enable or --disable",
+        "Pass --cron, --timezone, --prompt, --heartbeat, --budget, --enable, --disable or --no-deliver",
       );
     }
+    // A change made from an agent's session also points the runs' results at it.
+    const sessionDelivery = noDeliver ? undefined : deliveryFor(d.chatContext(), false);
+    if (sessionDelivery) body.delivery = sessionDelivery;
     return withCloudAgentsContract(
       op,
       asJson,
@@ -1392,6 +1802,12 @@ export class CloudSchedulesCommands {
               timezone: body.timezone ?? current.timezone,
               budgetUsd: body.budgetUsd ?? current.budgetUsd,
               enabled: enabledAfter,
+              delivery: body.delivery
+                ? {
+                    kind: body.delivery.kind,
+                    ...(body.delivery.sessionName ? { sessionName: body.delivery.sessionName } : {}),
+                  }
+                : null,
               effect: "the schedule keeps starting paid cloud runs, as you",
             },
             { asJson },

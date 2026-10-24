@@ -1,17 +1,18 @@
 ---
 title: Cloud agents
-description: Run a Library agent on Anthropic's managed agents with your organization's own key, from the CLI or from a task.
+description: Run a Library agent in the cloud as the person who asks, with results back in their chat, approvals, secrets, triggers, credits in BRL and workers on your own machine.
 icon: cloud
 ---
 
-A cloud agent is an agent definition from your [Library](/organizations/machines#share-skills-and-agents-across-the-organization) that runs in the cloud instead of on your machine. The Console compiles it into an Anthropic managed agent and runs it with your organization's Anthropic API key. The Console keeps the key (encrypted), the budgets, the approvals and the roles; `ravi cloud` drives it with your `ravi login` session.
+A cloud agent is an agent definition from your [Library](/organizations/machines#share-skills-and-agents-across-the-organization) that runs in the cloud instead of on your machine. The Console compiles it into an Anthropic managed agent and runs it with your organization's Anthropic API key, or with Ravi credits paid in BRL. The Console keeps the key (encrypted), secrets, budgets, caps, approvals and roles; `ravi cloud` drives it with your `ravi login` session.
 
 ```text
 ravi agents publish triage   →  Library agent definition
-ravi cloud agents deploy     →  managed agent + environment on Anthropic
-ravi cloud runs start        →  a paid run, with a budget
-  → waits for approval before a write outside its container
-  → result, cost, files → ravi cloud runs show / follow / outputs
+ravi cloud agents deploy     →  managed agent + environment
+ravi cloud runs start        →  a paid run, with a budget, as you
+  → waits for your approval before a write outside its container
+  → may ask you a question (ask_human)
+  → result, cost (US$ and R$), files → back in the chat where it started
 ```
 
 <Note>
@@ -20,7 +21,7 @@ You need a `ravi login` session, a Console project (`--project <slug>`, or your 
 
 ## Braking
 
-Everything that spends money, creates provider objects or sends a secret is braked: without `--execute` the command prints its plan and exits 3, and nothing is sent. Stopping, denying, archiving, removing and disabling apply at once. Every command takes `--json`.
+Everything that spends money, creates provider objects, sends a secret or lets an agent act on your machine is braked: without `--execute` the command prints its plan and exits 3, and nothing is sent. Stopping, denying, archiving, removing, disabling and lowering a cap apply at once. Every command takes `--json`.
 
 | Command | Braked |
 |---|---|
@@ -29,9 +30,20 @@ Everything that spends money, creates provider objects or sends a secret is brak
 | `ravi cloud runs start <agent> "<prompt>"` | yes |
 | `ravi cloud runs reply <run> "<text>"` | yes |
 | `ravi cloud runs approve <run> <approval>` | yes |
+| `ravi cloud runs answer <run> <question> "<answer>"` | yes |
 | `ravi cloud schedules add` and `update` when the schedule ends up enabled | yes |
+| `ravi cloud triggers create` and `update` when the trigger ends up enabled | yes |
+| `ravi cloud secrets set <NAME> --stdin` | yes (terminal only) |
+| `ravi cloud webhook set --stdin` | yes (terminal only) |
+| `ravi cloud credits topup <amount>` | yes |
+| `ravi cloud settings set` when it can raise spending | yes |
+| `ravi cloud agents approve <agent>` | yes |
+| `ravi cloud agents cap <agent> <usd>` when it raises or removes the cap | yes |
+| `ravi cloud agents memory-reset <agent>` | yes |
+| `ravi cloud catalog install <entry>`, `catalog packs install <pack>` | yes |
+| `ravi cloud worker enable` | yes (terminal only) |
 | `ravi tasks dispatch <task> --agent <id> --cloud` | yes |
-| `key remove`, `agents archive`, `runs stop`, `runs deny`, `runs outputs`, `schedules remove`, `--disable` | no |
+| `key remove`, `agents archive`, `runs stop`, `runs deny`, `runs outputs`, `schedules remove`, `triggers remove`, `triggers test`, `secrets remove`, `webhook remove`, `worker disable`, `worker key set`, `worker key remove`, `--disable` | no |
 
 ## Set the organization's key
 
@@ -59,14 +71,27 @@ ravi cloud runs stop <run>
 
 - `--budget <usd>` (0.5 to 200) caps one run; without it the agent's budget applies (5 by default). A run that reaches it ends `budget_exceeded`.
 - `--repo owner/name[@branch]` mounts a repository the organization's GitHub App covers; repeat it for more.
+- `--file <path>` (repeatable, up to 10 files and 3 MB in all) uploads an input; the run reads it at `/mnt/session/inputs/<name>`. Files are deleted with the run.
+- `--outcome "<rubric>"` with `--max-iterations <n>` (1 to 5) makes the run check its result against the rubric and revise until it passes.
+- `--rows-view <id>` with `--rows-limit <n>` (up to 500) works through the rows of a Base view with the `ravi` tools; it needs a budget.
 - `--idempotency-key <key>` makes a retry return the same run instead of starting a second one.
 - `runs follow --json` prints one event per line and ends with `{"type":"run","run":{...}}`.
 
-Run statuses: `starting`, `running`, `waiting_approval`, `completed`, `failed`, `stopped`, `budget_exceeded`.
+Run statuses: `starting`, `running`, `waiting_approval`, `waiting_input`, `completed`, `failed`, `stopped`, `budget_exceeded`.
+
+A run acts as the person who started it (or who created its schedule or trigger): the Console checks that person's access for every Ravi tool it calls.
+
+## Results in the chat
+
+A run started inside an agent's conversation (Slack, WhatsApp, the CLI session) brings its result back to that conversation when it ends: the result quoted as untrusted text, the cost in US$ and R$, and its files. `--no-deliver` keeps it in the Console only. Runs started in the Console's UI stay there; runs started from a page chat answer in that room.
+
+### Thread = run
+
+From a Slack thread, `ravi cloud runs start ... --bind-thread --execute` binds the thread to the run: the thread's root becomes the run card, updated on every status change, and later replies from the run's person go to the run instead of the local agent. In a WhatsApp group bound to a run, only messages from the run's person that start with `@run`, or reply to the run card, go to the run. The binding ends with the run.
 
 ## Approvals
 
-With `tools.writes: "ask"` (the default), a run pauses in `waiting_approval` before a write outside its container, such as an MCP tool that changes something. Approving makes the run act as you.
+With `tools.writes: "ask"` (the default), a run pauses in `waiting_approval` before a write outside its container, such as a Ravi tool that changes something. Some writes always ask, even with `writes: "auto"`: shipping a page, sending mail, notifying someone and posting into a chat.
 
 ```bash
 ravi cloud runs show <run> --json
@@ -74,7 +99,17 @@ ravi cloud runs approve <run> <approval> --execute
 ravi cloud runs deny <run> <approval> --reason "not now"
 ```
 
-An agent turn of someone other than the operator cannot approve. You can also decide in the Console's run page.
+Only the run's person decides. In the chat where the run started, that person gets the request privately in Slack (Approve and Deny buttons only they can use), or is asked to reply `aprovar <code>` or `negar <code>` on WhatsApp; a reply from anyone else does not count. Owners and admins can also decide in the Console's run page.
+
+## Questions (ask_human)
+
+A run can ask its person a question and wait (status `waiting_input`). The question reaches the chat where the run started and the Console inbox. The answer goes back with:
+
+```bash
+ravi cloud runs answer <run> <question> "<answer>" --execute
+```
+
+In a chat bound to the run, the person's next message is the answer. A question nobody answers in 24 hours expires, and the run continues without it. Set `"askHuman": false` in the agent's `tools` to turn it off.
 
 ## Files
 
@@ -84,6 +119,41 @@ ravi cloud runs outputs <run> --download ./out
 ```
 
 Files come through the Console. A download never overwrites an existing file; use an empty folder. Two outputs that would land on one path (also when only the case differs) are refused before anything is written.
+
+## Secrets
+
+Secrets let a run call an API without the value ever entering its container: the Console stores the value encrypted and substitutes it when a request leaves for one of the secret's hosts. An owner or admin sets each one from stdin:
+
+```bash
+ravi cloud secrets set STRIPE_API_KEY --host api.stripe.com --stdin --execute < ~/secrets/stripe
+ravi cloud secrets set CRM_TOKEN --host api.crm.example --project clinica --stdin --execute < ~/secrets/crm
+ravi cloud secrets list
+ravi cloud secrets remove STRIPE_API_KEY
+```
+
+- Names are `A-Z`, `0-9` and `_`, starting with a letter. Each secret is bound to 1 to 10 hosts.
+- Without `--project` a secret is organization-wide; with it, only that project's runs get it.
+- The agent names the secrets it uses in its `cloud` block (`"secrets": ["STRIPE_API_KEY"]`). A run whose agent names a missing secret is refused before it starts (`CLOUD_SECRET_MISSING`).
+- `list` shows names, hosts and the last characters only. Agents never set secrets.
+
+## Triggers
+
+A trigger turns Console events into runs, as the person who created it: Bases rows, approvals and agent columns (`--source bases`), inbound mail (`mail`), meetings ended or transcribed (`meetings`) and page comments (`pages_comments`).
+
+```bash
+ravi cloud triggers create triage --source bases --base pedidos --events row.created --prompt "Triage this request: {{event}}" --project clinica --execute
+ravi cloud triggers list --project clinica
+ravi cloud triggers test <id>
+ravi cloud triggers update <id> --disable
+ravi cloud triggers update <id> --enable --execute
+ravi cloud triggers remove <id>
+```
+
+- The prompt must contain `{{event}}`: that is where the events go, quoted as untrusted data.
+- The Console waits `--batch-window` seconds (default 60) and starts one run with up to 25 events. `--dedupe-window` drops repeats, `--daily-cap` (1 to 200, default 20) limits runs per day, `--budget` sets each run's budget.
+- Rows the trigger's own agent wrote never fire it, so a run never loops.
+- `--deliver-to <session>` sends each result to a session (`none` for no delivery). Inside an agent's conversation the default is that conversation.
+- `test` shows the prompt the trigger would send now, from its pending events or a sample one; it starts no run.
 
 ## Schedules
 
@@ -96,6 +166,86 @@ ravi cloud schedules update <id> --disable
 ravi cloud schedules update <id> --enable --execute
 ravi cloud schedules remove <id>
 ```
+
+`--disabled` creates a schedule turned off, with no brake. Inside a conversation, each tick's result comes back to it (`--no-deliver` turns that off).
+
+## Memory and outcomes
+
+`"memory": "agent"` in the `cloud` block gives the agent one memory store that every run reads and writes; `"person"` gives one store per person. `"outcome": { "rubric": "...", "maxIterations": 3 }` makes every run check its result against the rubric (or pass `--outcome` per run). An owner or admin clears the memory with:
+
+```bash
+ravi cloud agents memory-reset triage --project clinica --execute
+```
+
+## Credits, caps and settings
+
+An organization pays for runs with its own Anthropic key (`byok`, the default) or with Ravi credits in BRL (`credits`). Credits cost the provider's list price converted at the rate shown on every entry, with no markup.
+
+```bash
+ravi cloud credits show
+ravi cloud credits topup 100 --execute
+ravi cloud settings show
+ravi cloud settings set --billing-mode credits --execute
+ravi cloud settings set --monthly-cap 500 --execute
+ravi cloud settings set --monthly-cap 50
+```
+
+- `topup` (R$ 20 to R$ 5,000) creates a Pix charge and prints the payment link and the copy-paste code; the credit posts when the payment clears. In credits mode a run starts only when the balance covers its budget (`CLOUD_CREDITS_INSUFFICIENT`).
+- A monthly cap in US$ pauses spending when the month's runs cross it: schedules and triggers skip and new runs are refused (`CLOUD_MONTHLY_CAP_REACHED`) until the 1st (UTC) or until an admin raises it. Running runs keep their own budget. The organization has one cap (`settings set --monthly-cap`), each agent can have its own:
+
+```bash
+ravi cloud agents cap triage 100 --project clinica --execute
+ravi cloud agents cap triage none --project clinica --execute
+```
+
+Raising or removing a cap, raising `--daily-event-runs` (event runs per day for the organization, 1 to 1000) and switching the billing mode are braked; lowering a cap applies at once.
+
+## Capability approval and the catalog
+
+Deploying computes a manifest of what the agent can do: model, writes, network and hosts, MCP servers, Ravi tool families, secrets, repositories, memory, placement, provider, Office skills, web filters, ask_human and workflows. When an owner or admin deploys, the manifest is approved. Otherwise an agent with writes `auto`, open network, secrets, external MCP servers, a worker placement or the Ravi provider waits in `awaiting_approval` (runs refused with `CLOUD_AGENT_AWAITING_APPROVAL`) until an owner or admin approves it:
+
+```bash
+ravi cloud agents approve triage --project clinica --execute
+```
+
+The plan prints the manifest. A new version whose manifest changes asks again.
+
+The catalog lists agents curated by Ravi, alone or in sector packs from agencies. Installing copies the agent into your Library and deploys it; it waits for an admin's approval unless an admin installed it.
+
+```bash
+ravi cloud catalog list
+ravi cloud catalog install clinic-triage --project clinica --execute
+ravi cloud catalog packs install clinic --project clinica --execute
+```
+
+## Provider webhook
+
+With the provider's webhook registered, the Console syncs a run as soon as it changes instead of on its periodic pass. An owner or admin copies the URL, registers it for session events in the provider console, and stores the signing secret it shows:
+
+```bash
+ravi cloud webhook show
+ravi cloud webhook set --stdin --execute < <file-with-the-secret>
+ravi cloud webhook remove
+```
+
+## Workers on your machine
+
+An agent with `"environment": { "placement": "installation" }` runs its model in the cloud and its tools (bash, files) on a Ravi installation: the one that deployed it, unless the deploy names another. Only owners and admins place an agent on a machine, and the manifest says so. The daemon runs one worker per agent, in `~/.ravi/cloud-workers/<agent>/work`, and heartbeats every 30 seconds; a run starts only when its worker was seen in the last 2 minutes (`CLOUD_WORKER_OFFLINE`).
+
+```bash
+ravi cloud worker enable --execute
+ravi cloud worker list
+ravi cloud worker key set <workerId> --stdin < <file-with-the-environment-key>
+ravi cloud worker disable
+```
+
+- `enable` is braked and terminal only: from then on bash from those agents runs on this machine, as the daemon's user. `disable` stops every worker within 30 seconds and the Console refuses their runs.
+- Each worker needs its environment key, generated in the provider console. `key set` stores it in `~/.ravi/cloud-workers/keys/` (mode 0600); it is never sent to the Ravi Console.
+- `list` shows each worker's Console status, whether its key is here, and what the daemon is doing with it (`running`, `waiting_key`, or `backoff` with the last error). A worker that fails restarts after 30 seconds, then longer.
+
+## Ravi provider (prototype)
+
+`"provider": "ravi"` in the `cloud` block runs the agent with the Ravi runtime in a disposable E2B sandbox, with the organization's model key, for organizations that need zero data retention. It is a prototype, off unless the Console enables it, and it needs the organization's E2B key. The sandbox runs `ravi cloud worker session`: it reads its session from the Console, runs the agent with the Console's `ravi` tools, waits for a person before each write, and uploads the files the agent leaves in `/mnt/session/outputs`. Approvals, questions, results and costs work as above. The agent's tools can read the sandbox's environment, model key included, so the Ravi provider runs only on the organization's own Anthropic key: in credits mode its runs are refused with `CLOUD_AGENT_PROVIDER_UNSUPPORTED`.
 
 ## Run a task in the cloud
 
@@ -120,15 +270,29 @@ The agent's `agent.json` can carry a `cloud` block. `ravi agents publish` valida
     "model": "sonnet",
     "effort": "high",
     "budgetUsd": 5,
+    "monthlyCapUsd": 100,
     "environment": {
       "networking": "limited",
       "allowedHosts": ["api.github.com"],
-      "packages": { "apt": [], "pip": ["pandas"], "npm": [] }
+      "packages": { "apt": [], "pip": ["pandas"], "npm": [] },
+      "placement": "cloud"
     },
     "mcp": { "ravi": true, "servers": [{ "name": "linear", "url": "https://mcp.linear.app/sse" }] },
-    "tools": { "webSearch": false, "writes": "ask" },
+    "tools": {
+      "webSearch": true,
+      "webFetch": true,
+      "web": { "allowedDomains": ["docs.stripe.com"], "blockedDomains": [] },
+      "writes": "ask",
+      "office": ["xlsx", "pdf"],
+      "askHuman": true,
+      "workflows": false
+    },
+    "secrets": ["STRIPE_API_KEY"],
+    "memory": "agent",
+    "outcome": { "rubric": "Every open ticket has an owner and a next step.", "maxIterations": 3 },
     "repositories": [{ "repo": "acme/api", "branch": "main" }],
-    "schedule": { "cron": "0 9 * * 1-5", "timezone": "America/Sao_Paulo" }
+    "schedule": { "cron": "0 9 * * 1-5", "timezone": "America/Sao_Paulo" },
+    "provider": "anthropic"
   }
 }
 ```
@@ -138,13 +302,24 @@ The agent's `agent.json` can carry a `cloud` block. `ravi agents publish` valida
 | `model` | `opus`, `sonnet`, `haiku` or a `claude-*` model id |
 | `effort` | `low`, `medium`, `high`, `xhigh`, `max` |
 | `budgetUsd` | 0.5 to 200 |
+| `monthlyCapUsd` | more than 0, up to 100,000; `null` for none |
 | `environment.networking` | `limited` (only `allowedHosts`, up to 25) or `unrestricted` |
-| `environment.packages` | `apt`, `pip`, `npm`: up to 50 each |
+| `environment.packages` | `apt`, `pip`, `npm`, `cargo`, `gem`, `go`: up to 50 each |
+| `environment.placement` | `cloud` or `installation` (tools on a Ravi worker) |
 | `mcp.servers` | up to 10, `https` only; `ravi` is reserved |
+| `tools.webFetch` | defaults to `webSearch` |
+| `tools.web` | `allowedDomains` or `blockedDomains` (only one of them), up to 50 hosts |
 | `tools.writes` | `ask` (approval before writes) or `auto` |
+| `tools.office` | `xlsx`, `docx`, `pptx`, `pdf`, or `true` for all four: the provider's Office skills |
+| `tools.askHuman` | default `true` |
+| `tools.workflows` | dynamic workflows (many agents in phases); not with the `installation` placement |
+| `secrets` | up to 20 names set with `ravi cloud secrets set` |
+| `memory` | `agent`, `person` or `null` |
+| `outcome` | `rubric` up to 8,000 characters, `maxIterations` 1 to 5 (default 3) |
 | `repositories` | up to 10 `owner/name` with an optional `branch` |
+| `provider` | `anthropic` or `ravi` (prototype) |
 
-The block never carries credentials: keys that look like secrets (token, secret, password, apiKey, authorization, cookie), URLs with a user or a query string, and unknown keys are refused with `CLOUD_AGENT_DEFINITION_INVALID`.
+The block never carries credentials: keys that look like secrets (token, secret, password, apiKey, authorization, cookie, credential), URLs with a user or a query string, and unknown keys are refused with `CLOUD_AGENT_DEFINITION_INVALID`. Secret values live in `ravi cloud secrets`; the block names them only.
 
 ## Errors
 
@@ -156,7 +331,12 @@ The block never carries credentials: keys that look like secrets (token, secret,
 | `CLOUD_CREDENTIAL_MISSING`, `CLOUD_CREDENTIAL_INVALID` | 1 | an owner or admin runs `ravi cloud key set --stdin --execute` |
 | `CLOUD_AGENT_NOT_FOUND` | 1 | `ravi cloud agents list`, then deploy |
 | `CLOUD_AGENT_DEFINITION_INVALID` | 2 | fix the `cloud` block and publish again |
+| `CLOUD_AGENT_AWAITING_APPROVAL` | 3 | an owner or admin runs `ravi cloud agents approve <agent> --execute` |
 | `CLOUD_AGENT_REPOSITORY_UNAVAILABLE` | 1 | add the repository to the organization's GitHub App |
+| `CLOUD_SECRET_MISSING` | 1 | an owner or admin sets it with `ravi cloud secrets set` |
+| `CLOUD_MONTHLY_CAP_REACHED` | 3 | wait for the 1st, or an admin raises the cap |
+| `CLOUD_CREDITS_INSUFFICIENT` | 3 | `ravi cloud credits topup <amount> --execute` |
+| `CLOUD_WORKER_OFFLINE` | 1 | start the daemon of the installation; check `ravi cloud worker list` there |
 | `CLOUD_RUN_NOT_ACTIVE` | 1 | the run already ended |
 | `CLOUD_AGENTS_FORBIDDEN` | 1 | your role does not allow it |
 | `CLOUD_PROVIDER_ERROR` | 1 | retry in a moment |
