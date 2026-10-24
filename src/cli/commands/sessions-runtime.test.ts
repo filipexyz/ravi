@@ -363,15 +363,18 @@ describe("SessionRuntimeCommands", () => {
     expect(output).toContain('"code": "RUNTIME_CONTROL_DISABLED"');
   });
 
-  it("maps a reply timeout to RUNTIME_CONTROL_TIMEOUT (retryable) without raw text", async () => {
+  it("maps a reply timeout to RUNTIME_CONTROL_TIMEOUT without raw text, retryable only for reads", async () => {
     requestReplyError = new Error("Request timeout (15000ms) on ravi.session.runtime.control");
 
-    const error = await captureError(() => new SessionRuntimeCommands().interrupt("dev-main"));
+    const read = await captureError(() => new SessionRuntimeCommands().read("dev-main"));
+    const interrupt = await captureError(() => new SessionRuntimeCommands().interrupt("dev-main"));
 
-    expect(error).toBeInstanceOf(ContractError);
-    expect(error.code).toBe("RUNTIME_CONTROL_TIMEOUT");
-    expect(error.envelope().error.retryable).toBe(true);
-    expect(error.message).not.toContain("ravi.session.runtime.control");
+    expect(read).toBeInstanceOf(ContractError);
+    expect(read.code).toBe("RUNTIME_CONTROL_TIMEOUT");
+    expect(read.envelope().error.retryable).toBe(true);
+    expect(interrupt.code).toBe("RUNTIME_CONTROL_TIMEOUT");
+    expect(interrupt.envelope().error.retryable).toBe(false);
+    expect(read.message).not.toContain("ravi.session.runtime.control");
   });
 
   it("maps any other reply rejection to RUNTIME_CONTROL_UNAVAILABLE instead of an unhandled error", async () => {
@@ -382,6 +385,17 @@ describe("SessionRuntimeCommands", () => {
     expect(error).toBeInstanceOf(ContractError);
     expect(error.code).toBe("RUNTIME_CONTROL_UNAVAILABLE");
     expect(JSON.stringify(error.envelope())).not.toContain("PRIVATE_DAEMON_TEXT");
+  });
+
+  it("does not mark a daemon error reply retryable for a mutating control", async () => {
+    requestReplyError = new Error("PRIVATE_DAEMON_TEXT");
+
+    const error = await captureError(() =>
+      new SessionRuntimeCommands().rollback("dev-main", "1", undefined, false, true),
+    );
+
+    expect(error.code).toBe("RUNTIME_CONTROL_UNAVAILABLE");
+    expect(error.envelope().error.retryable).toBe(false);
   });
 
   it("answers a missing session and a session without modify access with the same typed code", async () => {

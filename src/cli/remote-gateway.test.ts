@@ -1801,11 +1801,11 @@ describe("sessions runtime remote relay", () => {
 
   it("keeps the timeout retryable and drops unbounded details", async () => {
     const remote = await relay(
-      "sessions runtime interrupt",
-      new ContractError("sessions runtime interrupt", RUNTIME_CONTROL_TIMEOUT, "PRIVATE_8K2R", 1, {
+      "sessions runtime read",
+      new ContractError("sessions runtime read", RUNTIME_CONTROL_TIMEOUT, "PRIVATE_8K2R", 1, {
         retryable: true,
         suggestedAction: "PRIVATE_ACTION_8K2R",
-        operation: "turn.interrupt",
+        operation: "thread.read",
         turnId: "turn with spaces and PRIVATE_8K2R",
         disabledReason: "PRIVATE_REASON_8K2R",
       }),

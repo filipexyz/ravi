@@ -92,8 +92,9 @@ const RUNTIME_CONTROL_CATALOG: Record<RuntimeControlErrorCode, { message: string
       "Check the runtime state with: ravi sessions runtime read <session> --json before retrying; the control may still have run",
   },
   [RUNTIME_CONTROL_UNAVAILABLE]: {
-    message: "The daemon did not take the runtime control request.",
-    suggestedAction: "Check the daemon with: ravi daemon status, then retry",
+    message: "The daemon did not answer the runtime control request with a result.",
+    suggestedAction:
+      "Check the daemon with: ravi daemon status and the runtime state with: ravi sessions runtime read <session> --json before retrying; the control may still have run",
   },
   [RUNTIME_CONTROL_FAILED]: {
     message: "The runtime refused the control request.",
@@ -108,23 +109,23 @@ export function runtimeControlCatalogCopy(code: string): { message: string; sugg
     : undefined;
 }
 
-/** Controls that are safe to send again after a timeout: reads and interrupt. */
+/**
+ * Controls that are safe to send again when the outcome is unknown: reads only.
+ * An untargeted interrupt is left out, since a retry can hit the next turn.
+ */
 const IDEMPOTENT_RUNTIME_CONTROL_OPERATIONS: ReadonlySet<string> = new Set([
   "thread.list",
   "thread.read",
   "session.read",
   "goal.get",
-  "turn.interrupt",
 ]);
 
 /**
- * A timeout does not prove the control did not run, so only idempotent
- * operations are retryable after one. An unavailable daemon never took the
- * request, so that code is retryable for every operation.
+ * A timeout, or a daemon error reply / transport failure, does not prove the
+ * control did not run, so those codes are retryable only for idempotent reads.
  */
 export function isRetryableRuntimeControlCode(code: string, operation?: string): boolean {
-  if (code === RUNTIME_CONTROL_UNAVAILABLE) return true;
-  if (code === RUNTIME_CONTROL_TIMEOUT) {
+  if (code === RUNTIME_CONTROL_TIMEOUT || code === RUNTIME_CONTROL_UNAVAILABLE) {
     return operation !== undefined && IDEMPOTENT_RUNTIME_CONTROL_OPERATIONS.has(operation);
   }
   return false;
