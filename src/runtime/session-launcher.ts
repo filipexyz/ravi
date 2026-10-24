@@ -396,6 +396,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       prompt,
       session,
       agent,
+      configModel,
       runtimeProviderId,
       runtimeProvider,
       runtimeCapabilities,

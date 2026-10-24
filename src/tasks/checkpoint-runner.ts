@@ -215,6 +215,7 @@ export class TaskCheckpointRunner {
             }),
             deliveryBarrier: "after_response",
             deliveryBarrierSource: "default",
+            taskBarrierTaskId: missed.task.id,
           });
         } catch (error) {
           log.error("Task checkpoint reminder failed", { taskId: task.id, error });

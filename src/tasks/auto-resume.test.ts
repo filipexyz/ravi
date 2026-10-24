@@ -245,8 +245,12 @@ describe("auto-resume blocked tasks", () => {
       await commentTask(task.id, { author: "operator", body: "try X" });
 
       expect(publishCalls).toHaveLength(1);
-      expect(publishCalls[0]!.payload).toMatchObject({ _agentId: "dev", deliveryBarrier: "after_response" });
-      expect(publishCalls[0]!.payload.taskBarrierTaskId).toBeUndefined();
+      // No brief on a live session: the steer waits for the reply and runs in the task's binding.
+      expect(publishCalls[0]!.payload).toMatchObject({
+        _agentId: "dev",
+        deliveryBarrier: "after_response",
+        taskBarrierTaskId: task.id,
+      });
       expect(String(publishCalls[0]!.payload.prompt)).toStartWith("[System] Inform: New comment on task");
     });
 

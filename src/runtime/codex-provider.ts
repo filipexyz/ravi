@@ -764,8 +764,11 @@ async function* normalizeCodexEvents(
         cwd: input.cwd,
         security: resolveCodexThreadSecurity(input.agentId),
         env: input.env ?? process.env,
-        model: resolveCodexModelArg(input.model, defaultModel),
-        effort,
+        model: resolveCodexModelArg(
+          promptMessage.runtimeOptions?.model && !input.modelBroker ? promptMessage.runtimeOptions.model : input.model,
+          defaultModel,
+        ),
+        effort: promptMessage.runtimeOptions ? toCodexRuntimeEffort(promptMessage.runtimeOptions.effort) : effort,
         prompt: promptText,
         clientMessageId: promptMessage.clientMessageId,
         replay: promptMessage.replay,
@@ -1207,6 +1210,12 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   let currentInstructionSources: string[] = [];
   let currentGoalStatus: string | undefined;
   let resolvedModel: string | null = null;
+  // The model the thread runs with: set at thread start/resume, switched per turn by turn/start.
+  let appliedTurnModel: string | null = null;
+  // The model the thread first started with, restored by a turn that names none.
+  // A resume after an app-server restart can report a task turn's model, so it
+  // does not overwrite this.
+  let threadBaseModel: string | null = null;
   let resolvedModelProvider = "openai";
   let pendingRequests = new Map<string, PendingRequest>();
   const pendingDynamicToolResults = new Map<string, PendingDynamicToolResult>();
@@ -2250,6 +2259,10 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     }
     currentInstructionSources = stringArray(threadResponse.instructionSources);
     resolvedModel = firstString(threadResponse.model, input.model) ?? null;
+    threadBaseModel ??= resolvedModel;
+    // thread/fork does not take a model, so a fork runs on the inherited one
+    // until a turn/start switches it.
+    appliedTurnModel = forkThreadId ? resolvedModel : (input.model ?? resolvedModel);
     resolvedModelProvider = firstString(threadResponse.modelProvider, resolvedModelProvider) ?? "openai";
   }
 
@@ -2477,6 +2490,10 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             if (!turn.threadId) {
               throw new Error("Codex app-server did not initialize a thread");
             }
+            // A turn whose model differs from the thread's (entering or leaving a
+            // task with a model override) switches it here, without a relaunch.
+            const turnModel = input.model ?? threadBaseModel;
+            const switchesModel = turnModel !== appliedTurnModel;
             await sendRequest(
               "turn/start",
               {
@@ -2492,7 +2509,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
                 cwd: null,
                 approvalPolicy: null,
                 sandboxPolicy: null,
-                model: null,
+                model: switchesModel ? turnModel : null,
                 effort: input.effort ?? null,
                 summary: null,
                 personality: null,
@@ -2508,6 +2525,11 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
                 },
               },
             );
+            appliedTurnModel = turnModel;
+            if (switchesModel && turnModel) {
+              // Usage and cost are reported against the model the turn ran on.
+              resolvedModel = turnModel;
+            }
           };
 
           try {

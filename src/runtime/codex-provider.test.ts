@@ -13,7 +13,7 @@ import {
   isCodexRestrictedRuntimeProfile,
   resolveCodexThreadSecurity,
 } from "./codex-provider.js";
-import type { RuntimeEvent, RuntimeHostServices, RuntimeStartRequest } from "./types.js";
+import type { RuntimeEvent, RuntimeHostServices, RuntimePromptMessage, RuntimeStartRequest } from "./types.js";
 
 type TransportRequest = {
   cwd: string;
@@ -847,6 +847,96 @@ rl.on("line", (line) => {
     ).toBe(true);
   });
 
+  it("switches the thread's model per turn through turn/start", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-turn-model-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const requestsPath = join(cwd, "requests.jsonl");
+
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+const requestsPath = ${JSON.stringify(requestsPath)};
+const rl = createInterface({ input: process.stdin });
+const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+let turns = 0;
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") return;
+  if (message.id && message.method === "thread/start") {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+    send({ id: message.id, result: { thread: { id: "thread_models" }, model: message.params.model, modelProvider: "openai" } });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+    turns += 1;
+    const turn = { id: "turn_" + turns, status: "inProgress" };
+    send({ id: message.id, result: { turn } });
+    send({ jsonrpc: "2.0", method: "turn/started", params: { threadId: "thread_models", turn } });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/completed",
+      params: { threadId: "thread_models", turn: { id: turn.id, status: "completed" } },
+    });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const turn = (text: string, model: string): RuntimePromptMessage => ({
+      type: "user",
+      message: { role: "user", content: text },
+      session_id: "",
+      parent_tool_use_id: null,
+      runtimeOptions: { model },
+    });
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest([], {
+        cwd,
+        model: "gpt-5.5",
+        prompt: (async function* () {
+          yield turn("agent turn", "gpt-5.5");
+          yield turn("task turn", "gpt-5.4-mini");
+          yield turn("task turn again", "gpt-5.4-mini");
+          yield turn("back to agent", "gpt-5.5");
+        })(),
+      }),
+    );
+
+    const events = await collectEvents(session.events);
+    const requests = readFileSync(requestsPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+
+    expect(requests.map((request) => request.method)).toEqual([
+      "thread/start",
+      "turn/start",
+      "turn/start",
+      "turn/start",
+      "turn/start",
+    ]);
+    // Usage is reported against the model each turn ran on.
+    expect(findEventsByType(events, "turn.complete").map((event) => event.execution?.model)).toEqual([
+      "gpt-5.5",
+      "gpt-5.4-mini",
+      "gpt-5.4-mini",
+      "gpt-5.5",
+    ]);
+    expect(requests[0]?.params.model).toBe("gpt-5.5");
+    expect(requests.slice(1).map((request) => request.params.model)).toEqual([null, "gpt-5.4-mini", null, "gpt-5.5"]);
+  });
+
   it("keeps multi-agent child notifications from replacing the top-level thread", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-sub-agent-notifications-"));
     const command = join(cwd, "fake-codex-app-server.mjs");
@@ -1075,6 +1165,75 @@ rl.on("line", (line) => {
         }),
       }),
     ]);
+  });
+
+  it("switches a fork to the requested model on its first turn/start", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-fork-model-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const requestsPath = join(cwd, "requests.jsonl");
+
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+const requestsPath = ${JSON.stringify(requestsPath)};
+const rl = createInterface({ input: process.stdin });
+const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") return;
+  if (message.id && ["thread/fork", "thread/resume", "thread/start", "turn/start"].includes(message.method)) {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+  }
+  if (message.id && message.method === "thread/fork") {
+    send({ id: message.id, result: { thread: { id: "thread_child" }, model: "gpt-5", modelProvider: "openai" } });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    send({ id: message.id, result: {} });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/started",
+      params: { threadId: message.params.threadId, turn: { id: "turn_child", status: "inProgress" } },
+    });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/completed",
+      params: { threadId: message.params.threadId, turn: { id: "turn_child", status: "completed" } },
+    });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest(["child turn"], {
+        cwd,
+        model: "gpt-5.5",
+        resume: "thread_parent",
+        forkSession: true,
+      }),
+    );
+
+    await collectEvents(session.events);
+    const requests = readFileSync(requestsPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+
+    expect(requests.map((request) => request.method)).toEqual(["thread/fork", "turn/start"]);
+    expect(requests[0]?.params.model).toBeNull();
+    // The fork inherited gpt-5, so its first turn switches to the requested model.
+    expect(requests[1]?.params.model).toBe("gpt-5.5");
   });
 
   it("passes max/ultra effort as model_reasoning_effort in app-server thread/start and thread/resume", async () => {

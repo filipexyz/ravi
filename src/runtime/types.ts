@@ -74,6 +74,13 @@ export interface RuntimePromptMessage {
   replay?: boolean;
   /** Whether reconciliation may retry after the provider reports a failed or interrupted terminal turn. */
   terminalReplayAllowed?: boolean;
+  /**
+   * This turn's model, effort and thinking (task, profile, session or agent).
+   * When present it replaces the start request's values for this turn,
+   * including an absent effort or thinking, so leaving a task drops its
+   * overrides without a relaunch. A model broker session keeps its leased model.
+   */
+  runtimeOptions?: { model?: string; effort?: RuntimeEffort; thinking?: RuntimeThinking };
 }
 
 export interface RuntimeToolUse {
