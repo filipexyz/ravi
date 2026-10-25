@@ -156,7 +156,7 @@ export function resolveClickScope(
   return { scopeValue: candidate as PermissionGrantScopeValue, scopeRef };
 }
 
-/** Stable dedupe identity: one open card per (chat, subject, capability). */
+/** Stable dedupe identity: one open card per (chat, subject, agent, capability). */
 export function grantSubjectKey(grant: PermissionGrantMetadata): string {
   if (grant.targets.contactId) return `contact:${grant.targets.contactId}`;
   if (grant.targets.agentId) return `agent:${grant.targets.agentId}`;
@@ -167,6 +167,9 @@ export function sameGrantTuple(a: PermissionGrantMetadata, b: PermissionGrantMet
   return (
     a.targets.chatId === b.targets.chatId &&
     grantSubjectKey(a) === grantSubjectKey(b) &&
+    // The grant also widens the executor agent's ceiling: two agents serving
+    // the same contact each need their own card.
+    (a.targets.agentId ?? null) === (b.targets.agentId ?? null) &&
     a.capability.permission === b.capability.permission &&
     a.capability.objectType === b.capability.objectType &&
     a.capability.objectId === b.capability.objectId

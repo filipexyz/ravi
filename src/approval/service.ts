@@ -888,7 +888,7 @@ async function waitForApprovalResponse(
 
           const grantOutcome = await applyGrantForDecision(claimed, evaluation).catch((error) => {
             log.warn("Failed to apply a permission grant", { requestId, error });
-            return { detail: "grant failed" };
+            return { detail: "grant failed", failed: true };
           });
 
           await finalizeApprovalMessage(
@@ -899,6 +899,12 @@ async function waitForApprovalResponse(
           ).catch((error) => {
             log.warn("Failed to finalize Slack approval message", { requestId, error });
           });
+          // A grant click that could not write the grant does not let the
+          // blocked call through: the next denial opens a fresh card.
+          if (grantOutcome?.failed) {
+            finish({ approved: false, reason: "The permission grant could not be applied." });
+            return;
+          }
           finish({
             approved: claimed.decision === "approved",
             ...(claimed.decision === "rejected" ? { reason: claimed.reason ?? evaluation.reason } : {}),
@@ -920,7 +926,7 @@ async function waitForApprovalResponse(
 async function applyGrantForDecision(
   request: ApprovalRequestRecord,
   evaluation: Extract<ApprovalInboundEvaluation, { kind: "decide" }>,
-): Promise<{ detail?: string } | null> {
+): Promise<{ detail?: string; failed?: boolean } | null> {
   const grant = readPermissionGrantMetadata(request);
   const click = evaluation.grant;
   if (!grant || !click || request.decision !== "approved") return null;
@@ -996,7 +1002,7 @@ async function applyGrantForDecision(
     timestamp: new Date(now).toISOString(),
   });
 
-  if (!applied) return { detail: "grant failed" };
+  if (!applied) return { detail: "grant failed", failed: true };
   const target = scopeLabel ? ` in ${describeGrantScope(scopeLabel)}` : " (agent ceiling)";
   return {
     detail:

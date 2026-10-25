@@ -29,6 +29,7 @@ import {
   SLACK_PERMISSION_GRANT_ACTION_SCOPE,
 } from "./slack-blocks.js";
 import { attachApprovalRequestMessageId, createApprovalRequest } from "./store.js";
+import { sameGrantTuple } from "./grant-metadata.js";
 import { dbGetContactChatGrant, dbListContactChatGrants } from "../permissions/contact-chat-grants.js";
 import { getContact } from "../contacts.js";
 import { readAgentRuntimePermissionsConfig } from "../permissions/agent-default-capabilities-provider.js";
@@ -1643,6 +1644,50 @@ describe("approval service", () => {
       expect(rows.count).toBe(1);
       await flushPermissionAuditEvents();
       expect(auditEvents.filter((entry) => entry.topic === "ravi.audit.permission_grant")).toHaveLength(1);
+    });
+
+    it("does not let the blocked call through when the grant cannot be written", async () => {
+      seedSlackOwner();
+      const requester = seedRequester();
+      const chat = seedGrantChat();
+      // A tag with the derived profile name that permissions does not own.
+      dbCreateTagDefinition({ slug: "permission-use-tool-bash", label: "Bash fans", kind: "user", source: "manual" });
+      requestReplyResult = {
+        messageId: "eph_1",
+        deliveries: [{ userId: OWNER_SLACK_USER, kind: "ephemeral", chatId: "C123", messageId: "eph_1" }],
+      };
+      subscribeEvents = [
+        slackClick({
+          userId: OWNER_SLACK_USER,
+          messageTs: "eph_seen_by_slack",
+          actionId: SLACK_PERMISSION_GRANT_ACTION_EXACT,
+        }),
+      ];
+
+      const context = seedDeniedContext({ contextId: "ctx_grant_fails", contactId: requester.id, chatId: chat.id });
+      const result = await authorizeRuntimeContext({
+        context,
+        permission: "use",
+        objectType: "tool",
+        objectId: "Bash",
+        timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
+      });
+
+      expect(result).toMatchObject({ allowed: false, approved: false });
+      expect(respondedSlack[respondedSlack.length - 1]?.payload.text ?? "").toContain("grant failed");
+    });
+
+    it("keeps one card per agent when two agents serve the same contact", () => {
+      const base = {
+        capability: { permission: "use", objectType: "tool", objectId: "Bash" },
+        adminUserIds: [OWNER_SLACK_USER],
+        allowed: ["exact"] as const,
+        scopes: ["chat"] as const,
+      };
+      const forAgent = (agentId: string) =>
+        ({ ...base, targets: { contactId: "c1", chatId: "chat1", chatTags: [], agentId } }) as never;
+      expect(sameGrantTuple(forAgent("dev"), forAgent("dev"))).toBe(true);
+      expect(sameGrantTuple(forAgent("dev"), forAgent("ops"))).toBe(false);
     });
   });
 });
