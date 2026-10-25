@@ -195,6 +195,10 @@ describe("router context queries", () => {
     expect(sessionEventIndexes).toContain("idx_session_events_visible_key_time_seq_id");
     expect(sessionEventIndexes).toContain("idx_session_events_key_type_id");
     expect(sessionEventIndexes).toContain("idx_session_events_rollup_turns_cover");
+    // Legacy trace fallback: the (session_key IN (?) OR session_name IN (?))
+    // query is ordered by timestamp and cannot use a key-leading index; this
+    // covering index keeps it off the table (8.6s -> 0.25s, measured 2026-10-25).
+    expect(sessionEventIndexes).toContain("idx_session_events_visible_order_cover");
     expect(contextIndexes).toContain("idx_contexts_kind_created");
     expect(triggerColumns).toContain("execution_type");
     expect(triggerColumns).toContain("shell_command");
