@@ -195,6 +195,40 @@ describe("public runtime failures", () => {
     );
   });
 
+  it("never forwards native tracing output, Rust paths or exit diagnostics to chat", () => {
+    const internal =
+      "Error: The agent could not complete this request because of an internal runtime error. Please try again.";
+    const threadId = "019a0000-1111-7222-8333-444455556666";
+    const tracing =
+      `\u001b[2m2026-10-23T14:53:40.282103Z\u001b[0m \u001b[33m WARN\u001b[0m ` +
+      `\u001b[2mcodex_thread_store::local::live_writer\u001b[0m: failed to project durable rollout for ${threadId}: ` +
+      `thread-store internal error: thread history projection for ${threadId} expected ordinal 2963, got 2962`;
+
+    const formatted = formatUserFacingTurnFailure(tracing);
+    expect(formatted).toBe(internal);
+    expect(formatted).not.toContain("\u001b");
+    expect(formatted).not.toContain(threadId);
+
+    expect(formatUserFacingTurnFailure("ERROR codex_core::exec: sandbox denied")).toBe(internal);
+    expect(formatUserFacingTurnFailure("panicked at codex_core::client: index out of bounds")).toBe(internal);
+    expect(formatUserFacingTurnFailure("thread-store internal error: projection failed")).toBe(internal);
+    expect(formatUserFacingTurnFailure("Codex CLI exited without a terminal event (code 1)")).toBe(internal);
+    expect(formatUserFacingTurnFailure("Codex app-server connection closed without a terminal event")).toBe(internal);
+    expect(formatUserFacingTurnFailure("codex websocket closed (code=1006, reason=n/a)")).toBe(internal);
+  });
+
+  it("strips control characters and redacts ids from failures that stay visible", () => {
+    expect(formatUserFacingTurnFailure("\u001b[31mUsage limit reached.\u001b[0m Try again\u0007 later.")).toBe(
+      "Error: Usage limit reached. Try again later.",
+    );
+    expect(
+      formatUserFacingTurnFailure("Conversation 019a0000-1111-7222-8333-444455556666 is busy. Try again later."),
+    ).toBe("Error: Conversation <id> is busy. Try again later.");
+    expect(formatUserFacingTurnFailure("Usage\u0085 limit\u202E reached.\u2066 Try\u200F again later.")).toBe(
+      "Error: Usage limit reached. Try again later.",
+    );
+  });
+
   it("avoids a duplicate Error prefix and bounds long details", () => {
     expect(formatUserFacingTurnFailure("Error: Error: retry later")).toBe("Error: retry later");
 

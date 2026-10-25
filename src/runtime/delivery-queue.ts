@@ -604,6 +604,11 @@ export async function* createRuntimeMessageGenerator({
       clientMessageId,
       replay,
       terminalReplayAllowed,
+      runtimeOptions: {
+        model: session.currentModel,
+        effort: session.currentEffort,
+        thinking: session.currentThinking,
+      },
     };
 
     await turnCompleted;

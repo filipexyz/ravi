@@ -45,6 +45,11 @@ import { CALLER_CWD_HEADER, parseCallerCwd } from "./caller-cwd.js";
 import { cloudContractCatalogCopy, safeDomainSetupMessage } from "./cloud-error-contract.js";
 import { plannedPageDomainDns, plannedPageDomainDnsLines, projectPageDomainSetups } from "../pages/domain-setup.js";
 import { localMediaSendCatalogCopy } from "./media-send-auth.js";
+import {
+  RUNTIME_CONTROL_DISABLED_REASON,
+  isRetryableRuntimeControlCode,
+  runtimeControlCatalogCopy,
+} from "../runtime/runtime-control-errors.js";
 import { turnLinkContract } from "../identity-link/turn-link-copy.js";
 import { isSafeLocalPayloadMessage } from "./payload-error-message.js";
 import { projectPublicIssues, sanitizePublicValue } from "./redaction.js";
@@ -452,6 +457,51 @@ interface CompleteContractErrorBody {
 const IDENTITY_LINK_OPS = new Set(["identity link", "identity unlink"]);
 
 /**
+ * `sessions runtime *` refusals carry a RUNTIME_* code (or SESSION_NOT_FOUND,
+ * which also covers a session the caller may not modify). The relay renders
+ * local catalog copy for the code and keeps only typed state, never the
+ * daemon's free text.
+ */
+const SESSIONS_RUNTIME_OP_PREFIX = "sessions runtime ";
+const RUNTIME_SESSION_NOT_FOUND_COPY = {
+  message: "Session not found, or not visible to this context.",
+  suggestedAction:
+    "List visible sessions with: ravi sessions list --json (mutating runtime controls also need modify access)",
+};
+const RUNTIME_REMOTE_OPERATION_PATTERN = /^[a-z]+\.[a-z_]+$/;
+const RUNTIME_REMOTE_TURN_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
+
+function sessionsRuntimeCatalogCopy(
+  op: string,
+  code: string,
+): { message: string; suggestedAction: string } | undefined {
+  if (!op.startsWith(SESSIONS_RUNTIME_OP_PREFIX)) return undefined;
+  if (code === "SESSION_NOT_FOUND") return RUNTIME_SESSION_NOT_FOUND_COPY;
+  return runtimeControlCatalogCopy(code);
+}
+
+function projectSessionsRuntimeDetails(remote: Record<string, unknown>): ContractErrorDetails {
+  const details: ContractErrorDetails = {};
+  const operation =
+    typeof remote.operation === "string" && RUNTIME_REMOTE_OPERATION_PATTERN.test(remote.operation)
+      ? remote.operation
+      : undefined;
+  if (
+    typeof remote.code === "string" &&
+    (remote.code === "RUNTIME_CONTROL_TIMEOUT" || remote.code === "RUNTIME_CONTROL_UNAVAILABLE")
+  ) {
+    details.retryable = isRetryableRuntimeControlCode(remote.code, operation);
+  }
+  if (typeof remote.activeTurn === "boolean") details.activeTurn = remote.activeTurn;
+  if (typeof remote.turnId === "string" && RUNTIME_REMOTE_TURN_ID_PATTERN.test(remote.turnId)) {
+    details.turnId = remote.turnId;
+  }
+  if (operation) details.operation = operation;
+  if (remote.disabledReason === RUNTIME_CONTROL_DISABLED_REASON) details.disabledReason = remote.disabledReason;
+  return details;
+}
+
+/**
  * Personal-connector commands. Their blocks tell the agent what to say and
  * where (a chat line, the reply target, a reconnect link), so the relay keeps
  * that copy instead of a generic line. Other failures get the local catalog.
@@ -772,6 +822,10 @@ function remoteContractFailureMessage(
     const catalog = localMediaSendCatalogCopy(code);
     if (catalog) return catalog.message;
   }
+  if (code) {
+    const catalog = sessionsRuntimeCatalogCopy(op, code);
+    if (catalog) return catalog.message;
+  }
   if (IDENTITY_LINK_OPS.has(op) && code) {
     const catalog = cloudContractCatalogCopy(code);
     if (catalog) return catalog.message;
@@ -885,6 +939,7 @@ function projectRemoteContractDetails(
   const denial = projectRemoteDenial(body);
   if (denial) Object.assign(details, denial);
   const mediaCatalog = op === "media send" ? localMediaSendCatalogCopy(remote.code) : undefined;
+  const runtimeCatalog = sessionsRuntimeCatalogCopy(op, remote.code);
   const identityCatalog = IDENTITY_LINK_OPS.has(op) ? cloudContractCatalogCopy(remote.code) : undefined;
   const connectorCatalog =
     isConnectorOp(op) && (body.outcome === "failed" || remote.code.startsWith("CONNECTOR_"))
@@ -896,6 +951,9 @@ function projectRemoteContractDetails(
     if (domainSetup) details.domainSetup = domainSetup;
   } else if (mediaCatalog) {
     details.suggestedAction = mediaCatalog.suggestedAction;
+  } else if (runtimeCatalog) {
+    details.suggestedAction = runtimeCatalog.suggestedAction;
+    Object.assign(details, projectSessionsRuntimeDetails(remote));
   } else if (identityCatalog && body.outcome === "failed") {
     details.suggestedAction = identityCatalog.suggestedAction;
   } else if (connectorCatalog) {

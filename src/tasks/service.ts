@@ -3236,6 +3236,8 @@ export async function commentTask(
     await publishTaskAssigneePrompt(taskAfterResume, steerTarget, {
       prompt: buildTaskCommentSteerPrompt(taskAfterResume, comment),
       deliveryBarrier: "after_response",
+      // The steer belongs to this task: it runs in the task's binding.
+      taskBarrierTaskId: taskAfterResume.id,
     });
     steeredSessionName = steerTarget.sessionName;
   } else if (steerTarget && !steerTarget.ok) {

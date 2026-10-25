@@ -1918,6 +1918,166 @@ describe("Slack Socket Mode routing", () => {
     ]);
   });
 
+  describe("route with a fixed session vs a residual chat subscription (bug a2d9fc1c)", () => {
+    const SLACK_INSTANCE = "ravi-rbbt-slack";
+    const MAIN_KEY = `agent:main-agent:slack:${SLACK_INSTANCE}:group:C777`;
+    const SPECIALIST_KEY = "agent:specialist-agent:specialist-fixed";
+
+    function setupResidualSubscription(attachedByType: "system" | "user") {
+      seedAgent("main-agent", "/tmp/main-agent");
+      seedAgent("specialist-agent", "/tmp/specialist-agent");
+      const chat = dbUpsertChat({
+        channel: "slack",
+        instanceId: SLACK_INSTANCE,
+        platformChatId: "C777",
+        chatType: "group",
+        title: "C777",
+        rawProvenance: { source: "test" },
+        seenAt: 1_713_000_000_000,
+      });
+      const mainSession = getOrCreateSession(MAIN_KEY, "main-agent", "/tmp/main-agent", {
+        name: "main-agent-c777",
+        channel: "slack",
+        accountId: SLACK_INSTANCE,
+        groupId: "C777",
+        lastChannel: "slack",
+        lastTo: "C777",
+        lastAccountId: SLACK_INSTANCE,
+      });
+      const specialistSession = getOrCreateSession(SPECIALIST_KEY, "specialist-agent", "/tmp/specialist-agent", {
+        name: "specialist-fixed",
+      });
+      attachChatToSession({
+        sessionKey: mainSession.sessionKey,
+        chatId: chat.id,
+        role: "primary",
+        attachedByType,
+        attachedReason: attachedByType === "system" ? "slack-socket-mode" : "test-operator",
+        setOutputTarget: true,
+      });
+      return { chat, mainSession, specialistSession };
+    }
+
+    function config(routeAgent: string, routeSession: string): RouterConfig {
+      return {
+        agents: {
+          "main-agent": { id: "main-agent", cwd: "/tmp/main-agent", dmScope: "per-peer" },
+          "specialist-agent": { id: "specialist-agent", cwd: "/tmp/specialist-agent", dmScope: "per-peer" },
+        },
+        routes: [
+          {
+            pattern: "group:C777",
+            accountId: SLACK_INSTANCE,
+            agent: routeAgent,
+            session: routeSession,
+            priority: 0,
+          },
+        ],
+        defaultAgent: "main-agent",
+        defaultDmScope: "per-peer",
+        accountAgents: {},
+        instanceToAccount: { [SLACK_INSTANCE]: SLACK_INSTANCE },
+        instances: {},
+      };
+    }
+
+    function service(routerConfig: RouterConfig, published: Array<{ sessionName: string; payload: unknown }>) {
+      return new SlackSocketModeService({
+        appToken: "xapp-test",
+        botToken: "xoxb-test",
+        accountId: SLACK_INSTANCE,
+        routeAccountId: SLACK_INSTANCE,
+        instanceId: SLACK_INSTANCE,
+        getRouterConfig: () => routerConfig,
+        publishPrompt: async (sessionName, payload) => {
+          published.push({ sessionName, payload });
+        },
+        webClient: {} as never,
+      });
+    }
+
+    function envelope(envelopeId: string) {
+      return {
+        envelope_id: envelopeId,
+        payload: {
+          team_id: "T1",
+          event_id: `Ev-${envelopeId}`,
+          event_time: 1_713_000_001,
+          event: {
+            type: "message",
+            channel: "C777",
+            channel_type: "channel",
+            user: "U123",
+            text: "hello specialist",
+            ts: "1713000001.000200",
+          },
+        },
+      };
+    }
+
+    it("delivers to the route's fixed session and rebinds an automatic subscription", async () => {
+      const { chat, mainSession, specialistSession } = setupResidualSubscription("system");
+      const published: Array<{ sessionName: string; payload: unknown }> = [];
+
+      const result = await service(config("specialist-agent", "specialist-fixed"), published).handleEnvelope(
+        envelope("env-a2d9-system"),
+      );
+
+      expect(result).toBe("processed");
+      expect(published).toHaveLength(1);
+      expect(published[0]?.sessionName).toBe("specialist-fixed");
+      expect(getSessionByName("specialist-fixed")?.agentId).toBe("specialist-agent");
+      expect(listSessionSubscriptions(mainSession.sessionKey)).toEqual([]);
+      expect(listSessionSubscriptions(specialistSession.sessionKey)).toEqual([
+        expect.objectContaining({ chatId: chat.id }),
+      ]);
+      expect(getSlackInboundEnvelope(SLACK_INSTANCE, "env-a2d9-system")).toMatchObject({ state: "processed" });
+    });
+
+    it("keeps an explicit attach and never pairs its agent with the route's session", async () => {
+      const { chat, mainSession } = setupResidualSubscription("user");
+      const published: Array<{ sessionName: string; payload: unknown }> = [];
+
+      await service(config("specialist-agent", "specialist-fixed"), published).handleEnvelope(
+        envelope("env-a2d9-explicit"),
+      );
+
+      expect(published).toHaveLength(1);
+      expect(published[0]?.sessionName).toBe("main-agent-c777");
+      expect(getSessionByName("main-agent-c777")?.sessionKey).toBe(mainSession.sessionKey);
+      expect(getSessionByName("specialist-fixed")?.sessionKey).toBe(SPECIALIST_KEY);
+      expect(listSessionSubscriptions(mainSession.sessionKey)).toEqual([expect.objectContaining({ chatId: chat.id })]);
+    });
+
+    it("keeps an explicit attach on its own session when the route forces another session of the same agent", async () => {
+      const { chat, mainSession } = setupResidualSubscription("user");
+      getOrCreateSession("agent:main-agent:main-other", "main-agent", "/tmp/main-agent", { name: "main-other" });
+      const published: Array<{ sessionName: string; payload: unknown }> = [];
+
+      await service(config("main-agent", "main-other"), published).handleEnvelope(envelope("env-a2d9-same-key"));
+
+      expect(published).toHaveLength(1);
+      expect(published[0]?.sessionName).toBe("main-agent-c777");
+      expect(listSessionSubscriptions(mainSession.sessionKey)).toEqual([expect.objectContaining({ chatId: chat.id })]);
+    });
+
+    it("settles the envelope instead of retrying when the route's session belongs to another agent", async () => {
+      seedAgent("main-agent", "/tmp/main-agent");
+      seedAgent("specialist-agent", "/tmp/specialist-agent");
+      getOrCreateSession(SPECIALIST_KEY, "specialist-agent", "/tmp/specialist-agent", { name: "specialist-fixed" });
+      const published: Array<{ sessionName: string; payload: unknown }> = [];
+      const slack = service(config("main-agent", "specialist-fixed"), published);
+
+      const result = await slack.handleEnvelope(envelope("env-a2d9-conflict"));
+
+      expect(result).toBe("ignored");
+      expect(published).toHaveLength(0);
+      expect(getSlackInboundEnvelope(SLACK_INSTANCE, "env-a2d9-conflict")).toMatchObject({ state: "processed" });
+      expect(await slack.resumePendingInboundEnvelopes()).toMatchObject({ scanned: 0, failed: 0 });
+      expect(getSessionByName("specialist-fixed")?.agentId).toBe("specialist-agent");
+    });
+  });
+
   it("publishes Block Kit interactions as native inbound interaction events", async () => {
     const order: string[] = [];
     const prompts: unknown[] = [];
@@ -3466,6 +3626,7 @@ describe("Slack Socket Mode foreign bot intake", () => {
     sourceTeamId?: string | null;
     userTeamId?: string | null;
     authorizations?: unknown;
+    text?: string;
   }): SlackSocketEnvelope {
     return {
       envelope_id: input.envelopeId,
@@ -3479,7 +3640,7 @@ describe("Slack Socket Mode foreign bot intake", () => {
           channel: "C123",
           channel_type: "channel",
           user: "UHUMAN",
-          text: "human message",
+          text: input.text ?? "human message",
           ts: input.ts,
           ...(input.eventTeamId === null || input.eventTeamId === undefined ? {} : { team: input.eventTeamId }),
           ...(input.sourceTeamId === null || input.sourceTeamId === undefined
@@ -3522,7 +3683,7 @@ describe("Slack Socket Mode foreign bot intake", () => {
     });
   }
 
-  it("preserves human intake without Slack team provenance and does not call auth.test", async () => {
+  it("preserves human intake without Slack team provenance and does not wait on auth.test", async () => {
     const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
     const authTest = mock(async () => ({ ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" }));
     const service = makeBotService({ published, authTest });
@@ -3537,7 +3698,8 @@ describe("Slack Socket Mode foreign bot intake", () => {
         }),
       ),
     ).toBe("processed");
-    expect(authTest).not.toHaveBeenCalled();
+    // Human intake only starts a background identity lookup; it never gates admission.
+    expect(authTest).toHaveBeenCalledTimes(1);
     expect(published).toHaveLength(1);
     const source = published[0]!.payload.source as MessageTarget;
     expect(dbGetChat(source.canonicalChatId!)).toMatchObject({
@@ -3545,7 +3707,7 @@ describe("Slack Socket Mode foreign bot intake", () => {
     });
   });
 
-  it("preserves event.team precedence for conflicting human team values without calling auth.test", async () => {
+  it("preserves event.team precedence for conflicting human team values without waiting on auth.test", async () => {
     const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
     const authTest = mock(async () => ({ ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" }));
     const service = makeBotService({ published, authTest });
@@ -3563,7 +3725,8 @@ describe("Slack Socket Mode foreign bot intake", () => {
         }),
       ),
     ).toBe("processed");
-    expect(authTest).not.toHaveBeenCalled();
+    // Human intake only starts a background identity lookup; it never gates admission.
+    expect(authTest).toHaveBeenCalledTimes(1);
     expect(published).toHaveLength(1);
     const source = published[0]!.payload.source as MessageTarget;
     expect(dbGetChat(source.canonicalChatId!)).toMatchObject({
@@ -3995,6 +4158,66 @@ describe("Slack Socket Mode foreign bot intake", () => {
 
     expect(authTest).not.toHaveBeenCalled();
     expect(published).toHaveLength(0);
+  });
+
+  async function flushBackgroundWork(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  it("marks a human message that mentions the local bot and tags the bot in group context", async () => {
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const authTest = mock(async () => ({ ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" }));
+    const service = makeBotService({ published, authTest });
+    service.warmLocalBotIdentity();
+    await flushBackgroundWork();
+
+    for (const [index, text] of ["<@ULOCAL> ta ai?", "oi <@ULOCAL|ravi>, ta ai?"].entries()) {
+      expect(
+        await service.handleEnvelope(
+          humanEnvelope({ envelopeId: `human-self-mention-${index}`, ts: `1713000092.00010${index}`, text }),
+        ),
+      ).toBe("processed");
+    }
+    expect(
+      await service.handleEnvelope(
+        humanEnvelope({ envelopeId: "human-other-mention", ts: "1713000092.000200", text: "<@UOTHER> ta ai?" }),
+      ),
+    ).toBe("processed");
+
+    expect(authTest).toHaveBeenCalledTimes(1);
+    expect(published).toHaveLength(3);
+    for (const entry of published.slice(0, 2)) {
+      expect(String(entry.payload.prompt).split("\n")[0]).toContain(" @mention]");
+      expect((entry.payload.context as MessageContext).botTag).toBe("<@ULOCAL>");
+    }
+    expect(String(published[2]!.payload.prompt)).not.toContain("@mention");
+    expect((published[2]!.payload.context as MessageContext).botTag).toBe("<@ULOCAL>");
+  });
+
+  it("admits a human bot mention while auth.test is stuck or failing, without the marker", async () => {
+    for (const [index, authTest] of [
+      mock(() => new Promise<never>(() => {})),
+      mock(async () => {
+        throw new Error("auth_failed");
+      }),
+    ].entries()) {
+      const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+      const service = makeBotService({ published, authTest, authTestTimeoutMs: 60_000 });
+      expect(
+        await service.handleEnvelope(
+          humanEnvelope({
+            envelopeId: `human-self-mention-no-identity-${index}`,
+            ts: `1713000093.00010${index}`,
+            text: "<@ULOCAL> ta ai?",
+          }),
+        ),
+      ).toBe("processed");
+      expect(authTest).toHaveBeenCalledTimes(1);
+      expect(published).toHaveLength(1);
+      expect(String(published[0]!.payload.prompt)).not.toContain("@mention");
+      expect((published[0]!.payload.context as MessageContext).botTag).toBeUndefined();
+      await service.stop();
+    }
   });
 
   it("coalesces concurrent auth.test discovery for foreign bot messages", async () => {

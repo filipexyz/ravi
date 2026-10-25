@@ -88,6 +88,32 @@ describe("runtime delivery queue", () => {
     await generator.return(undefined);
   });
 
+  it("yields the session's current model, effort and thinking with each turn", async () => {
+    const session = makeStreamingSession({
+      pendingMessages: [createQueuedRuntimeUserMessage({ prompt: "task turn" })],
+      currentEffort: "low",
+      currentThinking: "verbose",
+    });
+    const generator = createRuntimeMessageGenerator({
+      sessionName: "dev",
+      session,
+      stashedMessages: new Map(),
+      beforeTurnStart: () => {
+        session.currentModel = "task-model";
+        session.currentEffort = "xhigh";
+      },
+    });
+
+    const result = await generator.next();
+
+    expect(result.value).toMatchObject({
+      runtimeOptions: { model: "task-model", effort: "xhigh", thinking: "verbose" },
+    });
+    session.done = true;
+    session.onTurnComplete?.();
+    await generator.return(undefined);
+  });
+
   it("cancels idle session eviction when a new turn starts", async () => {
     const idleTimer = setTimeout(() => {}, 60_000);
     const queuedMessage = createQueuedRuntimeUserMessage({ prompt: "voltei" });
