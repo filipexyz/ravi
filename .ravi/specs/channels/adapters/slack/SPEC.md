@@ -167,6 +167,23 @@ Admission MUST reuse existing route, root/thread, canonical chat, persistence,
 and envelope-deduplication behavior. A duplicate Socket Mode envelope MUST still
 produce at most one prompt.
 
+## Local Bot Mentions
+
+A human message that mentions the local bot by id (`<@local_bot_user_id>` or
+`<@local_bot_user_id|label>`) MUST reach the agent with a `@mention` marker in
+the prompt header, and group message context MUST carry
+`botTag: "<@local_bot_user_id>"`, so the agent can tell it was addressed. The
+group system prompt MUST explain the `@mention` marker whenever `botTag` is
+known, whatever the size of the member list. A mention of another user MUST NOT
+add the marker.
+
+The local bot user id comes from the same cached `auth.test` discovery used for
+bot intake. Human intake MUST NOT wait for it: the adapter starts discovery when
+the Socket Mode or gateway service starts, uses the cached identity when present,
+and otherwise starts a background discovery (with the same in-flight sharing,
+timeout and failure backoff) and admits the message without the marker. A stuck
+or failing `auth.test` MUST NOT drop or delay a human message.
+
 ## Credentials
 
 The adapter MUST resolve Slack tokens through `src/credentials` unless explicit env fallback is enabled for local smoke.

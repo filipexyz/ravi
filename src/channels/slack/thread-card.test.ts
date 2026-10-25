@@ -149,4 +149,16 @@ describe("Slack thread card", () => {
     expect(split.title).toEndWith("…");
     expect(split.body).toBe(line);
   });
+
+  it("renders shell-typed \\n in the brief and note as line breaks", () => {
+    const brief = `Publicar Ravi Console Fleet no GitHub\\n\\n${"Luís autorizou criar o repositório privado. ".repeat(8)}`;
+    const card = buildSlackThreadCard(brief, { status: "open", note: "Repo criado\\nfaltando o push" });
+    const texts = cardTexts(card.blocks);
+
+    expect(card.text).toBe("Publicar Ravi Console Fleet no GitHub");
+    expect(texts.body).toStartWith("Luís autorizou");
+    expect(texts.subtitle).toBe("*Progresso:* Repo criado\nfaltando o push");
+    expect(card.fullBrief).toStartWith("**Instruções completas**\n\nPublicar Ravi Console Fleet no GitHub\n\nLuís");
+    expect(JSON.stringify(card)).not.toContain("\\\\n");
+  });
 });

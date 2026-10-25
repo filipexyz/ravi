@@ -28,6 +28,7 @@ describe("Slack Hub gateway mode", () => {
       return Response.json({ accepted: true });
     }) as unknown as typeof fetch;
     const handleEnvelope = mock(async () => "processed" as const);
+    const warmLocalBotIdentity = mock(() => {});
     const service = new SlackGatewayModeService({
       claimUrl: "https://hub.test/claim",
       completionBaseUrl: "https://hub.test/events",
@@ -35,6 +36,7 @@ describe("Slack Hub gateway mode", () => {
       processor: {
         handleEnvelope,
         resumePendingInboundEnvelopes: async () => ({}),
+        warmLocalBotIdentity,
       },
       fetchImpl,
     });
@@ -43,6 +45,7 @@ describe("Slack Hub gateway mode", () => {
     await completed;
     await service.stop();
 
+    expect(warmLocalBotIdentity).toHaveBeenCalledTimes(1);
     expect(handleEnvelope).toHaveBeenCalledWith({
       envelope_id: "Ev1",
       type: "events_api",

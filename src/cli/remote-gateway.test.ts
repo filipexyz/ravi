@@ -14,6 +14,12 @@ import { ContractError } from "./agent-contract.js";
 import { presentationProfile, withPresentationContract } from "./library-contract.js";
 import { LibraryCommandError } from "../library/service.js";
 import {
+  RUNTIME_CONTROL_DISABLED,
+  RUNTIME_CONTROL_DISABLED_REASON,
+  RUNTIME_CONTROL_TIMEOUT,
+  runtimeControlCatalogCopy,
+} from "../runtime/runtime-control-errors.js";
+import {
   FILE_NOT_FOUND_CODE,
   FILE_NOT_FOUND_MESSAGE,
   FILE_NOT_FOUND_SUGGESTED_ACTION,
@@ -1744,5 +1750,110 @@ describe("operator-only refusals over the gateway", () => {
     );
     expect(remote?.message).toBe("Remote command was blocked by policy.");
     expect(JSON.stringify(remote?.envelope())).not.toContain("PRIVATE");
+  });
+});
+
+describe("sessions runtime remote relay", () => {
+  async function relay(op: string, local: ContractError) {
+    const response = contractErrorResponse(local);
+    return remoteGatewayErrorToContractError(op, result({ status: response.status, body: await response.text() }));
+  }
+
+  it("relays a disabled steer with catalog copy and typed details instead of Remote command failed", async () => {
+    const remote = await relay(
+      "sessions runtime steer",
+      new ContractError(
+        "sessions runtime steer",
+        RUNTIME_CONTROL_DISABLED,
+        "PRIVATE_DAEMON_TEXT_8K2R session-private-name",
+        1,
+        {
+          retryable: false,
+          suggestedAction: "PRIVATE_ACTION_8K2R",
+          operation: "turn.steer",
+          activeTurn: true,
+          turnId: "turn_123",
+          disabledReason: RUNTIME_CONTROL_DISABLED_REASON,
+        },
+      ),
+    );
+
+    const catalog = runtimeControlCatalogCopy(RUNTIME_CONTROL_DISABLED);
+    expect(remote).toMatchObject({
+      op: "sessions runtime steer",
+      code: RUNTIME_CONTROL_DISABLED,
+      exitCode: 1,
+      message: catalog?.message,
+      details: {
+        retryable: false,
+        suggestedAction: catalog?.suggestedAction,
+        operation: "turn.steer",
+        activeTurn: true,
+        turnId: "turn_123",
+        disabledReason: RUNTIME_CONTROL_DISABLED_REASON,
+      },
+    });
+    const serialized = JSON.stringify(remote?.envelope());
+    expect(serialized).not.toContain("PRIVATE_DAEMON_TEXT_8K2R");
+    expect(serialized).not.toContain("PRIVATE_ACTION_8K2R");
+    expect(serialized).not.toContain("session-private-name");
+  });
+
+  it("keeps the timeout retryable and drops unbounded details", async () => {
+    const remote = await relay(
+      "sessions runtime read",
+      new ContractError("sessions runtime read", RUNTIME_CONTROL_TIMEOUT, "PRIVATE_8K2R", 1, {
+        retryable: true,
+        suggestedAction: "PRIVATE_ACTION_8K2R",
+        operation: "thread.read",
+        turnId: "turn with spaces and PRIVATE_8K2R",
+        disabledReason: "PRIVATE_REASON_8K2R",
+      }),
+    );
+
+    expect(remote).toMatchObject({
+      code: RUNTIME_CONTROL_TIMEOUT,
+      message: runtimeControlCatalogCopy(RUNTIME_CONTROL_TIMEOUT)?.message,
+      details: { retryable: true },
+    });
+    expect(remote?.details.turnId).toBeUndefined();
+    expect(remote?.details.disabledReason).toBeUndefined();
+    expect(JSON.stringify(remote?.envelope())).not.toContain("PRIVATE");
+  });
+
+  it("does not mark a timed-out rollback retryable", async () => {
+    const remote = await relay(
+      "sessions runtime rollback",
+      new ContractError("sessions runtime rollback", RUNTIME_CONTROL_TIMEOUT, "x", 1, {
+        retryable: true,
+        operation: "thread.rollback",
+      }),
+    );
+
+    expect(remote).toMatchObject({ code: RUNTIME_CONTROL_TIMEOUT, details: { retryable: false } });
+  });
+
+  it("renders SESSION_NOT_FOUND without echoing the requested session", async () => {
+    const remote = await relay(
+      "sessions runtime steer",
+      new ContractError("sessions runtime steer", "SESSION_NOT_FOUND", "Session not found: private-session-8k2r", 1, {
+        suggestedAction: "List visible sessions with: ravi sessions list --json",
+      }),
+    );
+
+    expect(remote).toMatchObject({
+      code: "SESSION_NOT_FOUND",
+      message: "Session not found, or not visible to this context.",
+    });
+    expect(JSON.stringify(remote?.envelope())).not.toContain("private-session-8k2r");
+  });
+
+  it("does not apply the runtime catalog to other ops", async () => {
+    const remote = await relay(
+      "media send",
+      new ContractError("media send", RUNTIME_CONTROL_DISABLED, "PRIVATE_8K2R", 1, { suggestedAction: "x" }),
+    );
+
+    expect(remote?.message).toBe("Remote command failed.");
   });
 });

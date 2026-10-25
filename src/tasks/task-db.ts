@@ -1794,30 +1794,6 @@ export function dbRegisterTaskCheckpointMiss(
   };
 }
 
-/**
- * Push the active assignment's checkpoint forward without recording an event.
- * The task observer calls this on every delivery it reads: a worker that is
- * visibly working is not stalled, even when nothing changed in the status.
- */
-export function dbTouchTaskCheckpoint(taskId: string, now = Date.now()): TaskAssignment | null {
-  ensureTaskSchema();
-  const db = getDb();
-  const task = dbGetTask(taskId);
-  if (!task || task.status === "done" || task.status === "failed") return null;
-  const assignment = dbGetActiveAssignment(taskId);
-  if (!assignment) return null;
-  const checkpointIntervalMs = resolveTaskCheckpointIntervalMs(
-    assignment.checkpointIntervalMs ?? task.checkpointIntervalMs,
-  );
-  db.prepare(`
-    UPDATE task_assignments
-    SET checkpoint_due_at = ?,
-        checkpoint_overdue_count = 0
-    WHERE id = ? AND status IN ('assigned', 'accepted')
-  `).run(computeTaskCheckpointDueAt(now, checkpointIntervalMs), assignment.id);
-  return dbGetActiveAssignment(taskId);
-}
-
 export function dbDispatchTask(
   taskId: string,
   input: DispatchTaskInput,

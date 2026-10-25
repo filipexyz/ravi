@@ -99,6 +99,7 @@ describe("task comments steering", () => {
       sessionName,
       payload: expect.objectContaining({
         deliveryBarrier: "after_response",
+        taskBarrierTaskId: taskId,
         _agentId: "dev",
       }),
     });

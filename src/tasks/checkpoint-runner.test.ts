@@ -47,6 +47,8 @@ const { getOrCreateSession, getSessionByName } = await import("../router/session
 const { dbCreateAgent } = await import("../router/router-db.js");
 const { initTaskProfileScaffold, invalidateTaskProfileCatalogCache } = await import("./profiles.js");
 const { setTaskSessionPromptPublisherForTests } = await import("./session-publisher.js");
+const { upsertSessionTurn } = await import("../session-trace/session-trace-db.js");
+const { describeObservedTaskSilence } = await import("./checkpoint-runner.js");
 
 const createdTaskIds: string[] = [];
 let stateDir: string | null = null;
@@ -147,6 +149,130 @@ describe("observed task silence detector", () => {
     const types = dbListTaskEvents(created.task.id).map((event) => event.type);
     expect(types.filter((type) => type === "task.stalled")).toHaveLength(1);
     expect(types.filter((type) => type === "task.checkpoint.missed")).toHaveLength(2);
+  });
+});
+
+describe("observed task stall wording", () => {
+  function dispatchObservedTask(title: string) {
+    getOrCreateSession("agent:main:requester", "main", "/tmp/ravi-requester", { name: "requester" });
+    const created = createTask({
+      title,
+      instructions: "Work while the task observer keeps status.",
+      createdBy: "test",
+    });
+    createdTaskIds.push(created.task.id);
+    const sessionName = `${created.task.id}-work`;
+    getOrCreateSession(`agent:dev:${sessionName}`, "dev", "/tmp/ravi-worker", { name: sessionName });
+    const dispatched = dbDispatchTask(created.task.id, {
+      agentId: "dev",
+      sessionName,
+      assignedBy: "test",
+      reportToSessionName: "requester",
+    });
+    expect(dispatched.assignment.checkpointIntervalMs).toBe(30 * 60 * 1000);
+    dbMarkTaskAcceptedForSession(sessionName, created.task.id);
+    return {
+      taskId: created.task.id,
+      sessionKey: `agent:dev:${sessionName}`,
+      assignment: dbGetActiveAssignment(created.task.id)!,
+    };
+  }
+
+  async function sweepOnce(dueAt: number): Promise<void> {
+    const runner = new TaskCheckpointRunner();
+    await runner.start();
+    try {
+      expect(await runner.sweep(dueAt + 1)).toBe(1);
+    } finally {
+      await runner.stop();
+    }
+  }
+
+  it("says the worker answered and the observer recorded nothing when the worker turn completed", async () => {
+    const { taskId, sessionKey, assignment } = dispatchObservedTask("Observer blind");
+    const completedAt = assignment.assignedAt + 5 * 60 * 1000;
+    upsertSessionTurn({
+      turnId: `${taskId}-turn-1`,
+      sessionKey,
+      status: "complete",
+      startedAt: assignment.assignedAt + 1000,
+      completedAt,
+      updatedAt: completedAt,
+    });
+
+    await sweepOnce(assignment.checkpointDueAt!);
+
+    const stalled = dbListTaskEvents(taskId).filter((event) => event.type === "task.stalled");
+    expect(stalled).toHaveLength(1);
+    expect(stalled[0]?.message).toContain("The worker turn ended (complete) 25 min ago");
+    expect(stalled[0]?.message).toContain("the task observer may not be reading the worker");
+    expect(stalled[0]?.message).not.toContain("may be hung");
+  });
+
+  it("says the turn is still running when the worker turn has not ended", async () => {
+    const { taskId, sessionKey, assignment } = dispatchObservedTask("Observer blind, worker busy");
+    upsertSessionTurn({
+      turnId: `${taskId}-turn-1`,
+      sessionKey,
+      status: "running",
+      startedAt: assignment.assignedAt + 1000,
+      updatedAt: assignment.assignedAt + 1000,
+    });
+
+    await sweepOnce(assignment.checkpointDueAt!);
+
+    const stalled = dbListTaskEvents(taskId).filter((event) => event.type === "task.stalled");
+    expect(stalled[0]?.message).toContain("The worker turn is still running");
+  });
+
+  it("does not call a turn left running by a previous daemon still running", () => {
+    const { taskId, sessionKey, assignment } = dispatchObservedTask("Worker died with the daemon");
+    const startedAt = assignment.assignedAt + 1000;
+    upsertSessionTurn({ turnId: `${taskId}-turn-1`, sessionKey, status: "running", startedAt, updatedAt: startedAt });
+
+    const message = describeObservedTaskSilence(assignment, 30, startedAt + 60_000, startedAt + 1);
+    expect(message).toContain("started before the last daemon restart");
+    expect(message).not.toContain("still running");
+  });
+
+  it("measures silence from the last report when the observer already reported", () => {
+    const { taskId, sessionKey, assignment } = dispatchObservedTask("Observer reported once");
+    const completedAt = assignment.assignedAt + 5 * 60 * 1000;
+    upsertSessionTurn({
+      turnId: `${taskId}-turn-1`,
+      sessionKey,
+      status: "complete",
+      startedAt: assignment.assignedAt + 1000,
+      completedAt,
+      updatedAt: completedAt,
+    });
+    const reportedAt = assignment.assignedAt + 10 * 60 * 1000;
+
+    const message = describeObservedTaskSilence(
+      { ...assignment, checkpointLastReportAt: reportedAt },
+      30,
+      reportedAt + 30 * 60 * 1000,
+    );
+    expect(message).toContain("no task status was recorded since the last report 30 min ago");
+    expect(message).not.toContain("after dispatch");
+  });
+
+  it("keeps the hung-or-gone wording when the worker has no turn since dispatch", async () => {
+    const { taskId, sessionKey, assignment } = dispatchObservedTask("Worker silent");
+    // A turn from before this dispatch says nothing about this assignment.
+    upsertSessionTurn({
+      turnId: `${taskId}-turn-old`,
+      sessionKey,
+      status: "complete",
+      startedAt: assignment.assignedAt - 60_000,
+      completedAt: assignment.assignedAt - 30_000,
+      updatedAt: assignment.assignedAt - 30_000,
+    });
+
+    await sweepOnce(assignment.checkpointDueAt!);
+
+    const stalled = dbListTaskEvents(taskId).filter((event) => event.type === "task.stalled");
+    expect(stalled[0]?.message).toBe("No worker activity seen for 30 min; the turn may be hung or the session gone.");
   });
 });
 
@@ -266,6 +392,7 @@ describe.skip("task checkpoint runner", () => {
         sessionName: `${created.task.id}-work`,
         payload: expect.objectContaining({
           deliveryBarrier: "after_response",
+          taskBarrierTaskId: created.task.id,
         }),
       },
     ]);

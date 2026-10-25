@@ -44,6 +44,9 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     // Agent Markdown as Slack Block Kit: safe splits, documents as canvases or files, mrkdwn fallback.
     "src/channels/slack/markdown-layout.test.ts",
     "src/channels/slack/markdown-delivery.test.ts",
+    // Thread root card and its brief: shell-typed `\n` decoded into line breaks.
+    "src/channels/slack/thread-card.test.ts",
+    "src/channels/slack/thread-text.test.ts",
   ],
   "src/omni/": [
     "src/omni/consumer-context.test.ts",
@@ -121,6 +124,9 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/session-dispatcher.test.ts",
     // Dispatch/launch prompt intake failure (no agent): durable trace, turn end, chat notice, held prompts.
     "src/runtime/intake-failure.test.ts",
+    // Host runtime control: typed refusals, provider timeout, per-session lanes.
+    "src/runtime/control-host.test.ts",
+    "src/runtime/host-subscriptions.test.ts",
     // O observer de intenção é chamado de host-services.ts, e o comportamento que
     // ele garante (o que vira acompanhamento e o que não vira) é coberto aqui.
     // O call site em si ainda não tem teste de integração — está declarado como
@@ -161,6 +167,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/session-trace/": ["src/session-trace/session-trace.test.ts"],
   "src/triggers/": [
     "src/triggers/triggers.test.ts",
+    // Catalog entries: payload/schema shape for trigger-ready subjects.
+    "src/triggers/__tests__/topic-catalog.test.ts",
     // Runner lifecycle against a mocked NATS stream: filters, refresh, and
     // deleted triggers that must not fire on a removed topic.
     "src/triggers/__tests__/runner-filter.test.ts",

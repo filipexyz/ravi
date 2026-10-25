@@ -163,6 +163,23 @@ export function emitPermissionDeniedAudit(event: PermissionDeniedAuditEvent): vo
   }).catch(() => {});
 }
 
+/**
+ * Audit one provider-owned permission grant applied from an approval card. Same
+ * publisher and sanitization as denial audits; no secrets, no context keys.
+ */
+export function emitPermissionGrantAudit(event: Record<string, unknown>): void {
+  if (process.env.RAVI_SUPPRESS_AUDIT_EVENTS === "1") return;
+  const enriched = sanitizePublicValue({ type: "permission_grant", ...event }) as Record<string, unknown>;
+  const p = Promise.resolve(permissionAuditPublisher("ravi.audit.permission_grant", enriched)).catch(() => {
+    console.error("[audit] permission grant event could not be emitted");
+  });
+  pendingPermissionAuditPublishes.push(p);
+  p.finally(() => {
+    const index = pendingPermissionAuditPublishes.indexOf(p);
+    if (index >= 0) pendingPermissionAuditPublishes.splice(index, 1);
+  }).catch(() => {});
+}
+
 export async function flushPermissionAuditEvents(): Promise<void> {
   if (pendingPermissionAuditPublishes.length === 0) return;
   await Promise.allSettled([...pendingPermissionAuditPublishes]);
@@ -207,6 +224,73 @@ export function getPermissionDenial(id: number): PermissionDenial | null {
 export function markPermissionDenialNotified(id: number, notifiedAt = Date.now()): PermissionDenial | null {
   getDb().prepare("UPDATE permission_denials SET notified_at = ? WHERE id = ?").run(notifiedAt, id);
   return getPermissionDenial(id);
+}
+
+export interface ResolvePermissionDenialsInput {
+  /** The denial the caller acted on, when it is known. */
+  denialId?: number;
+  subjectType?: string;
+  subjectId?: string;
+  relation: string;
+  objectType: string;
+  objectId: string;
+  /**
+   * Only close denials recorded from this chat (raw channel chat id), used by a
+   * chat-scoped grant. Denials without provenance are kept: they cannot be
+   * attributed to another chat.
+   */
+  chatId?: string;
+  /**
+   * Only close denials whose actor resolved to this contact, used by contact
+   * and chat-tag scoped grants. Same provenance rule as `chatId`.
+   */
+  contactId?: string;
+  now?: number;
+}
+
+/**
+ * Mark open denials resolved after a durable grant landed. The grant covers the
+ * subject, not one ledger row, so every still-open denial for the same subject
+ * and capability is closed. `resolved_relation_id` stays untouched: it belongs
+ * to another ledger.
+ */
+export function resolvePermissionDenials(input: ResolvePermissionDenialsInput): number {
+  const relation = normalizeText(input.relation);
+  const objectType = normalizeText(input.objectType);
+  const objectId = normalizeText(input.objectId);
+  if (!relation || !objectType || !objectId) return 0;
+
+  const matching = ["relation = ?", "object_type = ?", "object_id = ?", "resolved_at IS NULL"];
+  const params: Array<string | number> = [relation, objectType, objectId];
+  if (typeof input.denialId === "number" && Number.isFinite(input.denialId)) {
+    matching.push("id = ?");
+    params.push(input.denialId);
+  } else if (input.subjectType && input.subjectId) {
+    matching.push("subject_type = ?", "subject_id = ?");
+    params.push(input.subjectType, input.subjectId);
+  } else {
+    return 0;
+  }
+
+  const chatId = normalizeText(input.chatId);
+  if (chatId) {
+    matching.push(
+      "(json_extract(detail_json, '$.context.source.chatId') IS NULL OR json_extract(detail_json, '$.context.source.chatId') = ?)",
+    );
+    params.push(chatId);
+  }
+  const contactId = normalizeText(input.contactId);
+  if (contactId) {
+    matching.push(
+      "(json_extract(detail_json, '$.context.actorPrincipal') IS NULL OR json_extract(detail_json, '$.context.actorPrincipal') = ?)",
+    );
+    params.push(`contact:${contactId}`);
+  }
+
+  const result = getDb()
+    .prepare(`UPDATE permission_denials SET resolved_at = ? WHERE ${matching.join(" AND ")}`)
+    .run(input.now ?? Date.now(), ...params);
+  return result.changes;
 }
 
 function rowToPermissionDenial(row: PermissionDenialRow): PermissionDenial {

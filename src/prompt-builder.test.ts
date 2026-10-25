@@ -47,6 +47,28 @@ describe("buildGroupContext", () => {
     expect(context).not.toContain("122054447747088");
     expect(context).not.toContain("178035101794451@lid");
   });
+
+  it("explains the @mention marker in a small group whenever the bot tag is known", () => {
+    const tagged = buildGroupContext({
+      channelId: "slack",
+      channelName: "Slack",
+      isGroup: true,
+      groupName: "general",
+      botTag: "<@ULOCAL>",
+    });
+
+    expect(tagged).toContain('Your tag in this group: "<@ULOCAL>"');
+    expect(tagged).toContain("Messages with `@mention` in the header mean YOU were @mentioned directly.");
+    expect(tagged).not.toContain("mostly lurk");
+
+    const untagged = buildGroupContext({
+      channelId: "slack",
+      channelName: "Slack",
+      isGroup: true,
+      groupName: "general",
+    });
+    expect(untagged).not.toContain("`@mention`");
+  });
 });
 
 describe("buildSystemPrompt", () => {

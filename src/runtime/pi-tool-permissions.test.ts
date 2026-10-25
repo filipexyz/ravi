@@ -768,6 +768,23 @@ describe("pi dynamic tool bridge", () => {
     });
   });
 
+  it("reads the payload from placeholder, where Pi RPC puts ctx.ui.input's second argument", () => {
+    const payload = JSON.stringify({ toolName: "tasks_report", toolCallId: "call-2", arguments: { taskId: "task-1" } });
+    const expected = { id: "evt-2", toolName: "tasks_report", toolCallId: "call-2", arguments: { taskId: "task-1" } };
+    expect(
+      parsePiDynamicToolUiRequest({
+        type: "extension_ui_request",
+        id: "evt-2",
+        method: "input",
+        title: PI_DYNAMIC_TOOL_UI_TITLE,
+        placeholder: payload,
+      }),
+    ).toEqual(expected);
+    expect(
+      parsePiDynamicToolUiRequest({ id: "evt-2", method: "input", title: PI_DYNAMIC_TOOL_UI_TITLE, prefill: payload }),
+    ).toEqual(expected);
+  });
+
   it("ignores unrelated extension UI requests", () => {
     expect(parsePiDynamicToolUiRequest({ title: "permission", id: "x" })).toBeNull();
     expect(parsePiDynamicToolUiRequest({ title: PI_DYNAMIC_TOOL_UI_TITLE })).toBeNull();

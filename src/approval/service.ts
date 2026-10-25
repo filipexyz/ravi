@@ -2,7 +2,18 @@ import { randomUUID } from "node:crypto";
 import { nats as runtimeNats } from "../nats.js";
 import { isChatOnlyAgent, isToolOrExecCapability } from "../permissions/agent-default-capabilities-provider.js";
 import { canWithCapabilityContext } from "../permissions/provider-runtime.js";
-import { recordAndEmitPermissionDenial } from "../permissions/denials.js";
+import {
+  recordAndEmitPermissionDenial,
+  listPermissionDenials,
+  resolvePermissionDenials,
+  emitPermissionGrantAudit,
+  type PermissionDenial,
+} from "../permissions/denials.js";
+import {
+  applyPermissionGrant,
+  resolveGrantScopeRef,
+  type PermissionGrantScopeValue,
+} from "../permissions/apply-grant.js";
 import { buildAuditContextProvenance } from "../permissions/audit-provenance.js";
 import { buildAuthorizationGuidance, formatCanonicalCapability } from "../permissions/authorization-guidance.js";
 import { dbUpdateContextCapabilities, type ContextCapability, type ContextRecord } from "../router/router-db.js";
@@ -10,9 +21,20 @@ import { updateSlackText } from "../channels/slack/text-send.js";
 import { respondToSlackInteraction } from "../channels/slack/interactions.js";
 import { requestReply as runtimeRequestReply } from "../utils/request-reply.js";
 import { logger } from "../utils/logger.js";
-import { evaluateApprovalInboundEvent } from "./decision.js";
-import { listSlackApprovalGrantorUserIds } from "./grantor.js";
-import { buildSlackApprovalFinalMessage, buildSlackApprovalRequestMessage } from "./slack-blocks.js";
+import { evaluateApprovalInboundEvent, type ApprovalInboundEvaluation } from "./decision.js";
+import { findSlackUserIdForContact, listSlackApprovalGrantorUserIds } from "./grantor.js";
+import {
+  buildPermissionGrantMetadata,
+  describeGrantScope,
+  readPermissionGrantMetadata,
+  sameGrantTuple,
+  type PermissionGrantMetadata,
+} from "./grant-metadata.js";
+import {
+  buildSlackApprovalFinalMessage,
+  buildSlackApprovalRequestMessage,
+  buildSlackPermissionGrantMessage,
+} from "./slack-blocks.js";
 import {
   attachApprovalRequestMessageId,
   claimApprovalDecision,
@@ -20,7 +42,9 @@ import {
   expireApprovalRequest,
   getApprovalRequest,
   listApprovalDeliveries,
+  listPendingApprovalRequestsForChat,
   recordApprovalDeliveries,
+  setApprovalCardScope,
   type ApprovalDeliveryKind,
   type ApprovalRequestRecord,
   type ApprovalRequestType,
@@ -125,6 +149,10 @@ export interface CascadingApprovalOptions {
   autoApproveWithoutSource?: boolean;
   eventData?: Record<string, unknown>;
   beforeExternalApproval?: () => void;
+  /** Present on permission denials that may be granted as a durable profile. */
+  grant?: PermissionGrantMetadata | null;
+  /** Slack user id of the person whose call was denied. */
+  requesterUserId?: string;
 }
 
 export interface ContextAuthorizationOptions {
@@ -154,6 +182,9 @@ export interface RequestApprovalOptions {
   objectType?: string;
   objectId?: string;
   delegated?: boolean;
+  grant?: PermissionGrantMetadata | null;
+  /** Slack user id of the person whose call was denied, for the card mention. */
+  requesterUserId?: string;
 }
 
 interface ApprovalDeliveryReply {
@@ -171,6 +202,8 @@ export async function requestApproval(
   const requestId = randomUUID();
   const type = options?.type ?? "permission";
   const slack = isSlackChannel(source.channel);
+  const grantInput = slack ? (options?.grant ?? null) : null;
+  const grant = grantInput ? { ...grantInput, reason: compactReason(text) } : null;
 
   // Slack cards go privately to the people who can grant the request, and to
   // nobody else. When nobody can, say so now instead of posting a card no one
@@ -183,7 +216,10 @@ export async function requestApproval(
         objectId: options?.objectId,
       })
     : [];
-  if (slack && grantors.length === 0) {
+  // A grant card goes to the admins when there are any (they can grant the
+  // admin profile); otherwise to whoever can grant the exact capability.
+  const recipients = grant && grant.adminUserIds.length > 0 ? [...grant.adminUserIds] : grantors;
+  if (slack && recipients.length === 0) {
     const reason = buildNoSlackGrantorReason(type, options);
     log.warn("No Slack grantor for approval request", {
       channel: source.channel,
@@ -196,15 +232,41 @@ export async function requestApproval(
     return { approved: false, reason };
   }
 
+  // Dedupe: one open grant card per (chat, subject, capability). A second
+  // denied call in the same chat waits on the card already on screen.
+  if (grant) {
+    const duplicate = findOpenGrantRequest(grant, source.chatId, approvalServiceDependencies.now());
+    if (duplicate) {
+      log.info("Waiting on the open permission grant card", {
+        requestId: duplicate.id,
+        chatId: grant.targets.chatId,
+        capability: formatCanonicalCapability(grant.capability),
+      });
+      return waitForExistingApproval(duplicate, timeoutMs);
+    }
+  }
+
   const slackDelivery = slack
-    ? buildSlackApprovalRequestMessage({
-        requestId,
-        type,
-        text,
-        agentId: options?.agentId,
-        sessionName: options?.sessionName,
-        delegated: options?.delegated,
-      })
+    ? grant
+      ? buildSlackPermissionGrantMessage({
+          requestId,
+          ...(options?.requesterUserId ? { requesterUserId: options.requesterUserId } : {}),
+          capabilityText: formatCanonicalCapability(grant.capability),
+          reason: grant.reason ?? text,
+          ...(options?.agentId ? { agentId: options.agentId } : {}),
+          ...(options?.sessionName ? { sessionName: options.sessionName } : {}),
+          adminUserIds: grant.adminUserIds,
+          allowed: grant.allowed,
+          scopes: grant.scopes,
+        })
+      : buildSlackApprovalRequestMessage({
+          requestId,
+          type,
+          text,
+          agentId: options?.agentId,
+          sessionName: options?.sessionName,
+          delegated: options?.delegated,
+        })
     : null;
   const deliveryText =
     slackDelivery?.text ?? buildReactionApprovalText(type, text, options?.agentId, options?.delegated === true);
@@ -222,6 +284,7 @@ export async function requestApproval(
     permission: options?.permission,
     objectType: options?.objectType,
     objectId: options?.objectId,
+    ...(grant ? { grant } : {}),
     createdAt: now,
     expiresAt: now + timeoutMs,
   });
@@ -235,7 +298,7 @@ export async function requestApproval(
         accountId: source.accountId,
         to: source.chatId,
         text: deliveryText,
-        ...(slackDelivery ? { blocks: slackDelivery.blocks, privateTo: grantors } : {}),
+        ...(slackDelivery ? { blocks: slackDelivery.blocks, privateTo: recipients } : {}),
         ...(source.threadId ? { threadId: source.threadId } : {}),
       },
       Math.min(timeoutMs, DEFAULT_APPROVAL_DELIVERY_TIMEOUT_MS),
@@ -294,6 +357,53 @@ function parseApprovalDeliveries(
     deliveries.push({ userId, kind, chatId, messageId, createdAt: now });
   }
   return deliveries;
+}
+
+/**
+ * The open card that already covers this (chat, subject, capability). Two denied
+ * calls in one chat must not produce two cards the admin has to reason about.
+ */
+function findOpenGrantRequest(
+  grant: PermissionGrantMetadata,
+  approvalChatId: string,
+  now: number,
+): ApprovalRequestRecord | null {
+  const chatId = approvalChatId?.trim() || grant.targets.chatId;
+  if (!chatId) return null;
+  for (const candidate of listPendingApprovalRequestsForChat(chatId, now)) {
+    const candidateGrant = readPermissionGrantMetadata(candidate);
+    if (candidateGrant && sameGrantTuple(candidateGrant, grant)) return candidate;
+  }
+  return null;
+}
+
+/**
+ * Wait on a card someone else is already holding. Only the waiter that created
+ * the request claims its decision; this path just observes the outcome so the
+ * second blocked call proceeds with the same grant.
+ */
+async function waitForExistingApproval(
+  request: ApprovalRequestRecord,
+  timeoutMs: number,
+): Promise<{ approved: boolean; reason?: string; messageId?: string }> {
+  const startedAt = Date.now();
+  for (;;) {
+    const current = getApprovalRequest(request.id) ?? request;
+    if (current.status === "decided") {
+      return {
+        approved: current.decision === "approved",
+        ...(current.decision === "rejected" ? { reason: current.reason ?? "rejected" } : {}),
+        ...(current.messageId ? { messageId: current.messageId } : {}),
+      };
+    }
+    if (current.status === "expired") {
+      return { approved: false, reason: "Timeout — nenhuma resposta em 5 minutos." };
+    }
+    if (Date.now() - startedAt >= timeoutMs) {
+      return { approved: false, reason: "Timeout — nenhuma resposta em 5 minutos." };
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
 }
 
 function buildNoSlackGrantorReason(type: ApprovalRequestType, options: RequestApprovalOptions | undefined): string {
@@ -385,6 +495,8 @@ export async function requestCascadingApproval(
     permission: stringField(opts.eventData, "permission"),
     objectType: stringField(opts.eventData, "objectType"),
     objectId: stringField(opts.eventData, "objectId"),
+    ...(opts.grant ? { grant: opts.grant } : {}),
+    ...(opts.requesterUserId ? { requesterUserId: opts.requesterUserId } : {}),
   });
 
   await emitApprovalResponseOnce({
@@ -424,6 +536,7 @@ export async function authorizeRuntimeContext(opts: ContextAuthorizationOptions)
   const resolvedSource = toApprovalTarget(context.source);
   const approvalSource = resolvedSource ? undefined : getApprovalSourceFromMetadata(context);
   const text = buildPermissionRequestText(permission, objectType, objectId, context);
+  const grant = buildRuntimePermissionGrant(context, { permission, objectType, objectId });
   const result = await requestCascadingApproval({
     resolvedSource,
     approvalSource,
@@ -434,6 +547,8 @@ export async function authorizeRuntimeContext(opts: ContextAuthorizationOptions)
     timeoutMs: opts.timeoutMs,
     autoApproveWithoutSource: false,
     beforeExternalApproval: opts.beforeExternalApproval,
+    ...(grant ? { grant } : {}),
+    ...(grant ? requesterUserIdFor(grant, resolvedSource ?? approvalSource) : {}),
     eventData: {
       ...(opts.eventData ?? {}),
       contextId: context.contextId,
@@ -467,6 +582,141 @@ export async function authorizeRuntimeContext(opts: ContextAuthorizationOptions)
 
 function isUnresolvedExternalActor(context: ContextRecord): boolean {
   return context.metadata?.actorResolution === "missing_contact";
+}
+
+/**
+ * What a Slack denial card may offer for this turn. Only a Slack turn with a
+ * canonical chat and a resolvable subject gets grant metadata; every other
+ * case keeps today's one-shot approval card.
+ */
+function buildRuntimePermissionGrant(
+  context: ContextRecord,
+  capability: { permission: string; objectType: string; objectId: string },
+): PermissionGrantMetadata | null {
+  const source = context.source;
+  if (!source || !isSlackChannel(source.channel)) return null;
+  const instanceId = source.instanceId ?? source.accountId;
+  try {
+    const adminUserIds = listSlackApprovalGrantorUserIds({
+      instanceId,
+      permission: "admin",
+      objectType: "system",
+      objectId: "*",
+    });
+    const denialId = latestOpenDenialId(context, capability);
+    return buildPermissionGrantMetadata({
+      context,
+      capability,
+      adminUserIds,
+      ...(typeof denialId === "number" ? { denialId } : {}),
+    });
+  } catch (error) {
+    log.warn("Could not build permission grant metadata", {
+      contextId: context.contextId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+function latestOpenDenialId(
+  context: ContextRecord,
+  capability: { permission: string; objectType: string; objectId: string },
+): number | undefined {
+  const agentId = context.agentId;
+  if (!agentId) return undefined;
+  const provenance = buildAuditContextProvenance({ context });
+  const scope = {
+    chatId: provenance?.source?.chatId ?? context.source?.chatId ?? undefined,
+    contactId: contactIdFromPrincipal(provenance?.actorPrincipal),
+  };
+  const open = listPermissionDenials({ subjectType: "agent", subjectId: agentId, resolved: false });
+  for (let index = open.length - 1; index >= 0; index -= 1) {
+    const denial = open[index];
+    if (
+      denial.relation === capability.permission &&
+      denial.objectType === capability.objectType &&
+      denial.objectId === capability.objectId &&
+      denialMatchesScope(denial, scope)
+    ) {
+      return denial.id;
+    }
+  }
+  return undefined;
+}
+
+interface DenialScopeFilter {
+  readonly chatId?: string;
+  readonly contactId?: string;
+}
+
+/**
+ * A denial is only attributable to a scope when its provenance says so. A
+ * denial with no provenance is kept: it cannot be assigned to another chat.
+ */
+function denialMatchesScope(denial: PermissionDenial, scope: DenialScopeFilter): boolean {
+  const context = denialProvenanceContext(denial);
+  const denialChatId = stringValue(nestedValue(context, "source", "chatId"));
+  if (scope.chatId && denialChatId && denialChatId !== scope.chatId) return false;
+  const denialContactId = contactIdFromPrincipal(stringValue(context?.actorPrincipal));
+  if (scope.contactId && denialContactId && denialContactId !== scope.contactId) return false;
+  return true;
+}
+
+/**
+ * Which open denials a grant may close. A chat grant only covers its own chat;
+ * a contact or chat-tag grant covers the requester's denials; an agent-only
+ * grant stays agent-wide.
+ */
+function denialScopeSelector(
+  grant: PermissionGrantMetadata,
+  request: ApprovalRequestRecord,
+  scope: PermissionGrantScopeValue | null,
+): DenialScopeFilter {
+  if (!scope) return {};
+  if (scope === "chat") {
+    const chatId = request.chatId?.trim();
+    return chatId ? { chatId } : {};
+  }
+  const contactId = grant.targets.contactId;
+  return contactId ? { contactId } : {};
+}
+
+function denialProvenanceContext(denial: PermissionDenial): Record<string, unknown> | null {
+  const context = denial.detail?.context;
+  return context && typeof context === "object" && !Array.isArray(context)
+    ? (context as Record<string, unknown>)
+    : null;
+}
+
+function nestedValue(record: Record<string, unknown> | null, ...path: string[]): unknown {
+  let current: unknown = record;
+  for (const key of path) {
+    if (!current || typeof current !== "object" || Array.isArray(current)) return undefined;
+    current = (current as Record<string, unknown>)[key];
+  }
+  return current;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function contactIdFromPrincipal(principal: string | undefined): string | undefined {
+  const normalized = principal?.trim();
+  if (!normalized?.startsWith("contact:")) return undefined;
+  const contactId = normalized.slice("contact:".length).trim();
+  return contactId.length > 0 ? contactId : undefined;
+}
+
+function requesterUserIdFor(
+  grant: PermissionGrantMetadata,
+  source: ApprovalTarget | undefined,
+): { requesterUserId?: string } {
+  const contactId = grant.targets.contactId;
+  if (!contactId) return {};
+  const userId = findSlackUserIdForContact({ contactId, instanceId: source?.instanceId ?? source?.accountId });
+  return userId ? { requesterUserId: userId } : {};
 }
 
 function denyRuntimeContext(
@@ -606,11 +856,29 @@ async function waitForApprovalResponse(
           }
           if (evaluation.request.id !== requestId) continue;
 
+          if (evaluation.kind === "scope") {
+            setApprovalCardScope({
+              requestId,
+              userId: evaluation.actorId,
+              scope: evaluation.scope,
+              now: approvalServiceDependencies.now(),
+            });
+            await reRenderGrantCard(
+              evaluation.request,
+              evaluation.actorId,
+              evaluation.scope,
+              evaluation.responseUrlId,
+            ).catch((error) => log.warn("Failed to re-render the grant card scope", { requestId, error }));
+            continue;
+          }
+
           const claimed = claimApprovalDecision({
             id: requestId,
             decision: evaluation.decision,
             decidedBy: evaluation.actorId,
             reason: evaluation.reason,
+            ...(evaluation.grant ? { grantIntent: evaluation.grant.intent } : {}),
+            ...(evaluation.grant?.scope ? { grantScope: evaluation.grant.scope } : {}),
             now: approvalServiceDependencies.now(),
           });
           if (!claimed) {
@@ -618,12 +886,25 @@ async function waitForApprovalResponse(
             continue;
           }
 
-          await finalizeApprovalMessage(claimed, claimed.decision ?? evaluation.decision, {
-            actorId: evaluation.actorId,
-            responseUrlId: evaluation.responseUrlId,
-          }).catch((error) => {
+          const grantOutcome = await applyGrantForDecision(claimed, evaluation).catch((error) => {
+            log.warn("Failed to apply a permission grant", { requestId, error });
+            return { detail: "grant failed", failed: true };
+          });
+
+          await finalizeApprovalMessage(
+            claimed,
+            claimed.decision ?? evaluation.decision,
+            { actorId: evaluation.actorId, responseUrlId: evaluation.responseUrlId },
+            grantOutcome?.detail,
+          ).catch((error) => {
             log.warn("Failed to finalize Slack approval message", { requestId, error });
           });
+          // A grant click that could not write the grant does not let the
+          // blocked call through: the next denial opens a fresh card.
+          if (grantOutcome?.failed) {
+            finish({ approved: false, reason: "The permission grant could not be applied." });
+            return;
+          }
           finish({
             approved: claimed.decision === "approved",
             ...(claimed.decision === "rejected" ? { reason: claimed.reason ?? evaluation.reason } : {}),
@@ -638,6 +919,140 @@ async function waitForApprovalResponse(
 }
 
 /**
+ * Apply the grant a click chose, then close the denial ledger row. The click's
+ * scope was validated against the stored grant before the claim, so the only
+ * thing left here is the durable write and its audit trail.
+ */
+async function applyGrantForDecision(
+  request: ApprovalRequestRecord,
+  evaluation: Extract<ApprovalInboundEvaluation, { kind: "decide" }>,
+): Promise<{ detail?: string; failed?: boolean } | null> {
+  const grant = readPermissionGrantMetadata(request);
+  const click = evaluation.grant;
+  if (!grant || !click || request.decision !== "approved") return null;
+
+  const scopeRef = click.scope ? resolveGrantScopeRef(click.scope, grant.targets.chatId) : null;
+  const scopeLabel = click.scope ?? null;
+  const idempotencyKey = `permission-grant:${request.id}:${click.intent}:${scopeLabel ?? "agent"}`;
+  const now = approvalServiceDependencies.now();
+
+  let applied: ReturnType<typeof applyPermissionGrant> | null = null;
+  let errorText: string | undefined;
+  try {
+    applied = applyPermissionGrant({
+      intent: click.intent,
+      scope: scopeRef,
+      capability: grant.capability,
+      ...(grant.targets.contactId ? { contactId: grant.targets.contactId } : {}),
+      ...(grant.targets.agentId ? { agentId: grant.targets.agentId } : {}),
+      actor: {
+        channel: request.channel,
+        ...(request.decidedBy ? { userId: request.decidedBy } : {}),
+        ...(grant.targets.contactId ? { contactId: grant.targets.contactId } : {}),
+      },
+      requestId: request.id,
+      ...(typeof grant.denialId === "number" ? { denialId: grant.denialId } : {}),
+      idempotencyKey,
+      createdBy: "approval.grant-card",
+      now,
+    });
+  } catch (error) {
+    errorText = error instanceof Error ? error.message : String(error);
+    log.warn("Permission grant could not be applied", { requestId: request.id, error: errorText });
+  }
+
+  let resolvedDenials = 0;
+  if (applied) {
+    const denialSubjectId = grant.targets.agentId ?? request.agentId;
+    const denialScope = denialScopeSelector(grant, request, click.scope);
+    resolvedDenials = resolvePermissionDenials({
+      relation: grant.capability.permission,
+      objectType: grant.capability.objectType,
+      objectId: grant.capability.objectId,
+      ...(denialSubjectId ? { subjectType: "agent", subjectId: denialSubjectId } : {}),
+      ...denialScope,
+      now,
+    });
+  }
+
+  emitPermissionGrantAudit({
+    agentId: request.agentId ?? grant.targets.agentId ?? "unknown",
+    requestId: request.id,
+    ...(typeof grant.denialId === "number" ? { denialId: grant.denialId } : {}),
+    capability: formatCanonicalCapability(grant.capability),
+    intent: click.intent,
+    scope: scopeLabel ?? "agent",
+    clicker: {
+      channel: request.channel,
+      userId: request.decidedBy,
+      ...(evaluation.actorId ? { actorId: evaluation.actorId } : {}),
+    },
+    profile: applied?.profile ?? null,
+    capabilities: applied?.capabilities.map(formatCanonicalCapability) ?? [],
+    agentCeiling: {
+      agentId: grant.targets.agentId ?? null,
+      changed: applied?.operations.some((op) => op.kind === "agent-ceiling" && op.status === "applied") ?? false,
+    },
+    changed: applied?.changed ?? false,
+    replay: applied?.replay ?? false,
+    applied: Boolean(applied),
+    resolvedDenials,
+    operations: applied?.operations ?? [],
+    ...(errorText ? { error: errorText } : {}),
+    timestamp: new Date(now).toISOString(),
+  });
+
+  if (!applied) return { detail: "grant failed", failed: true };
+  const target = scopeLabel ? ` in ${describeGrantScope(scopeLabel)}` : " (agent ceiling)";
+  return {
+    detail:
+      click.intent === "full-access"
+        ? `Full access${target}`
+        : `Granted ${formatCanonicalCapability(grant.capability)}${target}`,
+  };
+}
+
+/** Re-render one person's private card after they picked a scope. */
+async function reRenderGrantCard(
+  request: ApprovalRequestRecord,
+  actorId: string,
+  scope: PermissionGrantScopeValue,
+  responseUrlId: string | undefined,
+): Promise<void> {
+  const grant = readPermissionGrantMetadata(request);
+  if (!grant || !responseUrlId) return;
+  const requesterUserId = grant.targets.contactId
+    ? findSlackUserIdForContact({
+        contactId: grant.targets.contactId,
+        instanceId: request.instanceId ?? request.accountId,
+      })
+    : null;
+  const payload = buildSlackPermissionGrantMessage({
+    requestId: request.id,
+    ...(requesterUserId ? { requesterUserId } : {}),
+    capabilityText: formatCanonicalCapability(grant.capability),
+    ...(grant.reason ? { reason: grant.reason } : {}),
+    ...(request.agentId ? { agentId: request.agentId } : {}),
+    ...(request.sessionName ? { sessionName: request.sessionName } : {}),
+    adminUserIds: grant.adminUserIds,
+    allowed: grant.allowed,
+    scopes: grant.scopes,
+    selectedScope: scope,
+  });
+  log.info("Re-rendering the grant card scope", { requestId: request.id, actorId, scope });
+  await approvalServiceDependencies.respondSlackInteraction({
+    responseUrlId,
+    payload: { replace_original: true, text: payload.text, blocks: payload.blocks },
+  });
+}
+
+function compactReason(value: string | undefined): string | undefined {
+  const compact = value?.replace(/\s+/g, " ").trim();
+  if (!compact) return undefined;
+  return compact.length > 300 ? `${compact.slice(0, 297)}...` : compact;
+}
+
+/**
  * Takes the buttons away once a request is settled. Private cards: the clicker's
  * own card is replaced through its `response_url`, DM cards are edited in place.
  * Other people's ephemeral cards cannot be edited by the app; a later click on
@@ -647,6 +1062,7 @@ async function finalizeApprovalMessage(
   request: ApprovalRequestRecord,
   outcome: "approved" | "rejected" | "expired",
   clicker?: { readonly actorId?: string; readonly responseUrlId?: string },
+  detail?: string,
 ): Promise<void> {
   if (!isSlackChannel(request.channel) || !request.messageId) return;
   const message = buildSlackApprovalFinalMessage({
@@ -654,6 +1070,7 @@ async function finalizeApprovalMessage(
     outcome,
     reason: request.reason ?? undefined,
     decidedBy: outcome === "expired" ? undefined : (request.decidedBy ?? undefined),
+    ...(outcome === "approved" && detail ? { detail } : {}),
   });
   const deliveries = listApprovalDeliveries(request.id);
   if (deliveries.length === 0) {

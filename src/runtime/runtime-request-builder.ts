@@ -1,8 +1,9 @@
 import { homedir } from "node:os";
 import { DEFAULT_DELIVERY_BARRIER } from "../delivery-barriers.js";
-import type { AgentConfig, SessionEntry } from "../router/index.js";
+import { getSessionByName, type AgentConfig, type SessionEntry } from "../router/index.js";
 import { dbGetChat, dbGetSessionDefaultChatId, dbGetSetting } from "../router/router-db.js";
 import { configStore } from "../config-store.js";
+import { applyProviderModelRule } from "./model-catalog.js";
 import {
   buildRuntimeTracePromptSectionMetadata,
   createSessionTraceTurnId,
@@ -17,6 +18,8 @@ import { buildTurnReplyTarget } from "./turn-reply-target.js";
 import { resolveAgentSkills } from "./allowed-skills.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { createRuntimeMessageGenerator } from "./delivery-queue.js";
+import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
+import { markRuntimeTaskAcceptedForPrompt, resolveRuntimeForPrompt } from "./task-runtime-context.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
 import {
   resolveRuntimeToolEffectFence,
@@ -105,6 +108,8 @@ export interface RuntimeStartRequestBuildOptions {
   sessionCwd: string;
   dbSessionKey: string;
   model: string;
+  /** Global default model, the fallback when no layer sets one for a turn. */
+  configModel?: string;
   runtimeResolution: TaskRuntimeResolution;
   storedRuntimeSessionParams: Record<string, unknown> | undefined;
   storedProviderSessionId?: string;
@@ -623,6 +628,8 @@ async function buildRuntimeStartRequestInternal(
   let initialModelBrokerAttemptAvailable = Boolean(modelBroker);
   let pendingModelBrokerTurnId = initialModelBrokerTurnId;
   let turnRuntimeContextActivated = false;
+  // The resolution the current turn runs with, recorded on its adapter trace.
+  let currentTurnRuntimeResolution = runtimeResolution;
   const reserveModelBrokerAttemptForTurn = async (
     turnId: string,
     planned?: ClaimedRuntimeModelBrokerPlan,
@@ -769,11 +776,11 @@ async function buildRuntimeStartRequestInternal(
       turnId,
       provider: runtimeProviderId,
       model: currentModel,
-      effort: runtimeResolution.options.effort ?? null,
-      thinking: runtimeResolution.options.thinking ?? null,
-      modelSource: runtimeResolution.sources.model,
-      effortSource: runtimeResolution.sources.effort,
-      thinkingSource: runtimeResolution.sources.thinking,
+      effort: currentTurnRuntimeResolution.options.effort ?? null,
+      thinking: currentTurnRuntimeResolution.options.thinking ?? null,
+      modelSource: currentTurnRuntimeResolution.sources.model,
+      effortSource: currentTurnRuntimeResolution.sources.effort,
+      thinkingSource: currentTurnRuntimeResolution.sources.thinking,
       prompt: input.combinedPrompt,
       systemPrompt: systemPromptAppend,
       systemPromptSectionMetadata,
@@ -876,6 +883,22 @@ async function buildRuntimeStartRequestInternal(
     }
     return { ...traceTurn, crashRecoveryAttemptId: attempt.attemptId };
   };
+  // Each turn resolves its runtime options from the current session row, so
+  // session overrides changed while the session runs apply on the next turn.
+  const resolveTurnRuntimeResolution = (turnPrompt: RuntimeLaunchPrompt): TaskRuntimeResolution => {
+    try {
+      return resolveRuntimeForPrompt({
+        sessionName,
+        prompt: turnPrompt,
+        session: getSessionByName(sessionName) ?? session,
+        agent,
+        configModel: options.configModel,
+      });
+    } catch (error) {
+      runtimeRequestLog.warn("Turn runtime options unavailable; keeping the session's", { sessionName, error });
+      return runtimeResolution;
+    }
+  };
   const messageGenerator = createRuntimeMessageGenerator({
     sessionName,
     session: streamingSession,
@@ -907,6 +930,41 @@ async function buildRuntimeStartRequestInternal(
         prompt: turnPrompt,
         source: turnSource,
       });
+      // Task binding, effort and thinking belong to the turn, not to the runtime
+      // process: each turn resolves its own and the provider applies them per
+      // turn, so entering or leaving a task never relaunches the session.
+      // A batched turn keeps the binding of its task atom when a task-less atom owns the envelope.
+      const turnTaskBarrierTaskId =
+        normalizePromptTaskBarrierTaskId(turnPrompt.taskBarrierTaskId) ??
+        [...input.deliverableMessages]
+          .reverse()
+          .map((message) => normalizePromptTaskBarrierTaskId(message.taskBarrierTaskId))
+          .find((taskId): taskId is string => Boolean(taskId));
+      const boundTurnPrompt =
+        turnTaskBarrierTaskId && !turnPrompt.taskBarrierTaskId
+          ? { ...turnPrompt, taskBarrierTaskId: turnTaskBarrierTaskId }
+          : turnPrompt;
+      // The launch turn uses the resolution the launch just made.
+      const turnRuntimeResolution =
+        boundTurnPrompt === prompt ? runtimeResolution : resolveTurnRuntimeResolution(boundTurnPrompt);
+      currentTurnRuntimeResolution = turnRuntimeResolution;
+      // A model broker leases the model; otherwise the model follows the turn too.
+      if (!modelBroker) {
+        // A turn that resolves the launch's model keeps the launch model as given.
+        const turnModel =
+          turnRuntimeResolution.options.model === runtimeResolution.options.model
+            ? model
+            : (turnRuntimeResolution.options.model ?? options.configModel ?? model);
+        streamingSession.currentModel = applyProviderModelRule(runtimeProviderId, turnModel) ?? turnModel;
+      }
+      streamingSession.currentTaskBarrierTaskId = turnTaskBarrierTaskId;
+      streamingSession.currentEffort = turnRuntimeResolution.options.effort;
+      streamingSession.currentThinking = turnRuntimeResolution.options.thinking;
+      if (boundTurnPrompt !== prompt && turnTaskBarrierTaskId) {
+        void markRuntimeTaskAcceptedForPrompt(sessionName, boundTurnPrompt).catch((error) => {
+          runtimeRequestLog.warn("Failed to mark the task accepted for this turn", { sessionName, error });
+        });
+      }
       refreshRuntimeRequestContextForTurn({
         runtimeContext,
         toolContext,
@@ -917,10 +975,10 @@ async function buildRuntimeStartRequestInternal(
         sessionName,
         sessionCwd,
         agent,
-        prompt: turnPrompt,
+        prompt: boundTurnPrompt,
         runtimeProviderId,
-        model: effectiveModel,
-        runtimeResolution,
+        model: streamingSession.currentModel || effectiveModel,
+        runtimeResolution: turnRuntimeResolution,
         resolvedSource: turnSource,
         approvalSource,
         // Recorded so a connector call in this turn knows who reads the

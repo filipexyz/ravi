@@ -1,5 +1,6 @@
 import type { RuntimeEffort } from "./effort.js";
 import type { RuntimeModelBrokerBinding, RuntimeModelBrokerCapabilities } from "./model-broker.js";
+import type { RuntimeControlErrorCode } from "./runtime-control-errors.js";
 
 export type { RuntimeEffort } from "./effort.js";
 
@@ -73,6 +74,13 @@ export interface RuntimePromptMessage {
   replay?: boolean;
   /** Whether reconciliation may retry after the provider reports a failed or interrupted terminal turn. */
   terminalReplayAllowed?: boolean;
+  /**
+   * This turn's model, effort and thinking (task, profile, session or agent).
+   * When present it replaces the start request's values for this turn,
+   * including an absent effort or thinking, so leaving a task drops its
+   * overrides without a relaunch. A model broker session keeps its leased model.
+   */
+  runtimeOptions?: { model?: string; effort?: RuntimeEffort; thinking?: RuntimeThinking };
 }
 
 export interface RuntimeToolUse {
@@ -270,6 +278,8 @@ export interface RuntimeControlState {
   turnId?: string;
   activeTurn?: boolean;
   supportedOperations?: RuntimeControlOperation[];
+  /** Operations the provider implements but the host refuses (see runtime-control-errors.ts). */
+  disabledOperations?: RuntimeControlOperation[];
 }
 
 export interface RuntimeControlRequest {
@@ -301,6 +311,11 @@ export interface RuntimeControlResult {
   goal?: RuntimeGoal | null;
   state?: RuntimeControlState;
   error?: string;
+  /** Typed refusal code (RUNTIME_*), set on every host refusal. */
+  code?: RuntimeControlErrorCode;
+  retryable?: boolean;
+  suggestedAction?: string;
+  disabledReason?: string;
 }
 
 export interface RuntimeControlCapabilities {

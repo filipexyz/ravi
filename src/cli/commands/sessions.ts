@@ -102,6 +102,7 @@ import {
   summarizeSlackThread,
 } from "../../channels/slack/thread-lifecycle.js";
 import { resolveSlackThreadRequester } from "../../channels/slack/thread-requester.js";
+import { decodeLiteralLineBreaks } from "../../channels/slack/thread-text.js";
 import { listStickers, stickerAllowedForAgent, stickerAllowedOnChannel } from "../../stickers/catalog.js";
 import { revokeAgentRuntimeContextsForSession } from "../../runtime/context-registry.js";
 import {
@@ -6393,7 +6394,7 @@ export class SessionCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
   ) {
-    const initialMessage = message.trim();
+    const initialMessage = decodeLiteralLineBreaks(message).trim();
     if (!initialMessage) {
       fail("Initial thread message is required");
       return;
@@ -6572,7 +6573,7 @@ export class SessionCommands {
       fail("thread.close is available only inside a Slack thread child session");
       return;
     }
-    const normalizedReturn = returnResult?.trim() || undefined;
+    const normalizedReturn = returnResult ? decodeLiteralLineBreaks(returnResult).trim() || undefined : undefined;
     const result = await closeSlackThread(session, normalizedReturn);
     const payload = {
       status: result.record.status,
@@ -6715,7 +6716,7 @@ export class SessionCommands {
     }
     let result: Awaited<ReturnType<typeof reportSlackThreadProgress>>;
     try {
-      result = await reportSlackThreadProgress(session, message);
+      result = await reportSlackThreadProgress(session, decodeLiteralLineBreaks(message));
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error));
       return;
@@ -6781,7 +6782,7 @@ export class SessionCommands {
       result = await sendSlackThreadMessage({
         parentSession: session,
         ref: thread,
-        message,
+        message: decodeLiteralLineBreaks(message),
         origin: getContext() ?? {},
       });
     } catch (error) {

@@ -85,7 +85,7 @@ import {
   resolveRuntimePromptText,
   withSessionSurfaceHint,
 } from "./session-surface-hint.js";
-import { resolveRuntimeForPrompt, runtimePromptRequiresRestart } from "./task-runtime-context.js";
+import { resolveInheritedTaskBindingTaskId, resolveRuntimeForPrompt } from "./task-runtime-context.js";
 import {
   RUNTIME_SESSION_RECLAIM_INTERVAL_MS,
   buildRuntimeSessionPoolSnapshot,
@@ -949,6 +949,18 @@ export class RuntimeSessionDispatcher {
     if (!prompt._resumeStashedMessages) {
       prompt = withSessionSurfaceHint(prompt);
     }
+    const inheritedTaskBarrierTaskId = resolveInheritedTaskBindingTaskId({
+      sessionName,
+      prompt,
+      liveTaskBarrierTaskId: existing && !existing.done ? existing.currentTaskBarrierTaskId : undefined,
+    });
+    if (inheritedTaskBarrierTaskId) {
+      log.info("Prompt inherits the session's active task binding", {
+        sessionName,
+        taskBarrierTaskId: inheritedTaskBarrierTaskId,
+      });
+      prompt = { ...prompt, taskBarrierTaskId: inheritedTaskBarrierTaskId };
+    }
     if (classifyRuntimeSessionStartLane(sessionName, prompt) === "interactive") {
       this.dropQueuedObserverPendingStarts();
     }
@@ -1062,21 +1074,14 @@ export class RuntimeSessionDispatcher {
           modelBrokerPlan?.lease.model ?? requestedRuntime.options.model ?? this.options.getConfigModel();
         const modelBrokerConfigurationChanged = runtimeModelBrokerConfigurationRequiresRestart(existing, agent);
         const modelBrokerRouteChanged = runtimeModelBrokerRouteRequiresRestart(existing, modelBrokerPlan);
-        if (
-          modelBrokerConfigurationChanged ||
-          modelBrokerRouteChanged ||
-          runtimePromptRequiresRestart(existing, requestedRuntime, prompt)
-        ) {
-          log.info("Streaming: restarting session after runtime task settings change", {
+        // Task binding, effort and thinking are per-turn data (see beforeTurnStart in
+        // runtime-request-builder.ts): they never relaunch the runtime. Only a model
+        // broker credential or route change needs a new provider process.
+        if (modelBrokerConfigurationChanged || modelBrokerRouteChanged) {
+          log.info("Streaming: restarting session after model broker change", {
             sessionName,
             modelBrokerConfigurationChanged,
             modelBrokerRouteChanged,
-            currentTaskBarrierTaskId: existing.currentTaskBarrierTaskId ?? null,
-            requestedTaskBarrierTaskId: normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId) ?? null,
-            currentEffort: existing.currentEffort ?? null,
-            requestedEffort: requestedRuntime.options.effort ?? null,
-            currentThinking: existing.currentThinking ?? null,
-            requestedThinking: requestedRuntime.options.thinking ?? null,
           });
           stashPendingRuntimeMessages(sessionName, existing, this.stashedMessages, {
             crashRecovery: this.options.crashRecovery,
@@ -1094,23 +1099,19 @@ export class RuntimeSessionDispatcher {
             status: "requested",
             source: existing.currentSource,
             payloadJson: {
-              reason: "runtime_task_settings_change",
-              currentTaskBarrierTaskId: existing.currentTaskBarrierTaskId ?? null,
-              requestedTaskBarrierTaskId: normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId) ?? null,
-              currentEffort: existing.currentEffort ?? null,
-              requestedEffort: requestedRuntime.options.effort ?? null,
-              currentThinking: existing.currentThinking ?? null,
-              requestedThinking: requestedRuntime.options.thinking ?? null,
+              reason: "model_broker_change",
+              modelBrokerConfigurationChanged,
+              modelBrokerRouteChanged,
             },
           });
           recordStreamingTurnInterruptedTrace(
             this.options.crashRecovery,
             sessionName,
             existing,
-            "runtime_task_settings_change",
+            "model_broker_change",
             sessionEntry?.sessionKey,
           );
-          shutdownRuntimeStreamingSession(existing, "runtime_task_settings_change");
+          shutdownRuntimeStreamingSession(existing, "model_broker_change");
           this.releaseRuntimeSessionSlot(sessionName, { drainPendingStarts: false });
           await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot: true });
           return;
@@ -2969,9 +2970,6 @@ export function shouldQueuePromptOnLiveSession(
   }
   const explicitSessionProvider = sessionProviderOverride?.trim();
   if (explicitSessionProvider && existing.queryHandle.provider !== explicitSessionProvider) {
-    return false;
-  }
-  if (existing.currentTaskBarrierTaskId !== normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId)) {
     return false;
   }
   const barrier = getRuntimePromptDeliveryBarrier(prompt);

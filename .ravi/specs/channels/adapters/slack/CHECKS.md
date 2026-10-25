@@ -4,6 +4,9 @@
 - [ ] Thread reply MUST include the Slack thread target.
 - [ ] Outbound response MUST use Slack native delivery.
 - [ ] Human message admission MUST remain unchanged.
+- [ ] A human message mentioning `<@local_bot_user_id>` (with or without a label) MUST carry `@mention` in the prompt header and `botTag` in group context; a mention of another user MUST NOT add the marker.
+- [ ] The group system prompt MUST explain the `@mention` marker whenever `botTag` is set, also for groups with fewer than three known members.
+- [ ] Human intake MUST NOT wait on `auth.test`; a stuck or failing discovery MUST still admit the human message, without the marker.
 - [ ] The local bot MUST be ignored when either event `bot_id` or `user` matches `auth.test`.
 - [ ] Foreign bot messages MUST fail closed unless `auth.test` returns `ok=true` with complete `bot_id`, `user_id`, and `team_id`.
 - [ ] When `authorizations` is present, it MUST be a usable array with a `team_id` matching the authenticated local team; empty, malformed, team-less, non-matching, or truncated values without that match MUST fail closed.

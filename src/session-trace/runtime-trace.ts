@@ -8,6 +8,7 @@ import type {
   RuntimeToolAccessMode,
   RuntimeUsage,
 } from "../runtime/types.js";
+import { hostRuntimeControlSummary } from "../runtime/runtime-control-errors.js";
 import { logger } from "../utils/logger.js";
 import { recordSessionBlob, recordSessionEvent, sha256Text, upsertSessionTurn } from "./session-trace-db.js";
 
@@ -112,7 +113,7 @@ export function createSessionTraceTurnId(): string {
 
 export function summarizeRuntimeCapabilities(capabilities: RuntimeCapabilities): Record<string, unknown> {
   return {
-    runtimeControl: capabilities.runtimeControl,
+    runtimeControl: hostRuntimeControlSummary(capabilities.runtimeControl),
     dynamicTools: capabilities.dynamicTools,
     execution: capabilities.execution,
     sessionState: capabilities.sessionState,

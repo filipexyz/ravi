@@ -25,6 +25,7 @@ import type {
   RuntimeUsage,
   SessionRuntimeProvider,
 } from "./types.js";
+import { RUNTIME_OPERATION_UNSUPPORTED } from "./runtime-control-errors.js";
 import { coalesceAssistantTextBlocks } from "./assistant-transcript.js";
 import { createRuntimeTerminalEventTracker } from "./terminality.js";
 import { buildPluginSkillVisibilitySnapshot } from "./skill-visibility.js";
@@ -42,6 +43,7 @@ import {
   isPiPermissionHooksReadyEvent,
   materializePiPermissionExtensionFile,
   formatPiDynamicToolUiResponse,
+  isPiDynamicToolUiTitle,
   parsePiDynamicToolUiRequest,
   PI_PERMISSION_BRIDGE_UNAVAILABLE_MESSAGE,
   PI_PERMISSION_EXTENSION_FILENAME,
@@ -208,6 +210,8 @@ interface PiSessionRuntimeState {
   currentState?: PiRpcSessionState;
   started: boolean;
   requestedModel?: string;
+  /** The model the live Pi process runs with, set after a spawn or a successful `set_model`. */
+  appliedModel?: string;
   transport?: PiRpcTransport;
   pendingSteers: string[];
   /** Latest context fill, used to rewrite a prompt timeout that is really saturation. */
@@ -861,6 +865,8 @@ async function* runPiTurns(
   // Last env that actually reached a live Pi process. Do not update this until
   // start/handshake succeeds — a failed respawn must retry the new key.
   let appliedManagedEnvSignature: string | undefined;
+  // Thinking level the live Pi process runs with.
+  let appliedThinkingLevel = startInput.thinkingLevel;
 
   const takeNextPiEvent = async (): Promise<IteratorResult<PiRpcEvent>> => {
     if (pendingStartupEvents.length > 0) {
@@ -956,11 +962,60 @@ async function* runPiTurns(
         continue;
       }
 
+      // Effort and thinking are per turn: a (re)spawn starts with this turn's
+      // level, a live process switches with `set_thinking_level`.
+      const turnThinkingLevel = promptMessage.runtimeOptions
+        ? toPiThinkingLevel(promptMessage.runtimeOptions.effort, promptMessage.runtimeOptions.thinking)
+        : undefined;
+      if (turnThinkingLevel) {
+        startInput.thinkingLevel = turnThinkingLevel;
+      }
+      // The model is per turn too, unless a model broker leases it. A (re)spawn
+      // starts with it, a live process switches with `set_model`.
+      const turnModel =
+        promptMessage.runtimeOptions?.model && !input.modelBroker ? promptMessage.runtimeOptions.model : undefined;
+      if (turnModel && turnModel !== (state.requestedModel ?? input.model)) {
+        state.requestedModel = turnModel;
+        input.model = turnModel;
+        refreshPiStartInputModel(startInput, turnModel, input.modelBroker);
+      }
+
       // Start (or respawn) after the host has applied this turn's runtime env.
       // Eager spawn at session open would bake the pre-rotation context key,
       // which refreshRuntimeRequestContextForTurn then revokes.
       try {
-        await ensurePiRpcReady();
+        const spawned = await ensurePiRpcReady();
+        if (spawned) {
+          state.appliedModel = state.requestedModel ?? input.model;
+        } else if (turnModel && turnModel !== state.appliedModel) {
+          // A turn must not run on a model it did not ask for: a failed switch
+          // fails the turn and the next turn with this model retries it.
+          try {
+            await applyPiSetModel(transport, state, turnModel, input.modelBroker, { verify: true });
+          } catch (error) {
+            log.warn("pi model switch failed; failing the turn", { model: turnModel, error });
+            yield {
+              type: "turn.failed",
+              error: `Pi could not switch to ${turnModel}: ${error instanceof Error ? error.message : String(error)}`,
+              recoverable: true,
+              rawEvent: { type: "model.switch_failed", model: turnModel },
+            };
+            continue;
+          }
+        }
+        if (spawned) {
+          appliedThinkingLevel = startInput.thinkingLevel;
+        } else if (turnThinkingLevel && turnThinkingLevel !== appliedThinkingLevel) {
+          try {
+            await sendPiCommand(transport, { type: "set_thinking_level", level: turnThinkingLevel });
+            appliedThinkingLevel = turnThinkingLevel;
+          } catch (error) {
+            log.warn("pi thinking level switch failed; keeping the current level", {
+              level: turnThinkingLevel,
+              error,
+            });
+          }
+        }
       } catch (error) {
         const firstStart = !state.started;
         if (!isPiPermissionBridgeError(error) && firstStart) {
@@ -981,6 +1036,10 @@ async function* runPiTurns(
           return;
         }
         continue;
+      }
+      // An abort during the switch above must not start this turn.
+      if (abortSignal.aborted) {
+        break;
       }
 
       const terminalTracker = createRuntimeTerminalEventTracker();
@@ -1440,11 +1499,9 @@ async function controlPiRuntime(
             buildState(),
           );
         }
-        return okControl(
-          request,
-          await sendPiCommand(transport, resolvePiSetModelCommand(model, modelBroker)),
-          buildState(),
-        );
+        const response = await sendPiCommand(transport, resolvePiSetModelCommand(model, modelBroker));
+        state.appliedModel = model;
+        return okControl(request, response, buildState());
       }
       case "thinking.set": {
         const level = normalizePiThinkingLevel(firstString(request.params?.level, request.text));
@@ -1489,7 +1546,10 @@ async function controlPiRuntime(
           );
         }
       default:
-        return failControl(request, `Pi runtime does not support ${request.operation}`, buildState());
+        return {
+          ...failControl(request, `Pi runtime does not support ${request.operation}`, buildState()),
+          code: RUNTIME_OPERATION_UNSUPPORTED,
+        };
     }
   } catch (error) {
     return failControl(request, error instanceof Error ? error.message : String(error), buildState());
@@ -1764,6 +1824,7 @@ async function applyPiSetModel(
   ) {
     throw new Error(`Pi set_model did not apply ${model}`);
   }
+  state.appliedModel = model;
 }
 
 async function applyPiRequestedModelAfterStart(
@@ -2074,6 +2135,28 @@ async function answerPiExtensionUiRequest(
       success: result.success,
     });
     await transport.writeMessage(formatPiDynamicToolUiResponse(dynamicRequest, result));
+    return;
+  }
+  if (isPiDynamicToolUiTitle(event) && typeof event.id === "string" && event.id) {
+    // A host-tool request we cannot read must still get an answer the bridge
+    // understands; cancelling it reads as "bridge did not answer" in the turn.
+    if (!transport.writeMessage) {
+      throw new Error("Pi RPC transport cannot answer extension UI dynamic tool requests");
+    }
+    log.warn("Unreadable Pi dynamic tool request", {
+      method: typeof event.method === "string" ? event.method : undefined,
+      fields: Object.keys(event).filter((key) => key !== "type" && key !== "id"),
+    });
+    await transport.writeMessage(
+      formatPiDynamicToolUiResponse(
+        { id: event.id, toolName: "unknown", arguments: {} },
+        {
+          success: false,
+          contentItems: [],
+          reason: "Ravi could not read this dynamic tool request (no toolName in the bridge payload).",
+        },
+      ),
+    );
     return;
   }
   const response = await resolvePiExtensionUiResponse(event, {
