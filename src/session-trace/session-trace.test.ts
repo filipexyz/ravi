@@ -4,8 +4,14 @@ import { attachChatToSession, getOrCreateSession, updateSessionName } from "../r
 import { dbUpsertChat } from "../router/router-db.js";
 import { recordDeliveryTrace, recordResponseEmittedTrace } from "./channel-trace.js";
 import { querySessionTrace } from "./query.js";
-import { recordAdapterRequestTrace } from "./runtime-trace.js";
-import { getSessionTraceBlob, listRecentSessionEventsByType, recordSessionEvent } from "./session-trace-db.js";
+import { recordAdapterRequestTrace, summarizeRuntimeCapabilities } from "./runtime-trace.js";
+import {
+  getLatestSessionTurn,
+  getSessionTraceBlob,
+  listRecentSessionEventsByType,
+  recordSessionEvent,
+  upsertSessionTurn,
+} from "./session-trace-db.js";
 import { listSessionEventsForTest } from "../test/session-trace-events.js";
 
 let stateDir: string | null = null;
@@ -48,6 +54,30 @@ describe("session trace query", () => {
         (event) => event.eventType,
       ),
     ).toEqual(["adapter.raw"]);
+  });
+
+  it("reads a session's newest turn started at or after a time", () => {
+    const sessionKey = "agent:main:latest-turn";
+    upsertSessionTurn({ turnId: "turn-old", sessionKey, status: "complete", startedAt: 1000, updatedAt: 1500 });
+    upsertSessionTurn({
+      turnId: "turn-new",
+      sessionKey,
+      status: "complete",
+      startedAt: 3000,
+      completedAt: 3500,
+      updatedAt: 3500,
+    });
+    upsertSessionTurn({
+      turnId: "turn-other",
+      sessionKey: "agent:main:other",
+      status: "running",
+      startedAt: 9000,
+      updatedAt: 9000,
+    });
+
+    expect(getLatestSessionTurn(sessionKey)?.turnId).toBe("turn-new");
+    expect(getLatestSessionTurn(sessionKey, 3000)).toMatchObject({ turnId: "turn-new", completedAt: 3500 });
+    expect(getLatestSessionTurn(sessionKey, 3001)).toBeNull();
   });
 
   it("lists recent events by type using newest event ids first", () => {
@@ -204,6 +234,23 @@ describe("session trace query", () => {
       canonicalChatId: chat.id,
       actorType: "agent",
       actorAgentId: "main",
+    });
+  });
+});
+
+describe("runtime capability summary", () => {
+  it("reports host-disabled runtime controls apart from the supported ones", () => {
+    const summary = summarizeRuntimeCapabilities({
+      runtimeControl: {
+        supported: true,
+        operations: ["thread.read", "turn.steer", "turn.follow_up", "turn.interrupt"],
+      },
+    } as unknown as Parameters<typeof summarizeRuntimeCapabilities>[0]);
+
+    expect(summary.runtimeControl).toEqual({
+      supported: true,
+      operations: ["thread.read", "turn.interrupt"],
+      disabledOperations: ["turn.steer", "turn.follow_up"],
     });
   });
 });

@@ -1941,8 +1941,9 @@ describe("SessionCommands attach hints", () => {
       instanceToAccount: {},
     };
 
+    // Typed as `\n` inside shell double quotes, the way agents usually pass it.
     const result = (await new SessionCommands().createThread(
-      "Investigate this branch",
+      "Investigate this branch\\n\\nCheck the CI run",
       "gpt-5.6",
       "codex",
       "high",
@@ -1969,7 +1970,7 @@ describe("SessionCommands attach hints", () => {
         parentSessionKey: sessionKey,
         initiatorSessionKey: sessionKey,
         platformChatId: "C123",
-        initialPrompt: "Investigate this branch",
+        initialPrompt: "Investigate this branch\n\nCheck the CI run",
         modelOverride: "gpt-5.6",
         providerOverride: "codex",
         effortOverride: "high",
@@ -1987,7 +1988,7 @@ describe("SessionCommands attach hints", () => {
       content: {
         type: "chat_action",
         actionId: "thread.create",
-        text: "Investigate this branch",
+        text: "Investigate this branch\n\nCheck the CI run",
         runtime: "codex · gpt-5.6 · high · normal",
       },
     });
@@ -2238,10 +2239,11 @@ describe("SessionCommands attach hints", () => {
     };
     toolContext = { sessionKey: childKey, sessionName: "dev-slack-t-1713000000000100" };
 
-    const result = (await new SessionCommands().report("Found the failing commit", undefined, true)) as Record<
-      string,
-      any
-    >;
+    const result = (await new SessionCommands().report(
+      "Found the failing commit\\nbisecting now",
+      undefined,
+      true,
+    )) as Record<string, any>;
 
     expect(result).toEqual({
       status: "published",
@@ -2250,7 +2252,9 @@ describe("SessionCommands attach hints", () => {
       messageId: "slack-thread-report:slack-thread:req-1:m1",
       parentSession: { sessionKey: "agent:dev:slack:ravi-slack:C123", sessionName: "dev-slack" },
     });
-    expect(reportedSlackThreads).toEqual([{ session: resolvedSession, message: "Found the failing commit" }]);
+    expect(reportedSlackThreads).toEqual([
+      { session: resolvedSession, message: "Found the failing commit\nbisecting now" },
+    ]);
 
     const rootKey = "agent:dev:slack:ravi-slack:C123";
     resolvedSession = { sessionKey: rootKey, name: "dev-slack", agentId: "dev", agentCwd: "/tmp/dev" };

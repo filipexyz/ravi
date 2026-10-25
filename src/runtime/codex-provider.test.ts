@@ -7,11 +7,13 @@ import {
   buildCodexDisabledSkillConfig,
   buildCodexExecArgs,
   buildCodexThreadSecurity,
+  CodexAppServerTransportError,
+  codexStderrTail,
   createCodexRuntimeProvider,
   isCodexRestrictedRuntimeProfile,
   resolveCodexThreadSecurity,
 } from "./codex-provider.js";
-import type { RuntimeEvent, RuntimeHostServices, RuntimeStartRequest } from "./types.js";
+import type { RuntimeEvent, RuntimeHostServices, RuntimePromptMessage, RuntimeStartRequest } from "./types.js";
 
 type TransportRequest = {
   cwd: string;
@@ -845,6 +847,96 @@ rl.on("line", (line) => {
     ).toBe(true);
   });
 
+  it("switches the thread's model per turn through turn/start", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-turn-model-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const requestsPath = join(cwd, "requests.jsonl");
+
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+const requestsPath = ${JSON.stringify(requestsPath)};
+const rl = createInterface({ input: process.stdin });
+const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+let turns = 0;
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") return;
+  if (message.id && message.method === "thread/start") {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+    send({ id: message.id, result: { thread: { id: "thread_models" }, model: message.params.model, modelProvider: "openai" } });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+    turns += 1;
+    const turn = { id: "turn_" + turns, status: "inProgress" };
+    send({ id: message.id, result: { turn } });
+    send({ jsonrpc: "2.0", method: "turn/started", params: { threadId: "thread_models", turn } });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/completed",
+      params: { threadId: "thread_models", turn: { id: turn.id, status: "completed" } },
+    });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const turn = (text: string, model: string): RuntimePromptMessage => ({
+      type: "user",
+      message: { role: "user", content: text },
+      session_id: "",
+      parent_tool_use_id: null,
+      runtimeOptions: { model },
+    });
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest([], {
+        cwd,
+        model: "gpt-5.5",
+        prompt: (async function* () {
+          yield turn("agent turn", "gpt-5.5");
+          yield turn("task turn", "gpt-5.4-mini");
+          yield turn("task turn again", "gpt-5.4-mini");
+          yield turn("back to agent", "gpt-5.5");
+        })(),
+      }),
+    );
+
+    const events = await collectEvents(session.events);
+    const requests = readFileSync(requestsPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+
+    expect(requests.map((request) => request.method)).toEqual([
+      "thread/start",
+      "turn/start",
+      "turn/start",
+      "turn/start",
+      "turn/start",
+    ]);
+    // Usage is reported against the model each turn ran on.
+    expect(findEventsByType(events, "turn.complete").map((event) => event.execution?.model)).toEqual([
+      "gpt-5.5",
+      "gpt-5.4-mini",
+      "gpt-5.4-mini",
+      "gpt-5.5",
+    ]);
+    expect(requests[0]?.params.model).toBe("gpt-5.5");
+    expect(requests.slice(1).map((request) => request.params.model)).toEqual([null, "gpt-5.4-mini", null, "gpt-5.5"]);
+  });
+
   it("keeps multi-agent child notifications from replacing the top-level thread", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-sub-agent-notifications-"));
     const command = join(cwd, "fake-codex-app-server.mjs");
@@ -1073,6 +1165,75 @@ rl.on("line", (line) => {
         }),
       }),
     ]);
+  });
+
+  it("switches a fork to the requested model on its first turn/start", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-fork-model-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const requestsPath = join(cwd, "requests.jsonl");
+
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+const requestsPath = ${JSON.stringify(requestsPath)};
+const rl = createInterface({ input: process.stdin });
+const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") return;
+  if (message.id && ["thread/fork", "thread/resume", "thread/start", "turn/start"].includes(message.method)) {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+  }
+  if (message.id && message.method === "thread/fork") {
+    send({ id: message.id, result: { thread: { id: "thread_child" }, model: "gpt-5", modelProvider: "openai" } });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    send({ id: message.id, result: {} });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/started",
+      params: { threadId: message.params.threadId, turn: { id: "turn_child", status: "inProgress" } },
+    });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/completed",
+      params: { threadId: message.params.threadId, turn: { id: "turn_child", status: "completed" } },
+    });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest(["child turn"], {
+        cwd,
+        model: "gpt-5.5",
+        resume: "thread_parent",
+        forkSession: true,
+      }),
+    );
+
+    await collectEvents(session.events);
+    const requests = readFileSync(requestsPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+
+    expect(requests.map((request) => request.method)).toEqual(["thread/fork", "turn/start"]);
+    expect(requests[0]?.params.model).toBeNull();
+    // The fork inherited gpt-5, so its first turn switches to the requested model.
+    expect(requests[1]?.params.model).toBe("gpt-5.5");
   });
 
   it("passes max/ultra effort as model_reasoning_effort in app-server thread/start and thread/resume", async () => {
@@ -1323,6 +1484,142 @@ process.on("SIGTERM", () => {
         failureKind: "transport",
       }),
     ]);
+  });
+
+  it("keeps native stderr out of the turn error when the process exits without a terminal event", async () => {
+    const threadId = "019a0000-1111-7222-8333-444455556666";
+    const stderr =
+      `\u001b[2m2026-10-23T14:53:40.282103Z\u001b[0m \u001b[33m WARN\u001b[0m ` +
+      `\u001b[2mcodex_thread_store::local::live_writer\u001b[0m: failed to project durable rollout for ${threadId}: ` +
+      `thread-store internal error: thread history projection for ${threadId} expected ordinal 2, got 1\n`;
+    const { transport } = createMockTransport([
+      () => ({
+        events: (async function* () {})(),
+        result: Promise.resolve({ exitCode: 1, signal: null, stderr }),
+      }),
+    ]);
+    const provider = createCodexRuntimeProvider({ transport: transport as any, defaultModel: "gpt-5" });
+    const session = provider.startSession(makeStartRequest(["oi"]));
+
+    const events = await collectEvents(session.events);
+    const failures = findEventsByType(events, "turn.failed");
+
+    expect(failures).toEqual([
+      expect.objectContaining({
+        error: "Codex CLI exited without a terminal event (code 1)",
+        recoverable: true,
+        failureKind: "transport",
+      }),
+    ]);
+    expect(failures[0]?.error).not.toContain("WARN");
+    expect(failures[0]?.error).not.toContain(threadId);
+    expect(failures[0]?.rawEvent).toMatchObject({ type: "process.exit", exitCode: 1, signal: null });
+    const diagnostic = String(failures[0]?.rawEvent?.message);
+    expect(diagnostic).toContain("WARN codex_thread_store::local::live_writer");
+    expect(diagnostic).not.toContain("\u001b");
+  });
+
+  it("names the signal when the process is killed without a terminal event", async () => {
+    const { transport } = createMockTransport([
+      () => ({
+        events: (async function* () {})(),
+        result: Promise.resolve({ exitCode: null, signal: "SIGKILL" as NodeJS.Signals, stderr: "" }),
+      }),
+    ]);
+    const provider = createCodexRuntimeProvider({ transport: transport as any, defaultModel: "gpt-5" });
+    const session = provider.startSession(makeStartRequest(["oi"]));
+
+    const events = await collectEvents(session.events);
+
+    expect(findEventsByType(events, "turn.failed")).toEqual([
+      expect.objectContaining({
+        error: "Codex CLI exited without a terminal event (signal SIGKILL)",
+        failureKind: "transport",
+      }),
+    ]);
+  });
+
+  it("treats a dropped app-server connection as a recoverable transport failure", async () => {
+    const { transport } = createMockTransport([
+      () => ({
+        events: (async function* () {
+          yield { type: "turn.started" };
+          throw new CodexAppServerTransportError(new Error("codex websocket closed (code=1006, reason=n/a)"));
+        })(),
+        result: Promise.resolve({ exitCode: 1, signal: null, stderr: "\u001b[33m WARN\u001b[0m codex_core: gone\n" }),
+      }),
+    ]);
+    const provider = createCodexRuntimeProvider({ transport: transport as any, defaultModel: "gpt-5" });
+    const session = provider.startSession(makeStartRequest(["oi"]));
+
+    const events = await collectEvents(session.events);
+    const failures = findEventsByType(events, "turn.failed");
+
+    expect(failures).toEqual([
+      expect.objectContaining({
+        error: "Codex app-server connection closed without a terminal event",
+        recoverable: true,
+        failureKind: "transport",
+      }),
+    ]);
+    expect(failures[0]?.rawEvent).toMatchObject({
+      type: "process.exit",
+      error: "codex websocket closed (code=1006, reason=n/a)",
+      message: "WARN codex_core: gone",
+    });
+  });
+
+  it("keeps a Codex error event as the failure when the connection drops after it", async () => {
+    const { transport } = createMockTransport([
+      () => ({
+        events: (async function* () {
+          yield { type: "turn.started" };
+          yield { type: "error", message: "The requested model is not available." };
+          throw new CodexAppServerTransportError(new Error("codex websocket closed (code=1006, reason=n/a)"));
+        })(),
+        result: Promise.resolve({ exitCode: 1, signal: null, stderr: "" }),
+      }),
+    ]);
+    const provider = createCodexRuntimeProvider({ transport: transport as any, defaultModel: "gpt-5" });
+    const session = provider.startSession(makeStartRequest(["oi"]));
+
+    const events = await collectEvents(session.events);
+    const failures = findEventsByType(events, "turn.failed");
+
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({ error: "The requested model is not available.", recoverable: true });
+    expect(failures[0]?.failureKind).toBeUndefined();
+  });
+
+  it("does not turn a missing Codex executable into a retryable transport failure", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-missing-bin-"));
+    const provider = createCodexRuntimeProvider({ command: join(cwd, "missing-codex"), defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest(["oi"], { cwd, env: { PATH: process.env.PATH ?? "", RAVI_CODEX_TRANSPORT: "websocket" } }),
+    );
+
+    const events: RuntimeEvent[] = [];
+    let thrown: unknown;
+    try {
+      for await (const event of session.events) events.push(event);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Error);
+    expect(thrown).not.toBeInstanceOf(CodexAppServerTransportError);
+    expect(findEventsByType(events, "turn.failed").filter((event) => event.failureKind === "transport")).toEqual([]);
+  });
+
+  it("strips terminal escapes from the stderr diagnostic and keeps its tail", () => {
+    expect(codexStderrTail("")).toBeUndefined();
+    expect(codexStderrTail("\u001b[2m \u001b[0m\n")).toBeUndefined();
+    expect(codexStderrTail("\u001b[33mWARN\u001b[0m a\u0007b\n")).toBe("WARN ab");
+    expect(codexStderrTail("WARN a\u0085b\u202Ec\n")).toBe("WARN abc");
+    const tail = codexStderrTail(`${"x".repeat(5_000)}END`) ?? "";
+    expect(tail.startsWith("...")).toBe(true);
+    expect(tail.endsWith("END")).toBe(true);
+    expect(tail.length).toBe(2_003);
   });
 
   it("maps CLI completion events and composes prompts with system instructions", async () => {
@@ -2652,6 +2949,117 @@ rl.on("line", (line) => {
       await iterator.return?.();
     }
   });
+
+  it("does not let a late interrupt fallback kill the process running the next turn", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-stale-interrupt-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { createInterface } from "node:readline";
+
+const rl = createInterface({ input: process.stdin });
+const send = (message) => {
+  process.stdout.write(JSON.stringify(message) + "\\n");
+};
+let turns = 0;
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.id && message.method === "thread/start") {
+    send({ id: message.id, result: { thread: { id: "thread_stale" }, model: "gpt-5.4", modelProvider: "openai" } });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    turns += 1;
+    const turnId = "turn_" + turns;
+    send({ id: message.id, result: {} });
+    send({ jsonrpc: "2.0", method: "turn/started", params: { threadId: "thread_stale", turn: { id: turnId, status: "inProgress" } } });
+    if (turns === 2) {
+      // Outlive the first turn's interrupt timeout (1.5s) plus its kill grace.
+      setTimeout(() => {
+        send({ jsonrpc: "2.0", method: "item/completed", params: { threadId: "thread_stale", turnId, item: { id: "msg_2", type: "agentMessage", text: "second done" } } });
+        send({ jsonrpc: "2.0", method: "turn/completed", params: { threadId: "thread_stale", turn: { id: turnId, status: "completed" } } });
+      }, 2_000);
+    }
+    return;
+  }
+  if (message.id && message.method === "turn/interrupt") {
+    // Never answer the request: the turn ends on its own notification instead.
+    send({ jsonrpc: "2.0", method: "turn/completed", params: { threadId: "thread_stale", turn: { id: message.params.turnId, status: "interrupted" } } });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    let releaseSecond!: () => void;
+    const secondReady = new Promise<void>((resolve) => {
+      releaseSecond = resolve;
+    });
+    const abortController = new AbortController();
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest([], {
+        cwd,
+        abortController,
+        env: { PATH: process.env.PATH ?? "", RAVI_CODEX_TRANSPORT: "stdio" },
+        prompt: (async function* () {
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "first" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+          await secondReady;
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "second" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+        })(),
+      }),
+    );
+
+    const iterator = session.events[Symbol.asyncIterator]();
+    const terminals: RuntimeEvent[] = [];
+    try {
+      for (;;) {
+        const next = await iterator.next();
+        if (next.done) throw new Error("Codex session ended before the first turn started");
+        if (next.value.type === "turn.started") break;
+      }
+      void session.interrupt();
+      for (;;) {
+        const next = await iterator.next();
+        if (next.done) throw new Error("Codex session ended before the first turn was interrupted");
+        if (next.value.type === "turn.interrupted") {
+          terminals.push(next.value);
+          break;
+        }
+      }
+      releaseSecond();
+      for (;;) {
+        const next = await iterator.next();
+        if (next.done) break;
+        if (next.value.type === "turn.complete" || next.value.type === "turn.failed") {
+          terminals.push(next.value);
+          break;
+        }
+      }
+
+      expect(terminals.map((event) => event.type)).toEqual(["turn.interrupted", "turn.complete"]);
+    } finally {
+      abortController.abort();
+      releaseSecond();
+      await iterator.return?.();
+    }
+  }, 15_000);
 
   it("routes app-server approval requests through the runtime approval handler", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-approval-"));

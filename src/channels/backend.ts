@@ -300,6 +300,30 @@ async function acceptParsedChannelIngress(
     });
   }
 
+  if (resolved !== undefined) {
+    // Check the resolved session before saving a receipt: a receipt for a
+    // pair that can never run would also make the corrected retry an
+    // IDEMPOTENCY_CONFLICT (bug a2d9fc1c).
+    const session = getSession(resolved.session.key);
+    if (session === null || session.agentId !== request.agentId || session.name !== resolved.session.name) {
+      log.error("Channel ingress rejected: resolved session does not match the request agent", {
+        requestId: request.requestId,
+        channelInstanceId: request.channelInstanceId,
+        agentId: request.agentId,
+        sessionKey: resolved.session.key,
+        sessionName: resolved.session.name,
+        sessionAgentId: session?.agentId ?? null,
+        currentSessionName: session?.name ?? null,
+      });
+      return rejectedIngress(request, {
+        code: "INVALID_REQUEST",
+        category: "validation",
+        retryable: false,
+        correlationId: request.requestId,
+      });
+    }
+  }
+
   const derivedIdentity = deriveLocalIdentity(request);
   const identity =
     resolved === undefined
@@ -373,7 +397,11 @@ async function acceptParsedChannelIngress(
     log.error("Channel ingress session binding failed", {
       requestId: request.requestId,
       receiptId: acceptance.receipt.id,
+      agentId: acceptance.receipt.agentId,
+      sessionKey: acceptance.receipt.sessionKey,
+      sessionName: acceptance.receipt.sessionName,
       errorKind: errorKind(error),
+      error: error instanceof Error ? error.message : String(error),
     });
     return rejectedIngress(request, {
       code: "INTERNAL",

@@ -1,3 +1,5 @@
+import { resolveSession } from "../router/sessions.js";
+import { getLatestSessionTurn } from "../session-trace/session-trace-db.js";
 import { logger } from "../utils/logger.js";
 import { resolveTaskCheckpointIntervalMs, TASK_CHECKPOINT_SWEEP_INTERVAL_MS } from "./checkpoint.js";
 import { TASK_OBSERVER_ACTOR } from "./observer-contract.js";
@@ -11,7 +13,7 @@ import {
   reportTaskStall,
   resolveTaskAssigneeSession,
 } from "./service.js";
-import type { TaskEvent, TaskRecord } from "./types.js";
+import type { TaskAssignment, TaskEvent, TaskRecord } from "./types.js";
 
 const log = logger.child("tasks:checkpoint-runner");
 
@@ -47,6 +49,51 @@ export function listTaskCheckpointSweepTasks(): TaskRecord[] {
     ...dbListTasks({ status: "dispatched", archiveMode: "exclude" }),
     ...dbListTasks({ status: "in_progress", archiveMode: "exclude" }),
   ];
+}
+
+/** When this process started; the checkpoint runner runs inside the daemon. */
+const PROCESS_STARTED_AT = Date.now() - Math.round(process.uptime() * 1000);
+
+/**
+ * What an observed task's silence means, from the worker's persisted turns.
+ *
+ * The checkpoint only moves on task mutations, so a miss says the observer
+ * recorded nothing, not that the worker stopped. The session trace survives a
+ * daemon restart, unlike the in-memory runtime session map, so it is what
+ * tells a hung or missing worker apart from a worker that answered and an
+ * observer that never wrote it down. A turn left `running` by a process that
+ * has since exited is not running.
+ */
+export function describeObservedTaskSilence(
+  assignment: Pick<TaskAssignment, "sessionName" | "assignedAt" | "checkpointLastReportAt">,
+  silentForMinutes: number,
+  now = Date.now(),
+  processStartedAt = PROCESS_STARTED_AT,
+): string {
+  const fallback = `No worker activity seen for ${silentForMinutes} min; the turn may be hung or the session gone.`;
+  try {
+    const session = resolveSession(assignment.sessionName);
+    if (!session) return fallback;
+    const turn = getLatestSessionTurn(session.sessionKey, assignment.assignedAt);
+    if (!turn) return fallback;
+    if (turn.status === "running" || !turn.completedAt) {
+      if (turn.startedAt < processStartedAt) {
+        return `The worker turn started before the last daemon restart and has no recorded end; it may have died with the daemon.`;
+      }
+      return `The worker turn is still running, but the task has recorded no status for ${silentForMinutes} min; the task observer may not be reading the worker.`;
+    }
+    const agoMinutes = Math.max(0, Math.round((now - turn.completedAt) / 60000));
+    const silence = assignment.checkpointLastReportAt
+      ? `no task status was recorded since the last report ${Math.max(0, Math.round((now - assignment.checkpointLastReportAt) / 60000))} min ago`
+      : "no task status was recorded after dispatch";
+    return `The worker turn ended (${turn.status}) ${agoMinutes} min ago, but ${silence}; the task observer may not be reading the worker.`;
+  } catch (error) {
+    log.warn("Could not read the worker turn for an observed task stall", {
+      sessionName: assignment.sessionName,
+      error,
+    });
+    return fallback;
+  }
 }
 
 export interface TaskCheckpointRunnerOptions {
@@ -120,8 +167,9 @@ export class TaskCheckpointRunner {
           }
 
           // An observed task's worker is never asked for status. Its checkpoint is a
-          // silence detector: the observer pushes it on every read, so a miss means
-          // nothing was seen for a whole interval, and the requester hears it once.
+          // silence detector that only moves on task mutations (reports, status
+          // changes), so a miss means nothing was recorded for a whole interval. The
+          // requester hears it once, with what the worker's turns say about why.
           if (taskProfileUsesObserver(resolveTaskProfileForTask(task))) {
             const silentForMinutes = Math.round(
               resolveTaskCheckpointIntervalMs(assignment.checkpointIntervalMs) / 60000,
@@ -136,7 +184,7 @@ export class TaskCheckpointRunner {
             if (previousOverdue === 0) {
               await recordTaskStall(
                 missed.task,
-                `No worker activity seen for ${silentForMinutes} min; the turn may be hung or the session gone.`,
+                describeObservedTaskSilence(missed.assignment, silentForMinutes, now),
                 { actor: TASK_OBSERVER_ACTOR },
               );
             }
@@ -167,6 +215,7 @@ export class TaskCheckpointRunner {
             }),
             deliveryBarrier: "after_response",
             deliveryBarrierSource: "default",
+            taskBarrierTaskId: missed.task.id,
           });
         } catch (error) {
           log.error("Task checkpoint reminder failed", { taskId: task.id, error });

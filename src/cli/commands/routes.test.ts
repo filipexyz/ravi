@@ -616,6 +616,105 @@ describe("RoutesCommands", () => {
     expect(routes).toContainEqual(expect.objectContaining({ pattern: "group:123", agent: "sales" }));
   });
 
+  it("releases automatic chat pins when a pending chat is approved", () => {
+    pendingEntries = [
+      {
+        accountId: "main",
+        phone: "123@g.us",
+        name: "Launch",
+        chatId: "123@g.us",
+        isGroup: true,
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    ];
+
+    const payload = captureJson(() => {
+      new InstancesPendingCommands().approve("main", "123@g.us", "sales", true);
+    });
+
+    expect(detachCalls).toEqual([
+      expect.objectContaining({ accountId: "main", pattern: "group:123", targetAgent: "sales" }),
+    ]);
+    expect(payload.detachedSubscriptions).toBe(stickyDetachResult.detached);
+  });
+
+  it("only cleans sessions of the exact group id", () => {
+    instanceNames = new Set(["ravi-rbbt-slack"]);
+    routes = [
+      {
+        id: 1,
+        accountId: "ravi-rbbt-slack",
+        pattern: "group:c123",
+        agent: "specialist",
+        priority: 0,
+        channel: "slack",
+      },
+    ];
+    sessions = [
+      {
+        sessionKey: "agent:other:slack:ravi-rbbt-slack:group:C123",
+        agentId: "other",
+        accountId: "ravi-rbbt-slack",
+        lastAccountId: "ravi-rbbt-slack",
+      },
+      {
+        sessionKey: "agent:other:slack:ravi-rbbt-slack:group:C1234",
+        agentId: "other",
+        accountId: "ravi-rbbt-slack",
+        lastAccountId: "ravi-rbbt-slack",
+      },
+    ];
+
+    captureJson(() => {
+      new InstancesRoutesCommands().set(
+        "ravi-rbbt-slack",
+        "group:c123",
+        "session",
+        "specialist-fixed",
+        undefined,
+        true,
+      );
+    });
+
+    expect(deletedSessionKeys).toEqual(["agent:other:slack:ravi-rbbt-slack:group:C123"]);
+  });
+
+  it("releases automatic chat pins when a route gets a fixed session (bug a2d9fc1c)", () => {
+    instanceNames = new Set(["ravi-rbbt-slack"]);
+    routes = [
+      {
+        id: 1,
+        accountId: "ravi-rbbt-slack",
+        pattern: "group:c0abc123",
+        agent: "specialist",
+        priority: 0,
+        channel: "slack",
+      },
+    ];
+
+    const payload = captureJson(() => {
+      new InstancesRoutesCommands().set(
+        "ravi-rbbt-slack",
+        "group:c0abc123",
+        "session",
+        "specialist-fixed",
+        undefined,
+        true,
+      );
+    });
+
+    expect(detachCalls).toEqual([
+      expect.objectContaining({
+        accountId: "ravi-rbbt-slack",
+        pattern: "group:c0abc123",
+        targetAgent: "specialist",
+        channel: "slack",
+      }),
+    ]);
+    expect(payload.stickyAttach).toEqual({ overrides: stickyOverrides });
+  });
+
   it("stores X@lid as lid:X and verifies live effect instead of skipping it as broad", () => {
     liveWinner = {
       route: { pattern: "lid:224420715061374" },

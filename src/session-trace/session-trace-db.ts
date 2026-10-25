@@ -688,6 +688,20 @@ export function getSessionTurn(turnId: string): SessionTurnRecord | null {
   return row ? rowToSessionTurn(row) : null;
 }
 
+/** The newest turn of a session that started at or after `since`. */
+export function getLatestSessionTurn(sessionKey: string, since = 0): SessionTurnRecord | null {
+  const row = getDb()
+    .prepare(`
+      SELECT *
+      FROM session_turns
+      WHERE session_key = ? AND started_at >= ?
+      ORDER BY started_at DESC, turn_id DESC
+      LIMIT 1
+    `)
+    .get(sessionKey, since) as SessionTurnRow | undefined;
+  return row ? rowToSessionTurn(row) : null;
+}
+
 /**
  * Events for a single turn, in trace order.
  *

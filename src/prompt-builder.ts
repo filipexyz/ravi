@@ -185,6 +185,11 @@ export function buildGroupContext(ctx: ChannelContext): string {
       ``,
       `Be extremely selective: reply only when directly addressed or clearly helpful.`,
       `Otherwise stay silent.`,
+    );
+  }
+
+  if (isLargeGroup || ctx.botTag) {
+    lines.push(
       ``,
       `IMPORTANT: Messages with \`@mention\` in the header mean YOU were @mentioned directly.`,
       `When you see \`@mention\`, you MUST respond — NEVER use ${SILENT_TOKEN}.`,

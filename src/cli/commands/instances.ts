@@ -668,6 +668,17 @@ function isSharedMainSessionKey(sessionKey: string): boolean {
   return parts.length === 3 && parts[0] === "agent" && parts[2] === "main";
 }
 
+function sessionKeyHasGroup(normalizedSessionKey: string, groupId: string): boolean {
+  const token = `group:${groupId}`;
+  let index = normalizedSessionKey.indexOf(token);
+  while (index !== -1) {
+    const next = normalizedSessionKey[index + token.length];
+    if (next === undefined || next === ":") return true;
+    index = normalizedSessionKey.indexOf(token, index + 1);
+  }
+  return false;
+}
+
 function deleteConflictingSessions(
   pattern: string,
   targetAgent: string,
@@ -688,7 +699,8 @@ function deleteConflictingSessions(
 
     if (normalizedPattern.startsWith("group:")) {
       const groupId = normalizedPattern.slice("group:".length);
-      shouldDelete = normalizedSessionKey.includes(`group:${groupId}`);
+      // Whole id only: `group:123` must not match a `group:1234` session.
+      shouldDelete = sessionKeyHasGroup(normalizedSessionKey, groupId);
     } else if (normalizedPattern.startsWith("lid:")) {
       const digits = normalizedPattern.slice("lid:".length);
       const last6 = digits.slice(-6);
@@ -2055,10 +2067,17 @@ export class InstancesRoutesCommands {
       emitConfigChanged();
 
       const routeChannel = typeof route?.channel === "string" ? route.channel : undefined;
-      const released =
+      // Pinning a session must release automatic pins too: a chat left
+      // subscribed to another agent's session would otherwise keep winning.
+      const releaseAgent =
         key === "agent" && !clear
-          ? releaseRouteAgentStickiness(name, routePattern, value, routeChannel, asJson)
-          : { detachedSubscriptions: 0, cleanedSessions: 0, stickyAttach: { overrides: [] as RouteStickyOverride[] } };
+          ? value
+          : key === "session" && !clear && typeof route?.agent === "string"
+            ? route.agent
+            : undefined;
+      const released = releaseAgent
+        ? releaseRouteAgentStickiness(name, routePattern, releaseAgent, routeChannel, asJson)
+        : { detachedSubscriptions: 0, cleanedSessions: 0, stickyAttach: { overrides: [] as RouteStickyOverride[] } };
 
       const payload = {
         status: "updated" as const,
@@ -2071,7 +2090,7 @@ export class InstancesRoutesCommands {
         liveEffect: key === "agent" && !clear ? getRouteLiveEffect(name, routePattern, value, routeChannel) : null,
         cleanedSessions: released.cleanedSessions,
         detachedSubscriptions: released.detachedSubscriptions,
-        stickyAttach: key === "agent" && !clear ? released.stickyAttach : null,
+        stickyAttach: releaseAgent ? released.stickyAttach : null,
         changedCount: 1,
       };
       if (asJson) {
@@ -2081,6 +2100,8 @@ export class InstancesRoutesCommands {
         console.log(`✓ ${key} set on route ${routePattern} (instance: ${name}): ${clear ? "(cleared)" : value}`);
         if (key === "agent" && !clear) {
           printRouteLiveEffect(name, routePattern, value, routeChannel);
+        }
+        if (releaseAgent) {
           if (released.detachedSubscriptions > 0) {
             console.log(`✓ Detached ${released.detachedSubscriptions} route subscription(s)`);
           }
@@ -2239,6 +2260,13 @@ export class InstancesPendingCommands {
       }
       const removedPending = pending ? removeAccountPending(name, pending.phone) : removeAccountPending(name, contact);
       emitConfigChanged();
+      const released = releaseRouteAgentStickiness(
+        name,
+        routePattern,
+        route.agent ?? routeAgent,
+        route.channel ?? undefined,
+        asJson,
+      );
       const payload = {
         status: "approved" as const,
         reviewKind: "chat" as const,
@@ -2248,13 +2276,23 @@ export class InstancesPendingCommands {
         route,
         routeCreated,
         removedPending,
-        changedCount: routeCreated || removedPending ? 1 : 0,
+        cleanedSessions: released.cleanedSessions,
+        detachedSubscriptions: released.detachedSubscriptions,
+        stickyAttach: released.stickyAttach,
+        changedCount: routeCreated || removedPending || released.detachedSubscriptions > 0 ? 1 : 0,
       };
       if (asJson) {
         printJson(payload);
       } else {
         console.log(`✓ Chat approved: ${routePattern} → ${routeAgent} (instance: ${name})`);
         if (removedPending) console.log(`✓ Removed from pending`);
+        if (released.detachedSubscriptions > 0) {
+          console.log(`✓ Detached ${released.detachedSubscriptions} route subscription(s)`);
+        }
+        printStickyAttachWarning(released.stickyAttach.overrides);
+        if (released.cleanedSessions > 0) {
+          console.log(`✓ Cleaned ${released.cleanedSessions} conflicting session(s)`);
+        }
       }
       return payload;
     }

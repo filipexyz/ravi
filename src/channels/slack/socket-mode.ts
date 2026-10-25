@@ -14,12 +14,16 @@ import { publishSessionPrompt } from "../../omni/session-stream.js";
 import {
   attachChatToSession,
   commitMatchedRoute,
+  detachChatFromSession,
   findSessionByAttachedChat,
   getSession,
+  getSessionByName,
   listSessionSubscriptions,
   matchRoute,
   isChatCompatibleWithSession,
+  RouteSessionAgentConflictError,
 } from "../../router/index.js";
+import { isExplicitSessionAttach } from "../../router/route-sticky-attach.js";
 import {
   dbListChatParticipants,
   dbUpsertChat,
@@ -90,6 +94,7 @@ import { buildSlackThreadCard, isSlackInvalidBlocksError, type SlackThreadCardMe
 import {
   cleanSlackId,
   envelopeEvent,
+  SLACK_USER_MENTION_RE,
   isSlackMessageEventStructurallyEligible,
   normalizeSlackRoutingPolicy,
   resolveSlackThreadContext,
@@ -98,6 +103,7 @@ import {
   slackRoutingPolicyFromChannelDefaults,
   slackRoutingPolicyFromEnv,
   slackSenderIdForEvent,
+  slackTextMentionsUser,
   slackTsToMs,
 } from "./routing.js";
 import type {
@@ -120,9 +126,25 @@ const DEFAULT_SLACK_HELLO_TIMEOUT_MS = 10_000;
 const DEFAULT_SLACK_INBOUND_RECONCILE_INTERVAL_MS = 5_000;
 const DEFAULT_SLACK_INBOUND_PRUNE_INTERVAL_MS = 6 * 60 * 60_000;
 const SLACK_FILE_INFO_RETRY_DELAYS_MS = [0, 250, 750, 1_500] as const;
-const SLACK_USER_MENTION_RE = /<@([UW][A-Z0-9]+)(?:\|([^>]*))?>/g;
 const SLACK_MAX_RESOLVED_MENTIONS = 20;
 const SLACK_LOOKUP_FAILURE_BACKOFF_MS = 10 * 60_000;
+
+/**
+ * Ingress rejections that repeat identically on every retry. INTERNAL stays
+ * retryable: it also covers a receipt write that failed on a locked database.
+ */
+const TERMINAL_INGRESS_CODES = new Set(["INVALID_REQUEST", "IDEMPOTENCY_CONFLICT", "NOT_FOUND"]);
+
+/** An inbound that can never be delivered as is: settled, not retried. */
+export class SlackInboundTerminalError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "SlackInboundTerminalError";
+  }
+}
 
 type PublishPrompt = typeof publishSessionPrompt;
 type PublishInteraction = (topic: string, payload: Record<string, unknown>) => Promise<void>;
@@ -764,6 +786,7 @@ export class SlackSocketModeService {
     this.connectedAt = undefined;
     this.reconnectCount = 0;
     this.setLifecycle("connecting", "opening_socket");
+    this.warmLocalBotIdentity();
     this.startInboundReconciler();
     this.loopPromise = this.runLoop();
   }
@@ -929,6 +952,22 @@ export class SlackSocketModeService {
       });
       return "processed";
     } catch (error) {
+      if (error instanceof SlackInboundTerminalError) {
+        // Retrying cannot succeed until the route or binding changes; settle
+        // the envelope instead of replaying it every reconcile tick.
+        log.error("Slack inbound envelope settled without delivery", {
+          envelopeId: record.envelopeId,
+          accountId: this.options.accountId,
+          code: error.code,
+        });
+        markSlackInboundEnvelopeProcessed({
+          scopeId: record.scopeId,
+          envelopeId: record.envelopeId,
+          claimId,
+          processedAt: this.now(),
+        });
+        return "ignored";
+      }
       try {
         releaseSlackInboundEnvelopeClaim({
           scopeId: record.scopeId,
@@ -1213,6 +1252,7 @@ export class SlackSocketModeService {
     let teamId = eventTeamId ?? payloadTeamId ?? this.options.accountId;
     let originTeamId: string | undefined;
     let localBotIdentity: SlackLocalBotIdentity | null = null;
+    let selfUserId: string | undefined;
     if (isBotMessage) {
       const legacyInstallationTeamIds = uniqueCleanSlackIds([payloadTeamId, eventTeamId]);
       originTeamId =
@@ -1236,7 +1276,9 @@ export class SlackSocketModeService {
         return null;
       }
       teamId = eventTeamId ?? payloadTeamId ?? originTeamId;
+      selfUserId = localBotIdentity.userId;
     } else {
+      selfUserId = this.cachedLocalBotUserId();
       const originCandidates = uniqueCleanSlackIds([payloadTeamId, eventTeamId]);
       originTeamId = sourceTeamId ?? (originCandidates.length === 1 ? originCandidates[0] : undefined);
     }
@@ -1271,6 +1313,7 @@ export class SlackSocketModeService {
       payloadTeamId,
       authorizedTeamIds,
       localTeamId: localBotIdentity?.teamId,
+      ...(selfUserId ? { selfUserId } : {}),
       channelId,
       channelType: cleanSlackId(event.channel_type) ?? "channel",
       userId,
@@ -1286,6 +1329,24 @@ export class SlackSocketModeService {
       eventTimeMs,
       rawEnvelope: envelope,
     };
+  }
+
+  /**
+   * Start resolving the local bot identity in the background so the first
+   * human message that mentions the bot can already be marked.
+   */
+  warmLocalBotIdentity(): void {
+    void this.resolveLocalBotIdentity();
+  }
+
+  /**
+   * Human intake never waits for `auth.test`: return the cached bot user id,
+   * or start a background resolution (honoring its backoff) and return none.
+   */
+  private cachedLocalBotUserId(): string | undefined {
+    if (this.localBotIdentity) return this.localBotIdentity.userId;
+    this.warmLocalBotIdentity();
+    return undefined;
   }
 
   private async resolveLocalBotIdentity(): Promise<SlackLocalBotIdentity | null> {
@@ -1323,11 +1384,14 @@ export class SlackSocketModeService {
       })
       .catch((error) => {
         this.nextLocalBotIdentityAttemptAt = this.now() + this.authTestFailureRetryMs;
-        log.warn("Slack bot message ignored because local bot identity could not be resolved", {
-          accountId: this.options.accountId,
-          retryAt: this.nextLocalBotIdentityAttemptAt,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        log.warn(
+          "Slack local bot identity could not be resolved; bot messages are ignored and bot mentions stay unmarked until it resolves",
+          {
+            accountId: this.options.accountId,
+            retryAt: this.nextLocalBotIdentityAttemptAt,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        );
         return null;
       });
 
@@ -1679,6 +1743,7 @@ export class SlackSocketModeService {
 
     const existingSubscription = findSessionByAttachedChat(canonicalChat.id);
     let trustedSubscription = false;
+    let staleSubscription: typeof existingSubscription = null;
     if (existingSubscription) {
       const ownerSession = getSession(existingSubscription.sessionKey);
       const ownerAgent = ownerSession ? routerConfig.agents[ownerSession.agentId] : undefined;
@@ -1690,21 +1755,50 @@ export class SlackSocketModeService {
           routeSessionKey: matched?.sessionKey,
         });
       } else if (ownerSession && ownerAgent) {
-        if (!matched || existingSubscription.sessionKey !== matched.sessionKey) {
-          log.info("Slack inbound rerouted by session subscription", {
+        const forcedSessionName = routeThreadId ? undefined : matched?.route?.session?.trim();
+        const forcedSession = forcedSessionName ? getSessionByName(forcedSessionName) : null;
+        const subscriptionIsForcedSession = forcedSession?.sessionKey === existingSubscription.sessionKey;
+        if (
+          forcedSessionName &&
+          !subscriptionIsForcedSession &&
+          !isExplicitSessionAttach(existingSubscription.attachedByType)
+        ) {
+          // An explicit route with a fixed session beats automatic inbound
+          // bookkeeping: the chat is rebound to the route's session after commit.
+          log.info("Slack route session replaces automatic chat subscription", {
             chatId: canonicalChat.id,
-            fromSessionKey: matched?.sessionKey,
-            toSessionKey: existingSubscription.sessionKey,
+            subscriptionSessionKey: existingSubscription.sessionKey,
+            subscriptionAgentId: ownerSession.agentId,
+            routeSession: forcedSessionName,
+            routeAgentId: matched?.agentId,
           });
-          matched = {
-            agentId: ownerSession.agentId,
-            agent: ownerAgent,
-            sessionKey: existingSubscription.sessionKey,
-            dmScope: matched?.dmScope ?? ownerAgent.dmScope ?? routerConfig.defaultDmScope,
-            route: matched?.route,
-          } satisfies MatchedRoute;
+          staleSubscription = existingSubscription;
+        } else {
+          if (!matched || existingSubscription.sessionKey !== matched.sessionKey) {
+            log.info("Slack inbound rerouted by session subscription", {
+              chatId: canonicalChat.id,
+              fromSessionKey: matched?.sessionKey,
+              toSessionKey: existingSubscription.sessionKey,
+            });
+            // The subscription picks agent and session together; dropping the
+            // route's fixed session keeps commit from pairing this agent with
+            // another agent's session.
+            const route = matched?.route;
+            matched = {
+              agentId: ownerSession.agentId,
+              agent: ownerAgent,
+              sessionKey: existingSubscription.sessionKey,
+              dmScope: matched?.dmScope ?? ownerAgent.dmScope ?? routerConfig.defaultDmScope,
+              route: route?.session && !subscriptionIsForcedSession ? { ...route, session: undefined } : route,
+            } satisfies MatchedRoute;
+          }
+          trustedSubscription = true;
+          // Even when the keys already agree, an attached chat must not be
+          // redirected to a different session the route forces.
+          if (matched?.route?.session && forcedSessionName && !subscriptionIsForcedSession) {
+            matched = { ...matched, route: { ...matched.route, session: undefined } };
+          }
         }
-        trustedSubscription = true;
       } else {
         log.warn("Slack subscription points to a missing session or agent - falling back to route resolution", {
           chatId: canonicalChat.id,
@@ -1759,15 +1853,33 @@ export class SlackSocketModeService {
       return;
     }
 
-    const resolved = commitMatchedRoute(matched, {
-      phone: routePeerId,
-      isGroup,
-      groupId: isGroup ? message.channelId : undefined,
-      peerKind,
-      threadId: routeThreadId,
-    });
+    let resolved: ResolvedRoute;
+    try {
+      resolved = commitMatchedRoute(matched, {
+        phone: routePeerId,
+        isGroup,
+        groupId: isGroup ? message.channelId : undefined,
+        peerKind,
+        threadId: routeThreadId,
+      });
+    } catch (error) {
+      if (error instanceof RouteSessionAgentConflictError) {
+        log.error("Slack inbound dropped: route session belongs to another agent", {
+          accountId: routeAccountId,
+          channelId: message.channelId,
+          chatId: canonicalChat.id,
+          messageTs: message.ts,
+          ...error.details,
+        });
+        throw new SlackInboundTerminalError(error.code, error.message);
+      }
+      throw error;
+    }
     const sessionName = resolved.sessionName ?? resolved.sessionKey;
 
+    if (staleSubscription && staleSubscription.sessionKey !== resolved.sessionKey) {
+      detachChatFromSession(staleSubscription.sessionKey, canonicalChat.id);
+    }
     syncSlackSessionSubscription(resolved.sessionKey, canonicalChat.id);
     let createdEventOwnedByProgrammaticLifecycle = false;
     if (routeThreadId) {
@@ -1949,6 +2061,7 @@ export class SlackSocketModeService {
       isGroup: peerKind !== "dm",
       groupId: peerKind !== "dm" ? message.channelId : undefined,
       groupName: peerKind !== "dm" ? (channelName ?? message.channelId) : undefined,
+      ...(peerKind !== "dm" && message.selfUserId ? { botTag: `<@${message.selfUserId}>` } : {}),
       timestamp: message.eventTimeMs,
       canonicalChatId: canonicalChat.id,
       rawSenderId: message.userId,
@@ -2006,7 +2119,21 @@ export class SlackSocketModeService {
       },
     );
     if (ingress.disposition === "rejected") {
-      throw new Error(`slack_channel_backend_${ingress.error?.code.toLowerCase() ?? "rejected"}`);
+      const code = `slack_channel_backend_${ingress.error?.code.toLowerCase() ?? "rejected"}`;
+      if (ingress.error && TERMINAL_INGRESS_CODES.has(ingress.error.code)) {
+        log.error("Slack inbound rejected by channel ingress", {
+          accountId: this.options.accountId,
+          channelId: message.channelId,
+          chatId: canonicalChat.id,
+          messageTs: message.ts,
+          agentId: resolved.agent.id,
+          sessionKey: resolved.sessionKey,
+          sessionName,
+          errorCode: ingress.error.code,
+        });
+        throw new SlackInboundTerminalError(code, code);
+      }
+      throw new Error(code);
     }
   }
 
@@ -2822,6 +2949,7 @@ function formatSlackPrompt(
     message.thread.inboundThreadTs ? `thread:${message.thread.inboundThreadTs}` : undefined,
     `mid:${message.ts}`,
     new Date(message.eventTimeMs).toISOString(),
+    slackTextMentionsUser(message.text, message.selfUserId) ? "@mention" : undefined,
   ].filter(Boolean);
   const sender = senderDisplayName ? `${senderDisplayName} (<@${message.userId}>)` : `<@${message.userId}>`;
   return `[${parts.join(" ")}]\n${sender}: ${formatSlackMessageBody(message, files)}`;

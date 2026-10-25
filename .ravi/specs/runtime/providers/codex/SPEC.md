@@ -44,7 +44,7 @@ The Codex provider adapts the Codex app-server transport into Ravi's canonical r
 - Ravi CLI access: model-initiated Ravi operations MUST go through shell commands such as `ravi tasks ...` or `bin/ravi tasks ...` with `RAVI_CONTEXT_KEY` in the shell env.
 - Shell env bridge: the Codex app-server receives Ravi runtime env and is launched with an explicit `shell_environment_policy` that allows the shell to inherit only core shell env plus `RAVI_*`, including `RAVI_CONTEXT_KEY`.
 - Approvals: mapped into Ravi `RuntimeApprovalRequest`.
-- Runtime control: thread list/read/rollback/fork, turn steer/interrupt, and goal get/set/clear.
+- Runtime control: thread list/read/rollback/fork, turn interrupt, and goal get/set/clear through `ravi sessions runtime`. The provider also implements `turn.steer`, used only by the host dispatcher for implicit native steer; the host refuses an explicit `turn.steer`/`turn.follow_up` with `RUNTIME_CONTROL_DISABLED` until the durable attempt-input journal exists (`daemon/restart/crash-recovery`), and host-facing operation lists report them under `disabledOperations`.
 - Tool access requirement: `tool_surface`.
 - Host session hooks/plugins/spec server/remote spawn: not supported.
 
@@ -113,7 +113,9 @@ Stored goal control initializes an experimental app-server connection without `t
 - Usage for completed physical goal turns MUST be accumulated into the logical terminal usage. A paused, cleared, blocked, limited, or completed goal MUST release a delivery waiting between physical turns. A failed or interrupted native turn MUST terminate immediately, even when goal state remains active.
 - Start/resume notifications MUST remain buffered until the explicit `turn/start` response binds the accepted native turn. An automatic resume turn MUST NOT seize the incoming delivery before that binding.
 - A native interrupted turn or interrupt request MUST produce `turn.interrupted`, not `turn.failed`, unless the native process actually fails before interruption can be established.
-- A native exit without terminal event MUST become recoverable `turn.failed`.
+- A native exit without terminal event MUST become recoverable `turn.failed`. When Codex sent no error event, the failure MUST carry `failureKind=transport` whatever stderr holds, and an app-server connection that drops before the exit is observed MUST end the same way. Failures before the connection is ready (a missing executable, no listener) are setup errors and MUST NOT be classified as transport.
+- The provider MUST NOT leak provider stderr to channel responses. The `turn.failed` error MUST be stable text (`Codex CLI exited without a terminal event (code N | signal S)`); the ANSI-stripped stderr tail, exit code and signal go only to logs and the failure `rawEvent` that the trace records.
+- The `turn/interrupt` timeout fallback (SIGINT, then SIGKILL after the grace) MUST signal only the process that ran the interrupted turn, and only while that turn is still the active one. Settling the turn, starting the next turn or closing the transport MUST cancel a pending kill from an earlier interrupt.
 - The provider MUST include metadata with thread, turn, and item ids whenever the native event carries them.
 - The provider MUST sync Codex skills during `prepareSession` and include the skill catalog in provider instructions.
 - Codex `thread.fork` MUST remain a provider-native runtime control until a canonical fork materializer proves parent/child thread mapping, optional child rollback, prompt atom replay, and provider state persistence.
@@ -123,6 +125,7 @@ Stored goal control initializes an experimental app-server connection without `t
 
 - `bun test src/runtime/codex-provider.test.ts`
 - `bun test src/runtime/codex-hooks.test.ts`
+- `bun test src/runtime/public-failure.test.ts`
 - `bun test src/runtime/provider-contract.test.ts`
 - `bun test src/runtime/model-catalog.test.ts`
 - `bun test src/plugins/codex-skills.test.ts`

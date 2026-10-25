@@ -304,7 +304,7 @@ function summarizeRuntimeFailureRawEvent(rawEvent?: Record<string, unknown>): Re
   if (!rawEvent) return undefined;
 
   const summary: Record<string, unknown> = {};
-  for (const key of ["type", "subtype", "status", "error", "errors", "message", "result", "exitCode"]) {
+  for (const key of ["type", "subtype", "status", "error", "errors", "message", "result", "exitCode", "signal"]) {
     if (rawEvent[key] !== undefined) {
       summary[key] = truncateLogDetail(rawEvent[key]);
     }

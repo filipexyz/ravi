@@ -48,6 +48,7 @@ import {
   dbCreateTask,
   dbDispatchTask,
   dbHasServingTaskForSession,
+  dbMarkTaskAcceptedForSession,
 } from "../tasks/task-db.js";
 import { buildChannelTurnOrigin, buildSessionRelayTurnOrigin } from "./turn-origin.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
@@ -2406,7 +2407,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     ).toBe(false);
   });
 
-  it("does not queue a send that leaves the live task context", () => {
+  it("queues a send that leaves the live task context: the binding is per turn", () => {
     const activeSession = createActiveSession({
       agentId: "main",
       turnActive: true,
@@ -2419,7 +2420,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
         { prompt: "normal turn", deliveryBarrier: "after_response" },
         "main",
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("does not queue an after_tool send that should interrupt the live turn", () => {
@@ -4166,5 +4167,219 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }
+  });
+});
+
+describe("RuntimeSessionDispatcher task-bound live sessions", () => {
+  function createTaskBoundSession(overrides: Partial<RuntimeHostStreamingSession> = {}): RuntimeHostStreamingSession {
+    return {
+      agentId: "main",
+      queryHandle: {
+        provider: "codex",
+        events: (async function* () {})(),
+        interrupt: async () => {},
+      },
+      abortController: new AbortController(),
+      pendingMessages: [],
+      currentModel: "test-model",
+      toolRunning: false,
+      lastActivity: Date.now(),
+      done: false,
+      starting: false,
+      compacting: false,
+      interrupted: false,
+      turnActive: true,
+      pushMessage: null,
+      pendingWake: false,
+      onTurnComplete: null,
+      currentToolSafety: null,
+      pendingAbort: false,
+      toolEffectFence: "provider_event_only",
+      ...overrides,
+    };
+  }
+
+  function createRunningTask(sessionName: string, title = "task in progress"): string {
+    const created = dbCreateTask({
+      title,
+      instructions: "long running work",
+      createdBy: "test",
+      createdByAgentId: "main",
+      createdBySessionName: "main",
+    });
+    dbDispatchTask(created.task.id, { agentId: "main", sessionName, assignedBy: "test" });
+    dbMarkTaskAcceptedForSession(sessionName, created.task.id);
+    return created.task.id;
+  }
+
+  async function withTaskSession(
+    prefix: string,
+    run: (input: { sessionName: string; stateDir: string }) => Promise<void>,
+  ): Promise<void> {
+    const stateDir = await createIsolatedRaviState(prefix);
+    try {
+      const sessionName = `${prefix}session`;
+      getOrCreateSession(`agent:main:test:${sessionName}`, "main", stateDir, { name: sessionName });
+      await run({ sessionName, stateDir });
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  }
+
+  it("queues an inform on the running task turn with the task binding instead of restarting", async () => {
+    await withTaskSession("ravi-task-inform-", async ({ sessionName }) => {
+      const taskId = createRunningTask(sessionName);
+      const dispatcher = createDispatcher();
+      const startStreamingSession = mock(async () => {});
+      dispatcher.startStreamingSession = startStreamingSession;
+      const existing = createTaskBoundSession({ toolRunning: true, currentTaskBarrierTaskId: taskId });
+      dispatcher.streamingSessions.set(sessionName, existing);
+
+      await dispatcher.handlePromptImmediate(sessionName, {
+        prompt: "[System] Inform: o deploy terminou",
+        deliveryBarrier: "after_response",
+      });
+
+      expect(existing.done).toBe(false);
+      expect(existing.internalAbortReason).toBeUndefined();
+      expect(startStreamingSession).not.toHaveBeenCalled();
+      expect(existing.pendingMessages).toHaveLength(1);
+      expect(existing.pendingMessages[0]?.taskBarrierTaskId).toBe(taskId);
+      expect(existing.pendingMessages[0]?.deliveryBarrier).toBe("after_response");
+    });
+  });
+
+  it("queues a task-less steer during a running task tool without interrupting or relaunching", async () => {
+    await withTaskSession("ravi-task-steer-", async ({ sessionName }) => {
+      const taskId = createRunningTask(sessionName);
+      const dispatcher = createDispatcher();
+      const startStreamingSession = mock(async () => {});
+      dispatcher.startStreamingSession = startStreamingSession;
+      const interrupt = mock(async () => {});
+      const existing = createTaskBoundSession({
+        toolRunning: true,
+        toolStartTime: Date.now(),
+        currentTaskBarrierTaskId: taskId,
+        queryHandle: { provider: "codex", events: (async function* () {})(), interrupt },
+      });
+      dispatcher.streamingSessions.set(sessionName, existing);
+
+      await dispatcher.handlePromptImmediate(sessionName, {
+        prompt: "olha o comentario novo",
+        deliveryBarrier: "after_tool",
+      });
+
+      expect(existing.done).toBe(false);
+      expect(startStreamingSession).not.toHaveBeenCalled();
+      expect(interrupt).not.toHaveBeenCalled();
+      expect(existing.pendingMessages.map((message) => message.taskBarrierTaskId)).toEqual([taskId]);
+    });
+  });
+
+  it("queues a task comment steer on the running task turn without relaunching", async () => {
+    await withTaskSession("ravi-task-comment-", async ({ sessionName }) => {
+      const taskId = createRunningTask(sessionName);
+      const dispatcher = createDispatcher();
+      const startStreamingSession = mock(async () => {});
+      dispatcher.startStreamingSession = startStreamingSession;
+      const existing = createTaskBoundSession({ toolRunning: true, currentTaskBarrierTaskId: taskId });
+      dispatcher.streamingSessions.set(sessionName, existing);
+
+      await dispatcher.handlePromptImmediate(sessionName, {
+        prompt: `[System] Inform: New comment on task ${taskId}`,
+        deliveryBarrier: "after_response",
+        taskBarrierTaskId: taskId,
+      });
+
+      expect(existing.done).toBe(false);
+      expect(existing.internalAbortReason).toBeUndefined();
+      expect(startStreamingSession).not.toHaveBeenCalled();
+      expect(existing.pendingMessages.map((message) => message.taskBarrierTaskId)).toEqual([taskId]);
+    });
+  });
+
+  it("queues a task-less prompt on a blocked task's live session without relaunching", async () => {
+    await withTaskSession("ravi-task-blocked-", async ({ sessionName }) => {
+      const taskId = createRunningTask(sessionName);
+      dbBlockTask(taskId, { actor: "test", agentId: "main", sessionName, message: "waiting on input" });
+      const dispatcher = createDispatcher();
+      const startStreamingSession = mock(async () => {});
+      dispatcher.startStreamingSession = startStreamingSession;
+      const existing = createTaskBoundSession({ currentTaskBarrierTaskId: taskId });
+      dispatcher.streamingSessions.set(sessionName, existing);
+
+      await dispatcher.handlePromptImmediate(sessionName, {
+        prompt: "[System] Inform: nova informacao",
+        deliveryBarrier: "after_response",
+      });
+
+      expect(existing.done).toBe(false);
+      expect(startStreamingSession).not.toHaveBeenCalled();
+      expect(existing.pendingMessages).toHaveLength(1);
+      expect(existing.pendingMessages[0]?.taskBarrierTaskId).toBeUndefined();
+    });
+  });
+
+  it("queues a task-less prompt after the task completes without relaunching", async () => {
+    await withTaskSession("ravi-task-done-", async ({ sessionName }) => {
+      const taskId = createRunningTask(sessionName);
+      dbCompleteTask(taskId, { actor: "test", agentId: "main", sessionName, message: "done" });
+      const dispatcher = createDispatcher();
+      const startStreamingSession = mock(async () => {});
+      dispatcher.startStreamingSession = startStreamingSession;
+      const existing = createTaskBoundSession({ currentTaskBarrierTaskId: taskId });
+      dispatcher.streamingSessions.set(sessionName, existing);
+
+      await dispatcher.handlePromptImmediate(sessionName, {
+        prompt: "checkpoint: como esta?",
+        deliveryBarrier: "after_response",
+      });
+
+      expect(existing.done).toBe(false);
+      expect(startStreamingSession).not.toHaveBeenCalled();
+      expect(existing.pendingMessages.map((message) => message.taskBarrierTaskId)).toEqual([undefined]);
+    });
+  });
+
+  it("queues a second task dispatch behind the running task without relaunching", async () => {
+    await withTaskSession("ravi-task-second-", async ({ sessionName }) => {
+      const firstTaskId = createRunningTask(sessionName, "first task");
+      const dispatcher = createDispatcher();
+      const startStreamingSession = mock(async () => {});
+      dispatcher.startStreamingSession = startStreamingSession;
+      const existing = createTaskBoundSession({ currentTaskBarrierTaskId: firstTaskId });
+      dispatcher.streamingSessions.set(sessionName, existing);
+
+      await dispatcher.handlePromptImmediate(sessionName, {
+        prompt: "second task brief",
+        deliveryBarrier: "after_task",
+        taskBarrierTaskId: "task-second",
+      });
+
+      expect(existing.done).toBe(false);
+      expect(startStreamingSession).not.toHaveBeenCalled();
+      expect(existing.pendingMessages.map((message) => message.taskBarrierTaskId)).toEqual(["task-second"]);
+    });
+  });
+
+  it("queues a prompt whose task asks for another effort without relaunching", async () => {
+    await withTaskSession("ravi-task-effort-", async ({ sessionName }) => {
+      const taskId = createRunningTask(sessionName);
+      const dispatcher = createDispatcher();
+      const startStreamingSession = mock(async () => {});
+      dispatcher.startStreamingSession = startStreamingSession;
+      const existing = createTaskBoundSession({ currentEffort: "xhigh", currentThinking: "verbose" });
+      dispatcher.streamingSessions.set(sessionName, existing);
+
+      await dispatcher.handlePromptImmediate(sessionName, {
+        prompt: "task brief",
+        deliveryBarrier: "after_task",
+        taskBarrierTaskId: taskId,
+      });
+
+      expect(existing.done).toBe(false);
+      expect(startStreamingSession).not.toHaveBeenCalled();
+      expect(existing.pendingMessages.map((message) => message.taskBarrierTaskId)).toEqual([taskId]);
+    });
   });
 });
