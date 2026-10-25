@@ -495,7 +495,11 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
           required: true,
           description: "Who clicked: channel, Slack user id and resolved actor id. Never a context key.",
         },
-        { path: "profile", type: "string", description: "Provider-owned profile applied, when it was applied." },
+        {
+          path: "profile",
+          type: ["string", "null"],
+          description: "Provider-owned profile applied; null when the grant was not applied.",
+        },
         { path: "capabilities", type: "array", description: "Capabilities the profile carries." },
         { path: "agentCeiling", type: "object", description: "Executor agent ceiling change: agentId and changed." },
         { path: "changed", type: "boolean", description: "Whether anything was written." },
