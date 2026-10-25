@@ -128,6 +128,34 @@ export function listSlackApprovalGrantorUserIds(input: SlackApprovalGrantorsInpu
 }
 
 /**
+ * The Slack user id of one contact in this instance, for card mentions. Display
+ * names are never identity evidence; only a linked platform identity is.
+ */
+export function findSlackUserIdForContact(input: {
+  readonly contactId: string;
+  readonly instanceId?: string | null;
+}): string | null {
+  const contactId = input.contactId.trim();
+  if (!contactId) return null;
+  let config: GrantorRouterConfig = null;
+  try {
+    config = loadGrantorRouterConfig();
+  } catch {
+    // Without config the lookup stays on the received instance.
+  }
+  const aliases = resolveSlackInstanceAliases(config, input.instanceId ?? null);
+  for (const identity of listOwnedPlatformIdentities({
+    channel: "slack",
+    instanceIds: [...aliases.scopedAliases, ""],
+  })) {
+    if (identity.ownerType !== "contact" || identity.ownerId !== contactId) continue;
+    if (!isSlackHumanUserId(identity.platformUserId)) continue;
+    return identity.platformUserId.trim().toUpperCase();
+  }
+  return null;
+}
+
+/**
  * A Slack clicker resolves exactly like a Slack message author
  * (`resolveSlackActorIdentity`): only the receiving instance's configured
  * aliases, then the empty legacy scope. No cross-instance or cross-channel

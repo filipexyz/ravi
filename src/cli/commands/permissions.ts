@@ -6,10 +6,9 @@
 
 import "reflect-metadata";
 import { z } from "zod";
-import { addContactTag, getContact, removeContactTag, type Contact } from "../../contacts.js";
+import { getContact, removeContactTag, type Contact } from "../../contacts.js";
 import {
   dbDeleteContactChatGrant,
-  dbEnsureContactChatGrant,
   dbGetContactChatGrant,
   type ContactChatGrantScopeType,
 } from "../../permissions/contact-chat-grants.js";
@@ -31,7 +30,6 @@ import { getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { strictCliOffsetPaginationSchema } from "../return-schemas.js";
 import {
-  ensureAgentRuntimeCapability,
   isChatOnlyRuntimePermissions,
   readAgentRuntimePermissionsConfig,
 } from "../../permissions/agent-default-capabilities-provider.js";
@@ -45,11 +43,16 @@ import {
 } from "../../permissions/authorization-guidance.js";
 import { getPermissionDenial, type PermissionDenial } from "../../permissions/denials.js";
 import {
-  dbCreateTagDefinition,
-  dbGetTagDefinition,
-  dbUpdateTagDefinition,
-  normalizeTagSlug,
-} from "../../tags/index.js";
+  assertProviderOwnedPermissionTag as assertProviderOwnedPermissionProfile,
+  capabilityListsEqual as grantCapabilityListsEqual,
+  derivePermissionProfileSlugForCapability,
+  ensureAgentCeilingCapability,
+  grantContactProfile,
+  labelFromProfile,
+  normalizePermissionProfileSlug,
+  upsertPermissionProfileDefinition,
+} from "../../permissions/apply-grant.js";
+import { dbGetTagDefinition } from "../../tags/index.js";
 import type { TagDefinition } from "../../tags/types.js";
 import type { OffsetPagination } from "../../utils/pagination.js";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
@@ -1553,15 +1556,34 @@ function planPermissionTagOperation(input: {
   apply: boolean;
   explicitCapabilitiesProvided: boolean;
 }): void {
+  if (input.apply) {
+    // Provider-owned profile upsert lives in src/permissions/apply-grant.ts so
+    // the CLI and the Slack grant card share one rule.
+    const result = upsertPermissionProfileDefinition({
+      profile: input.tagSlug,
+      capabilities: input.capabilities,
+      label: input.label,
+      ...(input.description ? { description: input.description } : {}),
+      explicitCapabilities: input.explicitCapabilitiesProvided,
+      updatedBy: "permissions.allow",
+    });
+    input.operations.push({
+      kind: "profile",
+      status: result.status,
+      target: result.tagSlug,
+      message: result.message,
+    });
+    return;
+  }
+
   if (input.existingTag) {
-    assertProviderOwnedPermissionTag(input.existingTag);
+    assertProviderOwnedPermissionProfile(input.tagSlug, input.existingTag.kind, input.existingTag.source);
     const current = readPermissionTagCapabilities(input.existingTag);
-    const sameCapabilities = capabilityListsEqual(current, input.capabilities);
     const shouldUpdate =
       input.explicitCapabilitiesProvided ||
       input.label !== input.existingTag.label ||
       (input.description ?? undefined) !== (input.existingTag.description ?? undefined) ||
-      !sameCapabilities;
+      !capabilityListsEqual(current, input.capabilities);
     if (!shouldUpdate) {
       input.operations.push({
         kind: "profile",
@@ -1571,48 +1593,11 @@ function planPermissionTagOperation(input: {
       });
       return;
     }
-    if (input.apply) {
-      dbUpdateTagDefinition({
-        slug: input.tagSlug,
-        label: input.label,
-        description: input.description ?? null,
-        kind: "system",
-        source: "permissions",
-        metadata: mergePermissionTagMetadata(input.existingTag.metadata, input.capabilities),
-        updatedBy: "permissions.allow",
-      });
-      input.operations.push({
-        kind: "profile",
-        status: "applied",
-        target: input.tagSlug,
-        message: "Updated provider-owned permission profile.",
-      });
-      return;
-    }
     input.operations.push({
       kind: "profile",
       status: "planned",
       target: input.tagSlug,
       message: "Would update provider-owned permission profile.",
-    });
-    return;
-  }
-
-  if (input.apply) {
-    dbCreateTagDefinition({
-      slug: input.tagSlug,
-      label: input.label,
-      description: input.description,
-      kind: "system",
-      source: "permissions",
-      metadata: permissionTagMetadata(input.capabilities),
-      createdBy: "permissions.allow",
-    });
-    input.operations.push({
-      kind: "profile",
-      status: "applied",
-      target: input.tagSlug,
-      message: "Created provider-owned permission profile.",
     });
     return;
   }
@@ -1642,12 +1627,19 @@ function planContactProfileOperation(input: {
     return;
   }
   if (input.apply) {
-    addContactTag(input.contact.id, input.tagSlug);
+    // Contact scoped grants live in src/permissions/apply-grant.ts: the CLI and
+    // the Slack grant card must not grow two versions of this rule.
+    const result = grantContactProfile({
+      contactId: input.contact.id,
+      profile: input.tagSlug,
+      scope: { type: "global" },
+      createdBy: "permissions.allow",
+    });
     input.operations.push({
       kind: "contact-profile-global",
-      status: "applied",
+      status: result.status,
       target,
-      message: "Attached global permission profile tag through contact policy (--force).",
+      message: result.message,
     });
     return;
   }
@@ -1713,12 +1705,17 @@ function planContactChatGrantOperation(input: {
     return;
   }
   if (input.apply) {
-    dbEnsureContactChatGrant({ ...key, createdBy: "permissions.allow" });
+    const result = grantContactProfile({
+      contactId: input.contact.id,
+      profile: input.tagSlug,
+      scope: contactGrantScopeRef(input.scope),
+      createdBy: "permissions.allow",
+    });
     input.operations.push({
       kind: "contact-chat-grant",
-      status: "applied",
+      status: result.status,
       target,
-      message: `Granted the permission profile to the contact only in ${input.scope.label}.`,
+      message: result.message,
     });
     return;
   }
@@ -1728,6 +1725,12 @@ function planContactChatGrantOperation(input: {
     target,
     message: `Would grant the permission profile to the contact only in ${input.scope.label}.`,
   });
+}
+
+function contactGrantScopeRef(
+  scope: Exclude<ResolvedContactScope, { type: "global" }>,
+): { type: "chat"; chatId: string } | { type: "chat_tag"; chatTag: string } {
+  return scope.type === "chat" ? { type: "chat", chatId: scope.chatId } : { type: "chat_tag", chatTag: scope.chatTag };
 }
 
 function planContactChatGrantRevokeOperation(input: {
@@ -1793,18 +1796,16 @@ function planAgentCapabilityOperation(input: {
 }): void {
   const capability = formatCanonicalCapability(input.capability);
   if (input.apply) {
-    const result = ensureAgentRuntimeCapability(input.agentId, input.capability);
-    if (!result.agent) {
-      throw new Error(`Agent not found: ${input.agentId}`);
-    }
+    const result = ensureAgentCeilingCapability({
+      agentId: input.agentId,
+      capability: input.capability,
+    });
     input.operations.push({
       kind: input.kind ?? "agent-profile",
-      status: result.changed ? "applied" : "unchanged",
-      target: `agent:${input.agentId}`,
-      capability,
-      message: result.changed
-        ? "Added capability to agent runtime ceiling."
-        : "Agent runtime ceiling already includes this capability.",
+      status: result.status,
+      target: result.target,
+      capability: result.capability,
+      message: result.message,
     });
     return;
   }
@@ -1883,15 +1884,7 @@ function printPermissionListResult(payload: PermissionListResult): void {
 }
 
 function normalizePermissionTagSlug(profile: string): string {
-  const base = profile
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9._:-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  if (!base) {
-    throw new Error("Permission profile name is required.");
-  }
-  return normalizeTagSlug(base.startsWith("permission-") ? base : `permission-${base}`);
+  return normalizePermissionProfileSlug(profile);
 }
 
 function parseCapabilityList(value: string | undefined): AuthorizationCapability[] | undefined {
@@ -1975,53 +1968,12 @@ function dedupeStrings(values: string[]): string[] {
   return [...new Set(values)];
 }
 
-function assertProviderOwnedPermissionTag(tag: TagDefinition): void {
-  if (tag.kind !== "system" || tag.source !== "permissions") {
-    throw new Error(
-      `Tag ${tag.slug} is not provider-owned by permissions; refusing to mutate it as an authorization profile.`,
-    );
-  }
-}
-
 function capabilityListsEqual(a: AuthorizationCapability[], b: AuthorizationCapability[]): boolean {
-  const left = a.map(formatCanonicalCapability).sort();
-  const right = b.map(formatCanonicalCapability).sort();
-  return left.length === right.length && left.every((value, index) => value === right[index]);
-}
-
-function permissionTagMetadata(capabilities: AuthorizationCapability[]): Record<string, unknown> {
-  return {
-    permissions: {
-      capabilities: capabilities.map(formatCanonicalCapability),
-    },
-  };
-}
-
-function mergePermissionTagMetadata(
-  metadata: Record<string, unknown> | undefined,
-  capabilities: AuthorizationCapability[],
-): Record<string, unknown> {
-  const previousPermissions = isRecord(metadata?.permissions) ? metadata.permissions : {};
-  return {
-    ...(metadata ?? {}),
-    permissions: {
-      ...previousPermissions,
-      capabilities: capabilities.map(formatCanonicalCapability),
-    },
-  };
-}
-
-function labelFromProfile(profile: string): string {
-  const slug = profile.startsWith("permission-") ? profile.slice("permission-".length) : profile;
-  return slug
-    .split(/[-_.:]+/)
-    .filter(Boolean)
-    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
-    .join(" ");
+  return grantCapabilityListsEqual(a, b);
 }
 
 function deriveProfileName(capability: AuthorizationCapability): string {
-  return `permission-${capability.permission}-${capability.objectType}-${capability.objectId}`;
+  return derivePermissionProfileSlugForCapability(capability);
 }
 
 function buildAllowApplyCommand(input: PermissionAllowInput): string {

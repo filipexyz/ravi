@@ -5,6 +5,8 @@ import { evaluateApprovalInboundEvent } from "./decision.js";
 import {
   buildSlackApprovalClickNotice,
   isSlackApprovalActionId,
+  isSlackPermissionGrantActionId,
+  parseSlackGrantActionValue,
   type SlackApprovalClickNotice,
 } from "./slack-blocks.js";
 import { getApprovalRequest } from "./store.js";
@@ -33,14 +35,14 @@ export async function answerSlackApprovalClick(
   dependencies: SlackApprovalClickFeedbackDependencies = defaultDependencies,
 ): Promise<SlackApprovalClickNotice | null> {
   const actionId = typeof data.actionId === "string" ? data.actionId : undefined;
-  if (!isSlackApprovalActionId(actionId)) return null;
+  if (!isSlackApprovalActionId(actionId) && !isSlackPermissionGrantActionId(actionId)) return null;
   const responseUrlId = typeof data.responseUrlId === "string" ? data.responseUrlId.trim() : "";
   if (!responseUrlId) return null;
 
   const notice = clickNotice(data, dependencies.now());
   if (!notice) return null;
 
-  const requestId = typeof data.value === "string" ? data.value.trim() : "";
+  const requestId = clickRequestId(data);
   const request = requestId ? getApprovalRequest(requestId) : null;
   await dependencies.respond({
     responseUrlId,
@@ -58,6 +60,8 @@ export async function answerSlackApprovalClick(
 function clickNotice(data: Record<string, unknown>, now: number): SlackApprovalClickNotice | null {
   const evaluation = evaluateApprovalInboundEvent({ topic: "ravi.inbound.interaction", data }, now);
   if (evaluation.kind === "decide") return null;
+  // A scope selection on a live card is answered by that request's waiter.
+  if (evaluation.kind === "scope") return null;
   switch (evaluation.reason) {
     case "unauthorized_grantor":
     case "missing_actor":
@@ -65,7 +69,7 @@ function clickNotice(data: Record<string, unknown>, now: number): SlackApprovalC
     case "unknown_request":
       return "unknown";
     case "not_open": {
-      const requestId = typeof data.value === "string" ? data.value.trim() : "";
+      const requestId = clickRequestId(data);
       const request = requestId ? getApprovalRequest(requestId) : null;
       if (!request) return "unknown";
       if (request.status === "decided") {
@@ -79,6 +83,12 @@ function clickNotice(data: Record<string, unknown>, now: number): SlackApprovalC
     default:
       return null;
   }
+}
+
+function clickRequestId(data: Record<string, unknown>): string {
+  const selectedOption = typeof data.selectedOption === "string" ? data.selectedOption : undefined;
+  const value = typeof data.value === "string" ? data.value : undefined;
+  return parseSlackGrantActionValue(selectedOption ?? value).requestId;
 }
 
 let runnerAbort: (() => void) | null = null;
