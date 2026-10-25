@@ -10,6 +10,7 @@ import {
   recordAdapterRequestTrace,
   recordTerminalTurnTrace,
   summarizeRuntimeCapabilities,
+  type RuntimeTraceAdapterRequestInput,
 } from "../session-trace/runtime-trace.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
@@ -729,6 +730,8 @@ async function buildRuntimeStartRequestInternal(
     initialModelBrokerAttemptAvailable = false;
     pendingModelBrokerTurnId = undefined;
   };
+  // Set by transformTurnPrompt and read by the trace of the same turn.
+  let turnSignals: RuntimeTraceAdapterRequestInput["signals"] = null;
   const traceTurnStart = async (input: { combinedPrompt: string; deliverableMessages: RuntimeUserMessage[] }) => {
     const turnPrompt = findRuntimeTurnPrompt(input.deliverableMessages);
     let planned: ClaimedRuntimeModelBrokerPlan | undefined;
@@ -810,7 +813,9 @@ async function buildRuntimeStartRequestInternal(
       commands: input.deliverableMessages.flatMap((message) => message.commands ?? []),
       runtimeCredential: runtimeCredential ? serializeRuntimeCredentialAttemptBinding(runtimeCredential) : null,
       turnProvenance: streamingSession.currentTurnProvenance ?? null,
+      signals: turnSignals,
     });
+    turnSignals = null;
     if (!traceTurn) {
       throw new Error(`Failed to persist the adapter request for runtime turn ${turnId}`);
     }
@@ -993,9 +998,12 @@ async function buildRuntimeStartRequestInternal(
       streamingSession.currentRuntimeContextKey = runtimeEnv.RAVI_CONTEXT_KEY;
     },
     transformTurnPrompt: ({ combinedPrompt }) => {
+      turnSignals = null;
       try {
         const rendered = renderSignalsForTurn({ sessionName, sessionKey: dbSessionKey });
-        return rendered.suffix ? `${combinedPrompt}${rendered.suffix}` : combinedPrompt;
+        if (!rendered.suffix) return combinedPrompt;
+        turnSignals = { surfaced: rendered.surfacedIds, skipped: rendered.skipped, budget: rendered.budget };
+        return `${combinedPrompt}${rendered.suffix}`;
       } catch {
         return combinedPrompt;
       }

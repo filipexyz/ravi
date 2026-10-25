@@ -13,17 +13,25 @@ export interface DeliverOobResult {
   pageLine?: "sent" | "skipped_no_binding" | "failed";
 }
 
-export function buildSignalOobPrompt(signal: SignalRecord, severity: SignalSeverity): string {
+export function buildSignalOobPrompt(
+  signal: SignalRecord,
+  severity: SignalSeverity,
+  pageLine?: DeliverOobResult["pageLine"],
+): string {
   const lines = [
     `[System] Inform: [signal:${signal.id}] ${severity} ${signal.title}.`,
     signal.detail ? signal.detail : "",
     `Closes when ${describeClearRule(signal.clearWhen)}.`,
     `Ack: ravi signals ack ${signal.id}.`,
   ].filter(Boolean);
-  if (severity === "interrupt" || severity === "page") {
+  // Only a page that actually went out lets the agent skip the alert; an
+  // interrupt has no page line, and a skipped or failed page reached nobody.
+  if (pageLine === "sent") {
     lines.push(
       "The operator already received the one-line notice. Add context only; do not repeat the alert verbatim.",
     );
+  } else if (severity === "interrupt" || severity === "page") {
+    lines.push("The operator has not received a notice for this signal. Tell the operator now.");
   }
   return lines.join("\n");
 }
@@ -72,7 +80,7 @@ export async function deliverSignalOob(input: {
 
   const publish = input.publishPrompt ?? ((sessionName, payload) => publishSessionPrompt(sessionName, payload));
   await publish(input.sessionName, {
-    prompt: buildSignalOobPrompt(input.signal, deliverySeverity),
+    prompt: buildSignalOobPrompt(input.signal, deliverySeverity, pageLine),
     deliveryBarrier: deliverySeverity === "nudge" ? "after_response" : "immediate_interrupt",
     deliveryBarrierSource: "explicit",
     _signal: {

@@ -6,7 +6,7 @@
 import "reflect-metadata";
 import { z } from "zod";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
-import { fail } from "../context.js";
+import { fail, getContext } from "../context.js";
 import {
   assertSignalTitle,
   normalizeSeverity,
@@ -289,6 +289,40 @@ function humanSignal(signal: ReturnType<typeof findSignal>): void {
   );
 }
 
+/**
+ * The caller as the invocation resolved it (in-process tool or gateway
+ * context first, then the runtime env), not the raw environment alone.
+ */
+function signalCaller(): { isAgent: boolean; sessionName: string | null } {
+  const ctx = getContext();
+  const isAgent = Boolean(
+    ctx?.agentId?.trim() ||
+      ctx?.context?.agentId?.trim() ||
+      process.env.RAVI_AGENT_ID?.trim() ||
+      process.env.RAVI_CONTEXT_KEY?.trim(),
+  );
+  const sessionName =
+    ctx?.sessionName?.trim() ||
+    ctx?.sessionKey?.trim() ||
+    process.env.RAVI_SESSION_NAME?.trim() ||
+    process.env.RAVI_SESSION_KEY?.trim() ||
+    null;
+  return { isAgent, sessionName };
+}
+
+/** A signal outside the caller session's scope is NOT_FOUND, like `list`. */
+function findVisibleSignal(idOrKey: string) {
+  const signal = findSignal(idOrKey);
+  if (!signal) return null;
+  const { sessionName } = signalCaller();
+  if (sessionName && !signalIsInSessionScope(signal, readSessionSignalContext(sessionName))) return null;
+  return signal;
+}
+
+function assertVisibleSignal(idOrKey: string) {
+  if (!findVisibleSignal(idOrKey)) fail(`Signal not found: ${idOrKey}`);
+}
+
 @Group({
   name: "signals",
   description: "Durable world conditions with piggyback delivery",
@@ -349,8 +383,7 @@ export class SignalsCommands {
       if (kind !== "fact" && kind !== "judgment") {
         fail("Invalid --kind. Use fact|judgment.");
       }
-      const agentContext = Boolean(process.env.RAVI_AGENT_ID?.trim() || process.env.RAVI_CONTEXT_KEY?.trim());
-      if (kind === "fact" && agentContext) {
+      if (kind === "fact" && signalCaller().isAgent) {
         fail("Facts must be raised by code producers. Agent turns may raise judgment signals only.");
       }
       const producerId =
@@ -407,6 +440,7 @@ export class SignalsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     try {
+      assertVisibleSignal(idOrKey);
       const signal = updateSignal({
         idOrKey,
         ...(severity ? { severity: normalizeSeverity(severity) } : {}),
@@ -447,17 +481,29 @@ export class SignalsCommands {
     if (parsedOffset !== undefined && (!Number.isInteger(parsedOffset) || parsedOffset < 0)) {
       fail("--offset must be a non-negative integer.");
     }
-    const items = listSignals({
+    const { sessionName } = signalCaller();
+    const filters: Parameters<typeof listSignals>[0] = {
       ...(state ? { state: state === "non_terminal" ? "non_terminal" : (state as never) } : {}),
       ...(parsedScope ? { scopeType: parsedScope.scopeType, scopeId: parsedScope.scopeId } : {}),
       ...(key ? { key } : {}),
-      ...(parsedLimit ? { limit: parsedLimit } : {}),
-      ...(parsedOffset ? { offset: parsedOffset } : {}),
-    });
-    const sessionName = process.env.RAVI_SESSION_NAME?.trim() || process.env.RAVI_SESSION_KEY?.trim();
-    const visible = sessionName
-      ? items.filter((item) => signalIsInSessionScope(item, readSessionSignalContext(sessionName)))
-      : items;
+    };
+    // A session sees only its scope; filter before paging so the page and
+    // total count only visible rows.
+    let visible: ReturnType<typeof listSignals>;
+    if (sessionName) {
+      const sessionContext = readSessionSignalContext(sessionName);
+      const start = parsedOffset ?? 0;
+      const inScope = listSignals({ ...filters, limit: 500 }).filter((item) =>
+        signalIsInSessionScope(item, sessionContext),
+      );
+      visible = parsedLimit ? inScope.slice(start, start + parsedLimit) : inScope.slice(start);
+    } else {
+      visible = listSignals({
+        ...filters,
+        ...(parsedLimit ? { limit: parsedLimit } : {}),
+        ...(parsedOffset ? { offset: parsedOffset } : {}),
+      });
+    }
     const payload = { total: visible.length, items: visible };
     if (asJson) printJson(payload);
     else if (visible.length === 0) console.log("No signals.");
@@ -474,7 +520,7 @@ export class SignalsCommands {
     @Arg("idOrKey", { description: "Signal id or key" }) idOrKey: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const signal = findSignal(idOrKey);
+    const signal = findVisibleSignal(idOrKey);
     if (!signal) fail(`Signal not found: ${idOrKey}`);
     if (asJson) printJson({ signal });
     else humanSignal(signal);
@@ -491,8 +537,9 @@ export class SignalsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     try {
-      const agentContext = Boolean(process.env.RAVI_AGENT_ID?.trim() || process.env.RAVI_CONTEXT_KEY?.trim());
-      if (agentContext && findSignal(idOrKey)?.kind === "fact") {
+      const target = findVisibleSignal(idOrKey);
+      if (!target) fail(`Signal not found: ${idOrKey}`);
+      if (signalCaller().isAgent && target.kind === "fact") {
         fail("Fact signals require operator acknowledgement. Agents may acknowledge judgments only.");
       }
       const signal = ackSignal({ idOrKey, ...(note ? { note } : {}), ...(by ? { by } : {}) });
@@ -515,6 +562,7 @@ export class SignalsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     try {
+      assertVisibleSignal(idOrKey);
       const signal = resolveSignal({ idOrKey, reason, ...(by ? { by } : {}) });
       const payload = { status: "resolved", signal };
       if (asJson) printJson(payload);
@@ -536,6 +584,7 @@ export class SignalsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     try {
+      assertVisibleSignal(idOrKey);
       const signal = muteSignal({
         idOrKey,
         forMs: parseDurationMs(duration, "--for"),
@@ -559,6 +608,7 @@ export class SignalsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     try {
+      assertVisibleSignal(idOrKey);
       const signal = unmuteSignal({ idOrKey });
       const payload = { status: "unmuted", signal };
       if (asJson) printJson(payload);
@@ -635,6 +685,7 @@ export class SignalsCommands {
     @Arg("idOrKey", { description: "Signal id or key" }) idOrKey: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    assertVisibleSignal(idOrKey);
     const explanation = explainSignal(idOrKey);
     if (!explanation) fail(`Signal not found: ${idOrKey}`);
     if (asJson) printJson(explanation);

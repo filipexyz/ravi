@@ -37,7 +37,7 @@ import {
   ensureSignalSchema,
 } from "./signal-db.js";
 import { isSubjectTerminal, resolveSignalTargetSessions } from "./subjects.js";
-import { describeClearRule, evaluateClearRule } from "./probes.js";
+import { describeClearRule, evaluateClearRule, isProbeRegistered } from "./probes.js";
 
 const DEFAULT_COOLDOWN_MS: Record<SignalSeverity, number> = {
   ambient: 24 * 3_600_000,
@@ -77,6 +77,9 @@ export function raiseSignal(input: RaiseSignalInput): RaiseSignalResult {
   const title = assertSignalTitle(input.title);
   const severity = normalizeSeverity(input.severity);
   const clearWhen = validateClearWhen(input.clearWhen, input.kind);
+  if (clearWhen.type === "probe" && !isProbeRegistered(clearWhen.probe)) {
+    throw new Error(`Unknown probe: ${clearWhen.probe}`);
+  }
   const producerClass = normalizeProducerClass(input.producerClass, input.kind, input.producerId);
   const producerType = input.producerType ?? (input.kind === "fact" ? "code" : "agent");
 
@@ -110,6 +113,12 @@ export function raiseSignal(input: RaiseSignalInput): RaiseSignalResult {
 
   const existing = dbGetNonTerminalSignalByKey(input.key);
   if (existing) {
+    // Another owner's or kind's open key is not ours to rewrite.
+    if (existing.kind !== input.kind || existing.producerType !== producerType) {
+      throw new Error(
+        `Key ${input.key} belongs to a ${existing.kind} raised by ${existing.producerType}; cross-owner or cross-kind raise is not allowed.`,
+      );
+    }
     let changed = false;
     if (title !== existing.title) {
       existing.title = title;
@@ -349,6 +358,9 @@ export function muteSignal(input: {
   const now = input.now ?? Date.now();
   const signal = findSignal(input.idOrKey);
   if (!signal) throw new Error(`Signal not found: ${input.idOrKey}`);
+  if (signal.state === "resolved" || signal.state === "expired") {
+    throw new Error("Cannot mute a terminal signal.");
+  }
   const previous = signal.state === "muted" ? signal.previousState : signal.state;
   signal.state = "muted";
   signal.previousState =

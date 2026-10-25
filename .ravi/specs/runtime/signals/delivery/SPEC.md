@@ -245,9 +245,11 @@ The OOB prompt MUST include:
 - what was observed and when;
 - the close rule in one line;
 - the ack command;
-- for `page`/`interrupt`: "the operator has already received the one-line notice; add context only".
+- only when the page line was actually sent: "the operator has already received the one-line notice; add context only"; for `interrupt`, or a `page` whose line was skipped or failed, say the operator has not been notified.
 
 OOB MUST be idempotent. The `signal_surfaces` row is written before publishing, keyed by `signal_id + route=oob + escalation bucket` (a bucket is one `cooldown_ms` window). A retry inside the same bucket MUST NOT publish again.
+
+A surface row alone MUST NOT suppress recovery of a publication that never happened. Pending OOB delivery work (prompt and page line) MUST be persisted with a stable idempotency key derived from `signal_id + route + bucket`, retried until the publisher accepts it, and marked complete only then; the publishers dedupe on that key, so a retry inside the bucket never delivers twice. Until the transactional outbox lands, a failed page line is recorded on `signal.escalated` (`pageLine=failed`) and the OOB prompt tells the agent the operator was not notified.
 
 ### Deterministic page line
 

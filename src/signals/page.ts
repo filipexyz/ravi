@@ -1,26 +1,17 @@
-import { dbGetChat, dbGetSessionDefaultChatId } from "../router/router-db.js";
 import { getSessionByName } from "../router/sessions.js";
 import { buildChannelTextOutboundJob, publishChannelOutboundJob } from "../channels/outbound-stream.js";
 import type { MessageTarget } from "../runtime/message-types.js";
+import { resolveSessionOutputTarget } from "../runtime/session-output-target.js";
 import type { SignalRecord } from "./types.js";
 
-export function resolveSessionOutputTarget(sessionName: string): MessageTarget | null {
+/**
+ * Where a page goes: the session's attached output, resolved like a
+ * source-less turn (channel and thread split, the attached chat's account).
+ */
+export function resolveSignalPageTarget(sessionName: string): MessageTarget | null {
   const session = getSessionByName(sessionName);
   if (!session) return null;
-  const chatId = dbGetSessionDefaultChatId(session.sessionKey);
-  if (!chatId) return null;
-  const chat = dbGetChat(chatId);
-  if (!chat) return null;
-  const channel = chat.channel || session.channel;
-  const accountId = session.accountId;
-  if (!channel || !accountId) return null;
-  return {
-    channel,
-    accountId,
-    ...(chat.instanceId ? { instanceId: chat.instanceId } : {}),
-    chatId: chat.platformChatId,
-    ...(session.lastThreadId ? { threadId: session.lastThreadId } : {}),
-  };
+  return resolveSessionOutputTarget({ sessionKey: session.sessionKey, fallback: undefined }).target;
 }
 
 export function buildSignalPageText(signal: SignalRecord, now = Date.now()): string {
@@ -34,7 +25,7 @@ export async function sendSignalPage(
   sessionName: string,
   bucket: string,
 ): Promise<"sent" | "skipped_no_binding" | "failed"> {
-  const target = resolveSessionOutputTarget(sessionName);
+  const target = resolveSignalPageTarget(sessionName);
   if (!target) return "skipped_no_binding";
   try {
     const idempotencyKey = `signal-page:${signal.id}:${bucket}`;

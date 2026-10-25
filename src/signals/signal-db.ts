@@ -529,21 +529,22 @@ export function dbClearKeyMute(key: string): void {
 
 export function dbAcquireTickLock(holder: string, now = Date.now(), staleMs = 10 * 60_000): boolean {
   ensureSignalSchema();
-  const db = getDb();
-  const row = db.prepare("SELECT value FROM signal_meta WHERE key = 'tick_lock'").get() as
-    | { value: string }
-    | undefined;
-  if (row) {
-    const parsed = parseJson<{ holder: string; acquiredAt: number }>(row.value);
-    if (parsed && now - parsed.acquiredAt < staleMs && parsed.holder !== holder) {
-      return false;
-    }
-  }
-  db.prepare(
-    `INSERT INTO signal_meta (key, value, updated_at) VALUES ('tick_lock', ?, ?)
-     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-  ).run(JSON.stringify({ holder, acquiredAt: now }), now);
-  return true;
+  // One conditional write: two processes that both saw a free or stale lock
+  // cannot both take it. An unreadable lock value counts as free.
+  const result = getDb()
+    .prepare(
+      `INSERT INTO signal_meta (key, value, updated_at) VALUES ('tick_lock', ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+       WHERE CASE
+         WHEN json_valid(signal_meta.value) THEN
+           json_extract(signal_meta.value, '$.holder') IS ?
+           OR json_extract(signal_meta.value, '$.acquiredAt') IS NULL
+           OR json_extract(signal_meta.value, '$.acquiredAt') <= ?
+         ELSE 1
+       END`,
+    )
+    .run(JSON.stringify({ holder, acquiredAt: now }), now, holder, now - staleMs);
+  return result.changes > 0;
 }
 
 export function dbReleaseTickLock(holder: string): void {

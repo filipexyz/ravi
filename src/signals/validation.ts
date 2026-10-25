@@ -144,13 +144,19 @@ export function normalizeScope(value: string): { scopeType: SignalScopeType; sco
 }
 
 export function sanitizeSignalText(value: string, maxLength: number): string {
-  return value
-    .replace(/[\u0000-\u001f\u007f]/g, " ")
-    .replace(/\[system\]/gi, "[system-marker]")
-    .replace(/```+/g, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, maxLength);
+  return (
+    value
+      .replace(/[\u0000-\u001f\u007f]/g, " ")
+      .replace(/\[system\]/gi, "[system-marker]")
+      // Signal text sits inside a <ravi-signals> block: it must not close or
+      // open one, nor pass for another speaker.
+      .replace(/<\s*(\/?)\s*ravi-signals/gi, "&lt;$1ravi-signals")
+      .replace(/^\s*(system|assistant|user|human|developer)\s*:/i, "")
+      .replace(/```+/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, maxLength)
+  );
 }
 
 export function assertSignalTitle(value: string): string {

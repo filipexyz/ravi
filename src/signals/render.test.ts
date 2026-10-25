@@ -123,4 +123,26 @@ describe("signals render", () => {
     expect(result.suffix).toContain("| piggyback |");
     expect(dbGetSignalById(signal.id)?.severity).toBe("piggyback");
   });
+
+  it("expires a signal whose ttl elapsed instead of surfacing it", () => {
+    const now = Date.now();
+    const signal = raiseDisk(now - 2 * 86_400_000);
+    const rendered = renderSignalsForTurn({ sessionName: "test-session", sessionKey: "test-session", now });
+    expect(rendered.suffix).toBe("");
+    expect(dbGetSignalById(signal.id)?.state).toBe("expired");
+    expect(dbGetSignalById(signal.id)?.closeReason).toBe("ttl");
+  });
+
+  it("reports the last measurement, not now, when no recheck is due", () => {
+    const now = Date.now();
+    const signal = raiseDisk(now);
+    const stored = dbGetSignalById(signal.id)!;
+    stored.lastEvalAt = now - 60_000;
+    stored.lastEvalError = null;
+    dbUpdateSignal(stored);
+    const later = now + 30_000;
+    const rendered = renderSignalsForTurn({ sessionName: "test-session", sessionKey: "test-session", now: later });
+    const observed = new Date(now - 60_000).toISOString().slice(11, 16);
+    expect(rendered.suffix).toContain(`observed ${observed}Z`);
+  });
 });
