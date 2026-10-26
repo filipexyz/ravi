@@ -3,31 +3,39 @@
  *
  * Receipts are never cleanup candidates and retention pruning never re-scans
  * the receipt directory as an allowlist root, and never deletes the receipt
- * currently being written.
+ * currently being written. v2 adds per-class eligibility bytes and the `df`
+ * before/after snapshot; v1 receipts stay readable so `summary` can span the
+ * upgrade.
  */
 
-import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { DiskUsage } from "./disk.js";
 
-export interface StorageAreaSummary {
+export interface StorageClassSummary {
   candidates: number;
   removed: number;
   preserved: number;
+  /** Aggregate bytes that the policy would remove (candidates). */
+  eligibleBytes: number;
+  /** Preserved bytes caused by an unresolved/ambiguous signal. */
+  inDoubtBytes: number;
+  /** Every preserved byte in the class (deterministic + in doubt). */
+  preservedBytes: number;
   freedBytes: number;
 }
 
 export interface StorageReceipt {
-  schema: "ravi.storage.receipt/v1";
+  schema: "ravi.storage.receipt/v2";
   id: string;
   createdAt: string;
   tier: string;
   dryRun: boolean;
   policyVersion: string;
   policyHash: string;
-  bytesBefore: number;
-  bytesAfter: number;
   freedBytes: number;
-  areas: Record<string, StorageAreaSummary>;
+  classes: Record<string, StorageClassSummary>;
+  disk: { before: DiskUsage | null; after: DiskUsage | null };
   errors: string[];
   limitations: string[];
   removed: string[];
@@ -45,6 +53,100 @@ export function writeStorageReceipt(dir: string, receipt: StorageReceipt): strin
   const file = join(dir, `${receipt.id}.json`);
   writeFileSync(file, `${JSON.stringify(receipt, null, 2)}\n`, "utf8");
   return file;
+}
+
+interface LegacyAreaSummary {
+  candidates?: number;
+  removed?: number;
+  preserved?: number;
+  eligibleBytes?: number;
+  inDoubtBytes?: number;
+  preservedBytes?: number;
+  freedBytes?: number;
+}
+
+interface LegacyReceipt {
+  schema?: string;
+  id?: string;
+  createdAt?: string;
+  tier?: string;
+  dryRun?: boolean;
+  policyVersion?: string;
+  policyHash?: string;
+  freedBytes?: number;
+  classes?: Record<string, Partial<StorageClassSummary>>;
+  areas?: Record<string, LegacyAreaSummary>;
+  disk?: { before?: DiskUsage | null; after?: DiskUsage | null } | null;
+  errors?: string[];
+  limitations?: string[];
+  removed?: string[];
+  preservedSample?: Array<{ path: string; bytes: number; reason: string }>;
+}
+
+export function normalizeStorageReceipt(raw: LegacyReceipt): StorageReceipt | null {
+  if (!raw || typeof raw !== "object") return null;
+  const sourceClasses = raw.classes ?? raw.areas;
+  if (!sourceClasses || typeof sourceClasses !== "object") return null;
+  const classes: Record<string, StorageClassSummary> = {};
+  for (const [id, summary] of Object.entries(sourceClasses)) {
+    const preserved = Number(summary.preserved ?? 0) || 0;
+    classes[id] = {
+      candidates: Number(summary.candidates ?? 0) || 0,
+      removed: Number(summary.removed ?? 0) || 0,
+      preserved,
+      eligibleBytes: Number(summary.eligibleBytes ?? 0) || 0,
+      inDoubtBytes: Number(summary.inDoubtBytes ?? 0) || 0,
+      preservedBytes: Number(summary.preservedBytes ?? 0) || 0,
+      freedBytes: Number(summary.freedBytes ?? 0) || 0,
+    };
+  }
+  const createdAt = typeof raw.createdAt === "string" ? raw.createdAt : new Date(0).toISOString();
+  return {
+    schema: "ravi.storage.receipt/v2",
+    id: typeof raw.id === "string" ? raw.id : "legacy",
+    createdAt,
+    tier: typeof raw.tier === "string" ? raw.tier : "unknown",
+    dryRun: raw.dryRun === true,
+    policyVersion: typeof raw.policyVersion === "string" ? raw.policyVersion : "0",
+    policyHash: typeof raw.policyHash === "string" ? raw.policyHash : "",
+    freedBytes: Number(raw.freedBytes ?? 0) || 0,
+    classes,
+    disk: { before: raw.disk?.before ?? null, after: raw.disk?.after ?? null },
+    errors: Array.isArray(raw.errors) ? raw.errors : [],
+    limitations: Array.isArray(raw.limitations) ? raw.limitations : [],
+    removed: Array.isArray(raw.removed) ? raw.removed : [],
+    preservedSample: Array.isArray(raw.preservedSample) ? raw.preservedSample : [],
+  };
+}
+
+export interface ParseIssues {
+  files: number;
+  invalid: string[];
+}
+
+/** Read every receipt file in `dir`, normalizing v1 rows. Never throws. */
+export function readStorageReceipts(dir: string, issues?: ParseIssues): StorageReceipt[] {
+  if (!existsSync(dir)) return [];
+  let names: string[];
+  try {
+    names = readdirSync(dir).filter((name) => name.endsWith(".json"));
+  } catch {
+    return [];
+  }
+  const receipts: StorageReceipt[] = [];
+  for (const name of names) {
+    const path = join(dir, name);
+    if (issues) issues.files += 1;
+    try {
+      const parsed = JSON.parse(readFileSync(path, "utf8")) as LegacyReceipt;
+      const normalized = normalizeStorageReceipt(parsed);
+      if (normalized) receipts.push(normalized);
+      else issues?.invalid.push(path);
+    } catch {
+      issues?.invalid.push(path);
+    }
+  }
+  return receipts.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
 }
 
 export interface PruneReceiptsOptions {

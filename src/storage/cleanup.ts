@@ -8,27 +8,39 @@
  *    closed without partial mutation;
  *  - every candidate is re-verified immediately before removal (lstat,
  *    allowlist, containment, protected paths);
- *  - removals are measured and individually recorded; partial failures are
- *    reported and never masked.
+ *  - removals are measured per class; partial failures are reported and never
+ *    masked;
+ *  - the receipt records per-class bytes and the disk (`df`) snapshot before
+ *    and after the run.
  */
 
 import { lstatSync, mkdirSync, openSync, closeSync, readFileSync, unlinkSync, writeSync, rmSync } from "node:fs";
 import { basename, join, sep } from "node:path";
+import { readDiskUsage, type DiskUsage } from "./disk.js";
 import {
   isContainedIn,
   measureBytes,
   parseCodexSessionId,
   scanStorageAreas,
   type CodexProbe,
+  type OmniBroadcastProbe,
   type StorageEntry,
 } from "./eligibility.js";
-import { resolveStoragePolicy, tmpNameMatchesAllowlist, type StoragePolicy, type StorageTier } from "./policy.js";
+import { isProtectedPath } from "./fsutil.js";
+import { staticOmniProbe } from "./omni-probe.js";
+import {
+  resolveClassExemptions,
+  resolveStoragePolicy,
+  tmpNameMatchesAllowlist,
+  type StoragePolicy,
+  type StorageTier,
+} from "./policy.js";
 import { isTerminalTask, taskTerminalStamp, type TaskProbe } from "./task-probe.js";
 import {
   newStorageReceiptId,
   pruneStorageReceipts,
   writeStorageReceipt,
-  type StorageAreaSummary,
+  type StorageClassSummary,
   type StorageReceipt,
 } from "./receipts.js";
 
@@ -48,6 +60,8 @@ export interface StorageCleanupOptions {
   codexProbe?: CodexProbe;
   /** Task worktree probe; absent means every worktree is preserved. */
   taskProbe?: TaskProbe;
+  /** status@broadcast reference source; absent preserves every video. */
+  omniBroadcastProbe?: OmniBroadcastProbe;
 }
 
 export interface StorageCleanupResult {
@@ -57,10 +71,9 @@ export interface StorageCleanupResult {
   dryRun: boolean;
   policyVersion: string;
   policyHash: string;
-  bytesBefore: number;
-  bytesAfter: number;
   freedBytes: number;
-  areas: Record<string, StorageAreaSummary>;
+  classes: Record<string, StorageClassSummary>;
+  disk: { before: DiskUsage | null; after: DiskUsage | null };
   errors: string[];
   limitations: string[];
   removed: string[];
@@ -72,6 +85,11 @@ export interface StorageCleanupResult {
 
 const LOCK_FILE = ".cleanup.lock";
 const PRESERVED_SAMPLE_LIMIT = 20;
+
+const NO_OMNI_PROBE: OmniBroadcastProbe = staticOmniProbe({
+  rows: [],
+  error: "status@broadcast source not provided",
+});
 
 interface LockHandle {
   path: string;
@@ -126,6 +144,8 @@ function isProcessAlive(pid: number): boolean {
 }
 
 const CODEX_ROLLOUT = /^rollout-.*\.jsonl$/;
+const ATTACHMENT_NAME = /^\d{10,16}-[A-Za-z0-9]{8,}\.[A-Za-z0-9]{2,6}$/;
+const CLAUDE_JSONL = /\.jsonl$/;
 
 interface StorageProbes {
   codexProbe?: CodexProbe;
@@ -140,34 +160,68 @@ function canRemove(entry: StorageEntry, policy: StoragePolicy, now: number, prob
     return "entry disappeared before removal";
   }
   if (st.isSymbolicLink()) return "symlink not followed";
-  if (isProtectedPath(entry.path, policy)) return "protected path";
-  if (entry.area === "tmp-ravi") {
-    if (!isContainedIn(entry.path, entry.root)) return "real path escapes allowlist root";
-    if (!tmpNameMatchesAllowlist(basename(entry.path), policy.tmpNameAllowlist)) return "no longer matches allowlist";
-    return null;
+  const exemptions = resolveClassExemptions(policy);
+  if (isProtectedPath(entry.path, policy.protectedPaths, exemptions)) return "protected path";
+
+  switch (entry.area) {
+    case "tmp-ravi": {
+      if (!isContainedIn(entry.path, entry.root)) return "real path escapes allowlist root";
+      if (!tmpNameMatchesAllowlist(basename(entry.path), policy.tmpNameAllowlist)) return "no longer matches allowlist";
+      return null;
+    }
+    case "codex-inactive": {
+      if (!isContainedIn(entry.path, entry.root)) return "real path escapes allowlist root";
+      if (!CODEX_ROLLOUT.test(basename(entry.path))) return "no longer a codex rollout artifact";
+      if (probes.codexProbe?.processRunning()) return "a live codex process is running";
+      const sessionId = parseCodexSessionId(entry.path);
+      if (!sessionId) return "session metadata unreadable (fail-closed)";
+      const liveness = probes.codexProbe?.sessionLiveness(sessionId) ?? "unknown";
+      if (liveness !== "not-live") return `session liveness is ${liveness}`;
+      return null;
+    }
+    case "backups-superseded": {
+      if (!policy.backupsDir) return "class disabled";
+      if (!isContainedIn(entry.path, policy.backupsDir)) return "real path escapes the backups root";
+      if (!entry.path.startsWith(policy.backupsDir + sep)) return "not a direct backup entry";
+      return null;
+    }
+    case "instance-attachments": {
+      if (!policy.attachmentsDir) return "class disabled";
+      if (!isContainedIn(entry.path, policy.attachmentsDir)) return "real path escapes the attachments root";
+      if (!st.isFile()) return "no longer a regular file";
+      if (!ATTACHMENT_NAME.test(basename(entry.path))) return "name no longer matches the attachment allowlist";
+      return null;
+    }
+    case "claude-jsonl": {
+      if (!policy.claudeProjectsDir) return "class disabled";
+      if (!isContainedIn(entry.path, policy.claudeProjectsDir)) return "real path escapes the Claude root";
+      if (!CLAUDE_JSONL.test(basename(entry.path))) return "no longer a Claude transcript";
+      if (entry.path.split(sep).includes("memory")) return "never delete */memory/*";
+      return null;
+    }
+    case "omni-broadcast-mp4": {
+      if (!policy.omniMediaDir) return "class disabled";
+      if (!isContainedIn(entry.path, policy.omniMediaDir)) return "real path escapes the Omni media root";
+      if (!basename(entry.path).toLowerCase().endsWith(".mp4")) return "no longer an mp4 artifact";
+      // The externalId match cannot be re-proven here without a second source
+      // read; the scan's positive match plus the age check is the gate, and any
+      // late liveness change is recorded by the next run.
+      return null;
+    }
+    case "tasks-terminal": {
+      const probe = probes.taskProbe;
+      if (!probe) return "no task source available";
+      const { records } = probe.listWorktreeTasks();
+      const record = records.find((candidate) => candidate.worktreePath === entry.path);
+      if (!record) return "task record not found or no longer a worktree task";
+      if (!isTerminalTask(record)) return `task is not terminal (${record.status})`;
+      if (now - taskTerminalStamp(record) < policy.taskMaxAgeMs) return "task is younger than the threshold";
+      const assessment = probe.assess(record);
+      return assessment.decision === "candidate" ? null : assessment.reason;
+    }
+    default:
+      return "area removal is not wired";
   }
-  if (entry.area === "codex-inactive") {
-    if (!isContainedIn(entry.path, entry.root)) return "real path escapes allowlist root";
-    if (!CODEX_ROLLOUT.test(basename(entry.path))) return "no longer a codex rollout artifact";
-    if (probes.codexProbe?.processRunning()) return "a live codex process is running";
-    const sessionId = parseCodexSessionId(entry.path);
-    if (!sessionId) return "session metadata unreadable (fail-closed)";
-    const liveness = probes.codexProbe?.sessionLiveness(sessionId) ?? "unknown";
-    if (liveness !== "not-live") return `session liveness is ${liveness}`;
-    return null;
-  }
-  if (entry.area === "tasks-terminal") {
-    const probe = probes.taskProbe;
-    if (!probe) return "no task source available";
-    const { records } = probe.listWorktreeTasks();
-    const record = records.find((candidate) => candidate.worktreePath === entry.path);
-    if (!record) return "task record not found or no longer a worktree task";
-    if (!isTerminalTask(record)) return `task is not terminal (${record.status})`;
-    if (now - taskTerminalStamp(record) < policy.taskMaxAgeMs) return "task is younger than the threshold";
-    const assessment = probe.assess(record);
-    return assessment.decision === "candidate" ? null : assessment.reason;
-  }
-  return "area removal is not wired";
 }
 
 function removeTaskWorktree(entry: StorageEntry, probe?: TaskProbe): { ok: boolean; error?: string } {
@@ -178,11 +232,16 @@ function removeTaskWorktree(entry: StorageEntry, probe?: TaskProbe): { ok: boole
   return probe.remove(record);
 }
 
-function isProtectedPath(target: string, policy: StoragePolicy): boolean {
-  return policy.protectedPaths.some((root) => {
-    const prefix = root.endsWith(sep) ? root : root + sep;
-    return target === root || target.startsWith(prefix);
-  });
+function emptyClassSummary(): StorageClassSummary {
+  return {
+    candidates: 0,
+    removed: 0,
+    preserved: 0,
+    eligibleBytes: 0,
+    inDoubtBytes: 0,
+    preservedBytes: 0,
+    freedBytes: 0,
+  };
 }
 
 export function runStorageCleanup(options: StorageCleanupOptions): StorageCleanupResult {
@@ -190,6 +249,7 @@ export function runStorageCleanup(options: StorageCleanupOptions): StorageCleanu
   const now = options.now ?? Date.now();
   const execute = options.execute === true;
   const policy = resolveStoragePolicy(options.tier, env);
+  const omniBroadcastProbe = options.omniBroadcastProbe ?? NO_OMNI_PROBE;
 
   const lock = acquireLock(policy.receiptDir);
   if (!lock) throw new StorageLockedError(join(policy.receiptDir, LOCK_FILE));
@@ -199,24 +259,33 @@ export function runStorageCleanup(options: StorageCleanupOptions): StorageCleanu
   let freedBytes = 0;
 
   try {
-    const scans = scanStorageAreas(policy, now, options.codexProbe, options.taskProbe);
+    const probe = readDiskUsage(policy.receiptDir);
+    const scans = scanStorageAreas(policy, {
+      now,
+      codexProbe: options.codexProbe,
+      taskProbe: options.taskProbe,
+      omniBroadcastProbe,
+    });
     const entries = scans.flatMap((scan) => scan.entries);
     const limitations = scans.flatMap((scan) => scan.limitations);
     const candidates = entries.filter((entry) => entry.decision === "candidate");
-    const bytesBefore = entries.reduce((sum, entry) => sum + entry.bytes, 0);
 
-    const areas: Record<string, StorageAreaSummary> = {};
-    for (const scan of scans) {
-      areas[scan.area] = { candidates: 0, removed: 0, preserved: 0, freedBytes: 0 };
-    }
-    const areaOf = (entry: StorageEntry): StorageAreaSummary => {
-      areas[entry.area] ??= { candidates: 0, removed: 0, preserved: 0, freedBytes: 0 };
-      return areas[entry.area];
+    const classes: Record<string, StorageClassSummary> = {};
+    for (const scan of scans) classes[scan.area] = emptyClassSummary();
+    const classOf = (entry: StorageEntry): StorageClassSummary => {
+      classes[entry.area] ??= emptyClassSummary();
+      return classes[entry.area];
     };
 
     for (const entry of entries) {
-      if (entry.decision === "candidate") areaOf(entry).candidates += 1;
-      else areaOf(entry).preserved += 1;
+      if (entry.decision === "candidate") {
+        classOf(entry).candidates += 1;
+        classOf(entry).eligibleBytes += entry.bytes;
+      } else {
+        classOf(entry).preserved += 1;
+        classOf(entry).preservedBytes += entry.bytes;
+        if (entry.doubt) classOf(entry).inDoubtBytes += entry.bytes;
+      }
     }
 
     if (execute) {
@@ -225,7 +294,11 @@ export function runStorageCleanup(options: StorageCleanupOptions): StorageCleanu
         const blocked = canRemove(entry, policy, now, probes);
         if (blocked) {
           errors.push(`preserved ${entry.path}: ${blocked}`);
-          areaOf(entry).preserved += 1;
+          const summary = classOf(entry);
+          summary.candidates = Math.max(0, summary.candidates - 1);
+          summary.eligibleBytes = Math.max(0, summary.eligibleBytes - entry.bytes);
+          summary.preserved += 1;
+          summary.preservedBytes += entry.bytes;
           continue;
         }
         try {
@@ -240,30 +313,30 @@ export function runStorageCleanup(options: StorageCleanupOptions): StorageCleanu
           }
           removed.push(entry.path);
           freedBytes += entry.bytes;
-          areaOf(entry).removed += 1;
-          areaOf(entry).freedBytes += entry.bytes;
+          classOf(entry).removed += 1;
+          classOf(entry).freedBytes += entry.bytes;
         } catch (error) {
           errors.push(`failed to remove ${entry.path}: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
     } else {
       freedBytes = candidates.reduce((sum, entry) => sum + entry.bytes, 0);
+      for (const entry of candidates) classOf(entry).freedBytes += entry.bytes;
     }
 
-    const bytesAfter = Math.max(0, bytesBefore - freedBytes);
+    const diskAfter = execute ? readDiskUsage(policy.receiptDir) : probe;
     const receiptId = newStorageReceiptId(now);
     const receipt: StorageReceipt = {
-      schema: "ravi.storage.receipt/v1",
+      schema: "ravi.storage.receipt/v2",
       id: receiptId,
       createdAt: new Date(now).toISOString(),
       tier: policy.tier,
       dryRun: !execute,
       policyVersion: policy.version,
       policyHash: policy.hash,
-      bytesBefore,
-      bytesAfter,
       freedBytes,
-      areas,
+      classes,
+      disk: { before: probe, after: diskAfter },
       errors,
       limitations,
       removed,
@@ -289,10 +362,9 @@ export function runStorageCleanup(options: StorageCleanupOptions): StorageCleanu
       dryRun: !execute,
       policyVersion: policy.version,
       policyHash: policy.hash,
-      bytesBefore,
-      bytesAfter,
       freedBytes,
-      areas,
+      classes,
+      disk: { before: probe, after: diskAfter },
       errors,
       limitations,
       removed,

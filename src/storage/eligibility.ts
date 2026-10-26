@@ -4,124 +4,59 @@
  * The default outcome of any uncertainty is "preserved". A candidate is only
  * produced when every gate passes: closed-allowlist match, `lstat` (never
  * follow symlinks), containment inside the allowlist root, not protected, and
- * age above the tier threshold.
+ * the class threshold.
  *
- * `tmp-ravi` is implemented end-to-end. `codex-inactive` requires a positive
- * inactivity proof: no live Codex process, age above the threshold, readable
- * `session_meta`, and a Ravi-session liveness answer of "not-live". Any
- * "unknown" liveness answer preserves the artifact. `omni-orphan` and
- * `tasks-terminal` remain preserved until their canonical hold/lifecycle
- * surfaces are wired (next slice); their limitations are always recorded.
+ * Each class lives in its own module (`tmp`, `codex`, backups, attachments,
+ * Claude JSONL, status@broadcast video, Omni holds, task worktrees); this file
+ * is the single place that composes them per tier and for `report`.
  */
 
-import {
-  existsSync,
-  lstatSync,
-  openSync,
-  closeSync,
-  readSync,
-  readdirSync,
-  readFileSync,
-  realpathSync,
-  type Dirent,
-} from "node:fs";
+import { existsSync, lstatSync, openSync, closeSync, readSync, readdirSync, readFileSync, type Dirent } from "node:fs";
 import { join, sep } from "node:path";
-import { tmpNameMatchesAllowlist, type StoragePolicy } from "./policy.js";
+import { isContainedIn, isProtectedPath, measureBytes } from "./fsutil.js";
+import { classesForTier, tmpNameMatchesAllowlist, type StoragePolicy } from "./policy.js";
 import { isTerminalTask, taskTerminalStamp, type TaskProbe } from "./task-probe.js";
+import { scanBackupsArea } from "./backups.js";
+import { scanAttachmentsArea } from "./attachments.js";
+import { scanClaudeJsonlArea } from "./claude-jsonl.js";
+import { scanOmniBroadcastArea } from "./omni-broadcast.js";
+import type { AreaScan, CodexProbe, OmniBroadcastProbe, StorageArea, StorageEntry } from "./types.js";
 
-export type StorageArea = "tmp-ravi" | "codex-inactive" | "omni-orphan" | "tasks-terminal";
-export type StorageDecision = "candidate" | "preserved";
-
-export interface StorageEntry {
-  area: StorageArea;
-  /** The allowlist root this entry was found under (containment boundary). */
-  root: string;
-  path: string;
-  bytes: number;
-  decision: StorageDecision;
-  reason: string;
-}
-
-export interface AreaScan {
-  area: StorageArea;
-  entries: StorageEntry[];
-  limitations: string[];
-}
-
-/** Tri-state liveness: unknown is never treated as inactive. */
-export type CodexSessionLiveness = "live" | "not-live" | "unknown";
-
-export interface CodexProbe {
-  processRunning(): boolean;
-  sessionLiveness(sessionId: string): CodexSessionLiveness;
-}
+export type {
+  AreaScan,
+  CodexProbe,
+  CodexSessionLiveness,
+  OmniBroadcastProbe,
+  StorageArea,
+  StorageEntry,
+} from "./types.js";
+export { isContainedIn, measureBytes } from "./fsutil.js";
 
 const DEFAULT_CODEX_PROBE: CodexProbe = {
   processRunning: () => codexProcessRunning(),
   sessionLiveness: () => "unknown",
 };
 
-const SIZE_CAP_BYTES = 8 * 1024 * 1024 * 1024;
-const SIZE_CAP_ENTRIES = 200_000;
 const CODEX_ROLLOUT = /^rollout-.*\.jsonl$/;
 
-/** Bounded recursive size; never follows a symlink. */
-export function measureBytes(target: string): number {
-  let total = 0;
-  let entries = 0;
-  const walk = (p: string): void => {
-    if (total >= SIZE_CAP_BYTES || entries >= SIZE_CAP_ENTRIES) return;
-    let st;
-    try {
-      st = lstatSync(p);
-    } catch {
-      return;
-    }
-    entries += 1;
-    if (st.isSymbolicLink()) return;
-    if (st.isDirectory()) {
-      let children: string[] = [];
-      try {
-        children = readdirSync(p);
-      } catch {
-        return;
-      }
-      for (const child of children) walk(join(p, child));
-      return;
-    }
-    if (st.isFile()) total += st.size;
-  };
-  walk(target);
-  return Math.min(total, SIZE_CAP_BYTES);
-}
-
-/** True when `child`'s resolved real path is inside `root` (no traversal). */
-export function isContainedIn(child: string, root: string): boolean {
-  let realChild: string;
-  let realRoot: string;
-  try {
-    realChild = realpathSync(child);
-    realRoot = realpathSync(root);
-  } catch {
-    return false;
-  }
-  const rootWithSep = realRoot.endsWith(sep) ? realRoot : realRoot + sep;
-  return realChild === realRoot || realChild.startsWith(rootWithSep);
-}
-
-function isProtected(target: string, policy: StoragePolicy): boolean {
-  return policy.protectedPaths.some((root) => {
-    const withSep = root.endsWith(sep) ? root : root + sep;
-    return target === root || target.startsWith(withSep);
-  });
-}
-
-function preserved(area: StorageArea, root: string, path: string, bytes: number, reason: string): StorageEntry {
-  return { area, root, path, bytes, decision: "preserved", reason };
+function preserved(
+  area: StorageArea,
+  root: string,
+  path: string,
+  bytes: number,
+  reason: string,
+  doubt = false,
+): StorageEntry {
+  return { area, root, path, bytes, decision: "preserved", reason, ...(doubt ? { doubt: true } : {}) };
 }
 
 function candidate(area: StorageArea, root: string, path: string, bytes: number, reason: string): StorageEntry {
   return { area, root, path, bytes, decision: "candidate", reason };
+}
+
+/** A preserved outcome caused by an unresolved signal, not by a policy rule. */
+function isAmbiguousReason(reason: string): boolean {
+  return /failed|not found|could not|unreadable|unavailable|unknown|not registered/.test(reason);
 }
 
 export function scanTmpArea(policy: StoragePolicy, now: number): AreaScan {
@@ -155,12 +90,12 @@ export function scanTmpArea(policy: StoragePolicy, now: number): AreaScan {
         entries.push(preserved("tmp-ravi", root, full, bytes, "symlink not followed"));
         continue;
       }
-      if (isProtected(full, policy)) {
+      if (isProtectedPath(full, policy.protectedPaths)) {
         entries.push(preserved("tmp-ravi", root, full, bytes, "protected path"));
         continue;
       }
       if (!isContainedIn(full, root)) {
-        entries.push(preserved("tmp-ravi", root, full, bytes, "real path escapes the allowlist root"));
+        entries.push(preserved("tmp-ravi", root, full, bytes, "real path escapes the allowlist root", true));
         continue;
       }
       const age = now - st.mtimeMs;
@@ -288,7 +223,7 @@ export function scanCodexArea(policy: StoragePolicy, now: number, probe: CodexPr
     }
     const sessionId = parseCodexSessionId(file);
     if (!sessionId) {
-      entries.push(preserved("codex-inactive", root, file, bytes, "session metadata unreadable (fail-closed)"));
+      entries.push(preserved("codex-inactive", root, file, bytes, "session metadata unreadable (fail-closed)", true));
       continue;
     }
     const liveness = probe.sessionLiveness(sessionId);
@@ -299,7 +234,7 @@ export function scanCodexArea(policy: StoragePolicy, now: number, probe: CodexPr
     if (liveness === "unknown") {
       unprovenLiveness += 1;
       entries.push(
-        preserved("codex-inactive", root, file, bytes, "session liveness could not be proven (fail-closed)"),
+        preserved("codex-inactive", root, file, bytes, "session liveness could not be proven (fail-closed)", true),
       );
       continue;
     }
@@ -315,11 +250,11 @@ export function scanCodexArea(policy: StoragePolicy, now: number, probe: CodexPr
 
 export function scanOmniArea(policy: StoragePolicy): AreaScan {
   const limitations: string[] = [];
-  if (!policy.omniDataDir || !existsSync(policy.omniDataDir)) {
+  if (!policy.omniMediaDir || !existsSync(policy.omniMediaDir)) {
     limitations.push("omni-orphan: Omni data root not present or not configured");
   } else {
     limitations.push(
-      "omni-orphan: no canonical hold/reference surface resolved; all Omni objects preserved (fail-closed)",
+      "omni-orphan: no canonical hold/reference surface resolved; all Omni objects preserved (fail-closed). status@broadcast must be handled by omni-broadcast-mp4, which has the 7-day class and the externalId match",
     );
   }
   return { area: "omni-orphan", entries: [], limitations };
@@ -352,19 +287,36 @@ export function scanTasksArea(policy: StoragePolicy, now: number, probe?: TaskPr
     entries.push(
       assessment.decision === "candidate"
         ? candidate("tasks-terminal", root, root, bytes, assessment.reason)
-        : preserved("tasks-terminal", root, root, bytes, assessment.reason),
+        : preserved("tasks-terminal", root, root, bytes, assessment.reason, isAmbiguousReason(assessment.reason)),
     );
   }
   return { area: "tasks-terminal", entries, limitations };
 }
 
-export function scanStorageAreas(
-  policy: StoragePolicy,
-  now: number,
-  probe?: CodexProbe,
-  taskProbe?: TaskProbe,
-): AreaScan[] {
-  return policy.tier === "routine"
-    ? [scanTmpArea(policy, now), scanCodexArea(policy, now, probe)]
-    : [scanOmniArea(policy), scanTasksArea(policy, now, taskProbe)];
+export interface ScanAllOptions {
+  now: number;
+  codexProbe?: CodexProbe;
+  taskProbe?: TaskProbe;
+  omniBroadcastProbe: OmniBroadcastProbe;
+}
+
+/** Run every class scan once. Used by `report` (all tiers) and `cleanup`. */
+export function scanAllAreas(policy: StoragePolicy, options: ScanAllOptions): AreaScan[] {
+  const { now, codexProbe, taskProbe, omniBroadcastProbe } = options;
+  return [
+    scanTmpArea(policy, now),
+    scanCodexArea(policy, now, codexProbe),
+    scanBackupsArea(policy, now),
+    scanAttachmentsArea(policy, now),
+    scanClaudeJsonlArea(policy, now),
+    scanOmniBroadcastArea(policy, now, omniBroadcastProbe),
+    scanOmniArea(policy),
+    scanTasksArea(policy, now, taskProbe),
+  ];
+}
+
+/** Scans for the classes owned by the policy tier. */
+export function scanStorageAreas(policy: StoragePolicy, options: ScanAllOptions): AreaScan[] {
+  const wanted = new Set(classesForTier(policy.tier));
+  return scanAllAreas(policy, options).filter((scan) => wanted.has(scan.area));
 }

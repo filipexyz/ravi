@@ -55,6 +55,13 @@ function makeFixture(options: { codex?: boolean } = {}): {
     RAVI_STORAGE_FIXTURE_TMP_ROOTS: tmpRoot,
     RAVI_STORAGE_FIXTURE_RECEIPT_DIR: receiptDir,
   };
+  // The suite must exercise the operator's real local CLI path even when the
+  // test runner itself inherited a runtime context (e.g. from a session turn).
+  // A context key would route every spawned command through the gateway and
+  // the CLI-only guard, which is a different contract than the one under test.
+  delete env.RAVI_CONTEXT_KEY;
+  delete env.RAVI_SESSION_KEY;
+  delete env.RAVI_SESSION_NAME;
   if (options.codex) {
     mkdirSync(codexDir, { recursive: true });
     env.RAVI_STORAGE_FIXTURE_CODEX_DIR = codexDir;
@@ -112,7 +119,7 @@ describe("storage cleanup dry-run", () => {
 
     expect(result.dryRun).toBe(true);
     expect(result.freedBytes).toBeGreaterThan(0);
-    expect(result.areas["tmp-ravi"]?.candidates).toBe(1);
+    expect(result.classes["tmp-ravi"]?.candidates).toBe(1);
     expect(result.removed).toEqual([]);
     expect(readdirSync(fx.tmpRoot).sort()).toEqual(before);
     expect(result.receiptId).toBeTruthy();
@@ -123,7 +130,7 @@ describe("storage cleanup dry-run", () => {
     const fx = makeFixture();
     makeDir(join(fx.tmpRoot, "ravi-recent"), 0);
     const result = runStorageCleanup({ tier: "routine", env: fx.env });
-    expect(result.areas["tmp-ravi"]?.candidates).toBe(0);
+    expect(result.classes["tmp-ravi"]?.candidates).toBe(0);
     expect(result.preserved).toContain(join(fx.tmpRoot, "ravi-recent"));
   });
 });
@@ -180,22 +187,38 @@ describe("storage cleanup CLI usage", () => {
     };
   };
 
-  it("exits 2 without --tier", () => {
-    const { result } = run(["--json"]);
-    expect(result.status).toBe(2);
-  });
+  // Spawning the real binary is CPU-bound and competes with the rest of the
+  // suite, so these cases need a budget larger than bun's 5s default.
+  const SPAWN_BUDGET_MS = 120_000;
 
-  it("exits 2 for an unknown tier", () => {
-    const { result } = run(["--tier", "bogus", "--json"]);
-    expect(result.status).toBe(2);
-  });
+  it(
+    "exits 2 without --tier",
+    () => {
+      const { result } = run(["--json"]);
+      expect(result.status).toBe(2);
+    },
+    SPAWN_BUDGET_MS,
+  );
 
-  it("exits 0 for a dry-run and prints one JSON line", () => {
-    const { result } = run(["--tier", "routine", "--json"]);
-    expect(result.status).toBe(0);
-    const payload = JSON.parse(result.stdout.trim().split("\n").pop()!);
-    expect(payload.dryRun).toBe(true);
-  });
+  it(
+    "exits 2 for an unknown tier",
+    () => {
+      const { result } = run(["--tier", "bogus", "--json"]);
+      expect(result.status).toBe(2);
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  it(
+    "exits 0 for a dry-run and prints one JSON line",
+    () => {
+      const { result } = run(["--tier", "routine", "--json"]);
+      expect(result.status).toBe(0);
+      const payload = JSON.parse(result.stdout.trim().split("\n").pop()!);
+      expect(payload.dryRun).toBe(true);
+    },
+    SPAWN_BUDGET_MS,
+  );
 });
 
 const NOT_LIVE: CodexProbe = { processRunning: () => false, sessionLiveness: () => "not-live" };
@@ -209,7 +232,7 @@ describe("storage cleanup codex-inactive", () => {
     const file = writeRollout(fx.codexDir, "rollout-2026-01-01T00-00-00-fixed.jsonl", "codex-1", AGE_30D_MS);
 
     const dry = runStorageCleanup({ tier: "routine", env: fx.env, codexProbe: NOT_LIVE });
-    expect(dry.areas["codex-inactive"]?.candidates).toBe(1);
+    expect(dry.classes["codex-inactive"]?.candidates).toBe(1);
 
     const executed = runStorageCleanup({ tier: "routine", execute: true, env: fx.env, codexProbe: NOT_LIVE });
     expect(existsSync(file)).toBe(false);
@@ -221,7 +244,7 @@ describe("storage cleanup codex-inactive", () => {
     const file = writeRollout(fx.codexDir, "rollout-live.jsonl", "codex-live", AGE_30D_MS);
     const result = runStorageCleanup({ tier: "routine", execute: true, env: fx.env, codexProbe: LIVE });
     expect(existsSync(file)).toBe(true);
-    expect(result.areas["codex-inactive"]?.candidates).toBe(0);
+    expect(result.classes["codex-inactive"]?.candidates).toBe(0);
   });
 
   it("preserves a rollout when liveness is unknown and records the limitation", () => {
@@ -250,7 +273,7 @@ describe("storage cleanup codex-inactive", () => {
     const result = runStorageCleanup({ tier: "routine", execute: true, env: fx.env, codexProbe: NOT_LIVE });
     expect(existsSync(young)).toBe(true);
     expect(existsSync(bad)).toBe(true);
-    expect(result.areas["codex-inactive"]?.candidates).toBe(0);
+    expect(result.classes["codex-inactive"]?.candidates).toBe(0);
   });
 
   it("re-verifies liveness at removal time and preserves on a late live answer", () => {
@@ -324,12 +347,12 @@ describe("storage cleanup tasks-terminal", () => {
     const path = join(fx.root, "tasks", "wt");
     const active = fakeTaskProbe(taskRecord(path, { status: "in_progress", completedAt: null }), CANDIDATE);
     const activeResult = runStorageCleanup({ tier: "weekly", execute: true, env: fx.env, taskProbe: active.probe });
-    expect(activeResult.areas["tasks-terminal"]?.candidates).toBe(0);
+    expect(activeResult.classes["tasks-terminal"]?.candidates).toBe(0);
     expect(active.calls.removed).toBe(0);
 
     const young = fakeTaskProbe(taskRecord(path, { completedAt: Date.now() }), CANDIDATE);
     const youngResult = runStorageCleanup({ tier: "weekly", execute: true, env: fx.env, taskProbe: young.probe });
-    expect(youngResult.areas["tasks-terminal"]?.candidates).toBe(0);
+    expect(youngResult.classes["tasks-terminal"]?.candidates).toBe(0);
     expect(young.calls.removed).toBe(0);
   });
 
@@ -339,7 +362,7 @@ describe("storage cleanup tasks-terminal", () => {
     const { probe, calls } = fakeTaskProbe(taskRecord(path), PRESERVED);
     const result = runStorageCleanup({ tier: "weekly", execute: true, env: fx.env, taskProbe: probe });
     expect(calls.removed).toBe(0);
-    expect(result.areas["tasks-terminal"]?.preserved).toBe(1);
+    expect(result.classes["tasks-terminal"]?.preserved).toBe(1);
   });
 
   it("reports a removal failure without masking it", () => {
