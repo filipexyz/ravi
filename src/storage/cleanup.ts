@@ -39,6 +39,7 @@ import {
   type StorageEntry,
 } from "./eligibility.js";
 import { isProtectedPath } from "./fsutil.js";
+import { newestBackupPaths } from "./backups.js";
 import { staticOmniProbe } from "./omni-probe.js";
 import { resolveStoragePolicy, tmpNameMatchesAllowlist, type StoragePolicy, type StorageTier } from "./policy.js";
 import { isTerminalTask, taskTerminalStamp, type TaskProbe } from "./task-probe.js";
@@ -247,6 +248,10 @@ export function canRemove(
     case "codex-inactive": {
       if (!isContainedIn(entry.path, entry.root)) return "real path escapes allowlist root";
       if (!CODEX_ROLLOUT.test(basename(entry.path))) return "no longer a codex rollout artifact";
+      // Re-check the class threshold like every other class: a rollout touched
+      // between the scan and the removal (a resumed session writing to it) is
+      // no longer the artifact the dry-run agreed to remove.
+      if (now - st.mtimeMs < policy.codexMaxAgeMs) return "rollout is younger than the threshold (re-checked)";
       if (probes.codexProbe?.processRunning()) return "a live codex process is running";
       const ownership = parseCodexRolloutMeta(entry.path);
       const sessionId = ownership?.sessionId ?? parseCodexSessionId(entry.path);
@@ -259,9 +264,16 @@ export function canRemove(
       return null;
     }
     case "backups-superseded": {
-      if (!policy.backupsDir) return "class disabled";
-      if (!isContainedIn(entry.path, policy.backupsDir)) return "real path escapes the backups root";
-      if (!entry.path.startsWith(policy.backupsDir + sep)) return "not a direct backup entry";
+      const root = policy.backupsDir;
+      if (!root) return "class disabled";
+      if (!isContainedIn(entry.path, root)) return "real path escapes the backups root";
+      if (!entry.path.startsWith(root + sep)) return "not a direct backup entry";
+      // Re-prove supersession: if the newest backup of this type disappeared
+      // since the scan, this entry is now the newest and must survive, or the
+      // type would be left with no backup at all.
+      if (newestBackupPaths(root).includes(entry.path)) {
+        return "backup is now the newest of its type (re-checked)";
+      }
       return null;
     }
     case "instance-attachments": {

@@ -618,6 +618,73 @@ describe("execute gate re-checks age and the lock", () => {
     expect(reason).toContain("younger than the threshold");
   });
 
+  it("preserves a codex rollout whose mtime was refreshed after the scan", () => {
+    const fx = makeFixture({ codex: true });
+    const policy = resolveStoragePolicy("routine", fx.env);
+    const file = writeRollout(fx.codexDir, "rollout-touched.jsonl", "codex-touched", AGE_30D_MS);
+    const entry: StorageEntry = {
+      area: "codex-inactive",
+      root: fx.codexDir,
+      path: file,
+      bytes: 2,
+      decision: "candidate",
+      reason: "aged, owned, not-live",
+    };
+
+    // Aged past the threshold, the gate accepts it.
+    expect(canRemove(entry, policy, Date.now(), { codexProbe: NOT_LIVE })).toBeNull();
+
+    // A resumed session writes to the rollout between scan and removal.
+    const fresh = new Date();
+    utimesSync(file, fresh, fresh);
+    expect(canRemove(entry, policy, Date.now(), { codexProbe: NOT_LIVE })).toContain("younger than the threshold");
+  });
+
+  it("keeps the codex threshold boundary on the execute side", () => {
+    const fx = makeFixture({ codex: true });
+    const policy = resolveStoragePolicy("routine", fx.env);
+    const justUnder = writeRollout(fx.codexDir, "rollout-just-under.jsonl", "codex-under", 0);
+    const stamp = new Date(Date.now() - (policy.codexMaxAgeMs - 60_000));
+    utimesSync(justUnder, stamp, stamp);
+    const entry: StorageEntry = {
+      area: "codex-inactive",
+      root: fx.codexDir,
+      path: justUnder,
+      bytes: 2,
+      decision: "candidate",
+      reason: "crafted",
+    };
+    expect(canRemove(entry, policy, Date.now(), { codexProbe: NOT_LIVE })).toContain("younger than the threshold");
+  });
+
+  it("preserves the backup that became the newest of its type after the scan", () => {
+    const fx = makeFixture();
+    const backups = join(fx.root, "backups");
+    fx.env.RAVI_STORAGE_FIXTURE_BACKUPS_DIR = backups;
+    const older = join(backups, "state-20260101T000000Z.db");
+    const newest = join(backups, "state-20260102T000000Z.db");
+    mkdirSync(backups, { recursive: true });
+    writeFileSync(older, "old");
+    writeFileSync(newest, "new");
+    const oldStamp = new Date(Date.now() - AGE_30D_MS);
+    utimesSync(older, oldStamp, oldStamp);
+
+    const policy = resolveStoragePolicy("weekly", fx.env);
+    const entry: StorageEntry = {
+      area: "backups-superseded",
+      root: backups,
+      path: older,
+      bytes: 3,
+      decision: "candidate",
+      reason: "superseded by the newest backup of type state.db",
+    };
+    expect(canRemove(entry, policy, Date.now(), {})).toBeNull();
+
+    // The newer backup disappears between scan and execute.
+    rmSync(newest);
+    expect(canRemove(entry, policy, Date.now(), {})).toContain("newest of its type");
+  });
+
   it("never steals a lock that was just created and is still empty", () => {
     const fx = makeFixture();
     makeDir(join(fx.tmpRoot, "ravi-eligible"), AGE_30D_MS);
