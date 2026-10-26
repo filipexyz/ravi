@@ -2324,6 +2324,7 @@ function getDb(): Database {
       cost_usd REAL DEFAULT 0,
       error TEXT,
       abort_reason TEXT,
+      output_state TEXT,
       started_at INTEGER NOT NULL,
       completed_at INTEGER,
       updated_at INTEGER NOT NULL
@@ -3007,6 +3008,16 @@ function getDb(): Database {
     log.info("Added model_preset_id column to agents table");
   }
   db.exec("CREATE INDEX IF NOT EXISTS idx_agents_model_preset ON agents(model_preset_id)");
+
+  // Migration: turn-output marker (`final` | `incomplete`) on session_turns.
+  const sessionTurnColumns = db.prepare("PRAGMA table_info(session_turns)").all() as Array<{ name: string }>;
+  if (!sessionTurnColumns.some((c) => c.name === "output_state")) {
+    try {
+      db.exec("ALTER TABLE session_turns ADD COLUMN output_state TEXT");
+    } catch (error) {
+      if (!isDuplicateColumnError(error)) throw error;
+    }
+  }
 
   // Migration: add heartbeat columns to sessions if not exists
   const sessionColumns = db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>;

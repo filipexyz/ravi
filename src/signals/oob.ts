@@ -1,18 +1,51 @@
 import { publishSessionPrompt } from "../omni/session-stream.js";
-import type { SignalRecord, SignalSeverity } from "./types.js";
+import type { SignalOutboxRecord, SignalRecord, SignalSeverity, SignalTickState } from "./types.js";
 import { effectiveSeverity, kindCeiling, minSeverity, producerClassCeiling } from "./validation.js";
-import { budgetDay, dbAppendSignalEvent, dbRecordSignalSurface, dbUpdateSignal } from "./signal-db.js";
+import {
+  budgetDay,
+  dbConfirmSignalSurface,
+  dbGetKeyMute,
+  dbGetOutboxRow,
+  dbGetSignalById,
+  dbListPendingOutbox,
+  dbRecordOutboxAttempt,
+  dbReleaseSignalSurface,
+  dbReserveSignalSurface,
+} from "./signal-db.js";
 import { describeClearRule } from "./probes.js";
 import { sendSignalPage } from "./page.js";
+import { readSignalObservation } from "./observation.js";
+import { oobBudgetLimit, surfaceBudgetLimit } from "./service.js";
+
+const OOB_ACTOR = "signals.tick";
+/** Attempts before a pending OOB row is failed and its reservation returned. */
+export const SIGNAL_OUTBOX_MAX_ATTEMPTS = 3;
+/** A pending row older than this is expired (failed), never sent late. */
+export const SIGNAL_OUTBOX_MAX_AGE_MS = 24 * 3_600_000;
+
+export type SignalPagePublisher = (
+  signal: SignalRecord,
+  sessionName: string,
+  idempotencyKey: string,
+) => Promise<"sent" | "skipped_no_binding" | "failed">;
+
+export type SignalPromptPublisher = (
+  sessionName: string,
+  payload: Record<string, unknown>,
+  options?: { messageId?: string },
+) => Promise<void>;
 
 export interface DeliverOobResult {
   delivered: boolean;
-  reason?: "below_oob" | "duplicate";
+  signalId?: string;
+  outcome: "sent" | "retry" | "failed" | "skipped";
+  reason?: string;
   route?: "oob" | "page";
   severity?: SignalSeverity;
   pageLine?: "sent" | "skipped_no_binding" | "failed";
 }
 
+/** The OOB prompt, built from what actually happened to the page line, never from intent. */
 export function buildSignalOobPrompt(
   signal: SignalRecord,
   severity: SignalSeverity,
@@ -21,7 +54,7 @@ export function buildSignalOobPrompt(
   const lines = [
     `[System] Inform: [signal:${signal.id}] ${severity} ${signal.title}.`,
     signal.detail ? signal.detail : "",
-    `Closes when ${describeClearRule(signal.clearWhen)}.`,
+    `Closes when ${describeClearRule(signal.clearWhen, signal.openedAt)}.`,
     `Ack: ravi signals ack ${signal.id}.`,
   ].filter(Boolean);
   // Only a page that actually went out lets the agent skip the alert; an
@@ -36,75 +69,175 @@ export function buildSignalOobPrompt(
   return lines.join("\n");
 }
 
-export async function deliverSignalOob(input: {
+export function oobDeliverySeverity(signal: SignalRecord, routeSeverity?: SignalSeverity): SignalSeverity {
+  const effective = effectiveSeverity(signal.severity, signal.kind, signal.producerClass);
+  const ceiling = minSeverity(kindCeiling(signal.kind), producerClassCeiling(signal.producerClass));
+  return minSeverity(routeSeverity ?? effective, ceiling);
+}
+
+function isOobSeverity(severity: SignalSeverity): boolean {
+  return severity === "nudge" || severity === "interrupt" || severity === "page";
+}
+
+/**
+ * Reserve one OOB surface: ledger row `pending` plus outbox row, with the
+ * surface budget and the daily OOB slot checked in the same transaction. A
+ * `page` on a fact with a fresh, successful evaluation is the one audited
+ * budget bypass.
+ */
+export function reserveSignalOob(input: {
   signal: SignalRecord;
   sessionName: string;
-  now?: number;
-  publishPrompt?: (sessionName: string, payload: Record<string, unknown>) => Promise<void>;
-  sendPage?: (signal: SignalRecord, sessionName: string) => Promise<"sent" | "skipped_no_binding" | "failed">;
-  routeSeverity?: SignalSeverity;
-  bucket?: string;
-}): Promise<DeliverOobResult> {
-  const now = input.now ?? Date.now();
-  const effective = effectiveSeverity(input.signal.severity, input.signal.kind, input.signal.producerClass);
-  const ceiling = minSeverity(kindCeiling(input.signal.kind), producerClassCeiling(input.signal.producerClass));
-  const deliverySeverity = minSeverity(input.routeSeverity ?? effective, ceiling);
-  if (deliverySeverity !== "nudge" && deliverySeverity !== "interrupt" && deliverySeverity !== "page") {
-    return { delivered: false, reason: "below_oob" };
-  }
-  const bucket = input.bucket ?? `${budgetDay(now)}:${input.signal.escalationCount + 1}`;
-  const route = deliverySeverity === "page" ? "page" : "oob";
-  const recorded = dbRecordSignalSurface({
-    signalId: input.signal.id,
-    route,
-    sessionName: input.sessionName,
-    bucket,
-    now,
-  });
-  if (!recorded) {
-    return { delivered: false, reason: "duplicate" };
-  }
-
-  input.signal.escalationCount += 1;
-  input.signal.state = "surfaced";
-  input.signal.surfacedAt = now;
-  input.signal.version += 1;
-  input.signal.updatedAt = now;
-  dbUpdateSignal(input.signal);
-
-  let pageLine: DeliverOobResult["pageLine"];
-  if (deliverySeverity === "page") {
-    const sender = input.sendPage ?? ((signal, sessionName) => sendSignalPage(signal, sessionName, bucket));
-    pageLine = await sender(input.signal, input.sessionName).catch(() => "failed" as const);
-  }
-
-  const publish = input.publishPrompt ?? ((sessionName, payload) => publishSessionPrompt(sessionName, payload));
-  await publish(input.sessionName, {
-    prompt: buildSignalOobPrompt(input.signal, deliverySeverity, pageLine),
-    deliveryBarrier: deliverySeverity === "nudge" ? "after_response" : "immediate_interrupt",
-    deliveryBarrierSource: "explicit",
-    _signal: {
-      id: input.signal.id,
-      key: input.signal.key,
-      severity: deliverySeverity,
+  routeSeverity: SignalSeverity;
+  freshEvaluation: boolean;
+  now: number;
+}):
+  | { reserved: true; outboxId: number; severity: SignalSeverity }
+  | { reserved: false; reason: "budget" | "oob_budget" | "pending" | "ineligible" } {
+  const severity = oobDeliverySeverity(input.signal, input.routeSeverity);
+  if (!isOobSeverity(severity)) return { reserved: false, reason: "ineligible" };
+  const route = severity === "page" ? "page" : "oob";
+  const surfaceLimit = surfaceBudgetLimit();
+  const oobLimit = oobBudgetLimit();
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const current = attempt === 0 ? input.signal : dbGetSignalById(input.signal.id);
+    if (!current) return { reserved: false, reason: "ineligible" };
+    const outcome = dbReserveSignalSurface({
+      signalId: current.id,
+      expectedVersion: current.version,
       route,
-    },
-  });
-
-  dbAppendSignalEvent({
-    signalId: input.signal.id,
-    type: "signal.escalated",
-    actorType: "system",
-    actorId: "signals.tick",
-    payload: {
-      route,
-      severity: deliverySeverity,
+      severity,
       sessionName: input.sessionName,
-      escalation: input.signal.escalationCount,
-      pageLine: pageLine ?? null,
-    },
-    now,
-  });
+      idempotencyKey: (sequence) => `signal:${current.id}:${route}:${budgetDay(input.now)}:${sequence}`,
+      decide: ({ budgetUnits, oobSlots, signal }) => {
+        if (route === "page" && signal.kind === "fact" && input.freshEvaluation) {
+          return { ok: true, budgetBypass: true };
+        }
+        if (budgetUnits >= surfaceLimit) return { ok: false, reason: "budget" };
+        if (oobSlots >= oobLimit) return { ok: false, reason: "oob_budget" };
+        return { ok: true };
+      },
+      actorId: OOB_ACTOR,
+      now: input.now,
+    });
+    if ("reserved" in outcome) return { reserved: true, outboxId: outcome.reserved.outboxId, severity };
+    if (outcome.skipped !== "stale_version") return { reserved: false, reason: outcome.skipped };
+  }
+  return { reserved: false, reason: "ineligible" };
+}
 
-  return { delivered: true, route, severity: deliverySeverity, pageLine };
+/**
+ * Re-validate a reservation before (re)sending it: the record must still be
+ * open, unmuted, OOB-capable and backed by a fresh, successful evaluation.
+ */
+function revalidate(
+  signal: SignalRecord | null,
+  row: SignalOutboxRecord,
+  tickState: SignalTickState,
+  now: number,
+  evaluatedAt?: number,
+): string | null {
+  if (!signal) return "signal missing";
+  if (signal.state === "resolved" || signal.state === "expired") return `signal ${signal.state}`;
+  if (signal.state === "muted") return "signal muted";
+  if (dbGetKeyMute(signal.key, now)) return "key muted";
+  if (signal.kind !== "fact") return "judgment cannot escalate";
+  if (!isOobSeverity(oobDeliverySeverity(signal, row.severity))) return "below oob ceiling";
+  const observation = readSignalObservation(signal, tickState, now, { evaluatedAt });
+  if (observation.status !== "fresh") return `observation ${observation.status}`;
+  return null;
+}
+
+/**
+ * Send one outbox row: the only path that delivers an OOB surface (and its
+ * retries). A retryable failure keeps the row `pending` under the same key; a
+ * terminal failure, expiry or failed re-validation releases the reservation.
+ */
+export async function deliverSignalOutboxRow(input: {
+  outboxId: number;
+  tickState: SignalTickState;
+  now: number;
+  evaluatedAt?: number;
+  publishPrompt?: SignalPromptPublisher;
+  sendPage?: SignalPagePublisher;
+}): Promise<DeliverOobResult> {
+  const row = dbGetOutboxRow(input.outboxId);
+  if (!row || row.status !== "pending") return { delivered: false, outcome: "skipped", reason: "not pending" };
+  const route = row.route === "page" ? "page" : "oob";
+  const release = (reason: string): DeliverOobResult => {
+    dbReleaseSignalSurface({ surfaceId: row.surfaceId, reason, actorId: OOB_ACTOR, now: input.now });
+    return { delivered: false, outcome: "failed", reason, route, severity: row.severity };
+  };
+  if (input.now - row.createdAt > SIGNAL_OUTBOX_MAX_AGE_MS) return release("reservation expired");
+
+  const signal = dbGetSignalById(row.signalId);
+  // The version moved since the reservation (an operator acted, a producer
+  // re-raised): re-read and re-validate before any side effect.
+  const invalid = revalidate(signal, row, input.tickState, input.now, input.evaluatedAt);
+  if (invalid || !signal) return release(invalid ?? "signal missing");
+  const reservedVersion = signal.version !== row.reservedVersion ? signal.version : undefined;
+
+  const severity = oobDeliverySeverity(signal, row.severity);
+  const sessionName = row.sessionName ?? "";
+  const lastAttempt = row.attempts + 1 >= SIGNAL_OUTBOX_MAX_ATTEMPTS;
+  let pageLine = row.pageStatus ?? undefined;
+  if (route === "page" && pageLine !== "sent" && pageLine !== "skipped_no_binding") {
+    const sender: SignalPagePublisher = input.sendPage ?? sendSignalPage;
+    pageLine = await sender(signal, sessionName, `signal-page:${row.idempotencyKey}`).catch(() => "failed" as const);
+    if (pageLine === "failed" && !lastAttempt) {
+      dbRecordOutboxAttempt({
+        outboxId: row.id,
+        error: "page line failed",
+        pageStatus: pageLine,
+        reservedVersion,
+        now: input.now,
+      });
+      return { delivered: false, outcome: "retry", reason: "page line failed", route, severity, pageLine };
+    }
+  }
+
+  const publish: SignalPromptPublisher =
+    input.publishPrompt ??
+    ((name, payload, options) => publishSessionPrompt(name, payload, options?.messageId ? options : {}));
+  try {
+    await publish(
+      sessionName,
+      {
+        prompt: buildSignalOobPrompt(signal, severity, pageLine),
+        deliveryBarrier: severity === "nudge" ? "after_response" : "immediate_interrupt",
+        deliveryBarrierSource: "explicit",
+        _signal: { id: signal.id, key: signal.key, severity, route, idempotencyKey: row.idempotencyKey },
+      },
+      { messageId: row.idempotencyKey },
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (lastAttempt) return release(`publish failed: ${message}`);
+    dbRecordOutboxAttempt({ outboxId: row.id, error: message, pageStatus: pageLine, reservedVersion, now: input.now });
+    return { delivered: false, outcome: "retry", reason: message, route, severity, pageLine };
+  }
+
+  dbConfirmSignalSurface({
+    surfaceId: row.surfaceId,
+    actorId: OOB_ACTOR,
+    now: input.now,
+    pageStatus: pageLine ?? null,
+    payload: { severity, attempts: row.attempts + 1 },
+  });
+  return { delivered: true, outcome: "sent", route, severity, pageLine };
+}
+
+/** Drain every pending OOB outbox row (the retry path). */
+export async function drainSignalOutbox(input: {
+  tickState: SignalTickState;
+  now: number;
+  evaluatedAt?: number;
+  publishPrompt?: SignalPromptPublisher;
+  sendPage?: SignalPagePublisher;
+}): Promise<DeliverOobResult[]> {
+  const results: DeliverOobResult[] = [];
+  for (const row of dbListPendingOutbox(["oob", "page"])) {
+    results.push({ ...(await deliverSignalOutboxRow({ ...input, outboxId: row.id })), signalId: row.signalId });
+  }
+  return results;
 }

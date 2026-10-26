@@ -19,6 +19,7 @@
  */
 
 import { getRecentHistory } from "../db.js";
+import { isFinalAssistantMessage } from "../runtime/utterance-class.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { nats } from "../nats.js";
 import { getAgent } from "../router/config.js";
@@ -153,7 +154,7 @@ type RuntimeEventStream = AsyncGenerator<{ topic: string; data: Record<string, u
 export interface LibraryRequestTurnDeps {
   publishPrompt?: (sessionName: string, payload: Record<string, unknown>) => Promise<void>;
   subscribe?: (...topics: string[]) => RuntimeEventStream;
-  readHistory?: (sessionName: string) => Array<{ role: string; content: string }>;
+  readHistory?: (sessionName: string) => Array<{ role: string; content: string; utterance_class?: string | null }>;
   timeoutMs?: number;
   /** How long `.response` events are still collected after the terminal event (default 500 ms). */
   graceMs?: number;
@@ -188,10 +189,11 @@ function responseText(data: Record<string, unknown>): string {
   return text.trim() === SILENT_TOKEN ? "" : text;
 }
 
-function lastAssistantText(history: Array<{ role: string; content: string }>): string {
+function lastAssistantText(history: Array<{ role: string; content: string; utterance_class?: string | null }>): string {
   for (let index = history.length - 1; index >= 0; index--) {
     const message = history[index]!;
-    if (message.role === "assistant" && message.content.trim() && message.content.trim() !== SILENT_TOKEN) {
+    // Commentary is history, never the answer (sessions/turn-output inv. 2).
+    if (isFinalAssistantMessage(message) && message.content.trim() && message.content.trim() !== SILENT_TOKEN) {
       return message.content;
     }
   }

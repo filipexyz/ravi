@@ -446,6 +446,17 @@ export function wakeRuntimeSessionIfDeliverable(
   resolver(null);
 }
 
+/**
+ * A prompt transform whose additions must be settled with the turn: `commit`
+ * runs once the augmented prompt is handed to the provider, `release` when
+ * the turn fails to start (signals/delivery: reserve, send, confirm).
+ */
+export interface RuntimeTurnPromptTransform {
+  prompt: string;
+  commit?: () => void;
+  release?: (reason: string) => void;
+}
+
 export interface RuntimeMessageGeneratorOptions {
   sessionName: string;
   session: RuntimeHostStreamingSession;
@@ -455,7 +466,7 @@ export interface RuntimeMessageGeneratorOptions {
     sessionName: string;
     deliverableMessages: RuntimeUserMessage[];
     combinedPrompt: string;
-  }) => string | Promise<string>;
+  }) => string | RuntimeTurnPromptTransform | Promise<string | RuntimeTurnPromptTransform>;
   traceTurnStart?: (input: {
     combinedPrompt: string;
     deliverableMessages: RuntimeUserMessage[];
@@ -464,6 +475,21 @@ export interface RuntimeMessageGeneratorOptions {
     | (RuntimeTraceTurnStartResult & { crashRecoveryAttemptId?: string })
     | null
     | undefined;
+}
+
+function settlePromptTransform(
+  sessionName: string,
+  transform: RuntimeTurnPromptTransform | undefined,
+  outcome: "commit" | "release",
+  reason = "",
+): void {
+  if (!transform) return;
+  try {
+    if (outcome === "commit") transform.commit?.();
+    else transform.release?.(reason);
+  } catch (error) {
+    log.warn("Turn prompt transform settlement failed", { sessionName, outcome, error });
+  }
 }
 
 export async function* createRuntimeMessageGenerator({
@@ -545,6 +571,7 @@ export async function* createRuntimeMessageGenerator({
     session.runtimeTerminalSseEmitted = false;
 
     let promptContent = combined;
+    let promptTransform: RuntimeTurnPromptTransform | undefined;
     try {
       beforeTurnStart?.({
         combinedPrompt: combined,
@@ -553,11 +580,17 @@ export async function* createRuntimeMessageGenerator({
 
       if (transformTurnPrompt) {
         try {
-          promptContent = await transformTurnPrompt({
+          const transformed = await transformTurnPrompt({
             sessionName,
             deliverableMessages: deliverable.map((message) => ({ ...message })),
             combinedPrompt: combined,
           });
+          if (typeof transformed === "string") {
+            promptContent = transformed;
+          } else {
+            promptTransform = transformed;
+            promptContent = transformed.prompt;
+          }
         } catch (error) {
           log.warn("Turn prompt transform failed; continuing without it", { sessionName, error });
         }
@@ -578,6 +611,7 @@ export async function* createRuntimeMessageGenerator({
         }
       }
     } catch (error) {
+      settlePromptTransform(sessionName, promptTransform, "release", "turn preparation failed");
       session.durableTurnPreparationFailed = true;
       session.turnActive = false;
       session.currentTurnPendingIds = undefined;
@@ -596,6 +630,7 @@ export async function* createRuntimeMessageGenerator({
       throw error;
     }
 
+    settlePromptTransform(sessionName, promptTransform, "commit");
     yield {
       type: "user" as const,
       message: { role: "user" as const, content: promptContent },

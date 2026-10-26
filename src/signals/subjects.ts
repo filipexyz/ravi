@@ -93,17 +93,18 @@ export function isSubjectTerminal(
   }
 }
 
-export function resolveFleetSessionName(): string {
-  const configured = dbGetSetting("signals.fleet_session")?.trim();
+/** The one session that receives `install`-scoped signals (this installation of Ravi). */
+export function resolveInstallSessionName(): string {
+  const configured = dbGetSetting("signals.install_session")?.trim();
   if (configured) return configured;
-  const agentId = process.env.RAVI_AGENT_ID?.trim() || dbGetSetting("defaultAgent")?.trim() || "main";
+  const agentId = dbGetSetting("defaultAgent")?.trim() || "main";
   return getMainSession(agentId)?.name ?? agentId;
 }
 
 export function resolveScopeSessionNames(scopeType: SignalScopeType, scopeId: string): string[] {
   switch (scopeType) {
-    case "fleet":
-      return [resolveFleetSessionName()];
+    case "install":
+      return [resolveInstallSessionName()];
     case "agent": {
       const main = getMainSession(scopeId);
       return main?.name ? [main.name] : [];
@@ -190,8 +191,8 @@ export function signalIsInSessionScope(signal: SignalRecord, context: SignalSess
     return signal.targetSessions.includes(context.sessionName);
   }
   switch (signal.scopeType) {
-    case "fleet":
-      return context.sessionName === resolveFleetSessionName();
+    case "install":
+      return context.sessionName === resolveInstallSessionName();
     case "agent":
       return Boolean(context.agentId && context.agentId === signal.scopeId);
     case "chat":

@@ -169,12 +169,15 @@ export interface SessionTurnUsage {
   startedAt: number;
   completedAt: number | null;
   durationMs: number | null;
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheCreationTokens: number;
-  effectiveContextTokens: number;
-  costUsd: number;
+  /** `null` = the provider reported no usage for this turn: render `unknown`, never `0`. */
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheCreationTokens: number | null;
+  effectiveContextTokens: number | null;
+  costUsd: number | null;
+  /** `incomplete` when the turn ended with commentary and no final utterance. */
+  outputState: string | null;
 }
 
 export interface SessionRecentTurnUsage {
@@ -186,6 +189,8 @@ export interface SessionRecentTurnUsage {
   effectiveContextTokensMax: number;
   durationMsAvg: number | null;
   costUsdTotal: number;
+  /** Finished turns in the window (any status) with no reported usage; never summed as zero. */
+  unknownUsageTurns: number;
 }
 
 export interface SessionTurnUsageSummary {
@@ -544,9 +549,9 @@ function nullableNumberFromRow(value: unknown): number | null {
 
 function turnUsageFromRow(row: Record<string, unknown> | null): SessionTurnUsage | null {
   if (!row) return null;
-  const inputTokens = numberFromRow(row.input_tokens);
-  const cacheReadTokens = numberFromRow(row.cache_read_tokens);
-  const cacheCreationTokens = numberFromRow(row.cache_creation_tokens);
+  const inputTokens = nullableNumberFromRow(row.input_tokens);
+  const cacheReadTokens = nullableNumberFromRow(row.cache_read_tokens);
+  const cacheCreationTokens = nullableNumberFromRow(row.cache_creation_tokens);
   return {
     runId: typeof row.run_id === "string" ? row.run_id : null,
     status: typeof row.status === "string" ? row.status : "unknown",
@@ -554,11 +559,13 @@ function turnUsageFromRow(row: Record<string, unknown> | null): SessionTurnUsage
     completedAt: nullableNumberFromRow(row.completed_at),
     durationMs: nullableNumberFromRow(row.duration_ms),
     inputTokens,
-    outputTokens: numberFromRow(row.output_tokens),
+    outputTokens: nullableNumberFromRow(row.output_tokens),
     cacheReadTokens,
     cacheCreationTokens,
-    effectiveContextTokens: inputTokens + cacheReadTokens + cacheCreationTokens,
-    costUsd: numberFromRow(row.cost_usd),
+    effectiveContextTokens:
+      inputTokens === null ? null : inputTokens + (cacheReadTokens ?? 0) + (cacheCreationTokens ?? 0),
+    costUsd: nullableNumberFromRow(row.cost_usd),
+    outputState: typeof row.output_state === "string" ? row.output_state : null,
   };
 }
 
@@ -593,7 +600,8 @@ export function getSessionTurnUsageSummary(
           output_tokens,
           cache_read_tokens,
           cache_creation_tokens,
-          cost_usd
+          cost_usd,
+          output_state
         FROM session_turns
         WHERE session_key = ?
         ORDER BY started_at DESC
@@ -611,17 +619,25 @@ export function getSessionTurnUsageSummary(
         COUNT(*) AS complete_turns,
         AVG(input_tokens) AS input_tokens_avg,
         AVG(output_tokens) AS output_tokens_avg,
-        AVG(input_tokens + cache_read_tokens + cache_creation_tokens) AS effective_context_tokens_avg,
-        MAX(input_tokens + cache_read_tokens + cache_creation_tokens) AS effective_context_tokens_max,
+        -- NULL usage is unknown, not zero: AVG/MAX/SUM skip it and it is counted apart.
+        AVG(input_tokens + COALESCE(cache_read_tokens, 0) + COALESCE(cache_creation_tokens, 0)) AS effective_context_tokens_avg,
+        MAX(input_tokens + COALESCE(cache_read_tokens, 0) + COALESCE(cache_creation_tokens, 0)) AS effective_context_tokens_max,
         AVG(completed_at - started_at) AS duration_ms_avg,
-        SUM(cost_usd) AS cost_usd_total
+        SUM(cost_usd) AS cost_usd_total,
+        (
+          SELECT COUNT(*) FROM session_turns unknown_usage
+          WHERE unknown_usage.session_key = ?
+            AND unknown_usage.started_at >= ?
+            AND unknown_usage.input_tokens IS NULL
+            AND unknown_usage.completed_at IS NOT NULL
+        ) AS unknown_usage_turns
       FROM session_turns
       WHERE session_key = ?
         AND status = 'complete'
         AND started_at >= ?
     `,
       )
-      .get(sessionKey, since) as Record<string, unknown> | null) ?? {};
+      .get(sessionKey, since, sessionKey, since) as Record<string, unknown> | null) ?? {};
 
   return {
     lastTurn,
@@ -634,6 +650,7 @@ export function getSessionTurnUsageSummary(
       effectiveContextTokensMax: numberFromRow(recentRow.effective_context_tokens_max),
       durationMsAvg: nullableNumberFromRow(recentRow.duration_ms_avg),
       costUsdTotal: numberFromRow(recentRow.cost_usd_total),
+      unknownUsageTurns: numberFromRow(recentRow.unknown_usage_turns),
     },
   };
 }

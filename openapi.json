@@ -80,7 +80,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "261b87669327de20"
+    "version": "cbab5e21ea0962be"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -120231,7 +120231,7 @@
                 "additionalProperties": false,
                 "properties": {
                   "by": {
-                    "description": "Actor, e.g. agent:main or operator:luis",
+                    "description": "Operator label, e.g. operator:luis (agents ack as themselves)",
                     "type": "string"
                   },
                   "idOrKey": {
@@ -120259,7 +120259,13 @@
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
+                    "changed": {
+                      "type": "boolean"
+                    },
                     "created": {
+                      "type": "boolean"
+                    },
+                    "reopened": {
                       "type": "boolean"
                     },
                     "signal": {
@@ -120668,6 +120674,12 @@
                         "limit": {
                           "type": "number"
                         },
+                        "oobLimit": {
+                          "type": "number"
+                        },
+                        "oobUsed": {
+                          "type": "number"
+                        },
                         "used": {
                           "type": "number"
                         }
@@ -120676,7 +120688,9 @@
                         "day",
                         "used",
                         "limit",
-                        "held"
+                        "held",
+                        "oobUsed",
+                        "oobLimit"
                       ],
                       "type": "object"
                     }
@@ -120746,6 +120760,12 @@
                         "limit": {
                           "type": "number"
                         },
+                        "oobLimit": {
+                          "type": "number"
+                        },
+                        "oobUsed": {
+                          "type": "number"
+                        },
                         "used": {
                           "type": "number"
                         }
@@ -120754,7 +120774,9 @@
                         "day",
                         "used",
                         "limit",
-                        "held"
+                        "held",
+                        "oobUsed",
+                        "oobLimit"
                       ],
                       "type": "object"
                     },
@@ -120777,6 +120799,9 @@
                           "createdAt": {
                             "type": "number"
                           },
+                          "fromState": {
+                            "type": "string"
+                          },
                           "id": {
                             "type": "number"
                           },
@@ -120795,8 +120820,14 @@
                           "signalId": {
                             "type": "string"
                           },
+                          "toState": {
+                            "type": "string"
+                          },
                           "type": {
                             "type": "string"
+                          },
+                          "version": {
+                            "type": "number"
                           }
                         },
                         "required": [
@@ -120872,12 +120903,16 @@
                             "type": "string"
                           },
                           "type": "object"
+                        },
+                        "status": {
+                          "type": "string"
                         }
                       },
                       "required": [
                         "at",
                         "error",
-                        "cleared"
+                        "cleared",
+                        "status"
                       ],
                       "type": "object"
                     },
@@ -120892,6 +120927,36 @@
                       ]
                     },
                     "lastSurfaceAt": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "ledgerToday": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "failed": {
+                          "type": "number"
+                        },
+                        "pending": {
+                          "type": "number"
+                        },
+                        "sent": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "pending",
+                        "sent",
+                        "failed"
+                      ],
+                      "type": "object"
+                    },
+                    "nextSurfaceAt": {
                       "anyOf": [
                         {
                           "type": "number"
@@ -121256,6 +121321,33 @@
                         "type": "string"
                       },
                       "type": "array"
+                    },
+                    "tick": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "lastSuccessfulTickAt": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "staleAfterMs": {
+                          "type": "number"
+                        },
+                        "staleAfterSource": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "lastSuccessfulTickAt",
+                        "staleAfterMs",
+                        "staleAfterSource"
+                      ],
+                      "type": "object"
                     }
                   },
                   "required": [
@@ -121264,9 +121356,12 @@
                     "targetSessions",
                     "clearRule",
                     "lastEvaluation",
+                    "tick",
                     "budget",
+                    "ledgerToday",
                     "lastSurfaceAt",
                     "lastOobAt",
+                    "nextSurfaceAt",
                     "keyMute",
                     "events"
                   ],
@@ -121312,7 +121407,7 @@
                     "type": "string"
                   },
                   "scope": {
-                    "description": "fleet or type:id",
+                    "description": "install or type:id",
                     "type": "string"
                   },
                   "state": {
@@ -121756,7 +121851,13 @@
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
+                    "changed": {
+                      "type": "boolean"
+                    },
                     "created": {
+                      "type": "boolean"
+                    },
+                    "reopened": {
                       "type": "boolean"
                     },
                     "signal": {
@@ -122301,7 +122402,7 @@
                     "type": "string"
                   },
                   "scope": {
-                    "description": "fleet or person|chat|project|agent:<id>",
+                    "description": "install or person|chat|project|agent:<id> (an agent turn defaults to agent:<its id>)",
                     "type": "string"
                   },
                   "severity": {
@@ -122309,7 +122410,7 @@
                     "type": "string"
                   },
                   "source": {
-                    "description": "Producer provenance",
+                    "description": "Producer provenance (operator only; agents raise as themselves)",
                     "type": "string"
                   },
                   "subject": {
@@ -122345,7 +122446,13 @@
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
+                    "changed": {
+                      "type": "boolean"
+                    },
                     "created": {
+                      "type": "boolean"
+                    },
+                    "reopened": {
                       "type": "boolean"
                     },
                     "signal": {
@@ -122770,7 +122877,13 @@
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
+                    "changed": {
+                      "type": "boolean"
+                    },
                     "created": {
+                      "type": "boolean"
+                    },
+                    "reopened": {
                       "type": "boolean"
                     },
                     "signal": {
@@ -123571,7 +123684,7 @@
                 "additionalProperties": false,
                 "properties": {
                   "execute": {
-                    "description": "Actually deliver out-of-band signals",
+                    "description": "Actually evaluate, expire and deliver out-of-band signals",
                     "type": "boolean"
                   }
                 },
@@ -123646,8 +123759,104 @@
                     "expired": {
                       "type": "number"
                     },
+                    "outbox": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "failed": {
+                          "type": "number"
+                        },
+                        "retried": {
+                          "type": "number"
+                        },
+                        "sent": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "sent",
+                        "retried",
+                        "failed"
+                      ],
+                      "type": "object"
+                    },
                     "resolved": {
                       "type": "number"
+                    },
+                    "skipped": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string"
+                          },
+                          "sessionName": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "sessionName",
+                          "reason"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "tickState": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "lastSuccessfulTickAt": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "lastTickAt": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "lastTickError": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "staleAfterMs": {
+                          "type": "number"
+                        },
+                        "staleAfterSource": {
+                          "type": "string"
+                        },
+                        "tickIntervalMs": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "lastSuccessfulTickAt",
+                        "lastTickAt",
+                        "lastTickError",
+                        "tickIntervalMs",
+                        "staleAfterMs",
+                        "staleAfterSource"
+                      ],
+                      "type": "object"
                     },
                     "watchers": {
                       "items": {
@@ -123684,6 +123893,9 @@
                     "escalated",
                     "errors",
                     "candidates",
+                    "skipped",
+                    "outbox",
+                    "tickState",
                     "watchers"
                   ],
                   "type": "object"
@@ -123700,7 +123912,7 @@
           }
         },
         "security": [],
-        "summary": "Evaluate signals and escalate due ones",
+        "summary": "Evaluate signals and escalate due ones (dry-run unless --execute)",
         "tags": [
           "signals"
         ]
@@ -123736,7 +123948,13 @@
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
+                    "changed": {
+                      "type": "boolean"
+                    },
                     "created": {
+                      "type": "boolean"
+                    },
+                    "reopened": {
                       "type": "boolean"
                     },
                     "signal": {
@@ -124234,7 +124452,13 @@
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
+                    "changed": {
+                      "type": "boolean"
+                    },
                     "created": {
+                      "type": "boolean"
+                    },
+                    "reopened": {
                       "type": "boolean"
                     },
                     "signal": {

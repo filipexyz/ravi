@@ -2,7 +2,7 @@ import { statfsSync } from "node:fs";
 import os from "node:os";
 import { getRaviStateDir } from "../utils/paths.js";
 import type { ClearWhen, SignalRecord } from "./types.js";
-import { evaluateClearExpression } from "./validation.js";
+import { evaluateClearExpression, parseClearExpression, SignalUsageError } from "./validation.js";
 import { dbGetSignalById } from "./signal-db.js";
 import { getDb } from "../router/router-db.js";
 
@@ -13,6 +13,8 @@ export interface SignalProbeResult {
 
 export interface SignalProbe {
   id: string;
+  /** Numeric fields a clear expression may compare; anything else is a usage error at raise. */
+  fields: readonly string[];
   read(signal?: SignalRecord): SignalProbeResult;
 }
 
@@ -130,12 +132,45 @@ function readSessionState(signal?: SignalRecord): SignalProbeResult {
 }
 
 export const SIGNAL_PROBES: Record<string, SignalProbe> = {
-  "host.disk": { id: "host.disk", read: readDisk },
-  "host.memory": { id: "host.memory", read: readMemory },
-  "host.load": { id: "host.load", read: readLoad },
-  "task.state": { id: "task.state", read: readTaskState },
-  "session.state": { id: "session.state", read: readSessionState },
+  "host.disk": { id: "host.disk", fields: ["free_pct", "free_bytes", "total_bytes"], read: readDisk },
+  "host.memory": { id: "host.memory", fields: ["available_pct", "free_bytes", "total_bytes"], read: readMemory },
+  "host.load": { id: "host.load", fields: ["load1", "cores"], read: readLoad },
+  "task.state": { id: "task.state", fields: ["archived", "archived_at", "terminal"], read: readTaskState },
+  "session.state": {
+    id: "session.state",
+    fields: ["exists", "ephemeral", "ended", "expires_at"],
+    read: readSessionState,
+  },
 };
+
+/**
+ * Validate a clear rule against the probe registry and the allowed field set,
+ * so a typo cannot mint a signal that never closes (invariant 27).
+ */
+export function validateClearRuleFields(rule: ClearWhen, evidence?: Record<string, unknown>): void {
+  if (rule.type === "probe") {
+    const probe = SIGNAL_PROBES[rule.probe];
+    if (!probe || !Object.hasOwn(SIGNAL_PROBES, rule.probe)) {
+      throw new SignalUsageError(`Unknown probe: ${rule.probe}. Registered probes: ${listProbeIds().join(", ")}.`);
+    }
+    for (const clause of parseClearExpression(rule.expr).clauses) {
+      if (!probe.fields.includes(clause.field)) {
+        throw new SignalUsageError(
+          `Field ${clause.field} is not produced by probe ${rule.probe}. Allowed: ${probe.fields.join(", ")}.`,
+        );
+      }
+    }
+    return;
+  }
+  if (rule.type === "metric") {
+    const value = evidence?.[rule.field];
+    if (value === undefined || !Number.isFinite(typeof value === "number" ? value : Number(value))) {
+      throw new SignalUsageError(
+        `Metric field ${rule.field} must be a numeric field of --evidence so the rule can be evaluated.`,
+      );
+    }
+  }
+}
 
 export function listProbeIds(): string[] {
   return Object.keys(SIGNAL_PROBES).sort();
@@ -289,7 +324,11 @@ function opToSymbol(op: "gt" | "gte" | "lt" | "lte" | "eq" | "neq"): string {
   }
 }
 
-export function describeClearRule(rule: ClearWhen): string {
+/**
+ * One line for the prompt and the CLI. `decay` is an absolute deadline counted
+ * from `opened_at` (invariant 26), never "in N hours" from now.
+ */
+export function describeClearRule(rule: ClearWhen, openedAt?: number): string {
   switch (rule.type) {
     case "probe":
       return `${rule.expr} (probe ${rule.probe}, recheck ${Math.round(rule.recheck_ms / 1000)}s, grace ${Math.round(rule.grace_ms / 1000)}s)`;
@@ -298,7 +337,9 @@ export function describeClearRule(rule: ClearWhen): string {
     case "producer_resolve":
       return `producer resolves (ttl ${Math.round(rule.ttl_ms / 1000)}s)`;
     case "decay":
-      return `decay at ${new Date(Date.now() + rule.after_ms).toISOString()}`;
+      return openedAt === undefined
+        ? `decay ${Math.round(rule.after_ms / 1000)}s after opening`
+        : `decay at ${new Date(openedAt + rule.after_ms).toISOString()}`;
     case "manual":
       return "manual resolution";
   }

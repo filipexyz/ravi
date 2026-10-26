@@ -4,6 +4,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { dbSetSetting, closeRouterDb } from "../router/router-db.js";
 import { tickSignals } from "./tick.js";
+import {
+  dbGetSignalById,
+  dbGetTickState,
+  dbListPendingOutbox,
+  dbListSignalEvents,
+  dbListSignalSurfaces,
+  dbRecordTickRun,
+  dbWriteSignalObservation,
+} from "./signal-db.js";
+import { muteSignal } from "./service.js";
 import { raiseSignal } from "./service.js";
 import { setDiskProbeForTests } from "./probes.js";
 
@@ -31,8 +41,8 @@ function seedPageSignal(now: number) {
     producerId: "test.code",
     producerClass: "code",
     producerType: "code",
-    scopeType: "fleet",
-    scopeId: "fleet",
+    scopeType: "install",
+    scopeId: "install",
     targetSessions: ["test-session"],
     severity: "page",
     title: "Daemon is down",
@@ -50,7 +60,9 @@ function seedPageSignal(now: number) {
 describe("signals tick", () => {
   it("is a dry run by default", async () => {
     const now = Date.now();
-    seedPageSignal(now);
+    const signal = seedPageSignal(now);
+    dbRecordTickRun({ now: now - 60_000, tickIntervalMs: 5 * 60_000 });
+    dbWriteSignalObservation({ signalId: signal.id, observedAt: now - 60_000 });
     let pages = 0;
     let prompts = 0;
     const result = await tickSignals({
@@ -68,6 +80,7 @@ describe("signals tick", () => {
     expect(result.candidates).toHaveLength(1);
     expect(pages).toBe(0);
     expect(prompts).toBe(0);
+    expect(dbListSignalSurfaces(signal.id)).toHaveLength(0);
   });
 
   it("delivers one page line and one prompt on execute", async () => {
@@ -115,8 +128,8 @@ describe("signals tick", () => {
       producerId: "test.code",
       producerClass: "code",
       producerType: "code",
-      scopeType: "fleet",
-      scopeId: "fleet",
+      scopeType: "install",
+      scopeId: "install",
       targetSessions: ["test-session"],
       severity: "piggyback",
       title: "Piggyback fact due",
@@ -164,5 +177,253 @@ describe("signals tick", () => {
     const third = await tickSignals({ ...deps, now: now + 22 * 60_000, execute: true });
     expect(third.resolved).toBe(1);
     expect(pages).toBe(1);
+  });
+
+  it("does not escalate on a stale observation, and says why", async () => {
+    const now = Date.now();
+    const signal = seedPageSignal(now - 60 * 60_000);
+    // Last successful tick 30 min ago: more than 2 × the 5 min interval.
+    dbRecordTickRun({ now: now - 30 * 60_000, tickIntervalMs: 5 * 60_000 });
+    dbWriteSignalObservation({ signalId: signal.id, observedAt: now - 30 * 60_000 });
+    const result = await tickSignals({ now, runWatchers: false });
+    expect(result.candidates).toHaveLength(0);
+    expect(result.skipped).toEqual([{ id: signal.id, sessionName: "test-session", reason: "stale" }]);
+  });
+
+  it("does not escalate when the last evaluation failed", async () => {
+    const now = Date.now();
+    raiseSignal({
+      key: "probe.error",
+      kind: "fact",
+      producerId: "test.code",
+      producerClass: "code",
+      producerType: "code",
+      scopeType: "install",
+      scopeId: "install",
+      targetSessions: ["test-session"],
+      severity: "page",
+      title: "Disk",
+      clearWhen: { type: "probe", probe: "host.disk", expr: "free_pct >= 20", recheck_ms: 60_000, grace_ms: 0 },
+      escalateAfterMs: 0,
+      now,
+    });
+    setDiskProbeForTests(() => {
+      throw new Error("statfs unavailable");
+    });
+    let prompts = 0;
+    const result = await tickSignals({
+      now,
+      execute: true,
+      runWatchers: false,
+      publishPrompt: async () => {
+        prompts += 1;
+      },
+      sendPage: async () => "sent",
+    });
+    expect(prompts).toBe(0);
+    expect(result.skipped[0]?.reason).toBe("unknown");
+    expect(result.resolved).toBe(0);
+  });
+
+  it("with signals.oob_enabled=false sends no OOB", async () => {
+    const now = Date.now();
+    seedPageSignal(now);
+    dbSetSetting("signals.oob_enabled", "false");
+    let prompts = 0;
+    const result = await tickSignals({
+      now,
+      execute: true,
+      runWatchers: false,
+      publishPrompt: async () => {
+        prompts += 1;
+      },
+    });
+    expect(prompts).toBe(0);
+    expect(result.skipped[0]?.reason).toBe("oob_disabled");
+  });
+
+  it("holds a due nudge when the daily budget is exhausted", async () => {
+    const now = Date.now();
+    dbSetSetting("signals.surface_budget_per_day", "1");
+    raiseSignal({
+      key: "test.nudge.one",
+      kind: "fact",
+      producerId: "test.code",
+      producerClass: "code",
+      producerType: "code",
+      scopeType: "install",
+      scopeId: "install",
+      targetSessions: ["test-session"],
+      severity: "nudge",
+      title: "First nudge",
+      clearWhen: { type: "producer_resolve", ttl_ms: 86_400_000 },
+      escalateAfterMs: 0,
+      now,
+    });
+    const deps = { runWatchers: false, publishPrompt: async () => {} };
+    const first = await tickSignals({ ...deps, now, execute: true });
+    expect(first.escalated).toBe(1);
+    raiseSignal({
+      key: "test.nudge.two",
+      kind: "fact",
+      producerId: "test.code",
+      producerClass: "code",
+      producerType: "code",
+      scopeType: "install",
+      scopeId: "install",
+      targetSessions: ["test-session"],
+      severity: "nudge",
+      title: "Second nudge",
+      clearWhen: { type: "producer_resolve", ttl_ms: 86_400_000 },
+      escalateAfterMs: 0,
+      now: now + 1_000,
+    });
+    let prompts = 0;
+    const second = await tickSignals({
+      runWatchers: false,
+      now: now + 2_000,
+      execute: true,
+      publishPrompt: async () => {
+        prompts += 1;
+      },
+    });
+    expect(prompts).toBe(0);
+    expect(second.skipped.some((item) => item.reason === "budget")).toBe(true);
+  });
+
+  it("lets a fresh page fact bypass the budget, audited", async () => {
+    const now = Date.now();
+    dbSetSetting("signals.surface_budget_per_day", "1");
+    dbSetSetting("signals.oob_budget_per_day", "1");
+    const signal = seedPageSignal(now);
+    const result = await tickSignals({
+      now,
+      execute: true,
+      runWatchers: false,
+      publishPrompt: async () => {},
+      sendPage: async () => "sent",
+    });
+    expect(result.escalated).toBe(1);
+    expect(dbListSignalSurfaces(signal.id)[0]?.budgetBypass).toBe(true);
+    expect(dbListSignalEvents(signal.id).some((event) => event.type === "signal.budget_bypass")).toBe(true);
+  });
+
+  it("keeps a failed publish pending under the same key, then fails it and returns the unit", async () => {
+    const now = Date.now();
+    const signal = seedPageSignal(now);
+    const keys: string[] = [];
+    const failing = async (_session: string, _payload: Record<string, unknown>, options?: { messageId?: string }) => {
+      keys.push(options?.messageId ?? "");
+      throw new Error("nats down");
+    };
+    const deps = { runWatchers: false, publishPrompt: failing, sendPage: async () => "sent" as const };
+    const first = await tickSignals({ ...deps, now, execute: true });
+    expect(first.escalated).toBe(0);
+    expect(first.outbox.retried).toBe(1);
+    expect(dbListSignalSurfaces(signal.id).map((row) => row.status)).toEqual(["pending"]);
+    expect(dbGetSignalById(signal.id)?.surfaceCount).toBe(0);
+    expect(dbGetSignalById(signal.id)?.state).toBe("open");
+
+    await tickSignals({ ...deps, now: now + 60_000, execute: true });
+    await tickSignals({ ...deps, now: now + 120_000, execute: true });
+    expect(new Set(keys).size).toBe(1);
+    expect(keys).toHaveLength(3);
+    expect(dbListSignalSurfaces(signal.id).map((row) => row.status)).toEqual(["failed"]);
+    expect(dbListPendingOutbox()).toHaveLength(0);
+    expect(dbGetSignalById(signal.id)?.escalationCount).toBe(0);
+  });
+
+  it("releases a reservation the operator muted while it waited", async () => {
+    const now = Date.now();
+    const signal = seedPageSignal(now);
+    const deps = {
+      runWatchers: false,
+      publishPrompt: async () => {
+        throw new Error("nats down");
+      },
+      sendPage: async () => "sent" as const,
+    };
+    await tickSignals({ ...deps, now, execute: true });
+    muteSignal({ idOrKey: signal.id, forMs: 3_600_000, now: now + 1_000 });
+    let prompts = 0;
+    const second = await tickSignals({
+      runWatchers: false,
+      now: now + 60_000,
+      execute: true,
+      publishPrompt: async () => {
+        prompts += 1;
+      },
+    });
+    expect(prompts).toBe(0);
+    expect(second.outbox.failed).toBe(1);
+    expect(dbListSignalSurfaces(signal.id).map((row) => row.status)).toEqual(["failed"]);
+  });
+
+  it("derives escalation_count from the sent OOB rows", async () => {
+    const now = Date.now();
+    const signal = seedPageSignal(now);
+    await tickSignals({
+      now,
+      execute: true,
+      runWatchers: false,
+      publishPrompt: async () => {},
+      sendPage: async () => "sent",
+    });
+    const stored = dbGetSignalById(signal.id)!;
+    const sentOob = dbListSignalSurfaces(signal.id).filter(
+      (row) => row.status === "sent" && row.route !== "piggyback",
+    ).length;
+    expect(stored.escalationCount).toBe(sentOob);
+    expect(stored.escalationCount).toBe(1);
+    expect(stored.state).toBe("surfaced");
+  });
+
+  it("escalates at most once across two concurrent ticks", async () => {
+    const now = Date.now();
+    seedPageSignal(now);
+    let prompts = 0;
+    const deps = {
+      now,
+      execute: true,
+      runWatchers: false,
+      publishPrompt: async () => {
+        prompts += 1;
+      },
+      sendPage: async () => "sent" as const,
+    };
+    await Promise.all([tickSignals(deps), tickSignals(deps)]);
+    expect(prompts).toBe(1);
+  });
+
+  it("advances the freshness anchor only on a tick without error and persists stale_after", async () => {
+    const now = Date.now();
+    await tickSignals({ now, execute: true, runWatchers: false });
+    expect(dbGetTickState().lastSuccessfulTickAt).toBe(now);
+    expect(dbGetTickState().staleAfterMs).toBe(10 * 60_000);
+    expect(dbGetTickState().staleAfterSource).toBe("default");
+
+    setDiskProbeForTests(() => {
+      throw new Error("statfs unavailable");
+    });
+    const failed = await tickSignals({ now: now + 300_000, execute: true });
+    expect(failed.errors.length).toBeGreaterThan(0);
+    expect(dbGetTickState().lastSuccessfulTickAt).toBe(now);
+    expect(dbGetTickState().lastTickAt).toBe(now + 300_000);
+
+    dbSetSetting("signals.stale_after_ms", "900000");
+    setDiskProbeForTests(null);
+    await tickSignals({ now: now + 600_000, execute: true, runWatchers: false });
+    expect(dbGetTickState().staleAfterMs).toBe(900_000);
+    expect(dbGetTickState().staleAfterSource).toBe("setting");
+  });
+
+  it("records the evaluation in the observation cache, not on the record version", async () => {
+    const now = Date.now();
+    const signal = seedPageSignal(now);
+    dbSetSetting("signals.oob_enabled", "false");
+    await tickSignals({ now, execute: true, runWatchers: false });
+    const stored = dbGetSignalById(signal.id)!;
+    expect(stored.lastEvalAt).toBe(now);
+    expect(stored.version).toBe(signal.version);
   });
 });

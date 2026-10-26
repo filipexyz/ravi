@@ -2,6 +2,7 @@ import { Database, type SQLQueryBindings } from "bun:sqlite";
 import { join } from "node:path";
 import { mkdirSync } from "node:fs";
 import { getRaviStateDir } from "./utils/paths.js";
+import type { UtteranceClass } from "./runtime/utterance-class.js";
 
 let db: Database | null = null;
 let dbPath: string | null = null;
@@ -57,7 +58,18 @@ function getDb(): Database {
   } catch {
     // column already exists
   }
-  for (const column of ["agent_id", "channel", "account_id", "chat_id", "source_message_id", "command_json"]) {
+  for (const column of [
+    "agent_id",
+    "channel",
+    "account_id",
+    "chat_id",
+    "source_message_id",
+    "command_json",
+    // sessions/turn-output: `final` or `commentary` for assistant rows (NULL = final, legacy).
+    "utterance_class",
+    // The trace turn that produced an assistant row; same-turn replay dedupes on it.
+    "turn_id",
+  ]) {
     try {
       db.exec(`ALTER TABLE messages ADD COLUMN ${column} TEXT`);
     } catch {
@@ -70,6 +82,7 @@ function getDb(): Database {
   db.exec("CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_messages_agent_chat ON messages(agent_id, chat_id)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_messages_source_message ON messages(source_message_id)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_messages_turn ON messages(session_id, turn_id)");
 
   return db;
 }
@@ -87,6 +100,9 @@ export interface Message {
   chat_id?: string | null;
   source_message_id?: string | null;
   command_json?: string | null;
+  /** Assistant rows: `final` or `commentary` (sessions/turn-output). NULL is a legacy final row. */
+  utterance_class?: UtteranceClass | null;
+  turn_id?: string | null;
   created_at: string;
 }
 
@@ -97,16 +113,37 @@ export interface SaveMessageMetadata {
   chatId?: string | null;
   sourceMessageId?: string | null;
   commands?: unknown[] | null;
+  utteranceClass?: UtteranceClass | null;
+  /** With a turn id, an exact replay of the same utterance in the same turn writes no second row. */
+  turnId?: string | null;
 }
 
+/**
+ * Persist one history row. Returns false when the row was an exact same-turn
+ * replay (same session, turn, role, class and content) and nothing was written;
+ * a new utterance that merely resembles an older one is always written.
+ */
 export function saveMessage(
   sessionId: string,
   role: "user" | "assistant",
   content: string,
   providerSessionId?: string | null,
   metadata: SaveMessageMetadata = {},
-): void {
-  getDb()
+): boolean {
+  const database = getDb();
+  const turnId = metadata.turnId?.trim() || null;
+  const utteranceClass = role === "assistant" ? (metadata.utteranceClass ?? "final") : null;
+  if (turnId) {
+    const replay = database
+      .prepare(
+        `SELECT 1 AS found FROM messages
+         WHERE session_id = ? AND turn_id = ? AND role = ? AND COALESCE(utterance_class, '') = ? AND content = ?
+         LIMIT 1`,
+      )
+      .get(sessionId, turnId, role, utteranceClass ?? "", content);
+    if (replay) return false;
+  }
+  database
     .prepare(
       `INSERT INTO messages (
         session_id,
@@ -118,8 +155,10 @@ export function saveMessage(
         account_id,
         chat_id,
         source_message_id,
-        command_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        command_json,
+        utterance_class,
+        turn_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       sessionId,
@@ -132,7 +171,10 @@ export function saveMessage(
       metadata.chatId ?? null,
       metadata.sourceMessageId ?? null,
       metadata.commands && metadata.commands.length > 0 ? JSON.stringify(metadata.commands) : null,
+      utteranceClass,
+      turnId,
     );
+  return true;
 }
 
 /**

@@ -7,6 +7,7 @@
 // deleted, so the quoted messages and the JSON reply are not kept.
 
 import { getRecentHistory } from "../../db.js";
+import { isFinalAssistantMessage } from "../../runtime/utterance-class.js";
 import { publishSessionPrompt } from "../../omni/session-stream.js";
 import { nats } from "../../nats.js";
 import { getAgent } from "../../router/config.js";
@@ -70,7 +71,7 @@ export interface CuratorTurnDeps {
   ensureSession?: (curatorAgentId: string, runId: string) => string | null;
   publishPrompt?: (sessionName: string, payload: Record<string, unknown>) => Promise<void>;
   subscribe?: (...topics: string[]) => RuntimeEventStream;
-  readHistory?: (sessionName: string) => Array<{ role: string; content: string }>;
+  readHistory?: (sessionName: string) => Array<{ role: string; content: string; utterance_class?: string | null }>;
   timeoutMs?: number;
   graceMs?: number;
 }
@@ -158,7 +159,8 @@ export async function runCuratorTurn(
       const history = (deps.readHistory ?? ((name: string) => getRecentHistory(name, 5)))(sessionName);
       for (let index = history.length - 1; index >= 0; index--) {
         const row = history[index];
-        if (row?.role === "assistant" && row.content.trim()) {
+        // Commentary is history, never the answer (sessions/turn-output inv. 2).
+        if (row && isFinalAssistantMessage(row) && row.content.trim()) {
           reply = row.content.trim();
           break;
         }

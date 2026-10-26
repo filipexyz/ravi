@@ -11,6 +11,7 @@ import type {
 import { hostRuntimeControlSummary } from "../runtime/runtime-control-errors.js";
 import { logger } from "../utils/logger.js";
 import { recordSessionBlob, recordSessionEvent, sha256Text, upsertSessionTurn } from "./session-trace-db.js";
+import type { SessionTurnOutputState } from "./types.js";
 
 const log = logger.child("session-trace:runtime");
 const PREVIEW_CHARS = 240;
@@ -78,7 +79,9 @@ export interface RuntimeTraceAdapterRequestInput extends RuntimeTraceIdentity {
   signals?: {
     surfaced: string[];
     skipped: Array<{ id: string; reason: string }>;
-    budget: { used: number; limit: number; held: number };
+    /** `used` = ledger rows first written by this turn; `daily` and `released` are reported apart from it. */
+    budget: { used: number; limit: number; held: number; daily?: number; released?: number } | null;
+    renderError?: string;
   } | null;
 }
 
@@ -91,6 +94,8 @@ export interface RuntimeTraceTerminalTurnInput extends RuntimeTraceIdentity {
   usage?: RuntimeUsage | null;
   costUsd?: number | null;
   responseChars?: number;
+  /** `incomplete` when the turn produced commentary but no final utterance. */
+  outputState?: SessionTurnOutputState | null;
   payloadJson?: Record<string, unknown>;
   startedAt?: number | null;
   completedAt?: number;
@@ -244,6 +249,7 @@ export function recordAdapterRequestTrace(input: RuntimeTraceAdapterRequestInput
             signalsSurfaced: input.signals.surfaced,
             signalsSkipped: input.signals.skipped,
             signalsBudget: input.signals.budget,
+            ...(input.signals.renderError ? { signalsRenderError: input.signals.renderError } : {}),
           }
         : {}),
     };
@@ -347,6 +353,7 @@ export function recordTerminalTurnTrace(input: RuntimeTraceTerminalTurnInput): v
       usage: usage ?? null,
       cost_usd: input.costUsd ?? null,
       response_chars: input.responseChars ?? null,
+      output_state: input.outputState ?? null,
     };
 
     recordSessionEvent({
@@ -378,11 +385,13 @@ export function recordTerminalTurnTrace(input: RuntimeTraceTerminalTurnInput): v
         model: input.model,
         status: input.status,
         providerSessionIdAfter: input.providerSessionIdAfter ?? null,
-        inputTokens: usage?.inputTokens ?? 0,
-        outputTokens: usage?.outputTokens ?? 0,
-        cacheReadTokens: usage?.cacheReadTokens ?? 0,
-        cacheCreationTokens: usage?.cacheCreationTokens ?? 0,
-        costUsd: input.costUsd ?? 0,
+        // No measurement is NULL, never 0 (sessions/turn-output inv. 7).
+        inputTokens: usage ? usage.inputTokens : null,
+        outputTokens: usage ? usage.outputTokens : null,
+        cacheReadTokens: usage ? (usage.cacheReadTokens ?? 0) : null,
+        cacheCreationTokens: usage ? (usage.cacheCreationTokens ?? 0) : null,
+        costUsd: input.costUsd ?? null,
+        ...(input.outputState !== undefined ? { outputState: input.outputState } : {}),
         error: input.error ?? null,
         abortReason: input.abortReason ?? null,
         completedAt,

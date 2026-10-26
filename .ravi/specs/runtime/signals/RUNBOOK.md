@@ -26,7 +26,7 @@ ravi signals budget --json
 
 ```bash
 ravi signals raise host.disk.free \
-  --kind fact --scope fleet --severity page \
+  --kind fact --scope install --severity page \
   --title "Disk free below 15%" \
   --evidence '{"metric":"free_pct","value":9.2,"threshold":15}' \
   --clear-probe host.disk --clear-expr "free_pct >= 20" \

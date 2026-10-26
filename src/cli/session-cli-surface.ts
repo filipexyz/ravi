@@ -1,3 +1,4 @@
+import { isFinalAssistantMessage } from "../runtime/utterance-class.js";
 import { SILENT_TOKEN } from "../prompt-builder.js";
 import type { RuntimeEffort } from "../runtime/effort.js";
 import { CLI_SESSION_BOOTSTRAP_EFFORT } from "../runtime/effort.js";
@@ -22,6 +23,8 @@ export interface TranscriptMessageLike {
   id: number;
   role: string;
   content: string;
+  /** `commentary` rows are history, never the turn's answer (sessions/turn-output). */
+  utterance_class?: string | null;
 }
 
 export interface WaitForThisTurnAssistantInput {
@@ -62,7 +65,7 @@ export function snapshotTranscriptCursor(messages: Array<{ id: number }>): numbe
 
 export function readThisTurnAssistantText(messages: TranscriptMessageLike[], afterId: number): { text: string } | null {
   const assistantParts = messages
-    .filter((message) => message.id > afterId && message.role === "assistant")
+    .filter((message) => message.id > afterId && isFinalAssistantMessage(message))
     .map((message) => sanitizeCliAssistantText(message.content))
     .filter((text) => text.length > 0);
   if (assistantParts.length === 0) return null;

@@ -11,7 +11,7 @@ export type SignalSeverity = (typeof SIGNAL_SEVERITIES)[number];
 export const SIGNAL_STATES = ["open", "surfaced", "acknowledged", "muted", "resolved", "expired"] as const;
 export type SignalState = (typeof SIGNAL_STATES)[number];
 
-export const SIGNAL_SCOPE_TYPES = ["person", "chat", "project", "agent", "fleet"] as const;
+export const SIGNAL_SCOPE_TYPES = ["person", "chat", "project", "agent", "install"] as const;
 export type SignalScopeType = (typeof SIGNAL_SCOPE_TYPES)[number];
 
 export const SIGNAL_PRODUCER_TYPES = ["code", "agent"] as const;
@@ -25,6 +25,26 @@ export type SignalSubjectType = (typeof SIGNAL_SUBJECT_TYPES)[number];
 
 export const SIGNAL_SURFACE_ROUTES = ["piggyback", "oob", "page"] as const;
 export type SignalSurfaceRoute = (typeof SIGNAL_SURFACE_ROUTES)[number];
+
+/** One ledger row per logical surface: `pending` reserves, `sent` consumes, `failed` counts zero. */
+export const SIGNAL_SURFACE_STATUSES = ["pending", "sent", "failed"] as const;
+export type SignalSurfaceStatus = (typeof SIGNAL_SURFACE_STATUSES)[number];
+
+/** How fresh the cached observation is, as rendered and as gated for OOB. */
+export const SIGNAL_OBSERVATION_STATUSES = ["fresh", "stale", "unknown"] as const;
+export type SignalObservationStatus = (typeof SIGNAL_OBSERVATION_STATUSES)[number];
+
+/**
+ * The caller as the invocation context (ToolContext) resolved it. Authority
+ * to raise a fact, request `page`, ack a fact or resolve a fact comes from
+ * here, never from the kind named in the request or the process environment.
+ */
+export interface SignalCaller {
+  /** An agent turn (session-bound context), as opposed to the operator's CLI. */
+  isAgent: boolean;
+  agentId?: string | null;
+  sessionName?: string | null;
+}
 
 export type ClearWhen =
   | {
@@ -99,7 +119,62 @@ export interface SignalEventRecord {
   actorId?: string;
   message?: string;
   payload?: Record<string, unknown>;
+  /** Record version after the transition this row audits; absent on non-transition notes. */
+  version?: number;
+  fromState?: string;
+  toState?: string;
   createdAt: number;
+}
+
+export interface SignalSurfaceRecord {
+  id: number;
+  signalId: string;
+  route: SignalSurfaceRoute;
+  status: SignalSurfaceStatus;
+  sessionName?: string;
+  turnId?: string;
+  idempotencyKey?: string;
+  budgetDay: string;
+  budgetBypass: boolean;
+  error?: string;
+  createdAt: number;
+  sentAt?: number | null;
+  failedAt?: number | null;
+}
+
+export interface SignalOutboxRecord {
+  id: number;
+  surfaceId: number;
+  signalId: string;
+  idempotencyKey: string;
+  route: SignalSurfaceRoute;
+  sessionName?: string;
+  severity: SignalSeverity;
+  status: SignalSurfaceStatus;
+  attempts: number;
+  pageStatus?: "sent" | "skipped_no_binding" | "failed" | null;
+  lastError?: string | null;
+  reservedVersion: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** The cached observation the tick stores and render reads (never computed on the turn path). */
+export interface SignalObservation {
+  signalId: string;
+  observedAt: number;
+  error?: string | null;
+  fields?: Record<string, unknown>;
+  clearSince?: number | null;
+}
+
+export interface SignalTickState {
+  lastSuccessfulTickAt: number | null;
+  lastTickAt: number | null;
+  lastTickError: string | null;
+  tickIntervalMs: number;
+  staleAfterMs: number;
+  staleAfterSource: "setting" | "default";
 }
 
 export interface RaiseSignalInput {
@@ -125,6 +200,8 @@ export interface RaiseSignalInput {
   maxSurfaces?: number;
   ttlMs?: number;
   reopenAfterMs?: number;
+  /** The resolved invocation context. Absent means a code producer in the daemon. */
+  caller?: SignalCaller;
   now?: number;
 }
 
@@ -133,6 +210,7 @@ export interface RaiseSignalResult {
   created: boolean;
   updated: boolean;
   suppressed?: "reopen" | "terminal_subject" | "muted_key";
+  reopened?: boolean;
 }
 
 export interface ListSignalsOptions {
@@ -175,14 +253,45 @@ export interface SignalSkipped {
     | "subject_terminal"
     | "ambiguous"
     | "held"
-    | "ignored";
+    | "ignored"
+    | "expired"
+    | "reserve_failed";
+}
+
+/** Why the tick did not escalate a signal that was otherwise due for OOB. */
+export interface SignalOobSkipped {
+  id: string;
+  sessionName: string;
+  reason:
+    | "stale"
+    | "unknown"
+    | "oob_disabled"
+    | "budget"
+    | "oob_budget"
+    | "cooldown"
+    | "escalation_cap"
+    | "pending"
+    | "ineligible";
+}
+
+export interface SignalTurnBudget {
+  /** Distinct ledger rows first written (reserved) by this turn, whatever their later outcome. */
+  used: number;
+  limit: number;
+  held: number;
+  /** Units of the daily budget taken (pending + sent) after this turn's reservations. */
+  daily: number;
+  /** Reservations of this turn released before the prompt went out. */
+  released: number;
 }
 
 export interface RenderSignalsResult {
   suffix: string;
   surfacedIds: string[];
   skipped: SignalSkipped[];
-  budget: { used: number; limit: number; held: number };
+  budget: SignalTurnBudget;
+  /** Ledger rows reserved by this render; commit or release them with the turn. */
+  reservations: number[];
 }
 
 export interface TickSignalsResult {
@@ -193,14 +302,26 @@ export interface TickSignalsResult {
   escalated: number;
   errors: Array<{ id: string; error: string }>;
   candidates: Array<{ id: string; route: SignalSurfaceRoute; severity: SignalSeverity; sessionName: string }>;
+  skipped: SignalOobSkipped[];
+  outbox: { sent: number; retried: number; failed: number };
   watchers: Array<{ id: string; raised: boolean; resolved: boolean; error?: string }>;
+  tickState: SignalTickState;
 }
 
 export interface SignalTickDependencies {
   now?: number;
   execute?: boolean;
-  publishPrompt?: (sessionName: string, payload: Record<string, unknown>) => Promise<void>;
-  sendPage?: (signal: SignalRecord, sessionName: string) => Promise<"sent" | "skipped_no_binding" | "failed">;
+  tickIntervalMs?: number;
+  publishPrompt?: (
+    sessionName: string,
+    payload: Record<string, unknown>,
+    options?: { messageId?: string },
+  ) => Promise<void>;
+  sendPage?: (
+    signal: SignalRecord,
+    sessionName: string,
+    idempotencyKey: string,
+  ) => Promise<"sent" | "skipped_no_binding" | "failed">;
   runWatchers?: boolean;
   probe?: typeof import("./probes.js").probeSignal;
 }
@@ -210,4 +331,7 @@ export interface SignalBudget {
   used: number;
   limit: number;
   held: number;
+  /** OOB slots taken today (pending + sent), out of `oobLimit`. */
+  oobUsed: number;
+  oobLimit: number;
 }

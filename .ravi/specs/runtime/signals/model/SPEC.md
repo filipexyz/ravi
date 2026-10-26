@@ -47,8 +47,8 @@ A signal is stored locally in the Ravi state directory (same SQLite family as th
 | `kind` | text | yes | `fact` or `judgment` |
 | `producer_type` | text | yes | `code` or `agent` |
 | `producer_id` | text | yes | `doctor.disk`, `agent:main`, `cron:<id>`, `session:<key>` |
-| `scope_type` | text | yes | `person`, `chat`, `project`, `agent`, or `fleet` |
-| `scope_id` | text | yes | Canonical id; `fleet` uses the literal `fleet` |
+| `scope_type` | text | yes | `person`, `chat`, `project`, `agent`, or `install` |
+| `scope_id` | text | yes | Canonical id; `install` uses the literal `install` |
 | `target_sessions` | text JSON | no | Optional explicit target session names |
 | `subject_type` | text | no | `task`, `session`, `agent`, `contact`, or `project` |
 | `subject_id` | text | no | Canonical id of the entity the signal is about |
@@ -255,19 +255,24 @@ Exactly one scope per signal:
 
 | Scope | `scope_id` | Resolves to |
 | --- | --- | --- |
-| `fleet` | `fleet` | The configured fleet session (`signals.fleet_session`, default the agent main session) |
+| `install` | `install` | The configured install session (`signals.install_session`, default the agent main session) |
 | `agent` | agent id | That agent's main session |
 | `chat` | canonical chat id | The session currently attached to that chat |
 | `person` | contact id | The session bound to that person's direct chat |
 | `project` | project id | Sessions currently working in that project |
 
+`install` means this installation of Ravi: one daemon and its state DB. It is not a
+fleet of installations. Rows stored with the legacy scope `fleet` are converted to
+`install` when the schema initializes, and a legacy `signals.fleet_session` setting
+is copied to `signals.install_session`.
+
 Rules:
 
 - Resolution MUST return explicit session names. A signal MUST NOT be rendered into a session that does not resolve from its scope.
-- `fleet` MUST resolve to one session, not to every session. Broadcasting a fleet fact to every agent is a flood.
+- `install` MUST resolve to one session, not to every session. Broadcasting an install fact to every agent is a flood.
 - `target_sessions` MAY override resolution for a single signal. The override MUST be visible in `ravi signals explain`.
 - Scope grants read visibility: `ravi signals list` returns signals resolvable from the current session plus signals the caller owns. `--all` requires operator capability.
-- Cross-scope escalation is forbidden. A `project` signal cannot page the fleet session unless a separate `fleet` signal exists.
+- Cross-scope escalation is forbidden. A `project` signal cannot page the install session unless a separate `install` signal exists.
 
 ## Persistence and Retention
 
@@ -309,7 +314,7 @@ Rules:
 - A `clear_when` predicate that uses an unregistered field silently never clears; validation must reject it.
 - A probe without a timeout blocks turn start.
 - A `manual` fact is used to avoid writing a real probe; facts then depend on humans and never clear.
-- `fleet` is implemented as a broadcast and floods every agent.
+- `install` is implemented as a broadcast and floods every agent.
 - Terminal rows are pruned before the audit question is answered.
 - Optimistic version is ignored, so two producers overwrite each other's evidence.
 - Archiving a task does not change `status`, so a status-only producer resurrects a signal over an archived entity.

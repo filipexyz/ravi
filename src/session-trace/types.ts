@@ -149,13 +149,15 @@ export interface UpsertSessionTurnInput {
   userPromptSha256?: string | null;
   systemPromptSha256?: string | null;
   requestBlobSha256?: string | null;
-  inputTokens?: number;
-  outputTokens?: number;
-  cacheReadTokens?: number;
-  cacheCreationTokens?: number;
-  costUsd?: number;
+  /** `null` = the provider reported no usage; persisted as NULL, never 0. */
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  cacheReadTokens?: number | null;
+  cacheCreationTokens?: number | null;
+  costUsd?: number | null;
   error?: string | null;
   abortReason?: string | null;
+  outputState?: SessionTurnOutputState | null;
   startedAt?: number;
   completedAt?: number | null;
   updatedAt?: number;
@@ -180,14 +182,21 @@ export interface SessionTurnRecord {
   userPromptSha256: string | null;
   systemPromptSha256: string | null;
   requestBlobSha256: string | null;
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheCreationTokens: number;
-  costUsd: number;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheCreationTokens: number | null;
+  costUsd: number | null;
   error: string | null;
   abortReason: string | null;
+  outputState: SessionTurnOutputState | null;
   startedAt: number;
   completedAt: number | null;
   updatedAt: number;
 }
+
+/**
+ * Turn-output marker: `final` when the turn materialized a final utterance,
+ * `incomplete` when it ended with commentary only (sessions/turn-output inv. 6).
+ */
+export type SessionTurnOutputState = "final" | "incomplete";

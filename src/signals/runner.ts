@@ -1,8 +1,9 @@
 import { logger } from "../utils/logger.js";
 import { tickSignals } from "./tick.js";
+import { SIGNALS_TICK_INTERVAL_MS } from "./signal-db.js";
 
 const log = logger.child("signals:runner");
-const SIGNALS_SWEEP_INTERVAL_MS = 5 * 60_000;
+const SIGNALS_SWEEP_INTERVAL_MS = SIGNALS_TICK_INTERVAL_MS;
 
 export class SignalsRunner {
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -33,7 +34,7 @@ export class SignalsRunner {
     if (!this.running || this.sweeping) return;
     this.sweeping = true;
     try {
-      const result = await tickSignals({ execute: true, now });
+      const result = await tickSignals({ execute: true, now, tickIntervalMs: SIGNALS_SWEEP_INTERVAL_MS });
       if (result.escalated > 0 || result.resolved > 0 || result.expired > 0 || result.errors.length > 0) {
         log.info("Signals sweep completed", {
           evaluated: result.evaluated,

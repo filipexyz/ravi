@@ -62,7 +62,7 @@ The first and third queries MUST return 0 rows. The second MUST show no `judgmen
 
 ## Scope
 
-- `fleet` resolves to exactly one session.
+- `install` resolves to exactly one session.
 - A `person` signal with no bound session stays list-only.
 - A signal is never rendered into a session outside its scope.
 - `--all` requires operator capability.

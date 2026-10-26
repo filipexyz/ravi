@@ -283,7 +283,7 @@ Details live in `runtime/signals/producers`.
 
 - A probe is slow or hangs and blocks turn start. Probes MUST have a hard timeout and a cached last value; the render path MUST NOT wait indefinitely.
 - A producer raises a new key every time (for example, including a timestamp in the key), defeating dedupe and flooding storage.
-- A scope resolver attaches a fleet fact to every session, turning piggyback into a broadcast.
+- A scope resolver attaches an install fact to every session, turning piggyback into a broadcast.
 - `clear_when` is treated as a general expression language and becomes an injection or CPU surface. Only registered probes and a tiny comparison grammar are allowed.
 - The agent acknowledges a fact to silence it while the condition remains true. Facts re-notify while true, and ack is not resolve.
 - Tick stops running, so piggyback works but escalations silently stop. Tick health MUST be observable.
