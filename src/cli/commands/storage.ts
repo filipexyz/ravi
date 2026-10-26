@@ -47,7 +47,6 @@ import {
 import { createRaviTaskProbe } from "../../storage/task-worktrees.js";
 
 const OP = "storage cleanup";
-const _OP_REPORT = "storage report";
 const OP_SUMMARY = "storage summary";
 const OP_SCHEDULE = "storage schedule";
 
@@ -80,9 +79,11 @@ const storageCleanupReturnSchema = z
     policyVersion: z.string(),
     policyHash: z.string(),
     freedBytes: z.number(),
+    wouldFreeBytes: z.number(),
     classes: z.record(z.string(), storageClassSummarySchema),
     disk: z.object({ before: diskUsageSchema, after: diskUsageSchema }),
     errors: z.array(z.string()),
+    blocked: z.array(z.string()),
     limitations: z.array(z.string()),
     removed: z.array(z.string()),
     preserved: z.array(z.string()),
@@ -138,9 +139,11 @@ const storageSummaryReturnSchema = z
     runs: z.number(),
     executedRuns: z.number(),
     freedBytes: z.number(),
+    wouldFreeBytes: z.number(),
     classes: z.record(z.string(), z.object({ freedBytes: z.number(), runs: z.number() })),
     disk: diskUsageSchema,
     receiptDir: z.string(),
+    driftedReceipts: z.array(z.string()),
     invalidReceipts: z.array(z.string()),
   })
   .passthrough();
@@ -187,21 +190,27 @@ export class StorageCommands {
       "",
     ].join("\n"),
   })
-  @CommandAccess({ kind: "mutate", resource: "storage", action: "cleanup", risk: "destructive" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "storage",
+    action: "cleanup",
+    risk: "destructive",
+    requiresConfirmation: true,
+  })
   @CliOnly()
   @Returns(storageCleanupReturnSchema)
   async cleanup(
     @Option({ flags: "--tier <tier>", description: "Policy preset: routine | weekly" }) tier?: string,
     @Option({
-      flags: "--execute",
-      description: "Actually remove eligible candidates; without it the command is a side-effect-free dry-run",
-    })
-    execute?: boolean,
-    @Option({
       flags: "--notify <session>",
       description: "After --execute, notify a session with GB freed in the last 7 days, by class, and disk %",
     })
     notify?: string,
+    @Option({
+      flags: "--execute",
+      description: "Actually remove eligible candidates; without it the command is a side-effect-free dry-run",
+    })
+    execute?: boolean,
     @Option({ flags: "--json", description: "Print one machine-readable result" }) asJson?: boolean,
   ) {
     if (tier !== "routine" && tier !== "weekly") {
@@ -389,7 +398,13 @@ export class StorageCommands {
       "",
     ].join("\n"),
   })
-  @CommandAccess({ kind: "mutate", resource: "storage", action: "schedule", risk: "medium" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "storage",
+    action: "schedule",
+    risk: "medium",
+    requiresConfirmation: true,
+  })
   @CliOnly()
   @Returns(storageScheduleReturnSchema)
   async schedule(
@@ -470,7 +485,11 @@ function printHumanSummary(result: StorageCleanupResult): void {
     `disk: ${before ? `${formatGigabytes(before.usedBytes)} used, ${before.usedPercent}%` : "unknown"} -> ` +
       `${after ? `${formatGigabytes(after.usedBytes)} used, ${after.usedPercent}%` : "unknown"}`,
   );
-  console.log(`freed: ${formatByteSize(result.freedBytes)}`);
+  console.log(
+    result.dryRun
+      ? `would free: ${formatByteSize(result.wouldFreeBytes)} (nothing removed)`
+      : `freed: ${formatByteSize(result.freedBytes)} (estimate ${formatByteSize(result.wouldFreeBytes)})`,
+  );
   for (const [id, summary] of Object.entries(result.classes)) {
     console.log(
       `  ${id}: eligible=${formatByteSize(summary.eligibleBytes)} removed=${summary.removed} ` +
@@ -479,6 +498,7 @@ function printHumanSummary(result: StorageCleanupResult): void {
   }
   if (result.removed.length > 0) console.log(`removed: ${result.removed.join(", ")}`);
   for (const limitation of result.limitations) console.log(`limitation: ${limitation}`);
+  for (const reason of result.blocked) console.log(`blocked: ${reason}`);
   for (const error of result.errors) console.error(`error: ${error}`);
   console.log(`receipt: ${result.receiptPath}`);
 }
@@ -521,7 +541,7 @@ function printReport(report: ReturnType<typeof buildStorageReport>): void {
 
 function printSummary(summary: ReturnType<typeof buildStorageSummary>): void {
   console.log(`storage summary (since ${summary.since}) — ${summary.runs} run(s), ${summary.executedRuns} executed`);
-  console.log(`freed: ${formatGigabytes(summary.freedBytes)}`);
+  console.log(`freed: ${formatGigabytes(summary.freedBytes)} (estimate ${formatGigabytes(summary.wouldFreeBytes)})`);
   for (const [id, entry] of Object.entries(summary.classes)) {
     console.log(`  ${id}: ${formatGigabytes(entry.freedBytes)} (${entry.runs} run(s))`);
   }
@@ -531,5 +551,7 @@ function printSummary(summary: ReturnType<typeof buildStorageSummary>): void {
         `${formatGigabytes(summary.disk.availableBytes)} free`,
     );
   }
+  for (const id of summary.driftedReceipts)
+    console.error(`policy drift: receipt ${id} ignored (different policy hash)`);
   for (const path of summary.invalidReceipts) console.error(`invalid receipt: ${path}`);
 }
