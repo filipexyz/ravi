@@ -18,7 +18,7 @@ import { isSessionRelayTurn } from "./turn-origin.js";
 import { buildTurnReplyTarget } from "./turn-reply-target.js";
 import { resolveAgentSkills } from "./allowed-skills.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
-import { createRuntimeMessageGenerator } from "./delivery-queue.js";
+import { createRuntimeMessageGenerator, pickRuntimeTurnAuthorityEnvelope } from "./delivery-queue.js";
 import { renderSignalsForTurn } from "../signals/render.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import { markRuntimeTaskAcceptedForPrompt, resolveRuntimeForPrompt } from "./task-runtime-context.js";
@@ -931,6 +931,7 @@ async function buildRuntimeStartRequestInternal(
         streamingSession.lastBoundReplyTarget = { ...replyResolution.target };
       }
       streamingSession.currentChannelBackend = turnPrompt._channelBackend;
+      streamingSession.currentTurnAuthority = pickRuntimeTurnAuthorityEnvelope(turnPrompt);
       streamingSession.currentObservation = turnPrompt._observation;
       streamingSession.currentTurnProvenance = classifyTurnProvenance({
         prompt: turnPrompt,
@@ -971,7 +972,7 @@ async function buildRuntimeStartRequestInternal(
           runtimeRequestLog.warn("Failed to mark the task accepted for this turn", { sessionName, error });
         });
       }
-      refreshRuntimeRequestContextForTurn({
+      const turnContext = refreshRuntimeRequestContextForTurn({
         runtimeContext,
         toolContext,
         runtimeEnv,
@@ -994,6 +995,16 @@ async function buildRuntimeStartRequestInternal(
           target: streamingSession.currentReplyTarget,
         }),
       });
+      // Every tool, the Codex hook included, is denied in such a turn; say why in the log.
+      if (turnContext.capabilities.length === 0 && turnContext.metadata?.actorResolution === "missing_contact") {
+        runtimeRequestLog.warn("Turn runs with no capabilities: its actor is not identified", {
+          sessionName,
+          provider: runtimeProviderId,
+          origin: streamingSession.currentTurnProvenance?.origin,
+          reason: streamingSession.currentTurnProvenance?.reason,
+          channel: turnSource?.channel,
+        });
+      }
       turnRuntimeContextActivated = true;
       streamingSession.currentRuntimeContextKey = runtimeEnv.RAVI_CONTEXT_KEY;
     },

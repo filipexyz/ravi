@@ -131,6 +131,20 @@ describe("Codex hook through the host gateway", () => {
     }, 20_000);
   }
 
+  // The context group is open: an unknown, expired or revoked key reaches command access with no capabilities.
+  for (const kind of ["denied", "expired", "revoked", "unknown"]) {
+    it(`names the denied capability instead of a gateway HTTP status (${kind})`, async () => {
+      const output = await callHook(JSON.stringify({ tool_input: { command: "pwd" } }), {
+        contextKey: contexts[kind]?.contextKey ?? "rctx_hook_unknown",
+      });
+      expectDeny(output);
+      const reason = output.hookSpecificOutput.permissionDecisionReason as string;
+      expect(reason).toContain("Ravi denied tool use in this turn (missing capability: read:context:codex-bash-hook)");
+      expect(reason).toContain("no linked contact");
+      expect(reason).not.toContain("HTTP 403");
+    }, 20_000);
+  }
+
   it("fails closed when the configured gateway is unavailable", async () => {
     expectDeny(
       await callHook(JSON.stringify({ tool_input: { command: "pwd" } }), {

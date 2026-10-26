@@ -19,6 +19,7 @@ import type { TaskRuntimeResolution } from "../tasks/types.js";
 import { buildLibraryRequestPrompt } from "../library/request-turn.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import { createRuntimeContext, resolveRuntimeContext } from "./context-registry.js";
+import { pickRuntimeTurnAuthorityEnvelope } from "./delivery-queue.js";
 import { buildRuntimeRequestContext, refreshRuntimeRequestContextForTurn } from "./runtime-request-context.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
 import { resolveRuntimePromptSource } from "./runtime-request-builder.js";
@@ -1065,6 +1066,47 @@ describe("runtime request context authority", () => {
     expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(false);
     expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Bash")).toBe(false);
     expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
+  });
+
+  it("keeps the authority of a cron turn on its host-made continuation", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    // A cron turn replies to a chat: its source names the surface, not an actor.
+    const cronTurn: RuntimeLaunchPrompt = {
+      prompt: "daily report",
+      source: { channel: "slack", accountId: "slack-main", chatId: "C0ABC123", canonicalChatId: "chat_group_1" },
+      _cron: true,
+      _jobId: "job-daily",
+    };
+    const continuation = (envelope: Partial<RuntimeLaunchPrompt>) =>
+      buildRuntimeRequestContext({
+        dbSessionKey: sessionKey,
+        sessionName,
+        sessionCwd: "/tmp/provider-agent",
+        agent,
+        prompt: {
+          ...envelope,
+          prompt: "[System] Inatividade: o provider ficou 180s sem produzir evento.",
+          source: cronTurn.source,
+        },
+        runtimeProviderId: "codex",
+        model: "gpt-5",
+        runtimeResolution,
+        resolvedSource: cronTurn.source,
+      }).runtimeContext;
+
+    const bare = continuation({});
+    expect(bare.metadata?.actorResolution).toBe("missing_contact");
+    expect(bare.capabilities).toEqual([]);
+
+    const inherited = continuation(pickRuntimeTurnAuthorityEnvelope(cronTurn));
+    expect(inherited.metadata).toMatchObject({
+      actorResolution: "resolved",
+      actorPrincipal: "automation:cron:job-daily",
+    });
+    expect(canWithCapabilities(inherited.capabilities, "read", "context", "codex-bash-hook")).toBe(true);
+    expect(canWithCapabilities(inherited.capabilities, "use", "tool", "Bash")).toBe(true);
   });
 
   it("runs a Library request from another machine as an unresolved external actor", () => {
