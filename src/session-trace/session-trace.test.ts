@@ -8,6 +8,7 @@ import { recordAdapterRequestTrace, summarizeRuntimeCapabilities } from "./runti
 import {
   getLatestSessionTurn,
   getSessionTraceBlob,
+  getSessionTurn,
   listRecentSessionEventsByType,
   recordSessionEvent,
   upsertSessionTurn,
@@ -272,6 +273,43 @@ describe("session trace query", () => {
       actorType: "agent",
       actorAgentId: "main",
     });
+  });
+});
+
+describe("session turn usage and output state", () => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-session-turn-usage-test-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  it("keeps unreported usage as NULL, never 0, and round-trips the output state", () => {
+    const sessionKey = "agent:main:usage-null";
+    upsertSessionTurn({ turnId: "turn-null", sessionKey, status: "running", startedAt: 1000, updatedAt: 1000 });
+    upsertSessionTurn({
+      turnId: "turn-null",
+      sessionKey,
+      status: "failed",
+      inputTokens: null,
+      outputTokens: null,
+      costUsd: null,
+      outputState: "incomplete",
+      completedAt: 2000,
+      updatedAt: 2000,
+    });
+    const turn = getSessionTurn("turn-null");
+    expect(turn?.inputTokens).toBeNull();
+    expect(turn?.outputTokens).toBeNull();
+    expect(turn?.cacheReadTokens).toBeNull();
+    expect(turn?.costUsd).toBeNull();
+    expect(turn?.outputState).toBe("incomplete");
+
+    upsertSessionTurn({ turnId: "turn-null", sessionKey, status: "failed", inputTokens: 12, updatedAt: 3000 });
+    expect(getSessionTurn("turn-null")?.inputTokens).toBe(12);
+    expect(getSessionTurn("turn-null")?.outputState).toBe("incomplete");
   });
 });
 
