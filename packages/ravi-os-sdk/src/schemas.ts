@@ -104852,6 +104852,4387 @@ export const SettingsSetReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `signals.ack`. */
+export const SignalsAckInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "by": {
+      "description": "Actor, e.g. agent:main or operator:luis",
+      "type": "string"
+    },
+    "idOrKey": {
+      "description": "Signal id or key",
+      "type": "string"
+    },
+    "note": {
+      "description": "Ack note",
+      "type": "string"
+    }
+  },
+  "required": [
+    "idOrKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `signals.ack`. */
+export const SignalsAckReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "created": {
+      "type": "boolean"
+    },
+    "signal": {
+      "additionalProperties": false,
+      "properties": {
+        "acknowledgedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "acknowledgedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearSince": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearWhen": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "expr": {
+                  "type": "string"
+                },
+                "grace_ms": {
+                  "type": "number"
+                },
+                "probe": {
+                  "type": "string"
+                },
+                "recheck_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "probe",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "probe",
+                "expr",
+                "recheck_ms",
+                "grace_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "op": {
+                  "type": "string"
+                },
+                "recheck_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "metric",
+                  "type": "string"
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "type",
+                "field",
+                "op",
+                "value",
+                "recheck_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "ttl_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "producer_resolve",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "ttl_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "after_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "decay",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "after_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "owner": {
+                  "type": "string"
+                },
+                "type": {
+                  "const": "manual",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "closeReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "closedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cooldownMs": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "dedupeKey": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "escalateAfterMs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "escalationCount": {
+          "type": "number"
+        },
+        "evidence": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "lastEvalAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastEvalError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastSeenAt": {
+          "type": "number"
+        },
+        "maxSurfaces": {
+          "type": "number"
+        },
+        "muteReason": {
+          "type": "string"
+        },
+        "mutedUntil": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "openedAt": {
+          "type": "number"
+        },
+        "previousState": {
+          "type": "string"
+        },
+        "producerClass": {
+          "type": "string"
+        },
+        "producerId": {
+          "type": "string"
+        },
+        "producerType": {
+          "type": "string"
+        },
+        "renotifyAfterMs": {
+          "type": "number"
+        },
+        "reopenAfterMs": {
+          "type": "number"
+        },
+        "schemaVersion": {
+          "type": "number"
+        },
+        "scopeId": {
+          "type": "string"
+        },
+        "scopeType": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectType": {
+          "type": "string"
+        },
+        "surfaceCount": {
+          "type": "number"
+        },
+        "surfacedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "targetSessions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        },
+        "ttlMs": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "key",
+        "schemaVersion",
+        "kind",
+        "producerType",
+        "producerClass",
+        "producerId",
+        "scopeType",
+        "scopeId",
+        "severity",
+        "title",
+        "clearWhen",
+        "state",
+        "cooldownMs",
+        "renotifyAfterMs",
+        "maxSurfaces",
+        "ttlMs",
+        "reopenAfterMs",
+        "surfaceCount",
+        "escalationCount",
+        "openedAt",
+        "lastSeenAt",
+        "version",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "type": "string"
+    },
+    "suppressed": {
+      "type": "string"
+    },
+    "updated": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "status",
+    "signal"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `signals.budget`. */
+export const SignalsBudgetInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `signals.budget`. */
+export const SignalsBudgetReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "budget": {
+      "additionalProperties": false,
+      "properties": {
+        "day": {
+          "type": "string"
+        },
+        "held": {
+          "type": "number"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "used": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "day",
+        "used",
+        "limit",
+        "held"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "budget"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `signals.explain`. */
+export const SignalsExplainInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "idOrKey": {
+      "description": "Signal id or key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "idOrKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `signals.explain`. */
+export const SignalsExplainReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "budget": {
+      "additionalProperties": false,
+      "properties": {
+        "day": {
+          "type": "string"
+        },
+        "held": {
+          "type": "number"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "used": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "day",
+        "used",
+        "limit",
+        "held"
+      ],
+      "type": "object"
+    },
+    "clearRule": {
+      "type": "string"
+    },
+    "effectiveSeverity": {
+      "type": "string"
+    },
+    "events": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "actorId": {
+            "type": "string"
+          },
+          "actorType": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "id": {
+            "type": "number"
+          },
+          "message": {
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "signalId": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "signalId",
+          "type",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "keyMute": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "mutedUntil": {
+              "type": "number"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "mutedUntil"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "lastEvaluation": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cleared": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fields": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "at",
+        "error",
+        "cleared"
+      ],
+      "type": "object"
+    },
+    "lastOobAt": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "lastSurfaceAt": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "signal": {
+      "additionalProperties": false,
+      "properties": {
+        "acknowledgedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "acknowledgedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearSince": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearWhen": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "expr": {
+                  "type": "string"
+                },
+                "grace_ms": {
+                  "type": "number"
+                },
+                "probe": {
+                  "type": "string"
+                },
+                "recheck_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "probe",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "probe",
+                "expr",
+                "recheck_ms",
+                "grace_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "op": {
+                  "type": "string"
+                },
+                "recheck_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "metric",
+                  "type": "string"
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "type",
+                "field",
+                "op",
+                "value",
+                "recheck_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "ttl_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "producer_resolve",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "ttl_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "after_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "decay",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "after_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "owner": {
+                  "type": "string"
+                },
+                "type": {
+                  "const": "manual",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "closeReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "closedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cooldownMs": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "dedupeKey": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "escalateAfterMs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "escalationCount": {
+          "type": "number"
+        },
+        "evidence": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "lastEvalAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastEvalError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastSeenAt": {
+          "type": "number"
+        },
+        "maxSurfaces": {
+          "type": "number"
+        },
+        "muteReason": {
+          "type": "string"
+        },
+        "mutedUntil": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "openedAt": {
+          "type": "number"
+        },
+        "previousState": {
+          "type": "string"
+        },
+        "producerClass": {
+          "type": "string"
+        },
+        "producerId": {
+          "type": "string"
+        },
+        "producerType": {
+          "type": "string"
+        },
+        "renotifyAfterMs": {
+          "type": "number"
+        },
+        "reopenAfterMs": {
+          "type": "number"
+        },
+        "schemaVersion": {
+          "type": "number"
+        },
+        "scopeId": {
+          "type": "string"
+        },
+        "scopeType": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectType": {
+          "type": "string"
+        },
+        "surfaceCount": {
+          "type": "number"
+        },
+        "surfacedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "targetSessions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        },
+        "ttlMs": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "key",
+        "schemaVersion",
+        "kind",
+        "producerType",
+        "producerClass",
+        "producerId",
+        "scopeType",
+        "scopeId",
+        "severity",
+        "title",
+        "clearWhen",
+        "state",
+        "cooldownMs",
+        "renotifyAfterMs",
+        "maxSurfaces",
+        "ttlMs",
+        "reopenAfterMs",
+        "surfaceCount",
+        "escalationCount",
+        "openedAt",
+        "lastSeenAt",
+        "version",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "targetSessions": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "signal",
+    "effectiveSeverity",
+    "targetSessions",
+    "clearRule",
+    "lastEvaluation",
+    "budget",
+    "lastSurfaceAt",
+    "lastOobAt",
+    "keyMute",
+    "events"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `signals.list`. */
+export const SignalsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "key": {
+      "description": "Exact key",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Max rows",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Rows to skip",
+      "type": "string"
+    },
+    "scope": {
+      "description": "fleet or type:id",
+      "type": "string"
+    },
+    "state": {
+      "description": "State filter or non_terminal",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `signals.list`. */
+export const SignalsListReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "acknowledgedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "acknowledgedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "clearSince": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "clearWhen": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "expr": {
+                    "type": "string"
+                  },
+                  "grace_ms": {
+                    "type": "number"
+                  },
+                  "probe": {
+                    "type": "string"
+                  },
+                  "recheck_ms": {
+                    "type": "number"
+                  },
+                  "type": {
+                    "const": "probe",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "probe",
+                  "expr",
+                  "recheck_ms",
+                  "grace_ms"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "field": {
+                    "type": "string"
+                  },
+                  "op": {
+                    "type": "string"
+                  },
+                  "recheck_ms": {
+                    "type": "number"
+                  },
+                  "type": {
+                    "const": "metric",
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "type",
+                  "field",
+                  "op",
+                  "value",
+                  "recheck_ms"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "ttl_ms": {
+                    "type": "number"
+                  },
+                  "type": {
+                    "const": "producer_resolve",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "ttl_ms"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "after_ms": {
+                    "type": "number"
+                  },
+                  "type": {
+                    "const": "decay",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "after_ms"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "owner": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "manual",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "closeReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "closedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cooldownMs": {
+            "type": "number"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "dedupeKey": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "escalateAfterMs": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "escalationCount": {
+            "type": "number"
+          },
+          "evidence": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "lastEvalAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastEvalError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastSeenAt": {
+            "type": "number"
+          },
+          "maxSurfaces": {
+            "type": "number"
+          },
+          "muteReason": {
+            "type": "string"
+          },
+          "mutedUntil": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "openedAt": {
+            "type": "number"
+          },
+          "previousState": {
+            "type": "string"
+          },
+          "producerClass": {
+            "type": "string"
+          },
+          "producerId": {
+            "type": "string"
+          },
+          "producerType": {
+            "type": "string"
+          },
+          "renotifyAfterMs": {
+            "type": "number"
+          },
+          "reopenAfterMs": {
+            "type": "number"
+          },
+          "schemaVersion": {
+            "type": "number"
+          },
+          "scopeId": {
+            "type": "string"
+          },
+          "scopeType": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "string"
+          },
+          "subjectType": {
+            "type": "string"
+          },
+          "surfaceCount": {
+            "type": "number"
+          },
+          "surfacedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "targetSessions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          },
+          "ttlMs": {
+            "type": "number"
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "schemaVersion",
+          "kind",
+          "producerType",
+          "producerClass",
+          "producerId",
+          "scopeType",
+          "scopeId",
+          "severity",
+          "title",
+          "clearWhen",
+          "state",
+          "cooldownMs",
+          "renotifyAfterMs",
+          "maxSurfaces",
+          "ttlMs",
+          "reopenAfterMs",
+          "surfaceCount",
+          "escalationCount",
+          "openedAt",
+          "lastSeenAt",
+          "version",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `signals.mute`. */
+export const SignalsMuteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "by": {
+      "description": "Actor",
+      "type": "string"
+    },
+    "for": {
+      "description": "Mute duration",
+      "type": "string"
+    },
+    "idOrKey": {
+      "description": "Signal id or key",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Mute reason",
+      "type": "string"
+    }
+  },
+  "required": [
+    "idOrKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `signals.mute`. */
+export const SignalsMuteReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "created": {
+      "type": "boolean"
+    },
+    "signal": {
+      "additionalProperties": false,
+      "properties": {
+        "acknowledgedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "acknowledgedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearSince": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearWhen": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "expr": {
+                  "type": "string"
+                },
+                "grace_ms": {
+                  "type": "number"
+                },
+                "probe": {
+                  "type": "string"
+                },
+                "recheck_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "probe",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "probe",
+                "expr",
+                "recheck_ms",
+                "grace_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "op": {
+                  "type": "string"
+                },
+                "recheck_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "metric",
+                  "type": "string"
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "type",
+                "field",
+                "op",
+                "value",
+                "recheck_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "ttl_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "producer_resolve",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "ttl_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "after_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "decay",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "after_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "owner": {
+                  "type": "string"
+                },
+                "type": {
+                  "const": "manual",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "closeReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "closedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cooldownMs": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "dedupeKey": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "escalateAfterMs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "escalationCount": {
+          "type": "number"
+        },
+        "evidence": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "lastEvalAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastEvalError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastSeenAt": {
+          "type": "number"
+        },
+        "maxSurfaces": {
+          "type": "number"
+        },
+        "muteReason": {
+          "type": "string"
+        },
+        "mutedUntil": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "openedAt": {
+          "type": "number"
+        },
+        "previousState": {
+          "type": "string"
+        },
+        "producerClass": {
+          "type": "string"
+        },
+        "producerId": {
+          "type": "string"
+        },
+        "producerType": {
+          "type": "string"
+        },
+        "renotifyAfterMs": {
+          "type": "number"
+        },
+        "reopenAfterMs": {
+          "type": "number"
+        },
+        "schemaVersion": {
+          "type": "number"
+        },
+        "scopeId": {
+          "type": "string"
+        },
+        "scopeType": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectType": {
+          "type": "string"
+        },
+        "surfaceCount": {
+          "type": "number"
+        },
+        "surfacedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "targetSessions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        },
+        "ttlMs": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "key",
+        "schemaVersion",
+        "kind",
+        "producerType",
+        "producerClass",
+        "producerId",
+        "scopeType",
+        "scopeId",
+        "severity",
+        "title",
+        "clearWhen",
+        "state",
+        "cooldownMs",
+        "renotifyAfterMs",
+        "maxSurfaces",
+        "ttlMs",
+        "reopenAfterMs",
+        "surfaceCount",
+        "escalationCount",
+        "openedAt",
+        "lastSeenAt",
+        "version",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "type": "string"
+    },
+    "suppressed": {
+      "type": "string"
+    },
+    "updated": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "status",
+    "signal"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `signals.mute-key`. */
+export const SignalsMuteKeyInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "for": {
+      "description": "Mute duration",
+      "type": "string"
+    },
+    "key": {
+      "description": "Signal key",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Mute reason",
+      "type": "string"
+    }
+  },
+  "required": [
+    "key"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `signals.mute-key`. */
+export const SignalsMuteKeyReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "key": {
+      "type": "string"
+    },
+    "mutedUntil": {
+      "type": "number"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "key",
+    "mutedUntil"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `signals.raise`. */
+export const SignalsRaiseInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "clearDecay": {
+      "description": "Judgment decay window",
+      "type": "string"
+    },
+    "clearExpr": {
+      "description": "Probe clear expression",
+      "type": "string"
+    },
+    "clearManual": {
+      "description": "Manual resolution only",
+      "type": "boolean"
+    },
+    "clearMetric": {
+      "description": "Metric clear rule, e.g. free_pct>=20",
+      "type": "string"
+    },
+    "clearProbe": {
+      "description": "Registered probe id",
+      "type": "string"
+    },
+    "clearProducerResolve": {
+      "description": "Close when the producer resolves",
+      "type": "boolean"
+    },
+    "cooldown": {
+      "description": "Minimum gap between surfaces",
+      "type": "string"
+    },
+    "dedupeKey": {
+      "description": "Producer event idempotency key",
+      "type": "string"
+    },
+    "detail": {
+      "description": "Redacted context, max 500 chars",
+      "type": "string"
+    },
+    "escalateAfter": {
+      "description": "Age before out-of-band escalation",
+      "type": "string"
+    },
+    "evidence": {
+      "description": "Structured observation JSON",
+      "type": "string"
+    },
+    "grace": {
+      "description": "Clear grace window",
+      "type": "string"
+    },
+    "key": {
+      "description": "Stable condition key, e.g. host.disk.free",
+      "type": "string"
+    },
+    "kind": {
+      "description": "Producer species",
+      "type": "string"
+    },
+    "maxSurfaces": {
+      "description": "Lifetime surface cap",
+      "type": "string"
+    },
+    "recheck": {
+      "description": "Probe recheck interval",
+      "type": "string"
+    },
+    "renotifyAfter": {
+      "description": "Re-surface gap after ack",
+      "type": "string"
+    },
+    "reopenAfter": {
+      "description": "Cooldown before the key may reopen",
+      "type": "string"
+    },
+    "scope": {
+      "description": "fleet or person|chat|project|agent:<id>",
+      "type": "string"
+    },
+    "severity": {
+      "description": "ambient|piggyback|nudge|interrupt|page",
+      "type": "string"
+    },
+    "source": {
+      "description": "Producer provenance",
+      "type": "string"
+    },
+    "subject": {
+      "description": "Entity the signal is about",
+      "type": "string"
+    },
+    "targetSession": {
+      "description": "Comma-separated explicit target sessions",
+      "type": "string"
+    },
+    "title": {
+      "description": "One redacted line",
+      "type": "string"
+    },
+    "ttl": {
+      "description": "Hard lifetime",
+      "type": "string"
+    }
+  },
+  "required": [
+    "key"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `signals.raise`. */
+export const SignalsRaiseReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "created": {
+      "type": "boolean"
+    },
+    "signal": {
+      "additionalProperties": false,
+      "properties": {
+        "acknowledgedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "acknowledgedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearSince": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearWhen": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "expr": {
+                  "type": "string"
+                },
+                "grace_ms": {
+                  "type": "number"
+                },
+                "probe": {
+                  "type": "string"
+                },
+                "recheck_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "probe",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "probe",
+                "expr",
+                "recheck_ms",
+                "grace_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "op": {
+                  "type": "string"
+                },
+                "recheck_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "metric",
+                  "type": "string"
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "type",
+                "field",
+                "op",
+                "value",
+                "recheck_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "ttl_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "producer_resolve",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "ttl_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "after_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "decay",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "after_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "owner": {
+                  "type": "string"
+                },
+                "type": {
+                  "const": "manual",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "closeReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "closedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cooldownMs": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "dedupeKey": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "escalateAfterMs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "escalationCount": {
+          "type": "number"
+        },
+        "evidence": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "lastEvalAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastEvalError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastSeenAt": {
+          "type": "number"
+        },
+        "maxSurfaces": {
+          "type": "number"
+        },
+        "muteReason": {
+          "type": "string"
+        },
+        "mutedUntil": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "openedAt": {
+          "type": "number"
+        },
+        "previousState": {
+          "type": "string"
+        },
+        "producerClass": {
+          "type": "string"
+        },
+        "producerId": {
+          "type": "string"
+        },
+        "producerType": {
+          "type": "string"
+        },
+        "renotifyAfterMs": {
+          "type": "number"
+        },
+        "reopenAfterMs": {
+          "type": "number"
+        },
+        "schemaVersion": {
+          "type": "number"
+        },
+        "scopeId": {
+          "type": "string"
+        },
+        "scopeType": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectType": {
+          "type": "string"
+        },
+        "surfaceCount": {
+          "type": "number"
+        },
+        "surfacedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "targetSessions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        },
+        "ttlMs": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "key",
+        "schemaVersion",
+        "kind",
+        "producerType",
+        "producerClass",
+        "producerId",
+        "scopeType",
+        "scopeId",
+        "severity",
+        "title",
+        "clearWhen",
+        "state",
+        "cooldownMs",
+        "renotifyAfterMs",
+        "maxSurfaces",
+        "ttlMs",
+        "reopenAfterMs",
+        "surfaceCount",
+        "escalationCount",
+        "openedAt",
+        "lastSeenAt",
+        "version",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "type": "string"
+    },
+    "suppressed": {
+      "type": "string"
+    },
+    "updated": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "status",
+    "signal"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `signals.resolve`. */
+export const SignalsResolveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "by": {
+      "description": "Actor",
+      "type": "string"
+    },
+    "idOrKey": {
+      "description": "Signal id or key",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Resolution reason",
+      "type": "string"
+    }
+  },
+  "required": [
+    "idOrKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `signals.resolve`. */
+export const SignalsResolveReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "created": {
+      "type": "boolean"
+    },
+    "signal": {
+      "additionalProperties": false,
+      "properties": {
+        "acknowledgedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "acknowledgedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearSince": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearWhen": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "expr": {
+                  "type": "string"
+                },
+                "grace_ms": {
+                  "type": "number"
+                },
+                "probe": {
+                  "type": "string"
+                },
+                "recheck_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "probe",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "probe",
+                "expr",
+                "recheck_ms",
+                "grace_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "op": {
+                  "type": "string"
+                },
+                "recheck_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "metric",
+                  "type": "string"
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "type",
+                "field",
+                "op",
+                "value",
+                "recheck_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "ttl_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "producer_resolve",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "ttl_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "after_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "decay",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "after_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "owner": {
+                  "type": "string"
+                },
+                "type": {
+                  "const": "manual",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "closeReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "closedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cooldownMs": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "dedupeKey": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "escalateAfterMs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "escalationCount": {
+          "type": "number"
+        },
+        "evidence": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "lastEvalAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastEvalError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastSeenAt": {
+          "type": "number"
+        },
+        "maxSurfaces": {
+          "type": "number"
+        },
+        "muteReason": {
+          "type": "string"
+        },
+        "mutedUntil": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "openedAt": {
+          "type": "number"
+        },
+        "previousState": {
+          "type": "string"
+        },
+        "producerClass": {
+          "type": "string"
+        },
+        "producerId": {
+          "type": "string"
+        },
+        "producerType": {
+          "type": "string"
+        },
+        "renotifyAfterMs": {
+          "type": "number"
+        },
+        "reopenAfterMs": {
+          "type": "number"
+        },
+        "schemaVersion": {
+          "type": "number"
+        },
+        "scopeId": {
+          "type": "string"
+        },
+        "scopeType": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectType": {
+          "type": "string"
+        },
+        "surfaceCount": {
+          "type": "number"
+        },
+        "surfacedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "targetSessions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        },
+        "ttlMs": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "key",
+        "schemaVersion",
+        "kind",
+        "producerType",
+        "producerClass",
+        "producerId",
+        "scopeType",
+        "scopeId",
+        "severity",
+        "title",
+        "clearWhen",
+        "state",
+        "cooldownMs",
+        "renotifyAfterMs",
+        "maxSurfaces",
+        "ttlMs",
+        "reopenAfterMs",
+        "surfaceCount",
+        "escalationCount",
+        "openedAt",
+        "lastSeenAt",
+        "version",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "type": "string"
+    },
+    "suppressed": {
+      "type": "string"
+    },
+    "updated": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "status",
+    "signal"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `signals.show`. */
+export const SignalsShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "idOrKey": {
+      "description": "Signal id or key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "idOrKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `signals.show`. */
+export const SignalsShowReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "signal": {
+      "additionalProperties": false,
+      "properties": {
+        "acknowledgedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "acknowledgedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearSince": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearWhen": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "expr": {
+                  "type": "string"
+                },
+                "grace_ms": {
+                  "type": "number"
+                },
+                "probe": {
+                  "type": "string"
+                },
+                "recheck_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "probe",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "probe",
+                "expr",
+                "recheck_ms",
+                "grace_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "op": {
+                  "type": "string"
+                },
+                "recheck_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "metric",
+                  "type": "string"
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "type",
+                "field",
+                "op",
+                "value",
+                "recheck_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "ttl_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "producer_resolve",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "ttl_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "after_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "decay",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "after_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "owner": {
+                  "type": "string"
+                },
+                "type": {
+                  "const": "manual",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "closeReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "closedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cooldownMs": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "dedupeKey": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "escalateAfterMs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "escalationCount": {
+          "type": "number"
+        },
+        "evidence": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "lastEvalAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastEvalError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastSeenAt": {
+          "type": "number"
+        },
+        "maxSurfaces": {
+          "type": "number"
+        },
+        "muteReason": {
+          "type": "string"
+        },
+        "mutedUntil": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "openedAt": {
+          "type": "number"
+        },
+        "previousState": {
+          "type": "string"
+        },
+        "producerClass": {
+          "type": "string"
+        },
+        "producerId": {
+          "type": "string"
+        },
+        "producerType": {
+          "type": "string"
+        },
+        "renotifyAfterMs": {
+          "type": "number"
+        },
+        "reopenAfterMs": {
+          "type": "number"
+        },
+        "schemaVersion": {
+          "type": "number"
+        },
+        "scopeId": {
+          "type": "string"
+        },
+        "scopeType": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectType": {
+          "type": "string"
+        },
+        "surfaceCount": {
+          "type": "number"
+        },
+        "surfacedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "targetSessions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        },
+        "ttlMs": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "key",
+        "schemaVersion",
+        "kind",
+        "producerType",
+        "producerClass",
+        "producerId",
+        "scopeType",
+        "scopeId",
+        "severity",
+        "title",
+        "clearWhen",
+        "state",
+        "cooldownMs",
+        "renotifyAfterMs",
+        "maxSurfaces",
+        "ttlMs",
+        "reopenAfterMs",
+        "surfaceCount",
+        "escalationCount",
+        "openedAt",
+        "lastSeenAt",
+        "version",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "signal"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `signals.tick`. */
+export const SignalsTickInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "execute": {
+      "description": "Actually deliver out-of-band signals",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `signals.tick`. */
+export const SignalsTickReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "candidates": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "route": {
+            "type": "string"
+          },
+          "sessionName": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "route",
+          "severity",
+          "sessionName"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "errors": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "error"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "escalated": {
+      "type": "number"
+    },
+    "evaluated": {
+      "type": "number"
+    },
+    "executed": {
+      "type": "boolean"
+    },
+    "expired": {
+      "type": "number"
+    },
+    "resolved": {
+      "type": "number"
+    },
+    "watchers": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "raised": {
+            "type": "boolean"
+          },
+          "resolved": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "raised",
+          "resolved"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "executed",
+    "evaluated",
+    "resolved",
+    "expired",
+    "escalated",
+    "errors",
+    "candidates",
+    "watchers"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `signals.unmute`. */
+export const SignalsUnmuteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "idOrKey": {
+      "description": "Signal id or key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "idOrKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `signals.unmute`. */
+export const SignalsUnmuteReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "created": {
+      "type": "boolean"
+    },
+    "signal": {
+      "additionalProperties": false,
+      "properties": {
+        "acknowledgedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "acknowledgedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearSince": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearWhen": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "expr": {
+                  "type": "string"
+                },
+                "grace_ms": {
+                  "type": "number"
+                },
+                "probe": {
+                  "type": "string"
+                },
+                "recheck_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "probe",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "probe",
+                "expr",
+                "recheck_ms",
+                "grace_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "op": {
+                  "type": "string"
+                },
+                "recheck_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "metric",
+                  "type": "string"
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "type",
+                "field",
+                "op",
+                "value",
+                "recheck_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "ttl_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "producer_resolve",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "ttl_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "after_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "decay",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "after_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "owner": {
+                  "type": "string"
+                },
+                "type": {
+                  "const": "manual",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "closeReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "closedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cooldownMs": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "dedupeKey": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "escalateAfterMs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "escalationCount": {
+          "type": "number"
+        },
+        "evidence": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "lastEvalAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastEvalError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastSeenAt": {
+          "type": "number"
+        },
+        "maxSurfaces": {
+          "type": "number"
+        },
+        "muteReason": {
+          "type": "string"
+        },
+        "mutedUntil": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "openedAt": {
+          "type": "number"
+        },
+        "previousState": {
+          "type": "string"
+        },
+        "producerClass": {
+          "type": "string"
+        },
+        "producerId": {
+          "type": "string"
+        },
+        "producerType": {
+          "type": "string"
+        },
+        "renotifyAfterMs": {
+          "type": "number"
+        },
+        "reopenAfterMs": {
+          "type": "number"
+        },
+        "schemaVersion": {
+          "type": "number"
+        },
+        "scopeId": {
+          "type": "string"
+        },
+        "scopeType": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectType": {
+          "type": "string"
+        },
+        "surfaceCount": {
+          "type": "number"
+        },
+        "surfacedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "targetSessions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        },
+        "ttlMs": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "key",
+        "schemaVersion",
+        "kind",
+        "producerType",
+        "producerClass",
+        "producerId",
+        "scopeType",
+        "scopeId",
+        "severity",
+        "title",
+        "clearWhen",
+        "state",
+        "cooldownMs",
+        "renotifyAfterMs",
+        "maxSurfaces",
+        "ttlMs",
+        "reopenAfterMs",
+        "surfaceCount",
+        "escalationCount",
+        "openedAt",
+        "lastSeenAt",
+        "version",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "type": "string"
+    },
+    "suppressed": {
+      "type": "string"
+    },
+    "updated": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "status",
+    "signal"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `signals.unmute-key`. */
+export const SignalsUnmuteKeyInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "key": {
+      "description": "Signal key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "key"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `signals.unmute-key`. */
+export const SignalsUnmuteKeyReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "key": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "key"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `signals.update`. */
+export const SignalsUpdateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "by": {
+      "description": "Actor",
+      "type": "string"
+    },
+    "detail": {
+      "description": "New detail",
+      "type": "string"
+    },
+    "evidence": {
+      "description": "New evidence JSON",
+      "type": "string"
+    },
+    "idOrKey": {
+      "description": "Signal id or key",
+      "type": "string"
+    },
+    "severity": {
+      "description": "New severity within producer ceiling",
+      "type": "string"
+    },
+    "title": {
+      "description": "New title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "idOrKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `signals.update`. */
+export const SignalsUpdateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "created": {
+      "type": "boolean"
+    },
+    "signal": {
+      "additionalProperties": false,
+      "properties": {
+        "acknowledgedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "acknowledgedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearSince": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearWhen": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "expr": {
+                  "type": "string"
+                },
+                "grace_ms": {
+                  "type": "number"
+                },
+                "probe": {
+                  "type": "string"
+                },
+                "recheck_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "probe",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "probe",
+                "expr",
+                "recheck_ms",
+                "grace_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "op": {
+                  "type": "string"
+                },
+                "recheck_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "metric",
+                  "type": "string"
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "type",
+                "field",
+                "op",
+                "value",
+                "recheck_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "ttl_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "producer_resolve",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "ttl_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "after_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "decay",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "after_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "owner": {
+                  "type": "string"
+                },
+                "type": {
+                  "const": "manual",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "closeReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "closedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cooldownMs": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "dedupeKey": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "escalateAfterMs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "escalationCount": {
+          "type": "number"
+        },
+        "evidence": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "lastEvalAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastEvalError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastSeenAt": {
+          "type": "number"
+        },
+        "maxSurfaces": {
+          "type": "number"
+        },
+        "muteReason": {
+          "type": "string"
+        },
+        "mutedUntil": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "openedAt": {
+          "type": "number"
+        },
+        "previousState": {
+          "type": "string"
+        },
+        "producerClass": {
+          "type": "string"
+        },
+        "producerId": {
+          "type": "string"
+        },
+        "producerType": {
+          "type": "string"
+        },
+        "renotifyAfterMs": {
+          "type": "number"
+        },
+        "reopenAfterMs": {
+          "type": "number"
+        },
+        "schemaVersion": {
+          "type": "number"
+        },
+        "scopeId": {
+          "type": "string"
+        },
+        "scopeType": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectType": {
+          "type": "string"
+        },
+        "surfaceCount": {
+          "type": "number"
+        },
+        "surfacedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "targetSessions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        },
+        "ttlMs": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "key",
+        "schemaVersion",
+        "kind",
+        "producerType",
+        "producerClass",
+        "producerId",
+        "scopeType",
+        "scopeId",
+        "severity",
+        "title",
+        "clearWhen",
+        "state",
+        "cooldownMs",
+        "renotifyAfterMs",
+        "maxSurfaces",
+        "ttlMs",
+        "reopenAfterMs",
+        "surfaceCount",
+        "escalationCount",
+        "openedAt",
+        "lastSeenAt",
+        "version",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "type": "string"
+    },
+    "suppressed": {
+      "type": "string"
+    },
+    "updated": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "status",
+    "signal"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `skill-gates.disable`. */
 export const SkillGatesDisableInputSchema = {
   "additionalProperties": false,

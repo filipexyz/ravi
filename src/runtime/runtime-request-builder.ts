@@ -10,6 +10,7 @@ import {
   recordAdapterRequestTrace,
   recordTerminalTurnTrace,
   summarizeRuntimeCapabilities,
+  type RuntimeTraceAdapterRequestInput,
 } from "../session-trace/runtime-trace.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
@@ -18,6 +19,7 @@ import { buildTurnReplyTarget } from "./turn-reply-target.js";
 import { resolveAgentSkills } from "./allowed-skills.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { createRuntimeMessageGenerator } from "./delivery-queue.js";
+import { renderSignalsForTurn } from "../signals/render.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import { markRuntimeTaskAcceptedForPrompt, resolveRuntimeForPrompt } from "./task-runtime-context.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
@@ -728,6 +730,8 @@ async function buildRuntimeStartRequestInternal(
     initialModelBrokerAttemptAvailable = false;
     pendingModelBrokerTurnId = undefined;
   };
+  // Set by transformTurnPrompt and read by the trace of the same turn.
+  let turnSignals: RuntimeTraceAdapterRequestInput["signals"] = null;
   const traceTurnStart = async (input: { combinedPrompt: string; deliverableMessages: RuntimeUserMessage[] }) => {
     const turnPrompt = findRuntimeTurnPrompt(input.deliverableMessages);
     let planned: ClaimedRuntimeModelBrokerPlan | undefined;
@@ -809,7 +813,9 @@ async function buildRuntimeStartRequestInternal(
       commands: input.deliverableMessages.flatMap((message) => message.commands ?? []),
       runtimeCredential: runtimeCredential ? serializeRuntimeCredentialAttemptBinding(runtimeCredential) : null,
       turnProvenance: streamingSession.currentTurnProvenance ?? null,
+      signals: turnSignals,
     });
+    turnSignals = null;
     if (!traceTurn) {
       throw new Error(`Failed to persist the adapter request for runtime turn ${turnId}`);
     }
@@ -990,6 +996,17 @@ async function buildRuntimeStartRequestInternal(
       });
       turnRuntimeContextActivated = true;
       streamingSession.currentRuntimeContextKey = runtimeEnv.RAVI_CONTEXT_KEY;
+    },
+    transformTurnPrompt: ({ combinedPrompt }) => {
+      turnSignals = null;
+      try {
+        const rendered = renderSignalsForTurn({ sessionName, sessionKey: dbSessionKey });
+        if (!rendered.suffix) return combinedPrompt;
+        turnSignals = { surfaced: rendered.surfacedIds, skipped: rendered.skipped, budget: rendered.budget };
+        return `${combinedPrompt}${rendered.suffix}`;
+      } catch {
+        return combinedPrompt;
+      }
     },
     traceTurnStart,
   });

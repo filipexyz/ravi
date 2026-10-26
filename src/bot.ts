@@ -248,6 +248,17 @@ export class RaviBot {
     return this.sessionDispatcher.canAcceptRuntimePrompt(sessionName);
   }
 
+  public getSessionRuntimeState(sessionName: string): { turnActive: boolean; pendingCount: number } {
+    const session = this.streamingSessions.get(sessionName);
+    if (!session || session.done) {
+      return { turnActive: false, pendingCount: 0 };
+    }
+    return {
+      turnActive: session.turnActive,
+      pendingCount: session.pendingMessages?.length ?? 0,
+    };
+  }
+
   private async handleRuntimeControlRequest(data: RuntimeControlNatsRequest): Promise<void> {
     await this.hostSubscriptions.handleRuntimeControlRequest(data);
   }

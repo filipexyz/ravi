@@ -451,6 +451,11 @@ export interface RuntimeMessageGeneratorOptions {
   session: RuntimeHostStreamingSession;
   stashedMessages: Map<string, RuntimeUserMessage[]>;
   beforeTurnStart?: (input: { deliverableMessages: RuntimeUserMessage[]; combinedPrompt: string }) => void;
+  transformTurnPrompt?: (input: {
+    sessionName: string;
+    deliverableMessages: RuntimeUserMessage[];
+    combinedPrompt: string;
+  }) => string | Promise<string>;
   traceTurnStart?: (input: {
     combinedPrompt: string;
     deliverableMessages: RuntimeUserMessage[];
@@ -466,6 +471,7 @@ export async function* createRuntimeMessageGenerator({
   session,
   stashedMessages,
   beforeTurnStart,
+  transformTurnPrompt,
   traceTurnStart,
 }: RuntimeMessageGeneratorOptions): AsyncGenerator<RuntimePromptMessage> {
   const stashed = stashedMessages.get(sessionName);
@@ -538,15 +544,28 @@ export async function* createRuntimeMessageGenerator({
     session.currentTraceTurnTerminalRecorded = false;
     session.runtimeTerminalSseEmitted = false;
 
+    let promptContent = combined;
     try {
       beforeTurnStart?.({
         combinedPrompt: combined,
         deliverableMessages: deliverable.map((message) => ({ ...message })),
       });
 
+      if (transformTurnPrompt) {
+        try {
+          promptContent = await transformTurnPrompt({
+            sessionName,
+            deliverableMessages: deliverable.map((message) => ({ ...message })),
+            combinedPrompt: combined,
+          });
+        } catch (error) {
+          log.warn("Turn prompt transform failed; continuing without it", { sessionName, error });
+        }
+      }
+
       if (traceTurnStart) {
         const traceTurn = await traceTurnStart({
-          combinedPrompt: combined,
+          combinedPrompt: promptContent,
           deliverableMessages: deliverable.map((message) => ({ ...message })),
         });
         if (traceTurn) {
@@ -579,7 +598,7 @@ export async function* createRuntimeMessageGenerator({
 
     yield {
       type: "user" as const,
-      message: { role: "user" as const, content: combined },
+      message: { role: "user" as const, content: promptContent },
       session_id: "",
       parent_tool_use_id: null,
       clientMessageId,

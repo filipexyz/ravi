@@ -85,6 +85,7 @@ export * from "./sessions-runtime.js";
 export * from "./sessions.js";
 export * from "./settings.js";
 export * from "./setup.js";
+export * from "./signals.js";
 export * from "./skill-gates.js";
 export * from "./skills.js";
 export * from "./slack.js";

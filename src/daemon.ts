@@ -52,6 +52,7 @@ import { startLinkRequestWatcher, stopLinkRequestWatcher } from "./identity-link
 import { startSlackApprovalClickFeedback, stopSlackApprovalClickFeedback } from "./approval/slack-click-feedback.js";
 import { startHookRunner, stopHookRunner } from "./hooks-runtime/index.js";
 import { startTaskCheckpointRunner, stopTaskCheckpointRunner } from "./tasks/index.js";
+import { startSignalsRunner, stopSignalsRunner } from "./signals/index.js";
 import { startKnowledgeLeaderRunners, stopKnowledgeLeaderRunners } from "./knowledge/runners.js";
 import { startSyncRunner, stopSyncRunner } from "./sync/index.js";
 import { startLibraryPinRunner, stopLibraryPinRunner } from "./library/pin-runner.js";
@@ -294,6 +295,7 @@ async function shutdown(signal: string, exitCode = 0) {
     await stopGhFollowMaintenanceRunner();
     await stopJobsRunner();
     await stopTaskCheckpointRunner();
+    await stopSignalsRunner();
     stopKnowledgeLeaderRunners();
     await releaseLeadership("runners");
 
@@ -461,8 +463,11 @@ export async function startDaemon() {
     log.info("Session followup runner started (leader)");
     await startTaskCheckpointRunner({
       canPublishSessionPrompt: (sessionName) => bot?.canAcceptRuntimePrompt(sessionName) ?? true,
+      getSessionRuntimeState: (sessionName) => bot?.getSessionRuntimeState(sessionName) ?? null,
     });
     log.info("Task checkpoint runner started (leader)");
+    await startSignalsRunner();
+    log.info("Signals runner started (leader)");
     startKnowledgeLeaderRunners();
     log.info("Knowledge runners started (leader)");
     await startCalendarAssistantRunner();
@@ -479,7 +484,9 @@ export async function startDaemon() {
       await startJobsRunner();
       await startTaskCheckpointRunner({
         canPublishSessionPrompt: (sessionName) => bot?.canAcceptRuntimePrompt(sessionName) ?? true,
+        getSessionRuntimeState: (sessionName) => bot?.getSessionRuntimeState(sessionName) ?? null,
       });
+      await startSignalsRunner();
       startKnowledgeLeaderRunners();
       await startCalendarAssistantRunner();
       log.info("Heartbeat, cron, session followup, and task checkpoint runners started (new leader)");

@@ -74,6 +74,12 @@ export interface RuntimeTraceAdapterRequestInput extends RuntimeTraceIdentity {
   commands?: unknown[];
   runtimeCredential?: Record<string, unknown> | null;
   turnProvenance?: TurnProvenance | null;
+  /** Signals rendered into this turn's prompt (runtime/signals/delivery). */
+  signals?: {
+    surfaced: string[];
+    skipped: Array<{ id: string; reason: string }>;
+    budget: { used: number; limit: number; held: number };
+  } | null;
 }
 
 export interface RuntimeTraceTerminalTurnInput extends RuntimeTraceIdentity {
@@ -233,6 +239,13 @@ export function recordAdapterRequestTrace(input: RuntimeTraceAdapterRequestInput
       commands: input.commands ?? [],
       runtime_credential: input.runtimeCredential ?? null,
       turn_provenance: input.turnProvenance ?? null,
+      ...(input.signals
+        ? {
+            signalsSurfaced: input.signals.surfaced,
+            signalsSkipped: input.signals.skipped,
+            signalsBudget: input.signals.budget,
+          }
+        : {}),
     };
     const request = recordSessionBlob({
       kind: "adapter_request",
