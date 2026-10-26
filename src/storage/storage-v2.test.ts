@@ -17,6 +17,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   symlinkSync,
   utimesSync,
@@ -32,6 +33,8 @@ import { scanOmniBroadcastArea } from "./omni-broadcast.js";
 import { loadOmniBroadcastMedia, readOmniDatabaseUrl, staticOmniProbe } from "./omni-probe.js";
 import { buildStorageReport } from "./report.js";
 import { buildStorageSummary, parseStorageSince } from "./summary.js";
+import { formatByteSize } from "./format.js";
+import { pruneStorageReceipts } from "./receipts.js";
 import { formatStorageNotify, deliverStorageNotify } from "./notify.js";
 import {
   applyStorageSchedule,
@@ -47,6 +50,7 @@ import {
   STORAGE_SCHEDULE_NAME,
   STORAGE_SCHEDULE_NOTIFY_SESSION,
   STORAGE_SCHEDULE_TIMEZONE,
+  computeStoragePolicyHash,
   resolveStoragePolicy,
 } from "./policy.js";
 import type { CronJob, CronJobInput } from "../cron/types.js";
@@ -438,6 +442,8 @@ describe("storage summary", () => {
     id: string;
     createdAt: string;
     freedBytes: number;
+    wouldFreeBytes?: number;
+    policyHash?: string;
     classes?: Record<string, { freedBytes: number; runs?: number }>;
     dryRun?: boolean;
   }): Record<string, unknown> {
@@ -445,7 +451,7 @@ describe("storage summary", () => {
     for (const [id, entry] of Object.entries(options.classes ?? { "tmp-ravi": { freedBytes: options.freedBytes } })) {
       classes[id] = {
         candidates: 1,
-        removed: 1,
+        removed: options.dryRun ? 0 : 1,
         preserved: 0,
         eligibleBytes: entry.freedBytes,
         inDoubtBytes: 0,
@@ -460,13 +466,16 @@ describe("storage summary", () => {
       tier: "weekly",
       dryRun: options.dryRun ?? false,
       policyVersion: "2",
-      policyHash: "0".repeat(64),
-      freedBytes: options.freedBytes,
+      policyHash: options.policyHash ?? computeStoragePolicyHash(),
+      freedBytes: options.dryRun ? 0 : options.freedBytes,
+      wouldFreeBytes: options.wouldFreeBytes ?? options.freedBytes,
       classes,
       disk: { before: null, after: null },
       errors: [],
+      blocked: [],
       limitations: [],
       removed: [],
+      removedSample: [],
       preservedSample: [],
     };
   }
@@ -551,12 +560,14 @@ describe("storage notify", () => {
       runs: 2,
       executedRuns: 1,
       freedBytes: 3 * 1024 ** 3,
+      wouldFreeBytes: 3 * 1024 ** 3,
       classes: {
         "tmp-ravi": { freedBytes: 2 * 1024 ** 3, runs: 1 },
         "claude-jsonl": { freedBytes: 1024 ** 3, runs: 1 },
       },
       disk: { root: "/", totalBytes: 100, usedBytes: 91, availableBytes: 9, usedPercent: 91 },
       receiptDir: "/receipts",
+      driftedReceipts: [],
       invalidReceipts: [],
     });
 
@@ -677,5 +688,161 @@ describe("storage schedule", () => {
     expect(plan.action).toBe("unchanged");
     expect(plan.duplicates).toEqual([duplicate.id]);
     expect(store.jobs).toHaveLength(2);
+  });
+});
+
+describe("byte formatting", () => {
+  it("uses the right unit at every step", () => {
+    expect(formatByteSize(0)).toBe("0 B");
+    expect(formatByteSize(1023)).toBe("1023 B");
+    expect(formatByteSize(1024)).toBe("1.0 KB");
+    expect(formatByteSize(1536)).toBe("1.5 KB");
+    expect(formatByteSize(1024 ** 2)).toBe("1.0 MB");
+    expect(formatByteSize(1024 ** 3)).toBe("1.0 GB");
+    expect(formatByteSize(1024 ** 4)).toBe("1.0 TB");
+    expect(formatByteSize(-5)).toBe("0 B");
+  });
+});
+
+describe("summary semantics", () => {
+  it("does not count a dry-run as freed space", () => {
+    const fx = fixture();
+    const receipts = dir(fx.root, "receipts");
+    const now = Date.now();
+    writeFileSync(
+      join(receipts, "dry.json"),
+      JSON.stringify({
+        schema: "ravi.storage.receipt/v2",
+        id: "dry",
+        createdAt: new Date(now - 1000).toISOString(),
+        tier: "routine",
+        dryRun: true,
+        policyVersion: STORAGE_POLICY_VERSION,
+        policyHash: computeStoragePolicyHash(),
+        freedBytes: 0,
+        wouldFreeBytes: 4096,
+        classes: {
+          "tmp-ravi": {
+            candidates: 1,
+            removed: 0,
+            preserved: 0,
+            eligibleBytes: 4096,
+            inDoubtBytes: 0,
+            preservedBytes: 0,
+            freedBytes: 0,
+          },
+        },
+        disk: { before: null, after: null },
+        errors: [],
+        blocked: [],
+        limitations: [],
+        removed: [],
+        removedSample: [],
+        preservedSample: [],
+      }),
+    );
+
+    const summary = buildStorageSummary({ receiptDir: receipts, sinceMs: 7 * DAY_MS, since: "7d", now, disk: null });
+    expect(summary.success).toBe(true);
+    expect(summary.runs).toBe(1);
+    expect(summary.executedRuns).toBe(0);
+    expect(summary.freedBytes).toBe(0);
+    expect(summary.classes).toEqual({});
+  });
+
+  it("excludes and flags a receipt written under another policy hash", () => {
+    const fx = fixture();
+    const receipts = dir(fx.root, "receipts");
+    const now = Date.now();
+    writeFileSync(
+      join(receipts, "forged.json"),
+      JSON.stringify({
+        schema: "ravi.storage.receipt/v2",
+        id: "forged",
+        createdAt: new Date(now - 1000).toISOString(),
+        tier: "weekly",
+        dryRun: false,
+        policyVersion: "1",
+        policyHash: "deadbeef",
+        freedBytes: 123456789,
+        wouldFreeBytes: 123456789,
+        classes: {
+          "tmp-ravi": {
+            candidates: 1,
+            removed: 1,
+            preserved: 0,
+            eligibleBytes: 123456789,
+            inDoubtBytes: 0,
+            preservedBytes: 0,
+            freedBytes: 123456789,
+          },
+        },
+        disk: { before: null, after: null },
+        errors: [],
+        blocked: [],
+        limitations: [],
+        removed: [],
+        removedSample: [],
+        preservedSample: [],
+      }),
+    );
+
+    const summary = buildStorageSummary({ receiptDir: receipts, sinceMs: 7 * DAY_MS, since: "7d", now, disk: null });
+    expect(summary.freedBytes).toBe(0);
+    expect(summary.driftedReceipts).toEqual(["forged"]);
+    expect(summary.success).toBe(false);
+  });
+
+  it("counts only what an execute actually removed, never the estimate twice", () => {
+    const fx = fixture();
+    const tmpRoot = dir(fx.root, "tmp");
+    fx.env.RAVI_STORAGE_FIXTURE_TMP_ROOTS = tmpRoot;
+    const eligible = join(tmpRoot, "ravi-eligible");
+    mkdirSync(join(eligible, "nested"), { recursive: true });
+    writeFileSync(join(eligible, "nested", "blob.bin"), "x".repeat(4096));
+    const old = new Date(Date.now() - 30 * DAY_MS);
+    utimesSync(join(eligible, "nested", "blob.bin"), old, old);
+    utimesSync(join(eligible, "nested"), old, old);
+    utimesSync(eligible, old, old);
+
+    const dry = runStorageCleanup({ tier: "routine", env: fx.env });
+    expect(dry.freedBytes).toBe(0);
+    expect(dry.wouldFreeBytes).toBe(4096);
+
+    const executed = runStorageCleanup({ tier: "routine", execute: true, env: fx.env });
+    expect(executed.freedBytes).toBe(4096);
+
+    const summary = buildStorageSummary({
+      receiptDir: fx.env.RAVI_STORAGE_FIXTURE_RECEIPT_DIR!,
+      sinceMs: 7 * DAY_MS,
+      since: "7d",
+      now: Date.now(),
+      disk: null,
+    });
+    expect(summary.runs).toBe(2);
+    expect(summary.executedRuns).toBe(1);
+    expect(summary.freedBytes).toBe(4096);
+    expect(summary.classes["tmp-ravi"]?.freedBytes).toBe(4096);
+  });
+});
+
+describe("receipt retention", () => {
+  it("counts the in-flight receipt inside the cap", () => {
+    const fx = fixture();
+    const receipts = dir(fx.root, "receipts");
+    const now = Date.now();
+    for (let index = 0; index < 60; index += 1) {
+      const path = join(receipts, `r-${String(index).padStart(3, "0")}.json`);
+      writeFileSync(path, "{}");
+      const stamp = new Date(now - (60 - index) * 1000);
+      utimesSync(path, stamp, stamp);
+    }
+    const keep = join(receipts, "r-059.json");
+
+    const removed = pruneStorageReceipts(receipts, { maxCount: 50, maxAgeMs: 90 * DAY_MS, now, keepPaths: [keep] });
+
+    expect(removed.length).toBe(10);
+    expect(existsSync(keep)).toBe(true);
+    expect(readdirSync(receipts).length).toBe(50);
   });
 });

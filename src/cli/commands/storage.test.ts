@@ -20,11 +20,12 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { StorageLockedError, runStorageCleanup } from "../../storage/cleanup.js";
-import type { CodexProbe } from "../../storage/eligibility.js";
-import { computeStoragePolicyHash, tmpNameMatchesAllowlist } from "../../storage/policy.js";
+import { canRemove, StorageLockedError, runStorageCleanup } from "../../storage/cleanup.js";
+import type { CodexProbe, StorageEntry } from "../../storage/eligibility.js";
+import { computeStoragePolicyHash, resolveStoragePolicy, tmpNameMatchesAllowlist } from "../../storage/policy.js";
 import { createRaviTaskProbe } from "../../storage/task-worktrees.js";
 import type { TaskProbe, TaskWorktreeAssessment, TaskWorktreeRecord } from "../../storage/task-probe.js";
+import { withoutRaviRuntimeContextEnv } from "../../test/ravi-state.js";
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const AGE_30D_MS = 30 * ONE_DAY_MS;
@@ -49,8 +50,10 @@ function makeFixture(options: { codex?: boolean } = {}): {
   mkdirSync(receiptDir, { recursive: true });
   mkdirSync(outside, { recursive: true });
   const env: NodeJS.ProcessEnv = {
-    ...process.env,
+    ...withoutRaviRuntimeContextEnv(),
     RAVI_HOST_CLI_GATEWAY: "0",
+    RAVI_STATE_DIR: join(root, "state"),
+    RAVI_SUPPRESS_AUDIT_EVENTS: "1",
     RAVI_STORAGE_FIXTURE_MODE: "1",
     RAVI_STORAGE_FIXTURE_TMP_ROOTS: tmpRoot,
     RAVI_STORAGE_FIXTURE_RECEIPT_DIR: receiptDir,
@@ -62,6 +65,9 @@ function makeFixture(options: { codex?: boolean } = {}): {
   delete env.RAVI_CONTEXT_KEY;
   delete env.RAVI_SESSION_KEY;
   delete env.RAVI_SESSION_NAME;
+  // Every spawn gets its own empty state dir: no test may migrate or lock the
+  // operator's live ~/.ravi/ravi.db.
+  mkdirSync(env.RAVI_STATE_DIR!, { recursive: true });
   if (options.codex) {
     mkdirSync(codexDir, { recursive: true });
     env.RAVI_STORAGE_FIXTURE_CODEX_DIR = codexDir;
@@ -69,10 +75,18 @@ function makeFixture(options: { codex?: boolean } = {}): {
   return { root, tmpRoot, receiptDir, outside, codexDir, env };
 }
 
-function writeRollout(dir: string, name: string, sessionId: string, ageMs: number): string {
+function writeRollout(
+  dir: string,
+  name: string,
+  sessionId: string,
+  ageMs: number,
+  originator: string | null = "ravi",
+): string {
   mkdirSync(dir, { recursive: true });
   const file = join(dir, name);
-  writeFileSync(file, `${JSON.stringify({ type: "session_meta", payload: { session_id: sessionId } })}\n`);
+  const payload: Record<string, unknown> = { session_id: sessionId };
+  if (originator !== null) payload.originator = originator;
+  writeFileSync(file, `${JSON.stringify({ type: "session_meta", payload })}\n`);
   const stamp = new Date(Date.now() - ageMs);
   utimesSync(file, stamp, stamp);
   return file;
@@ -118,8 +132,11 @@ describe("storage cleanup dry-run", () => {
     const result = runStorageCleanup({ tier: "routine", env: fx.env });
 
     expect(result.dryRun).toBe(true);
-    expect(result.freedBytes).toBeGreaterThan(0);
+    expect(result.wouldFreeBytes).toBeGreaterThan(0);
+    // A dry-run frees nothing: `summary` must never count it as released space.
+    expect(result.freedBytes).toBe(0);
     expect(result.classes["tmp-ravi"]?.candidates).toBe(1);
+    expect(result.classes["tmp-ravi"]?.freedBytes).toBe(0);
     expect(result.removed).toEqual([]);
     expect(readdirSync(fx.tmpRoot).sort()).toEqual(before);
     expect(result.receiptId).toBeTruthy();
@@ -289,7 +306,35 @@ describe("storage cleanup codex-inactive", () => {
     };
     const result = runStorageCleanup({ tier: "routine", execute: true, env: fx.env, codexProbe: flaky });
     expect(existsSync(file)).toBe(true);
-    expect(result.errors.join(" ")).toContain("liveness");
+    // A deterministic preservation is reported as `blocked`, not as a failure.
+    expect(result.blocked.join(" ")).toContain("liveness");
+    expect(result.errors).toEqual([]);
+    expect(result.success).toBe(true);
+  });
+
+  it("requires a Ravi ownership mark, not just liveness", () => {
+    const fx = makeFixture({ codex: true });
+    const owned = writeRollout(fx.codexDir, "rollout-owned.jsonl", "codex-owned", AGE_30D_MS, "ravi");
+    const foreign = writeRollout(fx.codexDir, "rollout-foreign.jsonl", "codex-foreign", AGE_30D_MS, "codex_exec");
+    const legacy = writeRollout(fx.codexDir, "rollout-legacy.jsonl", "codex-legacy", AGE_30D_MS, null);
+    const corrupt = join(fx.codexDir, "rollout-corrupt.jsonl");
+    writeFileSync(corrupt, "{not json\n");
+    utimesSync(corrupt, new Date(Date.now() - AGE_30D_MS), new Date(Date.now() - AGE_30D_MS));
+
+    const result = runStorageCleanup({ tier: "routine", execute: true, env: fx.env, codexProbe: NOT_LIVE });
+
+    expect(existsSync(owned)).toBe(false);
+    expect(existsSync(foreign)).toBe(true);
+    expect(existsSync(legacy)).toBe(true);
+    expect(existsSync(corrupt)).toBe(true);
+    expect(result.classes["codex-inactive"]?.candidates).toBe(1);
+    expect(result.classes["codex-inactive"]?.removed).toBe(1);
+    expect(result.removed).toEqual([owned]);
+    // Each preserved rollout is visible in the preserved record, and the
+    // foreign/legacy ones are counted as in doubt (not silently dropped).
+    expect(result.preserved).toContain(foreign);
+    expect(result.preserved).toContain(legacy);
+    expect(result.classes["codex-inactive"]?.inDoubtBytes).toBeGreaterThan(0);
   });
 });
 
@@ -455,5 +500,146 @@ describe("task worktree Git safety proof", () => {
     const outcome = probe.remove(taskRecord(fx.worktree));
     expect(outcome.ok).toBe(true);
     expect(existsSync(fx.worktree)).toBe(false);
+  });
+});
+
+/**
+ * Protected roots in the real host shape. `~/.codex/sessions` lives inside the
+ * protected `~/.codex` and `~/.ravi/tasks` inside the protected `~/.ravi`; the
+ * execute gate must still be able to remove its own allowlisted candidates
+ * there, while keeping every other protected path protected.
+ */
+function makeProtectedFixture(): {
+  root: string;
+  home: string;
+  codexDir: string;
+  tasksDir: string;
+  tmpRoot: string;
+  env: NodeJS.ProcessEnv;
+} {
+  const root = mkdtempSync(join(tmpdir(), "storage-protected-"));
+  fixtures.push(root);
+  const home = join(root, "home");
+  const stateDir = join(home, ".ravi");
+  const codexDir = join(home, ".codex", "sessions");
+  const tasksDir = join(stateDir, "tasks");
+  const tmpRoot = join(root, "tmp");
+  const receiptDir = join(stateDir, "storage", "receipts");
+  mkdirSync(codexDir, { recursive: true });
+  mkdirSync(tasksDir, { recursive: true });
+  mkdirSync(tmpRoot, { recursive: true });
+  mkdirSync(receiptDir, { recursive: true });
+  const env: NodeJS.ProcessEnv = {
+    ...withoutRaviRuntimeContextEnv(),
+    RAVI_HOST_CLI_GATEWAY: "0",
+    RAVI_STATE_DIR: stateDir,
+    RAVI_SUPPRESS_AUDIT_EVENTS: "1",
+    RAVI_STORAGE_FIXTURE_MODE: "1",
+    RAVI_STORAGE_FIXTURE_TMP_ROOTS: tmpRoot,
+    RAVI_STORAGE_FIXTURE_RECEIPT_DIR: receiptDir,
+    RAVI_STORAGE_FIXTURE_CODEX_DIR: codexDir,
+    RAVI_STORAGE_FIXTURE_PROTECTED_ROOTS: [
+      stateDir,
+      join(home, ".config", "ravi"),
+      join(home, ".pi"),
+      join(home, ".codex"),
+      join(home, ".omni"),
+    ].join(":"),
+  };
+  return { root, home, codexDir, tasksDir, tmpRoot, env };
+}
+
+describe("execute gate under the real protected roots", () => {
+  it("dry-run candidates are exactly the set the execute can remove", () => {
+    const fx = makeProtectedFixture();
+    const rollout = writeRollout(fx.codexDir, "rollout-owned.jsonl", "codex-owned", AGE_30D_MS, "ravi");
+    const tmpDir = join(fx.tmpRoot, "ravi-eligible");
+    makeDir(tmpDir, AGE_30D_MS);
+
+    const dry = runStorageCleanup({ tier: "routine", env: fx.env, codexProbe: NOT_LIVE });
+    const candidates = dry.classes["codex-inactive"]?.candidates ?? 0;
+    expect(candidates).toBe(1);
+    expect(dry.wouldFreeBytes).toBeGreaterThan(0);
+
+    const executed = runStorageCleanup({ tier: "routine", execute: true, env: fx.env, codexProbe: NOT_LIVE });
+
+    expect(existsSync(rollout)).toBe(false);
+    expect(existsSync(tmpDir)).toBe(false);
+    // SPEC invariant 6: the dry-run eligible set equals the removed set.
+    expect(executed.removed.sort()).toEqual([rollout, tmpDir].sort());
+    // No candidate may be promoted to "protected path" after being counted.
+    expect(executed.blocked.filter((line) => line.includes("protected path"))).toEqual([]);
+    expect(executed.errors).toEqual([]);
+    expect(executed.success).toBe(true);
+  });
+
+  it("keeps other protected paths protected", () => {
+    const fx = makeProtectedFixture();
+    const policy = resolveStoragePolicy("routine", fx.env);
+    const evil = join(fx.home, ".ravi", "ravi-evil");
+    mkdirSync(evil, { recursive: true });
+    const entry: StorageEntry = {
+      area: "tmp-ravi",
+      root: fx.tmpRoot,
+      path: evil,
+      bytes: 0,
+      decision: "candidate",
+      reason: "crafted",
+    };
+    expect(canRemove(entry, policy, Date.now(), {})).toBe("protected path");
+  });
+});
+
+describe("execute gate re-checks age and the lock", () => {
+  it("preserves a transcript whose mtime was refreshed after the scan", () => {
+    const fx = makeFixture();
+    const claudeDir = join(fx.root, "claude-projects");
+    fx.env.RAVI_STORAGE_FIXTURE_CLAUDE_DIR = claudeDir;
+    const transcript = join(claudeDir, "proj", "session.jsonl");
+    mkdirSync(join(claudeDir, "proj"), { recursive: true });
+    writeFileSync(transcript, "{}");
+    const old = new Date(Date.now() - AGE_30D_MS);
+    utimesSync(transcript, old, old);
+
+    const policy = resolveStoragePolicy("weekly", fx.env);
+    const entry: StorageEntry = {
+      area: "claude-jsonl",
+      root: claudeDir,
+      path: transcript,
+      bytes: 2,
+      decision: "candidate",
+      reason: "aged transcript",
+    };
+    // The file is touched between scan and removal (e.g. a resumed session).
+    const fresh = new Date();
+    utimesSync(transcript, fresh, fresh);
+
+    const reason = canRemove(entry, policy, Date.now(), {});
+    expect(reason).toContain("younger than the threshold");
+  });
+
+  it("never steals a lock that was just created and is still empty", () => {
+    const fx = makeFixture();
+    makeDir(join(fx.tmpRoot, "ravi-eligible"), AGE_30D_MS);
+    const lockPath = join(fx.receiptDir, ".cleanup.lock");
+    writeFileSync(lockPath, "");
+
+    expect(() => runStorageCleanup({ tier: "routine", execute: true, env: fx.env })).toThrow(StorageLockedError);
+    expect(existsSync(lockPath)).toBe(true);
+    expect(existsSync(join(fx.tmpRoot, "ravi-eligible"))).toBe(true);
+  });
+
+  it("takes over an unreadable lock only when it is old enough", () => {
+    const fx = makeFixture();
+    const dir = join(fx.tmpRoot, "ravi-eligible");
+    makeDir(dir, AGE_30D_MS);
+    const lockPath = join(fx.receiptDir, ".cleanup.lock");
+    writeFileSync(lockPath, "");
+    const stale = new Date(Date.now() - 5 * 60_000);
+    utimesSync(lockPath, stale, stale);
+
+    const result = runStorageCleanup({ tier: "routine", execute: true, env: fx.env });
+    expect(result.removed).toContain(dir);
+    expect(existsSync(lockPath)).toBe(false);
   });
 });
