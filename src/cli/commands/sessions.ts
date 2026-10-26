@@ -2544,6 +2544,20 @@ function buildTraceEventDetailLines(
         .filter(Boolean)
         .join(" "),
     );
+    // The turn snapshot is folded into its adapter request: keep its usage and output state.
+    const turn = getTurnForEvent(trace, event);
+    if (turn && turn.status !== "running") {
+      lines.push(
+        [
+          `status=${turn.status}`,
+          `tokens=input:${turn.inputTokens ?? "unknown"}`,
+          `output:${turn.outputTokens ?? "unknown"}`,
+          turn.outputState ? `outputState=${turn.outputState}` : null,
+        ]
+          .filter(Boolean)
+          .join(" "),
+      );
+    }
 
     if (options.raw) {
       const requestBlob = getBlob(trace, requestBlobSha);
