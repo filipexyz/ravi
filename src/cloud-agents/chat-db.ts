@@ -94,6 +94,13 @@ function db(): Database {
       CREATE INDEX IF NOT EXISTS idx_cloud_thread_runs_run ON cloud_thread_runs(run_id);
       CREATE INDEX IF NOT EXISTS idx_cloud_thread_runs_chat ON cloud_thread_runs(channel, chat_id, ended_at);
     `);
+    // Tables an earlier build of this branch created lack the card marker.
+    const approvalColumns = database.prepare("PRAGMA table_info(cloud_chat_approvals)").all() as Array<{
+      name: string;
+    }>;
+    if (!approvalColumns.some((column) => column.name === "card_sent_at")) {
+      database.exec("ALTER TABLE cloud_chat_approvals ADD COLUMN card_sent_at INTEGER");
+    }
     ensured.add(database);
   }
   return database;

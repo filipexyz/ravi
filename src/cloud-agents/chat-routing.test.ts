@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
+import { getDb } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   dbBindCloudThreadRun,
@@ -7,6 +8,7 @@ import {
   CLOUD_CHAT_APPROVAL_CLAIM_TTL_MS,
   dbClaimCloudChatApproval,
   dbGetCloudChatApproval,
+  dbMarkCloudChatApprovalCardSent,
   dbPendingCloudChatQuestion,
   dbRecordCloudChatApproval,
   dbRecordCloudChatQuestion,
@@ -56,6 +58,20 @@ function recordApproval(actorContactId: string | null = "contact-ana") {
     actorName: "Ana",
   });
 }
+
+describe("cloud chat approvals table", () => {
+  it("adds the card marker to a table an earlier build created", () => {
+    getDb().exec(`CREATE TABLE cloud_chat_approvals (
+      approval_id TEXT PRIMARY KEY, run_id TEXT NOT NULL, code TEXT NOT NULL, session_name TEXT, agent_name TEXT,
+      tool TEXT NOT NULL, actor_user_id TEXT, actor_contact_id TEXT, actor_name TEXT, status TEXT NOT NULL,
+      created_at INTEGER NOT NULL, decided_at INTEGER
+    )`);
+    recordApproval();
+    expect(dbGetCloudChatApproval(APPROVAL_ID)?.cardSentAt).toBeNull();
+    dbMarkCloudChatApprovalCardSent(APPROVAL_ID, 1234);
+    expect(dbGetCloudChatApproval(APPROVAL_ID)?.cardSentAt).toBe(1234);
+  });
+});
 
 function whatsapp(text: string, overrides: Partial<CloudChatInbound> = {}): CloudChatInbound {
   return {
