@@ -1,24 +1,49 @@
-# Storage — Runbook
+# Storage — Runbook (v2)
 
-Operational reference and surface inventory for `ravi storage cleanup`. All paths
-below were observed on the live host on 2026-09-14 against `ravi.bot@3.260914.3`.
+Operational reference and surface inventory for `ravi storage`. The v1 inventory
+below was observed on the live host on 2026-09-14 against `ravi.bot@3.260914.3`;
+the v2 additions were measured on 2026-10-26 (`origin/dev` 0dd8143a).
 
 ## Run
 
 ```bash
-# Always start with the dry-run (default; mutates nothing).
+# Read-only first: what each class holds, eligible vs in doubt.
+ravi storage report --json
+ravi storage report
+
+# What the receipt ledger says was freed in the last week.
+ravi storage summary --since 7d --json
+ravi storage summary --since 7d
+
+# Dry-run (default; mutates nothing). `would free` is an estimate.
 ravi storage cleanup --tier routine --json
 ravi storage cleanup --tier weekly  --json
 
-# Human summary (before / after / freed, areas, receipt id).
-ravi storage cleanup --tier routine
-
 # Mutation gate: explicit --execute, same candidate set the dry-run showed.
 ravi storage cleanup --tier routine --execute
+ravi storage cleanup --tier weekly  --execute --notify ravi-main-2-0-cloudopus
+
+# Idempotent weekly cron (dry-run prints the plan and exits 3).
+ravi storage schedule --json
+ravi storage schedule --execute
 ```
 
 Receipts go to the policy receipt directory (default `~/.ravi/storage/receipts/`)
-with bounded retention and are never cleanup candidates themselves.
+with bounded retention and are never cleanup candidates themselves. A dry-run
+writes a receipt with `freedBytes: 0` and the estimate in `wouldFreeBytes`.
+
+## Classes (policy v2)
+
+| class | tier | root | rule |
+|---|---|---|---|
+| `tmp-ravi` | routine | host temp root(s), depth 1 | closed name allowlist + 24h |
+| `codex-inactive` | routine | `~/.codex/sessions` | `originator=ravi` + not-live + 72h |
+| `backups-superseded` | weekly | `~/.ravi/backups` | keep newest of each type |
+| `instance-attachments` | weekly | `~/ravi/main/attachments` | `<epochMs>-<externalId>.<ext>`, 90d |
+| `claude-jsonl` | weekly | `~/.claude/projects` | `*.jsonl`, 90d, never `*/memory/*` |
+| `omni-broadcast-mp4` | weekly | `~/.omni/data/media` | matched `status@broadcast` id, 7d |
+| `omni-orphan` | weekly | `~/.omni/data` | always preserved (no hold surface) |
+| `tasks-terminal` | weekly | `~/.ravi/tasks` | terminal + 20d + `git worktree remove` |
 
 ## Surface inventory (LOCALIZE evidence)
 
@@ -31,64 +56,93 @@ with bounded retention and are never cleanup candidates themselves.
   default 24h; never globs a bare root; never follows symlinks by design).
 
 ### 2. Codex sessions (`routine`, `codex-inactive`)
-- Layout: `~/.codex/sessions/<YYYY>/<MM>/<DD>/rollout-<ISO>-<uuid>.jsonl`
-  (131 files observed). The first line is `session_meta` with `session_id`,
-  `cwd`, `originator`, `cli_version`.
-- Inactive test (fail-closed): older than the routine threshold **and** no live
-  process references the session id or its `cwd` **and** not the current session.
-- Live processes observed: none at inventory time (`codex` not running). When any
-  uncertainty remains, preserve.
+- Layout: `~/.codex/sessions/<YYYY>/<MM>/<DD>/rollout-<ISO>-<uuid>.jsonl`.
+  The first line is `session_meta` with `session_id`, `cwd`, `originator`,
+  `cli_version`.
+- Measured on 2026-10-26: 136 rollouts (753.5 MiB) — 131 with
+  `payload.originator = "ravi"` (753.1 MiB), 5 with `originator = "codex_exec"`
+  (0.4 MiB, direct `codex exec` runs, not Ravi's).
+- Inactive test (fail-closed): `originator === "ravi"` **and** older than the
+  routine threshold **and** no live Ravi session references the session id **and**
+  no Codex process is running. Any other originator or an unreadable header is
+  preserved as in doubt.
+- The execute gate re-reads the header and re-asks liveness right before removal.
 
-### 3. Omni state (`weekly`, `omni-orphan`)
+### 3. Backups (`weekly`, `backups-superseded`)
+- Root: `~/.ravi/backups`. A "type" is the name minus its extension and one
+  trailing timestamp (`-20260101T000000Z`, `-2026-01-01`, ...).
+- Only the newest entry of each type stays. Names without a recognizable
+  timestamp are preserved as in doubt, never grouped with unrelated artifacts.
+
+### 4. Instance attachments (`weekly`, `instance-attachments`)
+- Root: `~/ravi/main/attachments`, flat files named
+  `<epochMs>-<externalId>.<ext>` (WhatsApp inbound media).
+- Only that shape older than 90 days is a candidate; other names are preserved as
+  in doubt; subdirectories are outside the class.
+
+### 5. Claude transcripts (`weekly`, `claude-jsonl`)
+- Root: `~/.claude/projects/**/*.jsonl`, depth-bounded.
+- Older than 90 days is a candidate. Nothing under a `memory` path segment is
+  ever a candidate: it is durable agent memory, not a transcript.
+
+### 6. Omni state (`weekly`)
 - Service: pm2 apps `omni-api` and `omni-nats`; CLI `omni` (server `default`,
   configured). Data root `~/.omni/data/` → `media/`, `nats/`, `pgserve/`.
-- Reference query surface: `omni media list|ls`, `omni messages get <id>`.
-- **No explicit `hold` command was found** on the CLI. Therefore the rule stays
-  fail-closed: if a hold/reference cannot be positively disproved — Omni
-  unreachable, command errored, or answer indeterminate — every Omni object is
-  preserved and the limitation is recorded. This is a known gap to close (or
-  explicitly bound) during IMPLEMENT; it MUST NOT be guessed.
+- `omni-broadcast-mp4`: the probe reads the Omni PostgreSQL database **read-only**
+  for `status@broadcast` messages (`external_id`, `media_local_path`,
+  `platform_timestamp`). A video is a candidate only when its relative path
+  matches a row **and** the file stem equals that row's `external_id`, and both
+  are older than 7 days. The execute gate re-queries the probe.
+- `omni-orphan`: **no explicit hold command exists** on the CLI. The class stays
+  fail-closed: everything is preserved and the limitation is recorded.
+- If the Omni source is unavailable, every video is preserved as in doubt.
 
-### 4. Task lifecycle (`weekly`, `tasks-terminal`)
+### 7. Task lifecycle (`weekly`, `tasks-terminal`)
 - Task dirs: `~/.ravi/tasks/task-*/TASK.md` with YAML frontmatter `status`
-  (106 dirs observed; 73 terminal `done`/`failed`).
+  (106 dirs observed at v1 inventory; 73 terminal `done`/`failed`).
 - Worktrees: `git worktree list` per repository. Removal MUST go through the
   canonical lifecycle (`git worktree remove`), never raw `rm -rf` of a tree.
 - Tasks that are `open`/`in_progress`/`blocked` or unknown MUST be preserved.
 
-### 5. Receipts
-- No prior native receipt directory exists. The policy defines one
-  (`~/.ravi/storage/receipts/`), bounded by max count and/or max age.
-- Receipt pruning MUST NOT re-scan the receipt directory as an allowlist root and
-  MUST NOT delete the in-flight receipt.
+### 8. Receipts
+- Root: `~/.ravi/storage/receipts/`, schema `ravi.storage.receipt/v2`, bounded by
+  `RECEIPT_MAX_COUNT` and `RECEIPT_MAX_AGE_MS`.
+- The in-flight receipt counts against the cap. Pruning runs on every run
+  (dry-run included) and never re-scans the receipt directory as an allowlist
+  root.
+- `summary` counts only executed receipts and excludes/flags receipts written
+  under a different policy hash.
+
+## Protected roots
+
+Default protected roots: `~/.ravi`, `~/.config/ravi`, `~/.pi`, `~/.codex`,
+`~/.omni`. A class root inside a protected root (`~/.codex/sessions`,
+`~/.ravi/tasks`) is exempt from that check **only for its own allowlisted
+candidates**; everything else inside the protected root stays protected.
 
 ## Verification
 
-The out-of-candidate checker is the deterministic gate:
+Release checks (run in the candidate worktree/CI):
 
 ```bash
-bun /home/ravi/.ravi/tasks/task-f3f39d9a/checker/storage-plan-checker.ts \
-  --candidate /home/ravi/.ravi/tasks/task-84c0c0f1/storage-builder-worktree \
-  --behavioral --json
+bun run build
+bun run typecheck
+bun run test
+bun src/ci/run-quality-gate.ts
 ```
 
-- Static mode validates the frozen spec and the candidate surface.
-- `--behavioral` builds a throwaway fixture under the OS temp dir, uses the
-  `RAVI_STORAGE_FIXTURE_MODE=1` seams, and asserts: usage exits `2`, dry-run
-  mutates nothing, `--execute` removes only the eligible set, and the recent dir /
-  symlink target survive.
-- Expected on a correct candidate: all checks PASS, exit `0`.
+Fixture-only behavioral checks live in the test suites:
+
+- `src/storage/storage.test.ts` — policy seams, containment, measurement, parser;
+- `src/storage/storage-v2.test.ts` — v2 classes, report, summary, notify, schedule;
+- `src/cli/commands/storage.test.ts` — cleanup contract, execute gate, lock, CLI.
 
 ## Open items
 
 - Exact persisted location/semantics of Omni holds: no canonical hold surface was
   found, so `omni-orphan` stays fail-closed (preserve all, record the limitation).
-- `tasks-terminal` reads task state read-only from `ravi.db` and delegates removal
-  to `git worktree remove`. A worktree is only a candidate when the task is
-  terminal and older than 20 days, the worktree is a clean, non-detached secondary
-  worktree with an upstream, zero unpushed commits and the recorded branch. Any
-  other result preserves it.
-- Final numeric thresholds (routine tmp age, Codex age, task age 20d) are frozen
-  in the policy constants, not in this runbook.
-- Wire the checker into the independent verification task (task-67069d29) as its
-  required input.
+- `measureBytes` bounds large trees (8 GiB / 200k entries) and reports the capped
+  value as exact; a truncation flag in `report` is a known follow-up.
+- A `config.json` Omni installation that only carries `OMNI_API_URL`/`OMNI_API_KEY`
+  (no database URL) leaves `omni-broadcast-mp4` without a source; it preserves
+  every video and records the limitation.
