@@ -38,8 +38,8 @@ function codexHookRejection(result: RemoteDispatchResult): Record<string, unknow
     return buildPreToolUseDenyResult(
       [
         `Ravi denied tool use in this turn${capability ? ` (missing capability: ${capability})` : ""}.`,
-        "This turn's context has no tool authority: its actor is not identified (no linked contact), or the context expired or was revoked.",
-        "Stop retrying tools and tell the person; a turn from an identified person or automation gets its authority back.",
+        "Possible causes: the turn's actor is not identified (no linked contact), the context expired or was revoked, or the actor was never granted this permission.",
+        "Stop retrying tools and tell the person what was denied.",
       ].join(" "),
     );
   }
