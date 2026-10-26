@@ -160,6 +160,43 @@ describe("session trace query", () => {
     });
   });
 
+  it("records the signals rendered into the turn, and omits them when none were", () => {
+    const base = {
+      sessionKey: "agent:main:trace-limit",
+      sessionName: "trace-limit",
+      agentId: "main",
+      provider: "codex",
+      model: "gpt-5",
+      prompt: "hello",
+      systemPrompt: "system",
+      cwd: "/tmp/main",
+      resume: false,
+      fork: false,
+      hasHooks: false,
+      pluginNames: [],
+      mcpServerNames: [],
+      hasRemoteSpawn: false,
+    };
+    const withSignals = recordAdapterRequestTrace({
+      ...base,
+      runId: "run-signals",
+      turnId: "turn-signals",
+      signals: {
+        surfaced: ["sig_1"],
+        skipped: [{ id: "sig_2", reason: "budget" }],
+        budget: { used: 1, limit: 3, held: 1 },
+      },
+    });
+    expect(getSessionTraceBlob(withSignals!.requestBlobSha256)?.contentJson).toMatchObject({
+      signalsSurfaced: ["sig_1"],
+      signalsSkipped: [{ id: "sig_2", reason: "budget" }],
+      signalsBudget: { used: 1, limit: 3, held: 1 },
+    });
+
+    const without = recordAdapterRequestTrace({ ...base, runId: "run-no-signals", turnId: "turn-no-signals" });
+    expect(getSessionTraceBlob(without!.requestBlobSha256)?.contentJson).not.toHaveProperty("signalsSurfaced");
+  });
+
   it("records canonical and provider delivery receipt identity", () => {
     const sessionKey = "agent:main:delivery-receipt";
     const sessionName = "main-delivery-receipt";
