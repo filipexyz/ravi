@@ -14,6 +14,7 @@ import {
   resolvePlatformIdentity,
   upsertAgentPlatformIdentity,
 } from "../../contacts.js";
+import { dbGetCloudChatApproval, dbRecordCloudChatApproval } from "../../cloud-agents/chat-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { canWithCapabilities } from "../../permissions/provider-runtime.js";
 import {
@@ -3309,6 +3310,84 @@ describe("Slack Socket Mode routing", () => {
       contactId: identity.contact!.id,
       platformIdentityId: identity.platformIdentity!.id,
     });
+  });
+
+  it("hands a cloud run's approval reply to the run instead of the agent", async () => {
+    const identity = ensureContactFromInbound({
+      channel: "slack",
+      instanceId: "slack-instance-1",
+      platformSenderId: "U123",
+      contactIdentity: "U123",
+      displayName: "Ana",
+      chatId: "C123",
+      intakeMode: "pending",
+      source: "test",
+    });
+    const approvalId = "ab12cd34-0000-4000-8000-000000000001";
+    dbRecordCloudChatApproval({
+      approvalId,
+      runId: "run_1",
+      sessionName: "ravi-hil",
+      agentName: "triage",
+      tool: "create_issue",
+      actorUserId: "user-ana",
+      actorContactId: identity.contact!.id,
+      actorName: "Ana",
+    });
+    const config: RouterConfig = {
+      agents: { "ravi-hil": { id: "ravi-hil", cwd: "/tmp/ravi-hil", dmScope: "per-peer" } },
+      routes: [
+        {
+          pattern: "group:C123",
+          accountId: "ravi-rbbt-slack",
+          agent: "ravi-hil",
+          session: "ravi-hil",
+          priority: 100,
+          policy: "open",
+          channel: "slack",
+        },
+      ],
+      defaultAgent: "ravi-hil",
+      defaultDmScope: "per-peer",
+      accountAgents: { "ravi-rbbt-slack": "ravi-hil" },
+      instanceToAccount: {},
+      instances: {},
+    };
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const postMessage = mock(async (_input: Record<string, unknown>) => ({ ok: true, ts: "1713000031.000100" }));
+    const service = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "ravi-rbbt-slack",
+      routeAccountId: "ravi-rbbt-slack",
+      instanceId: "slack-instance-1",
+      getRouterConfig: () => config,
+      publishPrompt: async (sessionName, payload) => {
+        published.push({ sessionName, payload });
+      },
+      webClient: { postMessage } as never,
+    });
+    const send = (text: string, ts: string) =>
+      service.handleEnvelope({
+        envelope_id: `env-cloud-${ts}`,
+        payload: {
+          team_id: "T1",
+          event_id: `EvCloud${ts}`,
+          event_time: 1_713_000_030,
+          event: { type: "message", channel: "C123", channel_type: "channel", user: "U123", text, ts },
+        },
+      });
+
+    // No Console login here: the decision cannot be recorded, but the reply is still the run's.
+    await send("aprovar ab12cd", "1713000030.000100");
+    expect(published).toHaveLength(0);
+    expect(postMessage).toHaveBeenCalledTimes(1);
+    expect(postMessage.mock.calls[0]?.[0]).toMatchObject({ channel: "C123" });
+    expect(dbGetCloudChatApproval(approvalId)?.status).toBe("pending");
+
+    // Anything else still reaches the agent.
+    await send("bom dia", "1713000032.000100");
+    expect(published).toHaveLength(1);
   });
 });
 
