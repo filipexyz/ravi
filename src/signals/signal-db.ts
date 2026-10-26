@@ -1043,16 +1043,19 @@ export function dbReserveSignalSurface(input: {
       ) + 1;
     const idempotencyKey = input.idempotencyKey(sequence);
     const budgetBypass = decision.budgetBypass === true;
-    // A page line that already reached the operator in this episode is never
-    // sent again by a later row, even when that earlier row's prompt failed.
+    // A page line that already reached this session's target in this episode
+    // is never sent again by a later row, even when that earlier row's prompt
+    // failed. Each target session resolves its own page target, so another
+    // session's sent line does not count.
     const carriedPageStatus =
       input.route === "page" &&
       db
         .prepare(
           `SELECT 1 AS found FROM signal_outbox
-           WHERE signal_id = ? AND route = 'page' AND page_status = 'sent' AND created_at >= ? LIMIT 1`,
+           WHERE signal_id = ? AND route = 'page' AND session_name IS ? AND page_status = 'sent' AND created_at >= ?
+           LIMIT 1`,
         )
-        .get(signal.id, signal.openedAt)
+        .get(signal.id, input.sessionName, signal.openedAt)
         ? "sent"
         : null;
     const surface = db

@@ -414,6 +414,38 @@ describe("signals tick", () => {
     expect(last.skipped.map((item) => item.reason)).toContain("escalation_cap");
   });
 
+  it("carries a sent page line only within the same target session", async () => {
+    const now = Date.now();
+    const signal = seedPageSignal(now);
+    const paged: string[] = [];
+    await tickSignals({
+      now,
+      execute: true,
+      runWatchers: false,
+      publishPrompt: async () => {},
+      sendPage: async (_signal, sessionName) => {
+        paged.push(sessionName);
+        return "sent";
+      },
+    });
+    expect(paged).toEqual(["test-session"]);
+    const current = dbGetSignalById(signal.id)!;
+    const outcome = dbReserveSignalSurface({
+      signalId: current.id,
+      expectedVersion: current.version,
+      route: "page",
+      severity: "page",
+      sessionName: "other-session",
+      idempotencyKey: () => "page-other-session",
+      decide: () => ({ ok: true }),
+      actorId: "test",
+      now: now + 61_000,
+    });
+    expect("reserved" in outcome).toBe(true);
+    const row = dbListPendingOutbox().find((item) => item.sessionName === "other-session");
+    expect(row?.pageStatus ?? null).toBeNull();
+  });
+
   it("releases a pending retry once the operator disables OOB", async () => {
     const now = Date.now();
     const signal = seedPageSignal(now);
