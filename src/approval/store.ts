@@ -1,5 +1,6 @@
 import { getDb } from "../router/router-db.js";
 import { fromSubjectColumns, resolveSubjectForChat, toSubjectColumns, type SubjectRef } from "../identity/subject.js";
+import type { PermissionGrantMetadata } from "./grant-metadata.js";
 
 export type ApprovalRequestType = "plan" | "spec" | "permission";
 export type ApprovalRequestStatus = "pending" | "decided" | "expired";
@@ -23,6 +24,11 @@ export interface ApprovalRequestRecord {
   readonly decision: ApprovalDecisionValue | null;
   /** On whose behalf the approval was requested. Not the same as who asked for it (actor). */
   readonly subject?: SubjectRef;
+  /** Grant choices a permission denial card may apply. Absent on legacy requests. */
+  readonly grant?: PermissionGrantMetadata;
+  /** Set when the decision came from a grant card. */
+  readonly grantIntent?: string | null;
+  readonly grantScope?: string | null;
   readonly decidedBy: string | null;
   readonly reason: string | null;
   readonly createdAt: number;
@@ -44,6 +50,7 @@ export interface CreateApprovalRequestInput {
   readonly permission?: string;
   readonly objectType?: string;
   readonly objectId?: string;
+  readonly grant?: PermissionGrantMetadata;
   readonly createdAt: number;
   readonly expiresAt: number;
 }
@@ -69,6 +76,9 @@ export interface ClaimApprovalDecisionInput {
   readonly decision: ApprovalDecisionValue;
   readonly decidedBy: string;
   readonly reason?: string;
+  /** Present when the click came from a grant card button. */
+  readonly grantIntent?: string;
+  readonly grantScope?: string;
   readonly now: number;
 }
 
@@ -99,6 +109,9 @@ interface ApprovalRequestRow {
   subject_agent_id: string | null;
   subject_channel: string | null;
   subject_raw_id: string | null;
+  grant_json: string | null;
+  grant_intent: string | null;
+  grant_scope: string | null;
 }
 
 export function createApprovalRequest(input: CreateApprovalRequestInput): ApprovalRequestRecord {
@@ -110,8 +123,9 @@ export function createApprovalRequest(input: CreateApprovalRequestInput): Approv
         id, type, channel, account_id, chat_id, instance_id, thread_id, message_id,
         session_name, agent_id, permission, object_type, object_id,
         subject_kind, subject_contact_id, subject_identity_id, subject_agent_id, subject_channel, subject_raw_id,
+        grant_json,
         status, decision, decided_by, reason, created_at, expires_at, decided_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, NULL, NULL, ?, ?, NULL)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, NULL, NULL, ?, ?, NULL)`,
     )
     .run(
       input.id,
@@ -133,6 +147,7 @@ export function createApprovalRequest(input: CreateApprovalRequestInput): Approv
       subject.subjectAgentId,
       subject.subjectChannel,
       subject.subjectRawId,
+      input.grant ? JSON.stringify(input.grant) : null,
       input.createdAt,
       input.expiresAt,
     );
@@ -206,12 +221,23 @@ export function claimApprovalDecision(input: ClaimApprovalDecisionInput): Approv
             decision = ?,
             decided_by = ?,
             reason = ?,
+            grant_intent = ?,
+            grant_scope = ?,
             decided_at = ?
         WHERE id = ?
           AND status = 'pending'
           AND expires_at > ?`,
     )
-    .run(input.decision, input.decidedBy, emptyToNull(input.reason), input.now, input.id, input.now);
+    .run(
+      input.decision,
+      input.decidedBy,
+      emptyToNull(input.reason),
+      emptyToNull(input.grantIntent),
+      emptyToNull(input.grantScope),
+      input.now,
+      input.id,
+      input.now,
+    );
   if (result.changes !== 1) return null;
   return getApprovalRequest(input.id);
 }
@@ -230,6 +256,51 @@ export function expireApprovalRequest(id: string, now: number): ApprovalRequestR
 
 export function isApprovalRequestOpen(record: ApprovalRequestRecord, now: number): boolean {
   return record.status === "pending" && record.expiresAt > now;
+}
+
+/** Pending permission requests on one chat, newest first. Used for card dedupe. */
+export function listPendingApprovalRequestsForChat(chatId: string, now: number): ApprovalRequestRecord[] {
+  ensureApprovalRequestTable();
+  const rows = getDb()
+    .prepare(
+      `SELECT * FROM approval_requests
+        WHERE chat_id = ? AND type = 'permission' AND status = 'pending' AND expires_at > ?
+        ORDER BY created_at DESC`,
+    )
+    .all(chatId, now) as ApprovalRequestRow[];
+  return rows.map(rowToRecord);
+}
+
+/**
+ * Which scope a person picked on their own card. Slack sends the select change
+ * as its own interaction, so the choice has to survive until the button click.
+ */
+export function setApprovalCardScope(input: {
+  readonly requestId: string;
+  readonly userId: string;
+  readonly scope: string;
+  readonly now?: number;
+}): void {
+  ensureApprovalRequestTable();
+  const userId = input.userId.trim().toUpperCase();
+  if (!userId) return;
+  getDb()
+    .prepare(
+      `INSERT INTO approval_card_scopes (request_id, user_id, scope, updated_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(request_id, user_id) DO UPDATE SET scope = excluded.scope, updated_at = excluded.updated_at`,
+    )
+    .run(input.requestId, userId, input.scope, input.now ?? Date.now());
+}
+
+export function getApprovalCardScope(requestId: string, userId: string | null | undefined): string | null {
+  ensureApprovalRequestTable();
+  const normalized = userId?.trim().toUpperCase();
+  if (!normalized) return null;
+  const row = getDb()
+    .prepare("SELECT scope FROM approval_card_scopes WHERE request_id = ? AND user_id = ?")
+    .get(requestId, normalized) as { scope: string } | undefined;
+  return row?.scope?.trim() || null;
 }
 
 interface ApprovalDeliveryRow {
@@ -285,12 +356,24 @@ function ensureApprovalRequestTable(): void {
     "subject_agent_id",
     "subject_channel",
     "subject_raw_id",
+    "grant_json",
+    "grant_intent",
+    "grant_scope",
   ]) {
     if (!approvalColumns.has(column)) {
       db.exec(`ALTER TABLE approval_requests ADD COLUMN ${column} TEXT`);
     }
   }
   db.exec("CREATE INDEX IF NOT EXISTS idx_approval_requests_subject_contact ON approval_requests(subject_contact_id)");
+  db.prepare(
+    `CREATE TABLE IF NOT EXISTS approval_card_scopes (
+      request_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (request_id, user_id)
+    )`,
+  ).run();
   db.prepare(
     `CREATE TABLE IF NOT EXISTS approval_request_deliveries (
       request_id TEXT NOT NULL,
@@ -305,6 +388,7 @@ function ensureApprovalRequestTable(): void {
 }
 
 function rowToRecord(row: ApprovalRequestRow): ApprovalRequestRecord {
+  const grant = parseGrantJson(row.grant_json);
   return {
     id: row.id,
     type: row.type as ApprovalRequestType,
@@ -322,6 +406,9 @@ function rowToRecord(row: ApprovalRequestRow): ApprovalRequestRecord {
     status: row.status as ApprovalRequestStatus,
     decision: (row.decision as ApprovalDecisionValue | null) ?? null,
     ...(fromSubjectColumns(row) ? { subject: fromSubjectColumns(row) } : {}),
+    ...(grant ? { grant } : {}),
+    ...(row.grant_intent ? { grantIntent: row.grant_intent } : {}),
+    ...(row.grant_scope ? { grantScope: row.grant_scope } : {}),
     decidedBy: row.decided_by,
     reason: row.reason,
     createdAt: row.created_at,
@@ -333,4 +420,15 @@ function rowToRecord(row: ApprovalRequestRow): ApprovalRequestRecord {
 function emptyToNull(value: string | undefined | null): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+}
+
+function parseGrantJson(value: string | null): PermissionGrantMetadata | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as PermissionGrantMetadata;
+    if (!parsed || typeof parsed !== "object" || !parsed.capability) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
 }

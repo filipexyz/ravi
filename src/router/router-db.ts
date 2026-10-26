@@ -2233,6 +2233,24 @@ function getDb(): Database {
           OR event_type LIKE '%.delta'
           OR event_type LIKE '%provider_event%'
         );
+    -- Legacy trace fallback: session-trace/query.ts builds
+    -- (session_key IN (?) OR session_name IN (?)) with ORDER BY timestamp DESC
+    -- when the caller passes a name that has no sessions row. The OR cannot use
+    -- any of the key-leading indexes, so SQLite walked idx_session_events_timestamp
+    -- and fetched the whole row for every candidate: a client polling a stale
+    -- session name produced 8-25s reads and ~1GB RSS (2026-10-25). A covering
+    -- partial index ordered by timestamp lets that scan read session_key and
+    -- session_name from the index instead of the table (8.6s -> 0.25s measured
+    -- on the same 1.5M-row database).
+    CREATE INDEX IF NOT EXISTS idx_session_events_visible_order_cover
+      ON session_events(timestamp DESC, session_key, session_name)
+      WHERE event_group != 'stream'
+        AND NOT (
+          event_type = 'adapter.raw'
+          OR event_type LIKE '%.stream%'
+          OR event_type LIKE '%.delta'
+          OR event_type LIKE '%provider_event%'
+        );
     CREATE INDEX IF NOT EXISTS idx_session_events_run_seq
       ON session_events(run_id, seq);
     -- Hot path: SELECT COALESCE(MAX(seq), 0) + 1 FROM session_events WHERE session_key = ?
