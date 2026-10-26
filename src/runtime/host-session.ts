@@ -2,6 +2,7 @@ import type { DeliveryBarrier, DeliveryBarrierSource } from "../delivery-barrier
 import type { SessionEntry } from "../router/index.js";
 import type { TurnProvenance } from "./turn-provenance.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
+import type { RuntimeTurnAuthorityEnvelope } from "./delivery-queue.js";
 import { hasRuntimeTurnAttemptInputMutation, type RuntimeTurnAttemptTerminalStatus } from "./crash-recovery-store.js";
 import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
 import type { SkillGatePersistedListener } from "./skill-gate.js";
@@ -104,6 +105,8 @@ export interface RuntimeHostStreamingSession {
   lastBoundReplyTarget?: RuntimeMessageTarget;
   /** CLI-only or observer turns must not emit to a chat sink. */
   suppressChatEmit?: boolean;
+  /** Authority envelope of the current turn; host-made continuations of the turn inherit it. Set with `currentSource`. */
+  currentTurnAuthority?: RuntimeTurnAuthorityEnvelope;
   /** Provider-neutral channel backend identity for the currently executing turn. */
   currentChannelBackend?: ChannelBackendPromptMetadata;
   /** Runtime model currently assigned to this live stream */

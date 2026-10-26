@@ -42,6 +42,53 @@ export function createQueuedRuntimeUserMessage(prompt: RuntimePromptDeliveryMess
   };
 }
 
+/** Who a turn acts for: what turn-scoped authority is derived from, apart from `source`. */
+export type RuntimeTurnAuthorityEnvelope = Pick<
+  RuntimeLaunchPrompt,
+  | "context"
+  | "_approvalSource"
+  | "_turnOrigin"
+  | "_heartbeat"
+  | "_cron"
+  | "_jobId"
+  | "_trigger"
+  | "_triggerId"
+  | "_sessionFollowup"
+  | "_sessionFollowupCadenceId"
+  | "_sessionFollowupRunId"
+>;
+
+/**
+ * Copy the authority envelope of a turn so a host-made continuation of that
+ * same turn (inactivity or context recovery) acts for the same actor. Without
+ * it the continuation carries the chat surface but no actor, resolves as
+ * `missing_contact` and runs with zero capabilities.
+ */
+export function pickRuntimeTurnAuthorityEnvelope(
+  prompt: Partial<RuntimeLaunchPrompt> | null | undefined,
+): RuntimeTurnAuthorityEnvelope {
+  if (!prompt) return {};
+  const envelope: RuntimeTurnAuthorityEnvelope = {};
+  if (prompt.context) envelope.context = { ...prompt.context };
+  if (prompt._approvalSource) envelope._approvalSource = { ...prompt._approvalSource };
+  if (prompt._turnOrigin) envelope._turnOrigin = prompt._turnOrigin;
+  if (prompt._heartbeat) envelope._heartbeat = prompt._heartbeat;
+  if (prompt._cron) {
+    envelope._cron = prompt._cron;
+    if (prompt._jobId) envelope._jobId = prompt._jobId;
+  }
+  if (prompt._trigger) {
+    envelope._trigger = prompt._trigger;
+    if (prompt._triggerId) envelope._triggerId = prompt._triggerId;
+  }
+  if (prompt._sessionFollowup) {
+    envelope._sessionFollowup = prompt._sessionFollowup;
+    if (prompt._sessionFollowupCadenceId) envelope._sessionFollowupCadenceId = prompt._sessionFollowupCadenceId;
+    if (prompt._sessionFollowupRunId) envelope._sessionFollowupRunId = prompt._sessionFollowupRunId;
+  }
+  return envelope;
+}
+
 export function hasIsolatedRuntimeTurnEnvelope(
   prompt: Pick<RuntimeLaunchPrompt, "_channelBackend" | "_turnOrigin"> | null | undefined,
 ): boolean {

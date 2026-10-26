@@ -37,6 +37,7 @@ import {
   canReleaseRuntimeDeliveryBarrier,
   createQueuedRuntimeUserMessage,
   createRuntimeMessageGenerator,
+  pickRuntimeTurnAuthorityEnvelope,
 } from "./delivery-queue.js";
 import type { RuntimeHostStreamingSession, RuntimeMessageTarget, RuntimeUserMessage } from "./host-session.js";
 import {
@@ -3738,6 +3739,8 @@ describe("runtime session trace instrumentation", () => {
     process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS = "1000";
     const streaming = makeStreamingSession();
     seedAdapterTrace(streaming, "turn-mid-then-tool-hang");
+    // A cron turn: its continuation must act for the same automation.
+    streaming.currentTurnAuthority = pickRuntimeTurnAuthorityEnvelope({ _cron: true, _jobId: "job-daily" });
     const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
     const stashed = new Map<string, RuntimeUserMessage[]>();
     const providerLifecycle: string[] = [];
@@ -3783,6 +3786,11 @@ describe("runtime session trace instrumentation", () => {
     expect(queued).toHaveLength(1);
     expect(queued[0]?.message.content).toContain("Inatividade");
     expect(queued[0]?.message.content).toContain("O turno nao foi encerrado");
+    expect(queued[0]?.launchPrompt).toMatchObject({
+      _cron: true,
+      _jobId: "job-daily",
+      source: streaming.currentSource,
+    });
 
     expect(Date.now() - started).toBeLessThan(8_000);
     expect(providerLifecycle).toEqual(["close"]);

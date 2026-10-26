@@ -36,6 +36,12 @@ const contexts: Record<string, ContextRecord> = {
     capabilities: [{ permission: "read", objectType: "context", objectId: "codex-bash-hook" }],
   },
   denied: { ...allowedContext, contextKey: "rctx_hook_denied", capabilities: [] },
+  // An identified actor whose grants leave the hook out.
+  ungranted: {
+    ...allowedContext,
+    contextKey: "rctx_hook_ungranted",
+    capabilities: [{ permission: "use", objectType: "tool", objectId: "Read" }],
+  },
   expired: { ...allowedContext, contextKey: "rctx_hook_expired", expiresAt: Date.now() - 1 },
   revoked: { ...allowedContext, contextKey: "rctx_hook_revoked", revokedAt: Date.now() - 1 },
 };
@@ -128,6 +134,21 @@ describe("Codex hook through the host gateway", () => {
           contextKey: contexts[kind]?.contextKey ?? "rctx_hook_unknown",
         }),
       );
+    }, 20_000);
+  }
+
+  // The context group is open: an unknown, expired or revoked key reaches command access with no capabilities.
+  for (const kind of ["denied", "ungranted", "expired", "revoked", "unknown"]) {
+    it(`names the denied capability instead of a gateway HTTP status (${kind})`, async () => {
+      const output = await callHook(JSON.stringify({ tool_input: { command: "pwd" } }), {
+        contextKey: contexts[kind]?.contextKey ?? "rctx_hook_unknown",
+      });
+      expectDeny(output);
+      const reason = output.hookSpecificOutput.permissionDecisionReason as string;
+      expect(reason).toContain("Ravi denied tool use in this turn (missing capability: read:context:codex-bash-hook)");
+      expect(reason).toContain("no linked contact");
+      expect(reason).toContain("never granted this permission");
+      expect(reason).not.toContain("HTTP 403");
     }, 20_000);
   }
 
