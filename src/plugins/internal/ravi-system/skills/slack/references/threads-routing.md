@@ -43,6 +43,10 @@ canal com `ravi sessions report "..."` sem fechar e termina com
 `ravi sessions close-thread [--return "..."]`. Progresso e resultado chegam como
 `[System] Inform: Slack thread "<titulo>" (<sessao-da-thread>) ...`.
 
+Follow-up no canal sobre o assunto de uma thread aberta vai para ela com
+`thread-send`, sem abrir outra. Threads nao falam entre si: a thread pede com
+`report` e a sessao do canal repassa com `thread-send`.
+
 ## Diagnostico
 
 ```bash

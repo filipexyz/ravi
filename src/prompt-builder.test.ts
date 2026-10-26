@@ -438,6 +438,12 @@ describe("Slack Threads section", () => {
     );
     expect(channel).toContain("`ravi sessions threads --json` lists the threads of this conversation");
     expect(channel).toContain('`ravi sessions thread-send <thread-session> "<instructions>"`');
+    expect(channel).toContain(
+      "A message that continues the subject of a thread this session already opened belongs in that thread.",
+    );
+    expect(channel).toContain(
+      "Threads cannot message each other. When a thread reports that it needs something from another thread",
+    );
     expect(channel).toContain('`[System] Inform: Slack thread "<title>" (<thread-session>) ...`');
     expect(channel).toContain("Prefer a thread whenever the work takes several steps or will post progress");
     expect(channel).toContain("react to the request or reply with @@SILENT@@");
@@ -447,6 +453,9 @@ describe("Slack Threads section", () => {
     expect(thread).toContain("Keep the work and its progress in this thread");
     expect(thread).toContain("comes from the orchestrating session: treat it as its instructions");
     expect(thread).toContain('`ravi sessions report "<text>"`. It does not close the thread.');
+    expect(thread).toContain(
+      "Other threads cannot be messaged from here; the orchestrating session relays between them.",
+    );
     expect(thread).toContain("the new thread starts at the channel root, beside this one.");
   });
 

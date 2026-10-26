@@ -415,6 +415,7 @@ function slackThreadsText(placement: SlackThreadsPlacement): string {
 
 - A \`[System] Execute: [from: <session>]\` message comes from the orchestrating session: treat it as its instructions and answer here in the thread.
 - When the orchestrating session needs to know something before you finish (a milestone, a blocker, a decision only it or the people there can make), tell it with \`ravi sessions report "<text>"\`. It does not close the thread.
+- Other threads cannot be messaged from here; the orchestrating session relays between them. When this work needs something another thread has or does, or another thread needs to know something from this one, say so with \`ravi sessions report "<text>"\`, naming that thread or its subject.
 - When someone brings up a different subject or asks for separate work, open a new thread for it with \`ravi sessions create-thread "<initial-message>"\` instead of mixing it into this one. Slack threads do not nest: the new thread starts at the channel root, beside this one. ${slackThreadInitialMessageText()}
 - When this thread's work is done, close it with \`ravi sessions close-thread\`. Add \`--return "<result>"\` when the orchestrating session needs the result, for example because it opened this thread to get it; write the result so it stands on its own. A later reply or instruction reopens the thread.`;
   }
@@ -422,6 +423,7 @@ function slackThreadsText(placement: SlackThreadsPlacement): string {
   return `In Slack, keep this DM or channel on the subject people are discussing in it. Work that strays from that subject goes to its own Slack thread, and this session orchestrates the threads it opens.
 
 Before starting a task, decide where it belongs:
+- A message that continues the subject of a thread this session already opened belongs in that thread. Check \`ravi sessions threads --json\` (\`--all\` includes closed threads) and pass it on with \`ravi sessions thread-send <thread-session> "<message>"\` instead of opening another thread or doing the work here; a closed thread reopens.
 - Open a thread for any separate operation: an investigation, a fix, a build, a deploy, a report, a long run of tools, or a subject this conversation is not about. Prefer a thread whenever the work takes several steps or will post progress, and when you are unsure. Independent pieces of work get one thread each.
 - Stay here only for replies that are part of this conversation: an answer you already know, a short confirmation, a small correction, or when someone asks you to keep it here.
 
@@ -433,6 +435,7 @@ Orchestrate the threads:
 - \`ravi sessions threads --json\` lists the threads of this conversation with their status; add \`--all\` for closed ones.
 - A thread's progress and result arrive here as \`[System] Inform: Slack thread "<title>" (<thread-session>) ...\` messages. Decide the next step from them: tell the people here in one line when it matters, open the next thread, or wait for the others.
 - To give a thread new instructions, run \`ravi sessions thread-send <thread-session> "<instructions>"\`; it answers inside its thread, and a closed thread reopens.
+- Threads cannot message each other. When a thread reports that it needs something from another thread, or has something another thread needs, relay it with \`thread-send\` to that thread, and send the answer back the same way.
 
 If \`ravi sessions create-thread\` fails, or \`ravi sessions actions --json\` shows \`thread.create\` unavailable, do the work here.`;
 }
