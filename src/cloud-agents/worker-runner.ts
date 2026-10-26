@@ -265,6 +265,7 @@ export class CloudWorkerRunner {
     const start = this.options.startWorker ?? defaultStartEnvironmentWorker;
     const workdir = cloudWorkerWorkdir(worker.agentId || worker.id, env);
     log.info("Starting cloud environment worker", { workerId: worker.id, agent: worker.agentName });
+    const startedAt = this.now();
     const entry: RunningWorker = {
       workerId: worker.id,
       environmentId: worker.providerEnvironmentId,
@@ -284,12 +285,12 @@ export class CloudWorkerRunner {
       )
       .then(
         () => {
-          if (!controller.signal.aborted) this.recordFailure(worker.id, "The environment worker stopped.");
+          if (!controller.signal.aborted) this.recordFailure(worker.id, "The environment worker stopped.", startedAt);
           else this.history.delete(worker.id);
         },
         (error) => {
           if (controller.signal.aborted) return;
-          this.recordFailure(worker.id, errorText(error, key));
+          this.recordFailure(worker.id, errorText(error, key), startedAt);
         },
       )
       .finally(() => {
@@ -298,9 +299,11 @@ export class CloudWorkerRunner {
     this.workers.set(worker.id, entry);
   }
 
-  private recordFailure(workerId: string, message: string): void {
+  private recordFailure(workerId: string, message: string, startedAt: number): void {
     const previous = this.history.get(workerId);
-    const failures = (previous?.failures ?? 0) + 1;
+    // A worker that ran longer than the longest backoff was healthy: its next failure starts the count over.
+    const healthy = this.now() - startedAt >= RESTART_BACKOFF_MAX_MS;
+    const failures = (healthy ? 0 : (previous?.failures ?? 0)) + 1;
     const backoff = Math.min(RESTART_BACKOFF_MIN_MS * 2 ** (failures - 1), RESTART_BACKOFF_MAX_MS);
     this.history.set(workerId, { failures, lastError: message, restartAt: this.now() + backoff });
     log.warn("Cloud environment worker failed", { workerId, failures, error: message });

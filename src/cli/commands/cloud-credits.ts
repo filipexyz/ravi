@@ -15,13 +15,14 @@ import type { CloudCreditEntry } from "../../cloud-agents/types.js";
 import { contractDryRun } from "../agent-contract.js";
 import { formatUsd, usageError, withCloudAgentsContract } from "../cloud-agents-contract.js";
 import {
-  type CloudProductCommandDeps,
   cloudCreditEntryReturnSchema,
   cloudCreditsReturnSchema,
+  type CloudProductCommandDeps,
   formatBrl,
   parseBrl,
   printJson,
   productSession,
+  refuseInAgentRuntime,
 } from "../cloud-product-contract.js";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 
@@ -113,6 +114,13 @@ export class CloudCreditsCommands {
     execute?: boolean,
   ) {
     const op = "cloud credits topup";
+    refuseInAgentRuntime(op, this.deps, {
+      code: "CLOUD_AGENT_CANNOT_BUY_CREDITS",
+      message: "Agents do not buy cloud credits.",
+      suggestedAction:
+        "Ask an owner or admin to run: ravi cloud credits topup <amount> --execute (or buy them in the Console)",
+      asJson,
+    });
     const amountBrl = parseBrl(op, "<amount>", amount, asJson);
     if (amountBrl < CLOUD_TOPUP_MIN_BRL || amountBrl > CLOUD_TOPUP_MAX_BRL) {
       usageError(op, `<amount> must be from R$ ${CLOUD_TOPUP_MIN_BRL} to R$ ${CLOUD_TOPUP_MAX_BRL}.`, asJson);

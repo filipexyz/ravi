@@ -21,6 +21,7 @@ import {
   parseUsd,
   printJson,
   productSession,
+  refuseInAgentRuntime,
 } from "../cloud-product-contract.js";
 import { Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 
@@ -134,6 +135,15 @@ export class CloudSettingsCommands {
       const session = await productSession(this.deps, undefined, false);
       const current = await getCloudSettings(session.client);
       const expansions = spendExpansions(current, body);
+      if (expansions.length > 0) {
+        refuseInAgentRuntime(op, this.deps, {
+          code: "CLOUD_AGENT_CANNOT_RAISE_SPENDING",
+          message: "Agents do not change cloud settings in a way that can raise spending; lowering a cap is fine.",
+          suggestedAction:
+            "Ask an owner or admin to run: ravi cloud settings set ... --execute (or change it in the Console)",
+          asJson,
+        });
+      }
       if (expansions.length > 0 && execute !== true) {
         contractDryRun(
           op,

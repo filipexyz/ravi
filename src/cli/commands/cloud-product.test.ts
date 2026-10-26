@@ -462,6 +462,22 @@ describe("ravi cloud agents approve|cap|memory-reset", () => {
     expectSchema(CloudAgentAdminCommands, "memoryReset", done.result);
   });
 
+  it("an agent's turn never approves, raises a cap, buys credits or raises spending; lowering still applies", async () => {
+    const fake = createFakeProductConsole({ agents: [agent()] });
+    const inAgent = deps(fake, { inAgentRuntime: () => true });
+    const approve = await capture(() => new CloudAgentAdminCommands(inAgent).approve("triage", "clinica", true, true));
+    expect(approve.error).toMatchObject({ code: "CLOUD_AGENT_CANNOT_APPROVE_AGENT", exitCode: 3 });
+    const raise = await capture(() => new CloudAgentAdminCommands(inAgent).cap("triage", "100", "clinica", true, true));
+    expect(raise.error).toMatchObject({ code: "CLOUD_AGENT_CANNOT_RAISE_CAP", exitCode: 3 });
+    const topup = await capture(() => new CloudCreditsCommands(inAgent).topup("100", true, true));
+    expect(topup.error).toMatchObject({ code: "CLOUD_AGENT_CANNOT_BUY_CREDITS", exitCode: 3 });
+    const spend = await capture(() => new CloudSettingsCommands(inAgent).set(undefined, "500", undefined, true, true));
+    expect(spend.error).toMatchObject({ code: "CLOUD_AGENT_CANNOT_RAISE_SPENDING", exitCode: 3 });
+    expect(fake.writes()).toHaveLength(0);
+    const lower = await capture(() => new CloudAgentAdminCommands(inAgent).cap("triage", "10", "clinica", true, false));
+    expect(lower.result).toMatchObject({ agent: { cap: { monthlyCapUsd: 10 } } });
+  });
+
   it("an unknown agent is CLOUD_AGENT_NOT_FOUND", async () => {
     const fake = createFakeProductConsole({ agents: [agent()] });
     const outcome = await capture(() => new CloudAgentAdminCommands(deps(fake)).approve("nope", "clinica", true, true));

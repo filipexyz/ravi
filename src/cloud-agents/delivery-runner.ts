@@ -46,8 +46,10 @@ import {
   dbCloseCloudChatRun,
   dbEndCloudThreadRuns,
   dbFinishCloudDeliveryItem,
+  dbGetCloudChatApproval,
   dbListCloudThreadsForRun,
   dbListDueCloudDeliveryItems,
+  dbMarkCloudChatApprovalCardSent,
   dbMarkCloudDeliveryItemInformed,
   dbRecordCloudChatApproval,
   dbRecordCloudChatQuestion,
@@ -397,7 +399,10 @@ export class CloudDeliveryRunner {
     });
     let via: CloudApprovalInformInput["via"] = actorContactId ? "reply_code" : "console";
     const chat = this.chat(item, sessionName);
-    if (actorContactId && chat && normalizeChatChannel(chat.channel) === "slack") {
+    if (dbGetCloudChatApproval(approvalId)?.cardSentAt) {
+      // A retry after the inform failed: the card is already in the person's Slack.
+      via = "slack_card";
+    } else if (actorContactId && chat && normalizeChatChannel(chat.channel) === "slack") {
       const userIds = (this.deps.slackUserIdsForContact ?? defaultSlackUserIdsForContact)(
         actorContactId,
         chat.instanceId ?? chat.accountId,
@@ -418,6 +423,7 @@ export class CloudDeliveryRunner {
             blocks: card.blocks,
             privateTo: userIds,
           });
+          dbMarkCloudChatApprovalCardSent(approvalId, this.now());
           via = "slack_card";
         } catch (error) {
           log.warn("Private approval card not delivered; asking for the reply code", {

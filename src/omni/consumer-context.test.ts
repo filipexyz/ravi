@@ -1323,6 +1323,10 @@ describe("OmniConsumer channel context", () => {
     );
     expect(promptCalls).toHaveLength(0);
     expect(commitMatchedRouteCalls).toHaveLength(0);
+    // Taken by the run is a terminal outcome: a redelivery after the in-flight window never reaches the run again.
+    const inFlight = consumer["inboundMessagesInFlight"] as Map<string, number>;
+    expect(inFlight.size).toBe(0);
+    expect((consumer["processedInboundMessages"] as { size: number }).size).toBe(1);
 
     // A message the run does not take follows the normal route.
     takes = false;

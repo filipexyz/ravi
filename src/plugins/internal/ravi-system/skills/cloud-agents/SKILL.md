@@ -53,10 +53,10 @@ trigger): o Console confere o acesso dessa pessoa a cada ferramenta Ravi.
 | `ravi cloud triggers create` / `update` que deixa ligado | sim |
 | `ravi cloud secrets set <NOME> --stdin` | sim (só no terminal) |
 | `ravi cloud webhook set --stdin` | sim (só no terminal) |
-| `ravi cloud credits topup <valor>` | sim |
-| `ravi cloud settings set` que pode aumentar o gasto | sim |
-| `ravi cloud agents approve <agent>` | sim |
-| `ravi cloud agents cap <agent> <usd>` que sobe ou tira o limite | sim |
+| `ravi cloud credits topup <valor>` | sim (nunca dentro de um agent) |
+| `ravi cloud settings set` que pode aumentar o gasto | sim (nunca dentro de um agent) |
+| `ravi cloud agents approve <agent>` | sim (nunca dentro de um agent) |
+| `ravi cloud agents cap <agent> <usd>` que sobe ou tira o limite | sim (nunca dentro de um agent) |
 | `ravi cloud agents memory-reset <agent>` | sim |
 | `ravi cloud catalog install <entry>` / `catalog packs install <pack>` | sim |
 | `ravi cloud worker enable` | sim (só no terminal) |
@@ -462,4 +462,5 @@ opcionais:
 | `CLOUD_WORKER_OFFLINE` | ligue o daemon da instalação; lá, `ravi cloud worker list` |
 | `CLOUD_RUN_NOT_ACTIVE` | o run já terminou; `ravi cloud runs show <run>` |
 | `CLOUD_AGENTS_FORBIDDEN` | seu papel na organização não permite |
+| `CLOUD_AGENT_CANNOT_APPROVE_AGENT` / `CLOUD_AGENT_CANNOT_RAISE_CAP` / `CLOUD_AGENT_CANNOT_BUY_CREDITS` / `CLOUD_AGENT_CANNOT_RAISE_SPENDING` | num turno de agent: peça a um owner ou admin; baixar um limite funciona |
 | `CLOUD_PROVIDER_ERROR` | tente de novo em instantes |

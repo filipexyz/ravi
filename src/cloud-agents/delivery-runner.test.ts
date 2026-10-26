@@ -274,6 +274,28 @@ describe("CloudDeliveryRunner", () => {
     });
   });
 
+  it("approval on Slack: a retry after the inform failed never posts the private card again", async () => {
+    const fake = createFakeCloudConsole();
+    let informDown = true;
+    const { runner, informs, sent, advance } = setup(fake, {
+      chat: SLACK_CHAT,
+      slackUsers: ["U0ANA"],
+      informFails: () => informDown,
+    });
+    const item = inboxItem("cloud_agents.approval.requested", { approvalId: "cc12dd34", tool: "create_issue" });
+    acceptCloudInboxItem(item);
+    await runner.tickOnce();
+    expect(sent).toHaveLength(1);
+    expect(dbGetCloudDeliveryItem(item.eventId)?.state).toBe("pending");
+
+    informDown = false;
+    advance(60 * 60_000);
+    await runner.tickOnce();
+    expect(sent).toHaveLength(1);
+    expect(informs[0]!.prompt).toContain("botões Aprovar e Negar");
+    expect(dbGetCloudDeliveryItem(item.eventId)?.state).toBe("done");
+  });
+
   it("approval on WhatsApp asks for the reply code; a card that fails falls back to it too", async () => {
     const fake = createFakeCloudConsole();
     const whatsapp = setup(fake);

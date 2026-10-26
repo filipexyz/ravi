@@ -54,7 +54,8 @@ function db(): Database {
         actor_name TEXT,
         status TEXT NOT NULL CHECK(status IN ('pending','deciding','approved','denied','closed')),
         created_at INTEGER NOT NULL,
-        decided_at INTEGER
+        decided_at INTEGER,
+        card_sent_at INTEGER
       );
       CREATE INDEX IF NOT EXISTS idx_cloud_chat_approvals_code ON cloud_chat_approvals(code, status);
       CREATE TABLE IF NOT EXISTS cloud_chat_questions (
@@ -260,6 +261,8 @@ export interface CloudChatApproval {
   createdAt: number;
   /** When it was decided; while `deciding`, when it was claimed. */
   decidedAt: number | null;
+  /** When the private Slack card went out; a retried delivery never posts it twice. */
+  cardSentAt: number | null;
 }
 
 /** A claim older than this was left by a Ravi that stopped mid-decision: the approval is open again. */
@@ -287,6 +290,7 @@ interface ApprovalRow {
   status: string;
   created_at: number;
   decided_at: number | null;
+  card_sent_at: number | null;
 }
 
 function toApproval(row: ApprovalRow): CloudChatApproval {
@@ -303,6 +307,7 @@ function toApproval(row: ApprovalRow): CloudChatApproval {
     status: row.status as CloudChatApprovalStatus,
     createdAt: row.created_at,
     decidedAt: row.decided_at,
+    cardSentAt: row.card_sent_at,
   };
 }
 
@@ -316,7 +321,7 @@ export function cloudApprovalCode(approvalId: string): string {
 
 /** Records an approval asked in chat once; false when it was already recorded. */
 export function dbRecordCloudChatApproval(
-  input: Omit<CloudChatApproval, "code" | "status" | "createdAt" | "decidedAt"> & { now?: number },
+  input: Omit<CloudChatApproval, "code" | "status" | "createdAt" | "decidedAt" | "cardSentAt"> & { now?: number },
 ): boolean {
   const now = input.now ?? Date.now();
   const result = db()
@@ -339,6 +344,10 @@ export function dbRecordCloudChatApproval(
       now,
     );
   return result.changes === 1;
+}
+
+export function dbMarkCloudChatApprovalCardSent(approvalId: string, now = Date.now()): void {
+  db().prepare("UPDATE cloud_chat_approvals SET card_sent_at = ? WHERE approval_id = ?").run(now, approvalId);
 }
 
 export function dbGetCloudChatApproval(approvalId: string): CloudChatApproval | null {

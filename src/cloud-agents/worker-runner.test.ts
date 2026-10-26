@@ -152,6 +152,43 @@ describe("CloudWorkerRunner", () => {
     await runner.stop();
   });
 
+  it("the backoff doubles on quick failures and starts over after a worker ran long", async () => {
+    const fake = createFakeProductConsole();
+    const env = stateEnv();
+    writeCloudWorkerState({ enabled: true, enabledAt: null }, env);
+    writeCloudWorkerKey("wrk_1", "env-key-1", env);
+    const starter = fakeStarter();
+    let now = 1_000_000;
+    const runner = new CloudWorkerRunner({
+      env,
+      openSession: fakeCloudSessionOpener(fake),
+      startWorker: starter.start,
+      now: () => now,
+    });
+    const failNow = async () => {
+      starter.fail("env_self_1", new Error("boom"));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    };
+    await runner.tick();
+    await failNow();
+    now += 31_000;
+    expect(await runner.tick()).toMatchObject({ started: 1 });
+    await failNow();
+    // Second quick failure: 60 s.
+    now += 31_000;
+    expect(await runner.tick()).toMatchObject({ started: 0, backoff: 1 });
+    now += 30_000;
+    expect(await runner.tick()).toMatchObject({ started: 1 });
+
+    // It now runs longer than the longest backoff: the next failure waits 30 s again.
+    now += 16 * 60_000;
+    await failNow();
+    now += 31_000;
+    expect(await runner.tick()).toMatchObject({ started: 1 });
+    expect(starter.starts).toHaveLength(4);
+    await runner.stop();
+  });
+
   it("a changed key restarts the worker; a removed assignment stops it", async () => {
     const fake = createFakeProductConsole();
     const env = stateEnv();

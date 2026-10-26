@@ -1221,6 +1221,7 @@ export class OmniConsumer {
         (text) => this.sender.send(instanceId, chatJid, text),
       ))
     ) {
+      this.completeInboundMessage(dedupKey);
       return;
     }
 

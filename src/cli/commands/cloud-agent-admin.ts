@@ -24,11 +24,12 @@ import type { CloudAgent } from "../../cloud-agents/types.js";
 import { contractDryRun } from "../agent-contract.js";
 import { formatUsd, requireCloudProject, withCloudAgentsContract } from "../cloud-agents-contract.js";
 import {
-  type CloudProductCommandDeps,
   cloudProductAgentReturnSchema,
+  type CloudProductCommandDeps,
   parseUsd,
   printJson,
   productSession,
+  refuseInAgentRuntime,
   requireArg,
   requireProjectAgent,
 } from "../cloud-product-contract.js";
@@ -110,6 +111,13 @@ export class CloudAgentAdminCommands {
     @Option({ flags: "--execute", description: "Approve (without it, print the plan and exit 3)" }) execute?: boolean,
   ) {
     const op = "cloud agents approve";
+    refuseInAgentRuntime(op, this.deps, {
+      code: "CLOUD_AGENT_CANNOT_APPROVE_AGENT",
+      message: "Agents do not approve what a cloud agent may do.",
+      suggestedAction:
+        "Ask an owner or admin to run: ravi cloud agents approve <agent> --execute (or approve it in the Console)",
+      asJson,
+    });
     const ref = requireArg(op, "<agent>", agentRef, asJson);
     return withCloudAgentsContract(
       op,
@@ -188,6 +196,14 @@ export class CloudAgentAdminCommands {
         const current = await getCloudProductAgent(session.client, matched.id);
         const currentCap = current.cap?.monthlyCapUsd ?? null;
         const raises = currentCap !== null && (next === null || next > currentCap);
+        if (raises) {
+          refuseInAgentRuntime(op, this.deps, {
+            code: "CLOUD_AGENT_CANNOT_RAISE_CAP",
+            message: "Agents do not raise or remove a cloud agent's cap; lowering it is fine.",
+            suggestedAction: "Ask an owner or admin to run: ravi cloud agents cap <agent> <usd|none> --execute",
+            asJson,
+          });
+        }
         if (raises && execute !== true) {
           contractDryRun(
             op,
