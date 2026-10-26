@@ -63,7 +63,11 @@
 - **Non-terminal task**: an `open`/`in_progress`/`blocked` task older than 20 days
   MUST be preserved.
 - **Refreshed mtime**: a candidate whose mtime is renewed after the scan MUST be
-  preserved by the execute-time re-check, with a reason.
+  preserved by the execute-time re-check, with a reason — in **every** class,
+  `codex-inactive` included.
+- **Vanished supersession**: if the newest backup of a type disappears between the
+  scan and the execute, the older entry that became the newest MUST be preserved
+  instead of leaving the type with no backup.
 - **Omni hold**: an Omni object carrying a hold MUST be preserved; when the Omni
   reference check is unavailable or indeterminate, all Omni objects MUST be
   preserved and the run MUST record the limitation.

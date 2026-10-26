@@ -269,7 +269,8 @@ checker MUST rely on these seams; no test may delete outside its fixture.
 9. The execute gate MUST re-verify every candidate immediately before removal:
    class containment, allowlist, current age against the class threshold,
    Ravi ownership for Codex rollouts, the `status@broadcast` match for Omni
-   videos, and protected paths. A candidate whose signal changed is preserved.
+   videos, the newest-of-type proof for superseded backups, and protected paths.
+   A candidate whose signal changed is preserved.
 10. Protected roots MUST stay protected, and a class root that itself lives inside
     a protected root (`~/.codex/sessions`, `~/.ravi/tasks`) MUST be exempt only for
     its own allowlisted candidates — never for the whole protected root.
