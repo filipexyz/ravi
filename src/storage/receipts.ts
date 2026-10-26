@@ -33,12 +33,18 @@ export interface StorageReceipt {
   dryRun: boolean;
   policyVersion: string;
   policyHash: string;
+  /** Bytes actually removed. Always 0 on a dry-run. */
   freedBytes: number;
+  /** Bytes the policy would remove (the dry-run estimate). */
+  wouldFreeBytes: number;
   classes: Record<string, StorageClassSummary>;
   disk: { before: DiskUsage | null; after: DiskUsage | null };
   errors: string[];
+  /** Candidates the execute gate preserved (deterministic, not a failure). */
+  blocked: string[];
   limitations: string[];
   removed: string[];
+  removedSample: Array<{ path: string; bytes: number; reason: string }>;
   preservedSample: Array<{ path: string; bytes: number; reason: string }>;
 }
 
@@ -74,13 +80,24 @@ interface LegacyReceipt {
   policyVersion?: string;
   policyHash?: string;
   freedBytes?: number;
+  wouldFreeBytes?: number;
   classes?: Record<string, Partial<StorageClassSummary>>;
   areas?: Record<string, LegacyAreaSummary>;
   disk?: { before?: DiskUsage | null; after?: DiskUsage | null } | null;
   errors?: string[];
+  blocked?: string[];
   limitations?: string[];
   removed?: string[];
+  removedSample?: Array<{ path: string; bytes: number; reason: string }>;
   preservedSample?: Array<{ path: string; bytes: number; reason: string }>;
+}
+
+/** A finite, non-negative count/byte value; null when the receipt is damaged. */
+function finiteNumber(value: unknown): number | null {
+  if (value === undefined || value === null) return 0;
+  const parsed = typeof value === "number" ? value : Number.NaN;
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return parsed;
 }
 
 export function normalizeStorageReceipt(raw: LegacyReceipt): StorageReceipt | null {
@@ -89,32 +106,42 @@ export function normalizeStorageReceipt(raw: LegacyReceipt): StorageReceipt | nu
   if (!sourceClasses || typeof sourceClasses !== "object") return null;
   const classes: Record<string, StorageClassSummary> = {};
   for (const [id, summary] of Object.entries(sourceClasses)) {
-    const preserved = Number(summary.preserved ?? 0) || 0;
-    classes[id] = {
-      candidates: Number(summary.candidates ?? 0) || 0,
-      removed: Number(summary.removed ?? 0) || 0,
-      preserved,
-      eligibleBytes: Number(summary.eligibleBytes ?? 0) || 0,
-      inDoubtBytes: Number(summary.inDoubtBytes ?? 0) || 0,
-      preservedBytes: Number(summary.preservedBytes ?? 0) || 0,
-      freedBytes: Number(summary.freedBytes ?? 0) || 0,
+    const preserved = Number(summary.preserved ?? 0);
+    const fields = {
+      candidates: finiteNumber(summary.candidates),
+      removed: finiteNumber(summary.removed),
+      preserved: finiteNumber(preserved),
+      eligibleBytes: finiteNumber(summary.eligibleBytes),
+      inDoubtBytes: finiteNumber(summary.inDoubtBytes),
+      preservedBytes: finiteNumber(summary.preservedBytes),
+      freedBytes: finiteNumber(summary.freedBytes),
     };
+    // A damaged class row invalidates the receipt instead of silently counting 0.
+    if (Object.values(fields).some((value) => value === null)) return null;
+    classes[id] = fields as StorageClassSummary;
   }
-  const createdAt = typeof raw.createdAt === "string" ? raw.createdAt : new Date(0).toISOString();
+  if (typeof raw.createdAt !== "string" || Number.isNaN(Date.parse(raw.createdAt))) return null;
+  const freedBytes = finiteNumber(raw.freedBytes);
+  if (freedBytes === null) return null;
+  const wouldFreeBytes = finiteNumber(raw.wouldFreeBytes);
+  if (wouldFreeBytes === null) return null;
   return {
     schema: "ravi.storage.receipt/v2",
     id: typeof raw.id === "string" ? raw.id : "legacy",
-    createdAt,
+    createdAt: raw.createdAt,
     tier: typeof raw.tier === "string" ? raw.tier : "unknown",
     dryRun: raw.dryRun === true,
     policyVersion: typeof raw.policyVersion === "string" ? raw.policyVersion : "0",
     policyHash: typeof raw.policyHash === "string" ? raw.policyHash : "",
-    freedBytes: Number(raw.freedBytes ?? 0) || 0,
+    freedBytes,
+    wouldFreeBytes,
     classes,
     disk: { before: raw.disk?.before ?? null, after: raw.disk?.after ?? null },
     errors: Array.isArray(raw.errors) ? raw.errors : [],
+    blocked: Array.isArray(raw.blocked) ? raw.blocked : [],
     limitations: Array.isArray(raw.limitations) ? raw.limitations : [],
     removed: Array.isArray(raw.removed) ? raw.removed : [],
+    removedSample: Array.isArray(raw.removedSample) ? raw.removedSample : [],
     preservedSample: Array.isArray(raw.preservedSample) ? raw.preservedSample : [],
   };
 }
@@ -180,14 +207,16 @@ export function pruneStorageReceipts(dir: string, options: PruneReceiptsOptions)
       }
       return { path, mtimeMs };
     })
-    .filter((record) => !keep.has(record.path))
     .sort((a, b) => b.mtimeMs - a.mtimeMs);
 
   const removed: string[] = [];
   records.forEach((record, index) => {
+    // `keepPaths` still consumes one slot of the cap; otherwise the in-flight
+    // receipt lets the directory hold `maxCount + 1` files forever.
     const tooOld = options.now - record.mtimeMs > options.maxAgeMs;
     const overCount = index >= options.maxCount;
     if (!tooOld && !overCount) return;
+    if (keep.has(record.path)) return;
     try {
       unlinkSync(record.path);
       removed.push(record.path);

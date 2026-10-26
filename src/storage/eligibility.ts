@@ -130,8 +130,21 @@ export function codexProcessRunning(): boolean {
 const MAX_META_BYTES = 4 * 1024 * 1024;
 const READ_CHUNK_BYTES = 64 * 1024;
 
-/** Read the first line of a Codex rollout and return its session id, if any. */
-export function parseCodexSessionId(file: string): string | null {
+/**
+ * The only originator value Codex records for a Ravi-launched session.
+ * `codex_exec` (a direct CLI run) and anything else is NOT proven to be Ravi's,
+ * so it is preserved instead of deleted.
+ */
+export const RAVI_CODEX_ORIGINATOR = "ravi";
+
+export interface CodexRolloutMeta {
+  sessionId: string;
+  /** `payload.originator` of the first record; null when absent or unreadable. */
+  originator: string | null;
+}
+
+/** Read the first line of a Codex rollout, bounded and never following links. */
+function readFirstLine(file: string): string | null {
   let fd: number | null = null;
   try {
     fd = openSync(file, "r");
@@ -153,18 +166,39 @@ export function parseCodexSessionId(file: string): string | null {
       offset += read;
     }
     if (newlineAt < 0) return null;
-    const firstLine = Buffer.concat(chunks).toString("utf8");
-    const parsed = JSON.parse(firstLine) as {
-      type?: string;
-      payload?: { session_id?: string; id?: string };
-    };
-    if (parsed.type !== "session_meta") return null;
-    return parsed.payload?.session_id ?? parsed.payload?.id ?? null;
+    return Buffer.concat(chunks).toString("utf8");
   } catch {
     return null;
   } finally {
     if (fd !== null) closeSync(fd);
   }
+}
+
+/**
+ * Read the Ravi ownership mark and session id from a Codex rollout header.
+ * Returns null when the header is missing, unreadable or not `session_meta`.
+ */
+export function parseCodexRolloutMeta(file: string): CodexRolloutMeta | null {
+  const firstLine = readFirstLine(file);
+  if (!firstLine) return null;
+  try {
+    const parsed = JSON.parse(firstLine) as {
+      type?: string;
+      payload?: { session_id?: string; id?: string; originator?: unknown };
+    };
+    if (parsed.type !== "session_meta") return null;
+    const sessionId = parsed.payload?.session_id ?? parsed.payload?.id;
+    if (!sessionId) return null;
+    const originator = typeof parsed.payload?.originator === "string" ? parsed.payload.originator : null;
+    return { sessionId, originator };
+  } catch {
+    return null;
+  }
+}
+
+/** Read the first line of a Codex rollout and return its session id, if any. */
+export function parseCodexSessionId(file: string): string | null {
+  return parseCodexRolloutMeta(file)?.sessionId ?? null;
 }
 
 function walkFiles(root: string, out: string[]): void {
@@ -226,6 +260,20 @@ export function scanCodexArea(policy: StoragePolicy, now: number, probe: CodexPr
       entries.push(preserved("codex-inactive", root, file, bytes, "session metadata unreadable (fail-closed)", true));
       continue;
     }
+    const ownership = parseCodexRolloutMeta(file);
+    if (ownership?.originator !== RAVI_CODEX_ORIGINATOR) {
+      entries.push(
+        preserved(
+          "codex-inactive",
+          root,
+          file,
+          bytes,
+          `rollout is not proven to belong to Ravi (originator=${ownership?.originator ?? "missing"})`,
+          true,
+        ),
+      );
+      continue;
+    }
     const liveness = probe.sessionLiveness(sessionId);
     if (liveness === "live") {
       entries.push(preserved("codex-inactive", root, file, bytes, "referenced by a live Ravi session"));
@@ -283,7 +331,11 @@ export function scanTasksArea(policy: StoragePolicy, now: number, probe?: TaskPr
       continue;
     }
     const assessment = probe.assess(record);
-    const bytes = assessment.decision === "candidate" ? measureBytes(root) : 0;
+    // Measure terminal, aged worktrees whether they end up eligible or
+    // preserved, so `report` does not understate the preserved bytes. Only
+    // this bounded set is measured; active worktrees are out of scope and stay
+    // at 0 bytes without being called "in doubt".
+    const bytes = measureBytes(root);
     entries.push(
       assessment.decision === "candidate"
         ? candidate("tasks-terminal", root, root, bytes, assessment.reason)

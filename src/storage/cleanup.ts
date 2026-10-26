@@ -14,13 +14,25 @@
  *    and after the run.
  */
 
-import { lstatSync, mkdirSync, openSync, closeSync, readFileSync, unlinkSync, writeSync, rmSync } from "node:fs";
-import { basename, join, sep } from "node:path";
+import {
+  lstatSync,
+  mkdirSync,
+  openSync,
+  closeSync,
+  readFileSync,
+  unlinkSync,
+  writeSync,
+  rmSync,
+  statSync,
+} from "node:fs";
+import { basename, join, relative, sep } from "node:path";
 import { readDiskUsage, type DiskUsage } from "./disk.js";
 import {
   isContainedIn,
   measureBytes,
+  parseCodexRolloutMeta,
   parseCodexSessionId,
+  RAVI_CODEX_ORIGINATOR,
   scanStorageAreas,
   type CodexProbe,
   type OmniBroadcastProbe,
@@ -28,13 +40,7 @@ import {
 } from "./eligibility.js";
 import { isProtectedPath } from "./fsutil.js";
 import { staticOmniProbe } from "./omni-probe.js";
-import {
-  resolveClassExemptions,
-  resolveStoragePolicy,
-  tmpNameMatchesAllowlist,
-  type StoragePolicy,
-  type StorageTier,
-} from "./policy.js";
+import { resolveStoragePolicy, tmpNameMatchesAllowlist, type StoragePolicy, type StorageTier } from "./policy.js";
 import { isTerminalTask, taskTerminalStamp, type TaskProbe } from "./task-probe.js";
 import {
   newStorageReceiptId,
@@ -71,10 +77,14 @@ export interface StorageCleanupResult {
   dryRun: boolean;
   policyVersion: string;
   policyHash: string;
+  /** Bytes actually removed. Always 0 on a dry-run. */
   freedBytes: number;
+  /** Bytes the policy would remove. Equal to `freedBytes` after a clean execute. */
+  wouldFreeBytes: number;
   classes: Record<string, StorageClassSummary>;
   disk: { before: DiskUsage | null; after: DiskUsage | null };
   errors: string[];
+  blocked: string[];
   limitations: string[];
   removed: string[];
   preserved: string[];
@@ -85,6 +95,12 @@ export interface StorageCleanupResult {
 
 const LOCK_FILE = ".cleanup.lock";
 const PRESERVED_SAMPLE_LIMIT = 20;
+/**
+ * An unreadable lock is only considered stale after this long. The writer opens
+ * the file and then writes the pid, so a reader can legitimately observe an
+ * empty lock for a few microseconds; deleting it there would let two runs in.
+ */
+const LOCK_UNREADABLE_STALE_MS = 60_000;
 
 const NO_OMNI_PROBE: OmniBroadcastProbe = staticOmniProbe({
   rows: [],
@@ -115,15 +131,10 @@ function acquireLock(dir: string): LockHandle | null {
         },
       };
     } catch {
-      let holderPid: number | null = null;
-      try {
-        const holder = JSON.parse(readFileSync(path, "utf8")) as { pid?: number };
-        holderPid = typeof holder.pid === "number" ? holder.pid : null;
-      } catch {
-        /* unreadable/incomplete lock */
-      }
-      const alive = holderPid !== null && isProcessAlive(holderPid);
-      if (alive) return null;
+      // The file exists (or the directory is not writable). Never steal a lock
+      // without proof that its holder is gone AND the file is old enough that a
+      // concurrent writer could not still be filling it in.
+      if (!isLockStale(path)) return null;
       try {
         unlinkSync(path);
       } catch {
@@ -132,6 +143,29 @@ function acquireLock(dir: string): LockHandle | null {
     }
   }
   return null;
+}
+
+function isLockStale(path: string): boolean {
+  let mtimeMs: number;
+  try {
+    mtimeMs = statSync(path).mtimeMs;
+  } catch {
+    // The file vanished between EEXIST and stat: retry immediately.
+    return true;
+  }
+  let holderPid: number | null = null;
+  let readable = false;
+  try {
+    const holder = JSON.parse(readFileSync(path, "utf8")) as { pid?: number };
+    readable = true;
+    holderPid = typeof holder.pid === "number" ? holder.pid : null;
+  } catch {
+    /* unreadable/incomplete lock */
+  }
+  if (readable && holderPid !== null) return !isProcessAlive(holderPid);
+  // Unreadable or pid-less: only stale once it is old enough to rule out a
+  // writer that is still inside the open->write window.
+  return Date.now() - mtimeMs > LOCK_UNREADABLE_STALE_MS;
 }
 
 function isProcessAlive(pid: number): boolean {
@@ -147,12 +181,47 @@ const CODEX_ROLLOUT = /^rollout-.*\.jsonl$/;
 const ATTACHMENT_NAME = /^\d{10,16}-[A-Za-z0-9]{8,}\.[A-Za-z0-9]{2,6}$/;
 const CLAUDE_JSONL = /\.jsonl$/;
 
-interface StorageProbes {
+/** Probes injected into the execute-time gate. */
+export interface StorageProbes {
   codexProbe?: CodexProbe;
   taskProbe?: TaskProbe;
+  omniBroadcastProbe?: OmniBroadcastProbe;
 }
 
-function canRemove(entry: StorageEntry, policy: StoragePolicy, now: number, probes: StorageProbes): string | null {
+/** The single allowlist root that owns a class, when it has one. */
+function classRoot(entry: StorageEntry, policy: StoragePolicy): string | null {
+  switch (entry.area) {
+    case "tmp-ravi":
+      return entry.root;
+    case "codex-inactive":
+      return policy.codexSessionsDir;
+    case "backups-superseded":
+      return policy.backupsDir;
+    case "instance-attachments":
+      return policy.attachmentsDir;
+    case "claude-jsonl":
+      return policy.claudeProjectsDir;
+    case "omni-broadcast-mp4":
+      return policy.omniMediaDir;
+    case "tasks-terminal":
+      return policy.tasksDir;
+    default:
+      return null;
+  }
+}
+
+/** Normalize a path to the `/`-separated form Omni stores for media paths. */
+function normalizeRelative(path: string): string {
+  return path.replace(/\\/g, "/").replace(/^\.\//, "").replace(/^\/+/, "");
+}
+
+/** Exposed for tests: the execute-time re-verification gate for one candidate. */
+export function canRemove(
+  entry: StorageEntry,
+  policy: StoragePolicy,
+  now: number,
+  probes: StorageProbes,
+): string | null {
   let st;
   try {
     st = lstatSync(entry.path);
@@ -160,21 +229,31 @@ function canRemove(entry: StorageEntry, policy: StoragePolicy, now: number, prob
     return "entry disappeared before removal";
   }
   if (st.isSymbolicLink()) return "symlink not followed";
-  const exemptions = resolveClassExemptions(policy);
+  // Only the class's own allowlist root is exempt from the protected roots: a
+  // class root can live inside a protected root (`~/.codex/sessions`,
+  // `~/.ravi/tasks`) and its candidates must stay removable. Everything else
+  // inside those protected roots stays protected.
+  const ownRoot = classRoot(entry, policy);
+  const exemptions = ownRoot ? [ownRoot] : [];
   if (isProtectedPath(entry.path, policy.protectedPaths, exemptions)) return "protected path";
 
   switch (entry.area) {
     case "tmp-ravi": {
       if (!isContainedIn(entry.path, entry.root)) return "real path escapes allowlist root";
       if (!tmpNameMatchesAllowlist(basename(entry.path), policy.tmpNameAllowlist)) return "no longer matches allowlist";
+      if (now - st.mtimeMs < policy.tmpMaxAgeMs) return "entry is younger than the threshold (re-checked)";
       return null;
     }
     case "codex-inactive": {
       if (!isContainedIn(entry.path, entry.root)) return "real path escapes allowlist root";
       if (!CODEX_ROLLOUT.test(basename(entry.path))) return "no longer a codex rollout artifact";
       if (probes.codexProbe?.processRunning()) return "a live codex process is running";
-      const sessionId = parseCodexSessionId(entry.path);
-      if (!sessionId) return "session metadata unreadable (fail-closed)";
+      const ownership = parseCodexRolloutMeta(entry.path);
+      const sessionId = ownership?.sessionId ?? parseCodexSessionId(entry.path);
+      if (!sessionId || !ownership) return "session metadata unreadable (fail-closed)";
+      if (ownership.originator !== RAVI_CODEX_ORIGINATOR) {
+        return `rollout is not proven to belong to Ravi (originator=${ownership.originator ?? "missing"})`;
+      }
       const liveness = probes.codexProbe?.sessionLiveness(sessionId) ?? "unknown";
       if (liveness !== "not-live") return `session liveness is ${liveness}`;
       return null;
@@ -190,6 +269,7 @@ function canRemove(entry: StorageEntry, policy: StoragePolicy, now: number, prob
       if (!isContainedIn(entry.path, policy.attachmentsDir)) return "real path escapes the attachments root";
       if (!st.isFile()) return "no longer a regular file";
       if (!ATTACHMENT_NAME.test(basename(entry.path))) return "name no longer matches the attachment allowlist";
+      if (now - st.mtimeMs < policy.attachmentsMaxAgeMs) return "attachment is younger than the threshold (re-checked)";
       return null;
     }
     case "claude-jsonl": {
@@ -197,15 +277,30 @@ function canRemove(entry: StorageEntry, policy: StoragePolicy, now: number, prob
       if (!isContainedIn(entry.path, policy.claudeProjectsDir)) return "real path escapes the Claude root";
       if (!CLAUDE_JSONL.test(basename(entry.path))) return "no longer a Claude transcript";
       if (entry.path.split(sep).includes("memory")) return "never delete */memory/*";
+      if (now - st.mtimeMs < policy.claudeJsonlMaxAgeMs) return "transcript is younger than the threshold (re-checked)";
       return null;
     }
     case "omni-broadcast-mp4": {
-      if (!policy.omniMediaDir) return "class disabled";
-      if (!isContainedIn(entry.path, policy.omniMediaDir)) return "real path escapes the Omni media root";
-      if (!basename(entry.path).toLowerCase().endsWith(".mp4")) return "no longer an mp4 artifact";
-      // The externalId match cannot be re-proven here without a second source
-      // read; the scan's positive match plus the age check is the gate, and any
-      // late liveness change is recorded by the next run.
+      const root = policy.omniMediaDir;
+      if (!root) return "class disabled";
+      if (!isContainedIn(entry.path, root)) return "real path escapes the Omni media root";
+      const name = basename(entry.path);
+      if (!name.toLowerCase().endsWith(".mp4")) return "no longer an mp4 artifact";
+      // Re-prove the status@broadcast match at removal time, exactly like the
+      // Codex liveness re-check: a source that became unavailable preserves the
+      // file instead of trusting the earlier scan.
+      const probe = probes.omniBroadcastProbe;
+      if (!probe) return "status@broadcast source not provided (fail-closed)";
+      const probeResult = probe.listStatusBroadcastMedia();
+      if (probeResult.error) return `status@broadcast source unavailable (${probeResult.error})`;
+      if (now - st.mtimeMs < policy.omniBroadcastMaxAgeMs) return "video is younger than the threshold (re-checked)";
+      const relativePath = normalizeRelative(relative(root, entry.path));
+      const stem = name.slice(0, -4);
+      const row = probeResult.rows.find((candidate) => normalizeRelative(candidate.localPath) === relativePath);
+      if (!row) return "no matching status@broadcast externalId (re-checked)";
+      if (row.externalId !== stem) return "status@broadcast externalId no longer matches the file name";
+      if (now - row.postedAt < policy.omniBroadcastMaxAgeMs)
+        return "status@broadcast message is younger than the threshold";
       return null;
     }
     case "tasks-terminal": {
@@ -255,7 +350,9 @@ export function runStorageCleanup(options: StorageCleanupOptions): StorageCleanu
   if (!lock) throw new StorageLockedError(join(policy.receiptDir, LOCK_FILE));
 
   const errors: string[] = [];
+  const blocked: string[] = [];
   const removed: string[] = [];
+  const removedSample: Array<{ path: string; bytes: number; reason: string }> = [];
   let freedBytes = 0;
 
   try {
@@ -269,6 +366,7 @@ export function runStorageCleanup(options: StorageCleanupOptions): StorageCleanu
     const entries = scans.flatMap((scan) => scan.entries);
     const limitations = scans.flatMap((scan) => scan.limitations);
     const candidates = entries.filter((entry) => entry.decision === "candidate");
+    const wouldFreeBytes = candidates.reduce((sum, entry) => sum + entry.bytes, 0);
 
     const classes: Record<string, StorageClassSummary> = {};
     for (const scan of scans) classes[scan.area] = emptyClassSummary();
@@ -289,11 +387,17 @@ export function runStorageCleanup(options: StorageCleanupOptions): StorageCleanu
     }
 
     if (execute) {
-      const probes: StorageProbes = { codexProbe: options.codexProbe, taskProbe: options.taskProbe };
+      const probes: StorageProbes = {
+        codexProbe: options.codexProbe,
+        taskProbe: options.taskProbe,
+        omniBroadcastProbe,
+      };
       for (const entry of candidates) {
-        const blocked = canRemove(entry, policy, now, probes);
-        if (blocked) {
-          errors.push(`preserved ${entry.path}: ${blocked}`);
+        const blockedReason = canRemove(entry, policy, now, probes);
+        if (blockedReason) {
+          // A candidate that the execute gate refuses is a deterministic
+          // preservation, not a failure: it must not turn a healthy run red.
+          blocked.push(`preserved ${entry.path}: ${blockedReason}`);
           const summary = classOf(entry);
           summary.candidates = Math.max(0, summary.candidates - 1);
           summary.eligibleBytes = Math.max(0, summary.eligibleBytes - entry.bytes);
@@ -312,6 +416,9 @@ export function runStorageCleanup(options: StorageCleanupOptions): StorageCleanu
             rmSync(entry.path, { recursive: true, force: false });
           }
           removed.push(entry.path);
+          if (removedSample.length < PRESERVED_SAMPLE_LIMIT) {
+            removedSample.push({ path: entry.path, bytes: entry.bytes, reason: entry.reason });
+          }
           freedBytes += entry.bytes;
           classOf(entry).removed += 1;
           classOf(entry).freedBytes += entry.bytes;
@@ -320,8 +427,8 @@ export function runStorageCleanup(options: StorageCleanupOptions): StorageCleanu
         }
       }
     } else {
-      freedBytes = candidates.reduce((sum, entry) => sum + entry.bytes, 0);
-      for (const entry of candidates) classOf(entry).freedBytes += entry.bytes;
+      // A dry-run never frees anything: `freedBytes` stays 0 and the estimate
+      // lives in `wouldFreeBytes`, so `summary` cannot double count.
     }
 
     const diskAfter = execute ? readDiskUsage(policy.receiptDir) : probe;
@@ -335,25 +442,28 @@ export function runStorageCleanup(options: StorageCleanupOptions): StorageCleanu
       policyVersion: policy.version,
       policyHash: policy.hash,
       freedBytes,
+      wouldFreeBytes,
       classes,
       disk: { before: probe, after: diskAfter },
       errors,
+      blocked,
       limitations,
       removed,
+      removedSample,
       preservedSample: entries
         .filter((entry) => entry.decision === "preserved")
         .slice(0, PRESERVED_SAMPLE_LIMIT)
         .map((entry) => ({ path: entry.path, bytes: entry.bytes, reason: entry.reason })),
     };
     const receiptPath = writeStorageReceipt(policy.receiptDir, receipt);
-    if (execute) {
-      pruneStorageReceipts(policy.receiptDir, {
-        maxCount: policy.receiptMaxCount,
-        maxAgeMs: policy.receiptMaxAgeMs,
-        now,
-        keepPaths: [receiptPath],
-      });
-    }
+    // Retention applies to every run, dry-run included: a dry-run writes a
+    // receipt too, so leaving its pruning to `--execute` leaks files.
+    pruneStorageReceipts(policy.receiptDir, {
+      maxCount: policy.receiptMaxCount,
+      maxAgeMs: policy.receiptMaxAgeMs,
+      now,
+      keepPaths: [receiptPath],
+    });
 
     return {
       success: errors.length === 0,
@@ -363,9 +473,11 @@ export function runStorageCleanup(options: StorageCleanupOptions): StorageCleanu
       policyVersion: policy.version,
       policyHash: policy.hash,
       freedBytes,
+      wouldFreeBytes,
       classes,
       disk: { before: probe, after: diskAfter },
       errors,
+      blocked,
       limitations,
       removed,
       preserved: entries

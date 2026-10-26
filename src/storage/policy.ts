@@ -186,11 +186,26 @@ export function resolveProtectedPaths(env: NodeJS.ProcessEnv = process.env): str
   return [stateDir, join(home, ".config", "ravi"), join(home, ".pi"), join(home, ".codex"), join(home, ".omni")];
 }
 
-/** Root paths that the host classes are allowed to live under. */
+/**
+ * Root paths that the host classes are allowed to live under.
+ *
+ * Every class root MUST be listed here: a class root can sit inside a protected
+ * root (`~/.codex/sessions` is inside `~/.codex`, `~/.ravi/tasks` is inside
+ * `~/.ravi`), and the execute gate must not promote its own allowlisted
+ * candidates to "protected path" after the dry-run counted them as eligible.
+ * The class-specific containment check in `canRemove` still pins every
+ * candidate to its own root, so this exemption never widens the surface.
+ */
 export function resolveClassExemptions(policy: StoragePolicy): string[] {
-  return [policy.backupsDir, policy.attachmentsDir, policy.claudeProjectsDir, policy.omniMediaDir].filter(
-    (value): value is string => typeof value === "string" && value.length > 0,
-  );
+  return [
+    ...policy.tmpRoots,
+    policy.codexSessionsDir,
+    policy.backupsDir,
+    policy.attachmentsDir,
+    policy.claudeProjectsDir,
+    policy.omniMediaDir,
+    policy.tasksDir,
+  ].filter((value): value is string => typeof value === "string" && value.length > 0);
 }
 
 function fixtureDir(env: NodeJS.ProcessEnv, key: string): string | null {
@@ -224,7 +239,11 @@ export function resolveStoragePolicy(tier: StorageTier, env: NodeJS.ProcessEnv =
       fixtureMode: true,
       tmpRoots: splitList(env.RAVI_STORAGE_FIXTURE_TMP_ROOTS),
       tmpNameAllowlist,
-      protectedPaths: [],
+      // Fixture mode normally disables protected roots so a behavioral run can
+      // never touch real state. A test that needs to prove the execute-time
+      // protected-path gate can opt into a fixture-local list of protected
+      // roots; they are still fixture paths, never real ones.
+      protectedPaths: splitList(env.RAVI_STORAGE_FIXTURE_PROTECTED_ROOTS),
       codexSessionsDir: fixtureDir(env, "RAVI_STORAGE_FIXTURE_CODEX_DIR"),
       backupsDir: fixtureDir(env, "RAVI_STORAGE_FIXTURE_BACKUPS_DIR"),
       attachmentsDir: fixtureDir(env, "RAVI_STORAGE_FIXTURE_ATTACHMENTS_DIR"),

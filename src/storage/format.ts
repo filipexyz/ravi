@@ -6,7 +6,7 @@ export function formatByteSize(bytes: number): string {
   const value = Number.isFinite(bytes) ? Math.max(0, bytes) : 0;
   if (value < 1024) return `${value} B`;
   let scaled = value / 1024;
-  let index = 0;
+  let index = 1;
   while (scaled >= 1024 && index < UNITS.length - 1) {
     scaled /= 1024;
     index += 1;
