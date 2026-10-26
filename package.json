@@ -1,6 +1,6 @@
 {
   "name": "ravi.bot",
-  "version": "3.261026.1",
+  "version": "3.261026.2",
   "description": "Run AI agents on machines you control, alone or as a whole organization: Slack, WhatsApp, Pages, Bases and SDKs generated from the CLI",
   "type": "module",
   "main": "dist/bundle/index.js",
