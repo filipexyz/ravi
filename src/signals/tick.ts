@@ -9,8 +9,10 @@ import type {
 } from "./types.js";
 import { effectiveSeverity, severityRank } from "./validation.js";
 import {
+  blockingPendingRoutes,
   dbAcquireTickLock,
   dbAppendSignalEvent,
+  dbCountOobAttemptsInEpisode,
   dbGetKeyMute,
   dbGetLastOobAt,
   dbGetLastSurfaceAt,
@@ -84,8 +86,17 @@ function escalationDecision(signal: SignalRecord, now: number, tickState: Signal
   // Cooldown is shared across routes; only `page` may follow a piggyback inside it.
   const lastSurface = routeSeverity === "page" ? dbGetLastOobAt(signal.id) : dbGetLastSurfaceAt(signal.id);
   if (lastSurface !== null && now - lastSurface < signal.cooldownMs) return { skip: "cooldown" };
-  if (signal.escalationCount >= MAX_ESCALATIONS_PER_EPISODE) return { skip: "escalation_cap" };
-  if (dbHasPendingSurface(signal.id, ["oob", "page"])) return { skip: "pending" };
+  // Failed deliveries count toward the cap too, so an exhausted one is not
+  // recreated under a fresh key forever.
+  if (
+    signal.escalationCount >= MAX_ESCALATIONS_PER_EPISODE ||
+    dbCountOobAttemptsInEpisode(signal.id, signal.openedAt) >= MAX_ESCALATIONS_PER_EPISODE
+  ) {
+    return { skip: "escalation_cap" };
+  }
+  if (dbHasPendingSurface(signal.id, blockingPendingRoutes(routeSeverity === "page" ? "page" : "oob"))) {
+    return { skip: "pending" };
+  }
   return { severity: routeSeverity };
 }
 

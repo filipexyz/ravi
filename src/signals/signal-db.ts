@@ -940,6 +940,31 @@ export function dbGetLastOobAt(signalId: string): number | null {
   return row.last === null ? null : Number(row.last);
 }
 
+/**
+ * Pending routes that block a new reservation of `route`. A pending row of any
+ * route holds the shared cooldown and surface limit; the one exception is a
+ * `page`, which may follow an in-flight piggyback (but never another OOB).
+ */
+export function blockingPendingRoutes(route: SignalSurfaceRoute): SignalSurfaceRoute[] {
+  return route === "page" ? ["oob", "page"] : ["piggyback", "oob", "page"];
+}
+
+/**
+ * OOB deliveries attempted in the current episode: `sent` rows plus `failed`
+ * ones. Failed rows consume no budget or cooldown, but they count toward the
+ * escalation cap so an exhausted delivery cannot restart forever.
+ */
+export function dbCountOobAttemptsInEpisode(signalId: string, openedAt: number): number {
+  ensureSignalSchema();
+  const row = getDb()
+    .prepare(
+      `SELECT COUNT(*) AS total FROM signal_surfaces
+       WHERE signal_id = ? AND route IN ('oob', 'page') AND status IN ('sent', 'failed') AND created_at >= ?`,
+    )
+    .get(signalId, openedAt) as { total: number };
+  return Number(row.total);
+}
+
 export function dbHasPendingSurface(signalId: string, routes: SignalSurfaceRoute[]): boolean {
   ensureSignalSchema();
   const placeholders = routes.map(() => "?").join(", ");
@@ -996,7 +1021,7 @@ export function dbReserveSignalSurface(input: {
       return { skipped: "ineligible" as const };
     }
     if (signal.version !== input.expectedVersion) return { skipped: "stale_version" as const };
-    if (dbHasPendingSurface(signal.id, input.route === "piggyback" ? ["piggyback"] : ["oob", "page"])) {
+    if (dbHasPendingSurface(signal.id, blockingPendingRoutes(input.route))) {
       return { skipped: "pending" as const };
     }
     const decision = input.decide({
@@ -1018,6 +1043,18 @@ export function dbReserveSignalSurface(input: {
       ) + 1;
     const idempotencyKey = input.idempotencyKey(sequence);
     const budgetBypass = decision.budgetBypass === true;
+    // A page line that already reached the operator in this episode is never
+    // sent again by a later row, even when that earlier row's prompt failed.
+    const carriedPageStatus =
+      input.route === "page" &&
+      db
+        .prepare(
+          `SELECT 1 AS found FROM signal_outbox
+           WHERE signal_id = ? AND route = 'page' AND page_status = 'sent' AND created_at >= ? LIMIT 1`,
+        )
+        .get(signal.id, signal.openedAt)
+        ? "sent"
+        : null;
     const surface = db
       .prepare(
         `INSERT INTO signal_surfaces
@@ -1073,8 +1110,8 @@ export function dbReserveSignalSurface(input: {
     const outbox = db
       .prepare(
         `INSERT INTO signal_outbox
-          (surface_id, signal_id, idempotency_key, route, session_name, severity, status, attempts, reserved_version, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, ?)`,
+          (surface_id, signal_id, idempotency_key, route, session_name, severity, status, attempts, reserved_version, page_status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, ?, ?)`,
       )
       .run(
         surfaceId,
@@ -1084,6 +1121,7 @@ export function dbReserveSignalSurface(input: {
         input.sessionName,
         input.severity,
         next.version,
+        carriedPageStatus,
         input.now,
         input.now,
       );
@@ -1128,7 +1166,13 @@ export function dbConfirmSignalSurface(input: {
     const signal = dbGetSignalById(surface.signalId);
     if (!signal) return null;
     const next = { ...signal };
-    if (next.state === "open" || next.state === "acknowledged") next.state = "surfaced";
+    // An ack given after this surface was reserved stands: the delivery that
+    // was already in flight does not undo it.
+    const ackedSinceReserve =
+      signal.state === "acknowledged" &&
+      typeof signal.acknowledgedAt === "number" &&
+      signal.acknowledgedAt >= surface.createdAt;
+    if (next.state === "open" || (next.state === "acknowledged" && !ackedSinceReserve)) next.state = "surfaced";
     next.surfacedAt = input.now;
     next.version = signal.version + 1;
     next.updatedAt = input.now;

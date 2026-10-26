@@ -11,9 +11,10 @@ import {
   dbListSignalEvents,
   dbListSignalSurfaces,
   dbRecordTickRun,
+  dbReserveSignalSurface,
   dbWriteSignalObservation,
 } from "./signal-db.js";
-import { muteSignal } from "./service.js";
+import { ackSignal, muteSignal } from "./service.js";
 import { raiseSignal } from "./service.js";
 import { setDiskProbeForTests } from "./probes.js";
 
@@ -357,6 +358,112 @@ describe("signals tick", () => {
     expect(prompts).toBe(0);
     expect(second.outbox.failed).toBe(1);
     expect(dbListSignalSurfaces(signal.id).map((row) => row.status)).toEqual(["failed"]);
+  });
+
+  it("holds a piggyback reservation while an OOB delivery of the same signal is pending", async () => {
+    const now = Date.now();
+    const signal = seedPageSignal(now);
+    await tickSignals({
+      runWatchers: false,
+      now,
+      execute: true,
+      publishPrompt: async () => {
+        throw new Error("nats down");
+      },
+      sendPage: async () => "sent" as const,
+    });
+    const current = dbGetSignalById(signal.id)!;
+    const outcome = dbReserveSignalSurface({
+      signalId: current.id,
+      expectedVersion: current.version,
+      route: "piggyback",
+      severity: "piggyback",
+      sessionName: "test-session",
+      idempotencyKey: () => "piggyback-during-oob",
+      decide: () => ({ ok: true }),
+      actorId: "test",
+      now: now + 1_000,
+    });
+    expect(outcome).toEqual({ skipped: "pending" });
+  });
+
+  it("never resends a delivered page line and stops recreating an exhausted delivery", async () => {
+    const now = Date.now();
+    const signal = seedPageSignal(now);
+    let pages = 0;
+    const keys = new Set<string>();
+    const deps = {
+      runWatchers: false,
+      publishPrompt: async (_session: string, _payload: Record<string, unknown>, options?: { messageId?: string }) => {
+        keys.add(options?.messageId ?? "");
+        throw new Error("nats down");
+      },
+      sendPage: async () => {
+        pages += 1;
+        return "sent" as const;
+      },
+    };
+    for (let tick = 0; tick < 15; tick += 1) {
+      await tickSignals({ ...deps, now: now + tick * 61_000, execute: true });
+    }
+    expect(pages).toBe(1);
+    // At most MAX_ESCALATIONS_PER_EPISODE delivery rows, each failed after its attempts.
+    expect(keys.size).toBe(3);
+    expect(dbListSignalSurfaces(signal.id).map((row) => row.status)).toEqual(["failed", "failed", "failed"]);
+    const last = await tickSignals({ ...deps, now: now + 16 * 61_000, execute: true });
+    expect(last.skipped.map((item) => item.reason)).toContain("escalation_cap");
+  });
+
+  it("releases a pending retry once the operator disables OOB", async () => {
+    const now = Date.now();
+    const signal = seedPageSignal(now);
+    const failing = {
+      runWatchers: false,
+      publishPrompt: async () => {
+        throw new Error("nats down");
+      },
+      sendPage: async () => "sent" as const,
+    };
+    await tickSignals({ ...failing, now, execute: true });
+    dbSetSetting("signals.oob_enabled", "false");
+    let prompts = 0;
+    const second = await tickSignals({
+      runWatchers: false,
+      now: now + 60_000,
+      execute: true,
+      publishPrompt: async () => {
+        prompts += 1;
+      },
+    });
+    expect(prompts).toBe(0);
+    expect(second.outbox.failed).toBe(1);
+    expect(dbListSignalSurfaces(signal.id).map((row) => row.status)).toEqual(["failed"]);
+  });
+
+  it("releases a pending retry the operator acknowledged, and keeps the ack", async () => {
+    const now = Date.now();
+    const signal = seedPageSignal(now);
+    await tickSignals({
+      runWatchers: false,
+      now,
+      execute: true,
+      publishPrompt: async () => {
+        throw new Error("nats down");
+      },
+      sendPage: async () => "sent" as const,
+    });
+    ackSignal({ idOrKey: signal.id, now: now + 1_000 });
+    let prompts = 0;
+    await tickSignals({
+      runWatchers: false,
+      now: now + 30_000,
+      execute: true,
+      publishPrompt: async () => {
+        prompts += 1;
+      },
+    });
+    expect(prompts).toBe(0);
+    expect(dbGetSignalById(signal.id)?.state).toBe("acknowledged");
   });
 
   it("derives escalation_count from the sent OOB rows", async () => {

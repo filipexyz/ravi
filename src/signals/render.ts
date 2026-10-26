@@ -25,6 +25,9 @@ import { describeClearRule } from "./probes.js";
 import { isSubjectTerminal, readSessionSignalContext, signalIsInSessionScope } from "./subjects.js";
 import { readSignalObservation, type RenderedObservation } from "./observation.js";
 import { clampSignalSeverity, closeSignal, surfaceBudgetLimit, unmuteSignal } from "./service.js";
+import { logger } from "../utils/logger.js";
+
+const log = logger.child("signals:render");
 
 const MAX_BLOCK_CHARS = 1200;
 const MAX_ITEMS = 3;
@@ -235,8 +238,14 @@ export function renderSignalsForTurn(input: RenderSignalsInput): RenderSignalsRe
         actorId: RENDER_ACTOR,
         now,
       });
-    } catch {
-      // A failed persist omits the item rather than risk a double delivery.
+    } catch (error) {
+      // A failed persist omits the item rather than risk a double delivery,
+      // and says why, so a vanished block is never silent.
+      log.warn("Signal reservation failed; item omitted from the block", {
+        signalId: item.signal.id,
+        sessionName: context.sessionName,
+        error: error instanceof Error ? error.message : String(error),
+      });
       skipped.push({ id: item.signal.id, reason: "reserve_failed" });
       continue;
     }

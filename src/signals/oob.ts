@@ -15,7 +15,7 @@ import {
 import { describeClearRule } from "./probes.js";
 import { sendSignalPage } from "./page.js";
 import { readSignalObservation } from "./observation.js";
-import { oobBudgetLimit, surfaceBudgetLimit } from "./service.js";
+import { oobBudgetLimit, oobEnabled, surfaceBudgetLimit } from "./service.js";
 
 const OOB_ACTOR = "signals.tick";
 /** Attempts before a pending OOB row is failed and its reservation returned. */
@@ -141,6 +141,15 @@ function revalidate(
   if (signal.state === "resolved" || signal.state === "expired") return `signal ${signal.state}`;
   if (signal.state === "muted") return "signal muted";
   if (dbGetKeyMute(signal.key, now)) return "key muted";
+  // Operator decisions made since the reservation hold on every retry.
+  if (!oobEnabled()) return "oob disabled";
+  if (
+    signal.state === "acknowledged" &&
+    typeof signal.acknowledgedAt === "number" &&
+    now - signal.acknowledgedAt < signal.renotifyAfterMs
+  ) {
+    return "acknowledged";
+  }
   if (signal.kind !== "fact") return "judgment cannot escalate";
   if (!isOobSeverity(oobDeliverySeverity(signal, row.severity))) return "below oob ceiling";
   const observation = readSignalObservation(signal, tickState, now, { evaluatedAt });
