@@ -91,7 +91,7 @@ From a Slack thread, `ravi cloud runs start ... --bind-thread --execute` binds t
 
 ## Approvals
 
-With `tools.writes: "ask"` (the default), a run pauses in `waiting_approval` before a write outside its container, such as a Ravi tool that changes something. Some writes always ask, even with `writes: "auto"`: shipping a page, sending mail, notifying someone and posting into a chat.
+With `tools.writes: "ask"` (the default), a run pauses in `waiting_approval` before a write outside its container, such as a Ravi tool that changes something. Some writes always ask, even with `writes: "auto"`: shipping a page, replying to a page comment, sending mail, notifying someone and posting into a chat.
 
 ```bash
 ravi cloud runs show <run> --json
@@ -99,7 +99,7 @@ ravi cloud runs approve <run> <approval> --execute
 ravi cloud runs deny <run> <approval> --reason "not now"
 ```
 
-Only the run's person decides. In the chat where the run started, that person gets the request privately in Slack (Approve and Deny buttons only they can use), or is asked to reply `aprovar <code>` or `negar <code>` on WhatsApp; a reply from anyone else does not count. Owners and admins can also decide in the Console's run page.
+Only the run's person decides. In the chat where the run started, that person gets the request privately in Slack (Approve and Deny buttons only they can use), or is asked to reply `aprovar <code>` or `negar <code>` on WhatsApp; a reply from anyone else does not count. Owners and admins can also decide in the Console's run page. In an agent turn where Ravi cannot tell who asked (another agent, an unidentified speaker), `approve` and `answer` stop with `ACTOR_UNKNOWN` (exit 3) before calling the Console.
 
 ## Questions (ask_human)
 

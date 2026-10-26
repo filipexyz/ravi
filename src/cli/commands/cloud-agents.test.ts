@@ -441,6 +441,27 @@ describe("ravi cloud runs", () => {
     expectSchema(CloudRunsCommands, "approve", done.result);
   });
 
+  it("approve and answer refuse a turn Ravi cannot attribute, before any Console call", async () => {
+    const fake = createFakeCloudConsole({
+      runs: [
+        fakeCloudRun({
+          status: "waiting_approval",
+          approvals: [fakeCloudApproval()],
+        }),
+      ],
+    });
+    // Another agent's turn, or an unresolved speaker: no person goes to the Console, so the call would act as the operator.
+    const commands = new CloudRunsCommands(
+      deps(fake, { inAgentRuntime: () => true, operatorOwnTurn: () => false, unattributedTurn: () => true }),
+    );
+    const approve = await capture(() => commands.approve("run_1", "ap_1", true, true));
+    expect(approve.error).toMatchObject({ code: "ACTOR_UNKNOWN", exitCode: 3 });
+    const answer = await capture(() => commands.answer("run_1", "q_1", "Suporte", true, true));
+    expect(answer.error).toMatchObject({ code: "ACTOR_UNKNOWN", exitCode: 3 });
+    expect(fake.writes()).toHaveLength(0);
+    expect(fake.requests).toHaveLength(0);
+  });
+
   it("deny applies at once with a reason", async () => {
     const fake = createFakeCloudConsole({ runs: [fakeCloudRun({ approvals: [fakeCloudApproval()] })] });
     const outcome = await capture(() => new CloudRunsCommands(deps(fake)).deny("run_1", "ap_1", "not today", true));

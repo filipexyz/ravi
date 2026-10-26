@@ -33,6 +33,7 @@ import {
   type CloudRunStartBody,
   type CloudSchedule,
 } from "../../cloud-agents/types.js";
+import { isUnattributedTurn } from "../../cloud-auth/turn-actor.js";
 import { isOperatorOwnTurn } from "../../library/turn.js";
 import { safeRelativePath } from "../../pages/read-download.js";
 import {
@@ -75,6 +76,8 @@ export interface CloudAgentsCommandDeps {
   /** Whether this call runs inside an agent's turn, and whether that turn is the operator's own. */
   inAgentRuntime?: () => boolean;
   operatorOwnTurn?: () => boolean;
+  /** Whether an agent turn runs this and Ravi cannot say who asked (another agent, an unresolved speaker). */
+  unattributedTurn?: () => boolean;
   /** Default timezone of a new schedule. */
   localTimezone?: () => string;
   /** The agent session this call runs in and the chat its turn came from; null in a terminal. */
@@ -143,6 +146,7 @@ function defaultsOf(deps: CloudAgentsCommandDeps) {
     sleep: deps.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms))),
     inAgentRuntime: deps.inAgentRuntime ?? (() => runtimeLibraryCaller() !== null),
     operatorOwnTurn: deps.operatorOwnTurn ?? (() => isOperatorOwnTurn()),
+    unattributedTurn: deps.unattributedTurn ?? (() => isUnattributedTurn()),
     localTimezone: deps.localTimezone ?? (() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"),
     chatContext: deps.chatContext ?? defaultChatContext,
     turnPerson: deps.turnPerson ?? currentTurnPerson,
@@ -1233,6 +1237,7 @@ export class CloudRunsCommands {
     const approvalRef = requireText(op, "<approval>", approvalId, asJson);
     // Only the run's person approves: in a person's turn this call acts as them
     // (their `ravi link`), and the Console refuses anyone else.
+    this.refuseUnattributedTurn(op, asJson);
     return withCloudAgentsContract(
       op,
       asJson,
@@ -1260,6 +1265,28 @@ export class CloudRunsCommands {
       asJson,
       () => this.decide(op, id, approvalRef, "deny", reason?.trim() || undefined, true, asJson),
       { notFoundCode: "CLOUD_RUN_NOT_FOUND" },
+    );
+  }
+
+  /**
+   * A turn Ravi cannot attribute sends no person to the Console, so the call
+   * would go out as the operator and decide the operator's runs. It stops here
+   * instead (as Bases does), before any Console call.
+   */
+  private refuseUnattributedTurn(op: string, asJson?: boolean) {
+    if (!defaultsOf(this.deps).unattributedTurn()) return;
+    contractFail(
+      op,
+      "ACTOR_UNKNOWN",
+      "Ravi could not tell who is asking in this turn, so it will not decide a cloud run for anyone, not even as the operator.",
+      {
+        asJson,
+        exitCode: CONTRACT_EXIT_POLICY,
+        details: {
+          suggestedAction:
+            "Ask the run's person to answer from their own chat or the Console, or the operator to run it in the terminal.",
+        },
+      },
     );
   }
 
@@ -1353,6 +1380,7 @@ export class CloudRunsCommands {
     const questionRef = requireText(op, "<question>", questionId, asJson);
     const answerText = requireText(op, "<text>", text, asJson);
     if (answerText.length > 4_000) usageError(op, "<text> takes at most 4000 characters.", asJson);
+    this.refuseUnattributedTurn(op, asJson);
     return withCloudAgentsContract(
       op,
       asJson,

@@ -452,6 +452,8 @@ class WorkerSession {
   private readonly customResults = new Map<string, Extract<InboxItem, { type: "custom_tool_result" }>>();
   private readonly emittedToolUses = new Set<string>();
   private buffer: RaviSessionEventEntry[] = [];
+  /** The post in flight, so two flushes never send the same events. */
+  private flushing: Promise<void> | null = null;
   private readonly usage: RaviSessionUsage = {
     inputTokens: 0,
     outputTokens: 0,
@@ -735,12 +737,18 @@ class WorkerSession {
     return answer.isError ? `No answer: ${answer.text}` : answer.text;
   }
 
-  /** Waits (the turn's background poller reads the inbox) until `pick` finds the item, or the turn or session ends. */
+  /**
+   * Waits (the turn's background poller reads the inbox) until `pick` finds the
+   * item, or the turn or session ends. Events a failed post kept, the request
+   * being waited on among them, are posted again meanwhile: nobody can answer a
+   * request the Console never received.
+   */
   private async waitFor<T>(pick: () => T | undefined): Promise<T | undefined> {
     for (;;) {
       const found = pick();
       if (found !== undefined) return found;
       if (this.terminated || !this.activeTurn || this.activeTurn.signal.aborted) return undefined;
+      if (this.buffer.length > 0) await this.flush();
       await this.sleep(this.pollMs);
     }
   }
@@ -829,8 +837,22 @@ class WorkerSession {
     this.activeTurn?.abort();
   }
 
-  /** Posts the buffered events (100 per call) with the usage; on failure they stay buffered for the next flush. */
+  /**
+   * Posts the buffered events (100 per call) with the usage; on failure they
+   * stay buffered for the next flush. One post at a time: a flush called while
+   * another runs waits for it, so no event is posted twice.
+   */
   private async flush(): Promise<void> {
+    while (this.flushing) await this.flushing;
+    this.flushing = this.postBuffered();
+    try {
+      await this.flushing;
+    } finally {
+      this.flushing = null;
+    }
+  }
+
+  private async postBuffered(): Promise<void> {
     while (this.buffer.length > 0 && !this.terminated) {
       const events = this.buffer.slice(0, MAX_EVENTS_PER_POST);
       try {

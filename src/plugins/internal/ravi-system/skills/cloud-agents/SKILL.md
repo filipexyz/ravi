@@ -134,8 +134,8 @@ A ligação acaba quando o run acaba.
 
 Com `tools.writes: "ask"` (padrão), o run pausa em `waiting_approval` antes de
 uma escrita fora do container (uma ferramenta Ravi ou um MCP que altera algo).
-Publicar página, mandar e-mail, notificar alguém e postar num chat pedem
-aprovação sempre, mesmo com `writes: "auto"`.
+Publicar página, responder comentário de página, mandar e-mail, notificar
+alguém e postar num chat pedem aprovação sempre, mesmo com `writes: "auto"`.
 
 ```bash
 ravi cloud runs show <run> --json            # approvals[]: id, tool, server, inputPreview
@@ -147,6 +147,9 @@ ravi cloud runs deny <run> <approval> --reason "not now"
   particular no Slack (botões Aprovar/Negar que só ela usa) ou, no WhatsApp,
   responde `aprovar <código>` ou `negar <código> [motivo]`. Resposta de outra
   pessoa não conta e vai para o agent como mensagem comum.
+- Num turno em que o Ravi não sabe quem pediu (outro agent, alguém não
+  identificado), `approve` e `answer` param com `ACTOR_UNKNOWN` (exit 3) antes
+  de falar com o Console.
 - Nunca aprove sozinho: o pedido é da pessoa, não seu. Mostre `tool`, `server`
   e `inputPreview` e deixe ela decidir. Num turno de outra pessoa, `approve`
   age como essa pessoa e o Console recusa se ela não for a pessoa do run.

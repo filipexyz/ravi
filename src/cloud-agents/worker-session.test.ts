@@ -523,6 +523,48 @@ describe("runWorkerSession", () => {
     expect(last.event).toEqual({ kind: "status", status: "idle", stopReason: { type: "end_turn" } });
   });
 
+  it("an approval request a failed post kept is posted again while the turn waits", async () => {
+    const fake = fakeCallback({
+      items: [{ type: "message", text: "Publish" }],
+      react: (state, posted) => {
+        const waiting = posted.find(
+          (entry) => entry.event.kind === "status" && entry.event.stopReason?.type === "requires_action",
+        );
+        if (waiting?.event.kind === "status" && waiting.event.stopReason?.type === "requires_action") {
+          push(state, { type: "confirmation", toolUseId: waiting.event.stopReason.eventIds[0], allow: true });
+        }
+        endAfterTurn(state, posted);
+      },
+    });
+    let failed = false;
+    const fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      if (new URL(String(url)).pathname.endsWith("/events")) {
+        const body = JSON.parse(String(init?.body)) as { events: RaviSessionEventEntry[] };
+        // The post carrying the approval request fails once.
+        if (
+          !failed &&
+          body.events.some(
+            (entry) => entry.event.kind === "status" && entry.event.stopReason?.type === "requires_action",
+          )
+        ) {
+          failed = true;
+          return new Response("{}", { status: 502 });
+        }
+      }
+      return fake.fetch(url, init);
+    }) as typeof globalThis.fetch;
+    const decisions: unknown[] = [];
+    const runTurn: RunAgentTurn = async function* (turn) {
+      decisions.push(
+        await turn.canUseTool("mcp__ravi__ravi_pages_ship", { title: "Weekly" }, { toolUseID: "toolu_1" }),
+      );
+      yield { type: "result", subtype: "success" };
+    };
+    await runWorkerSession({ env: sessionEnv(), fetch, runTurn, ...quick });
+    expect(failed).toBe(true);
+    expect(decisions).toEqual([{ behavior: "allow", updatedInput: { title: "Weekly" } }]);
+  });
+
   it("an interrupt aborts the running turn", async () => {
     const fake = fakeCallback({
       items: [{ type: "message", text: "Loop forever" }],
