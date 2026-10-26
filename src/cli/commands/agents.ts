@@ -2029,7 +2029,9 @@ SOURCES
           recent.effectiveContextTokensAvg,
         )} maxContext=${formatTokenCount(recent.effectiveContextTokensMax)} avgInput=${formatTokenCount(
           recent.inputTokensAvg,
-        )} cost=${formatCostUsd(recent.costUsdTotal)}`,
+        )} cost=${formatCostUsd(recent.costUsdTotal)}${
+          recent.unknownUsageTurns > 0 ? ` unknownUsage=${recent.unknownUsageTurns}` : ""
+        }`,
       );
       console.log(`    Updated: ${updated}`);
       console.log();

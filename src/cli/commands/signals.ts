@@ -33,7 +33,7 @@ import {
   updateSignal,
 } from "../../signals/service.js";
 import { dbClearKeyMute, dbSetKeyMute } from "../../signals/signal-db.js";
-import { tickSignals } from "../../signals/tick.js";
+import { signalsEnabled, tickSignals } from "../../signals/tick.js";
 import { jsonObjectSchema } from "../return-schemas.js";
 
 const clearWhenSchema = z.union([
@@ -710,9 +710,19 @@ export class SignalsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const result = await tickSignals({ execute: execute === true });
-    if (!result.executed) {
+    if (execute !== true) {
       // A tick has triggered effects: without --execute it is a plan (exit 3).
       contractDryRun("signals.tick", result as unknown as Record<string, unknown>, { asJson });
+    }
+    if (!result.executed) {
+      // --execute was given but nothing ran: a failure (exit 1), never the dry-run brake.
+      const disabled = !signalsEnabled();
+      contractFail(
+        "signals.tick",
+        disabled ? "SIGNALS_DISABLED" : "TICK_LOCKED",
+        disabled ? "Signals are disabled (signals.enabled != true)." : "Another tick holds the lock; nothing ran.",
+        { asJson },
+      );
     }
     if (asJson) printJson(result);
     else {

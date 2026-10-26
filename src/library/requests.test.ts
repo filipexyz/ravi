@@ -295,6 +295,34 @@ describe("library requests: the request turn", () => {
     expect(outcome).toEqual({ ok: true, reply: "First part.\n\nLate part.", sessionName: "s" });
   });
 
+  it("never answers with commentary or with an earlier turn's final row", async () => {
+    let reads = 0;
+    const outcome = await runLibraryRequestTurn(
+      { agentId: "helper", request: fakeAgentRequest({ id: "req-1" }), sessionName: "s" },
+      {
+        publishPrompt: async () => {},
+        subscribe: async function* () {
+          yield {
+            topic: "ravi.session.s.response",
+            data: { response: "Looking it up.", metadata: { item: { phase: "commentary" } } },
+          };
+          yield { topic: "ravi.session.s.runtime", data: { type: "turn.complete" } };
+        },
+        // First read is the cursor before the prompt; the second is the fallback.
+        readHistory: () => {
+          reads += 1;
+          const old = { id: 7, role: "assistant", content: "Old answer.", utterance_class: "final" };
+          return reads === 1
+            ? [old]
+            : [old, { id: 8, role: "assistant", content: "Looking it up.", utterance_class: "commentary" }];
+        },
+        timeoutMs: 5_000,
+        graceMs: 10,
+      },
+    );
+    expect(outcome).toMatchObject({ ok: false, failure: "The agent finished without an answer." });
+  });
+
   it("fails a turn that ends without an answer or in error", async () => {
     const run = (events: Array<{ topic: string; data: Record<string, unknown> }>) =>
       runLibraryRequestTurn(

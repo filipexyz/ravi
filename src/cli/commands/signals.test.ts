@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { closeRouterDb, dbSetSetting } from "../../router/router-db.js";
-import { listSignals, raiseSignal } from "../../signals/service.js";
+import { listSignals, raiseSignal, signalVisibleTo } from "../../signals/service.js";
 import { ContractError } from "../agent-contract.js";
 import { runWithContext } from "../context.js";
 import { SignalsCommands } from "./signals.js";
@@ -187,6 +187,32 @@ describe("signals CLI contract", () => {
     expect(error?.code).toBe("WRITE_REQUIRES_EXECUTE");
     const executed = await quiet(() => commands.tick(true, true));
     expect(executed.result?.executed).toBe(true);
+  });
+
+  it("fails with exit 1, not the dry-run brake, when --execute runs nothing", async () => {
+    dbSetSetting("signals.enabled", "false");
+    const { error } = await quiet(() => commands.tick(true, true));
+    expect(error?.exitCode).toBe(1);
+    expect(error?.code).toBe("SIGNALS_DISABLED");
+  });
+
+  it("fails closed for an agent caller without a session: it sees only what it owns", () => {
+    const { signal } = raiseSignal({
+      key: "cli.hidden",
+      kind: "fact",
+      producerId: "test.code",
+      producerClass: "code",
+      producerType: "code",
+      scopeType: "install",
+      scopeId: "install",
+      title: "Operator fact",
+      clearWhen: { type: "producer_resolve", ttl_ms: 60_000 },
+    });
+    expect(signalVisibleTo(signal, { isAgent: true, agentId: "main", sessionName: null })).toBe(false);
+    expect(
+      signalVisibleTo({ ...signal, producerId: "agent:main" }, { isAgent: true, agentId: "main", sessionName: null }),
+    ).toBe(true);
+    expect(signalVisibleTo(signal, undefined)).toBe(true);
   });
 
   it("defaults an agent's scope to its own agent and owns the record as that agent", async () => {

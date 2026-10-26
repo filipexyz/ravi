@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { calculateCost, prewarmPricingCatalog } from "../costs/pricing-catalog.js";
 import { projectChannelRuntimeEvent } from "../channels/runtime-events.js";
 import { backfillProviderSessionId, getRecentHistory, saveMessage } from "../db.js";
-import { isFinalAssistantMessage, type UtteranceClass } from "./utterance-class.js";
+import { isCommentaryMetadata, isFinalAssistantMessage, type UtteranceClass } from "./utterance-class.js";
 import { HEARTBEAT_OK } from "../heartbeat/index.js";
 import { getToolSafety } from "../hooks/tool-safety.js";
 import { nats } from "../nats.js";
@@ -276,7 +276,7 @@ function appendAssistantResponse(current: string, next: string): string {
 }
 
 function isCommentaryResponse(metadata: RuntimeEventMetadata | undefined): boolean {
-  return metadata?.item?.phase === "commentary";
+  return isCommentaryMetadata(metadata);
 }
 
 /** Upper bound for the full assistant text carried to observers that read detail. */

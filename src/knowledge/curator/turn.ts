@@ -7,7 +7,7 @@
 // deleted, so the quoted messages and the JSON reply are not kept.
 
 import { getRecentHistory } from "../../db.js";
-import { isFinalAssistantMessage } from "../../runtime/utterance-class.js";
+import { isCommentaryMetadata, isFinalAssistantMessage } from "../../runtime/utterance-class.js";
 import { publishSessionPrompt } from "../../omni/session-stream.js";
 import { nats } from "../../nats.js";
 import { getAgent } from "../../router/config.js";
@@ -116,6 +116,8 @@ export async function runCuratorTurn(
         for await (const event of stream) {
           if (!collecting) return;
           if (event.topic.endsWith(".response")) {
+            // Commentary is history, never the answer (sessions/turn-output inv. 2).
+            if (isCommentaryMetadata(event.data.metadata)) continue;
             const text = typeof event.data.response === "string" ? event.data.response : "";
             if (text.trim() && text.trim() !== SILENT_TOKEN) parts.push(text);
             continue;

@@ -376,9 +376,11 @@ export function findSignal(idOrKey: string): SignalRecord | null {
  * agent session sees what resolves to it plus what it owns.
  */
 export function signalVisibleTo(signal: SignalRecord, caller: SignalCaller | undefined): boolean {
-  const sessionName = caller?.sessionName?.trim();
-  if (!caller?.isAgent || !sessionName) return true;
+  if (!caller?.isAgent) return true;
   if (signal.producerId === callerOwnerId(caller)) return true;
+  const sessionName = caller.sessionName?.trim();
+  // Fail closed: an agent without a resolvable session sees only what it owns.
+  if (!sessionName) return false;
   return signalIsInSessionScope(signal, callerSessionContext(caller, sessionName));
 }
 
