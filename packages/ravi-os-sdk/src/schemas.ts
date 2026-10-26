@@ -39484,6 +39484,569 @@ export const ChatsReadReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `cloud.agents.approve`. */
+export const CloudAgentsApproveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Cloud agent id, Library slug or name",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Approve (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Console project slug (default: the cwd's project)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.agents.approve`. */
+export const CloudAgentsApproveReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "additionalProperties": false,
+      "properties": {
+        "cap": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "monthSpentUsd": {
+                  "type": "number"
+                },
+                "monthlyCapUsd": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "pausedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "pausedReason": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "monthlyCapUsd",
+                "monthSpentUsd",
+                "pausedAt",
+                "pausedReason"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "catalogEntryId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "config": {
+          "additionalProperties": false,
+          "properties": {
+            "askHuman": {
+              "type": "boolean"
+            },
+            "budgetUsd": {
+              "type": "number"
+            },
+            "mcpServers": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "memory": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "agent",
+                    "person"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "networking": {
+              "type": "string"
+            },
+            "office": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "outcome": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "maxIterations": {
+                      "type": "number"
+                    },
+                    "rubric": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "rubric",
+                    "maxIterations"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "placement": {
+              "enum": [
+                "cloud",
+                "installation"
+              ],
+              "type": "string"
+            },
+            "provider": {
+              "enum": [
+                "anthropic",
+                "ravi"
+              ],
+              "type": "string"
+            },
+            "raviMcp": {
+              "type": "boolean"
+            },
+            "repositories": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "schedule": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "cron": {
+                      "type": "string"
+                    },
+                    "timezone": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "cron",
+                    "timezone"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "secrets": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "webFetch": {
+              "type": "boolean"
+            },
+            "webSearch": {
+              "type": "boolean"
+            },
+            "workflows": {
+              "type": "boolean"
+            },
+            "writes": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "budgetUsd",
+            "networking",
+            "webSearch",
+            "writes",
+            "raviMcp",
+            "mcpServers",
+            "repositories",
+            "schedule"
+          ],
+          "type": "object"
+        },
+        "deployedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deployedBy": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "lastError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "library": {
+          "additionalProperties": false,
+          "properties": {
+            "itemId": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string"
+            },
+            "slug": {
+              "type": "string"
+            },
+            "version": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "itemId",
+            "slug",
+            "scope",
+            "version"
+          ],
+          "type": "object"
+        },
+        "manifest": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "approved": {
+                  "type": "boolean"
+                },
+                "approvedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hash": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "value": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "allowedHosts": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "askHuman": {
+                          "type": "boolean"
+                        },
+                        "mcpServers": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "memory": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "agent",
+                                "person"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "model": {
+                          "type": "string"
+                        },
+                        "networking": {
+                          "enum": [
+                            "limited",
+                            "unrestricted"
+                          ],
+                          "type": "string"
+                        },
+                        "office": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "placement": {
+                          "enum": [
+                            "cloud",
+                            "installation"
+                          ],
+                          "type": "string"
+                        },
+                        "provider": {
+                          "enum": [
+                            "anthropic",
+                            "ravi"
+                          ],
+                          "type": "string"
+                        },
+                        "raviOps": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "repositories": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "secrets": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "web": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "allowedDomains": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "blockedDomains": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "fetch": {
+                              "type": "boolean"
+                            },
+                            "search": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "search",
+                            "fetch",
+                            "allowedDomains",
+                            "blockedDomains"
+                          ],
+                          "type": "object"
+                        },
+                        "workflows": {
+                          "type": "boolean"
+                        },
+                        "writes": {
+                          "enum": [
+                            "ask",
+                            "auto"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "model",
+                        "provider",
+                        "placement",
+                        "writes",
+                        "networking",
+                        "allowedHosts",
+                        "mcpServers",
+                        "raviOps",
+                        "secrets",
+                        "repositories",
+                        "memory",
+                        "office",
+                        "web",
+                        "askHuman",
+                        "workflows"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "hash",
+                "approved",
+                "approvedAt",
+                "value"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "placementInstallationId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "projectId",
+        "name",
+        "library",
+        "provider",
+        "model",
+        "status",
+        "deployedAt",
+        "deployedBy",
+        "lastError",
+        "config"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "agent"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `cloud.agents.archive`. */
 export const CloudAgentsArchiveInputSchema = {
   "additionalProperties": false,
@@ -39721,6 +40284,574 @@ export const CloudAgentsArchiveReturnSchema = {
     "success",
     "id",
     "archived",
+    "agent"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.agents.cap`. */
+export const CloudAgentsCapInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Cloud agent id, Library slug or name",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Raise or remove the cap (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Console project slug (default: the cwd's project)",
+      "type": "string"
+    },
+    "usd": {
+      "description": "Monthly cap in US dollars, or none",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent",
+    "usd"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.agents.cap`. */
+export const CloudAgentsCapReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "additionalProperties": false,
+      "properties": {
+        "cap": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "monthSpentUsd": {
+                  "type": "number"
+                },
+                "monthlyCapUsd": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "pausedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "pausedReason": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "monthlyCapUsd",
+                "monthSpentUsd",
+                "pausedAt",
+                "pausedReason"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "catalogEntryId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "config": {
+          "additionalProperties": false,
+          "properties": {
+            "askHuman": {
+              "type": "boolean"
+            },
+            "budgetUsd": {
+              "type": "number"
+            },
+            "mcpServers": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "memory": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "agent",
+                    "person"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "networking": {
+              "type": "string"
+            },
+            "office": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "outcome": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "maxIterations": {
+                      "type": "number"
+                    },
+                    "rubric": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "rubric",
+                    "maxIterations"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "placement": {
+              "enum": [
+                "cloud",
+                "installation"
+              ],
+              "type": "string"
+            },
+            "provider": {
+              "enum": [
+                "anthropic",
+                "ravi"
+              ],
+              "type": "string"
+            },
+            "raviMcp": {
+              "type": "boolean"
+            },
+            "repositories": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "schedule": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "cron": {
+                      "type": "string"
+                    },
+                    "timezone": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "cron",
+                    "timezone"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "secrets": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "webFetch": {
+              "type": "boolean"
+            },
+            "webSearch": {
+              "type": "boolean"
+            },
+            "workflows": {
+              "type": "boolean"
+            },
+            "writes": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "budgetUsd",
+            "networking",
+            "webSearch",
+            "writes",
+            "raviMcp",
+            "mcpServers",
+            "repositories",
+            "schedule"
+          ],
+          "type": "object"
+        },
+        "deployedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deployedBy": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "lastError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "library": {
+          "additionalProperties": false,
+          "properties": {
+            "itemId": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string"
+            },
+            "slug": {
+              "type": "string"
+            },
+            "version": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "itemId",
+            "slug",
+            "scope",
+            "version"
+          ],
+          "type": "object"
+        },
+        "manifest": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "approved": {
+                  "type": "boolean"
+                },
+                "approvedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hash": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "value": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "allowedHosts": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "askHuman": {
+                          "type": "boolean"
+                        },
+                        "mcpServers": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "memory": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "agent",
+                                "person"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "model": {
+                          "type": "string"
+                        },
+                        "networking": {
+                          "enum": [
+                            "limited",
+                            "unrestricted"
+                          ],
+                          "type": "string"
+                        },
+                        "office": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "placement": {
+                          "enum": [
+                            "cloud",
+                            "installation"
+                          ],
+                          "type": "string"
+                        },
+                        "provider": {
+                          "enum": [
+                            "anthropic",
+                            "ravi"
+                          ],
+                          "type": "string"
+                        },
+                        "raviOps": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "repositories": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "secrets": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "web": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "allowedDomains": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "blockedDomains": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "fetch": {
+                              "type": "boolean"
+                            },
+                            "search": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "search",
+                            "fetch",
+                            "allowedDomains",
+                            "blockedDomains"
+                          ],
+                          "type": "object"
+                        },
+                        "workflows": {
+                          "type": "boolean"
+                        },
+                        "writes": {
+                          "enum": [
+                            "ask",
+                            "auto"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "model",
+                        "provider",
+                        "placement",
+                        "writes",
+                        "networking",
+                        "allowedHosts",
+                        "mcpServers",
+                        "raviOps",
+                        "secrets",
+                        "repositories",
+                        "memory",
+                        "office",
+                        "web",
+                        "askHuman",
+                        "workflows"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "hash",
+                "approved",
+                "approvedAt",
+                "value"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "placementInstallationId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "projectId",
+        "name",
+        "library",
+        "provider",
+        "model",
+        "status",
+        "deployedAt",
+        "deployedBy",
+        "lastError",
+        "config"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
     "agent"
   ],
   "type": "object"
@@ -40256,6 +41387,56 @@ export const CloudAgentsListReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `cloud.agents.memory-reset`. */
+export const CloudAgentsMemoryResetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Cloud agent id, Library slug or name",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Archive the stores (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Console project slug (default: the cwd's project)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.agents.memory-reset`. */
+export const CloudAgentsMemoryResetReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "type": "string"
+    },
+    "archivedStores": {
+      "type": "number"
+    },
+    "name": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "agentId",
+    "name",
+    "archivedStores"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `cloud.agents.show`. */
 export const CloudAgentsShowInputSchema = {
   "additionalProperties": false,
@@ -40478,6 +41659,2095 @@ export const CloudAgentsShowReturnSchema = {
   "required": [
     "success",
     "agent"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.catalog.install`. */
+export const CloudCatalogInstallInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "entry": {
+      "description": "Catalog entry slug or id",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Install (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Console project slug (default: the cwd's project)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "entry"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.catalog.install`. */
+export const CloudCatalogInstallReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agents": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "cap": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "monthSpentUsd": {
+                    "type": "number"
+                  },
+                  "monthlyCapUsd": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "pausedAt": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "pausedReason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "monthlyCapUsd",
+                  "monthSpentUsd",
+                  "pausedAt",
+                  "pausedReason"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "catalogEntryId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "config": {
+            "additionalProperties": false,
+            "properties": {
+              "askHuman": {
+                "type": "boolean"
+              },
+              "budgetUsd": {
+                "type": "number"
+              },
+              "mcpServers": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "memory": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "agent",
+                      "person"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "networking": {
+                "type": "string"
+              },
+              "office": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "outcome": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "maxIterations": {
+                        "type": "number"
+                      },
+                      "rubric": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "rubric",
+                      "maxIterations"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "placement": {
+                "enum": [
+                  "cloud",
+                  "installation"
+                ],
+                "type": "string"
+              },
+              "provider": {
+                "enum": [
+                  "anthropic",
+                  "ravi"
+                ],
+                "type": "string"
+              },
+              "raviMcp": {
+                "type": "boolean"
+              },
+              "repositories": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "schedule": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cron": {
+                        "type": "string"
+                      },
+                      "timezone": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "cron",
+                      "timezone"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "secrets": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "webFetch": {
+                "type": "boolean"
+              },
+              "webSearch": {
+                "type": "boolean"
+              },
+              "workflows": {
+                "type": "boolean"
+              },
+              "writes": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "budgetUsd",
+              "networking",
+              "webSearch",
+              "writes",
+              "raviMcp",
+              "mcpServers",
+              "repositories",
+              "schedule"
+            ],
+            "type": "object"
+          },
+          "deployedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deployedBy": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "name"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "library": {
+            "additionalProperties": false,
+            "properties": {
+              "itemId": {
+                "type": "string"
+              },
+              "scope": {
+                "type": "string"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "version": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "itemId",
+              "slug",
+              "scope",
+              "version"
+            ],
+            "type": "object"
+          },
+          "manifest": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "approved": {
+                    "type": "boolean"
+                  },
+                  "approvedAt": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "hash": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "value": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "allowedHosts": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "askHuman": {
+                            "type": "boolean"
+                          },
+                          "mcpServers": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "memory": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "agent",
+                                  "person"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "model": {
+                            "type": "string"
+                          },
+                          "networking": {
+                            "enum": [
+                              "limited",
+                              "unrestricted"
+                            ],
+                            "type": "string"
+                          },
+                          "office": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "placement": {
+                            "enum": [
+                              "cloud",
+                              "installation"
+                            ],
+                            "type": "string"
+                          },
+                          "provider": {
+                            "enum": [
+                              "anthropic",
+                              "ravi"
+                            ],
+                            "type": "string"
+                          },
+                          "raviOps": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "repositories": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "secrets": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "web": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "allowedDomains": {
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": "array"
+                              },
+                              "blockedDomains": {
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": "array"
+                              },
+                              "fetch": {
+                                "type": "boolean"
+                              },
+                              "search": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "search",
+                              "fetch",
+                              "allowedDomains",
+                              "blockedDomains"
+                            ],
+                            "type": "object"
+                          },
+                          "workflows": {
+                            "type": "boolean"
+                          },
+                          "writes": {
+                            "enum": [
+                              "ask",
+                              "auto"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "model",
+                          "provider",
+                          "placement",
+                          "writes",
+                          "networking",
+                          "allowedHosts",
+                          "mcpServers",
+                          "raviOps",
+                          "secrets",
+                          "repositories",
+                          "memory",
+                          "office",
+                          "web",
+                          "askHuman",
+                          "workflows"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "hash",
+                  "approved",
+                  "approvedAt",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "placementInstallationId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "name",
+          "library",
+          "provider",
+          "model",
+          "status",
+          "deployedAt",
+          "deployedBy",
+          "lastError",
+          "config"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "installed": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "entry",
+            "pack"
+          ],
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "project": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "project",
+    "installed",
+    "agents"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.catalog.list`. */
+export const CloudCatalogListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (1-200, default 50)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Skip this many (default 0)",
+      "type": "string"
+    },
+    "sector": {
+      "description": "Only this sector",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.catalog.list`. */
+export const CloudCatalogListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "entries": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "installed": {
+            "type": "boolean"
+          },
+          "manifest": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "allowedHosts": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "askHuman": {
+                    "type": "boolean"
+                  },
+                  "mcpServers": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "memory": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "agent",
+                          "person"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "networking": {
+                    "enum": [
+                      "limited",
+                      "unrestricted"
+                    ],
+                    "type": "string"
+                  },
+                  "office": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "placement": {
+                    "enum": [
+                      "cloud",
+                      "installation"
+                    ],
+                    "type": "string"
+                  },
+                  "provider": {
+                    "enum": [
+                      "anthropic",
+                      "ravi"
+                    ],
+                    "type": "string"
+                  },
+                  "raviOps": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "repositories": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "secrets": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "web": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "allowedDomains": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "blockedDomains": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "fetch": {
+                        "type": "boolean"
+                      },
+                      "search": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "search",
+                      "fetch",
+                      "allowedDomains",
+                      "blockedDomains"
+                    ],
+                    "type": "object"
+                  },
+                  "workflows": {
+                    "type": "boolean"
+                  },
+                  "writes": {
+                    "enum": [
+                      "ask",
+                      "auto"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "model",
+                  "provider",
+                  "placement",
+                  "writes",
+                  "networking",
+                  "allowedHosts",
+                  "mcpServers",
+                  "raviOps",
+                  "secrets",
+                  "repositories",
+                  "memory",
+                  "office",
+                  "web",
+                  "askHuman",
+                  "workflows"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "manifestHash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "publisher": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "sector": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "slug": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "listed",
+              "unlisted"
+            ],
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "summary",
+          "sector",
+          "publisher",
+          "manifest",
+          "manifestHash",
+          "status",
+          "installed"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "packs": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "entries": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "slug": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "slug",
+                "name"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "publisher": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "revenueShareBps": {
+            "type": "number"
+          },
+          "sector": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "slug": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "listed",
+              "unlisted"
+            ],
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "summary",
+          "sector",
+          "publisher",
+          "entries",
+          "revenueShareBps",
+          "status"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "entries",
+    "packs",
+    "pagination"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.catalog.packs.install`. */
+export const CloudCatalogPacksInstallInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "execute": {
+      "description": "Install (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "pack": {
+      "description": "Pack slug or id",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project slug (default: the cwd's project)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pack"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.catalog.packs.install`. */
+export const CloudCatalogPacksInstallReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agents": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "cap": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "monthSpentUsd": {
+                    "type": "number"
+                  },
+                  "monthlyCapUsd": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "pausedAt": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "pausedReason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "monthlyCapUsd",
+                  "monthSpentUsd",
+                  "pausedAt",
+                  "pausedReason"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "catalogEntryId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "config": {
+            "additionalProperties": false,
+            "properties": {
+              "askHuman": {
+                "type": "boolean"
+              },
+              "budgetUsd": {
+                "type": "number"
+              },
+              "mcpServers": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "memory": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "agent",
+                      "person"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "networking": {
+                "type": "string"
+              },
+              "office": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "outcome": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "maxIterations": {
+                        "type": "number"
+                      },
+                      "rubric": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "rubric",
+                      "maxIterations"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "placement": {
+                "enum": [
+                  "cloud",
+                  "installation"
+                ],
+                "type": "string"
+              },
+              "provider": {
+                "enum": [
+                  "anthropic",
+                  "ravi"
+                ],
+                "type": "string"
+              },
+              "raviMcp": {
+                "type": "boolean"
+              },
+              "repositories": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "schedule": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cron": {
+                        "type": "string"
+                      },
+                      "timezone": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "cron",
+                      "timezone"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "secrets": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "webFetch": {
+                "type": "boolean"
+              },
+              "webSearch": {
+                "type": "boolean"
+              },
+              "workflows": {
+                "type": "boolean"
+              },
+              "writes": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "budgetUsd",
+              "networking",
+              "webSearch",
+              "writes",
+              "raviMcp",
+              "mcpServers",
+              "repositories",
+              "schedule"
+            ],
+            "type": "object"
+          },
+          "deployedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deployedBy": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "name"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "library": {
+            "additionalProperties": false,
+            "properties": {
+              "itemId": {
+                "type": "string"
+              },
+              "scope": {
+                "type": "string"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "version": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "itemId",
+              "slug",
+              "scope",
+              "version"
+            ],
+            "type": "object"
+          },
+          "manifest": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "approved": {
+                    "type": "boolean"
+                  },
+                  "approvedAt": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "hash": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "value": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "allowedHosts": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "askHuman": {
+                            "type": "boolean"
+                          },
+                          "mcpServers": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "memory": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "agent",
+                                  "person"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "model": {
+                            "type": "string"
+                          },
+                          "networking": {
+                            "enum": [
+                              "limited",
+                              "unrestricted"
+                            ],
+                            "type": "string"
+                          },
+                          "office": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "placement": {
+                            "enum": [
+                              "cloud",
+                              "installation"
+                            ],
+                            "type": "string"
+                          },
+                          "provider": {
+                            "enum": [
+                              "anthropic",
+                              "ravi"
+                            ],
+                            "type": "string"
+                          },
+                          "raviOps": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "repositories": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "secrets": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "web": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "allowedDomains": {
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": "array"
+                              },
+                              "blockedDomains": {
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": "array"
+                              },
+                              "fetch": {
+                                "type": "boolean"
+                              },
+                              "search": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "search",
+                              "fetch",
+                              "allowedDomains",
+                              "blockedDomains"
+                            ],
+                            "type": "object"
+                          },
+                          "workflows": {
+                            "type": "boolean"
+                          },
+                          "writes": {
+                            "enum": [
+                              "ask",
+                              "auto"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "model",
+                          "provider",
+                          "placement",
+                          "writes",
+                          "networking",
+                          "allowedHosts",
+                          "mcpServers",
+                          "raviOps",
+                          "secrets",
+                          "repositories",
+                          "memory",
+                          "office",
+                          "web",
+                          "askHuman",
+                          "workflows"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "hash",
+                  "approved",
+                  "approvedAt",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "placementInstallationId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "name",
+          "library",
+          "provider",
+          "model",
+          "status",
+          "deployedAt",
+          "deployedBy",
+          "lastError",
+          "config"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "installed": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "entry",
+            "pack"
+          ],
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "project": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "project",
+    "installed",
+    "agents"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.credits.show`. */
+export const CloudCreditsShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.credits.show`. */
+export const CloudCreditsShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "credits": {
+      "additionalProperties": false,
+      "properties": {
+        "balanceBrl": {
+          "type": "number"
+        },
+        "entries": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "amountBrl": {
+                "type": "number"
+              },
+              "createdAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "fxRate": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "topup",
+                  "run",
+                  "adjustment",
+                  "refund"
+                ],
+                "type": "string"
+              },
+              "paymentUrl": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "pixCopyPaste": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "postedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "runId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "posted",
+                  "void"
+                ],
+                "type": "string"
+              },
+              "usd": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "amountBrl",
+              "usd",
+              "fxRate",
+              "runId",
+              "status",
+              "paymentUrl",
+              "pixCopyPaste",
+              "createdAt",
+              "postedAt"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "fxRate": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mode": {
+          "enum": [
+            "byok",
+            "credits"
+          ],
+          "type": "string"
+        },
+        "monthSpentBrl": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "mode",
+        "balanceBrl",
+        "fxRate",
+        "monthSpentBrl",
+        "entries"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "credits"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.credits.topup`. */
+export const CloudCreditsTopupInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "amount": {
+      "description": "Amount in reais (20 to 5000)",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Create the Pix charge (without it, print the plan and exit 3)",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "amount"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.credits.topup`. */
+export const CloudCreditsTopupReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "credits": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "balanceBrl": {
+              "type": "number"
+            },
+            "entries": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "amountBrl": {
+                    "type": "number"
+                  },
+                  "createdAt": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "fxRate": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "topup",
+                      "run",
+                      "adjustment",
+                      "refund"
+                    ],
+                    "type": "string"
+                  },
+                  "paymentUrl": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "pixCopyPaste": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "postedAt": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "runId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "status": {
+                    "enum": [
+                      "pending",
+                      "posted",
+                      "void"
+                    ],
+                    "type": "string"
+                  },
+                  "usd": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "kind",
+                  "amountBrl",
+                  "usd",
+                  "fxRate",
+                  "runId",
+                  "status",
+                  "paymentUrl",
+                  "pixCopyPaste",
+                  "createdAt",
+                  "postedAt"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "fxRate": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "mode": {
+              "enum": [
+                "byok",
+                "credits"
+              ],
+              "type": "string"
+            },
+            "monthSpentBrl": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "mode",
+            "balanceBrl",
+            "fxRate",
+            "monthSpentBrl",
+            "entries"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "entry": {
+      "additionalProperties": false,
+      "properties": {
+        "amountBrl": {
+          "type": "number"
+        },
+        "createdAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fxRate": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "topup",
+            "run",
+            "adjustment",
+            "refund"
+          ],
+          "type": "string"
+        },
+        "paymentUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pixCopyPaste": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "postedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "posted",
+            "void"
+          ],
+          "type": "string"
+        },
+        "usd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "amountBrl",
+        "usd",
+        "fxRate",
+        "runId",
+        "status",
+        "paymentUrl",
+        "pixCopyPaste",
+        "createdAt",
+        "postedAt"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "entry",
+    "credits"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -40916,6 +44186,825 @@ export const CloudProjectsListReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `cloud.runs.answer`. */
+export const CloudRunsAnswerInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "execute": {
+      "description": "Send the answer (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "question": {
+      "description": "Question id (ravi cloud runs show <run>)",
+      "type": "string"
+    },
+    "run": {
+      "description": "Run id",
+      "type": "string"
+    },
+    "text": {
+      "description": "The answer, in the person's words",
+      "type": "string"
+    }
+  },
+  "required": [
+    "question",
+    "run",
+    "text"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.runs.answer`. */
+export const CloudRunsAnswerReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "question": {
+      "additionalProperties": false,
+      "properties": {
+        "answer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredBy": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "askedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "options": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "question": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "answered",
+            "expired"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "question",
+        "options",
+        "status",
+        "answer",
+        "askedAt",
+        "answeredAt",
+        "answeredBy"
+      ],
+      "type": "object"
+    },
+    "run": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "type": "object"
+        },
+        "agentId": {
+          "type": "string"
+        },
+        "agentName": {
+          "type": "string"
+        },
+        "approvals": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "decidedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "decidedBy": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "inputPreview": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "requestedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "server": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "type": "string"
+              },
+              "tool": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "tool",
+              "server",
+              "inputPreview",
+              "status",
+              "requestedAt",
+              "decidedAt",
+              "decidedBy"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "billingMode": {
+          "enum": [
+            "byok",
+            "credits"
+          ],
+          "type": "string"
+        },
+        "budgetUsd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "chargedBrl": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "costBrl": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "costUsd": {
+          "type": "number"
+        },
+        "deliveredAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "delivery": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "chat": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "channel": {
+                          "type": "string"
+                        },
+                        "chatId": {
+                          "type": "string"
+                        },
+                        "instanceId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "threadId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "channel",
+                        "chatId"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "installationId": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "session",
+                    "page_room",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                "roomId": {
+                  "type": "string"
+                },
+                "sessionName": {
+                  "type": "string"
+                },
+                "siteId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "endedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "fileId": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "size": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "fileId",
+              "name",
+              "size"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "id": {
+          "type": "string"
+        },
+        "origin": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "deliveredAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "delivery": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "installationId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "sessionName": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "taskId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "installationId",
+                "sessionName",
+                "taskId",
+                "delivery",
+                "deliveredAt"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "feedback": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "iterations": {
+                  "type": "number"
+                },
+                "lastResult": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "maxIterations": {
+                  "type": "number"
+                },
+                "rubric": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "rubric",
+                "maxIterations",
+                "iterations",
+                "lastResult",
+                "feedback"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outputs": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "size": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "size"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "questions": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "answer": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "answeredAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "answeredBy": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "askedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "options": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "question": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "answered",
+                  "expired"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "question",
+              "options",
+              "status",
+              "answer",
+              "askedAt",
+              "answeredAt",
+              "answeredBy"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runningSeconds": {
+          "type": "number"
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "threadKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tokens": {
+          "additionalProperties": false,
+          "properties": {
+            "cacheRead": {
+              "type": "number"
+            },
+            "cacheWrite": {
+              "type": "number"
+            },
+            "input": {
+              "type": "number"
+            },
+            "output": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "input",
+            "output",
+            "cacheRead",
+            "cacheWrite"
+          ],
+          "type": "object"
+        },
+        "trigger": {
+          "type": "string"
+        },
+        "triggerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "agentId",
+        "agentName",
+        "projectId",
+        "status",
+        "trigger",
+        "actor",
+        "prompt",
+        "result",
+        "budgetUsd",
+        "costUsd",
+        "runningSeconds",
+        "tokens",
+        "approvals",
+        "outputs",
+        "startedAt",
+        "endedAt",
+        "error",
+        "origin",
+        "url"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "run",
+    "question"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `cloud.runs.approve`. */
 export const CloudRunsApproveInputSchema = {
   "additionalProperties": false,
@@ -41169,7 +45258,34 @@ export const CloudRunsApproveReturnSchema = {
           },
           "type": "array"
         },
+        "billingMode": {
+          "enum": [
+            "byok",
+            "credits"
+          ],
+          "type": "string"
+        },
         "budgetUsd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "chargedBrl": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "costBrl": {
           "anyOf": [
             {
               "type": "number"
@@ -41181,6 +45297,95 @@ export const CloudRunsApproveReturnSchema = {
         },
         "costUsd": {
           "type": "number"
+        },
+        "deliveredAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "delivery": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "chat": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "channel": {
+                          "type": "string"
+                        },
+                        "chatId": {
+                          "type": "string"
+                        },
+                        "instanceId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "threadId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "channel",
+                        "chatId"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "installationId": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "session",
+                    "page_room",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                "roomId": {
+                  "type": "string"
+                },
+                "sessionName": {
+                  "type": "string"
+                },
+                "siteId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "endedAt": {
           "anyOf": [
@@ -41214,6 +45419,29 @@ export const CloudRunsApproveReturnSchema = {
               "type": "null"
             }
           ]
+        },
+        "files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "fileId": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "size": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "fileId",
+              "name",
+              "size"
+            ],
+            "type": "object"
+          },
+          "type": "array"
         },
         "id": {
           "type": "string"
@@ -41292,6 +45520,55 @@ export const CloudRunsApproveReturnSchema = {
             }
           ]
         },
+        "outcome": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "feedback": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "iterations": {
+                  "type": "number"
+                },
+                "lastResult": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "maxIterations": {
+                  "type": "number"
+                },
+                "rubric": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "rubric",
+                "maxIterations",
+                "iterations",
+                "lastResult",
+                "feedback"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "outputs": {
           "items": {
             "additionalProperties": false,
@@ -41321,6 +45598,105 @@ export const CloudRunsApproveReturnSchema = {
         "prompt": {
           "type": "string"
         },
+        "questions": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "answer": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "answeredAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "answeredBy": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "askedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "options": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "question": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "answered",
+                  "expired"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "question",
+              "options",
+              "status",
+              "answer",
+              "askedAt",
+              "answeredAt",
+              "answeredBy"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
         "result": {
           "anyOf": [
             {
@@ -41346,6 +45722,16 @@ export const CloudRunsApproveReturnSchema = {
         },
         "status": {
           "type": "string"
+        },
+        "threadKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "tokens": {
           "additionalProperties": false,
@@ -41373,6 +45759,16 @@ export const CloudRunsApproveReturnSchema = {
         },
         "trigger": {
           "type": "string"
+        },
+        "triggerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "url": {
           "anyOf": [
@@ -41675,7 +46071,34 @@ export const CloudRunsDenyReturnSchema = {
           },
           "type": "array"
         },
+        "billingMode": {
+          "enum": [
+            "byok",
+            "credits"
+          ],
+          "type": "string"
+        },
         "budgetUsd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "chargedBrl": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "costBrl": {
           "anyOf": [
             {
               "type": "number"
@@ -41687,6 +46110,95 @@ export const CloudRunsDenyReturnSchema = {
         },
         "costUsd": {
           "type": "number"
+        },
+        "deliveredAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "delivery": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "chat": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "channel": {
+                          "type": "string"
+                        },
+                        "chatId": {
+                          "type": "string"
+                        },
+                        "instanceId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "threadId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "channel",
+                        "chatId"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "installationId": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "session",
+                    "page_room",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                "roomId": {
+                  "type": "string"
+                },
+                "sessionName": {
+                  "type": "string"
+                },
+                "siteId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "endedAt": {
           "anyOf": [
@@ -41720,6 +46232,29 @@ export const CloudRunsDenyReturnSchema = {
               "type": "null"
             }
           ]
+        },
+        "files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "fileId": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "size": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "fileId",
+              "name",
+              "size"
+            ],
+            "type": "object"
+          },
+          "type": "array"
         },
         "id": {
           "type": "string"
@@ -41798,6 +46333,55 @@ export const CloudRunsDenyReturnSchema = {
             }
           ]
         },
+        "outcome": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "feedback": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "iterations": {
+                  "type": "number"
+                },
+                "lastResult": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "maxIterations": {
+                  "type": "number"
+                },
+                "rubric": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "rubric",
+                "maxIterations",
+                "iterations",
+                "lastResult",
+                "feedback"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "outputs": {
           "items": {
             "additionalProperties": false,
@@ -41827,6 +46411,105 @@ export const CloudRunsDenyReturnSchema = {
         "prompt": {
           "type": "string"
         },
+        "questions": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "answer": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "answeredAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "answeredBy": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "askedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "options": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "question": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "answered",
+                  "expired"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "question",
+              "options",
+              "status",
+              "answer",
+              "askedAt",
+              "answeredAt",
+              "answeredBy"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
         "result": {
           "anyOf": [
             {
@@ -41852,6 +46535,16 @@ export const CloudRunsDenyReturnSchema = {
         },
         "status": {
           "type": "string"
+        },
+        "threadKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "tokens": {
           "additionalProperties": false,
@@ -41879,6 +46572,16 @@ export const CloudRunsDenyReturnSchema = {
         },
         "trigger": {
           "type": "string"
+        },
+        "triggerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "url": {
           "anyOf": [
@@ -42104,7 +46807,34 @@ export const CloudRunsListReturnSchema = {
             },
             "type": "array"
           },
+          "billingMode": {
+            "enum": [
+              "byok",
+              "credits"
+            ],
+            "type": "string"
+          },
           "budgetUsd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "chargedBrl": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "costBrl": {
             "anyOf": [
               {
                 "type": "number"
@@ -42116,6 +46846,95 @@ export const CloudRunsListReturnSchema = {
           },
           "costUsd": {
             "type": "number"
+          },
+          "deliveredAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "delivery": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "chat": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "channel": {
+                            "type": "string"
+                          },
+                          "chatId": {
+                            "type": "string"
+                          },
+                          "instanceId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "threadId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "channel",
+                          "chatId"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "installationId": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "session",
+                      "page_room",
+                      "none"
+                    ],
+                    "type": "string"
+                  },
+                  "roomId": {
+                    "type": "string"
+                  },
+                  "sessionName": {
+                    "type": "string"
+                  },
+                  "siteId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "endedAt": {
             "anyOf": [
@@ -42149,6 +46968,29 @@ export const CloudRunsListReturnSchema = {
                 "type": "null"
               }
             ]
+          },
+          "files": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "fileId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "fileId",
+                "name",
+                "size"
+              ],
+              "type": "object"
+            },
+            "type": "array"
           },
           "id": {
             "type": "string"
@@ -42227,6 +47069,55 @@ export const CloudRunsListReturnSchema = {
               }
             ]
           },
+          "outcome": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "feedback": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "iterations": {
+                    "type": "number"
+                  },
+                  "lastResult": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "maxIterations": {
+                    "type": "number"
+                  },
+                  "rubric": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "rubric",
+                  "maxIterations",
+                  "iterations",
+                  "lastResult",
+                  "feedback"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "outputs": {
             "items": {
               "additionalProperties": false,
@@ -42256,6 +47147,105 @@ export const CloudRunsListReturnSchema = {
           "prompt": {
             "type": "string"
           },
+          "questions": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "answer": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "answeredAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "answeredBy": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "askedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "options": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "question": {
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "pending",
+                    "answered",
+                    "expired"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "question",
+                "options",
+                "status",
+                "answer",
+                "askedAt",
+                "answeredAt",
+                "answeredBy"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "result": {
             "anyOf": [
               {
@@ -42281,6 +47271,16 @@ export const CloudRunsListReturnSchema = {
           },
           "status": {
             "type": "string"
+          },
+          "threadKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "tokens": {
             "additionalProperties": false,
@@ -42308,6 +47308,16 @@ export const CloudRunsListReturnSchema = {
           },
           "trigger": {
             "type": "string"
+          },
+          "triggerId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "url": {
             "anyOf": [
@@ -42619,7 +47629,34 @@ export const CloudRunsReplyReturnSchema = {
           },
           "type": "array"
         },
+        "billingMode": {
+          "enum": [
+            "byok",
+            "credits"
+          ],
+          "type": "string"
+        },
         "budgetUsd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "chargedBrl": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "costBrl": {
           "anyOf": [
             {
               "type": "number"
@@ -42631,6 +47668,95 @@ export const CloudRunsReplyReturnSchema = {
         },
         "costUsd": {
           "type": "number"
+        },
+        "deliveredAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "delivery": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "chat": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "channel": {
+                          "type": "string"
+                        },
+                        "chatId": {
+                          "type": "string"
+                        },
+                        "instanceId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "threadId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "channel",
+                        "chatId"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "installationId": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "session",
+                    "page_room",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                "roomId": {
+                  "type": "string"
+                },
+                "sessionName": {
+                  "type": "string"
+                },
+                "siteId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "endedAt": {
           "anyOf": [
@@ -42664,6 +47790,29 @@ export const CloudRunsReplyReturnSchema = {
               "type": "null"
             }
           ]
+        },
+        "files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "fileId": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "size": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "fileId",
+              "name",
+              "size"
+            ],
+            "type": "object"
+          },
+          "type": "array"
         },
         "id": {
           "type": "string"
@@ -42742,6 +47891,55 @@ export const CloudRunsReplyReturnSchema = {
             }
           ]
         },
+        "outcome": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "feedback": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "iterations": {
+                  "type": "number"
+                },
+                "lastResult": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "maxIterations": {
+                  "type": "number"
+                },
+                "rubric": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "rubric",
+                "maxIterations",
+                "iterations",
+                "lastResult",
+                "feedback"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "outputs": {
           "items": {
             "additionalProperties": false,
@@ -42771,6 +47969,105 @@ export const CloudRunsReplyReturnSchema = {
         "prompt": {
           "type": "string"
         },
+        "questions": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "answer": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "answeredAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "answeredBy": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "askedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "options": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "question": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "answered",
+                  "expired"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "question",
+              "options",
+              "status",
+              "answer",
+              "askedAt",
+              "answeredAt",
+              "answeredBy"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
         "result": {
           "anyOf": [
             {
@@ -42796,6 +48093,16 @@ export const CloudRunsReplyReturnSchema = {
         },
         "status": {
           "type": "string"
+        },
+        "threadKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "tokens": {
           "additionalProperties": false,
@@ -42823,6 +48130,16 @@ export const CloudRunsReplyReturnSchema = {
         },
         "trigger": {
           "type": "string"
+        },
+        "triggerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "url": {
           "anyOf": [
@@ -43020,7 +48337,34 @@ export const CloudRunsShowReturnSchema = {
           },
           "type": "array"
         },
+        "billingMode": {
+          "enum": [
+            "byok",
+            "credits"
+          ],
+          "type": "string"
+        },
         "budgetUsd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "chargedBrl": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "costBrl": {
           "anyOf": [
             {
               "type": "number"
@@ -43032,6 +48376,95 @@ export const CloudRunsShowReturnSchema = {
         },
         "costUsd": {
           "type": "number"
+        },
+        "deliveredAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "delivery": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "chat": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "channel": {
+                          "type": "string"
+                        },
+                        "chatId": {
+                          "type": "string"
+                        },
+                        "instanceId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "threadId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "channel",
+                        "chatId"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "installationId": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "session",
+                    "page_room",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                "roomId": {
+                  "type": "string"
+                },
+                "sessionName": {
+                  "type": "string"
+                },
+                "siteId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "endedAt": {
           "anyOf": [
@@ -43065,6 +48498,29 @@ export const CloudRunsShowReturnSchema = {
               "type": "null"
             }
           ]
+        },
+        "files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "fileId": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "size": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "fileId",
+              "name",
+              "size"
+            ],
+            "type": "object"
+          },
+          "type": "array"
         },
         "id": {
           "type": "string"
@@ -43143,6 +48599,55 @@ export const CloudRunsShowReturnSchema = {
             }
           ]
         },
+        "outcome": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "feedback": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "iterations": {
+                  "type": "number"
+                },
+                "lastResult": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "maxIterations": {
+                  "type": "number"
+                },
+                "rubric": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "rubric",
+                "maxIterations",
+                "iterations",
+                "lastResult",
+                "feedback"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "outputs": {
           "items": {
             "additionalProperties": false,
@@ -43172,6 +48677,105 @@ export const CloudRunsShowReturnSchema = {
         "prompt": {
           "type": "string"
         },
+        "questions": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "answer": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "answeredAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "answeredBy": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "askedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "options": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "question": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "answered",
+                  "expired"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "question",
+              "options",
+              "status",
+              "answer",
+              "askedAt",
+              "answeredAt",
+              "answeredBy"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
         "result": {
           "anyOf": [
             {
@@ -43197,6 +48801,16 @@ export const CloudRunsShowReturnSchema = {
         },
         "status": {
           "type": "string"
+        },
+        "threadKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "tokens": {
           "additionalProperties": false,
@@ -43224,6 +48838,16 @@ export const CloudRunsShowReturnSchema = {
         },
         "trigger": {
           "type": "string"
+        },
+        "triggerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "url": {
           "anyOf": [
@@ -43280,6 +48904,10 @@ export const CloudRunsStartInputSchema = {
       "description": "Library agent slug, or a cloud agent id or name",
       "type": "string"
     },
+    "bindThread": {
+      "description": "Make this Slack thread or WhatsApp group the run's conversation (run card, replies go to the run)",
+      "type": "boolean"
+    },
     "budget": {
       "description": "Budget for this run in US dollars (0.5-200)",
       "type": "string"
@@ -43288,8 +48916,28 @@ export const CloudRunsStartInputSchema = {
       "description": "Start the run (without it, print the plan and exit 3)",
       "type": "boolean"
     },
+    "file": {
+      "description": "A file the run reads at /mnt/session/inputs/<name>, repeatable (10 files, 3 MB in all)",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
     "idempotencyKey": {
       "description": "Same key, same run: a retry never starts a second run",
+      "type": "string"
+    },
+    "maxIterations": {
+      "description": "Revisions for --outcome (1-5, default 1)",
+      "type": "string"
+    },
+    "noDeliver": {
+      "default": false,
+      "description": "Do not bring the result back to this conversation",
+      "type": "boolean"
+    },
+    "outcome": {
+      "description": "What the result must satisfy; the run revises until it does",
       "type": "string"
     },
     "project": {
@@ -43306,6 +48954,14 @@ export const CloudRunsStartInputSchema = {
         "type": "string"
       },
       "type": "array"
+    },
+    "rowsLimit": {
+      "description": "How many rows of --rows-view (1-500)",
+      "type": "string"
+    },
+    "rowsView": {
+      "description": "Work through the rows of this Base view (needs a budget)",
+      "type": "string"
     }
   },
   "required": [
@@ -43449,7 +49105,34 @@ export const CloudRunsStartReturnSchema = {
           },
           "type": "array"
         },
+        "billingMode": {
+          "enum": [
+            "byok",
+            "credits"
+          ],
+          "type": "string"
+        },
         "budgetUsd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "chargedBrl": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "costBrl": {
           "anyOf": [
             {
               "type": "number"
@@ -43461,6 +49144,95 @@ export const CloudRunsStartReturnSchema = {
         },
         "costUsd": {
           "type": "number"
+        },
+        "deliveredAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "delivery": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "chat": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "channel": {
+                          "type": "string"
+                        },
+                        "chatId": {
+                          "type": "string"
+                        },
+                        "instanceId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "threadId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "channel",
+                        "chatId"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "installationId": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "session",
+                    "page_room",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                "roomId": {
+                  "type": "string"
+                },
+                "sessionName": {
+                  "type": "string"
+                },
+                "siteId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "endedAt": {
           "anyOf": [
@@ -43494,6 +49266,29 @@ export const CloudRunsStartReturnSchema = {
               "type": "null"
             }
           ]
+        },
+        "files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "fileId": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "size": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "fileId",
+              "name",
+              "size"
+            ],
+            "type": "object"
+          },
+          "type": "array"
         },
         "id": {
           "type": "string"
@@ -43572,6 +49367,55 @@ export const CloudRunsStartReturnSchema = {
             }
           ]
         },
+        "outcome": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "feedback": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "iterations": {
+                  "type": "number"
+                },
+                "lastResult": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "maxIterations": {
+                  "type": "number"
+                },
+                "rubric": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "rubric",
+                "maxIterations",
+                "iterations",
+                "lastResult",
+                "feedback"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "outputs": {
           "items": {
             "additionalProperties": false,
@@ -43601,6 +49445,105 @@ export const CloudRunsStartReturnSchema = {
         "prompt": {
           "type": "string"
         },
+        "questions": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "answer": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "answeredAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "answeredBy": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "askedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "options": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "question": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "answered",
+                  "expired"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "question",
+              "options",
+              "status",
+              "answer",
+              "askedAt",
+              "answeredAt",
+              "answeredBy"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
         "result": {
           "anyOf": [
             {
@@ -43626,6 +49569,16 @@ export const CloudRunsStartReturnSchema = {
         },
         "status": {
           "type": "string"
+        },
+        "threadKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "tokens": {
           "additionalProperties": false,
@@ -43653,6 +49606,16 @@ export const CloudRunsStartReturnSchema = {
         },
         "trigger": {
           "type": "string"
+        },
+        "triggerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "url": {
           "anyOf": [
@@ -43692,6 +49655,37 @@ export const CloudRunsStartReturnSchema = {
     "success": {
       "const": true,
       "type": "boolean"
+    },
+    "thread": {
+      "additionalProperties": false,
+      "properties": {
+        "cardMessageId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "channel": {
+          "enum": [
+            "slack",
+            "whatsapp"
+          ],
+          "type": "string"
+        },
+        "threadKey": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadKey",
+        "channel",
+        "cardMessageId"
+      ],
+      "type": "object"
     }
   },
   "required": [
@@ -43850,7 +49844,34 @@ export const CloudRunsStopReturnSchema = {
           },
           "type": "array"
         },
+        "billingMode": {
+          "enum": [
+            "byok",
+            "credits"
+          ],
+          "type": "string"
+        },
         "budgetUsd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "chargedBrl": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "costBrl": {
           "anyOf": [
             {
               "type": "number"
@@ -43862,6 +49883,95 @@ export const CloudRunsStopReturnSchema = {
         },
         "costUsd": {
           "type": "number"
+        },
+        "deliveredAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "delivery": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "chat": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "channel": {
+                          "type": "string"
+                        },
+                        "chatId": {
+                          "type": "string"
+                        },
+                        "instanceId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "threadId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "channel",
+                        "chatId"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "installationId": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "session",
+                    "page_room",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                "roomId": {
+                  "type": "string"
+                },
+                "sessionName": {
+                  "type": "string"
+                },
+                "siteId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "endedAt": {
           "anyOf": [
@@ -43895,6 +50005,29 @@ export const CloudRunsStopReturnSchema = {
               "type": "null"
             }
           ]
+        },
+        "files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "fileId": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "size": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "fileId",
+              "name",
+              "size"
+            ],
+            "type": "object"
+          },
+          "type": "array"
         },
         "id": {
           "type": "string"
@@ -43973,6 +50106,55 @@ export const CloudRunsStopReturnSchema = {
             }
           ]
         },
+        "outcome": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "feedback": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "iterations": {
+                  "type": "number"
+                },
+                "lastResult": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "maxIterations": {
+                  "type": "number"
+                },
+                "rubric": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "rubric",
+                "maxIterations",
+                "iterations",
+                "lastResult",
+                "feedback"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "outputs": {
           "items": {
             "additionalProperties": false,
@@ -44002,6 +50184,105 @@ export const CloudRunsStopReturnSchema = {
         "prompt": {
           "type": "string"
         },
+        "questions": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "answer": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "answeredAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "answeredBy": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "askedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "options": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "question": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "answered",
+                  "expired"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "question",
+              "options",
+              "status",
+              "answer",
+              "askedAt",
+              "answeredAt",
+              "answeredBy"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
         "result": {
           "anyOf": [
             {
@@ -44027,6 +50308,16 @@ export const CloudRunsStopReturnSchema = {
         },
         "status": {
           "type": "string"
+        },
+        "threadKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "tokens": {
           "additionalProperties": false,
@@ -44054,6 +50345,16 @@ export const CloudRunsStopReturnSchema = {
         },
         "trigger": {
           "type": "string"
+        },
+        "triggerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "url": {
           "anyOf": [
@@ -44126,6 +50427,11 @@ export const CloudSchedulesAddInputSchema = {
       "description": "Create an enabled schedule (without it, print the plan and exit 3)",
       "type": "boolean"
     },
+    "noDeliver": {
+      "default": false,
+      "description": "Do not bring each run's result back to this conversation",
+      "type": "boolean"
+    },
     "project": {
       "description": "Console project slug (default: the cwd's project)",
       "type": "string"
@@ -44193,6 +50499,85 @@ export const CloudSchedulesAddReturnSchema = {
         },
         "cron": {
           "type": "string"
+        },
+        "delivery": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "chat": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "channel": {
+                          "type": "string"
+                        },
+                        "chatId": {
+                          "type": "string"
+                        },
+                        "instanceId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "threadId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "channel",
+                        "chatId"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "installationId": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "session",
+                    "page_room",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                "roomId": {
+                  "type": "string"
+                },
+                "sessionName": {
+                  "type": "string"
+                },
+                "siteId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "enabled": {
           "type": "boolean"
@@ -44395,6 +50780,85 @@ export const CloudSchedulesListReturnSchema = {
           "cron": {
             "type": "string"
           },
+          "delivery": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "chat": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "channel": {
+                            "type": "string"
+                          },
+                          "chatId": {
+                            "type": "string"
+                          },
+                          "instanceId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "threadId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "channel",
+                          "chatId"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "installationId": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "session",
+                      "page_room",
+                      "none"
+                    ],
+                    "type": "string"
+                  },
+                  "roomId": {
+                    "type": "string"
+                  },
+                  "sessionName": {
+                    "type": "string"
+                  },
+                  "siteId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "enabled": {
             "type": "boolean"
           },
@@ -44548,6 +51012,11 @@ export const CloudSchedulesUpdateInputSchema = {
       "description": "Schedule id",
       "type": "string"
     },
+    "noDeliver": {
+      "default": false,
+      "description": "Stop bringing each run's result back to a conversation",
+      "type": "boolean"
+    },
     "project": {
       "description": "Console project slug (default: the cwd's project)",
       "type": "string"
@@ -44615,6 +51084,85 @@ export const CloudSchedulesUpdateReturnSchema = {
         },
         "cron": {
           "type": "string"
+        },
+        "delivery": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "chat": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "channel": {
+                          "type": "string"
+                        },
+                        "chatId": {
+                          "type": "string"
+                        },
+                        "instanceId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "threadId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "channel",
+                        "chatId"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "installationId": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "session",
+                    "page_room",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                "roomId": {
+                  "type": "string"
+                },
+                "sessionName": {
+                  "type": "string"
+                },
+                "siteId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "enabled": {
           "type": "boolean"
@@ -45544,6 +52092,2021 @@ export const CloudScopeShowReturnSchema = {
   "required": [
     "success",
     "scope"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.secrets.list`. */
+export const CloudSecretsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (1-200, default 50)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Skip this many (default 0)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Only this Console project's secrets",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.secrets.list`. */
+export const CloudSecretsListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "project": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "secrets": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "allowedHosts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastUsedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "projectId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedBy": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "name"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "valueHint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "name",
+          "valueHint",
+          "allowedHosts",
+          "updatedAt",
+          "updatedBy",
+          "lastUsedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "project",
+    "secrets",
+    "pagination"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.secrets.remove`. */
+export const CloudSecretsRemoveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "project": {
+      "description": "The project the secret is bound to (default: organization-wide)",
+      "type": "string"
+    },
+    "secret": {
+      "description": "Secret name or id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "secret"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.secrets.remove`. */
+export const CloudSecretsRemoveReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "removed": {
+      "const": true,
+      "type": "boolean"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "id",
+    "name",
+    "removed"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.settings.set`. */
+export const CloudSettingsSetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "billingMode": {
+      "description": "byok (the organization's key) or credits (Ravi credits)",
+      "type": "string"
+    },
+    "dailyEventRuns": {
+      "description": "Runs event triggers may start per day (1-1000)",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Apply a change that can raise spending (without it, exit 3)",
+      "type": "boolean"
+    },
+    "monthlyCap": {
+      "description": "Monthly cap in US dollars for the organization, or none",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.settings.set`. */
+export const CloudSettingsSetReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "changes": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "settings": {
+      "additionalProperties": false,
+      "properties": {
+        "billingMode": {
+          "enum": [
+            "byok",
+            "credits"
+          ],
+          "type": "string"
+        },
+        "dailyEventRunsCap": {
+          "type": "number"
+        },
+        "gatewayAvailable": {
+          "type": "boolean"
+        },
+        "monthSpentUsd": {
+          "type": "number"
+        },
+        "monthlyCapUsd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pausedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pausedReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "webhook": {
+          "additionalProperties": false,
+          "properties": {
+            "configured": {
+              "type": "boolean"
+            },
+            "lastEventAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "url": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "url",
+            "configured",
+            "lastEventAt"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "billingMode",
+        "monthlyCapUsd",
+        "monthSpentUsd",
+        "pausedAt",
+        "pausedReason",
+        "dailyEventRunsCap",
+        "webhook",
+        "gatewayAvailable"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "settings",
+    "changes"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.settings.show`. */
+export const CloudSettingsShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.settings.show`. */
+export const CloudSettingsShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "settings": {
+      "additionalProperties": false,
+      "properties": {
+        "billingMode": {
+          "enum": [
+            "byok",
+            "credits"
+          ],
+          "type": "string"
+        },
+        "dailyEventRunsCap": {
+          "type": "number"
+        },
+        "gatewayAvailable": {
+          "type": "boolean"
+        },
+        "monthSpentUsd": {
+          "type": "number"
+        },
+        "monthlyCapUsd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pausedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pausedReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "webhook": {
+          "additionalProperties": false,
+          "properties": {
+            "configured": {
+              "type": "boolean"
+            },
+            "lastEventAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "url": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "url",
+            "configured",
+            "lastEventAt"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "billingMode",
+        "monthlyCapUsd",
+        "monthSpentUsd",
+        "pausedAt",
+        "pausedReason",
+        "dailyEventRunsCap",
+        "webhook",
+        "gatewayAvailable"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "settings"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.triggers.create`. */
+export const CloudTriggersCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Library agent slug, or a cloud agent id or name",
+      "type": "string"
+    },
+    "base": {
+      "description": "Bases: only this base",
+      "type": "string"
+    },
+    "batchWindow": {
+      "description": "Wait this long to batch events (0-3600, default 60)",
+      "type": "string"
+    },
+    "budget": {
+      "description": "Budget per run in US dollars (default: the agent's)",
+      "type": "string"
+    },
+    "dailyCap": {
+      "description": "Runs per day at most (1-200, default 20)",
+      "type": "string"
+    },
+    "dedupeWindow": {
+      "description": "Drop repeats of an event within (default 600)",
+      "type": "string"
+    },
+    "deliverTo": {
+      "description": "Session that gets each result, or none",
+      "type": "string"
+    },
+    "disabled": {
+      "description": "Create it disabled (applies at once)",
+      "type": "boolean"
+    },
+    "events": {
+      "description": "Only these event types (comma-separated or repeated)",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "execute": {
+      "description": "Create an enabled trigger (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "mailbox": {
+      "description": "Mail: only this mailbox",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project slug (default: the cwd's project)",
+      "type": "string"
+    },
+    "prompt": {
+      "description": "What each run does; {{event}} is where the events go",
+      "type": "string"
+    },
+    "site": {
+      "description": "Page comments: only this site",
+      "type": "string"
+    },
+    "source": {
+      "description": "bases, mail, meetings or pages_comments",
+      "type": "string"
+    },
+    "view": {
+      "description": "Bases: only rows of this view",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.triggers.create`. */
+export const CloudTriggersCreateReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "trigger": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "type": "object"
+        },
+        "agentId": {
+          "type": "string"
+        },
+        "agentName": {
+          "type": "string"
+        },
+        "batchWindowSeconds": {
+          "type": "number"
+        },
+        "budgetUsd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dailyCap": {
+          "type": "number"
+        },
+        "dedupeWindowSeconds": {
+          "type": "number"
+        },
+        "delivery": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "chat": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "channel": {
+                          "type": "string"
+                        },
+                        "chatId": {
+                          "type": "string"
+                        },
+                        "instanceId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "threadId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "channel",
+                        "chatId"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "installationId": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "session",
+                    "page_room",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                "roomId": {
+                  "type": "string"
+                },
+                "sessionName": {
+                  "type": "string"
+                },
+                "siteId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "filter": {
+          "additionalProperties": false,
+          "properties": {
+            "baseId": {
+              "type": "string"
+            },
+            "events": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "mailboxId": {
+              "type": "string"
+            },
+            "siteId": {
+              "type": "string"
+            },
+            "viewId": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "firedToday": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "lastFiredAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastRunId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pausedReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pendingEvents": {
+          "type": "number"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "bases",
+            "mail",
+            "meetings",
+            "pages_comments"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "projectId",
+        "agentId",
+        "agentName",
+        "actor",
+        "source",
+        "filter",
+        "prompt",
+        "delivery",
+        "enabled",
+        "dailyCap",
+        "batchWindowSeconds",
+        "dedupeWindowSeconds",
+        "budgetUsd",
+        "firedToday",
+        "lastFiredAt",
+        "lastRunId",
+        "pausedReason",
+        "pendingEvents"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "success",
+    "trigger"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.triggers.list`. */
+export const CloudTriggersListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (1-200, default 50)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Skip this many (default 0)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project slug (default: the cwd's project)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.triggers.list`. */
+export const CloudTriggersListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "project": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "triggers": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "batchWindowSeconds": {
+            "type": "number"
+          },
+          "budgetUsd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dailyCap": {
+            "type": "number"
+          },
+          "dedupeWindowSeconds": {
+            "type": "number"
+          },
+          "delivery": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "chat": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "channel": {
+                            "type": "string"
+                          },
+                          "chatId": {
+                            "type": "string"
+                          },
+                          "instanceId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "threadId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "channel",
+                          "chatId"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "installationId": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "session",
+                      "page_room",
+                      "none"
+                    ],
+                    "type": "string"
+                  },
+                  "roomId": {
+                    "type": "string"
+                  },
+                  "sessionName": {
+                    "type": "string"
+                  },
+                  "siteId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "filter": {
+            "additionalProperties": false,
+            "properties": {
+              "baseId": {
+                "type": "string"
+              },
+              "events": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "mailboxId": {
+                "type": "string"
+              },
+              "siteId": {
+                "type": "string"
+              },
+              "viewId": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "firedToday": {
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastFiredAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastRunId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pausedReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pendingEvents": {
+            "type": "number"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "bases",
+              "mail",
+              "meetings",
+              "pages_comments"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "agentId",
+          "agentName",
+          "actor",
+          "source",
+          "filter",
+          "prompt",
+          "delivery",
+          "enabled",
+          "dailyCap",
+          "batchWindowSeconds",
+          "dedupeWindowSeconds",
+          "budgetUsd",
+          "firedToday",
+          "lastFiredAt",
+          "lastRunId",
+          "pausedReason",
+          "pendingEvents"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "success",
+    "project",
+    "triggers",
+    "pagination"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.triggers.remove`. */
+export const CloudTriggersRemoveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Trigger id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.triggers.remove`. */
+export const CloudTriggersRemoveReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "removed": {
+      "const": true,
+      "type": "boolean"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "id",
+    "removed"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.triggers.test`. */
+export const CloudTriggersTestInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Trigger id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.triggers.test`. */
+export const CloudTriggersTestReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "test": {
+      "additionalProperties": false,
+      "properties": {
+        "blockedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "eventCount": {
+          "type": "number"
+        },
+        "prompt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sample": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "prompt",
+        "eventCount",
+        "sample",
+        "blockedBy"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "success",
+    "id",
+    "test"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.triggers.update`. */
+export const CloudTriggersUpdateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "batchWindow": {
+      "description": "Wait this long to batch events (0-3600)",
+      "type": "string"
+    },
+    "budget": {
+      "description": "Budget per run in US dollars, or none for the agent's",
+      "type": "string"
+    },
+    "dailyCap": {
+      "description": "Runs per day at most (1-200)",
+      "type": "string"
+    },
+    "dedupeWindow": {
+      "description": "Drop repeats of an event within",
+      "type": "string"
+    },
+    "deliverTo": {
+      "description": "Session that gets each result, or none",
+      "type": "string"
+    },
+    "disable": {
+      "description": "Disable it (applies at once)",
+      "type": "boolean"
+    },
+    "enable": {
+      "description": "Enable it",
+      "type": "boolean"
+    },
+    "events": {
+      "description": "Only these event types",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "execute": {
+      "description": "Apply a change that leaves the trigger enabled (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Trigger id",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project slug (default: the cwd's project)",
+      "type": "string"
+    },
+    "prompt": {
+      "description": "What each run does; {{event}} is where the events go",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.triggers.update`. */
+export const CloudTriggersUpdateReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "trigger": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "type": "object"
+        },
+        "agentId": {
+          "type": "string"
+        },
+        "agentName": {
+          "type": "string"
+        },
+        "batchWindowSeconds": {
+          "type": "number"
+        },
+        "budgetUsd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dailyCap": {
+          "type": "number"
+        },
+        "dedupeWindowSeconds": {
+          "type": "number"
+        },
+        "delivery": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "chat": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "channel": {
+                          "type": "string"
+                        },
+                        "chatId": {
+                          "type": "string"
+                        },
+                        "instanceId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "threadId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "channel",
+                        "chatId"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "installationId": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "session",
+                    "page_room",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                "roomId": {
+                  "type": "string"
+                },
+                "sessionName": {
+                  "type": "string"
+                },
+                "siteId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "filter": {
+          "additionalProperties": false,
+          "properties": {
+            "baseId": {
+              "type": "string"
+            },
+            "events": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "mailboxId": {
+              "type": "string"
+            },
+            "siteId": {
+              "type": "string"
+            },
+            "viewId": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "firedToday": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "lastFiredAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastRunId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pausedReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pendingEvents": {
+          "type": "number"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "bases",
+            "mail",
+            "meetings",
+            "pages_comments"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "projectId",
+        "agentId",
+        "agentName",
+        "actor",
+        "source",
+        "filter",
+        "prompt",
+        "delivery",
+        "enabled",
+        "dailyCap",
+        "batchWindowSeconds",
+        "dedupeWindowSeconds",
+        "budgetUsd",
+        "firedToday",
+        "lastFiredAt",
+        "lastRunId",
+        "pausedReason",
+        "pendingEvents"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "success",
+    "trigger"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.webhook.remove`. */
+export const CloudWebhookRemoveInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.webhook.remove`. */
+export const CloudWebhookRemoveReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "webhook": {
+      "additionalProperties": false,
+      "properties": {
+        "configured": {
+          "type": "boolean"
+        },
+        "lastEventAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "url",
+        "configured",
+        "lastEventAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "success",
+    "webhook"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.webhook.show`. */
+export const CloudWebhookShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.webhook.show`. */
+export const CloudWebhookShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "webhook": {
+      "additionalProperties": false,
+      "properties": {
+        "configured": {
+          "type": "boolean"
+        },
+        "lastEventAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "url",
+        "configured",
+        "lastEventAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "success",
+    "webhook"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.worker.disable`. */
+export const CloudWorkerDisableInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.worker.disable`. */
+export const CloudWorkerDisableReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "changed": {
+      "type": "boolean"
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "enabledAt": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "enabled",
+    "enabledAt",
+    "changed"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.worker.key.remove`. */
+export const CloudWorkerKeyRemoveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "workerId": {
+      "description": "Worker id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "workerId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.worker.key.remove`. */
+export const CloudWorkerKeyRemoveReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "removed": {
+      "type": "boolean"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "workerId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "success",
+    "workerId",
+    "removed"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.worker.list`. */
+export const CloudWorkerListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (1-200, default 50)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Skip this many (default 0)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.worker.list`. */
+export const CloudWorkerListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "enabled": {
+      "type": "boolean"
+    },
+    "enabledAt": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "orphanKeys": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "workers": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "installationId": {
+            "type": "string"
+          },
+          "lastError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastSeenAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "local": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "error": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "restartAt": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "state": {
+                    "enum": [
+                      "running",
+                      "waiting_key",
+                      "backoff"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "state",
+                  "error",
+                  "restartAt"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "localKey": {
+            "type": "boolean"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "providerEnvironmentId": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "waiting_key",
+              "online",
+              "offline",
+              "disabled"
+            ],
+            "type": "string"
+          },
+          "thisMachine": {
+            "type": "boolean"
+          },
+          "workdir": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "agentName",
+          "projectId",
+          "installationId",
+          "providerEnvironmentId",
+          "status",
+          "lastSeenAt",
+          "lastError",
+          "localKey",
+          "thisMachine",
+          "workdir",
+          "local"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "success",
+    "enabled",
+    "enabledAt",
+    "workers",
+    "orphanKeys",
+    "pagination"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
