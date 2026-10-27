@@ -3602,7 +3602,8 @@ export class SessionCommands {
     // (Claude gates every SDK tool; Codex hooks only the shell), so an agent
     // turn needs agent-configuration authority to pick one. Clearing returns
     // to the agent's configured provider and stays open, as does picking it.
-    const configuredProvider = (getAgent(s.agentId) ?? loadRouterConfig().agents[s.agentId])?.provider;
+    const configuredProvider =
+      (getAgent(s.agentId) ?? loadRouterConfig().agents[s.agentId])?.provider ?? DEFAULT_RUNTIME_PROVIDER_ID;
     if (
       propagate !== true &&
       providerOverride &&
