@@ -103,6 +103,33 @@ describe("sessions set-provider/set-model --propagate", () => {
   });
 });
 
+describe("sessions relay delivery override", () => {
+  it("refuses --channel/--to naming a chat the target session is not attached to", async () => {
+    const own = getOrCreateSession("agent:crm:worker", "crm", "/tmp/crm");
+    const send = new SessionCommands().send as (...values: unknown[]) => Promise<unknown>;
+    const args: unknown[] = [own.name ?? own.sessionKey, "hello"];
+    args[5] = "whatsapp"; // --channel
+    args[6] = "5511900009999@s.whatsapp.net"; // --to
+    args[15] = true; // --json
+    const caller: ToolContext = {
+      ...BOOTSTRAP,
+      context: {
+        ...BOOTSTRAP.context!,
+        capabilities: [
+          ...BOOTSTRAP.context!.capabilities,
+          { permission: "access", objectType: "session", objectId: own.name ?? own.sessionKey, source: "test" },
+        ],
+      },
+    };
+    const error = await runWithContext(caller, () => send.apply(new SessionCommands(), args)).then(
+      () => null,
+      (err: unknown) => err as { code?: string },
+    );
+    expect(error?.code).toBe("PERMISSION_DENIED");
+    expect(getOrCreateSession("agent:crm:worker", "crm", "/tmp/crm").lastTo ?? null).toBeNull();
+  });
+});
+
 describe("sessions send --thread", () => {
   it("needs the threads brief and comment authority", async () => {
     const own = getOrCreateSession("agent:crm:worker", "crm", "/tmp/crm");

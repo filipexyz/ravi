@@ -44,6 +44,7 @@ import { applyProviderModelRule } from "./model-catalog.js";
 import { ensureObserverBindingsForSession } from "./observation-plane.js";
 import { formatUserFacingTurnFailure, publicRuntimeFailureDetail } from "./public-failure.js";
 import { reportRuntimePromptIntakeFailure } from "./intake-failure.js";
+import { isSessionRelayTurn } from "./turn-origin.js";
 
 const log = logger.child("runtime:session-launcher");
 
@@ -72,7 +73,10 @@ export interface StartRuntimeSessionOptions {
 }
 
 export function updateRuntimeSessionMetadata(sessionKey: string, prompt: RuntimeLaunchPrompt): void {
-  if (prompt.source) {
+  // A relay's source is where that one relay delivers, not a chat the session
+  // talks to: saving it as last_* would let later cron, trigger and heartbeat
+  // turns reply (and send approval cards) there under a real account.
+  if (prompt.source && !isSessionRelayTurn(prompt)) {
     updateSessionSource(sessionKey, prompt.source);
   }
 

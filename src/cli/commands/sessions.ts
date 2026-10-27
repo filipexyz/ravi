@@ -5810,6 +5810,17 @@ export class SessionCommands {
     let context: ChannelContext | undefined;
 
     if (channelOverride && toOverride) {
+      // From an agent turn the override may only name a chat this session
+      // already talks to; anything else would hand the agent an outbound
+      // channel to an arbitrary chat.
+      if (getContext()?.agentId && !sessionTalksToChat(session, channelOverride, toOverride)) {
+        throw new CliExpectedError(
+          `--channel/--to must name a chat session ${session.name ?? session.sessionKey} is attached to.`,
+          "PERMISSION_DENIED",
+          1,
+          "Attach the chat to the session first, or send through the channel's own command.",
+        );
+      }
       source = { channel: channelOverride, accountId: "", chatId: toOverride };
     }
     // Session-relay without --channel/--to is not inbound chat. Leftover
@@ -7326,6 +7337,14 @@ function assertAgentDefaultsWriteAuthorized(agentId: string): void {
  * prompt to it, so an agent turn needs the same authority as `ravi threads
  * brief` and `ravi threads comment` (and `create` when it may create one).
  */
+function sessionTalksToChat(session: SessionEntry, channel: string, chatId: string): boolean {
+  if (session.lastChannel === channel && session.lastTo === chatId) return true;
+  return listSessionSubscriptions(session.sessionKey).some((subscription) => {
+    const chat = dbGetChat(subscription.chatId);
+    return chat?.channel === channel && chat.platformChatId === chatId;
+  });
+}
+
 function assertThreadHandoffAuthorized(mayCreate: boolean, asJson?: boolean): void {
   if (!getContext()?.context) return;
   const actions: Array<{ kind: "read" | "mutate"; action: string }> = [
