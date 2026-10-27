@@ -1600,6 +1600,42 @@ describe("runtime request context authority", () => {
     expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
   });
 
+  it("keeps an unresolved sender's interrupted turn unresolved across a daemon restart", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    for (const noticeOnly of [false, true]) {
+      const prompt: RuntimeLaunchPrompt = {
+        prompt: "[System] Daemon reiniciou (test). Continue de onde parou.",
+        source: {
+          channel: "whatsapp",
+          accountId: "main",
+          chatId: "120363428243036323@g.us",
+          canonicalChatId: "chat_group_1",
+          actorType: "unknown",
+          normalizedSenderId: "5511900000999",
+        },
+        _daemonRestartResume: { restartEpoch: "restart-unknown", sessionKey, ...(noticeOnly ? { noticeOnly } : {}) },
+      };
+
+      const { runtimeContext } = buildRuntimeRequestContext({
+        dbSessionKey: sessionKey,
+        sessionName,
+        sessionCwd: "/tmp/provider-agent",
+        agent,
+        prompt,
+        runtimeProviderId: "codex",
+        model: "gpt-5",
+        runtimeResolution,
+        resolvedSource: prompt.source,
+      });
+
+      expect(runtimeContext.metadata?.actorPrincipal).not.toBe("automation:daemon-restart");
+      expect(runtimeContext.metadata?.actorResolution).toBe("missing_contact");
+      expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(false);
+    }
+  });
+
   it("preserves the contact principal for daemon restart resume prompts with a human snapshot source", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });

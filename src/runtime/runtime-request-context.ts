@@ -760,6 +760,11 @@ function resolveAutomationPromptPrincipal(
     if (hasResolvedExternalActor(source) || hasResolvedExternalActor(context)) {
       return null;
     }
+    // An interrupted turn from a sender Ravi could not resolve stays unresolved:
+    // the restart must not lift it to the daemon's own authority.
+    if (hasRecordedExternalSender(source) || hasRecordedExternalSender(context)) {
+      return null;
+    }
     return { subjectType: "automation", subjectId: "daemon-restart" };
   }
   return null;
@@ -781,6 +786,27 @@ function hasResolvedExternalActor(
   return Boolean(
     (metadata?.actorType === "contact" && cleanStringValue(metadata.contactId)) ||
       (metadata?.actorType === "agent" && cleanStringValue(metadata.actorAgentId)),
+  );
+}
+
+function hasRecordedExternalSender(
+  metadata:
+    | {
+        actorType?: string;
+        rawSenderId?: string;
+        normalizedSenderId?: string;
+        platformIdentityId?: string;
+        senderId?: string;
+      }
+    | undefined,
+): boolean {
+  return Boolean(
+    metadata &&
+      (metadata.actorType === "unknown" ||
+        cleanStringValue(metadata.rawSenderId) ||
+        cleanStringValue(metadata.normalizedSenderId) ||
+        cleanStringValue(metadata.platformIdentityId) ||
+        cleanStringValue(metadata.senderId)),
   );
 }
 
