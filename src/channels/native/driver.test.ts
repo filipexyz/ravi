@@ -595,7 +595,7 @@ describe("native channel driver contract", () => {
     ]);
   });
 
-  it("reports a credential broker failure as missing_credentials with its stable code only", async () => {
+  it("reports a missing connection as missing_credentials and a backend failure as startup_failed, codes only", async () => {
     const registry = new NativeChannelDriverRegistry();
     registry.register({
       descriptor: {
@@ -609,11 +609,15 @@ describe("native channel driver contract", () => {
         if (context.channel.name === "example-missing") {
           throw new CredentialBrokerError("connection_not_found", "Connection not found: example:sensitive-name");
         }
+        if (context.channel.name === "example-backend") {
+          throw new CredentialBrokerError("backend_unavailable", "VAULT_ADDR and VAULT_TOKEN are required");
+        }
         throw new Error("sensitive-startup-detail");
       },
     });
     const manager = new NativeChannelDriverManager({
       channels: {
+        "example-backend": channel("example-backend"),
         "example-missing": channel("example-missing"),
         "example-other": channel("example-other"),
       },
@@ -628,6 +632,13 @@ describe("native channel driver contract", () => {
       status: "failed",
       reason: "missing_credentials",
       detail: "connection_not_found",
+    });
+    expect(manager.health()).toContainEqual({
+      id: "example:example-backend",
+      channelId: "example",
+      status: "failed",
+      reason: "startup_failed",
+      detail: "backend_unavailable",
     });
     expect(manager.health()).toContainEqual({
       id: "example:example-other",

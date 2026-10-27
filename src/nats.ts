@@ -42,7 +42,7 @@ export async function connectNats(
 
       if (opts?.explicit) explicitConnect = true;
 
-      log.info("Connected to NATS", { server: url, attempt });
+      log.info("Connected to NATS", { server: redactNatsUrl(url), attempt });
 
       // Log status changes (only for long-lived daemon connections)
       if (opts?.explicit) {
@@ -56,15 +56,20 @@ export async function connectNats(
     } catch (err) {
       if (attempt === maxRetries) {
         log[opts?.quiet ? "debug" : "error"]("Failed to connect to NATS after all retries", {
-          url,
+          url: redactNatsUrl(url),
           attempts: maxRetries,
         });
         throw err;
       }
-      log.info("NATS not ready, retrying...", { url, attempt, maxRetries });
+      log.info("NATS not ready, retrying...", { url: redactNatsUrl(url), attempt, maxRetries });
       await new Promise((r) => setTimeout(r, retryInterval));
     }
   }
+}
+
+/** NATS URLs can carry `user:password@` or a token; logs keep only the host. */
+export function redactNatsUrl(url: string): string {
+  return url.replace(/\/\/[^@/,\s]+@/g, "//[redacted]@");
 }
 
 /** Whether NATS was explicitly connected (daemon) vs lazy (CLI) */
@@ -98,7 +103,7 @@ export async function ensureConnected(opts?: { quiet?: boolean }): Promise<NatsC
   } catch (err) {
     if (!opts?.quiet && !attempt.failureLogged) {
       attempt.failureLogged = true;
-      log.error("Failed to connect to NATS after all retries", { url: DEFAULT_URL, attempts: 1 });
+      log.error("Failed to connect to NATS after all retries", { url: redactNatsUrl(DEFAULT_URL), attempts: 1 });
     }
     throw err;
   }

@@ -975,7 +975,15 @@ describe("channels.native_runtime", () => {
       runnerStatus: "online",
     });
     expect(check.status).toBe("warn");
-    expect(check.details).toContain("slack-a: vault backend is missing VAULT_TOKEN in this environment");
+    expect(check.details).toContain(
+      "slack-a: vault backend is missing VAULT_TOKEN in this CLI's environment (the runner's PM2 environment may differ)",
+    );
+  });
+
+  it("does not pass when the runner's state cannot be checked", () => {
+    const check = buildNativeChannelRuntimeCheck({ channels: [ready], runnerStatus: null });
+    expect(check).toMatchObject({ status: "skip", severity: "warn" });
+    expect(check.summary).toContain("could not be checked");
   });
 
   it("warns when the runner is not online, and exempts the hub gateway transport", () => {

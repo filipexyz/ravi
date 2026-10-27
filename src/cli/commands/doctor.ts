@@ -1331,7 +1331,7 @@ export function buildNativeChannelRuntimeCheck(snapshot: NativeChannelRuntimeSna
     } else if (channel.missingPrerequisites.length > 0) {
       problems.push(channel.name);
       details.push(
-        `${channel.name}: ${channel.backend} backend is missing ${channel.missingPrerequisites.join(", ")} in this environment`,
+        `${channel.name}: ${channel.backend} backend is missing ${channel.missingPrerequisites.join(", ")} in this CLI's environment (the runner's PM2 environment may differ)`,
       );
     } else {
       details.push(`${channel.name}: connection ${connection} active (${channel.backend ?? "unknown"} backend)`);
@@ -1351,12 +1351,24 @@ export function buildNativeChannelRuntimeCheck(snapshot: NativeChannelRuntimeSna
     undeliverable: problems,
     runnerStatus: snapshot.runnerStatus,
   };
+  if (problems.length === 0 && snapshot.runnerStatus === null) {
+    return {
+      id,
+      title,
+      status: "skip",
+      severity: "warn",
+      summary: `${snapshot.channels.length} enabled native channel(s) have an active broker connection, but ${CHANNELS_PM2_PROCESS_NAME} could not be checked (PM2 not available)`,
+      details,
+      fixHint: `confirm the runner from a host terminal with \`ravi channels status\``,
+      data,
+    };
+  }
   if (problems.length === 0 && !runnerDown) {
     return {
       id,
       title,
       status: "ok",
-      summary: `${snapshot.channels.length} enabled native channel(s) can start`,
+      summary: `${snapshot.channels.length} enabled native channel(s) have an active broker connection and ${CHANNELS_PM2_PROCESS_NAME} is online`,
       details,
       data,
     };

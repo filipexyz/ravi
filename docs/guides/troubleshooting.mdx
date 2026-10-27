@@ -40,7 +40,7 @@ Some findings are false alarms in this version:
 | `agents.registered` | `claude: 1` | Agents with no explicit provider are counted as `claude`, but the built-in default is `codex`. Check `ravi agents show main`. |
 | `channels.instance_health_missing` | warning for Slack instances | Slack instances have no provider instance id. Expected. |
 
-`channels.native_runtime` checks each enabled native channel (Slack): that its broker connection exists and is active, that the backend can be reached from this environment (the `security` CLI for the macOS keychain, `VAULT_ADDR` and `VAULT_TOKEN` for Vault), and that `ravi-channels` is online in PM2. A Slack channel that fails it has its replies queued but never delivered. The doctor does not check NATS, Omni, Slack tokens or provider credentials beyond that, so a clean report does not prove a channel works.
+`channels.native_runtime` checks each enabled native channel (Slack): that its broker connection exists and is active, that the backend prerequisites are present in the environment `ravi doctor` runs in, which can differ from the runner's PM2 environment (the `security` CLI for the macOS keychain, `VAULT_ADDR` and `VAULT_TOKEN` for Vault), and that `ravi-channels` is online in PM2. A Slack channel that fails it has its replies queued but never delivered. The doctor does not check NATS, Omni, Slack tokens or provider credentials beyond that, so a clean report does not prove a channel works.
 
 ## The agent did not answer
 

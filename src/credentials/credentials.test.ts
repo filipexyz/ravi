@@ -225,3 +225,25 @@ describe("credential broker typed errors", () => {
     expect((error as CredentialBrokerError).code).toBe("backend_unavailable");
   });
 });
+
+describe("credential broker secret read failures", () => {
+  it("wraps a backend read error in a fixed message and keeps it only as the cause", async () => {
+    const options = tempOptions();
+    upsertCredentialConnection(
+      {
+        provider: "slack",
+        connection: "odd",
+        backend: "vault",
+        secretRef: "unknown:sensitive-ref",
+        status: "active",
+      },
+      options,
+    );
+    const error = (await resolveCredentialSecret({ provider: "slack", connection: "odd", action: "x", options }).catch(
+      (caught: unknown) => caught,
+    )) as CredentialBrokerError;
+    expect(error.code).toBe("secret_unavailable");
+    expect(error.message).toBe("Secret unavailable: slack:odd");
+    expect(error.cause).toBeInstanceOf(Error);
+  });
+});

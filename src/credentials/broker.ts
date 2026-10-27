@@ -72,16 +72,15 @@ export async function resolveCredentialSecret(input: {
         approvalRequired: policy.approval.required,
         approvalStatus: policy.approval.required ? "not_requested" : null,
         resultStatus: "failed",
-        errorCode: error instanceof Error ? error.message.slice(0, 120) : "unknown_error",
+        // A stable code, not the raw message: a parser error can echo secret data.
+        errorCode: error instanceof CredentialBrokerError ? error.code : "secret_unavailable",
       },
       input.options,
     );
     if (error instanceof CredentialBrokerError) throw error;
-    throw new CredentialBrokerError(
-      "secret_unavailable",
-      error instanceof Error ? error.message : `Secret unavailable: ${input.provider}:${input.connection}`,
-      { cause: error },
-    );
+    throw new CredentialBrokerError("secret_unavailable", `Secret unavailable: ${input.provider}:${input.connection}`, {
+      cause: error,
+    });
   }
 }
 

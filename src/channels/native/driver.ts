@@ -679,7 +679,14 @@ function driverFailureReason(
   fallback: NativeChannelDriverFailureReason,
 ): NativeChannelDriverFailureReason {
   if (error instanceof NativeChannelDriverContractError) return error.reason;
-  if (isCredentialBrokerError(error)) return "missing_credentials";
+  if (isCredentialBrokerError(error)) {
+    // Only an absent or disabled connection is a credentials problem; an
+    // unreachable backend or a failed read stays a startup failure, with its
+    // code as the detail.
+    return error.code === "connection_not_found" || error.code === "connection_disabled"
+      ? "missing_credentials"
+      : fallback;
+  }
   return fallback;
 }
 
