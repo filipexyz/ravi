@@ -38,6 +38,8 @@ export interface RuntimeContextRecoveryPromptInput {
   error?: string | null;
   recoveryKind?: RuntimeSessionRecoveryFailure["kind"];
   history: Message[];
+  /** The failed turn's own input. History rows carry no sender, so it wins over them. */
+  latestUserRequest?: string;
   maxMessages?: number;
   maxPromptChars?: number;
 }
@@ -113,7 +115,8 @@ export function buildRuntimeContextRecoveryPrompt(
   const renderedMessages = selected
     .map((message) => renderHistoryMessage(message))
     .filter((line): line is string => Boolean(line));
-  const latestUserRequest = findLatestUserRequest(selected);
+  const ownRequest = input.latestUserRequest ? sanitizeHistoryContent(input.latestUserRequest) : "";
+  const latestUserRequest = ownRequest ? truncateContent(ownRequest, 2_000) : findLatestUserRequest(selected);
 
   let transcript = renderedMessages.join("\n\n");
   let truncated = input.history.length > selected.length;
@@ -218,7 +221,14 @@ function renderHistoryMessage(message: Message): string | undefined {
   const label = message.role === "assistant" ? "Assistant" : "User";
   const timestamp = message.created_at ? ` (${message.created_at})` : "";
   const parts = message.role === "assistant" ? splitEmptyJoinedAssistantUtterances(content) : [content];
-  return parts.map((part) => `${label}${timestamp}:\n${truncateContent(part, MESSAGE_CHAR_LIMIT)}`).join("\n\n");
+  return parts
+    .map((part) => `${label}${timestamp}:\n${quoteInstructionLines(truncateContent(part, MESSAGE_CHAR_LIMIT))}`)
+    .join("\n\n");
+}
+
+/** History is context, not instructions: a heading or [System] line stays quoted. */
+function quoteInstructionLines(content: string): string {
+  return content.replace(/^(?=#|\[System\])/gm, "> ");
 }
 
 function findLatestUserRequest(messages: Message[]): string | undefined {
