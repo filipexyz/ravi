@@ -29,12 +29,11 @@ import { consoleIdentityFromBinding, readActorBindingForActiveLogin } from "../c
 import { CloudAuthError, type CloudAuthErrorCode } from "../cloud-auth/errors.js";
 import { readActiveCloudAuthUserId, readCloudCredentials } from "../cloud-auth/storage.js";
 import { dbGetCronJob } from "../cron/cron-db.js";
+import { dmContactForChat } from "../knowledge/contacts.js";
 import {
   dbGetAgent,
   dbGetContext,
   dbGetSessionOutputAttachment,
-  dbListChatParticipants,
-  dbListChatsByRef,
   dbListRoutesBySessionName,
   dbListSessionChatSubscriptions,
   type ContextRecord,
@@ -950,28 +949,7 @@ function readLiveContext(contextId: string): ContextRecord | null {
  * a direct chat.
  */
 function readDmChatContact(input: { chatId: string; channel: string | null }): string | null {
-  try {
-    const chats = dbListChatsByRef({ ref: input.chatId, channel: input.channel, limit: 10 });
-    if (chats.length === 0) return null;
-    const contacts = new Set<string>();
-    for (const chat of chats) {
-      if (chat.chatType !== "dm") return null;
-      if (chat.normalizedChatId.startsWith("contact:")) {
-        contacts.add(chat.normalizedChatId.slice("contact:".length));
-        continue;
-      }
-      const members = new Set(
-        dbListChatParticipants(chat.id)
-          .map((participant) => participant.contactId)
-          .filter((contactId): contactId is string => Boolean(contactId)),
-      );
-      if (members.size !== 1) return null;
-      for (const contactId of members) contacts.add(contactId);
-    }
-    return contacts.size === 1 ? ([...contacts][0] ?? null) : null;
-  } catch {
-    return null;
-  }
+  return dmContactForChat(input);
 }
 
 function readContactBinding(contactId: string): ContactConsoleIdentity | null {

@@ -14,7 +14,7 @@ import { dbFindTagBindings } from "./tags/tag-db.js";
 import { detachTagFromSelector, searchTagBindingsForSelector } from "./tags/service.js";
 import { buildSqlWhereClause, countRows, normalizeLimitOffsetPage, type ListPage } from "./utils/pagination.js";
 import { nats } from "./nats.js";
-import { dbCanonicalizeDmChatForContact } from "./router/router-db.js";
+import { dbCanonicalizeDmChatForContact, dbDetachChatParticipantIdentity } from "./router/router-db.js";
 
 // Re-export shared phone helpers.
 export {
@@ -7407,6 +7407,38 @@ function assertPlatformIdentityCanBeOwnedBy(
   if (conflict) throw new Error(conflict);
 }
 
+/**
+ * True when the contact still owns a platform identity of one of these chat
+ * participants. Derived copies (a DM chat keyed `contact:<id>`, a participant's
+ * contact_id) are only a hint: after an unlink they keep naming the old owner.
+ */
+export function contactOwnsChatPeer(
+  contactId: string,
+  channel: string,
+  participants: readonly { platformIdentityId?: string | null; normalizedPlatformUserId?: string | null }[],
+): boolean {
+  const identityIds = participants.map((p) => p.platformIdentityId).filter((id): id is string => Boolean(id));
+  const userIds = participants.map((p) => p.normalizedPlatformUserId).filter((id): id is string => Boolean(id));
+  if (identityIds.length === 0 && userIds.length === 0) return false;
+  const idClause = identityIds.length > 0 ? `id IN (${identityIds.map(() => "?").join(", ")})` : "0";
+  const userClause =
+    userIds.length > 0
+      ? `(channel IN (?, ?) AND normalized_platform_user_id COLLATE NOCASE IN (${userIds.map(() => "?").join(", ")}))`
+      : "0";
+  const row = ensureDb()
+    .prepare(
+      `SELECT 1 FROM platform_identities
+        WHERE owner_type = 'contact' AND owner_id = ? AND (${idClause} OR ${userClause})
+        LIMIT 1`,
+    )
+    .get(
+      contactId,
+      ...identityIds,
+      ...(userIds.length > 0 ? [channel, normalizePlatformIdentityChannel(channel), ...userIds] : []),
+    );
+  return Boolean(row);
+}
+
 export function resolvePlatformIdentity(input: {
   channel: string;
   instanceId?: string | null;
@@ -10184,6 +10216,26 @@ export function unlinkContactIdentity(
   const contactId = row.owner_id;
 
   database.prepare("DELETE FROM platform_identities WHERE id = ?").run(row.id);
+  // Derived identity copies must not keep resolving the identity to its former
+  // owner: chat participants, and the profile phone/email written from it.
+  dbDetachChatParticipantIdentity(row.id);
+  if (contactId) {
+    database
+      .prepare(
+        `UPDATE contacts
+            SET primary_phone = CASE WHEN primary_phone COLLATE NOCASE IN (?, ?) THEN NULL ELSE primary_phone END,
+                primary_email = CASE WHEN primary_email COLLATE NOCASE IN (?, ?) THEN NULL ELSE primary_email END,
+                updated_at = datetime('now')
+          WHERE id = ?`,
+      )
+      .run(
+        row.normalized_platform_user_id,
+        row.platform_user_id,
+        row.normalized_platform_user_id,
+        row.platform_user_id,
+        contactId,
+      );
+  }
   database
     .prepare(
       `

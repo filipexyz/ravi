@@ -7332,6 +7332,15 @@ export function dbListChatIdsByContactIds(input: {
   return result;
 }
 
+/** Drop a removed platform identity from chat participant rows (they keep the raw sender ids). */
+export function dbDetachChatParticipantIdentity(platformIdentityId: string): number {
+  return getDb()
+    .prepare(
+      "UPDATE chat_participants SET contact_id = NULL, platform_identity_id = NULL, updated_at = ? WHERE platform_identity_id = ?",
+    )
+    .run(Date.now(), platformIdentityId).changes;
+}
+
 export function dbUpsertChatParticipant(input: UpsertChatParticipantInput): ChatParticipantRecord {
   return upsertChatParticipant(getDb(), input);
 }
