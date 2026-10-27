@@ -30,7 +30,12 @@ import {
   updateSignal,
   isProducerOwnedSignalKey,
 } from "../../signals/service.js";
-import { dbClearKeyMute, dbSetKeyMute } from "../../signals/signal-db.js";
+import {
+  dbClearKeyMute,
+  dbGetLatestSignalByKey,
+  dbGetNonTerminalSignalByKey,
+  dbSetKeyMute,
+} from "../../signals/signal-db.js";
 import { readSessionSignalContext, signalIsInSessionScope } from "../../signals/subjects.js";
 import { tickSignals } from "../../signals/tick.js";
 import { jsonObjectSchema } from "../return-schemas.js";
@@ -390,8 +395,20 @@ export class SignalsCommands {
       if (signalCaller().isAgent && isProducerOwnedSignalKey(key)) {
         fail(`Key ${key} is reserved for Ravi's own producers; raise the judgment under another key.`);
       }
-      const producerId =
-        source?.trim() || (process.env.RAVI_SESSION_KEY ? `session:${process.env.RAVI_SESSION_KEY}` : "cli:signals");
+      const caller = signalCaller();
+      const ctx = getContext();
+      const callerSessionKey = ctx?.sessionKey?.trim() || process.env.RAVI_SESSION_KEY?.trim();
+      // An agent raises as its own session: --source cannot borrow another owner.
+      const producerId = caller.isAgent
+        ? `session:${callerSessionKey || caller.sessionName || "unknown"}`
+        : source?.trim() || (callerSessionKey ? `session:${callerSessionKey}` : "cli:signals");
+      if (caller.isAgent) {
+        // Re-raising someone else's key would rewrite their judgment and echo it back.
+        const prior = dbGetNonTerminalSignalByKey(key) ?? dbGetLatestSignalByKey(key);
+        if (prior && prior.producerId !== producerId) {
+          fail(`Key ${key} is not available to this session; raise the judgment under another key.`);
+        }
+      }
       const result = raiseSignal({
         key,
         kind,

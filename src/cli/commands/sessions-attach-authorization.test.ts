@@ -102,3 +102,28 @@ describe("sessions set-provider/set-model --propagate", () => {
     expect(getOrCreateSession("agent:crm:main", "crm", "/tmp/crm").runtimeProviderOverride ?? null).toBeNull();
   });
 });
+
+describe("sessions send --thread", () => {
+  it("needs the threads brief and comment authority", async () => {
+    const own = getOrCreateSession("agent:crm:worker", "crm", "/tmp/crm");
+    const send = new SessionCommands().send as (...values: unknown[]) => Promise<unknown>;
+    const args: unknown[] = [own.name ?? own.sessionKey, "hello"];
+    args[7] = "thr_foreign"; // --thread
+    args[15] = true; // --json
+    const caller: ToolContext = {
+      ...BOOTSTRAP,
+      context: {
+        ...BOOTSTRAP.context!,
+        capabilities: [
+          ...BOOTSTRAP.context!.capabilities,
+          { permission: "access", objectType: "session", objectId: own.name ?? own.sessionKey, source: "test" },
+        ],
+      },
+    };
+    const error = await runWithContext(caller, () => send.apply(new SessionCommands(), args)).then(
+      () => null,
+      (err: unknown) => err as { envelope?: () => { error: { code: string } } },
+    );
+    expect(error?.envelope?.().error.code).toBe("PERMISSION_DENIED");
+  });
+});

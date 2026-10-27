@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import { enforceCliCommandAccess } from "../command-access.js";
 import { runCloudTaskDispatch } from "../cloud-task-dispatch.js";
 import { fail, getContext } from "../context.js";
 import {
@@ -1950,6 +1951,29 @@ export class TaskCommands {
     const details = getTaskDetailsForContract("tasks dispatch", taskId, asJson);
 
     if (cloud === true) {
+      // A paid cloud run needs the authority `ravi cloud runs start` asks for,
+      // not just the baseline tasks group that tasks dispatch declares.
+      if (getContext()?.context) {
+        const cloudAccess = enforceCliCommandAccess({
+          group: "cloud.runs",
+          command: "start",
+          access: {
+            kind: "mutate",
+            resource: "cloud.agents",
+            action: "runs.start",
+            risk: "high",
+            requiresConfirmation: true,
+          },
+          input: { agent: normalizedAgentId },
+          source: "tool",
+        });
+        if (!cloudAccess.allowed) {
+          contractFail("tasks dispatch", "PERMISSION_DENIED", cloudAccess.errorMessage, {
+            asJson,
+            details: { ...(cloudAccess.denialDetails ?? {}) },
+          });
+        }
+      }
       if (sessionName || checkpoint || reportEvents || model || effort || thinking) {
         contractFail(
           "tasks dispatch",

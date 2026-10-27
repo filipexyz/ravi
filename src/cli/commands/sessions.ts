@@ -4636,6 +4636,9 @@ export class SessionCommands {
       fail("sessions send --thread requires a prompt and cannot be combined with --interactive.");
       return;
     }
+    if (threadRef) {
+      assertThreadHandoffAuthorized(Boolean(threadTitle || threadSummary || threadScope || threadOwner), asJson);
+    }
 
     if (interactive || !prompt) {
       return this.interactiveMode(sessionName, session, channel, to);
@@ -7309,6 +7312,35 @@ function assertAgentDefaultsWriteAuthorized(agentId: string): void {
       1,
       "Drop --propagate to change only this session, or ask an operator to run ravi agents set",
     );
+  }
+}
+
+/**
+ * `--thread` reads a thread's brief into the target session and appends the
+ * prompt to it, so an agent turn needs the same authority as `ravi threads
+ * brief` and `ravi threads comment` (and `create` when it may create one).
+ */
+function assertThreadHandoffAuthorized(mayCreate: boolean, asJson?: boolean): void {
+  if (!getContext()?.context) return;
+  const actions: Array<{ kind: "read" | "mutate"; action: string }> = [
+    { kind: "read", action: "brief" },
+    { kind: "mutate", action: "comment" },
+    ...(mayCreate ? [{ kind: "mutate" as const, action: "create" }] : []),
+  ];
+  for (const { kind, action } of actions) {
+    const access = enforceCliCommandAccess({
+      group: "threads",
+      command: action,
+      access: { kind, resource: "threads", action, risk: kind === "read" ? "low" : "medium" },
+      input: {},
+      source: "tool",
+    });
+    if (!access.allowed) {
+      contractFail("sessions send", "PERMISSION_DENIED", access.errorMessage, {
+        asJson,
+        details: { ...(access.denialDetails ?? {}) },
+      });
+    }
   }
 }
 
