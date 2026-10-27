@@ -9559,6 +9559,8 @@ export function dbDeleteAgent(id: string): boolean {
   for (const { key } of modeKeys) {
     if (key.startsWith(modePrefix) && !key.slice(modePrefix.length).includes(".")) s.deleteSetting.run(key);
   }
+  // And its Library listing: a same-id recreation starts unlisted and closed to requests.
+  getDb().prepare("DELETE FROM library_agents WHERE agent_id = ?").run(id);
   s.deleteAgent.run(id);
   if (getDbChanges() > 0) {
     log.info("Deleted agent", { id });
