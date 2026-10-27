@@ -1857,3 +1857,61 @@ describe("sessions runtime remote relay", () => {
     expect(remote?.message).toBe("Remote command failed.");
   });
 });
+
+describe("thread command remote relay", () => {
+  async function relay(op: string, local: ContractError) {
+    const response = contractErrorResponse(local);
+    return remoteGatewayErrorToContractError(op, result({ status: response.status, body: await response.text() }));
+  }
+
+  it("relays a report outside a thread with local copy instead of Remote command failed", async () => {
+    const remote = await relay(
+      "sessions report",
+      new ContractError("sessions report", "THREAD_NOT_THREAD_CHILD", "PRIVATE_DAEMON_TEXT_8K2R thread-private", 1, {
+        suggestedAction: "PRIVATE_ACTION_8K2R",
+      }),
+    );
+    expect(remote).toMatchObject({
+      code: "THREAD_NOT_THREAD_CHILD",
+      exitCode: 1,
+      message: "This command is available only inside a Slack thread child session.",
+      details: { suggestedAction: "Run it from the Slack thread's own session, or pass --session <thread session>" },
+    });
+    expect(JSON.stringify(remote?.envelope())).not.toContain("PRIVATE");
+  });
+
+  it("relays the identity mismatch and a missing thread session for close-thread and thread-send", async () => {
+    const mismatch = await relay(
+      "sessions close-thread",
+      new ContractError("sessions close-thread", "THREAD_IDENTITY_MISMATCH", "PRIVATE_8K2R", 1),
+    );
+    expect(mismatch?.message).toContain("lost its session");
+    const missing = await relay(
+      "sessions thread-send",
+      new ContractError("sessions thread-send", "THREAD_SESSION_MISSING", "PRIVATE_8K2R", 1),
+    );
+    expect(missing?.message).toBe("The Slack thread's session no longer exists.");
+    expect(JSON.stringify([mismatch?.envelope(), missing?.envelope()])).not.toContain("PRIVATE");
+  });
+
+  it("relays the task dispatch thread identity conflict", async () => {
+    const remote = await relay(
+      "tasks dispatch",
+      new ContractError("tasks dispatch", "TASK_SESSION_THREAD_IDENTITY_CONFLICT", "PRIVATE_8K2R", 1),
+    );
+    expect(remote?.message).toContain("open Slack thread");
+    expect(remote?.details.suggestedAction).toContain("--session");
+    expect(JSON.stringify(remote?.envelope())).not.toContain("PRIVATE");
+  });
+
+  it("keeps the generic failure for unknown codes, prototype keys and other commands", async () => {
+    for (const [op, code] of [
+      ["sessions report", "COMMAND_FAILED"],
+      ["sessions report", "toString"],
+      ["sessions list", "THREAD_NOT_THREAD_CHILD"],
+    ] as const) {
+      const remote = await relay(op, new ContractError(op, code, "PRIVATE_8K2R", 1));
+      expect(remote?.message).toMatch(/^Remote (command|gateway request) failed\.$/);
+    }
+  });
+});

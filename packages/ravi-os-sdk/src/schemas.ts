@@ -103496,6 +103496,9 @@ export const SessionsThreadSendReturnSchema = {
             }
           ]
         },
+        "childSessionMissing": {
+          "type": "boolean"
+        },
         "childSessionName": {
           "anyOf": [
             {
@@ -103718,6 +103721,7 @@ export const SessionsThreadSendReturnSchema = {
         "source",
         "childSessionKey",
         "childSessionName",
+        "childSessionMissing",
         "slackThreadTs",
         "link",
         "runtime",
@@ -103792,6 +103796,9 @@ export const SessionsThreadsReturnSchema = {
                 "type": "null"
               }
             ]
+          },
+          "childSessionMissing": {
+            "type": "boolean"
           },
           "childSessionName": {
             "anyOf": [
@@ -104015,6 +104022,7 @@ export const SessionsThreadsReturnSchema = {
           "source",
           "childSessionKey",
           "childSessionName",
+          "childSessionMissing",
           "slackThreadTs",
           "link",
           "runtime",

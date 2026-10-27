@@ -24,6 +24,12 @@
   session owned by another agent MUST leave the task blocked with a "not
   steered" reason, and dispatch into it MUST fail with
   `TASK_SESSION_OWNERSHIP_CONFLICT` before resuming (`src/tasks/comment-steer.test.ts`).
+- [ ] Dispatch into the name of an open Slack thread whose session is gone, or
+  whose name resolves under another key, MUST fail with
+  `TASK_SESSION_THREAD_IDENTITY_CONFLICT` and write no session or assignment;
+  assignee resolution MUST not recreate it; dispatch into the thread's own
+  session MUST work (`src/tasks/dispatch-thread-identity.test.ts`,
+  `src/router/thread-identity.test.ts`).
 
 ## Commands
 
