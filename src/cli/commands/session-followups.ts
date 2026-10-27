@@ -370,6 +370,7 @@ export class SessionFollowupCommands {
     recalculateNext?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    assertNoUserOverlayAutomationWrite("session-followups update");
     const current = requireCadence(id);
     const parsedSteps = parseStepSpecs(steps);
     const messageTemplate = message?.trim() || parsedSteps[0]?.messageTemplate;
@@ -496,6 +497,7 @@ export class SessionFollowupCommands {
     @Arg("id", { description: "Followup cadence id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    assertNoUserOverlayAutomationWrite("session-followups run");
     requireCadence(id);
     const result = await runSessionFollowupNow(id);
     const payload = { result };
@@ -533,6 +535,7 @@ export class SessionFollowupCommands {
     @Arg("id", { description: "Followup cadence id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    assertNoUserOverlayAutomationWrite("session-followups resume");
     const current = requireCadence(id);
     const now = Date.now();
     const nextRunAt = current.schedule.type === "every" ? now : calculateNextRun(current.schedule, now);

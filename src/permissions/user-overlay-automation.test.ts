@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { runWithContext, type ToolContext } from "../cli/context.js";
 import { assertNoUserOverlayAutomationWrite } from "./user-overlay-automation.js";
 
-function turn(actorAuthorizationMode: string): ToolContext {
+function turn(actorAuthorizationMode: string, extra: Record<string, unknown> = {}): ToolContext {
   return {
     contextId: "ctx_turn",
     agentId: "crm",
@@ -12,7 +12,7 @@ function turn(actorAuthorizationMode: string): ToolContext {
       kind: "turn-runtime",
       agentId: "crm",
       capabilities: [],
-      metadata: { actorAuthorizationMode },
+      metadata: { actorAuthorizationMode, ...extra },
       createdAt: 0,
     },
   };
@@ -22,6 +22,14 @@ describe("automation writes from a contact-narrowed turn", () => {
   it("refuses them, so they never run later with the agent's full authority", () => {
     expect(() =>
       runWithContext(turn("user-overlay"), () => assertNoUserOverlayAutomationWrite("triggers add")),
+    ).toThrow(expect.objectContaining({ code: "PERMISSION_DENIED" }));
+  });
+
+  it("refuses them in a turn relayed from a contact-narrowed turn", () => {
+    expect(() =>
+      runWithContext(turn("invoke-only", { relayNarrowing: true }), () =>
+        assertNoUserOverlayAutomationWrite("triggers add"),
+      ),
     ).toThrow(expect.objectContaining({ code: "PERMISSION_DENIED" }));
   });
 

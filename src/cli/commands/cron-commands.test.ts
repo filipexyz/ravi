@@ -304,6 +304,13 @@ describe("CronCommands --json", () => {
     ).rejects.toThrow("--message cannot be combined with --shell/--exec");
   });
 
+  it("refuses a job from a relayed contact-narrowed turn that has no chat to bind it to", async () => {
+    mockCliContext = { agentId: "dev", context: { metadata: { relayNarrowing: true } } };
+    await expect(
+      new CronCommands().add("Relayed", undefined, "30m", undefined, undefined, "hello"),
+    ).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
+  });
+
   it("derives durable creation idempotency from observer source turns", async () => {
     mockCliContext = {
       agentId: "observer",

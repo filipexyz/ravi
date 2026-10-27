@@ -42,6 +42,7 @@ import { buildCronShowOutput, type CronRoutingResolution, type CronRoutingSource
 import { resolveCronTarget, type CronTargetResolution } from "../../cron/target-resolver.js";
 import { CRON_OPERATOR_OWNER, resolveCronOwnerPrincipalForCurrentTurn } from "../../link/connector-turn.js";
 import { assertShellAutomationAuthorized } from "../../permissions/shell-automation.js";
+import { assertNoUserOverlayAutomationWrite } from "../../permissions/user-overlay-automation.js";
 
 function parseCronShellTimeout(value: string | undefined): number | undefined {
   if (!value) return undefined;
@@ -298,6 +299,16 @@ function currentUserOverlayChat(): string | undefined {
   return chat || undefined;
 }
 
+/**
+ * A turn relayed from a contact-narrowed turn has no chat of its own to bind a
+ * job to, so it cannot write one that would later run with the agent's authority.
+ */
+function assertCronCreatorBindable(op: string): void {
+  if (getContext()?.context?.metadata?.relayNarrowing === true && !currentUserOverlayChat()) {
+    assertNoUserOverlayAutomationWrite(op);
+  }
+}
+
 function serializeCronJob(job: CronJob) {
   return {
     ...job,
@@ -546,6 +557,7 @@ export class CronCommands {
     }
 
     if (isShellJob) assertShellAutomationAuthorized("cron add");
+    assertCronCreatorBindable("cron add");
 
     // Validate message is provided for agent jobs.
     if (!isShellJob && !message) {
@@ -788,6 +800,7 @@ export class CronCommands {
       assertCronTargetAuthorized("cron set", { agentId: nextAgent }, asJson);
     }
     if (key === "shell" || key === "exec" || key === "env-file") assertShellAutomationAuthorized("cron set");
+    if (!CRON_OWNER_KEEP_KEYS.has(key)) assertCronCreatorBindable("cron set");
     if (key === "reply-session" && value !== "null" && value !== "-") {
       assertCronTargetAuthorized("cron set", { agentId: cronJobOwnerId(job), replySession: value }, asJson);
     }

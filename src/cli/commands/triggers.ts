@@ -736,6 +736,7 @@ export class TriggersCommands {
     const trigger = dbGetTrigger(id);
     if (!trigger) failTriggerNotFound("triggers enable", id, asJson);
     assertTriggerMutable("triggers enable", id, trigger, asJson);
+    assertNoUserOverlayAutomationWrite("triggers enable");
 
     try {
       const updated = dbUpdateTrigger(id, { enabled: true });
@@ -807,6 +808,8 @@ export class TriggersCommands {
     const trigger = dbGetTrigger(id);
     if (!trigger) failTriggerNotFound("triggers set", id, asJson);
     assertTriggerMutable("triggers set", id, trigger, asJson);
+    // Every edit (message, filter, topic...) changes what runs later as the agent.
+    assertNoUserOverlayAutomationWrite("triggers set");
     const clearing = value === "null" || value === "-";
     if (key === "shell" || key === "exec" || key === "env-file") assertShellAutomationAuthorized("triggers set");
     if (key === "agent") {
@@ -1023,6 +1026,7 @@ export class TriggersCommands {
     const trigger = dbGetTrigger(id);
     if (!trigger) failTriggerNotFound("triggers test", id, asJson);
     assertTriggerMutable("triggers test", id, trigger, asJson);
+    assertNoUserOverlayAutomationWrite("triggers test");
 
     if (execute !== true) {
       contractDryRun(
