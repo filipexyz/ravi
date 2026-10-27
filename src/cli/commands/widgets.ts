@@ -353,7 +353,7 @@ export class WidgetsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const op = "widgets init";
-    const target = resolveCallerPath(dir ?? "");
+    const target = resolveCallerPath(dir ?? "", "write");
     const widgetSlug = (slug?.trim() || basename(target)).toLowerCase();
     if (!isLibrarySlug(widgetSlug)) {
       failLibraryUsage(
@@ -483,7 +483,7 @@ export class WidgetsCommands {
         ["theme"],
       );
     }
-    const target = out?.trim() ? resolveCallerPath(out.trim()) : join(folder, "preview.html");
+    const target = resolveCallerPath(out?.trim() ? out.trim() : join(folder, "preview.html"), "write");
     return withPresentationContract(op, WIDGET, asJson, async () => {
       const outcome = await previewWidget({
         dir: folder,

@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 
+import { resolveCallerPath } from "../cli/caller-cwd.js";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 import { readActiveCloudAuthUserId, readCloudCredentials } from "../cloud-auth/storage.js";
 import { LEGACY_CLOUD_AUTH_USER_ID } from "../cloud-auth/types.js";
@@ -294,7 +295,7 @@ export async function readPage(options: PageReadOptions, deps: PageReadDeps = {}
     result.download = await downloadPageFiles({
       files,
       kind: format === "zip" ? "zip" : "directory",
-      out,
+      out: resolveCallerPath(out, "write"),
       fetch: deps.fetchFile,
       now: deps.now?.(),
     });

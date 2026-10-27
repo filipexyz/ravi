@@ -11,10 +11,18 @@
  *   field when the command does not already declare `cwd`.
  * - Handlers read it through {@link getCallerCwd} / {@link resolveCallerPath}.
  * - The value is only used for path resolution. It does not change auth or scope.
+ *
+ * The daemon reads and writes these paths with its own filesystem authority,
+ * so in a runtime context {@link resolveCallerPath} also checks that the
+ * caller may read (`use:tool:Read`) or write (`use:tool:Write`) local files,
+ * the same tools it would need to touch them directly.
  */
 
 import { isAbsolute, resolve } from "node:path";
+import { providerConfigWriteDenial } from "../permissions/provider-config-paths.js";
+import { canWithCapabilityContext } from "../permissions/provider-runtime.js";
 import { getContext } from "./context.js";
+import { CliExpectedError } from "./expected-error.js";
 
 export const CALLER_CWD_HEADER = "x-ravi-cwd";
 export const MAX_CALLER_CWD_LENGTH = 4096;
@@ -38,9 +46,33 @@ export function getCallerCwd(): string {
   return parsed.ok && parsed.cwd ? parsed.cwd : process.cwd();
 }
 
-/** Resolve a CLI file argument against the caller cwd when it is relative. */
-export function resolveCallerPath(path: string): string {
+export type CallerPathMode = "read" | "write";
+
+/**
+ * Resolve a CLI file argument against the caller cwd when it is relative, and
+ * refuse it when the calling runtime context cannot read or write local files.
+ */
+export function resolveCallerPath(path: string, mode: CallerPathMode = "read"): string {
   const trimmed = path.trim();
-  if (!trimmed || isAbsolute(trimmed)) return trimmed;
-  return resolve(getCallerCwd(), trimmed);
+  const resolved = !trimmed || isAbsolute(trimmed) ? trimmed : resolve(getCallerCwd(), trimmed);
+  assertCallerFileAccess(resolved || getCallerCwd(), mode);
+  return resolved;
+}
+
+function assertCallerFileAccess(path: string, mode: CallerPathMode): void {
+  const ctx = getContext();
+  const context = ctx?.context;
+  if (!context) return;
+  const can = (permission: string, objectType: string, objectId: string) =>
+    canWithCapabilityContext(context, permission, objectType, objectId);
+  const tool = mode === "write" ? "Write" : "Read";
+  const allowed = can("use", "tool", tool) || can("execute", "executable", "*") || can("admin", "system", "*");
+  const denial = !allowed
+    ? `Permission denied: this context cannot ${mode} local files (${path}); it needs use:tool:${tool}`
+    : mode === "write"
+      ? providerConfigWriteDenial({ can, agentId: ctx?.agentId ?? context.agentId, targets: [path] })
+      : undefined;
+  if (denial) {
+    throw new CliExpectedError(denial, "PERMISSION_DENIED", 1, "Ask the operator for file access, or use stdout");
+  }
 }
