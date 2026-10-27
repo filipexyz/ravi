@@ -463,7 +463,7 @@ function toDynamicToolContentItems(content: ToolResult["content"]): RuntimeDynam
 }
 
 async function authorizeRuntimeCommandExecution(
-  options: Pick<RuntimeHostServicesOptions, "context" | "agentId" | "sessionName" | "onSkillGatePersisted">,
+  options: Pick<RuntimeHostServicesOptions, "context" | "agentId" | "sessionName" | "onSkillGatePersisted" | "cwd">,
   request: RuntimeCommandAuthorizationRequest,
 ): Promise<RuntimeApprovalResult> {
   const command = request.command;

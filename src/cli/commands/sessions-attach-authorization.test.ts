@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { runWithContext, type ToolContext } from "../context.js";
 import { attachChatToSession, getOrCreateSession, listSessionSubscriptions } from "../../router/sessions.js";
-import { dbCreateAgent, dbGetAgent, dbUpsertChat } from "../../router/router-db.js";
+import { dbCreateAgent, dbGetAgent, dbSetSetting, dbUpsertChat } from "../../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { SessionCommands } from "./sessions.js";
 
@@ -115,6 +115,20 @@ describe("sessions set-provider", () => {
       commands.setProvider(own.sessionKey, "clear", true);
     });
     expect(getOrCreateSession("agent:crm:main", "crm", "/tmp/crm").runtimeProviderOverride ?? null).not.toBe("codex");
+  });
+});
+
+describe("sessions set-provider with no agent provider", () => {
+  it("treats the runtime.defaultProvider setting as the agent's own provider", () => {
+    dbCreateAgent({ id: "crm", cwd: "/tmp/crm" });
+    dbSetSetting("runtime.defaultProvider", "claude");
+    const own = getOrCreateSession("agent:crm:main", "crm", "/tmp/crm");
+    const commands = new SessionCommands();
+
+    runWithContext(BOOTSTRAP, () => {
+      commands.setProvider(own.sessionKey, "claude", true);
+      expect(() => commands.setProvider(own.sessionKey, "codex", true)).toThrow("tool gate");
+    });
   });
 });
 

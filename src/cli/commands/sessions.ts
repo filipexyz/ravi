@@ -65,6 +65,7 @@ import { loadRouterConfig, expandHome, getAgent, updateAgent } from "../../route
 import {
   describeSessionAgentDefaultDiff,
   rematerializeSessionToAgentRuntime,
+  resolveAgentRuntimeDefaultProvider,
   syncAgentSessionsToAgentRuntime,
 } from "../../runtime/agent-session-runtime-sync.js";
 import {
@@ -3602,8 +3603,15 @@ export class SessionCommands {
     // (Claude gates every SDK tool; Codex hooks only the shell), so an agent
     // turn needs agent-configuration authority to pick one. Clearing returns
     // to the agent's configured provider and stays open, as does picking it.
-    const configuredProvider =
-      (getAgent(s.agentId) ?? loadRouterConfig().agents[s.agentId])?.provider ?? DEFAULT_RUNTIME_PROVIDER_ID;
+    const configuredAgent = getAgent(s.agentId) ?? loadRouterConfig().agents[s.agentId];
+    // The same resolution the launch path uses: agent provider, model preset,
+    // then the runtime.defaultProvider setting.
+    let configuredProvider: string;
+    try {
+      configuredProvider = resolveAgentRuntimeDefaultProvider(configuredAgent ?? {});
+    } catch {
+      configuredProvider = configuredAgent?.provider ?? DEFAULT_RUNTIME_PROVIDER_ID;
+    }
     if (
       propagate !== true &&
       providerOverride &&
