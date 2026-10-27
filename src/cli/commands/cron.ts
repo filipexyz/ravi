@@ -41,6 +41,7 @@ import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 import { buildCronShowOutput, type CronRoutingResolution, type CronRoutingSource } from "../cron-show-output.js";
 import { resolveCronTarget, type CronTargetResolution } from "../../cron/target-resolver.js";
 import { CRON_OPERATOR_OWNER, resolveCronOwnerPrincipalForCurrentTurn } from "../../link/connector-turn.js";
+import { assertShellAutomationAuthorized } from "../../permissions/shell-automation.js";
 
 function parseCronShellTimeout(value: string | undefined): number | undefined {
   if (!value) return undefined;
@@ -544,6 +545,8 @@ export class CronCommands {
       fail("--on-error, --timeout and --env-file are only valid with --shell/--exec");
     }
 
+    if (isShellJob) assertShellAutomationAuthorized("cron add");
+
     // Validate message is provided for agent jobs.
     if (!isShellJob && !message) {
       fail("--message is required");
@@ -784,6 +787,7 @@ export class CronCommands {
       const nextAgent = value === "null" || value === "-" ? getDefaultAgentId() : value;
       assertCronTargetAuthorized("cron set", { agentId: nextAgent }, asJson);
     }
+    if (key === "shell" || key === "exec" || key === "env-file") assertShellAutomationAuthorized("cron set");
     if (key === "reply-session" && value !== "null" && value !== "-") {
       assertCronTargetAuthorized("cron set", { agentId: cronJobOwnerId(job), replySession: value }, asJson);
     }

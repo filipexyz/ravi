@@ -28,6 +28,7 @@ import { getAccountForAgent, getDefaultAgentId } from "../../router/router-db.js
 import { parseDurationMs, formatDurationMs } from "../../cron/schedule.js";
 import { parseOptionalDurationMs } from "../../triggers/debounce.js";
 import { DEFAULT_CRON_SHELL_TIMEOUT_MS } from "../../cron/shell-executor.js";
+import { assertShellAutomationAuthorized } from "../../permissions/shell-automation.js";
 import {
   dbCreateTrigger,
   dbGetTrigger,
@@ -575,6 +576,7 @@ export class TriggersCommands {
     if (!isShellTrigger && (onError || timeout || envFile)) {
       fail("--on-error, --timeout and --env-file are only valid with --shell/--exec");
     }
+    if (isShellTrigger) assertShellAutomationAuthorized("triggers add");
 
     const resolvedMessage = isShellTrigger
       ? {
@@ -806,6 +808,7 @@ export class TriggersCommands {
     if (!trigger) failTriggerNotFound("triggers set", id, asJson);
     assertTriggerMutable("triggers set", id, trigger, asJson);
     const clearing = value === "null" || value === "-";
+    if (key === "shell" || key === "exec" || key === "env-file") assertShellAutomationAuthorized("triggers set");
     if (key === "agent") {
       assertTriggerTargetAuthorized("triggers set", { agentId: clearing ? getDefaultAgentId() : value }, asJson);
     } else if (key === "session") {
