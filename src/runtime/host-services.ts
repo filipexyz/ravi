@@ -46,6 +46,7 @@ import {
 import { formatSkillNotAuthorizedReason, isSkillAuthorizedForAgent } from "./skill-authorization.js";
 import { isLibraryPluginSkillAllowedForTurn } from "../library/session-plugins.js";
 import { isOperatorOwnTurn } from "../library/turn.js";
+import { contextCan, fileWriteToolTargets, providerConfigWriteDenial } from "../permissions/provider-config-paths.js";
 import {
   commandLineRunsSkillRemediation,
   extractRequestedSkillsFromCommandLine,
@@ -697,6 +698,22 @@ async function authorizeRuntimeToolUse(
 
   if (!result.allowed) {
     return { approved: false, reason: result.reason ?? `${request.toolName} permission denied.` };
+  }
+
+  const configWriteDenial = providerConfigWriteDenial({
+    can: contextCan(options.context),
+    agentId: options.agentId,
+    targets: fileWriteToolTargets(request.toolName, request.input),
+  });
+  if (configWriteDenial) {
+    emitRuntimePolicyDenied(options, {
+      type: "tool",
+      denied: `tool:${request.toolName}`,
+      reason: configWriteDenial,
+      blockType: "runtime_provider_config_write",
+      detail: { toolName: request.toolName },
+    });
+    return { approved: false, reason: configWriteDenial };
   }
 
   const deniedToolSkill = extractRequestedSkillsFromToolCall(request.toolName, request.input).find(
