@@ -381,6 +381,16 @@ describe("Slack thread lifecycle", () => {
     });
     expect(reopened.parentNotifiedAt).toBeUndefined();
 
+    const failingDependencies = {
+      publishPrompt: mock(async () => {
+        throw new Error("nats down");
+      }),
+      publishEvent: mock(async () => {}),
+    };
+    await expect(closeSlackThread(child, "Second result", failingDependencies)).rejects.toMatchObject({
+      code: "THREAD_PARENT_RETURN_PENDING",
+    });
+
     const parentPrompts: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
     const recoveryDependencies = {
       publishPrompt: mock(async (sessionName: string, payload: Record<string, unknown>) => {

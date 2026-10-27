@@ -132,6 +132,7 @@ describe("task dispatch into a Slack thread session", () => {
 
     expect(target.ok).toBe(false);
     expect(target.ok ? "" : target.reason).toContain("open thread");
+    expect(target.ok ? undefined : target.code).toBe(TASK_SESSION_THREAD_IDENTITY_CONFLICT);
     expect(resolveSession(CHILD_NAME)).toBeNull();
   });
 });

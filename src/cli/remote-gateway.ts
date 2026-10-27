@@ -504,7 +504,7 @@ const THREAD_COMMAND_COPY: Readonly<Record<string, { message: string; suggestedA
   },
   THREAD_NOT_FOUND: {
     message: "Slack thread not found for this session.",
-    suggestedAction: "List this session's threads with: ravi sessions threads --all",
+    suggestedAction: "List the session's threads with: ravi sessions threads --all --session <parent session>",
   },
   THREAD_NOT_STARTED: {
     message: "The Slack thread has not started yet.",

@@ -446,7 +446,7 @@ export interface TaskStreamEventPayload {
 
 export interface TaskRecoveryResult {
   recoveredTaskIds: string[];
-  skipped: Array<{ taskId: string; reason: string }>;
+  skipped: Array<{ taskId: string; reason: string; code?: string }>;
 }
 
 export function deriveTaskReadStatus(
@@ -1412,7 +1412,7 @@ export type TaskAssigneeSessionTarget =
        */
       briefPrompt?: string;
     }
-  | { ok: false; reason: string };
+  | { ok: false; reason: string; code?: string };
 
 /**
  * Resolves the assignee's work session before Ravi prompts it. A task session can expire while the
@@ -1460,7 +1460,11 @@ export function resolveTaskAssigneeSession(
     const context = resolveTaskSessionContext(task, profile, agentId, sessionName, worktreeInput);
     return { ok: true, ...context, briefPrompt };
   } catch (error) {
-    return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+    return {
+      ok: false,
+      reason: error instanceof Error ? error.message : String(error),
+      ...(error instanceof CliExpectedError ? { code: error.code } : {}),
+    };
   }
 }
 
@@ -2985,7 +2989,7 @@ export async function dispatchTask(
 
 export async function recoverActiveTasksAfterRestart(): Promise<TaskRecoveryResult> {
   const recoveredTaskIds: string[] = [];
-  const skipped: Array<{ taskId: string; reason: string }> = [];
+  const skipped: Array<{ taskId: string; reason: string; code?: string }> = [];
   const seen = new Set<string>();
   const now = Date.now();
 
@@ -3046,6 +3050,7 @@ export async function recoverActiveTasksAfterRestart(): Promise<TaskRecoveryResu
         skipped.push({
           taskId: task.id,
           reason: error instanceof Error ? error.message : String(error),
+          ...(error instanceof CliExpectedError ? { code: error.code } : {}),
         });
       }
     }

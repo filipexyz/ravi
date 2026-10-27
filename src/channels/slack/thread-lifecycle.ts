@@ -306,7 +306,16 @@ export async function closeSlackThread(
 ): Promise<CloseSlackThreadResult> {
   const existing = ensureSlackThreadLifecycleForSession(session);
   if (existing.parentReturnRequested && existing.parentNotifiedAt === undefined) {
-    const delivered = await deliverSlackThreadParentReturn(existing.requestId, dependencies);
+    let delivered = false;
+    try {
+      delivered = await deliverSlackThreadParentReturn(existing.requestId, dependencies);
+    } catch (error) {
+      // A failed retry leaves the return pending: report that, not a bare failure.
+      log.warn("Retry of pending Slack thread parent return failed", {
+        requestId: existing.requestId,
+        error: errorMessage(error),
+      });
+    }
     const refreshed = getSlackThreadLifecycle(existing.requestId);
     if (!delivered && refreshed?.parentNotifiedAt === undefined) {
       throw slackThreadError(
@@ -675,7 +684,7 @@ export async function sendSlackThreadMessage(
     throw slackThreadError(
       "THREAD_NOT_FOUND",
       `Slack thread not found for this session: ${input.ref}`,
-      "List this session's threads with: ravi sessions threads --all",
+      `List this session's threads with: ravi sessions threads --all --session ${parent.name ?? parent.sessionKey}`,
     );
   }
   if (
