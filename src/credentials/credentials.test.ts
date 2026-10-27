@@ -4,7 +4,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deleteSecret, readSecret, redactSecretRef, writeSecret } from "./backends.js";
-import { explainCredentialPolicy, publicCredentialConnection } from "./broker.js";
+import { explainCredentialPolicy, publicCredentialConnection, resolveCredentialSecret } from "./broker.js";
+import { CredentialBrokerError } from "./errors.js";
 import {
   closeCredentialsDb,
   getCredentialConnection,
@@ -167,3 +168,60 @@ function startVaultKvV2Server(vaultData: Map<string, Record<string, unknown>>, t
     },
   });
 }
+
+describe("credential broker typed errors", () => {
+  it("throws stable codes for a missing or disabled connection", async () => {
+    const options = tempOptions();
+    const missing = await resolveCredentialSecret({
+      provider: "slack",
+      connection: "absent",
+      action: "x",
+      options,
+    }).catch((error: unknown) => error);
+    expect(missing).toBeInstanceOf(CredentialBrokerError);
+    expect((missing as CredentialBrokerError).code).toBe("connection_not_found");
+    expect((missing as Error).message).toBe("Connection not found: slack:absent");
+
+    upsertCredentialConnection(
+      {
+        provider: "slack",
+        connection: "off",
+        backend: "vault",
+        secretRef: "vault:secret/ravi/credentials/slack/off#token",
+        status: "disabled",
+      },
+      options,
+    );
+    const disabled = await resolveCredentialSecret({
+      provider: "slack",
+      connection: "off",
+      action: "x",
+      options,
+    }).catch((error: unknown) => error);
+    expect((disabled as CredentialBrokerError).code).toBe("connection_disabled");
+  });
+
+  it("reports an unreachable vault backend as backend_unavailable", async () => {
+    const options = tempOptions();
+    delete process.env.VAULT_ADDR;
+    delete process.env.VAULT_TOKEN;
+    upsertCredentialConnection(
+      {
+        provider: "slack",
+        connection: "vaulted",
+        backend: "vault",
+        secretRef: "vault:secret/ravi/credentials/slack/vaulted#token",
+        status: "active",
+      },
+      options,
+    );
+    const error = await resolveCredentialSecret({
+      provider: "slack",
+      connection: "vaulted",
+      action: "x",
+      options,
+    }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(CredentialBrokerError);
+    expect((error as CredentialBrokerError).code).toBe("backend_unavailable");
+  });
+});

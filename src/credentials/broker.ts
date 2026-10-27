@@ -1,4 +1,5 @@
 import { readSecret, redactSecretRef } from "./backends.js";
+import { CredentialBrokerError } from "./errors.js";
 import { getCredentialConnection, recordCredentialAuditEvent, type CredentialStoreOptions } from "./store.js";
 import type { CredentialConnectionRecord, CredentialPolicyExplanation, PublicCredentialConnection } from "./types.js";
 
@@ -30,10 +31,16 @@ export async function resolveCredentialSecret(input: {
 }): Promise<{ connection: CredentialConnectionRecord; secret: string; policy: CredentialPolicyExplanation }> {
   const connection = getCredentialConnection(input.provider, input.connection, input.options);
   if (!connection) {
-    throw new Error(`Connection not found: ${input.provider}:${input.connection}`);
+    throw new CredentialBrokerError(
+      "connection_not_found",
+      `Connection not found: ${input.provider}:${input.connection}`,
+    );
   }
   if (connection.status !== "active") {
-    throw new Error(`Connection disabled: ${input.provider}:${input.connection}`);
+    throw new CredentialBrokerError(
+      "connection_disabled",
+      `Connection disabled: ${input.provider}:${input.connection}`,
+    );
   }
   const policy = explainCredentialPolicy({
     provider: connection.provider,
@@ -69,7 +76,12 @@ export async function resolveCredentialSecret(input: {
       },
       input.options,
     );
-    throw error;
+    if (error instanceof CredentialBrokerError) throw error;
+    throw new CredentialBrokerError(
+      "secret_unavailable",
+      error instanceof Error ? error.message : `Secret unavailable: ${input.provider}:${input.connection}`,
+      { cause: error },
+    );
   }
 }
 
@@ -81,7 +93,12 @@ export async function execCredentialBroker(input: {
   options?: CredentialStoreOptions;
 }) {
   const record = getCredentialConnection(input.provider, input.connection, input.options);
-  if (!record) throw new Error(`Connection not found: ${input.provider}:${input.connection}`);
+  if (!record) {
+    throw new CredentialBrokerError(
+      "connection_not_found",
+      `Connection not found: ${input.provider}:${input.connection}`,
+    );
+  }
   const policy = explainCredentialPolicy({
     provider: record.provider,
     connection: record.connection,

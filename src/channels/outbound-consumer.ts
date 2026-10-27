@@ -357,6 +357,7 @@ export async function processChannelOutboundJob(
     if (!adapter) {
       if (!receipt) return emitMissingAdapter(emitEvent, recordTrace, job, t0, deliveryAttempt);
       const delayMs = missingAdapterRetryDelayMs(deliveryAttempt);
+      warnMissingAdapter(job.request.channelId, { jobId: job.jobId, deliveryAttempt, retryDelayMs: delayMs });
       try {
         receiptStore.recordError(
           job.request.idempotencyKey,
@@ -998,6 +999,7 @@ async function emitMissingAdapter(
 ): Promise<ChannelOutboundProcessingResult> {
   const error = `No native delivery adapter registered for channel: ${job.request.channelId}`;
   const retryDelayMs = missingAdapterRetryDelayMs(deliveryAttempt);
+  warnMissingAdapter(job.request.channelId, { jobId: job.jobId, deliveryAttempt, retryDelayMs });
   await emitDelivery(emitEvent, traceRecorderForAttempt(recordTrace, deliveryAttempt), job, {
     status: "failed",
     reason: "missing_adapter",
@@ -1019,6 +1021,36 @@ async function emitMissingAdapter(
     phase: "adapter_lookup",
     nakDelayMs: retryDelayMs,
   };
+}
+
+const MISSING_ADAPTER_WARN_INTERVAL_MS = 60_000;
+const missingAdapterWarnedAt = new Map<string, number>();
+
+/**
+ * A reply with no adapter is NAKed and retried until the stream's max age, so
+ * say so in the log, once a minute per channel. The usual cause is an adapter
+ * that failed to start; `ravi channels status` shows its reason.
+ */
+export function warnMissingAdapter(
+  channelId: string,
+  fields: { jobId: string; deliveryAttempt?: number; retryDelayMs: number },
+  now = Date.now(),
+): boolean {
+  const last = missingAdapterWarnedAt.get(channelId);
+  if (last !== undefined && now - last < MISSING_ADAPTER_WARN_INTERVAL_MS) return false;
+  missingAdapterWarnedAt.set(channelId, now);
+  log.warn("Native outbound has no adapter for its channel; the reply stays queued and is retried", {
+    channelId,
+    jobId: fields.jobId,
+    ...(fields.deliveryAttempt !== undefined ? { deliveryAttempt: fields.deliveryAttempt } : {}),
+    retryDelayMs: fields.retryDelayMs,
+    hint: "run `ravi channels status` for the adapter's failure reason",
+  });
+  return true;
+}
+
+export function resetMissingAdapterWarningsForTests(): void {
+  missingAdapterWarnedAt.clear();
 }
 
 export function missingAdapterRetryDelayMs(deliveryAttempt: number | undefined): number {

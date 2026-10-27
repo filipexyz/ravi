@@ -30,6 +30,7 @@ import {
   dbUpsertInstance,
   closeRouterDb,
   getDb,
+  warnBackfilledSlackChannelsWithoutConnection,
 } from "./router-db.js";
 import { getOrCreateSession } from "./sessions.js";
 import { createRuntimeModelPreset } from "../runtime/model-preset-store.js";
@@ -506,6 +507,25 @@ describe("router context queries", () => {
     closeRouterDb();
     getDb();
     expect(dbListChannels()).toEqual(firstPass);
+  });
+
+  it("names backfilled Slack channels whose broker connection is missing or disabled", () => {
+    const missing = warnBackfilledSlackChannelsWithoutConnection(
+      [
+        { name: "slack-a", credentialConnection: "slack-a", enabled: true },
+        { name: "slack-b", credentialConnection: "slack-b", enabled: true },
+        { name: "slack-c", credentialConnection: "slack-c", enabled: true },
+        { name: "slack-off", credentialConnection: "slack-off", enabled: false },
+        { name: "slack-bad", credentialConnection: "bad id", enabled: true },
+      ],
+      (_provider, connection) => {
+        if (connection === "slack-a") return { status: "active" };
+        if (connection === "slack-b") return { status: "disabled" };
+        if (connection === "bad id") throw new Error("invalid connection");
+        return null;
+      },
+    );
+    expect(missing).toEqual(["slack-b", "slack-c", "slack-bad"]);
   });
 });
 

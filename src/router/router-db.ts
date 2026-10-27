@@ -15,6 +15,7 @@ import { mkdirSync, existsSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
 import { logger } from "../utils/logger.js";
+import { getCredentialConnection } from "../credentials/store.js";
 import { createReadWatchdog } from "../db/read-watchdog.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import { normalizePhone, normalizeRoutePattern } from "../utils/phone.js";
@@ -3884,22 +3885,56 @@ function backfillLegacySlackInstancesToChannels(database: Database): void {
      VALUES (?, 'slack', ?, ?, NULL, ?, ?, NULL)`,
   );
 
-  let migrated = 0;
+  const inserted: Array<{ name: string; credentialConnection: string; enabled: boolean }> = [];
   database.transaction(() => {
     for (const instance of legacyInstances) {
-      migrated += insertChannel.run(
+      const credentialConnection = legacySlackCredentialConnection(instance.name, instance.defaults);
+      const enabled = instance.enabled !== 0;
+      const changes = insertChannel.run(
         instance.name,
-        instance.enabled === 0 ? 0 : 1,
-        legacySlackCredentialConnection(instance.name, instance.defaults),
+        enabled ? 1 : 0,
+        credentialConnection,
         instance.created_at,
         instance.updated_at,
       ).changes;
+      if (changes > 0) inserted.push({ name: instance.name, credentialConnection, enabled });
     }
   })();
 
-  if (migrated > 0) {
-    log.info("Backfilled Slack channel configs from legacy instances", { count: migrated });
+  if (inserted.length > 0) {
+    log.info("Backfilled Slack channel configs from legacy instances", { count: inserted.length });
+    warnBackfilledSlackChannelsWithoutConnection(inserted);
   }
+}
+
+/**
+ * The backfill names a broker connection after the instance without checking
+ * it exists. Say so when it does not: `ravi-channels` cannot start that Slack
+ * adapter, so its replies stay queued until `ravi credentials add` adds one.
+ */
+export function warnBackfilledSlackChannelsWithoutConnection(
+  channels: ReadonlyArray<{ name: string; credentialConnection: string; enabled: boolean }>,
+  lookup: (provider: string, connection: string) => { status: string } | null = getCredentialConnection,
+): string[] {
+  const missing: string[] = [];
+  for (const channel of channels) {
+    if (!channel.enabled) continue;
+    let found: { status: string } | null;
+    try {
+      found = lookup("slack", channel.credentialConnection);
+    } catch {
+      found = null;
+    }
+    if (found?.status === "active") continue;
+    missing.push(channel.name);
+    log.warn("Backfilled Slack channel has no active broker connection; its replies cannot be delivered", {
+      channel: channel.name,
+      credentialConnection: channel.credentialConnection,
+      connectionStatus: found?.status ?? "not_found",
+      hint: "add it with `ravi credentials add`, then restart `ravi-channels`; `ravi doctor --domain channels` lists it",
+    });
+  }
+  return missing;
 }
 
 function legacySlackCredentialConnection(instanceName: string, defaultsJson: string | null): string {

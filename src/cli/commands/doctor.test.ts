@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { inspectDoctor, runDoctor } from "./doctor.js";
+import { buildNativeChannelRuntimeCheck, inspectDoctor, runDoctor } from "./doctor.js";
 
 const tempDirs: string[] = [];
 
@@ -201,6 +201,7 @@ function makeHealthyDeps() {
     agentHasNoExec: () => true,
     codexKnowledgeParityHolds: () => true,
     listInboxSubscriptions: () => [{ id: "sub_1" }],
+    inspectNativeChannelRuntime: () => ({ channels: [], runnerStatus: null }),
   };
 }
 
@@ -932,5 +933,75 @@ describe("runDoctor", () => {
       expect(text).toContain("codex parity fixture fails for codex-dev");
       expect(text).toContain("inbox subscription");
     });
+  });
+});
+
+describe("channels.native_runtime", () => {
+  const ready = {
+    name: "slack-a",
+    provider: "slack",
+    transport: "broker" as const,
+    credentialConnection: "slack-a",
+    issue: null,
+    backend: "vault" as const,
+    missingPrerequisites: [],
+  };
+
+  it("passes when there are no enabled native channels", () => {
+    const check = buildNativeChannelRuntimeCheck({ channels: [], runnerStatus: null });
+    expect(check).toMatchObject({ id: "channels.native_runtime", status: "ok" });
+  });
+
+  it("passes when every channel can start and the runner is online", () => {
+    const check = buildNativeChannelRuntimeCheck({ channels: [ready], runnerStatus: "online" });
+    expect(check.status).toBe("ok");
+    expect(check.details).toContain("slack-a: connection slack-a active (vault backend)");
+  });
+
+  it("warns when a channel's broker connection does not exist", () => {
+    const check = buildNativeChannelRuntimeCheck({
+      channels: [{ ...ready, issue: "connection_not_found", backend: undefined }],
+      runnerStatus: "online",
+    });
+    expect(check.status).toBe("warn");
+    expect(check.summary).toContain("1 native channel(s) cannot start: slack-a");
+    expect(check.details).toContain("slack-a: connection slack-a connection not found");
+    expect(check.fixHint).toContain("ravi credentials add");
+  });
+
+  it("warns when the backend is missing a prerequisite, naming it without its value", () => {
+    const check = buildNativeChannelRuntimeCheck({
+      channels: [{ ...ready, missingPrerequisites: ["VAULT_TOKEN"] }],
+      runnerStatus: "online",
+    });
+    expect(check.status).toBe("warn");
+    expect(check.details).toContain("slack-a: vault backend is missing VAULT_TOKEN in this environment");
+  });
+
+  it("warns when the runner is not online, and exempts the hub gateway transport", () => {
+    const check = buildNativeChannelRuntimeCheck({
+      channels: [
+        { name: "slack-hub", provider: "slack", transport: "hub_gateway_v1", issue: null, missingPrerequisites: [] },
+      ],
+      runnerStatus: "stopped",
+    });
+    expect(check.status).toBe("warn");
+    expect(check.summary).toContain("ravi-channels is not online");
+    expect(check.fixHint).toContain("ravi channels start");
+  });
+
+  it("is reported in the channels domain of the doctor report", () => {
+    const report = inspectDoctor(
+      {
+        ...makeHealthyDeps(),
+        inspectNativeChannelRuntime: () => ({
+          channels: [{ ...ready, issue: "connection_not_found" }],
+          runnerStatus: "online",
+        }),
+      },
+      { domain: "channels" },
+    );
+    const check = report.checks.find((entry) => entry.id === "channels.native_runtime");
+    expect(check).toMatchObject({ domain: "channels", status: "fail", severity: "warn" });
   });
 });

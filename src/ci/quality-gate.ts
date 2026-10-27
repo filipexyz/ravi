@@ -47,6 +47,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     // Thread root card and its brief: shell-typed `\n` decoded into line breaks.
     "src/channels/slack/thread-card.test.ts",
     "src/channels/slack/thread-text.test.ts",
+    // Native channel readiness: broker connection, backend prerequisites, queued-but-undeliverable warnings.
+    "src/channels/native-readiness.test.ts",
   ],
   "src/omni/": [
     "src/omni/consumer-context.test.ts",

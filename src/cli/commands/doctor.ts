@@ -53,12 +53,15 @@ import type { RuntimeCompatibilityIssue, RuntimeProviderId } from "../../runtime
 import {
   dbGetAgent,
   dbListAgents,
+  dbListChannels,
   dbListInstances,
   dbListRoutes,
   getDb,
   getDefaultAgentId,
   getRaviDbPath,
 } from "../../router/router-db.js";
+import { inspectNativeChannelRuntime, type NativeChannelRuntimeSnapshot } from "../../channels/native-readiness.js";
+import { CHANNELS_PM2_PROCESS_NAME, getPm2Process, isPm2Available } from "../../pm2.js";
 import {
   currentCliOnlyCommands,
   currentWeakPublicReturnCommands,
@@ -257,6 +260,7 @@ type DoctorDeps = {
   agentHasNoExec: (agentId: string) => boolean;
   codexKnowledgeParityHolds: typeof codexKnowledgeParityHolds;
   listInboxSubscriptions: (opts?: { enabledOnly?: boolean }) => unknown[];
+  inspectNativeChannelRuntime: () => NativeChannelRuntimeSnapshot;
 };
 
 export interface InspectDoctorOptions {
@@ -322,6 +326,11 @@ const DEFAULT_DEPS: DoctorDeps = {
   agentHasNoExec: (agentId: string) => agentHasNoExec(agentId),
   codexKnowledgeParityHolds,
   listInboxSubscriptions: listSubscriptions,
+  inspectNativeChannelRuntime: () =>
+    inspectNativeChannelRuntime({
+      listChannels: dbListChannels,
+      runnerStatus: () => (isPm2Available() ? (getPm2Process(CHANNELS_PM2_PROCESS_NAME)?.status ?? "missing") : null),
+    }),
 };
 
 function defaultStatDisk(path: string): DiskUsageStat | null {
@@ -577,6 +586,7 @@ export function inspectDoctor(overrides: Partial<DoctorDeps> = {}, options: Insp
       return buildInstanceHealthMetadataCheck(instances);
     });
     addCheck(checks, () => buildInboundIdentityResolutionCheck(deps));
+    addCheck(checks, () => buildNativeChannelRuntimeCheck(deps.inspectNativeChannelRuntime()));
     addCheck(checks, () => buildCostPricingCoverageCheck(deps));
     addCheck(checks, () => buildCostCompletenessCheck(deps));
   }
@@ -1292,6 +1302,80 @@ function buildRaviDbCheck(dbPath: string, deps: DoctorDeps): LegacyDoctorCheck {
     details: [dbPath],
     fixHint: "restore or initialize ~/.ravi/ravi.db before operating the runtime",
     data: { path: dbPath },
+  };
+}
+
+/**
+ * Native channels (Slack) queue every reply for `ravi-channels`, so a channel
+ * whose broker connection is missing, or a runner that is not online, leaves
+ * replies queued with nothing else in the logs (7984bc41).
+ */
+export function buildNativeChannelRuntimeCheck(snapshot: NativeChannelRuntimeSnapshot): LegacyDoctorCheck {
+  const id = "channels.native_runtime";
+  const title = "Native channel runtime";
+  if (snapshot.channels.length === 0) {
+    return { id, title, status: "ok", summary: "no enabled native channels", data: { channels: 0 } };
+  }
+
+  const details: string[] = [];
+  const problems: string[] = [];
+  for (const channel of snapshot.channels) {
+    if (channel.transport === "hub_gateway_v1") {
+      details.push(`${channel.name}: hub gateway transport (no broker connection needed)`);
+      continue;
+    }
+    const connection = channel.credentialConnection ?? "-";
+    if (channel.issue) {
+      problems.push(channel.name);
+      details.push(`${channel.name}: connection ${connection} ${channel.issue.replaceAll("_", " ")}`);
+    } else if (channel.missingPrerequisites.length > 0) {
+      problems.push(channel.name);
+      details.push(
+        `${channel.name}: ${channel.backend} backend is missing ${channel.missingPrerequisites.join(", ")} in this environment`,
+      );
+    } else {
+      details.push(`${channel.name}: connection ${connection} active (${channel.backend ?? "unknown"} backend)`);
+    }
+  }
+
+  const runnerOnline = snapshot.runnerStatus === "online";
+  if (snapshot.runnerStatus === null) {
+    details.push(`${CHANNELS_PM2_PROCESS_NAME}: PM2 not available, runner state unknown`);
+  } else {
+    details.push(`${CHANNELS_PM2_PROCESS_NAME}: ${snapshot.runnerStatus}`);
+  }
+  const runnerDown = snapshot.runnerStatus !== null && !runnerOnline;
+
+  const data = {
+    channels: snapshot.channels.length,
+    undeliverable: problems,
+    runnerStatus: snapshot.runnerStatus,
+  };
+  if (problems.length === 0 && !runnerDown) {
+    return {
+      id,
+      title,
+      status: "ok",
+      summary: `${snapshot.channels.length} enabled native channel(s) can start`,
+      details,
+      data,
+    };
+  }
+
+  const parts: string[] = [];
+  if (problems.length > 0) parts.push(`${problems.length} native channel(s) cannot start: ${problems.join(", ")}`);
+  if (runnerDown) parts.push(`${CHANNELS_PM2_PROCESS_NAME} is not online`);
+  return {
+    id,
+    title,
+    status: "warn",
+    summary: `${parts.join("; ")}; their replies stay queued and are not delivered`,
+    details,
+    fixHint:
+      problems.length > 0
+        ? "add or enable the broker connection with `ravi credentials add` (keychain needs macOS; elsewhere use vault with VAULT_ADDR and VAULT_TOKEN), then `ravi channels restart`"
+        : "start the runner with `ravi channels start`",
+    data,
   };
 }
 
