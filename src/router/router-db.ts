@@ -3330,6 +3330,8 @@ function getDb(): Database {
   ensureColumn(db, "slack_thread_lifecycle", "provider_override", "TEXT");
   ensureColumn(db, "slack_thread_lifecycle", "effort_override", "TEXT");
   ensureColumn(db, "slack_thread_lifecycle", "thinking_level", "TEXT");
+  ensureColumn(db, "slack_thread_lifecycle", "initiator_context_id", "TEXT");
+  ensureColumn(db, "slack_thread_lifecycle", "close_context_id", "TEXT");
   ensureColumn(db, "triggers", "filter_reject_count", "INTEGER DEFAULT 0");
   migrateTriggerDebounce(db);
   ensureColumn(db, "triggers", "last_filter_reject_at", "INTEGER");

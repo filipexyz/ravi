@@ -154,6 +154,11 @@ interface RuntimeTurnOriginEnvelope {
   protocol: "ravi.runtime.turn-origin";
   schemaVersion: 1;
   principal: RuntimeTurnOriginPrincipal;
+  /**
+   * The runtime context of the turn that produced this one. It can only narrow
+   * the new turn (to a contact overlay's capabilities), never widen it.
+   */
+  callerContextId?: string;
 }
 
 export interface SessionRelayTurnOriginMetadata extends RuntimeTurnOriginEnvelope {

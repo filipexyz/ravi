@@ -4604,8 +4604,13 @@ export class SessionCommands {
     const sessionName = session.name ?? nameOrKey;
 
     // Self-send check
-    const currentSession = getContext()?.sessionKey;
-    if (currentSession && currentSession === sessionName) {
+    const caller = getContext();
+    if (
+      caller &&
+      ((caller.sessionKey && caller.sessionKey === session.sessionKey) ||
+        (caller.sessionKey && caller.sessionKey === sessionName) ||
+        (caller.sessionName && caller.sessionName === session.name))
+    ) {
       fail(`Cannot send to same session (${sessionName}) - would cause deadlock`);
       return;
     }
@@ -6502,6 +6507,7 @@ export class SessionCommands {
       rootCanonicalChatId: creationTarget.rootCanonicalChatId,
       initialPrompt: initialMessage,
       requestedBy,
+      initiatorContextId: getContext()?.contextId,
       modelOverride: normalizedModel,
       providerOverride: resolvedProvider,
       effortOverride: normalizedEffort,

@@ -1214,6 +1214,59 @@ describe("runtime request context authority", () => {
     expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Bash")).toBe(true);
   });
 
+  it("narrows a relay produced by a contact-overlay turn to that turn's capabilities", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+    const overlayCaller = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: agent.id,
+      sessionKey,
+      sessionName,
+      capabilities: [{ permission: "use", objectType: "tool", objectId: "Bash", source: "test" }],
+      metadata: { actorAuthorizationMode: "user-overlay", actorPrincipal: "contact:ana" },
+    });
+    const plainCaller = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: agent.id,
+      sessionKey,
+      capabilities: [],
+      metadata: { actorAuthorizationMode: "invoke-only" },
+    });
+
+    const build = (callerContextId: string) =>
+      buildRuntimeRequestContext({
+        dbSessionKey: sessionKey,
+        sessionName,
+        sessionCwd: agent.cwd,
+        agent,
+        prompt: {
+          prompt: "[System] Inform: do it",
+          _turnOrigin: buildSessionRelayTurnOrigin("inform", {
+            agentId: agent.id,
+            sessionKey,
+            sessionName,
+            contextId: callerContextId,
+          }),
+        },
+        runtimeProviderId: "codex",
+        model: "gpt-5",
+        runtimeResolution,
+      }).runtimeContext;
+
+    const narrowed = build(overlayCaller.contextId);
+    expect(narrowed.metadata?.relayNarrowing).toBe(true);
+    expect(narrowed.metadata?.relayCallerContactId).toBe("ana");
+    expect(canWithCapabilities(narrowed.capabilities, "use", "tool", "Bash")).toBe(true);
+    expect(canWithCapabilities(narrowed.capabilities, "use", "tool", "Read")).toBe(false);
+
+    const missing = build("ctx_missing_caller");
+    expect(canWithCapabilities(missing.capabilities, "use", "tool", "Bash")).toBe(false);
+
+    const plain = build(plainCaller.contextId);
+    expect(plain.metadata?.relayNarrowing).toBeUndefined();
+    expect(canWithCapabilities(plain.capabilities, "use", "tool", "Read")).toBe(true);
+  });
+
   it("keeps a source-less operator relay in the target workspace compartment", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });

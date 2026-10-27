@@ -371,6 +371,7 @@ function isUserOverlayTurn(ctx: Pick<BashPermissionContext, "metadata">): boolea
 }
 
 function hasTurnCapabilityNarrowing(ctx: Pick<BashPermissionContext, "metadata">): boolean {
+  if (ctx.metadata?.relayNarrowing === true) return true;
   const count = ctx.metadata?.turnCapabilityCount;
   if (typeof count === "number" && count > 0) return true;
   return Array.isArray(ctx.metadata?.turnCapabilities) && ctx.metadata.turnCapabilities.length > 0;
