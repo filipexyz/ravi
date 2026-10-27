@@ -37,6 +37,7 @@ import {
   HOOK_SCOPE_TYPES,
 } from "../../hooks-runtime/index.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
+import { assertNoUserOverlayAutomationWrite } from "../../permissions/user-overlay-automation.js";
 
 const VALID_SCOPE_TYPES = new Set<string>(HOOK_SCOPE_TYPES);
 const VALID_ACTION_TYPES = new Set<string>(HOOK_ACTION_TYPES);
@@ -220,6 +221,7 @@ function assertHookWithinCallerScope(
   op: string,
   hook: Pick<HookRecord, "scopeType" | "scopeValue" | "actionType" | "actionPayload">,
 ): void {
+  assertNoUserOverlayAutomationWrite(op);
   const scopeCtx = getScopeContext();
   if (!isScopeEnforced(scopeCtx)) return;
   const deny = (message: string): never =>

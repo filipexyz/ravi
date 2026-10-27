@@ -33,6 +33,7 @@ import {
   type SessionFollowupStep,
   type SessionFollowupTargetType,
 } from "../../session-followups/index.js";
+import { assertNoUserOverlayAutomationWrite } from "../../permissions/user-overlay-automation.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -152,6 +153,7 @@ function assertFollowupTargetAuthorized(
   target: { targetType: SessionFollowupTargetType; targetRef: string },
   ownerScope: { type: string; id: string },
 ): void {
+  assertNoUserOverlayAutomationWrite("session-followups add");
   const owner = enforcedOwner();
   if (!owner) return;
   if (ownerScope.type !== owner.type || ownerScope.id !== owner.id) {

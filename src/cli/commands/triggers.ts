@@ -47,6 +47,7 @@ import { validateFilter } from "../../triggers/filter.js";
 import { resolveTriggerActivation } from "../../triggers/activation.js";
 import { isLegacySessionTarget, sessionTargetError, type SessionTarget } from "../../triggers/types.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
+import { assertNoUserOverlayAutomationWrite } from "../../permissions/user-overlay-automation.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -130,6 +131,7 @@ function assertTriggerTargetAuthorized(
   target: { agentId?: string; session?: string; replySession?: string | null },
   asJson?: boolean,
 ): void {
+  assertNoUserOverlayAutomationWrite(op);
   const scopeCtx = getScopeContext();
   const owner = target.agentId ?? scopeCtx?.agentId ?? getDefaultAgentId();
   if (!canAccessResource(scopeCtx, owner, "mutate")) {

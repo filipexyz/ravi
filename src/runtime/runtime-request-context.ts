@@ -43,6 +43,7 @@ import {
 import type { RuntimeCapabilities, RuntimeProviderId } from "./types.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
 import { resolveRuntimeTurnOrigin } from "./turn-origin.js";
+import { dbGetCronJob } from "../cron/cron-db.js";
 import { TURN_REPLY_TARGET_METADATA_KEY, type TurnReplyTarget } from "./turn-reply-target.js";
 
 export interface RuntimeRequestContextOptions {
@@ -343,7 +344,9 @@ function buildAgentIdentityRuntimeContextInputForPrompt(options: {
     actorPrincipal,
     hasPromptExternalAuthoritySurface(options.prompt),
   );
-  const userOverlay = resolveUserOverlay(actorPrincipal, surfacePrincipal, actorMetadata);
+  const userOverlay =
+    resolveStoredAutomationCreatorOverlay(options.prompt) ??
+    resolveUserOverlay(actorPrincipal, surfacePrincipal, actorMetadata);
 
   return buildAgentIdentityRuntimeContextInput({
     agentId: options.agentId,
@@ -357,6 +360,20 @@ function buildAgentIdentityRuntimeContextInputForPrompt(options: {
     consoleBinding,
     userOverlay,
   });
+}
+
+/**
+ * A job a contact wrote from a turn narrowed to their chat grants runs every
+ * turn under those grants as they are now: none left means no capabilities.
+ * The binding is read from the stored job, never from the published prompt.
+ */
+function resolveStoredAutomationCreatorOverlay(prompt: RuntimeLaunchPrompt): ContactChatOverlay | null {
+  if (!prompt._cron || !prompt._jobId) return null;
+  const job = dbGetCronJob(prompt._jobId);
+  const owner = job?.ownerPrincipal ?? "";
+  if (!job?.creatorChat || !owner.startsWith("contact:")) return null;
+  const overlay = resolveContactChatOverlay({ contactId: owner.slice("contact:".length), chatId: job.creatorChat });
+  return { ...overlay, active: true };
 }
 
 function resolveUserOverlay(

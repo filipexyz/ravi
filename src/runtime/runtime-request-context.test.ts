@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { createContact } from "../contacts.js";
-import { dbEnsureContactChatGrant } from "../permissions/contact-chat-grants.js";
+import { dbDeleteContactChatGrant, dbEnsureContactChatGrant } from "../permissions/contact-chat-grants.js";
+import { dbCreateCronJob } from "../cron/cron-db.js";
 import { canWithCapabilities } from "../permissions/provider-runtime.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
@@ -1943,6 +1944,51 @@ describe("runtime request context chat-scoped user overlay", () => {
     // In the agent ceiling but not granted to the contact in this chat.
     expect(canWithCapabilities(context.capabilities, "execute", "executable", "curl")).toBe(false);
     expect(canWithCapabilities(context.capabilities, "use", "tool", "Bash")).toBe(false);
+  });
+
+  it("runs a cron a narrowed contact wrote under that contact's current chat grants", () => {
+    const chat = groupChat("120363400000000009@g.us");
+    const ana = createContact({ phone: "5511900000009", name: "Ana" });
+    grant(ana.id, "chat", chat.id);
+    const job = dbCreateCronJob({
+      name: "ana-daily",
+      schedule: { type: "every", every: 60_000 },
+      message: "faz o relatorio",
+      agentId: agent.id,
+      ownerPrincipal: `contact:${ana.id}`,
+      creatorChat: chat.id,
+    });
+    const cronContext = () => {
+      const prompt: RuntimeLaunchPrompt = { ...promptInChat(ana.id, chat), _cron: true, _jobId: job.id };
+      const overlaySessionKey = `agent:provider-agent:cron:${job.id}`;
+      getOrCreateSession(overlaySessionKey, agent.id, agent.cwd, { name: `cron-${job.id}` });
+      return buildRuntimeRequestContext({
+        dbSessionKey: overlaySessionKey,
+        sessionName: `cron-${job.id}`,
+        sessionCwd: agent.cwd,
+        agent,
+        prompt,
+        runtimeProviderId: "codex",
+        model: "gpt-5",
+        runtimeResolution,
+        resolvedSource: prompt.source,
+      }).runtimeContext;
+    };
+
+    const granted = cronContext();
+    expect(granted.metadata?.actorPrincipal).toBe(`automation:cron:${job.id}`);
+    expect(canWithCapabilities(granted.capabilities, "mutate", "image", "generate")).toBe(true);
+    expect(canWithCapabilities(granted.capabilities, "execute", "executable", "curl")).toBe(false);
+
+    dbDeleteContactChatGrant({
+      contactId: ana.id,
+      profileSlug: "permission-image",
+      scopeType: "chat",
+      scopeId: chat.id,
+    });
+    const revoked = cronContext();
+    expect(canWithCapabilities(revoked.capabilities, "mutate", "image", "generate")).toBe(false);
+    expect(canWithCapabilities(revoked.capabilities, "execute", "executable", "curl")).toBe(false);
   });
 
   it("keeps chats without contact grants on the agent identity", () => {

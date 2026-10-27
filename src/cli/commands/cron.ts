@@ -271,11 +271,30 @@ function cronJobRunsAs(job: Pick<CronJob, "ownerPrincipal">): string {
 const CRON_OWNER_KEEP_KEYS = new Set(["description", "cron", "every", "tz", "timezone", "timeout", "delete-after"]);
 
 /** Owner change that goes in the same write as a `cron set` edit, or nothing. */
-function cronOwnerUpdateForSet(key: string, job: CronJob): Pick<CronJob, "ownerPrincipal"> | Record<string, never> {
+function cronOwnerUpdateForSet(
+  key: string,
+  job: CronJob,
+): Pick<CronJob, "ownerPrincipal" | "creatorChat"> | Record<string, never> {
   if (CRON_OWNER_KEEP_KEYS.has(key)) return {};
   const setterOwner = resolveCronOwnerPrincipalForCurrentTurn();
-  if (setterOwner === CRON_OPERATOR_OWNER || setterOwner === cronJobRunsAs(job)) return {};
-  return { ownerPrincipal: setterOwner };
+  const overlayChat = currentUserOverlayChat();
+  if (setterOwner === CRON_OPERATOR_OWNER) return {};
+  if (setterOwner === cronJobRunsAs(job)) {
+    return overlayChat && overlayChat !== job.creatorChat ? { creatorChat: overlayChat } : {};
+  }
+  return { ownerPrincipal: setterOwner, creatorChat: overlayChat };
+}
+
+/**
+ * The chat whose contact grants narrow the current turn, when they do. A job
+ * written from such a turn keeps running under those grants, never under the
+ * executor agent's full ceiling.
+ */
+function currentUserOverlayChat(): string | undefined {
+  const metadata = getContext()?.context?.metadata;
+  if (metadata?.actorAuthorizationMode !== "user-overlay") return undefined;
+  const chat = typeof metadata.userOverlayChat === "string" ? metadata.userOverlayChat.replace(/^chat:/, "") : "";
+  return chat || undefined;
 }
 
 function serializeCronJob(job: CronJob) {
@@ -615,6 +634,7 @@ export class CronCommands {
       shellEnvFile: isShellJob ? envFile : undefined,
       onError: isShellJob ? normalizeCronOnError(onError) : undefined,
       ownerPrincipal: resolveCronOwnerPrincipalForCurrentTurn(),
+      creatorChat: currentUserOverlayChat(),
     };
 
     try {

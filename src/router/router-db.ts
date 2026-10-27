@@ -3374,6 +3374,7 @@ function getDb(): Database {
     db.exec("ALTER TABLE cron_jobs ADD COLUMN owner_principal TEXT");
     log.info("Added owner_principal column to cron_jobs table");
   }
+  ensureColumn(db, "cron_jobs", "creator_chat", "TEXT");
 
   // Migration: add heartbeat_account_id column to agents
   if (addAgentColumnIfMissing("heartbeat_account_id", "ALTER TABLE agents ADD COLUMN heartbeat_account_id TEXT")) {

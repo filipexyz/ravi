@@ -39,6 +39,7 @@ import {
 import { readSessionSignalContext, signalIsInSessionScope } from "../../signals/subjects.js";
 import { tickSignals } from "../../signals/tick.js";
 import { jsonObjectSchema } from "../return-schemas.js";
+import { assertNoUserOverlayAutomationWrite } from "../../permissions/user-overlay-automation.js";
 
 const clearWhenSchema = z.union([
   z.object({
@@ -392,6 +393,7 @@ export class SignalsCommands {
       if (kind === "fact" && signalCaller().isAgent) {
         fail("Facts must be raised by code producers. Agent turns may raise judgment signals only.");
       }
+      assertNoUserOverlayAutomationWrite("signals raise");
       if (signalCaller().isAgent && isProducerOwnedSignalKey(key)) {
         fail(`Key ${key} is reserved for Ravi's own producers; raise the judgment under another key.`);
       }

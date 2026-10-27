@@ -162,6 +162,7 @@ export {
   resolveTaskSessionTtlMs,
   shouldRefreshTaskSessionTtlOnTurnComplete,
 } from "./session-retention.js";
+import { assertNoUserOverlayAutomationWrite } from "../permissions/user-overlay-automation.js";
 
 const TASK_EVENT_PREFIX = "ravi.task";
 const TASK_STATUSES = ["open", "dispatched", "in_progress", "blocked", "done", "failed"] as const;
@@ -1813,6 +1814,7 @@ export function assertTaskTargetAuthorized(input: {
   reportToSessionName?: string;
   actorSessionName?: string;
 }): void {
+  assertNoUserOverlayAutomationWrite("tasks");
   const scopeCtx = enforcedTaskCallerScope();
   if (!scopeCtx) return;
   const agentId = input.agentId?.trim();
