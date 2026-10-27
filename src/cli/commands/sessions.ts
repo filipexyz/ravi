@@ -95,6 +95,7 @@ import {
   listSlackThreadsForSession,
   reportSlackThreadProgress,
   sendSlackThreadMessage,
+  slackThreadError,
   slackThreadParentSessionKey,
   slackThreadRuntimeLabel,
   slackThreadTitle,
@@ -103,6 +104,8 @@ import {
 } from "../../channels/slack/thread-lifecycle.js";
 import { resolveSlackThreadRequester } from "../../channels/slack/thread-requester.js";
 import { decodeLiteralLineBreaks } from "../../channels/slack/thread-text.js";
+import { CliExpectedError } from "../expected-error.js";
+import { assessSessionThreadIdentity } from "../../router/thread-identity.js";
 import { listStickers, stickerAllowedForAgent, stickerAllowedOnChannel } from "../../stickers/catalog.js";
 import { revokeAgentRuntimeContextsForSession } from "../../runtime/context-registry.js";
 import {
@@ -417,6 +420,7 @@ const slackThreadSummarySchema = z
     source: z.enum(["action", "inbound"]),
     childSessionKey: z.string().nullable(),
     childSessionName: z.string().nullable(),
+    childSessionMissing: z.boolean(),
     slackThreadTs: z.string().nullable(),
     link: z.string().nullable(),
     runtime: z
@@ -2812,6 +2816,36 @@ function printSessionTraceExplanationHuman(explanation: SessionTraceExplanation)
 // suggestions on purpose: scope isolation cloaks unauthorized sessions as
 // not-found, and suggesting real session names would defeat that cloak.
 // ============================================================
+
+/**
+ * `report` and `close-thread` act only inside a Slack thread child session.
+ * A session that took over an open thread's name under another key (for
+ * example one a task dispatch created after the thread's session vanished)
+ * gets THREAD_IDENTITY_MISMATCH, so the caller learns the thread lost its
+ * session instead of being told it is not in a thread.
+ */
+function assertSlackThreadChildSession(action: "thread.report" | "thread.close", session: SessionEntry): void {
+  if (slackThreadParentSessionKey(session.sessionKey) !== session.sessionKey) return;
+  const assessment = assessSessionThreadIdentity(session.name ?? session.sessionKey, session);
+  if (assessment.kind === "key_mismatch") {
+    throw slackThreadError(
+      "THREAD_IDENTITY_MISMATCH",
+      `${action} refused: session ${session.name ?? session.sessionKey} has the name of open Slack thread ${assessment.thread.requestId}, but runs under ${session.sessionKey} instead of ${assessment.thread.childSessionKey}`,
+      `Check the thread with: ravi sessions threads --session ${assessment.thread.parentSessionName}`,
+    );
+  }
+  throw slackThreadError(
+    "THREAD_NOT_THREAD_CHILD",
+    `${action} is available only inside a Slack thread child session`,
+    "Run it from the Slack thread's own session, or pass --session <thread session>",
+  );
+}
+
+/** Keep a typed thread refusal; anything else stays a plain command failure. */
+function rethrowSlackThreadError(error: unknown): never {
+  if (error instanceof CliExpectedError) throw error;
+  fail(error instanceof Error ? error.message : String(error));
+}
 
 function failSessionNotFound(op: string, ref: string, asJson?: boolean): never {
   contractFail(op, "SESSION_NOT_FOUND", `Session not found: ${ref}`, {
@@ -6569,12 +6603,14 @@ export class SessionCommands {
       fail(`Session not found: ${target}`);
       return;
     }
-    if (slackThreadParentSessionKey(session.sessionKey) === session.sessionKey) {
-      fail("thread.close is available only inside a Slack thread child session");
-      return;
-    }
+    assertSlackThreadChildSession("thread.close", session);
     const normalizedReturn = returnResult ? decodeLiteralLineBreaks(returnResult).trim() || undefined : undefined;
-    const result = await closeSlackThread(session, normalizedReturn);
+    let result: Awaited<ReturnType<typeof closeSlackThread>>;
+    try {
+      result = await closeSlackThread(session, normalizedReturn);
+    } catch (error) {
+      rethrowSlackThreadError(error);
+    }
     const payload = {
       status: result.record.status,
       actionId: "thread.close",
@@ -6662,10 +6698,11 @@ export class SessionCommands {
         const name = thread.childSessionName ?? thread.requestId;
         const title = thread.title ? ` — ${thread.title}` : "";
         const pending = thread.parentReturn.pending ? " (return pending)" : "";
+        const missing = thread.childSessionMissing ? " (session missing)" : "";
         const runtime = [thread.runtime.provider, thread.runtime.model, thread.runtime.effort]
           .filter((value): value is string => Boolean(value))
           .join(" · ");
-        console.log(`  [${thread.status}] ${name}${title}${pending}${runtime ? ` (${runtime})` : ""}`);
+        console.log(`  [${thread.status}] ${name}${title}${pending}${missing}${runtime ? ` (${runtime})` : ""}`);
       }
     }
     return payload;
@@ -6710,16 +6747,12 @@ export class SessionCommands {
       fail(`Session not found: ${target}`);
       return;
     }
-    if (slackThreadParentSessionKey(session.sessionKey) === session.sessionKey) {
-      fail("thread.report is available only inside a Slack thread child session");
-      return;
-    }
+    assertSlackThreadChildSession("thread.report", session);
     let result: Awaited<ReturnType<typeof reportSlackThreadProgress>>;
     try {
       result = await reportSlackThreadProgress(session, decodeLiteralLineBreaks(message));
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
-      return;
+      rethrowSlackThreadError(error);
     }
     const payload = {
       status: "published" as const,
@@ -6786,8 +6819,7 @@ export class SessionCommands {
         origin: getContext() ?? {},
       });
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
-      return;
+      rethrowSlackThreadError(error);
     }
     const payload = {
       status: "published" as const,

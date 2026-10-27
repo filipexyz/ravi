@@ -20203,6 +20203,7 @@ export type SessionsThreadSendReturn = {
   status: "published";
   thread: {
     childSessionKey: string | null;
+    childSessionMissing: boolean;
     childSessionName: string | null;
     closedAt: number | null;
     createdAt: number;
@@ -20251,6 +20252,7 @@ export type SessionsThreadsReturn = {
   };
   threads: Array<{
     childSessionKey: string | null;
+    childSessionMissing: boolean;
     childSessionName: string | null;
     closedAt: number | null;
     createdAt: number;

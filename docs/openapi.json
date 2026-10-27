@@ -80,7 +80,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "c7f3f26f197a066d"
+    "version": "26a28a48517dc6f9"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -118612,6 +118612,9 @@
                             }
                           ]
                         },
+                        "childSessionMissing": {
+                          "type": "boolean"
+                        },
                         "childSessionName": {
                           "anyOf": [
                             {
@@ -118834,6 +118837,7 @@
                         "source",
                         "childSessionKey",
                         "childSessionName",
+                        "childSessionMissing",
                         "slackThreadTs",
                         "link",
                         "runtime",
@@ -118936,6 +118940,9 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "childSessionMissing": {
+                            "type": "boolean"
                           },
                           "childSessionName": {
                             "anyOf": [
@@ -119159,6 +119166,7 @@
                           "source",
                           "childSessionKey",
                           "childSessionName",
+                          "childSessionMissing",
                           "slackThreadTs",
                           "link",
                           "runtime",

@@ -144,6 +144,15 @@ ravi sessions thread-send <thread> "<instructions>"
 - `threads` lists the channel-root session's threads, from the root or any of
   its children. `thread-send` names a thread by child session name or key,
   request id or Slack `thread_ts`, and works only from the channel-root session.
+- `report`, `close-thread` and `thread-send` refuse with typed codes, never a
+  bare command failure: `THREAD_NOT_THREAD_CHILD`, `THREAD_IDENTITY_MISMATCH`
+  (the session has an open thread's name under another key), and for
+  `thread-send` `THREAD_NOT_CHANNEL_ROOT`, `THREAD_NOT_FOUND`,
+  `THREAD_NOT_STARTED`, `THREAD_SESSION_MISSING`; also
+  `THREAD_PARENT_MISSING` and `THREAD_PARENT_RETURN_PENDING`. The remote relay
+  renders local copy for each code.
+- A thread record can outlive its child session. `threads` MUST mark that
+  thread with `childSessionMissing: true` and MUST NOT report it as unstarted.
 
 ## Root Card
 

@@ -104748,6 +104748,9 @@ public enum RaviSchemas {
               }
             ]
           },
+          "childSessionMissing": {
+            "type": "boolean"
+          },
           "childSessionName": {
             "anyOf": [
               {
@@ -104970,6 +104973,7 @@ public enum RaviSchemas {
           "source",
           "childSessionKey",
           "childSessionName",
+          "childSessionMissing",
           "slackThreadTs",
           "link",
           "runtime",
@@ -105046,6 +105050,9 @@ public enum RaviSchemas {
                   "type": "null"
                 }
               ]
+            },
+            "childSessionMissing": {
+              "type": "boolean"
             },
             "childSessionName": {
               "anyOf": [
@@ -105269,6 +105276,7 @@ public enum RaviSchemas {
             "source",
             "childSessionKey",
             "childSessionName",
+            "childSessionMissing",
             "slackThreadTs",
             "link",
             "runtime",

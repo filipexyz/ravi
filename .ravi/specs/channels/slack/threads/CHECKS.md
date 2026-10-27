@@ -39,6 +39,14 @@
       hiding closed ones unless `--all`.
 - [ ] `thread.send` MUST publish one in-thread Execute turn, reopen a closed
       thread, and refuse thread callers, unknown threads and unstarted threads.
+- [ ] `report`, `close-thread` and `thread-send` refusals MUST carry a typed
+      `THREAD_*` code (`THREAD_IDENTITY_MISMATCH` for a session holding an open
+      thread's name under another key), and the remote relay MUST show local
+      copy for them instead of "Remote command failed."
+      (`src/cli/commands/sessions.test.ts`, `src/cli/remote-gateway.test.ts`).
+- [ ] `thread.list` MUST mark an open thread whose child session is gone with
+      `childSessionMissing: true`, and `thread-send` to it MUST fail with
+      `THREAD_SESSION_MISSING` (`src/channels/slack/thread-lifecycle.test.ts`).
 
 ## Commands
 
