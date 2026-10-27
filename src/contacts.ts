@@ -1306,6 +1306,13 @@ function metadataJson(value: Record<string, unknown>): string {
 }
 
 function deleteContactProjection(database: Database, contactId: string): void {
+  // Participant rows are a derived cache of who a sender was; never leave one
+  // naming a contact that no longer exists.
+  if (sqliteTableExists(database, "chat_participants")) {
+    database
+      .prepare("UPDATE chat_participants SET contact_id = NULL, platform_identity_id = NULL WHERE contact_id = ?")
+      .run(contactId);
+  }
   database.prepare("DELETE FROM platform_identities WHERE owner_type = 'contact' AND owner_id = ?").run(contactId);
   database.prepare("DELETE FROM contact_policies WHERE contact_id = ?").run(contactId);
   database.prepare("DELETE FROM contact_contexts WHERE contact_id = ?").run(contactId);
@@ -1339,7 +1346,15 @@ function moveCanonicalPlatformIdentities(
       | { id: string }
       | undefined;
 
+    const participants = sqliteTableExists(database, "chat_participants");
     if (conflict) {
+      if (participants) {
+        database
+          .prepare(
+            "UPDATE chat_participants SET contact_id = NULL, platform_identity_id = NULL WHERE platform_identity_id = ?",
+          )
+          .run(row.id);
+      }
       database.prepare("DELETE FROM platform_identities WHERE id = ?").run(row.id);
       continue;
     }
@@ -1347,6 +1362,11 @@ function moveCanonicalPlatformIdentities(
     database
       .prepare("UPDATE platform_identities SET owner_id = ?, updated_at = datetime('now') WHERE id = ?")
       .run(targetContactId, row.id);
+    if (participants) {
+      database
+        .prepare("UPDATE chat_participants SET contact_id = ? WHERE platform_identity_id = ?")
+        .run(targetContactId, row.id);
+    }
     moved.push(row.id);
   }
 

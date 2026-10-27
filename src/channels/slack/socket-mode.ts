@@ -25,7 +25,6 @@ import {
 } from "../../router/index.js";
 import { isExplicitSessionAttach } from "../../router/route-sticky-attach.js";
 import {
-  dbListChatParticipants,
   dbUpsertChat,
   dbUpsertChatMessage,
   dbUpsertChatParticipant,
@@ -1810,7 +1809,13 @@ export class SlackSocketModeService {
       }
     }
 
-    const explicitRoute = trustedSubscription || Boolean(matched?.route && matched.route.pattern !== "*");
+    // Only an explicit attach (a person or an agent) admits a chat past a
+    // closed, pairing or allowlist policy. Routing's own bookkeeping
+    // subscription still picks the session, but never outlives a tightened policy.
+    const explicitAttach = Boolean(
+      trustedSubscription && existingSubscription && isExplicitSessionAttach(existingSubscription.attachedByType),
+    );
+    const explicitRoute = explicitAttach || Boolean(matched?.route && matched.route.pattern !== "*");
     const routePolicy = matched?.route?.policy;
     const inboundPolicy = isGroup
       ? (routePolicy ?? instanceConfig?.groupPolicy ?? "open")
@@ -2470,32 +2475,9 @@ function resolveSlackActorIdentity(input: {
     };
   }
 
-  const participant = dbListChatParticipants(input.chatId).find(
-    (candidate) => candidate.normalizedPlatformUserId === input.platformUserId,
-  );
-  if (participant?.agentId) {
-    return {
-      actorType: "agent",
-      actorAgentId: participant.agentId,
-      platformIdentityId: participant.platformIdentityId,
-      rawSenderId: input.platformUserId,
-      normalizedSenderId: input.platformUserId,
-      identityConfidence: 1,
-      identityProvenance: { source: "chat_participants", chatId: input.chatId },
-    };
-  }
-  if (participant?.contactId) {
-    return {
-      actorType: "contact",
-      contactId: participant.contactId,
-      platformIdentityId: participant.platformIdentityId,
-      rawSenderId: input.platformUserId,
-      normalizedSenderId: input.platformUserId,
-      identityConfidence: 1,
-      identityProvenance: { source: "chat_participants", chatId: input.chatId },
-    };
-  }
-
+  // chat_participants is a derived copy of earlier resolutions that unlink or
+  // re-link does not rewrite; the live scoped platform identity is the only
+  // authority for who this Slack sender is.
   const identity = scoped.identity;
   if (identity?.ownerType === "agent" && identity.ownerId) {
     return {
