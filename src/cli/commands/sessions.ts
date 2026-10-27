@@ -3598,6 +3598,23 @@ export class SessionCommands {
       }
     }
 
+    // The provider decides which tool gate governs the session's later turns
+    // (Claude gates every SDK tool; Codex hooks only the shell), so an agent
+    // turn needs agent-configuration authority to pick one. Clearing returns
+    // to the agent's configured provider and stays open, as does picking it.
+    const configuredProvider = (getAgent(s.agentId) ?? loadRouterConfig().agents[s.agentId])?.provider;
+    if (
+      propagate !== true &&
+      providerOverride &&
+      providerOverride !== s.runtimeProviderOverride &&
+      providerOverride !== configuredProvider
+    ) {
+      assertAgentDefaultsWriteAuthorized(s.agentId, {
+        message: `Permission denied: the runtime provider decides which tool gate applies to ${s.name ?? s.sessionKey} and needs the authority of 'ravi agents set'`,
+        suggestedAction: "Ask an operator to set the provider",
+      });
+    }
+
     const label = s.name ?? s.sessionKey;
     const beforeProviderOverride = s.runtimeProviderOverride ?? null;
     const agent = getAgent(s.agentId) ?? loadRouterConfig().agents[s.agentId] ?? null;
@@ -7312,7 +7329,13 @@ declareCommandReturns(SessionCommands, {
  * so an agent turn needs the authority `ravi agents set` asks for, plus mutate
  * on that agent, not just the right to change its own session.
  */
-function assertAgentDefaultsWriteAuthorized(agentId: string): void {
+function assertAgentDefaultsWriteAuthorized(
+  agentId: string,
+  denial = {
+    message: `Permission denied: --propagate changes agent ${agentId}'s defaults and needs the authority of 'ravi agents set'`,
+    suggestedAction: "Drop --propagate to change only this session, or ask an operator to run ravi agents set",
+  },
+): void {
   if (!getContext()?.context) return;
   const access = enforceCliCommandAccess({
     group: "agents",
@@ -7323,20 +7346,10 @@ function assertAgentDefaultsWriteAuthorized(agentId: string): void {
   });
   const scopeCtx = getScopeContext();
   if (!access.allowed || (isScopeEnforced(scopeCtx) && !canAccessResource(scopeCtx, agentId, "mutate"))) {
-    throw new CliExpectedError(
-      `Permission denied: --propagate changes agent ${agentId}'s defaults and needs the authority of 'ravi agents set'`,
-      "PERMISSION_DENIED",
-      1,
-      "Drop --propagate to change only this session, or ask an operator to run ravi agents set",
-    );
+    throw new CliExpectedError(denial.message, "PERMISSION_DENIED", 1, denial.suggestedAction);
   }
 }
 
-/**
- * `--thread` reads a thread's brief into the target session and appends the
- * prompt to it, so an agent turn needs the same authority as `ravi threads
- * brief` and `ravi threads comment` (and `create` when it may create one).
- */
 function sessionTalksToChat(session: SessionEntry, channel: string, chatId: string): boolean {
   if (session.lastChannel === channel && session.lastTo === chatId) return true;
   return listSessionSubscriptions(session.sessionKey).some((subscription) => {
@@ -7345,6 +7358,11 @@ function sessionTalksToChat(session: SessionEntry, channel: string, chatId: stri
   });
 }
 
+/**
+ * `--thread` reads a thread's brief into the target session and appends the
+ * prompt to it, so an agent turn needs the same authority as `ravi threads
+ * brief` and `ravi threads comment` (and `create` when it may create one).
+ */
 function assertThreadHandoffAuthorized(mayCreate: boolean, asJson?: boolean): void {
   if (!getContext()?.context) return;
   const actions: Array<{ kind: "read" | "mutate"; action: string }> = [

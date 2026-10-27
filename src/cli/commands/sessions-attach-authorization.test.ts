@@ -103,6 +103,21 @@ describe("sessions set-provider/set-model --propagate", () => {
   });
 });
 
+describe("sessions set-provider", () => {
+  it("needs the authority of agents set to move an agent's session to another provider", () => {
+    dbCreateAgent({ id: "crm", cwd: "/tmp/crm", provider: "claude" });
+    const own = getOrCreateSession("agent:crm:main", "crm", "/tmp/crm");
+    const commands = new SessionCommands();
+
+    runWithContext(BOOTSTRAP, () => {
+      expect(() => commands.setProvider(own.sessionKey, "codex", true)).toThrow("tool gate");
+      commands.setProvider(own.sessionKey, "claude", true);
+      commands.setProvider(own.sessionKey, "clear", true);
+    });
+    expect(getOrCreateSession("agent:crm:main", "crm", "/tmp/crm").runtimeProviderOverride ?? null).not.toBe("codex");
+  });
+});
+
 describe("sessions relay delivery override", () => {
   it("refuses --channel/--to naming a chat the target session is not attached to", async () => {
     const own = getOrCreateSession("agent:crm:worker", "crm", "/tmp/crm");
