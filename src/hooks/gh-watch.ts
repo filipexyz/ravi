@@ -29,6 +29,7 @@ import {
 } from "../triggers/index.js";
 import type { TriggerReplySource } from "../triggers/types.js";
 import { logger } from "../utils/logger.js";
+import { parseBashCommand } from "../bash/parser.js";
 import {
   createWatch,
   listWatchConnectors,
@@ -160,6 +161,13 @@ export function tokenizeShellCommand(command: string): string[] {
 
   for (let index = 0; index < command.length; index += 1) {
     const char = command[index]!;
+    // A backslash escapes the next character outside single quotes, as in the
+    // shell, so `x\;gh` stays one argument here as it does for the Bash gate.
+    if (char === "\\" && quote !== "'") {
+      current += command[index + 1] ?? "";
+      index += 1;
+      continue;
+    }
     if (quote) {
       if (char === quote) {
         quote = null;
@@ -175,6 +183,12 @@ export function tokenizeShellCommand(command: string): string[] {
     if (/\s/.test(char)) {
       if (current) tokens.push(current);
       current = "";
+      continue;
+    }
+    if (char === "\n") {
+      if (current) tokens.push(current);
+      current = "";
+      tokens.push(";");
       continue;
     }
     if (char === "|" || char === "&" || char === ";" || char === "(" || char === ")") {
@@ -956,6 +970,12 @@ export async function observeGhBashCommand(
   try {
     if (process.env.RAVI_WATCH_GH_AUTODETECT === "0") return;
     if (!command.includes("gh")) return;
+    // Observe only what the Bash gate approved: its parser must see `gh` (or a
+    // wrapper this observer looks through) run in this command, or text that
+    // never runs gh could still create a follow.
+    const parsed = parseBashCommand(command);
+    if (!parsed.success || !parsed.executables.some((exec) => exec === "gh" || Object.hasOwn(COMMAND_WRAPPERS, exec)))
+      return;
 
     const intent = parseGhWatchIntent(command);
     if (!intent?.follow) return;
