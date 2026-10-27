@@ -1357,7 +1357,7 @@ export function buildNativeChannelRuntimeCheck(snapshot: NativeChannelRuntimeSna
       title,
       status: "skip",
       severity: "warn",
-      summary: `${snapshot.channels.length} enabled native channel(s) have an active broker connection, but ${CHANNELS_PM2_PROCESS_NAME} could not be checked (PM2 not available)`,
+      summary: `${snapshot.channels.length} enabled native channel(s) have what they need to start (an active broker connection, or the hub gateway transport), but ${CHANNELS_PM2_PROCESS_NAME} could not be checked (PM2 not available)`,
       details,
       fixHint: `confirm the runner from a host terminal with \`ravi channels status\``,
       data,
@@ -1368,7 +1368,7 @@ export function buildNativeChannelRuntimeCheck(snapshot: NativeChannelRuntimeSna
       id,
       title,
       status: "ok",
-      summary: `${snapshot.channels.length} enabled native channel(s) have an active broker connection and ${CHANNELS_PM2_PROCESS_NAME} is online`,
+      summary: `${snapshot.channels.length} enabled native channel(s) have what they need to start (an active broker connection, or the hub gateway transport) and ${CHANNELS_PM2_PROCESS_NAME} is online`,
       details,
       data,
     };
