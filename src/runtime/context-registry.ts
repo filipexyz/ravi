@@ -14,6 +14,7 @@ import {
 } from "../router/router-db.js";
 import { canWithCapabilityContext, materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
 import { TURN_SCOPED_AUTHORITY_KIND } from "../permissions/delegation.js";
+import { isRuntimeContextLive } from "./context-liveness.js";
 import {
   capabilityNotGrantedByParentError,
   delegatedAgentIdRequiredError,
@@ -250,6 +251,9 @@ export function getRuntimeContextFromEnv(env: NodeJS.ProcessEnv = process.env): 
 
 export function issueRuntimeContext(input: IssueRuntimeContextInput): ContextRecord {
   const now = Date.now();
+  if (!isRuntimeContextLive(input.parent, now)) {
+    throw new Error(`Parent context ${input.parent.contextId} is revoked or expired`);
+  }
   const delegatedIdentity = input.identity ? resolveDelegatedIdentity(input.parent, input.identity) : undefined;
   const sessionActor =
     delegatedIdentity && input.identity?.projectSessionActor

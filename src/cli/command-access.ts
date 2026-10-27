@@ -14,6 +14,7 @@ import {
   type AuthorizationCapability,
 } from "../permissions/authorization-guidance.js";
 import { RAVI_CONTEXT_KEY_ENV } from "../runtime/context-registry.js";
+import { isRuntimeContextLive } from "../runtime/context-liveness.js";
 import type {
   CapabilityContextLike,
   PermissionProviderCliCommandOperation,
@@ -230,6 +231,12 @@ function resolveCommandAccessAuthority(
   const ctx = getContext();
   const hasContextKey = Boolean(process.env[RAVI_CONTEXT_KEY_ENV]?.trim());
   const useRuntimeContext = source !== "cli" || hasContextKey;
+  if (useRuntimeContext && ctx?.context && !isRuntimeContextLive(ctx.context)) {
+    return {
+      allowed: false,
+      errorMessage: `Permission denied: runtime context ${ctx.context.contextId} is revoked or expired`,
+    };
+  }
   if (useRuntimeContext && ctx?.context) {
     const agentId = ctx.agentId ?? ctx.context.agentId;
     const context: CapabilityContextLike = {
