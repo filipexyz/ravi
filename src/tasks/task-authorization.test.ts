@@ -151,6 +151,24 @@ describe("task visibility and targets", () => {
     expect(isTaskVisibleToCaller(task)).toBe(true);
   });
 
+  it("shows the task to the agent an open decision waits on, so it can answer", () => {
+    const { taskId } = seedDispatchedTask();
+    dbDecideTask(taskId, { key: "window", ask: "When?", ownerType: "agent", ownerId: "intruder", actor: "main" });
+    const task = dbGetTask(taskId)!;
+    const owner = agentTurn("intruder", "intruder-main");
+    expect(runWithContext(owner, () => isTaskVisibleToCaller(task))).toBe(true);
+    runWithContext(owner, () =>
+      answerTaskDecision(taskId, {
+        key: "window",
+        answer: "now",
+        actor: "intruder-main",
+        agentId: "intruder",
+        sessionName: "intruder-main",
+      }),
+    );
+    expect(runWithContext(owner, () => isTaskVisibleToCaller(task))).toBe(false);
+  });
+
   it("refuses dispatching to another agent or reporting to its session", () => {
     const intruder = agentTurn("intruder", "intruder-main");
     runWithContext(intruder, () => {

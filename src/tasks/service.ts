@@ -1844,8 +1844,9 @@ export function taskCallerVisibilityEnforced(): boolean {
 
 /**
  * A task is visible to an agent turn when it holds a grant on the task, when it
- * can read the task's assignee, creator or dispatcher agent, or when the task
- * reports to one of its sessions.
+ * can read the task's assignee, creator or dispatcher agent, when the task
+ * reports to one of its sessions, or when an open decision on it waits on the
+ * agent (it must read the question to answer it).
  */
 export function isTaskVisibleToCaller(task: TaskRecord): boolean {
   const scopeCtx = enforcedTaskCallerScope();
@@ -1861,9 +1862,14 @@ export function isTaskVisibleToCaller(task: TaskRecord): boolean {
     return true;
   }
   const reportTo = assignment?.reportToSessionName ?? task.reportToSessionName;
-  return Boolean(
+  if (
     reportTo &&
-      [scopeCtx.sessionName, scopeCtx.sessionKey].some((ref) => ref && sessionRefsFor(reportTo).includes(ref)),
+    [scopeCtx.sessionName, scopeCtx.sessionKey].some((ref) => ref && sessionRefsFor(reportTo).includes(ref))
+  ) {
+    return true;
+  }
+  return dbListTaskDecisions(task.id).some(
+    (decision) => decision.status === "open" && decision.ownerType === "agent" && decision.ownerId === scopeCtx.agentId,
   );
 }
 
