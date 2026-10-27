@@ -82,6 +82,11 @@ export const SLACK_THREAD_ERROR_CODES = [
 ] as const;
 export type SlackThreadErrorCode = (typeof SLACK_THREAD_ERROR_CODES)[number];
 
+/** Quote a value for a copy-paste command line, leaving plain names as they are. */
+function shellArg(value: string): string {
+  return /^[A-Za-z0-9_.:@%+=/-]+$/.test(value) ? value : `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
 export function slackThreadError(code: SlackThreadErrorCode, message: string, suggestedAction?: string) {
   return new CliExpectedError(message, code, 1, suggestedAction);
 }
@@ -684,7 +689,7 @@ export async function sendSlackThreadMessage(
     throw slackThreadError(
       "THREAD_NOT_FOUND",
       `Slack thread not found for this session: ${input.ref}`,
-      `List this session's threads with: ravi sessions threads --all --session ${parent.name ?? parent.sessionKey}`,
+      `List this session's threads with: ravi sessions threads --all --session ${shellArg(parent.name ?? parent.sessionKey)}`,
     );
   }
   if (

@@ -47,6 +47,9 @@
 - [ ] `thread.list` MUST mark an open thread whose child session is gone with
       `childSessionMissing: true`, and `thread-send` to it MUST fail with
       `THREAD_SESSION_MISSING` (`src/channels/slack/thread-lifecycle.test.ts`).
+- [ ] A session rename MUST refuse a name an open thread saves for another
+      child session, even when that child is gone
+      (`src/router/thread-identity.test.ts`).
 
 ## Commands
 

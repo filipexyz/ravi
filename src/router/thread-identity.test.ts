@@ -77,4 +77,18 @@ describe("channel thread identity", () => {
     });
     expect(assessSessionThreadIdentity("dev-channel-thread", null)).toEqual({ kind: "none" });
   });
+
+  it("refuses to rename another session to a name an open thread still owns, even with its child gone", () => {
+    registerThread();
+    getOrCreateSession(PARENT_KEY, "dev", "/tmp/dev", { name: "dev-channel" });
+    getOrCreateSession("agent:dev:main", "dev", "/tmp/dev", { name: "dev-main" });
+
+    expect(() => renameSessionName("agent:dev:main", "dev-channel-thread")).toThrow(
+      "Session name is reserved by an open channel thread: dev-channel-thread",
+    );
+    expect(resolveSession("dev-main")?.sessionKey).toBe("agent:dev:main");
+
+    getOrCreateSession(CHILD_KEY, "dev", "/tmp/dev", { name: "dev-channel-thread" });
+    expect(renameSessionName(CHILD_KEY, "dev-channel-thread").changed).toBe(false);
+  });
 });

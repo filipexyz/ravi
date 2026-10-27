@@ -8,7 +8,7 @@
 import type { Statement } from "bun:sqlite";
 import { toPersistedChannelContext, type ChannelContext } from "../channels/context.js";
 import type { SessionEntry } from "./types.js";
-import { renameThreadSessionNames } from "./thread-identity.js";
+import { findOpenThreadIdentity, renameThreadSessionNames } from "./thread-identity.js";
 import {
   dbCreateSessionChatSubscription,
   dbDetachSessionChatSubscription,
@@ -854,6 +854,10 @@ export function renameSessionName(sessionKey: string, name: string): RenameSessi
   const existing = getSessionByName(newName);
   if (existing && existing.sessionKey !== sessionKey) {
     throw new Error(`Session name already exists: ${newName}`);
+  }
+  const reservedBy = findOpenThreadIdentity(newName);
+  if (reservedBy && reservedBy.childSessionKey !== sessionKey) {
+    throw new Error(`Session name is reserved by an open channel thread: ${newName}`);
   }
 
   const oldName = before.name ?? null;

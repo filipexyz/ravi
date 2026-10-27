@@ -155,6 +155,8 @@ ravi sessions thread-send <thread> "<instructions>"
   thread with `childSessionMissing: true` and MUST NOT report it as unstarted.
 - Renaming a session MUST update the thread registry's saved child and parent
   names, so an open thread stays bound to its child's current name.
+  A rename MUST refuse a name that an open thread saves for another child
+  session, even when that child session no longer exists.
 
 ## Root Card
 

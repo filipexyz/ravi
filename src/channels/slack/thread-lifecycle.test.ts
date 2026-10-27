@@ -666,6 +666,15 @@ describe("Slack thread orchestration", () => {
     await expect(
       sendSlackThreadMessage({ parentSession: parent, ref: "unknown-thread", message: "Hi" }, dependencies),
     ).rejects.toMatchObject({ code: "THREAD_NOT_FOUND" });
+    await expect(
+      sendSlackThreadMessage(
+        { parentSession: { ...parent, name: "team's channel" }, ref: "unknown-thread", message: "Hi" },
+        dependencies,
+      ),
+    ).rejects.toMatchObject({
+      code: "THREAD_NOT_FOUND",
+      suggestedAction: "List this session's threads with: ravi sessions threads --all --session 'team'\\''s channel'",
+    });
   });
 
   it("titles a thread with the first line of its initial message, trimmed", () => {
