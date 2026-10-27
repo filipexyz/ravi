@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { closeSlackThreadLifecycle, registerInboundSlackThread } from "../channels/slack/thread-lifecycle-store.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { deleteSession, getOrCreateSession, renameSessionName, resolveSession } from "./sessions.js";
 import { assessSessionThreadIdentity, findOpenThreadIdentity } from "./thread-identity.js";
 
 let stateDir: string | null = null;
@@ -59,5 +60,21 @@ describe("channel thread identity", () => {
       sessionKey: "dev-channel-thread",
     });
     expect(assessSessionThreadIdentity("dev-channel-thread", { sessionKey: CHILD_KEY }).kind).toBe("ok");
+  });
+
+  it("follows a renamed thread child, so the new name stays protected after the session is deleted", () => {
+    registerThread();
+    getOrCreateSession(PARENT_KEY, "dev", "/tmp/dev", { name: "dev-channel" });
+    getOrCreateSession(CHILD_KEY, "dev", "/tmp/dev", { name: "dev-channel-thread" });
+
+    renameSessionName(CHILD_KEY, "renamed-thread");
+    renameSessionName(PARENT_KEY, "renamed-channel");
+    deleteSession(CHILD_KEY);
+
+    expect(assessSessionThreadIdentity("renamed-thread", resolveSession("renamed-thread"))).toMatchObject({
+      kind: "child_missing",
+      thread: { parentSessionName: "renamed-channel" },
+    });
+    expect(assessSessionThreadIdentity("dev-channel-thread", null)).toEqual({ kind: "none" });
   });
 });

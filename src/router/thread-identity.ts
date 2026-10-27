@@ -1,3 +1,4 @@
+import type { Database } from "bun:sqlite";
 import { getDb } from "./router-db.js";
 import type { SessionEntry } from "./types.js";
 
@@ -80,4 +81,19 @@ export function assessSessionThreadIdentity(
     return { kind: "key_mismatch", thread, sessionKey: session.sessionKey };
   }
   return { kind: "ok", thread };
+}
+
+/**
+ * A session rename keeps the thread registry's saved names in step, so a
+ * renamed thread child stays protected by its new name (and its old name is
+ * free again), and a renamed parent is named correctly in refusals.
+ * Runs inside the rename's write.
+ */
+export function renameThreadSessionNames(database: Database, sessionKey: string, newName: string): void {
+  database
+    .prepare("UPDATE slack_thread_lifecycle SET child_session_name = ? WHERE child_session_key = ?")
+    .run(newName, sessionKey);
+  database
+    .prepare("UPDATE slack_thread_lifecycle SET parent_session_name = ? WHERE parent_session_key = ?")
+    .run(newName, sessionKey);
 }

@@ -153,6 +153,8 @@ ravi sessions thread-send <thread> "<instructions>"
   renders local copy for each code.
 - A thread record can outlive its child session. `threads` MUST mark that
   thread with `childSessionMissing: true` and MUST NOT report it as unstarted.
+- Renaming a session MUST update the thread registry's saved child and parent
+  names, so an open thread stays bound to its child's current name.
 
 ## Root Card
 

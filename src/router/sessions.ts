@@ -8,6 +8,7 @@
 import type { Statement } from "bun:sqlite";
 import { toPersistedChannelContext, type ChannelContext } from "../channels/context.js";
 import type { SessionEntry } from "./types.js";
+import { renameThreadSessionNames } from "./thread-identity.js";
 import {
   dbCreateSessionChatSubscription,
   dbDetachSessionChatSubscription,
@@ -873,6 +874,7 @@ export function renameSessionName(sessionKey: string, name: string): RenameSessi
     () => {
       const s = getStatements();
       s.updateName.run(newName, Date.now(), sessionKey);
+      renameThreadSessionNames(db, sessionKey, newName);
       return oldName ? dbRenameRouteSessionName(oldName, newName) : 0;
     },
     { label: "router:renameSessionCanonical" },
