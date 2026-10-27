@@ -35688,6 +35688,9 @@ public enum RaviSchemas {
                         "connectedAt": {
                           "type": "number"
                         },
+                        "detail": {
+                          "type": "string"
+                        },
                         "id": {
                           "type": "string"
                         },
@@ -36389,6 +36392,9 @@ public enum RaviSchemas {
                         "connectedAt": {
                           "type": "number"
                         },
+                        "detail": {
+                          "type": "string"
+                        },
                         "id": {
                           "type": "string"
                         },
@@ -36818,6 +36824,9 @@ public enum RaviSchemas {
                     },
                     "connectedAt": {
                       "type": "number"
+                    },
+                    "detail": {
+                      "type": "string"
                     },
                     "id": {
                       "type": "string"
@@ -37265,6 +37274,9 @@ public enum RaviSchemas {
                         },
                         "connectedAt": {
                           "type": "number"
+                        },
+                        "detail": {
+                          "type": "string"
                         },
                         "id": {
                           "type": "string"

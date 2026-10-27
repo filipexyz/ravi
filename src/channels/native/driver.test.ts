@@ -1,5 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import { readFile } from "node:fs/promises";
+import { CredentialBrokerError } from "../../credentials/errors.js";
 import type { ChannelConfig } from "../../router/router-db.js";
 import {
   CHANNEL_BACKEND_PROTOCOL,
@@ -592,6 +593,62 @@ describe("native channel driver contract", () => {
       "stop:example-b",
       "stop:example-a",
     ]);
+  });
+
+  it("reports a missing connection as missing_credentials and a backend failure as startup_failed, codes only", async () => {
+    const registry = new NativeChannelDriverRegistry();
+    registry.register({
+      descriptor: {
+        protocol: NATIVE_CHANNEL_DRIVER_PROTOCOL,
+        schemaVersion: NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION,
+        driverId: "example.native",
+        provider: "example",
+        capabilities: ["inbound"],
+      },
+      createRuntime(context) {
+        if (context.channel.name === "example-missing") {
+          throw new CredentialBrokerError("connection_not_found", "Connection not found: example:sensitive-name");
+        }
+        if (context.channel.name === "example-backend") {
+          throw new CredentialBrokerError("backend_unavailable", "VAULT_ADDR and VAULT_TOKEN are required");
+        }
+        throw new Error("sensitive-startup-detail");
+      },
+    });
+    const manager = new NativeChannelDriverManager({
+      channels: {
+        "example-backend": channel("example-backend"),
+        "example-missing": channel("example-missing"),
+        "example-other": channel("example-other"),
+      },
+      registry,
+      createHostLease: () => hostLease(),
+    });
+
+    await manager.start();
+    expect(manager.health()).toContainEqual({
+      id: "example:example-missing",
+      channelId: "example",
+      status: "failed",
+      reason: "missing_credentials",
+      detail: "connection_not_found",
+    });
+    expect(manager.health()).toContainEqual({
+      id: "example:example-backend",
+      channelId: "example",
+      status: "failed",
+      reason: "startup_failed",
+      detail: "backend_unavailable",
+    });
+    expect(manager.health()).toContainEqual({
+      id: "example:example-other",
+      channelId: "example",
+      status: "failed",
+      reason: "startup_failed",
+    });
+    const health = JSON.stringify(manager.health());
+    expect(health).not.toContain("sensitive-name");
+    expect(health).not.toContain("sensitive-startup-detail");
   });
 
   it("scopes registered sinks to the provider and disposes them with the runtime lease", async () => {

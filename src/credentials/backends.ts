@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { CredentialBrokerError } from "./errors.js";
 import type { CredentialBackend } from "./types.js";
 
 export interface SecretWriteInput {
@@ -88,6 +89,12 @@ function deleteKeychainSecret(secretRef: string): boolean {
 
 function runSecurity(args: string[]): string {
   const result = spawnSync("security", args, { encoding: "utf8" });
+  if ((result.error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
+    throw new CredentialBrokerError(
+      "backend_unavailable",
+      "The keychain backend needs the macOS `security` CLI, which is not on PATH.",
+    );
+  }
   if (result.status !== 0) {
     throw new Error(`security failed: ${redactSecurityError(result.stderr || result.stdout)}`);
   }
@@ -174,7 +181,12 @@ async function vaultRequest(
 ): Promise<unknown | null> {
   const addr = process.env.VAULT_ADDR?.replace(/\/+$/, "");
   const token = process.env.VAULT_TOKEN;
-  if (!addr || !token) throw new Error("VAULT_ADDR and VAULT_TOKEN are required for the vault backend.");
+  if (!addr || !token) {
+    throw new CredentialBrokerError(
+      "backend_unavailable",
+      "VAULT_ADDR and VAULT_TOKEN are required for the vault backend.",
+    );
+  }
   const url = `${addr}/v1/${encodeURIComponent(ref.mount)}/data/${ref.path
     .split("/")
     .map(encodeURIComponent)

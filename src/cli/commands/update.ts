@@ -13,6 +13,8 @@ import {
 } from "../../managed-runtime.js";
 import { managedRuntimeSnapshot, runManagedRuntimeRebindSupervisor } from "../../managed-runtime-rebind.js";
 import { CHANNELS_PM2_PROCESS_NAME, getPm2Processes, PM2_PROCESS_NAME, type Pm2Process } from "../../pm2.js";
+import { dbListChannels } from "../../router/router-db.js";
+import type { ChannelConfig } from "../../router/router-db.js";
 import { getRaviStateDir } from "../../utils/paths.js";
 import { CONTRACT_EXIT_USAGE, contractFail } from "../agent-contract.js";
 
@@ -468,6 +470,27 @@ export function resolveUpdatedManagedRuntimeTarget(preferredPackageRoot?: string
   return null;
 }
 
+/**
+ * The rebind restarts `ravi-channels` only when it was already online, so an
+ * update never starts it. Native channels (Slack) queue every reply for that
+ * runner: when any is enabled and the runner was not online, say so.
+ */
+export function nativeChannelRunnerUpdateWarning(
+  previousProcesses: Pm2Process[],
+  listChannels: () => ChannelConfig[] = dbListChannels,
+): string | null {
+  let enabled: number;
+  try {
+    enabled = listChannels().filter((channel) => channel.enabled !== false).length;
+  } catch {
+    return null;
+  }
+  if (enabled === 0) return null;
+  const runner = previousProcesses.find((process) => process.name === CHANNELS_PM2_PROCESS_NAME);
+  if (runner?.status === "online") return null;
+  return `${enabled} native channel(s) are enabled but ${CHANNELS_PM2_PROCESS_NAME} is not running, so their replies stay queued; start it with \`ravi channels start\` and check \`ravi doctor --domain channels\`.`;
+}
+
 async function reconcileManagedRuntime(
   restart: boolean,
   previousProcesses: Pm2Process[],
@@ -651,6 +674,11 @@ async function performUpdate(options: RaviUpdateOptions, reporter: UpdateReporte
       reporter.line("  The daemon now runs from this checkout; `ravi daemon status` from the PATH install reports");
       reporter.line("  drift until that install is updated too.");
     }
+    const runnerWarning = nativeChannelRunnerUpdateWarning(previousProcesses);
+    if (runnerWarning) {
+      outcome.warnings.push(runnerWarning);
+      reporter.warn(`Warning: ${runnerWarning}`);
+    }
     return {
       success: true,
       package: PACKAGE_NAME,
@@ -724,6 +752,11 @@ async function performUpdate(options: RaviUpdateOptions, reporter: UpdateReporte
     target,
     reporter,
   );
+  const runnerWarning = nativeChannelRunnerUpdateWarning(previousProcesses);
+  if (runnerWarning) {
+    warnings.push(runnerWarning);
+    reporter.warn(`Warning: ${runnerWarning}`);
+  }
   return {
     success: true,
     package: PACKAGE_NAME,

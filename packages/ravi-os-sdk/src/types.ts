@@ -6498,6 +6498,7 @@ export type ChannelsRestartReturn = {
       adapters: Array<{
         channelId: string;
         connectedAt?: number;
+        detail?: string;
         id: string;
         lastPongAt?: number;
         reason?: string;
@@ -6632,6 +6633,7 @@ export type ChannelsStartReturn = {
       adapters: Array<{
         channelId: string;
         connectedAt?: number;
+        detail?: string;
         id: string;
         lastPongAt?: number;
         reason?: string;
@@ -6714,6 +6716,7 @@ export type ChannelsStatusReturn = {
     adapters: Array<{
       channelId: string;
       connectedAt?: number;
+      detail?: string;
       id: string;
       lastPongAt?: number;
       reason?: string;
@@ -6800,6 +6803,7 @@ export type ChannelsStopReturn = {
       adapters: Array<{
         channelId: string;
         connectedAt?: number;
+        detail?: string;
         id: string;
         lastPongAt?: number;
         reason?: string;

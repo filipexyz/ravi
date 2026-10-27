@@ -35428,6 +35428,9 @@ export const ChannelsRestartReturnSchema = {
                       "connectedAt": {
                         "type": "number"
                       },
+                      "detail": {
+                        "type": "string"
+                      },
                       "id": {
                         "type": "string"
                       },
@@ -36123,6 +36126,9 @@ export const ChannelsStartReturnSchema = {
                       "connectedAt": {
                         "type": "number"
                       },
+                      "detail": {
+                        "type": "string"
+                      },
                       "id": {
                         "type": "string"
                       },
@@ -36550,6 +36556,9 @@ export const ChannelsStatusReturnSchema = {
                   },
                   "connectedAt": {
                     "type": "number"
+                  },
+                  "detail": {
+                    "type": "string"
                   },
                   "id": {
                     "type": "string"
@@ -36995,6 +37004,9 @@ export const ChannelsStopReturnSchema = {
                       },
                       "connectedAt": {
                         "type": "number"
+                      },
+                      "detail": {
+                        "type": "string"
                       },
                       "id": {
                         "type": "string"

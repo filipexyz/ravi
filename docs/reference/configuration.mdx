@@ -275,7 +275,7 @@ ravi channels logs          # the ravi-channels runner
 
 If you run NATS yourself instead of through Omni, it is your own PM2 process (for example `nats`). See [Install](/start/install).
 
-`ravi daemon start` starts only `ravi`. `ravi daemon status` shows `ravi`, `omni-nats` and `omni-api`; check the runner with `ravi channels status` or `pm2 ls`. `ravi update` restarts both `ravi` and `ravi-channels`.
+`ravi daemon start` starts only `ravi`. `ravi daemon status` shows `ravi`, `omni-nats` and `omni-api`; check the runner with `ravi channels status` or `pm2 ls`. `ravi update` restarts only the processes that were online before it ran, so `ravi-channels` is restarted only if the runner was already running; it warns when native channels are enabled and the runner is not online.
 
 To bring everything back after a reboot:
 

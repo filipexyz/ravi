@@ -53,3 +53,12 @@ describe("lazy NATS connect failure logging", () => {
     ).toBe(1);
   });
 });
+
+describe("redactNatsUrl", () => {
+  it("drops credentials and tokens but keeps the server", async () => {
+    const { redactNatsUrl } = await import("./nats.js");
+    expect(redactNatsUrl("nats://user:secret@127.0.0.1:4222")).toBe("nats://[redacted]@127.0.0.1:4222");
+    expect(redactNatsUrl("nats://token@a:4222,nats://b:4222")).toBe("nats://[redacted]@a:4222,nats://b:4222");
+    expect(redactNatsUrl("nats://127.0.0.1:4222")).toBe("nats://127.0.0.1:4222");
+  });
+});
