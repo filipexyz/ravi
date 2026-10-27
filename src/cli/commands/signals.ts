@@ -28,6 +28,7 @@ import {
   resolveSignal,
   unmuteSignal,
   updateSignal,
+  isProducerOwnedSignalKey,
 } from "../../signals/service.js";
 import { dbClearKeyMute, dbSetKeyMute } from "../../signals/signal-db.js";
 import { readSessionSignalContext, signalIsInSessionScope } from "../../signals/subjects.js";
@@ -385,6 +386,9 @@ export class SignalsCommands {
       }
       if (kind === "fact" && signalCaller().isAgent) {
         fail("Facts must be raised by code producers. Agent turns may raise judgment signals only.");
+      }
+      if (signalCaller().isAgent && isProducerOwnedSignalKey(key)) {
+        fail(`Key ${key} is reserved for Ravi's own producers; raise the judgment under another key.`);
       }
       const producerId =
         source?.trim() || (process.env.RAVI_SESSION_KEY ? `session:${process.env.RAVI_SESSION_KEY}` : "cli:signals");

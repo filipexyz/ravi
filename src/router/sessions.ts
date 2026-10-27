@@ -854,6 +854,15 @@ export function renameSessionName(sessionKey: string, name: string): RenameSessi
   if (existing && existing.sessionKey !== sessionKey) {
     throw new Error(`Session name already exists: ${newName}`);
   }
+  // Names and keys share one namespace: runners resolve both by name first, so
+  // a name equal to another session's key would capture that session's prompts.
+  const keyHolder = getSession(newName);
+  if (keyHolder && keyHolder.sessionKey !== sessionKey) {
+    throw new Error(`Session name collides with a session key: ${newName}`);
+  }
+  if (newName.toLowerCase().startsWith("agent:") && newName !== sessionKey) {
+    throw new Error(`Session names starting with 'agent:' are reserved for session keys: ${newName}`);
+  }
 
   const oldName = before.name ?? null;
   if (oldName === newName) {
@@ -1045,6 +1054,11 @@ export function getMainSession(agentId: string): SessionEntry | null {
  * This allows CLI commands to accept either format.
  */
 export function resolveSession(nameOrKey: string): SessionEntry | null {
+  // A key-shaped ref is a key: a name may not shadow another session's key.
+  if (nameOrKey.startsWith("agent:")) {
+    const byKey = getSession(nameOrKey);
+    if (byKey) return byKey;
+  }
   // Try name first
   const byName = getSessionByName(nameOrKey);
   if (byName) return byName;
