@@ -1,6 +1,15 @@
 import { getContext } from "../cli/context.js";
 import { resolveSubject, type SubjectRef } from "../identity/subject.js";
 import { CliExpectedError } from "../cli/expected-error.js";
+import {
+  canAccessResource,
+  canAccessSession,
+  canModifySession,
+  getScopeContext,
+  isScopeEnforced,
+  scopeHasCapability,
+  type ScopeContext,
+} from "../permissions/scope.js";
 import { nats } from "../nats.js";
 import { getAgent } from "../router/config.js";
 import { expandHome } from "../router/resolver.js";
@@ -1777,6 +1786,117 @@ function resolveTaskCreateAssignee(agentId?: string, assigneeAgentId?: string): 
   return agentId ?? assigneeAgentId;
 }
 
+/**
+ * The scope of a runtime agent turn that task authorization applies to, or null
+ * for the local operator, an admin principal and daemon-internal callers.
+ */
+function enforcedTaskCallerScope(): (ScopeContext & { agentId: string }) | null {
+  if (!getContext()?.context) return null;
+  const scopeCtx = getScopeContext();
+  if (!scopeCtx.agentId || !isScopeEnforced(scopeCtx)) return null;
+  return scopeCtx as ScopeContext & { agentId: string };
+}
+
+function sessionRefsFor(nameOrKey: string): string[] {
+  const session = resolveSession(nameOrKey);
+  return [...new Set([nameOrKey, session?.name, session?.sessionKey].filter((v): v is string => Boolean(v)))];
+}
+
+/**
+ * An agent turn may hand work only to itself or to an agent it may mutate, and
+ * may report to or speak as only sessions it can reach. Without this, the
+ * baseline tasks group would let any agent drive another agent's sessions
+ * under that agent's ceiling. Refusals look like the target does not exist.
+ */
+export function assertTaskTargetAuthorized(input: {
+  agentId?: string;
+  reportToSessionName?: string;
+  actorSessionName?: string;
+}): void {
+  const scopeCtx = enforcedTaskCallerScope();
+  if (!scopeCtx) return;
+  const agentId = input.agentId?.trim();
+  if (agentId && agentId !== scopeCtx.agentId && !canAccessResource(scopeCtx, agentId, "mutate")) {
+    throw new CliExpectedError(`Agent not found in runtime config: ${agentId}`, "TASK_AGENT_NOT_FOUND");
+  }
+  const reportTo = input.reportToSessionName?.trim();
+  if (reportTo && !sessionRefsFor(reportTo).some((ref) => canAccessSession(scopeCtx, ref))) {
+    throw new CliExpectedError(`Report target session not found: ${reportTo}`, "REPORT_TARGET_NOT_FOUND");
+  }
+  const actorSession = input.actorSessionName?.trim();
+  if (actorSession && !sessionRefsFor(actorSession).some((ref) => canModifySession(scopeCtx, ref))) {
+    throw new CliExpectedError(`Actor session not found: ${actorSession}`, "SESSION_NOT_FOUND");
+  }
+}
+
+function taskRelatedAgentIds(task: TaskRecord, assignment: TaskAssignment | null): string[] {
+  return [assignment?.agentId, task.assigneeAgentId, task.createdByAgentId, assignment?.assignedByAgentId].filter(
+    (value): value is string => Boolean(value),
+  );
+}
+
+/** True when task reads are filtered by {@link isTaskVisibleToCaller}. */
+export function taskCallerVisibilityEnforced(): boolean {
+  return enforcedTaskCallerScope() !== null;
+}
+
+/**
+ * A task is visible to an agent turn when it holds a grant on the task, when it
+ * can read the task's assignee, creator or dispatcher agent, or when the task
+ * reports to one of its sessions.
+ */
+export function isTaskVisibleToCaller(task: TaskRecord): boolean {
+  const scopeCtx = enforcedTaskCallerScope();
+  if (!scopeCtx) return true;
+  if (
+    scopeHasCapability(scopeCtx, "read", "task", task.id) ||
+    scopeHasCapability(scopeCtx, "mutate", "task", task.id)
+  ) {
+    return true;
+  }
+  const assignment = dbGetActiveAssignment(task.id);
+  if (taskRelatedAgentIds(task, assignment).some((agentId) => canAccessResource(scopeCtx, agentId, "read"))) {
+    return true;
+  }
+  const reportTo = assignment?.reportToSessionName ?? task.reportToSessionName;
+  return Boolean(
+    reportTo &&
+      [scopeCtx.sessionName, scopeCtx.sessionKey].some((ref) => ref && sessionRefsFor(reportTo).includes(ref)),
+  );
+}
+
+/**
+ * Lifecycle and decision mutations belong to the task's assignee, creator and
+ * dispatcher, or to whoever holds an explicit task grant. The command gate alone
+ * lets every agent with the baseline tasks group through for any task id.
+ */
+function assertTaskMutationAuthorized(
+  task: TaskRecord,
+  action: string,
+  options: { verb: string; extraAgentIds?: Array<string | null | undefined> },
+): void {
+  const scopeCtx = enforcedTaskCallerScope();
+  if (!scopeCtx) return;
+  const assignment = dbGetActiveAssignment(task.id);
+  const related = [...taskRelatedAgentIds(task, assignment), ...(options.extraAgentIds ?? [])];
+  if (related.includes(scopeCtx.agentId)) return;
+  if (
+    scopeHasCapability(scopeCtx, "mutate", "task", task.id) ||
+    scopeHasCapability(scopeCtx, "mutate", "tasks", action)
+  ) {
+    return;
+  }
+  if (!isTaskVisibleToCaller(task)) {
+    throw new Error(`Task not found: ${task.id}`);
+  }
+  throw new CliExpectedError(
+    `Cannot ${options.verb} task ${task.id}: only its assignee, creator or dispatcher may do that.`,
+    "PERMISSION_DENIED",
+    1,
+    `Ask the task's owner, or have an operator grant mutate task:${task.id}`,
+  );
+}
+
 export function requireTaskRuntimeAgent(agentId: string): { id: string; cwd: string } {
   const normalizedAgentId = agentId.trim();
   const agent = getAgent(normalizedAgentId);
@@ -3094,6 +3214,7 @@ export function reportTaskProgress(taskId: string, input: TaskProgressInput): { 
   if (!existingTask) {
     throw new Error(`Task not found: ${taskId}`);
   }
+  assertTaskMutationAuthorized(existingTask, "report", { verb: "report progress on" });
   assertTaskActorMatchesAssignment(taskId, input, "report progress on");
   ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
   return dbReportTaskProgress(taskId, {
@@ -3132,6 +3253,7 @@ export function archiveTask(
   if (!existingTask) {
     throw new Error(`Task not found: ${taskId}`);
   }
+  assertTaskMutationAuthorized(existingTask, "archive", { verb: "archive" });
   const { profile } = ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
   const result = dbArchiveTask(taskId, input);
   const documentedTask = result.wasNoop
@@ -3153,6 +3275,7 @@ export function unarchiveTask(
   if (!existingTask) {
     throw new Error(`Task not found: ${taskId}`);
   }
+  assertTaskMutationAuthorized(existingTask, "unarchive", { verb: "unarchive" });
   const { profile } = ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
   const result = dbUnarchiveTask(taskId, input);
   const documentedTask = result.wasNoop
@@ -3196,6 +3319,7 @@ export async function commentTask(
   if (!task) {
     throw new Error(`Task not found: ${taskId}`);
   }
+  assertTaskMutationAuthorized(task, "comment", { verb: "comment on" });
 
   const { task: profiledTask, profile: taskProfile } = ensureResolvedTaskProfile(task, {
     persistMissingProfileId: true,
@@ -3270,6 +3394,7 @@ export function decideTask(
   if (!existingTask) {
     throw new Error(`Task not found: ${taskId}`);
   }
+  assertTaskMutationAuthorized(existingTask, "decide", { verb: "open a decision on" });
   const result = dbDecideTask(taskId, input);
   return {
     task: dbGetTask(taskId) ?? existingTask,
@@ -3292,6 +3417,13 @@ export function answerTaskDecision(
     throw new Error(`Task not found: ${taskId}`);
   }
 
+  const openDecision = dbListTaskDecisions(taskId).find(
+    (decision) => decision.status === "open" && decision.key === input.key,
+  );
+  assertTaskMutationAuthorized(existingTask, "answer", {
+    verb: "answer a decision on",
+    extraAgentIds: openDecision?.ownerType === "agent" ? [openDecision.ownerId] : [],
+  });
   const assignment = dbGetActiveAssignment(taskId);
   if (assignment && input.sessionName && assignment.sessionName === input.sessionName) {
     throw new TaskDecisionError(
@@ -3331,6 +3463,7 @@ export function blockTask(
   if (!existingTask) {
     throw new Error(`Task not found: ${taskId}`);
   }
+  assertTaskMutationAuthorized(existingTask, "block", { verb: "block" });
   const { profile } = ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
   const result = dbBlockTask(taskId, input);
   const documentedTask = result.wasNoop
@@ -3357,6 +3490,7 @@ export function failTask(
   if (!existingTask) {
     throw new Error(`Task not found: ${taskId}`);
   }
+  assertTaskMutationAuthorized(existingTask, "fail", { verb: "fail" });
   const { profile } = ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
   const result = dbFailTask(taskId, input);
   const documentedTask = result.wasNoop
@@ -3384,6 +3518,7 @@ export async function completeTask(
   if (!existingTask) {
     throw new Error(`Task not found: ${taskId}`);
   }
+  assertTaskMutationAuthorized(existingTask, "done", { verb: "complete" });
   assertTaskActorMatchesAssignment(taskId, input, "complete");
   const { profile } = ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
   const result = dbCompleteTask(taskId, input);

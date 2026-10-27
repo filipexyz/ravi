@@ -53,6 +53,10 @@ import {
   saveTaskObserverChecklist,
   decideTask,
   answerTaskDecision,
+  assertTaskTargetAuthorized,
+  dbGetTask,
+  isTaskVisibleToCaller,
+  taskCallerVisibilityEnforced,
   listTaskDecisionAttention,
   normalizeTaskDecisionKey,
   parseTaskDecisionOwner,
@@ -73,6 +77,7 @@ import type {
   TaskComment,
   TaskDependencyEdge,
   TaskDecision,
+  TaskDecisionAttentionReport,
   TaskDecisionOwnerType,
   TaskEvent,
   TaskPriority,
@@ -1048,10 +1053,35 @@ type TaskDetailsWithTask = ReturnType<typeof getTaskDetails> & {
   task: NonNullable<ReturnType<typeof getTaskDetails>["task"]>;
 };
 
+function filterVisibleAttention(report: TaskDecisionAttentionReport): TaskDecisionAttentionReport {
+  const entries = report.entries.filter((entry) => {
+    const task = dbGetTask(entry.taskId);
+    return task ? isTaskVisibleToCaller(task) : false;
+  });
+  return {
+    ...report,
+    entries,
+    total: entries.length,
+    parkedCount: entries.filter((entry) => entry.parked).length,
+    decisionCount: entries.reduce((sum, entry) => sum + entry.decisionCount, 0),
+  };
+}
+
+/** A visible task can point at tasks the caller may not read; drop those nodes. */
+function withoutHiddenLineage(details: TaskDetailsWithTask): TaskDetailsWithTask {
+  if (!taskCallerVisibilityEnforced()) return details;
+  return {
+    ...details,
+    parentTask: details.parentTask && isTaskVisibleToCaller(details.parentTask) ? details.parentTask : null,
+    childTasks: details.childTasks.filter(isTaskVisibleToCaller),
+  };
+}
+
 function getTaskDetailsForContract(op: string, taskId: string, asJson?: boolean): TaskDetailsWithTask {
   try {
     const details = getTaskDetails(taskId);
-    if (details.task) return details as TaskDetailsWithTask;
+    if (details.task && isTaskVisibleToCaller(details.task))
+      return withoutHiddenLineage(details as TaskDetailsWithTask);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (!/task not found/i.test(message)) throw error;
@@ -1127,12 +1157,14 @@ export class TaskCommands {
     if (sessionName?.trim() && !assigneeAgentId) {
       fail("--session requires --agent or --assignee.");
     }
-    if (assigneeAgentId) {
-      try {
-        requireTaskRuntimeAgent(assigneeAgentId);
-      } catch (error) {
-        fail(error instanceof Error ? error.message : String(error));
-      }
+    try {
+      if (assigneeAgentId) requireTaskRuntimeAgent(assigneeAgentId);
+      assertTaskTargetAuthorized({
+        ...(assigneeAgentId ? { agentId: assigneeAgentId } : {}),
+        ...(reportToSessionName?.trim() ? { reportToSessionName } : {}),
+      });
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
     }
 
     const worktree = requireTaskWorktree(worktreeMode, worktreePath, worktreeBranch);
@@ -1297,6 +1329,8 @@ export class TaskCommands {
     if (typeof updatedSince === "number" && typeof updatedUntil === "number" && updatedSince > updatedUntil) {
       fail("--since must be earlier than or equal to --until.");
     }
+    // A runtime agent sees only tasks it may read, so the page is cut after that filter.
+    const visibilityFiltered = taskCallerVisibilityEnforced();
     const queryLimit = typeof pageLimit === "number" ? pageLimit + 1 : undefined;
     const resolvedStatus = requireStatus(status);
     const resolvedAgentId = mine ? (ctx?.agentId ?? undefined) : agentId?.trim() || undefined;
@@ -1304,7 +1338,7 @@ export class TaskCommands {
     const normalizedProfileId = profileId?.trim() || undefined;
     const normalizedTagSlug = parseTagSlug(tagSlug);
     const normalizedTextQuery = textQuery?.trim() || undefined;
-    const fetchedTasks = listTasks({
+    const queriedTasks = listTasks({
       status: resolvedStatus,
       agentId: resolvedAgentId,
       sessionName: resolvedSessionName,
@@ -1314,7 +1348,7 @@ export class TaskCommands {
       ...(lineageFilters.rootTaskId ? { rootTaskId: lineageFilters.rootTaskId } : {}),
       ...(lineageFilters.onlyRootTasks ? { onlyRootTasks: true } : {}),
       ...(normalizedTextQuery ? { query: normalizedTextQuery } : {}),
-      ...(typeof queryLimit === "number" ? { limit: queryLimit } : {}),
+      ...(typeof queryLimit === "number" && !visibilityFiltered ? { limit: queryLimit } : {}),
       ...(typeof updatedSince === "number" ? { updatedSince } : {}),
       ...(typeof updatedUntil === "number" ? { updatedUntil } : {}),
       sort: sortField,
@@ -1322,6 +1356,9 @@ export class TaskCommands {
       ...(taskCursor ? { cursor: taskCursor } : {}),
       archiveMode,
     });
+    const fetchedTasks = visibilityFiltered
+      ? queriedTasks.filter(isTaskVisibleToCaller).slice(0, queryLimit)
+      : queriedTasks;
     const hasMore = typeof pageLimit === "number" && fetchedTasks.length > pageLimit;
     const tasks = hasMore && typeof pageLimit === "number" ? fetchedTasks.slice(0, pageLimit) : fetchedTasks;
     const lastTask = tasks[tasks.length - 1];
@@ -1901,6 +1938,11 @@ export class TaskCommands {
     const normalizedAgentId = agentId.trim();
     try {
       requireTaskRuntimeAgent(normalizedAgentId);
+      assertTaskTargetAuthorized({
+        agentId: normalizedAgentId,
+        ...(reportToSessionName?.trim() ? { reportToSessionName } : {}),
+        ...(actorSessionName?.trim() ? { actorSessionName } : {}),
+      });
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error));
     }
@@ -2384,7 +2426,12 @@ export class TaskCommands {
     try {
       const normalizedKey = normalizeTaskDecisionKey(key);
       const actor = getTaskActor();
-      const answerActor = by?.trim() || actor.actor;
+      // In an agent turn the authenticated actor answers; --by only names who it answers for.
+      const onBehalfOf = by?.trim();
+      const answerActor =
+        actor.agentId && onBehalfOf && onBehalfOf !== actor.actor
+          ? `${actor.actor} (for ${onBehalfOf})`
+          : onBehalfOf || actor.actor;
       const result = answerTaskDecision(taskId, {
         key: normalizedKey,
         answer: text.trim(),
@@ -2429,11 +2476,12 @@ export class TaskCommands {
       });
     }
 
-    const report = listTaskDecisionAttention({
+    const fullReport = listTaskDecisionAttention({
       ...(agentId?.trim() ? { agentId: agentId.trim() } : {}),
       ...(ownerType ? { ownerType } : {}),
       ...(taskId?.trim() ? { taskId: taskId.trim() } : {}),
     });
+    const report = taskCallerVisibilityEnforced() ? filterVisibleAttention(fullReport) : fullReport;
 
     if (asJson) {
       console.log(JSON.stringify(report, null, 2));
@@ -2482,7 +2530,7 @@ export class TaskCommands {
     let lastSeenEventId = 0;
     if (taskId) {
       const details = getTaskDetails(taskId);
-      if (!details.task) {
+      if (!details.task || !isTaskVisibleToCaller(details.task)) {
         fail(`Task not found: ${taskId}`);
       }
       console.log(`\nWatching ${taskId}\n`);
@@ -2524,6 +2572,11 @@ export class TaskCommands {
           const stream = nats.subscribe(pattern);
           for await (const event of stream) {
             if (closed) break;
+            if (!taskId && taskCallerVisibilityEnforced()) {
+              const eventTaskId = typeof event.data.taskId === "string" ? event.data.taskId : null;
+              const eventTask = eventTaskId ? dbGetTask(eventTaskId) : null;
+              if (!eventTask || !isTaskVisibleToCaller(eventTask)) continue;
+            }
             console.log(formatWatchLine(event.data, asJson));
             if (taskId) {
               const eventId =

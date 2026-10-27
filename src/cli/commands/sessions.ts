@@ -53,6 +53,7 @@ import {
   extendSession,
   makeSessionPermanent,
   attachChatToSession,
+  findSessionByAttachedChat,
   describeSessionChatAssociation,
   detachChatFromSession,
   getSessionTurnUsageSummary,
@@ -162,7 +163,9 @@ import {
   isScopeEnforced,
   canAccessSession,
   canModifySession,
+  canAccessResource,
   filterAccessibleSessions,
+  type ScopeContext,
 } from "../../permissions/scope.js";
 import { formatInspectionSection, printInspectionBlock, printInspectionField } from "../inspection-output.js";
 import { requestReply } from "../../utils/request-reply.js";
@@ -6164,7 +6167,8 @@ export class SessionCommands {
     asJson?: boolean,
   ) {
     const session = resolveSession(nameOrKey);
-    if (!session) {
+    const scopeCtx = getScopeContext();
+    if (!session || (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, session.name ?? session.sessionKey))) {
       fail(`Session not found: ${nameOrKey}`);
       return;
     }
@@ -6173,16 +6177,18 @@ export class SessionCommands {
       return;
     }
     const chat = resolveAttachChat(chatRef) ?? seedRoutedSlackChat(chatRef, session.sessionKey);
-    if (!chat) {
+    if (!chat || (isScopeEnforced(scopeCtx) && !callerCanTakeChat(scopeCtx, chat, session.sessionKey))) {
       fail(`Chat not found: ${chatRef}`);
       return;
     }
+    const callerAgentId = getContext()?.agentId;
     try {
       const result = attachChatToSession({
         sessionKey: session.sessionKey,
         chatId: chat.id,
         role: "input",
-        attachedByType: "user",
+        attachedByType: callerAgentId ? "agent" : "user",
+        attachedById: callerAgentId ?? null,
         attachedReason: reason?.trim() || "cli-attach",
         setOutputTarget: true,
       });
@@ -6250,7 +6256,8 @@ export class SessionCommands {
     asJson?: boolean,
   ) {
     const session = resolveSession(nameOrKey);
-    if (!session) {
+    const scopeCtx = getScopeContext();
+    if (!session || (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, session.name ?? session.sessionKey))) {
       fail(`Session not found: ${nameOrKey}`);
       return;
     }
@@ -7176,7 +7183,8 @@ export class SessionCommands {
     asJson?: boolean,
   ) {
     const session = resolveSession(nameOrKey);
-    if (!session) {
+    const scopeCtx = getScopeContext();
+    if (!session || (isScopeEnforced(scopeCtx) && !canAccessSession(scopeCtx, session.name ?? session.sessionKey))) {
       fail(`Session not found: ${nameOrKey}`);
       return;
     }
@@ -7255,6 +7263,39 @@ declareCommandReturns(SessionCommands, {
   trace: commandEnvelopeReturnSchema,
   visibility: commandEnvelopeReturnSchema,
 });
+
+/**
+ * An agent may attach a chat only when every session that already owns it
+ * (its active subscription, the session that last replied to it) is one the
+ * caller may modify, and every route naming it targets an agent the caller may
+ * mutate. Otherwise attach would redirect another agent's conversation.
+ */
+function callerCanTakeChat(
+  scopeCtx: ScopeContext,
+  chat: NonNullable<ReturnType<typeof dbGetChat>>,
+  targetSessionKey: string,
+): boolean {
+  const ownerKeys = new Set<string>();
+  const subscription = findSessionByAttachedChat(chat.id);
+  if (subscription) ownerKeys.add(subscription.sessionKey);
+  const lastReplied = findSessionByChatId(chat.platformChatId);
+  if (lastReplied) ownerKeys.add(lastReplied.sessionKey);
+  ownerKeys.delete(targetSessionKey);
+  for (const key of ownerKeys) {
+    const owner = getSession(key);
+    const ref = owner?.name ?? key;
+    if (!canModifySession(scopeCtx, ref) && !canModifySession(scopeCtx, key)) return false;
+  }
+
+  const platformChatId = chat.platformChatId.trim().toLowerCase();
+  const patterns = new Set([platformChatId, `group:${platformChatId}`]);
+  for (const route of loadRouterConfig().routes) {
+    if (!patterns.has(route.pattern.trim().toLowerCase())) continue;
+    if (route.channel && route.channel !== chat.channel) continue;
+    if (!canAccessResource(scopeCtx, route.agent, "mutate")) return false;
+  }
+  return true;
+}
 
 function resolveAttachChat(ref: string): ReturnType<typeof dbGetChat> {
   const direct = dbGetChat(ref);
