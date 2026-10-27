@@ -68,6 +68,8 @@ export interface RuntimeHostServicesOptions {
   approvalSource?: ApprovalTarget;
   toolContext: Record<string, unknown>;
   onSkillGatePersisted?: SkillGatePersistedListener;
+  /** The session's working directory, which the provider resolves relative tool paths against. */
+  cwd?: string;
 }
 
 function hasUnrestrictedToolExecution(agentId: string): boolean {
@@ -481,6 +483,7 @@ async function authorizeRuntimeCommandExecution(
     ...(options.context.sessionKey ? { sessionKey: options.context.sessionKey } : {}),
     sessionName: options.context.sessionName ?? options.sessionName,
     capabilities: options.context.capabilities,
+    ...(options.cwd ? { cwd: options.cwd } : {}),
   });
 
   const preliminary = evaluateBashPermission(command, buildBashContext());
@@ -684,7 +687,7 @@ async function authorizeRuntimeCommandExecution(
 }
 
 async function authorizeRuntimeToolUse(
-  options: Pick<RuntimeHostServicesOptions, "context" | "agentId" | "sessionName" | "onSkillGatePersisted">,
+  options: Pick<RuntimeHostServicesOptions, "context" | "agentId" | "sessionName" | "onSkillGatePersisted" | "cwd">,
   request: RuntimeToolUseAuthorizationRequest,
 ): Promise<RuntimeApprovalResult> {
   const result = await authorizeRuntimeContext({
@@ -704,6 +707,7 @@ async function authorizeRuntimeToolUse(
     can: contextCan(options.context),
     agentId: options.agentId,
     targets: fileWriteToolTargets(request.toolName, request.input),
+    cwd: options.cwd,
   });
   if (configWriteDenial) {
     emitRuntimePolicyDenied(options, {

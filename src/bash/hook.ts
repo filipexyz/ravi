@@ -285,6 +285,8 @@ export interface BashPermissionContext {
   source?: ContextSource;
   capabilities?: ContextCapability[];
   metadata?: Record<string, unknown> | null;
+  /** The shell's starting directory, which relative redirect targets resolve against. */
+  cwd?: string;
 }
 
 export interface BashPermissionDecision {
@@ -440,6 +442,7 @@ function checkExecutablePermissionsForContext(
     can: (permission, objectType, objectId) => canWithBashContext(ctx, permission, objectType, objectId),
     agentId: ctx.agentId,
     targets: fileWrites,
+    cwd: ctx.cwd,
   });
   if (configWriteDenial) {
     return {
@@ -643,6 +646,7 @@ export function createBashPermissionHook(options: BashHookOptions): HookCallback
       source: scopeCtx.source,
       capabilities: scopeCtx.context?.capabilities,
       metadata: scopeCtx.context?.metadata,
+      ...(typeof input.cwd === "string" && input.cwd ? { cwd: input.cwd } : {}),
     };
     const decision = evaluateBashPermission(command, bashContext);
 

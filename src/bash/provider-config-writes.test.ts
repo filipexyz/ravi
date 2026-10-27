@@ -6,6 +6,8 @@ import { runWithContext, type ToolContext } from "../cli/context.js";
 import { fileWriteToolTargets, isProviderConfigPath } from "../permissions/provider-config-paths.js";
 import type { ContextCapability } from "../router/router-db.js";
 import { dbCreateAgent } from "../router/router-db.js";
+import { createRuntimeContext } from "../runtime/context-registry.js";
+import { createRuntimeHostServices } from "../runtime/host-services.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { createToolPermissionHook, evaluateBashPermission } from "./hook.js";
 
@@ -80,6 +82,41 @@ describe("writes to runtime provider settings", () => {
     const ctx = { agentId, capabilities: caps("use:tool:Write", "execute:executable:echo") };
     expect(evaluateBashPermission("echo '{}' > .claude/settings.json", ctx).allowed).toBe(false);
     expect(evaluateBashPermission("echo ok > notes.txt", ctx).allowed).toBe(true);
+  });
+
+  it("resolves a relative redirect against the shell's cwd, not the daemon's", () => {
+    mkdirSync(join(workspace, ".claude"));
+    symlinkSync(join(workspace, ".claude"), join(workspace, "innocent"));
+    const ctx = { agentId, capabilities: caps("use:tool:Write", "execute:executable:echo"), cwd: workspace };
+    expect(evaluateBashPermission("echo '{}' > innocent/settings.json", ctx).allowed).toBe(false);
+  });
+
+  it("resolves relative host-service tool paths against the session cwd", async () => {
+    mkdirSync(join(workspace, ".claude"));
+    symlinkSync(join(workspace, ".claude"), join(workspace, "innocent"));
+    const context = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId,
+      capabilities: WRITER,
+      metadata: { authorityMode: "agent-identity", executorAgentId: agentId },
+    });
+    const services = createRuntimeHostServices({
+      context,
+      agentId,
+      sessionName: `${agentId}-main`,
+      toolContext: {},
+      cwd: workspace,
+    });
+    const planted = await services.authorizeToolUse({
+      toolName: "Write",
+      input: { file_path: "innocent/settings.json", content: "{}" },
+    });
+    expect(planted.approved).toBe(false);
+    const plain = await services.authorizeToolUse({
+      toolName: "Write",
+      input: { file_path: "notes.md", content: "ok" },
+    });
+    expect(plain.approved).toBe(true);
   });
 
   it("reads the paths out of patch-style tool inputs", () => {
