@@ -10530,10 +10530,13 @@ export function dbPruneContexts(options: { apply?: boolean; olderThanMs?: number
   const db = getDb();
   const now = Date.now();
   const cutoff = options.olderThanMs != null ? now - Math.max(0, options.olderThanMs) : now;
+  // A revoked row stays until it also expires: a running turn may still hold a
+  // cached copy without revokedAt, and the stored row is what tells it apart
+  // (see isRuntimeContextLive).
   const where = `
     created_at <= ?
     AND (
-      (revoked_at IS NOT NULL AND revoked_at != 0 AND revoked_at <= ?)
+      (revoked_at IS NOT NULL AND revoked_at != 0 AND revoked_at <= ? AND (expires_at IS NULL OR expires_at = 0))
       OR (expires_at IS NOT NULL AND expires_at != 0 AND expires_at <= ?)
     )
   `;
