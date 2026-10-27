@@ -41,7 +41,8 @@ import { emitCliAuditEvent, runWithCliAudit, wasContractErrorAudited } from "./a
 import { configureCliLogging } from "./logging.js";
 import { spawnDirectTui } from "./tui-launcher.js";
 import { requireTuiSessionName } from "../tui/session-arg.js";
-import { maybeRunAppAliasRoute } from "../apps/router.js";
+import { maybeRunAppAliasRoute, resolveAppAliasInvocation } from "../apps/router.js";
+import { cliOnlyCommandError, REMOTE_GATEWAY_URL_ENV, requiresRemoteGateway } from "./remote-gateway.js";
 import { buildRootOperationalHelp } from "../runtime/runtime-operational-context.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -144,6 +145,22 @@ const AGENT_CONTRACT_DOMAINS = [
 ];
 for (const domain of AGENT_CONTRACT_DOMAINS) installUsageContract(program, domain);
 
+/**
+ * Root commands run outside registry.ts, so they apply its context-key gate
+ * themselves: a CLI holding RAVI_CONTEXT_KEY (or pointed at a gateway) acts for
+ * a runtime context and must never run an operator-terminal command locally.
+ */
+function refuseRootCommandInRuntimeSession(name: string, json?: boolean): void {
+  if (!runsForRuntimeContext()) return;
+  const error = cliOnlyCommandError(name);
+  renderContractError(error, json === true);
+  process.exit(error.exitCode);
+}
+
+function runsForRuntimeContext(): boolean {
+  return requiresRemoteGateway(process.env) || Boolean(process.env[REMOTE_GATEWAY_URL_ENV]?.trim());
+}
+
 // Top-level commands (not via decorator groups)
 program
   .command("doctor")
@@ -153,6 +170,7 @@ program
   .option("--strict", "Exit non-zero on warnings")
   .option("--domain <domain>", "Run one doctor domain")
   .action(async (options: { json?: boolean; full?: boolean; strict?: boolean; domain?: string }) => {
+    refuseRootCommandInRuntimeSession("doctor", options.json);
     await runWithCliAudit(
       {
         group: "_root",
@@ -176,6 +194,7 @@ program
   .command("setup")
   .description("Wizard interativo de configuração")
   .action(async () => {
+    refuseRootCommandInRuntimeSession("setup");
     await runWithCliAudit(
       {
         group: "_root",
@@ -197,6 +216,7 @@ program
   .option("--no-restart", "Do not restart managed Ravi processes after updating")
   .option("--json", "Print a machine-readable result")
   .action(async (options: RaviUpdateOptions) => {
+    refuseRootCommandInRuntimeSession("update", options.json);
     await runWithCliAudit(
       {
         group: "_root",
@@ -227,6 +247,7 @@ program
       timeoutSeconds?: string;
       intervalSeconds?: string;
     }) => {
+      refuseRootCommandInRuntimeSession("login", options.json);
       await runWithCliAudit(
         {
           group: "_root",
@@ -246,6 +267,7 @@ program
   .option("--console <url>", "Console base URL")
   .option("--json", "Print raw JSON result")
   .action(async (options: { console?: string; json?: boolean }) => {
+    refuseRootCommandInRuntimeSession("whoami", options.json);
     await runWithCliAudit(
       {
         group: "_root",
@@ -254,7 +276,7 @@ program
         input: options,
         closeLazyConnection: true,
       },
-      () => runCloudAuthRootCommand(options.json, () => runWhoami(options)),
+      () => runCloudAuthRootCommand(options.json, () => runWhoami(options), "whoami"),
     );
   });
 
@@ -264,6 +286,7 @@ program
   .option("--console <url>", "Console base URL")
   .option("--json", "Print raw JSON result")
   .action(async (options: { console?: string; json?: boolean }) => {
+    refuseRootCommandInRuntimeSession("logout", options.json);
     await runWithCliAudit(
       {
         group: "_root",
@@ -272,7 +295,7 @@ program
         input: options,
         closeLazyConnection: true,
       },
-      () => runCloudAuthRootCommand(options.json, () => runLogout(options)),
+      () => runCloudAuthRootCommand(options.json, () => runLogout(options), "logout"),
     );
   });
 
@@ -303,6 +326,7 @@ program
   .description("Open the terminal UI for a session")
   .argument("[session]", "Session name or key")
   .action(async (session?: string) => {
+    refuseRootCommandInRuntimeSession("tui");
     const sessionName = session?.trim();
     if (!sessionName) {
       contractFail("tui", "USAGE_ERROR", "Usage: ravi tui <session>", {
@@ -334,6 +358,7 @@ program
   .option("--topic <pattern...>", "Override topic patterns")
   .option("--heartbeat-ms <ms>", "Heartbeat interval in milliseconds", "5000")
   .action(async (options: { scope: string; topic?: string[]; heartbeatMs: string }) => {
+    refuseRootCommandInRuntimeSession("stream");
     await emitCliAuditEvent({
       group: "_root",
       name: "stream",
@@ -403,6 +428,30 @@ void bootstrapCli().catch(async (error: unknown) => {
 
 async function bootstrapCli(): Promise<void> {
   if (await maybeRunManagedRuntimeRebindFromEnv()) return;
+
+  // A runtime context never runs an app alias in-process: it goes through
+  // `apps run`, which the gateway authorizes (command access, write-after-read).
+  if (runsForRuntimeContext()) {
+    const argv = process.argv.slice(2);
+    const invocation = resolveAppAliasInvocation(argv, { staticRootCommands: rootCommandNames(program) });
+    if (invocation) {
+      await program.parseAsync(
+        [
+          "apps",
+          "run",
+          invocation.appId,
+          ...(invocation.operation !== undefined ? [invocation.operation] : []),
+          ...(invocation.json ? ["--json"] : []),
+          ...(invocation.execute ? ["--execute"] : []),
+          ...(invocation.args.length > 0 ? ["--", ...invocation.args] : []),
+        ],
+        { from: "user" },
+      );
+      return;
+    }
+    await program.parseAsync();
+    return;
+  }
 
   const handledByAppAlias = await maybeRunAppAliasRoute(process.argv.slice(2), {
     staticRootCommands: rootCommandNames(program),
