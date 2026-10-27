@@ -67,7 +67,15 @@ import {
   rematerializeSessionToAgentRuntime,
   syncAgentSessionsToAgentRuntime,
 } from "../../runtime/agent-session-runtime-sync.js";
-import { createRuntimeProvider, listRegisteredRuntimeProviderIds } from "../../runtime/provider-registry.js";
+import {
+  DEFAULT_RUNTIME_PROVIDER_ID,
+  createRuntimeProvider,
+  listRegisteredRuntimeProviderIds,
+} from "../../runtime/provider-registry.js";
+import { validateRuntimeModelSelector } from "../../runtime/model-validation.js";
+import { getRuntimeModelPreset } from "../../runtime/model-preset-store.js";
+import { enforceCliCommandAccess } from "../command-access.js";
+import { CliExpectedError } from "../expected-error.js";
 import { modelProviderMismatch } from "../../runtime/model-catalog.js";
 import { resolveEffectiveSessionRuntime } from "../../runtime/runtime-selection.js";
 import type { ChannelContext, ResponseMessage, SessionRelayAction } from "../../runtime/message-types.js";
@@ -3593,6 +3601,17 @@ export class SessionCommands {
     const label = s.name ?? s.sessionKey;
     const beforeProviderOverride = s.runtimeProviderOverride ?? null;
     const agent = getAgent(s.agentId) ?? loadRouterConfig().agents[s.agentId] ?? null;
+    if (propagate === true && providerOverride && agent) {
+      assertAgentDefaultsWriteAuthorized(s.agentId);
+      if (agent.model) assertModelValidForProvider(providerOverride, agent.model);
+      const preset = agent.modelPresetId ? getRuntimeModelPreset(agent.modelPresetId) : null;
+      if (preset && preset.provider !== providerOverride) {
+        fail(
+          `Cannot propagate provider '${providerOverride}': agent ${s.agentId} references preset '${preset.id}' (provider '${preset.provider}'). Clear the preset first: ravi agents set ${s.agentId} modelPreset clear`,
+        );
+        return;
+      }
+    }
     updateSessionRuntimeProviderOverride(s.sessionKey, providerOverride);
     if (providerOverride && s.providerSessionId && s.runtimeProvider && s.runtimeProvider !== providerOverride) {
       clearProviderSession(s.sessionKey);
@@ -3711,6 +3730,10 @@ export class SessionCommands {
     const modelOverride = model === "clear" ? null : model;
     const beforeModelOverride = s.modelOverride ?? null;
     const agent = getAgent(s.agentId) ?? loadRouterConfig().agents[s.agentId] ?? null;
+    if (propagate === true && modelOverride && agent) {
+      assertAgentDefaultsWriteAuthorized(s.agentId);
+      assertModelValidForProvider(agent.provider, modelOverride);
+    }
     if (model === "clear") {
       updateSessionModelOverride(s.sessionKey, null);
       if (!asJson) console.log(`Cleared model override for: ${label}`);
@@ -7263,6 +7286,36 @@ declareCommandReturns(SessionCommands, {
   trace: commandEnvelopeReturnSchema,
   visibility: commandEnvelopeReturnSchema,
 });
+
+/**
+ * `--propagate` rewrites the agent's defaults and moves every sibling session,
+ * so an agent turn needs the authority `ravi agents set` asks for, plus mutate
+ * on that agent, not just the right to change its own session.
+ */
+function assertAgentDefaultsWriteAuthorized(agentId: string): void {
+  if (!getContext()?.context) return;
+  const access = enforceCliCommandAccess({
+    group: "agents",
+    command: "set",
+    access: { kind: "mutate", resource: "agents", action: "set", risk: "medium" },
+    input: { id: agentId },
+    source: "tool",
+  });
+  const scopeCtx = getScopeContext();
+  if (!access.allowed || (isScopeEnforced(scopeCtx) && !canAccessResource(scopeCtx, agentId, "mutate"))) {
+    throw new CliExpectedError(
+      `Permission denied: --propagate changes agent ${agentId}'s defaults and needs the authority of 'ravi agents set'`,
+      "PERMISSION_DENIED",
+      1,
+      "Drop --propagate to change only this session, or ask an operator to run ravi agents set",
+    );
+  }
+}
+
+function assertModelValidForProvider(providerId: string | undefined, model: string): void {
+  const result = validateRuntimeModelSelector(providerId ?? DEFAULT_RUNTIME_PROVIDER_ID, model);
+  if (!result.ok) fail(result.error ?? `Invalid model: ${model}`);
+}
 
 /**
  * An agent may attach a chat only when every session that already owns it

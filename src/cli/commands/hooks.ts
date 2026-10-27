@@ -2,6 +2,13 @@ import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
+import {
+  canAccessResource,
+  canAccessSession,
+  canModifySession,
+  getScopeContext,
+  isScopeEnforced,
+} from "../../permissions/scope.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
   hookListReturnSchema,
@@ -203,6 +210,42 @@ function failHookNotFound(op: string, hookId: string, asJson?: boolean): never {
   });
 }
 
+/**
+ * A hook copies the prompts and tool I/O of the sessions it observes into the
+ * session it targets, so an agent may only observe what it can read and target
+ * what it can modify. Global, workspace and task scopes, templated targets and
+ * task comments need admin authority.
+ */
+function assertHookWithinCallerScope(
+  op: string,
+  hook: Pick<HookRecord, "scopeType" | "scopeValue" | "actionType" | "actionPayload">,
+): void {
+  const scopeCtx = getScopeContext();
+  if (!isScopeEnforced(scopeCtx)) return;
+  const deny = (message: string): never =>
+    contractFail(op, "PERMISSION_DENIED", `Permission denied: ${message}`, {
+      details: { suggestedAction: "Ask an operator to create this hook, or scope it to your own session" },
+    });
+  const scopeValue = hook.scopeValue;
+  if (hook.scopeType === "global" || hook.scopeType === "workspace" || hook.scopeType === "task") {
+    deny(`hook scope ${hook.scopeType} requires admin authority`);
+  }
+  if (hook.scopeType === "agent" && !canAccessResource(scopeCtx, scopeValue, "read")) {
+    deny(`cannot observe agent ${scopeValue ?? "(none)"}`);
+  }
+  if (hook.scopeType === "session" && (!scopeValue || !canAccessSession(scopeCtx, scopeValue))) {
+    deny(`cannot observe session ${scopeValue ?? "(none)"}`);
+  }
+  const payload = hook.actionPayload as { sessionName?: string; taskId?: string };
+  const target = payload.sessionName;
+  if (target && (target.includes("{{") || !canModifySession(scopeCtx, target))) {
+    deny(`cannot deliver to session ${target}`);
+  }
+  if (hook.actionType === "comment_task") {
+    deny("task comment hooks require admin authority");
+  }
+}
+
 /** Resolve a hook or fail with the contract envelope (exit 1). */
 function requireHook(op: string, hookId: string, asJson?: boolean): HookRecord {
   const hook = dbGetHook(hookId);
@@ -389,6 +432,7 @@ export class HooksCommands {
       ...(dedupeKey?.trim() ? { dedupeKey: dedupeKey.trim() } : {}),
     };
 
+    assertHookWithinCallerScope("hooks create", { ...input, scopeType });
     const created = dbCreateHook(input);
     await emitHookRefresh();
 
@@ -419,6 +463,7 @@ export class HooksCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const hook = requireHook("hooks enable", id, asJson);
+    assertHookWithinCallerScope("hooks enable", hook);
     const updated = dbUpdateHook(id, { enabled: true });
     await emitHookRefresh();
     const payload = {
@@ -520,6 +565,7 @@ export class HooksCommands {
     execute?: boolean,
   ) {
     const hook = requireHook("hooks test", id, asJson);
+    assertHookWithinCallerScope("hooks test", hook);
     if (hookTestRequiresExecute(hook.actionType) && execute !== true) {
       contractDryRun(
         "hooks test",

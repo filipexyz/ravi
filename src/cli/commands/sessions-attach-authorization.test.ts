@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { runWithContext, type ToolContext } from "../context.js";
 import { attachChatToSession, getOrCreateSession, listSessionSubscriptions } from "../../router/sessions.js";
-import { dbUpsertChat } from "../../router/router-db.js";
+import { dbCreateAgent, dbGetAgent, dbUpsertChat } from "../../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { SessionCommands } from "./sessions.js";
 
@@ -84,5 +84,21 @@ describe("sessions attach/detach/subscriptions authorization", () => {
     runWithContext(BOOTSTRAP, () => new SessionCommands().attach(own.sessionKey, freeChat.id, undefined, true));
     const [sub] = listSessionSubscriptions(own.sessionKey);
     expect(sub).toMatchObject({ chatId: freeChat.id, attachedByType: "agent", attachedById: "crm" });
+  });
+});
+
+describe("sessions set-provider/set-model --propagate", () => {
+  it("needs the authority of agents set, and changes nothing without it", () => {
+    dbCreateAgent({ id: "crm", cwd: "/tmp/crm", model: "gpt-5" });
+    const own = getOrCreateSession("agent:crm:main", "crm", "/tmp/crm");
+    const before = dbGetAgent("crm");
+    const commands = new SessionCommands();
+
+    runWithContext(BOOTSTRAP, () => {
+      expect(() => commands.setProvider(own.sessionKey, "claude", true, true)).toThrow("--propagate");
+      expect(() => commands.setModel(own.sessionKey, "gpt-5-mini", true, true)).toThrow("--propagate");
+    });
+    expect(dbGetAgent("crm")).toEqual(before);
+    expect(getOrCreateSession("agent:crm:main", "crm", "/tmp/crm").runtimeProviderOverride ?? null).toBeNull();
   });
 });
