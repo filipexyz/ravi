@@ -481,6 +481,7 @@ mock.module("../../permissions/scope.js", () => ({
   isScopeEnforced: () => scopeEnforced,
   canAccessSession: () => canAccess,
   canModifySession: () => true,
+  canAccessResource: () => true,
   canAccessContact: () => true,
   filterAccessibleSessions: <T>(_: unknown, sessions: T[]) => sessions,
 }));

@@ -6,6 +6,7 @@ mock.module("../../permissions/scope.js", () => ({
   getScopeContext: () => undefined,
   isScopeEnforced: () => false,
   canAccessSession: () => true,
+  canAccessResource: () => true,
   canModifySession: () => true,
   filterAccessibleSessions: <T>(_: unknown, sessions: T[]) => sessions,
 }));

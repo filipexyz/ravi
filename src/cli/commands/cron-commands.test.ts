@@ -879,6 +879,44 @@ describe("CronCommands cross-agent access", () => {
     ]);
   });
 
+  it("cron add cannot aim a job at another agent without modify agent:<target>", async () => {
+    const error = await captureContractError(() =>
+      new CronCommands().add(
+        "Aimed",
+        undefined,
+        "30m",
+        undefined,
+        undefined,
+        "hello",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "owner",
+        undefined,
+        undefined,
+        true,
+      ),
+    );
+    expect(error.envelope().error.code).toBe("PERMISSION_DENIED");
+    expect(recordedResourceDenials[0]).toMatchObject({ resourceAgentId: "owner", command: "cron add" });
+    expect(emitMock).not.toHaveBeenCalled();
+  });
+
+  it("cron set cannot retarget an own job to another agent or its session", async () => {
+    cronJob = { ...cronJob, agentId: "viewer" };
+    const before = { ...cronJob };
+
+    const agentError = await captureContractError(() => new CronCommands().set("cron-owner", "agent", "owner", true));
+    expect(agentError.envelope().error.code).toBe("PERMISSION_DENIED");
+    const defaultError = await captureContractError(() => new CronCommands().set("cron-owner", "agent", "-", true));
+    expect(defaultError.envelope().error.code).toBe("PERMISSION_DENIED");
+    expect(cronJob).toEqual(before);
+  });
+
   it("denial does not disclose the owning agent when the caller cannot view it", async () => {
     const error = await captureContractError(() => new CronCommands().disable("cron-owner", true));
 

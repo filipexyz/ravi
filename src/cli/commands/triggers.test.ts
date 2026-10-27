@@ -848,6 +848,23 @@ describe("triggers cross-agent access", () => {
     ]);
   });
 
+  it("triggers add cannot aim a trigger at another agent without modify agent:<target>", async () => {
+    const error = await captureContractError(() =>
+      new TriggersCommands().add("aimed", "ravi.external.topic", "hello", "owner"),
+    );
+    expect(error.envelope().error.code).toBe("PERMISSION_DENIED");
+    expect(recordedResourceDenials[0]).toMatchObject({ resourceAgentId: "owner", command: "triggers add" });
+    expect(emitMock).not.toHaveBeenCalled();
+  });
+
+  it("triggers set cannot retarget an own trigger to another agent", async () => {
+    triggerRecord = { ...buildTriggerRecord(), id: "trg_viewer", name: "viewer trigger", agentId: "viewer" };
+    const error = await captureContractError(() => new TriggersCommands().set("trg_viewer", "agent", "owner", true));
+    expect(error.envelope().error.code).toBe("PERMISSION_DENIED");
+    expect(recordedResourceDenials[0]).toMatchObject({ resourceAgentId: "owner", command: "triggers set" });
+    expect(updatedTriggers).toEqual([]);
+  });
+
   it("disable succeeds across agents with modify agent:<owner>", async () => {
     mockGrants = [{ permission: "modify", objectType: "agent", objectId: "owner" }];
 

@@ -103,7 +103,7 @@ describe("task lifecycle mutations are bound to the task", () => {
       for (const attempt of [
         () => failTask(taskId, input),
         () => blockTask(taskId, input),
-        () => archiveTask(taskId, input),
+        () => archiveTask(taskId, { ...input, reason: "x" }),
         () => reportTaskProgress(taskId, input),
         () => answerTaskDecision(taskId, { key: "window", answer: "now", ...input }),
       ]) {
