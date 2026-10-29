@@ -282,13 +282,12 @@ function printCronRunsAs(job: CronJob, warning: string): void {
  * `cron set` keys that change neither what a job runs nor where its output
  * goes. Any other key (name, which goes into the prompt and the isolated
  * session's name, instructions, agent, env file, error target, reply
- * session, account, and any key added later) set from another person's turn
- * makes that person the job's owner, so the job cannot keep the operator's
- * connectors under somebody else's changes.
+ * session, account, and any key added later) set by anyone but the job's
+ * owner makes the setter its owner, the operator included: a job never runs
+ * one person's authority under another person's changes.
  */
 const CRON_OWNER_KEEP_KEYS = new Set(["description", "cron", "every", "tz", "timezone", "timeout", "delete-after"]);
 
-/** Owner change that goes in the same write as a `cron set` edit, or nothing. */
 const CRON_SET_KEYS = new Set([
   "name",
   "message",
@@ -308,6 +307,8 @@ const CRON_SET_KEYS = new Set([
   "delete-after",
 ]);
 
+const CRON_RUN_KEYS = new Set(["message", "shell", "exec"]);
+
 // `timezone` is accepted as an alias of `tz`.
 const CRON_SET_KEY_ALIASES = new Set(["timezone"]);
 
@@ -315,10 +316,16 @@ function failUnknownCronSetKey(key: string): never {
   fail(`Unknown property: ${key}. Valid: ${[...CRON_SET_KEYS].join(", ")}`);
 }
 
+/** Owner change that goes in the same write as a `cron set` edit, or nothing. */
 function cronOwnerUpdateForSet(key: string, job: CronJob): Pick<CronJob, "ownerPrincipal"> | Record<string, never> {
   if (CRON_OWNER_KEEP_KEYS.has(key)) return {};
   const setterOwner = resolveCronOwnerPrincipalForCurrentTurn();
-  if (setterOwner === CRON_OPERATOR_OWNER || setterOwner === cronJobRunsAs(job)) return {};
+  if (setterOwner === cronJobRunsAs(job)) return {};
+  // The operator adopts someone else's shell job only by rewriting what it
+  // runs, never as a side effect of editing its env file or error target.
+  if (setterOwner === CRON_OPERATOR_OWNER && job.executionType === "shell" && !CRON_RUN_KEYS.has(key)) {
+    return {};
+  }
   return { ownerPrincipal: setterOwner };
 }
 

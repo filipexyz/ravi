@@ -55,7 +55,7 @@ The easiest way to get answers in the right chat is to ask your agent, in that c
 Every job has an owner, shown as `Runs as` in `ravi cron show <id>` and as `ownerPrincipal` and `runsAsOperator` in `--json`. The turn that creates the job sets it:
 
 - From the terminal, from your own direct chat, or when you (the owner) ask in a group, the job runs as `operator`.
-- When someone else asks in a chat, the job runs as that person's contact (`contact:<id>`). A `cron set` from such a turn moves the job to that person too.
+- When someone else asks in a chat, the job runs as that person's contact (`contact:<id>`). A `cron set` from such a turn moves the job to that person too. Likewise, when you change what someone else's job runs (its message, agent, reply session and so on), it moves to you; rescheduling it or editing its description does not.
 
 A job runs with the authority of the person who created it, never with your `ravi login`. Your login authenticates this Ravi installation; it does not lend your permissions to a job someone else created.
 

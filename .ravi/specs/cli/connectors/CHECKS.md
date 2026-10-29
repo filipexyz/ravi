@@ -175,17 +175,20 @@
   `ownerPrincipal`).
 - Opening a database whose `cron_jobs` lacks `owner_principal` MUST add the
   column and keep existing rows NULL.
-- `cron set <id> <key> ...` from a turn that is not the operator MUST make
-  that turn's principal the job's owner, in the same write, for every key but
-  `name`, `description`, `cron`, `every`, `tz`, `timezone`, `timeout` and
-  `delete-after`.
+- `cron set <id> <key> ...` from a turn whose principal is not the job's
+  owner, the operator included, MUST make that turn's principal the job's
+  owner, in the same write, for every key but `description`, `cron`, `every`,
+  `tz`, `timezone`, `timeout` and `delete-after`. The operator MUST NOT take
+  over someone else's shell job through any key but `message`, `shell` or
+  `exec`.
 - `cron add` with an idempotency key MUST deduplicate across owners: the
   owner is not part of the fingerprint.
 - `cron add` from a contact's turn MUST return `runsAsOperator: false`, a
   `Runs as:` line and a warning worded by owner and `executionType` (a contact owner acts as that person through their link); from the terminal
   or with a legacy NULL owner, `runsAsOperator: true` and no warning.
-  `cron set` that re-owns a job to a contact MUST warn the same way, and an
-  operator `cron set` on a contact-owned job MUST keep warning
+  `cron set` that re-owns a job to a contact MUST warn the same way; an
+  operator `cron set` that rewrites a contact-owned job MUST move it to the
+  operator, and one that only reschedules it MUST keep warning
   (`src/cli/commands/cron-commands.test.ts`). `cronOwnerActsAsOperator` MUST
   agree with the `automation:cron:<id>` classification
   (`src/link/connector-turn.test.ts`).

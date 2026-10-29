@@ -1319,7 +1319,8 @@ describe("CronCommands owner principal", () => {
     }
   });
 
-  it("refuses to set a shell command on a job someone else owns", async () => {
+  it("refuses to set a shell command from a turn that is not the operator's", async () => {
+    process.env.RAVI_SESSION_NAME = "someone-else";
     cronJob = { ...cronJob, ownerPrincipal: "contact:c_bob" };
     const originalError = console.error;
     console.error = () => {};
@@ -1434,10 +1435,19 @@ describe("CronCommands owner principal", () => {
     }
   });
 
-  it("keeps the owner when the operator edits the job", async () => {
+  it("moves a contact's job to the operator when the operator rewrites it", async () => {
     cronJob = { ...cronJob, ownerPrincipal: "contact:c_bob" };
 
-    const payload = (await captureJson(() => new CronCommands().set("cron-1", "message", "new text", true))) as {
+    const payload = await captureJson(() => new CronCommands().set("cron-1", "message", "new text", true));
+
+    expect(payload).toMatchObject({ warnings: [], job: { ownerPrincipal: "operator", runsAsOperator: true } });
+    expect(cronUpdatePatches[0]).toMatchObject({ ownerPrincipal: "operator" });
+  });
+
+  it("keeps a contact's job with that contact when the operator only reschedules it", async () => {
+    cronJob = { ...cronJob, ownerPrincipal: "contact:c_bob" };
+
+    const payload = (await captureJson(() => new CronCommands().set("cron-1", "every", "1h", true))) as {
       warnings: string[];
     };
 
@@ -1445,6 +1455,21 @@ describe("CronCommands owner principal", () => {
     expect(payload.warnings[0]).toContain("runs as contact:c_bob, not the operator");
     expect(payload.warnings[0]).toContain("act as that person through their own ravi link");
     expect(payload.warnings[0]).not.toContain("ACTOR_UNKNOWN");
+  });
+
+  it("does not hand a contact's shell job to the operator for an env-file edit", async () => {
+    cronJob = {
+      ...cronJob,
+      executionType: "shell",
+      shellCommand: "echo ok",
+      message: "",
+      ownerPrincipal: "contact:c_bob",
+    };
+
+    const payload = await captureJson(() => new CronCommands().set("cron-1", "env-file", "/tmp/x.env", true));
+
+    expect(payload).toMatchObject({ job: { ownerPrincipal: "contact:c_bob", runsAsOperator: false } });
+    expect(cronUpdatePatches[0]).not.toHaveProperty("ownerPrincipal");
   });
 
   it("does not warn when an operator-owned job is edited", async () => {

@@ -323,13 +323,16 @@ instead of inventing local suggestions that would require extra remote calls.
     creating turn's `actorPrincipal` (`unknown` when it cannot be resolved).
     NULL means a legacy job and runs as the operator. `cron show`/`list` JSON
     expose it as `ownerPrincipal`, and `cron show` prints it as "Runs as".
-    When a turn that is not the operator changes a job with `cron set`, any
-    key except `description`,
+    When a turn whose principal is not the job's owner (the operator
+    included) changes a job with `cron set`, any key except `description`,
     `cron`, `every`, `tz`/`timezone`, `timeout` and `delete-after` (so
     `name`, which the runner puts in the prompt, `message`, `shell`, `exec`,
     `agent`, `session`, `reply-session`, `env-file`, `on-error`, `account`
     and any key added later), the job takes
     that turn's principal as its owner, in the same write as the edit. The
+    one exception: the operator takes over someone else's shell job only
+    with `message`, `shell` or `exec`, never by editing its `env-file`,
+    `on-error` or another key around a command it did not write. The
     owner is not part of the `cron add` idempotency fingerprint, so a key
     recorded before owners existed, or an observer replay, still matches.
 13a. Every serialized job (`cron add`, `set`, `show`, `list` JSON) MUST carry
