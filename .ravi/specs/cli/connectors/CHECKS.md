@@ -186,8 +186,8 @@
   `Runs as:` line and a warning worded by owner and `executionType` (a contact owner acts as that person through their link); from the terminal
   or with a legacy NULL owner, `runsAsOperator: true` and no warning.
   `cron set` that re-owns a job to a contact MUST warn the same way; an
-  operator `cron set` of a contact-owned job's `message` MUST move it to the
-  operator, and any other operator edit MUST keep it with the contact and
+  operator `cron set` of a contact-owned job's `message`, `shell` or `exec`
+  MUST move it to the operator, and any other operator edit MUST keep it with the contact and
   keep warning
   (`src/cli/commands/cron-commands.test.ts`). `cronOwnerActsAsOperator` MUST
   agree with the `automation:cron:<id>` classification
