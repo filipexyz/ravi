@@ -321,11 +321,10 @@ function cronOwnerUpdateForSet(key: string, job: CronJob): Pick<CronJob, "ownerP
   if (CRON_OWNER_KEEP_KEYS.has(key)) return {};
   const setterOwner = resolveCronOwnerPrincipalForCurrentTurn();
   if (setterOwner === cronJobRunsAs(job)) return {};
-  // The operator adopts someone else's shell job only by rewriting what it
-  // runs, never as a side effect of editing its env file or error target.
-  if (setterOwner === CRON_OPERATOR_OWNER && job.executionType === "shell" && !CRON_RUN_KEYS.has(key)) {
-    return {};
-  }
+  // The operator takes over someone else's job only by writing what it runs
+  // (its message or command). Any other edit leaves it with its owner, so a
+  // prompt or command the operator did not write never gains their authority.
+  if (setterOwner === CRON_OPERATOR_OWNER && !CRON_RUN_KEYS.has(key)) return {};
   return { ownerPrincipal: setterOwner };
 }
 

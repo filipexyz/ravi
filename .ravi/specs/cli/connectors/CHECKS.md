@@ -179,16 +179,16 @@
   owner, the operator included, MUST make that turn's principal the job's
   owner, in the same write, for every key but `description`, `cron`, `every`,
   `tz`, `timezone`, `timeout` and `delete-after`. The operator MUST NOT take
-  over someone else's shell job through any key but `message`, `shell` or
-  `exec`.
+  over someone else's job through any key but `message`, `shell` or `exec`.
 - `cron add` with an idempotency key MUST deduplicate across owners: the
   owner is not part of the fingerprint.
 - `cron add` from a contact's turn MUST return `runsAsOperator: false`, a
   `Runs as:` line and a warning worded by owner and `executionType` (a contact owner acts as that person through their link); from the terminal
   or with a legacy NULL owner, `runsAsOperator: true` and no warning.
   `cron set` that re-owns a job to a contact MUST warn the same way; an
-  operator `cron set` that rewrites a contact-owned job MUST move it to the
-  operator, and one that only reschedules it MUST keep warning
+  operator `cron set` of a contact-owned job's `message` MUST move it to the
+  operator, and any other operator edit MUST keep it with the contact and
+  keep warning
   (`src/cli/commands/cron-commands.test.ts`). `cronOwnerActsAsOperator` MUST
   agree with the `automation:cron:<id>` classification
   (`src/link/connector-turn.test.ts`).

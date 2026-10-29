@@ -1444,6 +1444,22 @@ describe("CronCommands owner principal", () => {
     expect(cronUpdatePatches[0]).toMatchObject({ ownerPrincipal: "operator" });
   });
 
+  it("keeps a contact's job with that contact when the operator edits around its prompt", async () => {
+    for (const [key, value] of [
+      ["agent", "main"],
+      ["reply-session", "agent:main:main"],
+      ["name", "Renamed"],
+    ]) {
+      cronJob = { ...cronJob, message: "their prompt", ownerPrincipal: "contact:c_bob" };
+      cronUpdatePatches = [];
+
+      const payload = await captureJson(() => new CronCommands().set("cron-1", key, value, true));
+
+      expect(payload).toMatchObject({ job: { ownerPrincipal: "contact:c_bob", runsAsOperator: false } });
+      expect(cronUpdatePatches[0]).not.toHaveProperty("ownerPrincipal");
+    }
+  });
+
   it("keeps a contact's job with that contact when the operator only reschedules it", async () => {
     cronJob = { ...cronJob, ownerPrincipal: "contact:c_bob" };
 

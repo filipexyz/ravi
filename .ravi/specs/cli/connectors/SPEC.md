@@ -330,9 +330,11 @@ instead of inventing local suggestions that would require extra remote calls.
     `agent`, `session`, `reply-session`, `env-file`, `on-error`, `account`
     and any key added later), the job takes
     that turn's principal as its owner, in the same write as the edit. The
-    one exception: the operator takes over someone else's shell job only
-    with `message`, `shell` or `exec`, never by editing its `env-file`,
-    `on-error` or another key around a command it did not write, and a
+    one exception: the operator takes over someone else's job only with
+    `message`, `shell` or `exec`, never by editing `agent`, `name`,
+    `reply-session`, `env-file`, `on-error` or another key around a prompt
+    or command it did not write (that would run them with its authority);
+    a
     `shell`/`exec` edit that changes the owner MUST clear the job's
     `env-file` (loaded over the command's environment) and `on-error`
     (the session that receives the command's output when it fails), both
