@@ -102,7 +102,7 @@ describe("accessActorFromTurn", () => {
     expect(accessActorFromTurn(ended, noAgentName)).toMatchObject({ kind: "refused", reason: { kind: "ended" } });
   });
 
-  it("refuses a run of a cron job someone else owns, with the job and its owner", () => {
+  it("acts for the contact who owns the cron job this turn runs", () => {
     const routine: ConnectorTurnResult = {
       ok: false,
       error: blockedError,
@@ -110,10 +110,23 @@ describe("accessActorFromTurn", () => {
       routineOwner: { kind: "cron", id: "job_1", ownerPrincipal: "contact:c_ana" },
     };
     const decision = accessActorFromTurn(routine, noAgentName);
+    expect(decision).toEqual({ kind: "contact", contactId: "c_ana", routine: { kind: "cron", id: "job_1" } });
+    if (decision.kind === "refused") return;
+    expect(accessActorBody(decision)).toEqual({ actor: { contactId: "c_ana" } });
+  });
+
+  it("refuses a run of a cron job no person owns, with the job and its owner", () => {
+    const routine: ConnectorTurnResult = {
+      ok: false,
+      error: blockedError,
+      actorPrincipal: "automation:cron:job_1",
+      routineOwner: { kind: "cron", id: "job_1", ownerPrincipal: "unknown" },
+    };
+    const decision = accessActorFromTurn(routine, noAgentName);
     expect(decision).toMatchObject({
       kind: "refused",
       actorPrincipal: "automation:cron:job_1",
-      reason: { kind: "routine_not_operator_owned", routine: "cron", jobId: "job_1", ownerPrincipal: "contact:c_ana" },
+      reason: { kind: "routine_not_operator_owned", routine: "cron", jobId: "job_1", ownerPrincipal: "unknown" },
     });
     if (decision.kind !== "refused") return;
     expect(decision.message).toContain("cron job job_1");

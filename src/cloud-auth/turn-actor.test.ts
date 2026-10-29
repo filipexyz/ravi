@@ -100,16 +100,21 @@ describe("inRuntimeTurn", () => {
 describe("shell crons and Bases", () => {
   const OWNER = { activeUserId: "user_luis", activeOrgId: "org_1", ownerName: "Luis" };
 
-  it("refuses a contact-owned shell cron and lets an operator-owned one act as the operator", () => {
+  it("acts for the contact who owns a shell cron, refuses an ownerless one and lets an operator-owned one act as the operator", () => {
     const env = spawnedAutomationEnv("cron", "job_1");
-    const contactOwned = unattributedTurnRefusal(env, {
+    const contactOwned = {
       turn: { ...OWNER, getCronJobOwner: () => ({ found: true, ownerPrincipal: "contact:c_ana" }) },
+    };
+    expect(unattributedTurnRefusal(env, contactOwned)).toBeNull();
+    expect(turnActorContactId(env, contactOwned)).toBe("c_ana");
+    const ownerless = unattributedTurnRefusal(env, {
+      turn: { ...OWNER, getCronJobOwner: () => ({ found: true, ownerPrincipal: "unknown" }) },
     });
-    expect(contactOwned?.reason).toEqual({
+    expect(ownerless?.reason).toEqual({
       kind: "routine_not_operator_owned",
       routine: "cron",
       jobId: "job_1",
-      ownerPrincipal: "contact:c_ana",
+      ownerPrincipal: "unknown",
     });
     expect(
       unattributedTurnRefusal(env, {

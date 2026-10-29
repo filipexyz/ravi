@@ -402,6 +402,10 @@ describe("ACTOR_NOT_LINKED after the person's link started", () => {
     expect(String(contract("awaiting_dm").details.chatLinePt)).toContain("Me chama na DM");
     expect(contract("dm_sent").message).toContain("sent them a private approval link");
     expect(contract("already_linked").details.suggestedAction).toBe("retry the same command once");
+    // A cron run acting for its creator: nobody to talk to, so no chat line.
+    expect(contract("routine").message).toContain("person who created the cron job");
+    expect(contract("routine").details.chatLinePt).toBeUndefined();
+    expect(String(contract("routine").details.suggestedAction)).toContain("do not disable the job");
     // An unknown value keeps the catalog copy.
     expect(contract("bogus").details.linkFlow).toBeUndefined();
     expect(contract().message).toBe("The person asking is not linked to a Console user on this Ravi.");
@@ -424,7 +428,9 @@ describe("ACTOR_UNKNOWN copy", () => {
       jobId: "job_1",
       ownerPrincipal: "contact:c_ana",
     });
-    expect(String(local.details.suggestedAction)).toContain("recreate it from an operator turn");
+    expect(String(local.details.suggestedAction)).toContain(
+      "recreate it from the turn of the person it should act for",
+    );
 
     const remote = cloudErrorToContractError(
       "bases list",

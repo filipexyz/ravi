@@ -1328,6 +1328,8 @@ describe("CronCommands owner principal", () => {
 
     expect(payload).toMatchObject({ job: { ownerPrincipal: "contact:c_bob", runsAsOperator: false } });
     expect(payload.warnings[0]).toContain("runs as contact:c_bob, not the operator");
+    expect(payload.warnings[0]).toContain("act as that person through their own ravi link");
+    expect(payload.warnings[0]).not.toContain("ACTOR_UNKNOWN");
   });
 
   it("does not warn when an operator-owned job is edited", async () => {

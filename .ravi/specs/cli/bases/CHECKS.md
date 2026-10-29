@@ -79,7 +79,13 @@
 - Inside a runtime turn Ravi cannot attribute, every Bases command (reads
   included) MUST fail `ACTOR_UNKNOWN` (exit 3) with no Console call
   (`src/bases/client.test.ts`, `src/cloud-auth/turn-actor.test.ts`).
-- A run of a cron job someone else owns MUST fail `ACTOR_UNKNOWN` with
+- A run of a cron job a contact owns MUST send that contact as the actor
+  (`x-ravi-actor-contact`, access body `actor`), never refuse locally and
+  never act as the operator (`src/access/actor.test.ts`,
+  `src/cloud-auth/turn-actor.test.ts`); unlinked, the link flow MUST answer
+  `routine` without messaging anyone (`src/identity-link/turn-link.test.ts`,
+  `src/cloud-auth/errors.test.ts`).
+- A run of a cron job no person owns (`unknown`, an agent) MUST fail `ACTOR_UNKNOWN` with
   `refusalReason: routine_not_operator_owned`, its `jobId` and `ownerPrincipal`, and
   a suggested action that does not send the agent to the person's chat
   (`src/cli/commands/bases.test.ts`, `src/access/actor.test.ts`). A remote
@@ -87,8 +93,8 @@
   details (`src/cloud-auth/errors.test.ts`).
 - A shell cron process (`RAVI_AUTOMATION_PRINCIPAL=automation:cron:<id>`, no
   context key) MUST count as a runtime turn: a contact-owned job's Bases call
-  fails `ACTOR_UNKNOWN` with `routine_not_operator_owned`, an operator-owned
-  one sends no actor; shell triggers and jobs MUST NOT be covered
+  sends that contact, an ownerless one fails `ACTOR_UNKNOWN` with
+  `routine_not_operator_owned`, an operator-owned one sends no actor; shell triggers and jobs MUST NOT be covered
   (`src/cloud-auth/turn-actor.test.ts`).
 - `bases views share` without `--execute` MUST exit 3 after reading the
   view and site, with no PATCH; with it, it MUST PATCH `access` at the

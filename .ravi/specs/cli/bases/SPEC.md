@@ -103,21 +103,32 @@ writes only through a view, via the `ravi.bases.*` Pages connector actions
    that `resolveAccessActor` refuses (another agent's turn, an unresolved
    speaker) or cannot classify, `openBasesClient` MUST fail `ACTOR_UNKNOWN`
    (exit 3, policy) before any Console call, reads included, instead of
-   sending no actor (which the Console would serve as the operator). A shell
-   cron the daemon spawned (`RAVI_AUTOMATION_PRINCIPAL=automation:cron:<id>`,
-   no context key) counts as a runtime turn here, so a contact-owned shell
-   cron is refused and an operator-owned one acts as the operator; shell
-   triggers and `ravi jobs run` have no owner model and are not covered. Operator
-   turns, owner relays and owner-owned routines act as the operator. Outside a turn no actor
-   header is sent.
+   sending no actor (which the Console would serve as the operator). A run
+   of a cron job a contact owns (`owner_principal = contact:<id>` not bound
+   to the operator) MUST carry that contact as the actor: the job acts as
+   the person who created it through their own `ravi link` (and fails
+   `ACTOR_NOT_LINKED` without one), never as the operator who ran
+   `ravi login`. A cron job no person owns (`unknown`, an agent) is refused.
+   A shell cron the daemon spawned
+   (`RAVI_AUTOMATION_PRINCIPAL=automation:cron:<id>`, no context key) counts
+   as a runtime turn here, with the same owner rules; shell triggers and
+   `ravi jobs run` have no owner model and are not covered. Operator turns,
+   owner relays and owner-owned routines act as the operator. Outside a turn
+   no actor header is sent.
+   When a cron run's contact is not linked, the link flow MUST NOT message
+   anyone (nobody is asking in a scheduled run): the refusal carries
+   `linkFlow: routine`, no `chatLinePt`, and a suggested action to report
+   to the operator, without retrying or disabling the job, that the job's
+   creator must link their account.
    The refusal MUST carry a typed reason in `error.refusalReason`:
-   `routine_not_operator_owned` (a cron job someone else owns; with
+   `routine_not_operator_owned` (a cron job no person Ravi can act for owns; with
    `jobId` and `ownerPrincipal`), `agent_relay`, `ended` or `unknown`, and a
    `suggestedAction` true for that reason. A routine run has nobody to ask,
    so its action MUST NOT tell the agent to have the person ask from their
    chat: it says not to retry from the run, to report the job to the
    operator without disabling it, and that the operator reviews the job's
-   message or command and recreates it from an operator turn. This copy is
+   message or command and recreates it from the turn of the person it
+   should act for. This copy is
    local: it applies only to the error `openBasesClient` (and the access and
    cloud-run clients) build, marked by its class, never to an
    `ACTOR_UNKNOWN` a Console response carries, which keeps the catalog copy

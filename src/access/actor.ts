@@ -16,11 +16,12 @@
  *   own `ravi sessions send|ask`, routines the owner owns): no `actor`, the
  *   session user acts. The owner speaking in a group or in a shared session
  *   is still the owner asking, so it is the operator too.
- * - A resolved contact who is not the owner (a direct chat or a group):
+ * - A resolved contact who is not the owner (a direct chat or a group), or
+ *   the contact who owns the cron job this turn runs:
  *   `actor: { contactId }`, so Console acts for that person, never for the
  *   operator.
  * - Anything else (an unresolved speaker, an agent relaying for another
- *   session, a routine someone else owns, a turn that already ended): refused
+ *   session, a routine with no person as owner, a turn that already ended): refused
  *   here, with that reason, and nothing is sent. A turn that cannot be
  *   attributed never falls back to the operator's authority.
  */
@@ -41,6 +42,8 @@ export type AccessActorDecision =
       kind: "contact";
       contactId: string;
       agent?: AccessAgent;
+      /** A routine run acting for the contact who owns it. */
+      routine?: AccessRoutine;
     }
   | {
       kind: "refused";
@@ -49,6 +52,11 @@ export type AccessActorDecision =
       /** Why: a routine someone else owns, another agent's relay, an ended turn, or unknown (absent). */
       reason?: TurnRefusalReason;
     };
+
+export interface AccessRoutine {
+  kind: "cron";
+  id: string;
+}
 
 export interface AccessAgent {
   id: string;
@@ -97,7 +105,26 @@ export function accessActorFromTurn(result: ConnectorTurnResult, deps: AccessAct
   if (candidate?.speaker.kind === "contact" && candidate.speaker.contactId) {
     return { kind: "contact", contactId: candidate.speaker.contactId, ...agentOf(candidate, deps) };
   }
+  // A cron job a contact created runs as that person: Console acts for them
+  // through their own `ravi link` (and refuses without one), never as the
+  // operator. Any other owner (an unknown or an agent) is refused.
+  const routineContact = routineOwnerContactId(result);
+  if (routineContact) {
+    const routine = routineOf(result);
+    return { kind: "contact", contactId: routineContact, ...(routine ? { routine } : {}) };
+  }
   return refused(result.actorPrincipal, refusalReason(result));
+}
+
+function routineOwnerContactId(result: Extract<ConnectorTurnResult, { ok: false }>): string | null {
+  const owner = result.routineOwner?.ownerPrincipal;
+  if (!owner?.startsWith("contact:")) return null;
+  const contactId = owner.slice("contact:".length).trim();
+  return contactId || null;
+}
+
+function routineOf(result: Extract<ConnectorTurnResult, { ok: false }>): AccessRoutine | undefined {
+  return result.routineOwner ? { kind: result.routineOwner.kind, id: result.routineOwner.id } : undefined;
 }
 
 function refusalReason(result: Extract<ConnectorTurnResult, { ok: false }>): TurnRefusalReason {

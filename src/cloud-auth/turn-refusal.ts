@@ -11,7 +11,10 @@
 import { CloudAuthError } from "./errors.js";
 
 export type TurnRefusalReason =
-  /** A cron job someone other than the operator owns: it never acts as the operator. */
+  /**
+   * A cron job no person Ravi can act for owns (an unknown or an agent owner):
+   * it never acts as the operator. A contact's job acts as that contact.
+   */
   | { kind: "routine_not_operator_owned"; routine: "cron"; jobId: string; ownerPrincipal: string }
   /** Another agent's turn relaying a request. */
   | { kind: "agent_relay" }
@@ -42,8 +45,8 @@ export function turnRefusalCopy(
   switch (reason.kind) {
     case "routine_not_operator_owned":
       return {
-        message: `This turn is a run of cron job ${reason.jobId}, which ${reason.ownerPrincipal} owns, not the operator. A routine someone else owns never acts as the operator, so Ravi will not ${action} for this run.`,
-        suggestedAction: `do not retry from this run and do not disable the job; report to the operator that cron job ${reason.jobId} runs as ${reason.ownerPrincipal}: they review its message or command (\`ravi cron show ${reason.jobId}\`) and, if it should act as the operator, recreate it from an operator turn (the terminal or their own chat)`,
+        message: `This turn is a run of cron job ${reason.jobId}, owned by ${reason.ownerPrincipal}: neither the operator nor a person Ravi can act for. A routine never borrows the operator's authority, so Ravi will not ${action} for this run.`,
+        suggestedAction: `do not retry from this run and do not disable the job; report to the operator that cron job ${reason.jobId} runs as ${reason.ownerPrincipal}: they review its message or command (\`ravi cron show ${reason.jobId}\`) and recreate it from the turn of the person it should act for (the operator's terminal or own chat, or that person's chat)`,
       };
     case "agent_relay":
       return {

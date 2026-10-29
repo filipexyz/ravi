@@ -6,13 +6,14 @@
  */
 
 /** What the refusal set in motion. */
-export type TurnLinkFlow = "awaiting_dm" | "dm_sent" | "already_linked" | "unavailable";
+export type TurnLinkFlow = "awaiting_dm" | "dm_sent" | "already_linked" | "unavailable" | "routine";
 
 const TURN_LINK_FLOWS: ReadonlySet<string> = new Set<TurnLinkFlow>([
   "awaiting_dm",
   "dm_sent",
   "already_linked",
   "unavailable",
+  "routine",
 ]);
 
 export function parseTurnLinkFlow(value: unknown): TurnLinkFlow | null {
@@ -49,6 +50,13 @@ export function turnLinkCopy(flow: TurnLinkFlow): TurnLinkCopy {
       return {
         message: "The person asking has just linked their Ravi Console account. Retry the same command once.",
         suggestedAction: "retry the same command once",
+      };
+    case "routine":
+      return {
+        message:
+          "This scheduled run acts as the person who created the cron job, and that person has not linked their Ravi Console account, so Ravi did not do this. Nobody is asking in this run, so Ravi did not message them.",
+        suggestedAction:
+          "do not retry from this run and do not disable the job; report to the operator that the job's creator must link their Ravi Console account (they message the agent in private and approve the link) before the job can use the Console",
       };
     case "unavailable":
       return {

@@ -57,9 +57,14 @@ Every job has an owner, shown as `Runs as` in `ravi cron show <id>` and as `owne
 - From the terminal, from your own direct chat, or when you (the owner) ask in a group, the job runs as `operator`.
 - When someone else asks in a chat, the job runs as that person's contact (`contact:<id>`). A `cron set` from such a turn moves the job to that person too.
 
-A job that does not run as the operator never acts as the operator. In its runs, `ravi bases`, personal connectors, Pages share and invites, and Knowledge refuse it (`ACTOR_UNKNOWN`, `CONNECTOR_SPEAKER_NOT_OWNER`, `KNOWLEDGE_TURN_NOT_OPERATOR`). `ravi cron add` and `ravi cron set` print a warning when that is the case. Turning it into a `--shell` job does not change the owner: `ravi bases`, connectors and Pages access commands the shell runs are refused the same way.
+A job runs with the authority of the person who created it, never with your `ravi login`. Your login authenticates this Ravi installation; it does not lend your permissions to a job someone else created.
 
-The run still records `lastStatus: ok` when the agent turn completes, even if a command inside it was refused. So a job that needs those calls is ready only when it acts as the operator (`runsAsOperator: true` in `ravi cron show <id> --json`; a contact linked to you also acts as you) and it was proven: for a recurring job, one `ravi cron run <id> --execute` produced the result you expected. Don't run a one-shot job (`--at` or `--delete-after`) early to test it, because the manual run uses it up; check its settings and confirm after the scheduled run. If a job is refused, recreate it from one of your own turns after reading its message or command; an agent should report it to you instead of disabling it.
+- A job someone else created acts as that person: `ravi bases` and Pages share, invites and access requests go out in their name, through their own `ravi link`, with their own role in the organization. Until they link their account the calls are refused with `ACTOR_NOT_LINKED`, and Ravi does not message them from the run, since nobody is asking. Personal connectors and Knowledge are your own, so they refuse the job (`CONNECTOR_SPEAKER_NOT_OWNER`, `KNOWLEDGE_TURN_NOT_OPERATOR`).
+- A job with no person as owner (`unknown`) is refused (`ACTOR_UNKNOWN`).
+
+`ravi cron add` and `ravi cron set` print a warning when the job does not run as you. Turning it into a `--shell` job does not change the owner: the commands the shell runs follow the same rules.
+
+The run still records `lastStatus: ok` when the agent turn completes, even if a command inside it was refused. So prove a job that needs these calls: for a recurring job, one `ravi cron run <id> --execute` produced the result you expected. A job that needs your connectors or Knowledge must run as you (`runsAsOperator: true` in `ravi cron show <id> --json`; a contact linked to you also acts as you). Don't run a one-shot job (`--at` or `--delete-after`) early to test it, because the manual run uses it up; check its settings and confirm after the scheduled run. An agent should report a refused job to you instead of disabling it.
 
 ## Schedules
 
@@ -149,7 +154,7 @@ ravi cron add "ETL batch" \
 - On success the run records `ok`, the exit code and the duration. Nothing is sent to any agent.
 - On failure (non-zero exit or timeout) the run records `error`, `lastError` with stderr, and `lastExitCode`. With `--on-error notify-session:<session>`, that session receives a `[System] Inform:` message with the command, exit code, stderr and stdout, and its agent decides what to do.
 - A one-shot (`--at` or `--delete-after`) shell job is deleted only after a successful run.
-- A shell job keeps its owner. `ravi bases`, personal connectors and Pages access commands it runs refuse it when it does not run as the operator (see [Who the job runs as](#who-the-job-runs-as)).
+- A shell job keeps its owner. The `ravi bases`, Pages access and connector commands it runs act as that owner, or refuse it, the same way an agent job does (see [Who the job runs as](#who-the-job-runs-as)).
 
 ## Run status
 
@@ -215,9 +220,11 @@ Scripts and other agents that create jobs on retries should pass `--idempotency-
     4. If the agent answered `@@SILENT@@`, nothing is posted by design.
   </Accordion>
   <Accordion title="It shows ok, but Bases or a connector refused it">
-    1. `ravi cron show <id> --json`: read `runsAsOperator`. When it is `false` (see `ownerPrincipal`), the job cannot use Bases, personal connectors, Pages access or Knowledge.
-    2. The refusal says so: `ACTOR_UNKNOWN` with `refusalReason: routine_not_operator_owned`, the `jobId` and the `ownerPrincipal`.
-    3. Read the job's message or command, then recreate it from the terminal or your own chat and, for a recurring job, run `ravi cron run <id> --execute` once to check it.
+    1. `ravi cron show <id> --json`: read `ownerPrincipal` and `runsAsOperator`.
+    2. `ACTOR_NOT_LINKED` with `linkFlow: routine`: the job runs as a contact who has not linked their Ravi account. They link it by messaging the agent in private; the job then acts as them.
+    3. `ACTOR_UNKNOWN` with `refusalReason: routine_not_operator_owned`: no person owns the job. Read its message or command and recreate it from the turn of the person it should act for.
+    4. `CONNECTOR_SPEAKER_NOT_OWNER` or `KNOWLEDGE_TURN_NOT_OPERATOR`: those are your own accounts, so only a job that runs as you can use them; recreate it from the terminal or your own chat.
+    5. For a recurring job, run `ravi cron run <id> --execute` once to check it.
   </Accordion>
   <Accordion title="A one-shot job shows (expired) in ravi cron list">
     Its time has passed without a successful run (the run failed, or the time was already past when you added it), and it will not run again. Delete it with `ravi cron rm <id> --execute`.

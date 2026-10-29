@@ -241,11 +241,17 @@ function cronJobRunsAs(job: Pick<CronJob, "ownerPrincipal">): string {
 function cronRunsAsWarning(job: Pick<CronJob, "id" | "ownerPrincipal" | "executionType">): string | null {
   if (cronOwnerActsAsOperator(job.ownerPrincipal ?? null)) return null;
   const owner = cronJobRunsAs(job);
-  const refused =
-    job.executionType === "agent"
+  const agent = job.executionType === "agent";
+  const consequence = owner.startsWith("contact:")
+    ? `Bases and Pages access act as that person through their own ravi link, never as the operator, and refuse while they have not linked (ACTOR_NOT_LINKED); ${
+        agent
+          ? "personal connectors and Knowledge refuse its runs (CONNECTOR_SPEAKER_NOT_OWNER / KNOWLEDGE_TURN_NOT_OPERATOR)"
+          : "personal connector commands it runs refuse it (CONNECTOR_SPEAKER_NOT_OWNER)"
+      }`
+    : agent
       ? "Bases, personal connectors, Pages share/invites and Knowledge refuse its runs (ACTOR_UNKNOWN / CONNECTOR_SPEAKER_NOT_OWNER / KNOWLEDGE_TURN_NOT_OPERATOR)"
       : "Bases, personal connector and Pages access commands it runs refuse it (ACTOR_UNKNOWN / CONNECTOR_SPEAKER_NOT_OWNER)";
-  return `Warning: cron job ${job.id} runs as ${owner}, not the operator: ${refused}. Only a turn the operator writes (the terminal, their own direct chat, or the owner speaking in a group) creates a job that acts as the operator, and --shell does not get around the owner.`;
+  return `Warning: cron job ${job.id} runs as ${owner}, not the operator: ${consequence}. The operator's ravi login never lends its authority to a job someone else created, and --shell does not get around the owner.`;
 }
 
 function printCronRunsAs(job: CronJob, warning: string): void {

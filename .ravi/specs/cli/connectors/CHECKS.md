@@ -175,7 +175,7 @@
 - `cron add` with an idempotency key MUST deduplicate across owners: the
   owner is not part of the fingerprint.
 - `cron add` from a contact's turn MUST return `runsAsOperator: false`, a
-  `Runs as:` line and a warning worded by `executionType`; from the terminal
+  `Runs as:` line and a warning worded by owner and `executionType` (a contact owner acts as that person through their link); from the terminal
   or with a legacy NULL owner, `runsAsOperator: true` and no warning.
   `cron set` that re-owns a job to a contact MUST warn the same way, and an
   operator `cron set` on a contact-owned job MUST keep warning

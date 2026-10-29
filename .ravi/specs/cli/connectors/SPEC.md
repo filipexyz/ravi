@@ -338,15 +338,19 @@ instead of inventing local suggestions that would require extra remote calls.
     the turn classifier applies to `automation:cron:<id>`), else false. When
     it is false, `cron add` and `cron set` MUST print a `Runs as:` line and
     MUST add a warning to `warnings` (also printed in text output) that names
-    the owner and what refuses the job's runs, worded by `executionType`: an
-    agent job's Bases, personal connector, Pages share/invite and Knowledge
-    calls (`ACTOR_UNKNOWN`, `CONNECTOR_SPEAKER_NOT_OWNER`,
+    the owner and what its runs can do, worded by owner and `executionType`.
+    A contact owner: Bases and Pages access act as that person through their
+    own `ravi link` and refuse while they have not linked
+    (`ACTOR_NOT_LINKED`); personal connectors (and Knowledge, for an agent
+    job) refuse (`CONNECTOR_SPEAKER_NOT_OWNER`, `KNOWLEDGE_TURN_NOT_OPERATOR`),
+    since they are the operator's own accounts. Any other owner: an agent
+    job's Bases, personal connector, Pages share/invite and Knowledge calls
+    refuse (`ACTOR_UNKNOWN`, `CONNECTOR_SPEAKER_NOT_OWNER`,
     `KNOWLEDGE_TURN_NOT_OPERATOR`); a shell or exec job's Bases, personal
-    connector and Pages access calls. The warning MUST say that only a turn the
-    operator writes (the terminal, their own direct chat, the owner speaking
-    in a group) creates a job that acts as the operator, and that `--shell`
-    does not get around the owner. It is a warning, not a refusal: the write
-    still happens.
+    connector and Pages access calls. The warning MUST say that the
+    operator's `ravi login` never lends its authority to a job someone else
+    created, and that `--shell` does not get around the owner. It is a
+    warning, not a refusal: the write still happens.
 
 ### Agent-first contract
 
