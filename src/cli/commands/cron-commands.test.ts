@@ -1245,7 +1245,7 @@ describe("CronCommands owner principal", () => {
     }
     expect(lines).toContain("  Runs as:    unknown");
     const warning = lines.find((line) => line.startsWith("Warning: cron job"));
-    expect(warning).toContain("personal connectors and Pages access");
+    expect(warning).toContain("Bases, personal connector and Pages access commands");
     expect(warning).not.toContain("Knowledge");
   });
 

@@ -90,7 +90,7 @@ export function requireOperatorActor(deps: AccessActorDeps, what: string): Actin
   const decision = requireAccessActor(deps);
   if (decision.kind !== "operator") {
     throw new AccessActorRefusedError(
-      `Only the operator can ${what} from here: this turn comes from someone else, and Console cannot check their role on this route.`,
+      `Only the operator can ${what} from here: this turn comes from someone else, and Console cannot check their role on this route. Ask the operator to run it in the terminal.`,
       `contact:${decision.contactId}`,
     );
   }
@@ -569,15 +569,17 @@ export interface AccessFailure {
 /** Console refusals and local actor refusals, as the agent-facing failure. */
 export function describeAccessFailure(error: unknown, op: AccessOperation): AccessFailure | null {
   if (error instanceof AccessActorRefusedError) {
-    const reason = error.reason ?? { kind: "unknown" as const };
     return {
       code: error.code,
       message: error.message,
       exitCode: 3,
-      details: {
-        ...(error.reason ? turnRefusalDetails(error.reason) : {}),
-        suggestedAction: turnRefusalCopy(reason, "access").suggestedAction,
-      },
+      details: error.reason
+        ? {
+            ...turnRefusalDetails(error.reason),
+            suggestedAction: turnRefusalCopy(error.reason, "access").suggestedAction,
+          }
+        : // Operator-only routes (`requireOperatorActor`): the same chat cannot get there.
+          { suggestedAction: "do not retry from this turn; ask the operator to run the command in the terminal" },
     };
   }
   if (!(error instanceof CloudAuthError)) return null;

@@ -103,7 +103,11 @@ writes only through a view, via the `ravi.bases.*` Pages connector actions
    that `resolveAccessActor` refuses (another agent's turn, an unresolved
    speaker) or cannot classify, `openBasesClient` MUST fail `ACTOR_UNKNOWN`
    (exit 3, policy) before any Console call, reads included, instead of
-   sending no actor (which the Console would serve as the operator). Operator
+   sending no actor (which the Console would serve as the operator). A shell
+   cron the daemon spawned (`RAVI_AUTOMATION_PRINCIPAL=automation:cron:<id>`,
+   no context key) counts as a runtime turn here, so a contact-owned shell
+   cron is refused and an operator-owned one acts as the operator; shell
+   triggers and `ravi jobs run` have no owner model and are not covered. Operator
    turns, owner relays and owner-owned routines act as the operator. Outside a turn no actor
    header is sent.
    The refusal MUST carry a typed reason in `error.refusalReason`:

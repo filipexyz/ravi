@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { runWithContext } from "../cli/context.js";
+import { spawnedAutomationEnv } from "../runtime/turn-origin.js";
 import { inRuntimeTurn, isUnattributedTurn, turnActorContactId, unattributedTurnRefusal } from "./turn-actor.js";
 
 describe("turnActorContactId", () => {
@@ -86,5 +87,39 @@ describe("inRuntimeTurn", () => {
     expect(runWithContext({ transport: "gateway" }, () => inRuntimeTurn({}))).toBe(true);
     expect(runWithContext({ transport: "tool" }, () => inRuntimeTurn({}))).toBe(true);
     expect(runWithContext({}, () => inRuntimeTurn({}))).toBe(false);
+  });
+
+  it("covers a shell cron the daemon spawned, but not shell triggers or jobs", () => {
+    expect(inRuntimeTurn(spawnedAutomationEnv("cron", "job_1"))).toBe(true);
+    expect(inRuntimeTurn(spawnedAutomationEnv("trigger", "trg_1"))).toBe(false);
+    expect(inRuntimeTurn(spawnedAutomationEnv("job", "job_1"))).toBe(false);
+    expect(inRuntimeTurn({ RAVI_AUTOMATION_PRINCIPAL: "automation:cron:" })).toBe(false);
+  });
+});
+
+describe("shell crons and Bases", () => {
+  const OWNER = { activeUserId: "user_luis", activeOrgId: "org_1", ownerName: "Luis" };
+
+  it("refuses a contact-owned shell cron and lets an operator-owned one act as the operator", () => {
+    const env = spawnedAutomationEnv("cron", "job_1");
+    const contactOwned = unattributedTurnRefusal(env, {
+      turn: { ...OWNER, getCronJobOwner: () => ({ found: true, ownerPrincipal: "contact:c_ana" }) },
+    });
+    expect(contactOwned?.reason).toEqual({
+      kind: "routine_not_operator_owned",
+      routine: "cron",
+      jobId: "job_1",
+      ownerPrincipal: "contact:c_ana",
+    });
+    expect(
+      unattributedTurnRefusal(env, {
+        turn: { ...OWNER, getCronJobOwner: () => ({ found: true, ownerPrincipal: "operator" }) },
+      }),
+    ).toBeNull();
+    expect(
+      turnActorContactId(env, {
+        turn: { ...OWNER, getCronJobOwner: () => ({ found: true, ownerPrincipal: "operator" }) },
+      }),
+    ).toBeNull();
   });
 });

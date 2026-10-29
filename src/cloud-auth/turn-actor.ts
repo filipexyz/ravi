@@ -22,6 +22,7 @@
 import { resolveAccessActor, type AccessActorDeps } from "../access/actor.js";
 import { getContext } from "../cli/context.js";
 import { RAVI_CONTEXT_KEY_ENV } from "../runtime/context-registry.js";
+import { readSpawnedAutomationPrincipal } from "../runtime/turn-origin.js";
 import type { TurnRefusal } from "./turn-refusal.js";
 
 export const ACTOR_CONTACT_HEADER = "x-ravi-actor-contact";
@@ -40,10 +41,14 @@ export function turnActorContactId(env: NodeJS.ProcessEnv = process.env, deps: A
 /**
  * A runtime turn is running this command: the CLI carries `RAVI_CONTEXT_KEY`,
  * or the daemon is running it for a turn (its gateway and in-process tools
- * set the context; the daemon's own environment has no key).
+ * set the context; the daemon's own environment has no key), or a shell cron
+ * the daemon spawned (`RAVI_AUTOMATION_PRINCIPAL=automation:cron:<id>`), so a
+ * job someone else owns is refused instead of acting as the operator. Shell
+ * triggers and jobs have no owner yet and are not covered.
  */
 export function inRuntimeTurn(env: NodeJS.ProcessEnv = process.env): boolean {
   if (env[RAVI_CONTEXT_KEY_ENV]?.trim()) return true;
+  if (readSpawnedAutomationPrincipal(env)?.startsWith("automation:cron:")) return true;
   const transport = getContext({ localOnly: true })?.transport;
   return transport === "gateway" || transport === "tool";
 }

@@ -85,6 +85,11 @@
   (`src/cli/commands/bases.test.ts`, `src/access/actor.test.ts`). A remote
   `ACTOR_UNKNOWN` MUST keep the catalog copy even with a `reason` in its
   details (`src/cloud-auth/errors.test.ts`).
+- A shell cron process (`RAVI_AUTOMATION_PRINCIPAL=automation:cron:<id>`, no
+  context key) MUST count as a runtime turn: a contact-owned job's Bases call
+  fails `ACTOR_UNKNOWN` with `routine_not_operator_owned`, an operator-owned
+  one sends no actor; shell triggers and jobs MUST NOT be covered
+  (`src/cloud-auth/turn-actor.test.ts`).
 - `bases views share` without `--execute` MUST exit 3 after reading the
   view and site, with no PATCH; with it, it MUST PATCH `access` at the
   version read with the `page_viewer` added, MUST NOT PATCH when nothing

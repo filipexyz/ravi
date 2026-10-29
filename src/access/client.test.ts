@@ -355,6 +355,17 @@ describe("describeAccessFailure", () => {
     expect(describeAccessFailure(new AccessActorRefusedError("who?", "unknown"), "invites list")).toMatchObject({
       code: "ACTOR_UNKNOWN",
       exitCode: 3,
+      details: { suggestedAction: "do not retry from this turn; ask the operator to run the command in the terminal" },
+    });
+    const routine = new AccessActorRefusedError("routine", "automation:cron:job_1", {
+      kind: "routine_not_operator_owned",
+      routine: "cron",
+      jobId: "job_1",
+      ownerPrincipal: "contact:c_ana",
+    });
+    expect(describeAccessFailure(routine, "invites create")?.details).toMatchObject({
+      refusalReason: "routine_not_operator_owned",
+      jobId: "job_1",
     });
   });
 });

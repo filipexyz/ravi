@@ -341,8 +341,8 @@ instead of inventing local suggestions that would require extra remote calls.
     the owner and what refuses the job's runs, worded by `executionType`: an
     agent job's Bases, personal connector, Pages share/invite and Knowledge
     calls (`ACTOR_UNKNOWN`, `CONNECTOR_SPEAKER_NOT_OWNER`,
-    `KNOWLEDGE_TURN_NOT_OPERATOR`); a shell or exec job's personal connector
-    and Pages access calls. The warning MUST say that only a turn the
+    `KNOWLEDGE_TURN_NOT_OPERATOR`); a shell or exec job's Bases, personal
+    connector and Pages access calls. The warning MUST say that only a turn the
     operator writes (the terminal, their own direct chat, the owner speaking
     in a group) creates a job that acts as the operator, and that `--shell`
     does not get around the owner. It is a warning, not a refusal: the write

@@ -236,7 +236,7 @@ function cronJobRunsAs(job: Pick<CronJob, "ownerPrincipal">): string {
  * The `cron add`/`set` warning for a job that does not act as the operator,
  * or null. What refuses its runs depends on what runs: an agent turn hits
  * Bases, connectors, Pages access and Knowledge; a shell process hits
- * connectors and Pages access.
+ * Bases, connectors and Pages access.
  */
 function cronRunsAsWarning(job: Pick<CronJob, "id" | "ownerPrincipal" | "executionType">): string | null {
   if (cronOwnerActsAsOperator(job.ownerPrincipal ?? null)) return null;
@@ -244,7 +244,7 @@ function cronRunsAsWarning(job: Pick<CronJob, "id" | "ownerPrincipal" | "executi
   const refused =
     job.executionType === "agent"
       ? "Bases, personal connectors, Pages share/invites and Knowledge refuse its runs (ACTOR_UNKNOWN / CONNECTOR_SPEAKER_NOT_OWNER / KNOWLEDGE_TURN_NOT_OPERATOR)"
-      : "personal connectors and Pages access commands it runs refuse it (CONNECTOR_SPEAKER_NOT_OWNER / ACTOR_UNKNOWN)";
+      : "Bases, personal connector and Pages access commands it runs refuse it (ACTOR_UNKNOWN / CONNECTOR_SPEAKER_NOT_OWNER)";
   return `Warning: cron job ${job.id} runs as ${owner}, not the operator: ${refused}. Only a turn the operator writes (the terminal, their own direct chat, or the owner speaking in a group) creates a job that acts as the operator, and --shell does not get around the owner.`;
 }
 
@@ -465,7 +465,8 @@ export class CronCommands {
       for (const line of buildCronShowOutput(job, describeSchedule(job.schedule), agentId, routing)) {
         console.log(line);
       }
-      console.log(`  ${"Runs as:".padEnd(16)}${cronJobRunsAs(job)}`);
+      const boundToOperator = job.ownerPrincipal?.startsWith("contact:") && cronOwnerActsAsOperator(job.ownerPrincipal);
+      console.log(`  ${"Runs as:".padEnd(16)}${cronJobRunsAs(job)}${boundToOperator ? " (acts as the operator)" : ""}`);
     }
     return payload;
   }
