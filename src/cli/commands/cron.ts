@@ -39,7 +39,11 @@ import { DEFAULT_CRON_SHELL_TIMEOUT_MS } from "../../cron/shell-executor.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 import { buildCronShowOutput, type CronRoutingResolution, type CronRoutingSource } from "../cron-show-output.js";
 import { resolveCronTarget, type CronTargetResolution } from "../../cron/target-resolver.js";
-import { CRON_OPERATOR_OWNER, resolveCronOwnerPrincipalForCurrentTurn } from "../../link/connector-turn.js";
+import {
+  CRON_OPERATOR_OWNER,
+  cronOwnerActsAsOperator,
+  resolveCronOwnerPrincipalForCurrentTurn,
+} from "../../link/connector-turn.js";
 
 function parseCronShellTimeout(value: string | undefined): number | undefined {
   if (!value) return undefined;
@@ -229,6 +233,27 @@ function cronJobRunsAs(job: Pick<CronJob, "ownerPrincipal">): string {
 }
 
 /**
+ * The `cron add`/`set` warning for a job that does not act as the operator,
+ * or null. What refuses its runs depends on what runs: an agent turn hits
+ * Bases, connectors, Pages access and Knowledge; a shell process hits
+ * connectors and Pages access.
+ */
+function cronRunsAsWarning(job: Pick<CronJob, "id" | "ownerPrincipal" | "executionType">): string | null {
+  if (cronOwnerActsAsOperator(job.ownerPrincipal ?? null)) return null;
+  const owner = cronJobRunsAs(job);
+  const refused =
+    job.executionType === "agent"
+      ? "Bases, personal connectors, Pages share/invites and Knowledge refuse its runs (ACTOR_UNKNOWN / CONNECTOR_SPEAKER_NOT_OWNER / KNOWLEDGE_TURN_NOT_OPERATOR)"
+      : "personal connectors and Pages access commands it runs refuse it (CONNECTOR_SPEAKER_NOT_OWNER / ACTOR_UNKNOWN)";
+  return `Warning: cron job ${job.id} runs as ${owner}, not the operator: ${refused}. Only a turn the operator writes (the terminal, their own direct chat, or the owner speaking in a group) creates a job that acts as the operator, and --shell does not get around the owner.`;
+}
+
+function printCronRunsAs(job: CronJob, warning: string): void {
+  console.log(`  Runs as:    ${cronJobRunsAs(job)}`);
+  console.log(warning);
+}
+
+/**
  * `cron set` keys that change neither what a job runs nor where its output
  * goes. Any other key (name, which goes into the prompt and the isolated
  * session's name, instructions, agent, env file, error target, reply
@@ -250,6 +275,7 @@ function serializeCronJob(job: CronJob) {
   return {
     ...job,
     ownerPrincipal: cronJobRunsAs(job),
+    runsAsOperator: cronOwnerActsAsOperator(job.ownerPrincipal ?? null),
     effectiveAgentId: job.executionType === "agent" ? (job.agentId ?? getDefaultAgentId()) : undefined,
     ownerAgentId: job.executionType === "shell" ? job.agentId : undefined,
     scheduleDescription: describeSchedule(job.schedule),
@@ -595,6 +621,8 @@ export class CronCommands {
             : undefined,
       );
       const job = creation.job;
+      const runsAsWarning = job ? cronRunsAsWarning(job) : null;
+      if (runsAsWarning) warnings.push(runsAsWarning);
 
       // Signal daemon to refresh timers
       if (creation.created) await nats.emit("ravi.cron.refresh", {});
@@ -633,6 +661,7 @@ export class CronCommands {
         if (job.nextRunAt) {
           console.log(`  Next run:   ${new Date(job.nextRunAt).toLocaleString()}`);
         }
+        if (runsAsWarning) printCronRunsAs(job, runsAsWarning);
       }
       return payload;
     } catch (err) {
@@ -906,16 +935,20 @@ export class CronCommands {
       await nats.emit("ravi.cron.refresh", {});
 
       const updatedJob = dbGetCronJob(id);
+      const runsAsWarning = updatedJob ? cronRunsAsWarning(updatedJob) : null;
       const payload = {
         status: "updated" as const,
         target: { type: "cron" as const, id },
         changedCount: 1,
         property: key,
         value: normalizedValue,
+        warnings: runsAsWarning ? [runsAsWarning] : [],
         job: updatedJob ? serializeCronJob(updatedJob) : null,
       };
       if (asJson) {
         printJson(payload);
+      } else if (updatedJob && runsAsWarning) {
+        printCronRunsAs(updatedJob, runsAsWarning);
       }
       return payload;
     } catch (err) {

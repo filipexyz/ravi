@@ -332,6 +332,21 @@ instead of inventing local suggestions that would require extra remote calls.
     that turn's principal as its owner, in the same write as the edit. The
     owner is not part of the `cron add` idempotency fingerprint, so a key
     recorded before owners existed, or an observer replay, still matches.
+13a. Every serialized job (`cron add`, `set`, `show`, `list` JSON) MUST carry
+    `runsAsOperator`: true when the owner acts as the operator (NULL,
+    `operator`, or a contact bound to the active Console user, the same test
+    the turn classifier applies to `automation:cron:<id>`), else false. When
+    it is false, `cron add` and `cron set` MUST print a `Runs as:` line and
+    MUST add a warning to `warnings` (also printed in text output) that names
+    the owner and what refuses the job's runs, worded by `executionType`: an
+    agent job's Bases, personal connector, Pages share/invite and Knowledge
+    calls (`ACTOR_UNKNOWN`, `CONNECTOR_SPEAKER_NOT_OWNER`,
+    `KNOWLEDGE_TURN_NOT_OPERATOR`); a shell or exec job's personal connector
+    and Pages access calls. The warning MUST say that only a turn the
+    operator writes (the terminal, their own direct chat, the owner speaking
+    in a group) creates a job that acts as the operator, and that `--shell`
+    does not get around the owner. It is a warning, not a refusal: the write
+    still happens.
 
 ### Agent-first contract
 

@@ -106,6 +106,18 @@ writes only through a view, via the `ravi.bases.*` Pages connector actions
    sending no actor (which the Console would serve as the operator). Operator
    turns, owner relays and owner-owned routines act as the operator. Outside a turn no actor
    header is sent.
+   The refusal MUST carry a typed reason in `error.refusalReason`:
+   `routine_not_operator_owned` (a cron job someone else owns; with
+   `jobId` and `ownerPrincipal`), `agent_relay`, `ended` or `unknown`, and a
+   `suggestedAction` true for that reason. A routine run has nobody to ask,
+   so its action MUST NOT tell the agent to have the person ask from their
+   chat: it says not to retry from the run, to report the job to the
+   operator without disabling it, and that the operator reviews the job's
+   message or command and recreates it from an operator turn. This copy is
+   local: it applies only to the error `openBasesClient` (and the access and
+   cloud-run clients) build, marked by its class, never to an
+   `ACTOR_UNKNOWN` a Console response carries, which keeps the catalog copy
+   whatever its `details` say.
 7. `rows update`, `rows archive`, and `rows restore` MUST require exactly one
    of `--expected-version <n>` or `--last-write-wins`, checked before any
    Console call.

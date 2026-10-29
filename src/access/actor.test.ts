@@ -92,7 +92,32 @@ describe("accessActorFromTurn", () => {
     expect(decision.message).toContain("could not tell who is asking");
 
     const otherAgent: ConnectorTurnResult = { ok: false, error: blockedError, actorPrincipal: "agent:helper" };
-    expect(accessActorFromTurn(otherAgent, noAgentName).kind).toBe("refused");
+    expect(accessActorFromTurn(otherAgent, noAgentName)).toMatchObject({
+      kind: "refused",
+      reason: { kind: "agent_relay" },
+    });
+    expect(decision.reason).toEqual({ kind: "unknown" });
+
+    const ended: ConnectorTurnResult = { ok: false, error: blockedError, actorPrincipal: "unknown", ended: true };
+    expect(accessActorFromTurn(ended, noAgentName)).toMatchObject({ kind: "refused", reason: { kind: "ended" } });
+  });
+
+  it("refuses a run of a cron job someone else owns, with the job and its owner", () => {
+    const routine: ConnectorTurnResult = {
+      ok: false,
+      error: blockedError,
+      actorPrincipal: "automation:cron:job_1",
+      routineOwner: { kind: "cron", id: "job_1", ownerPrincipal: "contact:c_ana" },
+    };
+    const decision = accessActorFromTurn(routine, noAgentName);
+    expect(decision).toMatchObject({
+      kind: "refused",
+      actorPrincipal: "automation:cron:job_1",
+      reason: { kind: "routine_not_operator_owned", routine: "cron", jobId: "job_1", ownerPrincipal: "contact:c_ana" },
+    });
+    if (decision.kind !== "refused") return;
+    expect(decision.message).toContain("cron job job_1");
+    expect(decision.message).not.toContain("the person can ask");
   });
 
   it("sends no actor for the operator", () => {

@@ -22,6 +22,7 @@
 import { resolveAccessActor, type AccessActorDeps } from "../access/actor.js";
 import { getContext } from "../cli/context.js";
 import { RAVI_CONTEXT_KEY_ENV } from "../runtime/context-registry.js";
+import type { TurnRefusal } from "./turn-refusal.js";
 
 export const ACTOR_CONTACT_HEADER = "x-ravi-actor-contact";
 
@@ -56,10 +57,25 @@ export function inRuntimeTurn(env: NodeJS.ProcessEnv = process.env): boolean {
  * contact, false.
  */
 export function isUnattributedTurn(env: NodeJS.ProcessEnv = process.env, deps: AccessActorDeps = {}): boolean {
-  if (!deps.actor && !inRuntimeTurn(env)) return false;
+  return unattributedTurnRefusal(env, deps) !== null;
+}
+
+/**
+ * The refusal behind {@link isUnattributedTurn}, with its reason (a routine
+ * someone else owns, another agent's relay, an ended turn, unknown), or null
+ * when the turn may act.
+ */
+export function unattributedTurnRefusal(
+  env: NodeJS.ProcessEnv = process.env,
+  deps: AccessActorDeps = {},
+): TurnRefusal | null {
+  if (!deps.actor && !inRuntimeTurn(env)) return null;
   try {
-    return resolveAccessActor({ ...deps, turn: { ...deps.turn, env } }).kind === "refused";
+    const decision = resolveAccessActor({ ...deps, turn: { ...deps.turn, env } });
+    return decision.kind === "refused"
+      ? { reason: decision.reason ?? { kind: "unknown" }, actorPrincipal: decision.actorPrincipal }
+      : null;
   } catch {
-    return true;
+    return { reason: { kind: "unknown" }, actorPrincipal: "unknown" };
   }
 }

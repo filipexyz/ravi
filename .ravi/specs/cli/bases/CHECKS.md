@@ -79,6 +79,12 @@
 - Inside a runtime turn Ravi cannot attribute, every Bases command (reads
   included) MUST fail `ACTOR_UNKNOWN` (exit 3) with no Console call
   (`src/bases/client.test.ts`, `src/cloud-auth/turn-actor.test.ts`).
+- A run of a cron job someone else owns MUST fail `ACTOR_UNKNOWN` with
+  `refusalReason: routine_not_operator_owned`, its `jobId` and `ownerPrincipal`, and
+  a suggested action that does not send the agent to the person's chat
+  (`src/cli/commands/bases.test.ts`, `src/access/actor.test.ts`). A remote
+  `ACTOR_UNKNOWN` MUST keep the catalog copy even with a `reason` in its
+  details (`src/cloud-auth/errors.test.ts`).
 - `bases views share` without `--execute` MUST exit 3 after reading the
   view and site, with no PATCH; with it, it MUST PATCH `access` at the
   version read with the `page_viewer` added, MUST NOT PATCH when nothing

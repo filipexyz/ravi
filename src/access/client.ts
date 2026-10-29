@@ -20,6 +20,7 @@
 
 import { turnLinkContract } from "../identity-link/turn-link-copy.js";
 import { CloudAuthError } from "../cloud-auth/errors.js";
+import { turnRefusalCopy, turnRefusalDetails, type TurnRefusalReason } from "../cloud-auth/turn-refusal.js";
 import { createAuthenticatedPagesContext, type PagesClientDeps, type PagesClientOptions } from "../pages/client.js";
 import {
   accessActorBody,
@@ -67,6 +68,8 @@ export class AccessActorRefusedError extends Error {
   constructor(
     message: string,
     readonly actorPrincipal: string,
+    /** Why the turn was refused, when the classification said. */
+    readonly reason?: TurnRefusalReason,
   ) {
     super(message);
     this.name = "AccessActorRefusedError";
@@ -76,7 +79,9 @@ export class AccessActorRefusedError extends Error {
 /** The turn's actor, or AccessActorRefusedError. Never falls back to the operator. */
 export function requireAccessActor(deps: AccessActorDeps = {}): ActingDecision {
   const decision = resolveAccessActor(deps);
-  if (decision.kind === "refused") throw new AccessActorRefusedError(decision.message, decision.actorPrincipal);
+  if (decision.kind === "refused") {
+    throw new AccessActorRefusedError(decision.message, decision.actorPrincipal, decision.reason);
+  }
   return decision;
 }
 
@@ -564,13 +569,14 @@ export interface AccessFailure {
 /** Console refusals and local actor refusals, as the agent-facing failure. */
 export function describeAccessFailure(error: unknown, op: AccessOperation): AccessFailure | null {
   if (error instanceof AccessActorRefusedError) {
+    const reason = error.reason ?? { kind: "unknown" as const };
     return {
       code: error.code,
       message: error.message,
       exitCode: 3,
       details: {
-        suggestedAction:
-          "do not retry from this turn; the person can ask from their own chat, or the operator can run the command in the terminal",
+        ...(error.reason ? turnRefusalDetails(error.reason) : {}),
+        suggestedAction: turnRefusalCopy(reason, "access").suggestedAction,
       },
     };
   }

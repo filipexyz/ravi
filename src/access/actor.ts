@@ -21,13 +21,14 @@
  *   operator.
  * - Anything else (an unresolved speaker, an agent relaying for another
  *   session, a routine someone else owns, a turn that already ended): refused
- *   here, and nothing is sent. A turn that cannot be attributed never falls
- *   back to the operator's authority.
+ *   here, with that reason, and nothing is sent. A turn that cannot be
+ *   attributed never falls back to the operator's authority.
  */
 
 import { dbGetAgent } from "../router/router-db.js";
 import type { ConnectorTurn, ConnectorTurnDeps, ConnectorTurnResult } from "../link/connector-turn.js";
 import { resolveTurnForActiveLogin } from "../pages/read.js";
+import { turnRefusalCopy, type TurnRefusalReason } from "../cloud-auth/turn-refusal.js";
 import type { PagesClientDeps } from "../pages/client.js";
 
 export type AccessActorDecision =
@@ -45,6 +46,8 @@ export type AccessActorDecision =
       kind: "refused";
       message: string;
       actorPrincipal: string;
+      /** Why: a routine someone else owns, another agent's relay, an ended turn, or unknown (absent). */
+      reason?: TurnRefusalReason;
     };
 
 export interface AccessAgent {
@@ -77,7 +80,7 @@ export function accessActorFromTurn(result: ConnectorTurnResult, deps: AccessAct
     if (turn.speaker.kind === "contact" && turn.speaker.contactId) {
       return { kind: "contact", contactId: turn.speaker.contactId, ...agentOf(turn, deps) };
     }
-    if (turn.speaker.kind === "agent") return refused(turn.actorPrincipal);
+    if (turn.speaker.kind === "agent") return refused(turn.actorPrincipal, { kind: "agent_relay" });
     return { kind: "operator", ...agentOf(turn, deps) };
   }
   // The operator's own relay, refused by the connector rule only for where
@@ -94,7 +97,21 @@ export function accessActorFromTurn(result: ConnectorTurnResult, deps: AccessAct
   if (candidate?.speaker.kind === "contact" && candidate.speaker.contactId) {
     return { kind: "contact", contactId: candidate.speaker.contactId, ...agentOf(candidate, deps) };
   }
-  return refused(result.actorPrincipal);
+  return refused(result.actorPrincipal, refusalReason(result));
+}
+
+function refusalReason(result: Extract<ConnectorTurnResult, { ok: false }>): TurnRefusalReason {
+  if (result.routineOwner) {
+    return {
+      kind: "routine_not_operator_owned",
+      routine: result.routineOwner.kind,
+      jobId: result.routineOwner.id,
+      ownerPrincipal: result.routineOwner.ownerPrincipal,
+    };
+  }
+  if (result.ended) return { kind: "ended" };
+  if (result.actorPrincipal.startsWith("agent:")) return { kind: "agent_relay" };
+  return { kind: "unknown" };
 }
 
 /** `{ actor: { contactId } }` for a contact, nothing for the operator. */
@@ -126,11 +143,6 @@ function readAgentName(agentId: string, deps: AccessActorDeps): string | null {
   }
 }
 
-function refused(actorPrincipal: string): AccessActorDecision {
-  return {
-    kind: "refused",
-    actorPrincipal,
-    message:
-      "Ravi could not tell who is asking in this turn, so it will not share, invite or ask for access on anyone's behalf. Ask the person to send the request from their own chat, or the operator to run it in the terminal.",
-  };
+function refused(actorPrincipal: string, reason: TurnRefusalReason): AccessActorDecision {
+  return { kind: "refused", actorPrincipal, reason, message: turnRefusalCopy(reason, "access").message };
 }

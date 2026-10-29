@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { runWithContext } from "../cli/context.js";
-import { inRuntimeTurn, isUnattributedTurn, turnActorContactId } from "./turn-actor.js";
+import { inRuntimeTurn, isUnattributedTurn, turnActorContactId, unattributedTurnRefusal } from "./turn-actor.js";
 
 describe("turnActorContactId", () => {
   it("is null outside a runtime turn, without classifying anything", () => {
@@ -48,6 +48,34 @@ describe("isUnattributedTurn", () => {
   it("is false outside a runtime turn (the terminal, the daemon's own calls)", () => {
     expect(isUnattributedTurn({})).toBe(false);
     expect(runWithContext({}, () => isUnattributedTurn({}))).toBe(false);
+  });
+});
+
+describe("unattributedTurnRefusal", () => {
+  it("carries the refusal's reason, unknown when the classification gave none or failed", () => {
+    const env = { RAVI_CONTEXT_KEY: "ctx_1" };
+    const reason = {
+      kind: "routine_not_operator_owned" as const,
+      routine: "cron" as const,
+      jobId: "job_1",
+      ownerPrincipal: "contact:c_ana",
+    };
+    expect(
+      unattributedTurnRefusal(env, {
+        actor: { kind: "refused", message: "x", actorPrincipal: "automation:cron:job_1", reason },
+      }),
+    ).toEqual({ reason, actorPrincipal: "automation:cron:job_1" });
+    expect(
+      unattributedTurnRefusal(env, { actor: { kind: "refused", message: "x", actorPrincipal: "agent:x" } }),
+    ).toEqual({ reason: { kind: "unknown" }, actorPrincipal: "agent:x" });
+    expect(unattributedTurnRefusal(env, { actor: { kind: "operator" } })).toBeNull();
+    const throwing = {
+      readCredentials: () => {
+        throw new Error("credentials unreadable");
+      },
+    };
+    expect(unattributedTurnRefusal(env, throwing)?.reason).toEqual({ kind: "unknown" });
+    expect(unattributedTurnRefusal({})).toBeNull();
   });
 });
 

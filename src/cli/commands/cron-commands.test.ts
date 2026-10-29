@@ -1213,21 +1213,45 @@ describe("CronCommands owner principal", () => {
   it("records the operator as owner when the job is created from the terminal", async () => {
     const payload = await addAgentJob();
 
-    expect(payload).toMatchObject({ status: "created", job: { ownerPrincipal: "operator" } });
+    expect(payload).toMatchObject({
+      status: "created",
+      warnings: [],
+      job: { ownerPrincipal: "operator", runsAsOperator: true },
+    });
     expect(cronJob?.ownerPrincipal).toBe("operator");
   });
 
   it("records an unknown owner when a runtime creates the job without a context", async () => {
     process.env.RAVI_SESSION_NAME = "someone-else";
 
-    const payload = await addAgentJob();
+    const payload = (await addAgentJob()) as { warnings: string[] };
 
-    expect(payload).toMatchObject({ job: { ownerPrincipal: "unknown" } });
+    expect(payload).toMatchObject({ job: { ownerPrincipal: "unknown", runsAsOperator: false } });
+    expect(payload.warnings).toHaveLength(1);
+    expect(payload.warnings[0]).toContain("runs as unknown, not the operator");
+    expect(payload.warnings[0]).toContain("Bases");
+    expect(payload.warnings[0]).toContain("--shell does not get around the owner");
+  });
+
+  it("prints Runs as and the warning in text output when the job does not act as the operator", async () => {
+    process.env.RAVI_SESSION_NAME = "someone-else";
+    const lines: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => lines.push(args.map(String).join(" "));
+    try {
+      await new CronCommands().add("Sync", undefined, "30m", undefined, undefined, undefined, "ravi bases list --json");
+    } finally {
+      console.log = originalLog;
+    }
+    expect(lines).toContain("  Runs as:    unknown");
+    const warning = lines.find((line) => line.startsWith("Warning: cron job"));
+    expect(warning).toContain("personal connectors and Pages access");
+    expect(warning).not.toContain("Knowledge");
   });
 
   it("shows legacy jobs (no owner) as running as the operator", async () => {
     const payload = await captureJson(async () => new CronCommands().show("cron-1", true));
-    expect(payload).toMatchObject({ job: { ownerPrincipal: "operator" } });
+    expect(payload).toMatchObject({ job: { ownerPrincipal: "operator", runsAsOperator: true } });
 
     const lines: string[] = [];
     const originalLog = console.log;
@@ -1244,9 +1268,12 @@ describe("CronCommands owner principal", () => {
     cronJob = { ...cronJob, ownerPrincipal: "operator" };
     process.env.RAVI_SESSION_NAME = "someone-else";
 
-    const payload = await captureJson(() => new CronCommands().set("cron-1", "message", "forward my mail", true));
+    const payload = (await captureJson(() => new CronCommands().set("cron-1", "message", "forward my mail", true))) as {
+      warnings: string[];
+    };
 
-    expect(payload).toMatchObject({ status: "updated", job: { ownerPrincipal: "unknown" } });
+    expect(payload).toMatchObject({ status: "updated", job: { ownerPrincipal: "unknown", runsAsOperator: false } });
+    expect(payload.warnings[0]).toContain("runs as unknown, not the operator");
   });
 
   it("re-owns the job in the same write for name, env-file, on-error, agent, account and reply-session edits", async () => {
@@ -1295,8 +1322,19 @@ describe("CronCommands owner principal", () => {
   it("keeps the owner when the operator edits the job", async () => {
     cronJob = { ...cronJob, ownerPrincipal: "contact:c_bob" };
 
+    const payload = (await captureJson(() => new CronCommands().set("cron-1", "message", "new text", true))) as {
+      warnings: string[];
+    };
+
+    expect(payload).toMatchObject({ job: { ownerPrincipal: "contact:c_bob", runsAsOperator: false } });
+    expect(payload.warnings[0]).toContain("runs as contact:c_bob, not the operator");
+  });
+
+  it("does not warn when an operator-owned job is edited", async () => {
+    cronJob = { ...cronJob, ownerPrincipal: "operator" };
+
     const payload = await captureJson(() => new CronCommands().set("cron-1", "message", "new text", true));
 
-    expect(payload).toMatchObject({ job: { ownerPrincipal: "contact:c_bob" } });
+    expect(payload).toMatchObject({ warnings: [], job: { runsAsOperator: true } });
   });
 });

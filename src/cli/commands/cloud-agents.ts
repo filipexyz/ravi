@@ -33,7 +33,13 @@ import {
   type CloudRunStartBody,
   type CloudSchedule,
 } from "../../cloud-agents/types.js";
-import { isUnattributedTurn } from "../../cloud-auth/turn-actor.js";
+import { unattributedTurnRefusal } from "../../cloud-auth/turn-actor.js";
+import {
+  normalizeTurnRefusal,
+  turnRefusalCopy,
+  turnRefusalDetails,
+  type TurnRefusal,
+} from "../../cloud-auth/turn-refusal.js";
 import { isOperatorOwnTurn } from "../../library/turn.js";
 import { safeRelativePath } from "../../pages/read-download.js";
 import {
@@ -77,7 +83,7 @@ export interface CloudAgentsCommandDeps {
   inAgentRuntime?: () => boolean;
   operatorOwnTurn?: () => boolean;
   /** Whether an agent turn runs this and Ravi cannot say who asked (another agent, an unresolved speaker). */
-  unattributedTurn?: () => boolean;
+  unattributedTurn?: () => boolean | TurnRefusal | null;
   /** Default timezone of a new schedule. */
   localTimezone?: () => string;
   /** The agent session this call runs in and the chat its turn came from; null in a terminal. */
@@ -146,7 +152,7 @@ function defaultsOf(deps: CloudAgentsCommandDeps) {
     sleep: deps.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms))),
     inAgentRuntime: deps.inAgentRuntime ?? (() => runtimeLibraryCaller() !== null),
     operatorOwnTurn: deps.operatorOwnTurn ?? (() => isOperatorOwnTurn()),
-    unattributedTurn: deps.unattributedTurn ?? (() => isUnattributedTurn()),
+    unattributedTurn: deps.unattributedTurn ?? (() => unattributedTurnRefusal()),
     localTimezone: deps.localTimezone ?? (() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"),
     chatContext: deps.chatContext ?? defaultChatContext,
     turnPerson: deps.turnPerson ?? currentTurnPerson,
@@ -1274,20 +1280,20 @@ export class CloudRunsCommands {
    * instead (as Bases does), before any Console call.
    */
   private refuseUnattributedTurn(op: string, asJson?: boolean) {
-    if (!defaultsOf(this.deps).unattributedTurn()) return;
-    contractFail(
-      op,
-      "ACTOR_UNKNOWN",
-      "Ravi could not tell who is asking in this turn, so it will not decide a cloud run for anyone, not even as the operator.",
-      {
-        asJson,
-        exitCode: CONTRACT_EXIT_POLICY,
-        details: {
-          suggestedAction:
-            "Ask the run's person to answer from their own chat or the Console, or the operator to run it in the terminal.",
-        },
+    const refusal = normalizeTurnRefusal(defaultsOf(this.deps).unattributedTurn());
+    if (!refusal) return;
+    const copy = turnRefusalCopy(refusal.reason, "cloud-runs");
+    contractFail(op, "ACTOR_UNKNOWN", copy.message, {
+      asJson,
+      exitCode: CONTRACT_EXIT_POLICY,
+      details: {
+        ...turnRefusalDetails(refusal.reason),
+        suggestedAction:
+          refusal.reason.kind === "unknown"
+            ? "Ask the run's person to answer from their own chat or the Console, or the operator to run it in the terminal."
+            : copy.suggestedAction,
       },
-    );
+    });
   }
 
   private async decide(

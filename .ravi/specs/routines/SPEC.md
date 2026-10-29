@@ -88,6 +88,8 @@ quality:
 - A routine MUST NOT perform irreversible external action unless the routine policy explicitly allows it and approvals are satisfied.
 - A routine SHOULD write durable state when it is expected to remember prior runs.
 - An agent-created background cron MUST be inspected after creation with `ravi cron show <id>` and MUST verify agent, account, session/reply-session, schedule, and one-shot deletion policy when applicable.
+- An agent-created cron MUST also verify "Runs as" (`runsAsOperator`). A job someone other than the operator owns never acts as the operator: Bases, personal connectors, Pages access and Knowledge refuse its runs, and `--shell` does not get around that. A job that needs them is ready only when it runs as the operator and one real `ravi cron run <id> --execute` produced the intended outcome; `lastStatus: ok` alone does not prove it.
+- An agent MUST NOT disable a cron job it finds refused or failing without saying so; it reports the job and the refusal to the operator instead.
 - Agents MUST NOT create cron jobs for every task, vague reminders, duplicate existing jobs, or noisy checks.
 
 ## Acceptance Criteria
