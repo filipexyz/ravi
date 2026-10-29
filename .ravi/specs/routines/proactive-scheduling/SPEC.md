@@ -56,7 +56,7 @@ An agent MUST create or suggest a background cron **only** when **all** of the f
 - Agents MUST NOT create speculative automations for things that might be needed.
 - Agents MUST NOT use cron for inactivity-based follow-up. Those belong to `ravi sessions followups`.
 - Agents MUST NOT encode recurring behavior with policy as a long cron prompt. It MUST have or reference a routine/spec.
-- Agents MUST NOT switch a job to `--shell` to get around its owner: a shell job keeps the same owner, and Bases, personal connectors and Pages access refuse it the same way.
+- Agents MUST NOT try to switch a job to `--shell` to get around its owner: only the operator can own a shell job (`CRON_SHELL_NOT_OPERATOR` for anyone else), and the runner never runs one someone else owns.
 - Agents MUST NOT disable a refused or failing cron silently; they report the job and the refusal to the operator.
 
 ## SHOULD Rules

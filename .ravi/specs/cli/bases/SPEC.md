@@ -111,8 +111,10 @@ writes only through a view, via the `ravi.bases.*` Pages connector actions
    `ravi login`. A cron job no person owns (`unknown`, an agent) is refused.
    A shell cron the daemon spawned
    (`RAVI_AUTOMATION_PRINCIPAL=automation:cron:<id>`, no context key) counts
-   as a runtime turn here, with the same owner rules; shell triggers and
-   `ravi jobs run` have no owner model and are not covered. Operator turns,
+   as a runtime turn here; shell triggers and `ravi jobs run` have no owner
+   model and are not covered. That marker is not a boundary: a shell command
+   controls its own environment and runs with the machine's access, so only
+   a job that acts as the operator may be a shell job (connectors 13b). Operator turns,
    owner relays and owner-owned routines act as the operator. Outside a turn
    no actor header is sent.
    When a cron run's contact is not linked, the link flow MUST NOT message

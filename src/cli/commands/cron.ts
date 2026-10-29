@@ -4,7 +4,7 @@
 
 import "reflect-metadata";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
-import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import { CONTRACT_EXIT_POLICY, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { cronListReturnSchema, cronMutationReturnSchema, cronShowReturnSchema } from "./operational-return-schemas.js";
@@ -241,17 +241,37 @@ function cronJobRunsAs(job: Pick<CronJob, "ownerPrincipal">): string {
 function cronRunsAsWarning(job: Pick<CronJob, "id" | "ownerPrincipal" | "executionType">): string | null {
   if (cronOwnerActsAsOperator(job.ownerPrincipal ?? null)) return null;
   const owner = cronJobRunsAs(job);
-  const agent = job.executionType === "agent";
+  const lead = `Warning: cron job ${job.id} runs as ${owner}, not the operator`;
+  if (job.executionType !== "agent") {
+    return `${lead}: a shell job does not run unless it acts as the operator, since its command runs with this machine's access and the operator's credentials. The operator recreates it from the terminal or their own chat, or turns it into an agent job (cron set ${job.id} message ...).`;
+  }
   const consequence = owner.startsWith("contact:")
-    ? `Bases and Pages access act as that person through their own ravi link, never as the operator, and refuse while they have not linked (ACTOR_NOT_LINKED); ${
-        agent
-          ? "personal connectors and Knowledge refuse its runs (CONNECTOR_SPEAKER_NOT_OWNER / KNOWLEDGE_TURN_NOT_OPERATOR)"
-          : "personal connector commands it runs refuse it (CONNECTOR_SPEAKER_NOT_OWNER)"
-      }`
-    : agent
-      ? "Bases, personal connectors, Pages share/invites and Knowledge refuse its runs (ACTOR_UNKNOWN / CONNECTOR_SPEAKER_NOT_OWNER / KNOWLEDGE_TURN_NOT_OPERATOR)"
-      : "Bases, personal connector and Pages access commands it runs refuse it (ACTOR_UNKNOWN / CONNECTOR_SPEAKER_NOT_OWNER)";
-  return `Warning: cron job ${job.id} runs as ${owner}, not the operator: ${consequence}. The operator's ravi login never lends its authority to a job someone else created, and --shell does not get around the owner.`;
+    ? "Bases and Pages access act as that person through their own ravi link, never as the operator, and refuse while they have not linked (ACTOR_NOT_LINKED); personal connectors and Knowledge refuse its runs (CONNECTOR_SPEAKER_NOT_OWNER / KNOWLEDGE_TURN_NOT_OPERATOR)"
+    : "Bases, personal connectors, Pages share/invites and Knowledge refuse its runs (ACTOR_UNKNOWN / CONNECTOR_SPEAKER_NOT_OWNER / KNOWLEDGE_TURN_NOT_OPERATOR)";
+  return `${lead}: ${consequence}. The operator's ravi login never lends its authority to a job someone else created.`;
+}
+
+/**
+ * A shell job runs as this machine's user, with the installation's
+ * credentials, and its command controls its own environment, so no owner can
+ * be enforced on it: only an owner that acts as the operator may have one.
+ */
+function assertShellOwnerActsAsOperator(op: string, ownerPrincipal: string | null, asJson?: boolean): void {
+  if (cronOwnerActsAsOperator(ownerPrincipal)) return;
+  contractFail(
+    op,
+    "CRON_SHELL_NOT_OPERATOR",
+    `A shell cron job would run as ${ownerPrincipal ?? "unknown"}, not the operator. A shell command runs with this machine's access and the operator's credentials, so only the operator can own one.`,
+    {
+      asJson,
+      exitCode: CONTRACT_EXIT_POLICY,
+      details: {
+        ownerPrincipal: ownerPrincipal ?? "unknown",
+        suggestedAction:
+          "do not retry from this turn; use an agent job (--message) instead, which runs as its creator, or ask the operator to create the shell job from the terminal or their own chat",
+      },
+    },
+  );
 }
 
 function printCronRunsAs(job: CronJob, warning: string): void {
@@ -598,6 +618,9 @@ export class CronCommands {
     // Capture reply session from caller context (e.g., agent:comm:whatsapp:main:group:123)
     const replySession = isShellJob ? undefined : ctx?.sessionKey;
 
+    const ownerPrincipal = resolveCronOwnerPrincipalForCurrentTurn();
+    if (isShellJob) assertShellOwnerActsAsOperator("cron add", ownerPrincipal, asJson);
+
     // Create job
     const input: CronJobInput = {
       name,
@@ -614,7 +637,7 @@ export class CronCommands {
       shellTimeoutMs: isShellJob ? parseCronShellTimeout(timeout) : undefined,
       shellEnvFile: isShellJob ? envFile : undefined,
       onError: isShellJob ? normalizeCronOnError(onError) : undefined,
-      ownerPrincipal: resolveCronOwnerPrincipalForCurrentTurn(),
+      ownerPrincipal,
     };
 
     try {
@@ -764,13 +787,22 @@ export class CronCommands {
     const job = dbGetCronJob(id);
     if (!job) failCronJobNotFound("cron set", id, asJson);
     assertCronJobMutable("cron set", id, job, asJson);
+    const ownerUpdate = cronOwnerUpdateForSet(key, job);
+    // Setting a command, or a change that moves a shell job to another owner,
+    // must leave it with an owner that acts as the operator. Other edits of an
+    // existing shell job stay possible: the runner refuses to run it anyway.
+    const setsCommand = key === "shell" || key === "exec";
+    const reownsShell = job.executionType === "shell" && key !== "message" && "ownerPrincipal" in ownerUpdate;
+    if (setsCommand || reownsShell) {
+      const nextOwner = "ownerPrincipal" in ownerUpdate ? ownerUpdate.ownerPrincipal : job.ownerPrincipal;
+      assertShellOwnerActsAsOperator("cron set", nextOwner ?? null, asJson);
+    }
 
     try {
       let normalizedValue: unknown = value;
       const logHuman = (message: string) => {
         if (!asJson) console.log(message);
       };
-      const ownerUpdate = cronOwnerUpdateForSet(key, job);
       const update = (updates: Partial<CronJob>) => dbUpdateCronJob(id, { ...updates, ...ownerUpdate });
 
       switch (key) {

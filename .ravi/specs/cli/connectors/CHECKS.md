@@ -163,6 +163,13 @@
 
 ### Cron owner
 
+- `cron add --shell` from a turn that is not the operator, `cron set <id>
+  shell` on a contact-owned job and a non-operator `cron set` of an operator
+  shell job's `env-file`/`on-error` MUST fail `CRON_SHELL_NOT_OPERATOR`
+  (exit 3) with no write (`src/cli/commands/cron-commands.test.ts`); the
+  runner MUST NOT spawn a contact-owned shell job and MUST record the error
+  (`src/cron/runner.test.ts`).
+
 - `cron add` from the terminal MUST store `owner_principal = operator`;
   `cron show` MUST report a legacy NULL as `operator` ("Runs as" and
   `ownerPrincipal`).

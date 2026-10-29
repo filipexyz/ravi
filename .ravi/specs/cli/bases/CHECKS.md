@@ -92,9 +92,11 @@
   `ACTOR_UNKNOWN` MUST keep the catalog copy even with a `reason` in its
   details (`src/cloud-auth/errors.test.ts`).
 - A shell cron process (`RAVI_AUTOMATION_PRINCIPAL=automation:cron:<id>`, no
-  context key) MUST count as a runtime turn: a contact-owned job's Bases call
-  sends that contact, an ownerless one fails `ACTOR_UNKNOWN` with
-  `routine_not_operator_owned`, an operator-owned one sends no actor; shell triggers and jobs MUST NOT be covered
+  context key) MUST count as a runtime turn: an operator-owned one sends no
+  actor, and the classification of a marker naming a contact-owned job sends
+  that contact or, ownerless, fails `ACTOR_UNKNOWN` with
+  `routine_not_operator_owned` (such a job never runs: connectors 13b); shell
+  triggers and jobs MUST NOT be covered
   (`src/cloud-auth/turn-actor.test.ts`).
 - `bases views share` without `--execute` MUST exit 3 after reading the
   view and site, with no PATCH; with it, it MUST PATCH `access` at the

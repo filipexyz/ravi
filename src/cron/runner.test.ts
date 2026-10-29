@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 
@@ -378,15 +378,9 @@ describe("CronRunner shell jobs and personal connectors", () => {
 
   const owner = { activeUserId: "user_luis", activeOrgId: "org_1", ownerName: "Luis" };
 
-  it("runs the command as the job's routine, never as the operator's terminal", async () => {
-    const contactJob = await runShellJobEnv("contact:c_bob");
-
-    expect(contactJob.env.RAVI_AUTOMATION_PRINCIPAL).toBe(`automation:cron:${contactJob.jobId}`);
-    const blocked = resolveConnectorTurn({ ...owner, env: contactJob.env });
-    expect(blocked.ok).toBe(false);
-    if (!blocked.ok) expect(blocked.error.code).toBe("CONNECTOR_SPEAKER_NOT_OWNER");
-
+  it("runs an operator's command as the job's routine, never as the operator's terminal", async () => {
     const operatorJob = await runShellJobEnv("operator");
+    expect(operatorJob.env.RAVI_AUTOMATION_PRINCIPAL).toBe(`automation:cron:${operatorJob.jobId}`);
     const allowed = resolveConnectorTurn({ ...owner, env: operatorJob.env });
     expect(allowed.ok).toBe(true);
     if (allowed.ok) {
@@ -395,5 +389,22 @@ describe("CronRunner shell jobs and personal connectors", () => {
         routine: { kind: "cron", id: operatorJob.jobId },
       });
     }
+  });
+
+  it("does not run a shell job someone other than the operator owns", async () => {
+    const out = join(stateDir!, "contact-shell.txt");
+    const job = dbCreateCronJob({
+      name: "shell-contact",
+      schedule: { type: "every", every: 60_000 },
+      message: "",
+      executionType: "shell",
+      shellCommand: `echo ran > '${out}'`,
+      ownerPrincipal: "contact:c_bob",
+    });
+    await new CronRunner().triggerJob(job.id);
+    expect(existsSync(out)).toBe(false);
+    const after = dbGetCronJob(job.id);
+    expect(after?.lastStatus).toBe("error");
+    expect(after?.lastError).toContain("not the operator, so it does not run");
   });
 });

@@ -349,8 +349,20 @@ instead of inventing local suggestions that would require extra remote calls.
     `KNOWLEDGE_TURN_NOT_OPERATOR`); a shell or exec job's Bases, personal
     connector and Pages access calls. The warning MUST say that the
     operator's `ravi login` never lends its authority to a job someone else
-    created, and that `--shell` does not get around the owner. It is a
-    warning, not a refusal: the write still happens.
+    created. For a shell job (only a legacy row or an edit 13b allows) it
+    says the job does not run. It is a warning, not a refusal: the write
+    still happens.
+13b. A shell or exec job runs as the machine's user, with the
+    installation's credentials, and its command controls its own
+    environment, so no owner can be enforced inside it: only an owner that
+    acts as the operator (`runsAsOperator`) may have one. `cron add
+    --shell|--exec` from a turn whose owner would not act as the operator,
+    `cron set <id> shell|exec` on a job whose owner would not, and a
+    `cron set` that would move a shell job to such an owner MUST fail
+    `CRON_SHELL_NOT_OPERATOR` (exit 3, policy) with no write, suggesting an
+    agent job (`--message`, which acts as its creator) or the operator
+    creating it. The runner MUST NOT spawn a shell job whose owner does not
+    act as the operator: it records `lastStatus: error` with that reason.
 
 ### Agent-first contract
 
@@ -636,8 +648,9 @@ for the row (empty for connections made with the current connect flow).
   run` jobs ran without any runtime env (PM2 strips it) and classified as the
   terminal. The marker closes that path, but a shell command written by a
   contact can still unset it itself (`env -u`, a script file); the bash hook
-  only blocks literal `RAVI_*` overrides. Closing this fully means refusing
-  shell automations created from non-operator turns.
+  only blocks literal `RAVI_*` overrides. Rule 13b closes it for crons by
+  refusing shell jobs that do not act as the operator; shell triggers and
+  `ravi jobs run` still have no owner model.
 - Before the origin check, the session-goal wake (`execute`, no caller)
   looked like the operator's own `ravi sessions send`.
 - Open policy gaps: heartbeat turns have no owner (HEARTBEAT.md can be edited
