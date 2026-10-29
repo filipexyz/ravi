@@ -1457,12 +1457,13 @@ describe("CronCommands owner principal", () => {
     expect(payload.warnings[0]).not.toContain("ACTOR_UNKNOWN");
   });
 
-  it("drops someone else's env file when the operator writes the shell command", async () => {
+  it("drops someone else's env file and error target when the operator writes the shell command", async () => {
     cronJob = {
       ...cronJob,
       executionType: "shell",
       shellCommand: "echo ok",
       shellEnvFile: "/tmp/theirs.env",
+      onError: "notify-session:theirs",
       message: "",
       ownerPrincipal: "contact:c_bob",
     };
@@ -1471,6 +1472,7 @@ describe("CronCommands owner principal", () => {
 
     expect(payload).toMatchObject({ job: { ownerPrincipal: "operator", shellCommand: "echo mine" } });
     expect(cronUpdatePatches[0]).toHaveProperty("shellEnvFile", undefined);
+    expect(cronUpdatePatches[0]).toHaveProperty("onError", undefined);
   });
 
   it("does not hand a contact's shell job to the operator for an env-file edit", async () => {

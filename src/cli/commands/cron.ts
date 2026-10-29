@@ -864,17 +864,23 @@ export class CronCommands {
 
         case "shell":
         case "exec": {
-          // A new owner does not inherit the env file someone else chose: it
-          // is loaded over the command's environment (PATH included).
-          const dropsEnvFile = "ownerPrincipal" in ownerUpdate && Boolean(job.shellEnvFile);
+          // A new owner does not inherit the env file someone else chose (it
+          // is loaded over the command's environment, PATH included) nor the
+          // session that receives the command's output when it fails.
+          const changesOwner = "ownerPrincipal" in ownerUpdate;
+          const dropsEnvFile = changesOwner && Boolean(job.shellEnvFile);
+          const dropsOnError = changesOwner && Boolean(job.onError);
           update({
             executionType: "shell",
             message: "",
             shellCommand: value,
             ...(dropsEnvFile ? { shellEnvFile: undefined } : {}),
+            ...(dropsOnError ? { onError: undefined } : {}),
           });
           logHuman(`✓ Shell command set: ${id}`);
           if (dropsEnvFile) logHuman("  Env file cleared: set it again with `ravi cron set <id> env-file <path>`.");
+          if (dropsOnError)
+            logHuman("  Error target cleared: set it again with `ravi cron set <id> on-error <target>`.");
           break;
         }
 

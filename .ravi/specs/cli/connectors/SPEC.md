@@ -334,8 +334,9 @@ instead of inventing local suggestions that would require extra remote calls.
     with `message`, `shell` or `exec`, never by editing its `env-file`,
     `on-error` or another key around a command it did not write, and a
     `shell`/`exec` edit that changes the owner MUST clear the job's
-    `env-file`, which the previous owner chose and which is loaded over the
-    command's environment. The
+    `env-file` (loaded over the command's environment) and `on-error`
+    (the session that receives the command's output when it fails), both
+    chosen by the previous owner. The
     owner is not part of the `cron add` idempotency fingerprint, so a key
     recorded before owners existed, or an observer replay, still matches.
 13a. Every serialized job (`cron add`, `set`, `show`, `list` JSON) MUST carry
