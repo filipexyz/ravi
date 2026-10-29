@@ -332,7 +332,10 @@ instead of inventing local suggestions that would require extra remote calls.
     that turn's principal as its owner, in the same write as the edit. The
     one exception: the operator takes over someone else's shell job only
     with `message`, `shell` or `exec`, never by editing its `env-file`,
-    `on-error` or another key around a command it did not write. The
+    `on-error` or another key around a command it did not write, and a
+    `shell`/`exec` edit that changes the owner MUST clear the job's
+    `env-file`, which the previous owner chose and which is loaded over the
+    command's environment. The
     owner is not part of the `cron add` idempotency fingerprint, so a key
     recorded before owners existed, or an observer replay, still matches.
 13a. Every serialized job (`cron add`, `set`, `show`, `list` JSON) MUST carry
