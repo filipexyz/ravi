@@ -1264,6 +1264,8 @@ describe("CronCommands owner principal", () => {
     }
     expect(thrown).toMatchObject({ code: "CRON_SHELL_NOT_OPERATOR", exitCode: 3 });
     expect(cronJob).toBe(before);
+    // Text output carries the next step.
+    expect(errors.join("\n")).toContain("Next: do not retry from this turn; use an agent job (--message)");
   });
 
   it("refuses to set a shell command on a job someone else owns", async () => {

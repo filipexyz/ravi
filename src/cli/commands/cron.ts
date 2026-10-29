@@ -258,18 +258,17 @@ function cronRunsAsWarning(job: Pick<CronJob, "id" | "ownerPrincipal" | "executi
  */
 function assertShellOwnerActsAsOperator(op: string, ownerPrincipal: string | null, asJson?: boolean): void {
   if (cronOwnerActsAsOperator(ownerPrincipal)) return;
+  const suggestedAction =
+    "do not retry from this turn; use an agent job (--message) instead, which runs as its creator, or ask the operator to create the shell job from the terminal or their own chat";
+  // Text output prints only the message, so it carries the next step.
   contractFail(
     op,
     "CRON_SHELL_NOT_OPERATOR",
-    `A shell cron job would run as ${ownerPrincipal ?? "unknown"}, not the operator. A shell command runs with this machine's access and the operator's credentials, so only the operator can own one.`,
+    `A shell cron job would run as ${ownerPrincipal ?? "unknown"}, not the operator. A shell command runs with this machine's access and the operator's credentials, so only the operator can own one. Next: ${suggestedAction}.`,
     {
       asJson,
       exitCode: CONTRACT_EXIT_POLICY,
-      details: {
-        ownerPrincipal: ownerPrincipal ?? "unknown",
-        suggestedAction:
-          "do not retry from this turn; use an agent job (--message) instead, which runs as its creator, or ask the operator to create the shell job from the terminal or their own chat",
-      },
+      details: { ownerPrincipal: ownerPrincipal ?? "unknown", suggestedAction },
     },
   );
 }
