@@ -1268,6 +1268,57 @@ describe("CronCommands owner principal", () => {
     expect(errors.join("\n")).toContain("Next: do not retry from this turn; use an agent job (--message)");
   });
 
+  it("reports invalid shell input before the owner refusal", async () => {
+    process.env.RAVI_SESSION_NAME = "someone-else";
+    cronJob = { ...cronJob, executionType: "shell", shellCommand: "echo ok", message: "", ownerPrincipal: "operator" };
+    const originalError = console.error;
+    console.error = () => {};
+    const attempts: Array<() => Promise<unknown>> = [
+      () =>
+        new CronCommands().add(
+          "Sync",
+          undefined,
+          "30m",
+          undefined,
+          undefined,
+          undefined,
+          "echo ok",
+          undefined,
+          undefined,
+          "0",
+        ),
+      () =>
+        new CronCommands().add(
+          "Sync",
+          undefined,
+          "30m",
+          undefined,
+          undefined,
+          undefined,
+          "echo ok",
+          undefined,
+          "email-me",
+        ),
+      () => new CronCommands().set("cron-1", "bogus", "x", true),
+      () => new CronCommands().set("cron-1", "timeout", "0", true),
+    ];
+    try {
+      for (const attempt of attempts) {
+        cronUpdatePatches = [];
+        let thrown: unknown;
+        try {
+          await attempt();
+        } catch (error) {
+          thrown = error;
+        }
+        expect((thrown as Error).message).toMatch(/(Invalid timeout|Invalid --on-error|Unknown property)/);
+        expect(cronUpdatePatches).toHaveLength(0);
+      }
+    } finally {
+      console.error = originalError;
+    }
+  });
+
   it("refuses to set a shell command on a job someone else owns", async () => {
     cronJob = { ...cronJob, ownerPrincipal: "contact:c_bob" };
     const originalError = console.error;

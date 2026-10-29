@@ -289,6 +289,32 @@ function printCronRunsAs(job: CronJob, warning: string): void {
 const CRON_OWNER_KEEP_KEYS = new Set(["description", "cron", "every", "tz", "timezone", "timeout", "delete-after"]);
 
 /** Owner change that goes in the same write as a `cron set` edit, or nothing. */
+const CRON_SET_KEYS = new Set([
+  "name",
+  "message",
+  "shell",
+  "exec",
+  "timeout",
+  "env-file",
+  "on-error",
+  "cron",
+  "every",
+  "tz",
+  "agent",
+  "account",
+  "description",
+  "session",
+  "reply-session",
+  "delete-after",
+]);
+
+// `timezone` is accepted as an alias of `tz`.
+const CRON_SET_KEY_ALIASES = new Set(["timezone"]);
+
+function failUnknownCronSetKey(key: string): never {
+  fail(`Unknown property: ${key}. Valid: ${[...CRON_SET_KEYS].join(", ")}`);
+}
+
 function cronOwnerUpdateForSet(key: string, job: CronJob): Pick<CronJob, "ownerPrincipal"> | Record<string, never> {
   if (CRON_OWNER_KEEP_KEYS.has(key)) return {};
   const setterOwner = resolveCronOwnerPrincipalForCurrentTurn();
@@ -617,6 +643,9 @@ export class CronCommands {
     // Capture reply session from caller context (e.g., agent:comm:whatsapp:main:group:123)
     const replySession = isShellJob ? undefined : ctx?.sessionKey;
 
+    // Invalid input fails before the owner refusal (exit 3).
+    const shellTimeoutMs = isShellJob ? parseCronShellTimeout(timeout) : undefined;
+    const normalizedOnError = isShellJob ? normalizeCronOnError(onError) : undefined;
     const ownerPrincipal = resolveCronOwnerPrincipalForCurrentTurn();
     if (isShellJob) assertShellOwnerActsAsOperator("cron add", ownerPrincipal, asJson);
 
@@ -633,9 +662,9 @@ export class CronCommands {
       deleteAfterRun: deleteAfter,
       executionType: isShellJob ? "shell" : "agent",
       shellCommand: isShellJob ? shellCommand : undefined,
-      shellTimeoutMs: isShellJob ? parseCronShellTimeout(timeout) : undefined,
+      shellTimeoutMs,
       shellEnvFile: isShellJob ? envFile : undefined,
-      onError: isShellJob ? normalizeCronOnError(onError) : undefined,
+      onError: normalizedOnError,
       ownerPrincipal,
     };
 
@@ -793,6 +822,10 @@ export class CronCommands {
     const setsCommand = key === "shell" || key === "exec";
     const reownsShell = job.executionType === "shell" && key !== "message" && "ownerPrincipal" in ownerUpdate;
     if (setsCommand || reownsShell) {
+      // Invalid input fails before the owner refusal (exit 3).
+      if (!CRON_SET_KEYS.has(key) && !CRON_SET_KEY_ALIASES.has(key)) failUnknownCronSetKey(key);
+      if (key === "timeout" && value !== "null" && value !== "-") parseCronShellTimeout(value);
+      if (key === "on-error") normalizeCronOnError(value);
       const nextOwner = "ownerPrincipal" in ownerUpdate ? ownerUpdate.ownerPrincipal : job.ownerPrincipal;
       assertShellOwnerActsAsOperator("cron set", nextOwner ?? null, asJson);
     }
@@ -965,9 +998,7 @@ export class CronCommands {
         }
 
         default:
-          fail(
-            `Unknown property: ${key}. Valid: name, message, shell, exec, timeout, env-file, on-error, cron, every, tz, agent, account, description, session, reply-session, delete-after`,
-          );
+          failUnknownCronSetKey(key);
       }
 
       // Signal daemon to refresh timers
