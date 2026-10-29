@@ -66,6 +66,15 @@ export function turnRefusalCopy(
 }
 
 /**
+ * The message with its next step, for surfaces whose text output prints only
+ * the message (Pages access, cloud runs). Bases prints `Next:` itself.
+ */
+export function turnRefusalMessageWithNext(reason: TurnRefusalReason, surface: TurnRefusalSurface): string {
+  const copy = turnRefusalCopy(reason, surface);
+  return `${copy.message} Next: ${copy.suggestedAction}.`;
+}
+
+/**
  * Public fields of a reason for the envelope. The key is `refusalReason`:
  * public redaction treats a `reason` key as free text.
  */

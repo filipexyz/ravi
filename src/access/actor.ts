@@ -28,7 +28,7 @@
 import { dbGetAgent } from "../router/router-db.js";
 import type { ConnectorTurn, ConnectorTurnDeps, ConnectorTurnResult } from "../link/connector-turn.js";
 import { resolveTurnForActiveLogin } from "../pages/read.js";
-import { turnRefusalCopy, type TurnRefusalReason } from "../cloud-auth/turn-refusal.js";
+import { turnRefusalMessageWithNext, type TurnRefusalReason } from "../cloud-auth/turn-refusal.js";
 import type { PagesClientDeps } from "../pages/client.js";
 
 export type AccessActorDecision =
@@ -144,5 +144,5 @@ function readAgentName(agentId: string, deps: AccessActorDeps): string | null {
 }
 
 function refused(actorPrincipal: string, reason: TurnRefusalReason): AccessActorDecision {
-  return { kind: "refused", actorPrincipal, reason, message: turnRefusalCopy(reason, "access").message };
+  return { kind: "refused", actorPrincipal, reason, message: turnRefusalMessageWithNext(reason, "access") };
 }

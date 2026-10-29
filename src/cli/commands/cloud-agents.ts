@@ -1283,16 +1283,15 @@ export class CloudRunsCommands {
     const refusal = normalizeTurnRefusal(defaultsOf(this.deps).unattributedTurn());
     if (!refusal) return;
     const copy = turnRefusalCopy(refusal.reason, "cloud-runs");
-    contractFail(op, "ACTOR_UNKNOWN", copy.message, {
+    const suggestedAction =
+      refusal.reason.kind === "unknown"
+        ? "ask the run's person to answer from their own chat or the Console, or the operator to run it in the terminal"
+        : copy.suggestedAction;
+    // Text output prints only the message, so it carries the next step too.
+    contractFail(op, "ACTOR_UNKNOWN", `${copy.message} Next: ${suggestedAction}.`, {
       asJson,
       exitCode: CONTRACT_EXIT_POLICY,
-      details: {
-        ...turnRefusalDetails(refusal.reason),
-        suggestedAction:
-          refusal.reason.kind === "unknown"
-            ? "Ask the run's person to answer from their own chat or the Console, or the operator to run it in the terminal."
-            : copy.suggestedAction,
-      },
+      details: { ...turnRefusalDetails(refusal.reason), suggestedAction },
     });
   }
 

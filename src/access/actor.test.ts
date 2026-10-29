@@ -118,6 +118,8 @@ describe("accessActorFromTurn", () => {
     if (decision.kind !== "refused") return;
     expect(decision.message).toContain("cron job job_1");
     expect(decision.message).not.toContain("the person can ask");
+    // Text output of access commands prints only the message, so it carries the next step.
+    expect(decision.message).toContain("Next: do not retry from this run");
   });
 
   it("sends no actor for the operator", () => {

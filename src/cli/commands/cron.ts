@@ -649,6 +649,7 @@ export class CronCommands {
       } else if (!creation.created) {
         console.log(`\n= Cron action already handled: ${creation.targetId}`);
         if (!job) console.log("  The original one-shot job has already been removed.");
+        if (job && runsAsWarning) printCronRunsAs(job, runsAsWarning);
       } else {
         if (!job) fail("Created cron job could not be reloaded.");
         console.log(`\n✓ Created job: ${job.id}`);
