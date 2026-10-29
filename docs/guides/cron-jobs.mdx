@@ -57,7 +57,7 @@ Every job has an owner, shown as `Runs as` in `ravi cron show <id>` and as `owne
 - From the terminal, from your own direct chat, or when you (the owner) ask in a group, the job runs as `operator`.
 - When someone else asks in a chat, the job runs as that person's contact (`contact:<id>`). A `cron set` from such a turn that changes what the job runs or where it answers (its message, name, agent, reply session and so on) moves the job to that person too; editing its description, schedule, timeout or `delete-after` does not. The same goes for you: changing what someone else's job runs moves it to you.
 
-A job runs with the authority of the person who created it, never with your `ravi login`. Your login authenticates this Ravi installation; it does not lend your permissions to a job someone else created.
+A job runs with the authority of its current owner (its creator, or whoever last changed what it runs), never with your `ravi login`. Your login authenticates this Ravi installation; it does not lend your permissions to a job someone else owns.
 
 - A job someone else created acts as that person: `ravi bases` and Pages share, invites and access requests go out in their name, through their own `ravi link`, with their own role in the organization. Until they link their account the calls are refused with `ACTOR_NOT_LINKED`, and Ravi does not message them from the run, since nobody is asking. Personal connectors and Knowledge are your own, so they refuse the job (`CONNECTOR_SPEAKER_NOT_OWNER`, `KNOWLEDGE_TURN_NOT_OPERATOR`).
 - A job with no person as owner (`unknown`) is refused (`ACTOR_UNKNOWN`).

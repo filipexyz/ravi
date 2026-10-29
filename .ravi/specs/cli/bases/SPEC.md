@@ -106,7 +106,8 @@ writes only through a view, via the `ravi.bases.*` Pages connector actions
    sending no actor (which the Console would serve as the operator). A run
    of a cron job a contact owns (`owner_principal = contact:<id>` not bound
    to the operator) MUST carry that contact as the actor: the job acts as
-   the person who created it through their own `ravi link` (and fails
+   that person (its creator, or whoever last changed what it runs)
+   through their own `ravi link` (and fails
    `ACTOR_NOT_LINKED` without one), never as the operator who ran
    `ravi login`. A cron job no person owns (`unknown`, an agent) is refused.
    A shell cron the daemon spawned
