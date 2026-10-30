@@ -35,6 +35,8 @@
 - Persistent "already processing" responses exhaust the busy backoff, then restart the Pi RPC transport when a factory is available and retry the same plain `prompt` once more. If it is still busy, they surface a single `turn.failed` with `failureKind=transport` so the host respawns instead of reusing the stuck process.
 - After `turn.interrupted` / `turn.failed` / abort, leftover queued Pi events are drained and `abort` is sent again. If `get_state` still reports `isStreaming` / `isProcessing` / `isCompacting`, the adapter restarts the transport before the next prompt.
 - Leftover `agent_end` / `turn_end` from the interrupted run MUST NOT complete the next Ravi prompt. The next prompt waits for a fresh `agent_start` / `turn_start` (or a respawned transport) before accepting a terminal.
+- A `turn_end` with `stopReason=error` whose message matches the closed transport list (`Connection error.`, `ECONNRESET`, `ECONNREFUSED`, `socket hang up`, `ETIMEDOUT`, `fetch failed`, `terminated`, `network error`) MUST surface `turn.failed` with `failureKind=transport`; a non-transport message MUST NOT.
+- Recoverable provider transport restarts MUST back off (1s, then 5s, then 15s if a future budget allows more) while keeping the restart budget at two.
 - Interrupt then a subsequent prompt MUST emit `turn.interrupted` for the first turn and a real terminal for the second, never a ~instant fake `turn.complete`.
 
 ## Event Mapping Tests
