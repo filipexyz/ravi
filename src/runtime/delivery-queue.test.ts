@@ -504,7 +504,7 @@ describe("runtime delivery queue", () => {
     ]);
   });
 
-  it("keeps steering prompts from different channel threads queued behind the active thread", () => {
+  it("yields to the first queued thread without coalescing different threads", () => {
     const active = createQueuedRuntimeUserMessage(channelPrompt("active", "turn-a"));
     const firstThread = createQueuedRuntimeUserMessage(channelPrompt("thread one", "turn-b", "user-a", "thread-1"));
     const secondThread = createQueuedRuntimeUserMessage(channelPrompt("thread two", "turn-c", "user-a", "thread-2"));
@@ -516,8 +516,9 @@ describe("runtime delivery queue", () => {
 
     const prepared = prepareRuntimeInterruptSuccessor("dev", session);
 
-    expect(prepared).toBeNull();
-    expect(session.pendingMessages).toEqual([active, firstThread, secondThread]);
+    expect(prepared?.message).toBe(firstThread);
+    expect(prepared?.coalescedMessages).toEqual([]);
+    expect(session.pendingMessages).toEqual([active, firstThread, secondThread, prepared!.continuation!]);
   });
 
   it("does not fold Ravi Commands into conversational steering", () => {
@@ -686,7 +687,7 @@ describe("runtime delivery queue", () => {
     });
   }
 
-  it("does not interrupt an active turn for a different reply surface", () => {
+  it("yields to a different reply surface and queues a fresh continuation of the original work", () => {
     const active = createQueuedRuntimeUserMessage(surfacePrompt("active", "slack", "chat-a"));
     const otherSurface = createQueuedRuntimeUserMessage(surfacePrompt("wait", "whatsapp", "chat-b"));
     const session = makeStreamingSession({
@@ -696,9 +697,146 @@ describe("runtime delivery queue", () => {
       currentTurnPendingIds: [active.pendingId!],
     });
 
-    expect(prepareRuntimeInterruptSuccessor("dev", session)).toBeNull();
-    expect(session.pendingMessages).toEqual([active, otherSurface]);
+    active.clientMessageId = "ravi:already-delivered";
+    const prepared = prepareRuntimeInterruptSuccessor("dev", session);
+
+    expect(prepared?.message).toBe(otherSurface);
+    expect(prepared?.continuation).toMatchObject({
+      deliveryBarrier: "after_response",
+      yieldedRequest: "active",
+      launchPrompt: { source: active.launchPrompt!.source },
+    });
+    expect(prepared?.continuation?.message.content).toContain("Do not repeat completed actions");
+    expect(prepared?.continuation?.pendingId).not.toBe(active.pendingId);
+    expect(prepared?.continuation?.clientMessageId).toBeUndefined();
+    expect(prepared?.continuation?.replay).not.toBe(true);
+    expect(session.pendingMessages).toEqual([active, otherSurface, prepared!.continuation!]);
   });
+
+  it("keeps the yielded turn's authority, backend and model separate from the interrupting thread", () => {
+    const original = {
+      ...channelPrompt("original work", "turn-original", "original-actor", "thread-original"),
+      _runtimeModel: "original-model",
+      _modelBrokerTurnId: "consumed-model-broker-plan",
+      _runtimePrompt: "model-facing original work",
+      taskBarrierTaskId: "original-task",
+    };
+    const active = createQueuedRuntimeUserMessage(original);
+    const incoming = createQueuedRuntimeUserMessage(channelPrompt("new work", "turn-new", "other-actor", "thread-new"));
+    const session = makeStreamingSession({
+      turnActive: true,
+      currentSource: original.source,
+      currentTurnPendingIds: [active.pendingId!],
+      pendingMessages: [active, incoming],
+    });
+
+    const prepared = prepareRuntimeInterruptSuccessor("dev", session);
+    expect(prepared?.continuation?.launchPrompt).toMatchObject({
+      source: original.source,
+      context: original.context,
+      _channelBackend: original._channelBackend,
+      _runtimeModel: "original-model",
+      taskBarrierTaskId: "original-task",
+    });
+    expect(prepared?.continuation?.message.content).toContain("model-facing original work");
+    expect(prepared?.continuation?.message.content).not.toContain("new work");
+    expect(prepared?.continuation?.launchPrompt?._modelBrokerTurnId).toBeUndefined();
+    expect(prepared?.coalescedMessages).toEqual([]);
+    expect(session.currentSource).toEqual(original.source);
+  });
+
+  it("runs queued channels before resuming yielded work after a tool has already executed", async () => {
+    const active = createQueuedRuntimeUserMessage(surfacePrompt("original WhatsApp work", "whatsapp", "wa"));
+    const incoming = createQueuedRuntimeUserMessage(surfacePrompt("Slack request", "slack", "slack"));
+    const session = makeStreamingSession({ pendingMessages: [active] });
+    const generator = createRuntimeMessageGenerator({ sessionName: "dev", session, stashedMessages: new Map() });
+    await generator.next();
+    session.currentSource = active.launchPrompt!.source;
+    session.currentTurnToolStarted = true;
+    session.pendingMessages.push(incoming);
+    const prepared = prepareRuntimeInterruptSuccessor("dev", session)!;
+    session.currentTurnSuperseded = true;
+    session.currentTurnYieldContinuationId = prepared.continuation!.pendingId;
+    session.interrupted = true;
+
+    const stash = new Map<string, RuntimeUserMessage[]>();
+    stashPendingRuntimeMessages("dev", session, stash);
+    expect(stash.get("dev")).toEqual([incoming, prepared.continuation!]);
+
+    session.turnActive = false;
+    session.onTurnComplete?.();
+    expect((await generator.next()).value?.message.content).toBe("Slack request");
+    session.currentSource = incoming.launchPrompt!.source;
+    expect(session.currentTurnYieldContinuationId).toBeUndefined();
+    expect(prepareRuntimeInterruptSuccessor("dev", session)).toBeNull();
+
+    session.turnActive = false;
+    session.onTurnComplete?.();
+    const resumed = (await generator.next()).value!;
+    expect(resumed.message.content).toContain("original WhatsApp work");
+    expect(resumed.clientMessageId).not.toBe(active.clientMessageId);
+    expect(resumed.replay).toBe(false);
+
+    session.done = true;
+    session.onTurnComplete?.();
+    await generator.return(undefined);
+  });
+
+  it("does not duplicate continuations while an interrupt is already in flight", () => {
+    const active = createQueuedRuntimeUserMessage(surfacePrompt("active", "whatsapp", "wa"));
+    const incoming = createQueuedRuntimeUserMessage(surfacePrompt("incoming", "slack", "slack"));
+    const session = makeStreamingSession({
+      turnActive: true,
+      currentSource: active.launchPrompt!.source,
+      currentTurnPendingIds: [active.pendingId!],
+      pendingMessages: [active, incoming],
+    });
+    const prepared = prepareRuntimeInterruptSuccessor("dev", session)!;
+    session.currentTurnSuperseded = true;
+    session.interrupted = true;
+    expect(prepareRuntimeInterruptSuccessor("dev", session)).toBeNull();
+    expect(session.pendingMessages).toEqual([active, incoming, prepared.continuation!]);
+  });
+
+  it("bounds a repeated yield to the original request instead of nesting continuation prompts", () => {
+    const active = createQueuedRuntimeUserMessage(surfacePrompt("original", "whatsapp", "wa"));
+    const incoming = createQueuedRuntimeUserMessage(surfacePrompt("first", "slack", "slack"));
+    const session = makeStreamingSession({
+      turnActive: true,
+      currentSource: active.launchPrompt!.source,
+      currentTurnPendingIds: [active.pendingId!],
+      pendingMessages: [active, incoming],
+    });
+    const first = prepareRuntimeInterruptSuccessor("dev", session)!.continuation!;
+    const later = createQueuedRuntimeUserMessage(surfacePrompt("second", "slack", "slack"));
+    session.pendingMessages = [first, later];
+    session.currentTurnPendingIds = [first.pendingId!];
+    const second = prepareRuntimeInterruptSuccessor("dev", session)!.continuation!;
+    expect(second.message.content).toBe(first.message.content);
+    expect(second.pendingId).not.toBe(first.pendingId);
+  });
+
+  for (const state of [
+    { name: "short tool", toolRunning: true, toolAgeMs: 0, allowed: false },
+    { name: "long tool", toolRunning: true, toolAgeMs: 60_000, allowed: true },
+    { name: "pending result", toolResultDeliveryPending: true, allowed: false },
+    { name: "compaction", compacting: true, allowed: false },
+  ]) {
+    it(`respects the ${state.name} barrier before yielding across channels`, () => {
+      const active = createQueuedRuntimeUserMessage(surfacePrompt("original", "whatsapp", "wa"));
+      const incoming = createQueuedRuntimeUserMessage(surfacePrompt("incoming", "slack", "slack"));
+      const session = makeStreamingSession({
+        ...state,
+        toolStartTime: Date.now() - (state.toolAgeMs ?? 0),
+        turnActive: true,
+        currentSource: active.launchPrompt!.source,
+        currentTurnPendingIds: [active.pendingId!],
+        pendingMessages: [active, incoming],
+      });
+      expect(prepareRuntimeInterruptSuccessor("dev", session) !== null).toBe(state.allowed);
+      if (!state.allowed) expect(session.pendingMessages).toEqual([active, incoming]);
+    });
+  }
 
   it("does not let a later same-surface interrupt bypass an earlier different surface", () => {
     const active = createQueuedRuntimeUserMessage(surfacePrompt("active", "slack", "chat-a"));

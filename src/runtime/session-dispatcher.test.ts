@@ -17,7 +17,7 @@ import {
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import { KNOWLEDGE_AUDIENCE_LINES } from "../knowledge/turn/preamble.js";
 import { RuntimeHostSubscriptions } from "./host-subscriptions.js";
-import type { RuntimeUserMessage } from "./host-session.js";
+import { stashPendingRuntimeMessages, type RuntimeUserMessage } from "./host-session.js";
 import type { RuntimeHostStreamingSession } from "./host-session.js";
 import type { RuntimeRecoveryExhaustedAlertInput } from "./runtime-recovery-alert.js";
 import type { PendingRuntimeSessionStart } from "./session-launcher.js";
@@ -1294,6 +1294,49 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       await cleanupIsolatedRaviState(stateDir);
     }
   });
+
+  for (const deferred of [false, true]) {
+    it(`removes yielded work from pending and restart queues on ${deferred ? "deferred" : "immediate"} abort`, async () => {
+      const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-yield-abort-");
+      try {
+        const sessionName = "yield-abort";
+        getOrCreateSession("agent:main:test:yield-abort", "main", stateDir, { name: sessionName });
+        const dispatcher = createDispatcher(2);
+        const active = createQueuedRuntimeUserMessage({ prompt: "active Slack request" });
+        const queued = createQueuedRuntimeUserMessage({ prompt: "new unrelated request" });
+        const continuations = ["unfinished WhatsApp request", "unfinished thread request"].map((request) => ({
+          ...createQueuedRuntimeUserMessage({ prompt: request, deliveryBarrier: "after_response" }),
+          yieldedRequest: request,
+        }));
+        const streaming = createActiveSession({
+          agentId: "main",
+          turnActive: true,
+          currentTurnToolStarted: true,
+          currentTurnPendingIds: [active.pendingId!],
+          pendingMessages: [active, queued, ...continuations],
+          toolResultDeliveryPending: deferred,
+        });
+        dispatcher.streamingSessions.set(sessionName, streaming);
+        dispatcher.stashedMessages.set(
+          sessionName,
+          continuations.map((message) => ({ ...message })),
+        );
+
+        expect(dispatcher.abortSession(sessionName)).toBe(true);
+
+        expect(streaming.pendingMessages).toEqual([active, queued]);
+        expect(streaming.pendingAbort).toBe(deferred);
+        expect(streaming.abortController.signal.aborted).toBe(!deferred);
+        if (deferred) expect(dispatcher.stashedMessages.has(sessionName)).toBe(false);
+
+        // Deferred abort and shutdown recovery must not recreate cancelled work.
+        stashPendingRuntimeMessages(sessionName, streaming, dispatcher.stashedMessages);
+        expect(dispatcher.stashedMessages.get(sessionName)).toEqual([queued]);
+      } finally {
+        await cleanupIsolatedRaviState(stateDir);
+      }
+    });
+  }
 
   it("keeps deferring an explicit abort only while a completed tool result is still being delivered", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-delivery-vs-running-");
@@ -2796,7 +2839,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 
-  it("queues another surface without replacing or interrupting the active turn", async () => {
+  it("yields to another surface without replacing the active reply target", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-interrupt-source-");
     try {
       getOrCreateSession("agent:main:test:interrupt-source", "main", stateDir, { name: "interrupt-source" });
@@ -2858,7 +2901,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       });
 
       expect(activeSession.currentSource).toEqual(activeSource);
-      expect(activeSession.pendingMessages).toHaveLength(2);
+      expect(activeSession.pendingMessages).toHaveLength(3);
       expect(activeSession.pendingMessages[1]?.deliveryBarrier).toBe("after_tool");
       expect(activeSession.pendingMessages[1]?.launchPrompt?.source).toEqual(slackSource);
       expect(activeSession.pendingMessages[1]?.message.content).toBe(
@@ -2867,9 +2910,12 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
           "[Slack C123 mid:123.456] <@U123>: hello",
       );
       expect(activeSession.pendingMessages[1]?.launchPrompt?._sessionSurfaceHint).toBe(true);
-      expect(activeSession.currentTurnSuperseded).not.toBe(true);
-      expect(activeSession.interrupted).not.toBe(true);
-      expect(interrupt).not.toHaveBeenCalled();
+      expect(activeSession.pendingMessages[2]?.launchPrompt?.source).toEqual(activeSource);
+      expect(activeSession.pendingMessages[2]?.yieldedRequest).toBe("active work");
+      expect(activeSession.currentTurnYieldContinuationId).toBe(activeSession.pendingMessages[2]?.pendingId);
+      expect(activeSession.currentTurnSuperseded).toBe(true);
+      expect(activeSession.interrupted).toBe(true);
+      expect(interrupt).toHaveBeenCalledTimes(1);
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }

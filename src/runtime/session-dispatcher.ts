@@ -557,6 +557,7 @@ export class RuntimeSessionDispatcher {
     const sessionEntry =
       getSessionByName(sessionName) ?? (identity.sessionKey ? getSession(identity.sessionKey) : null);
     const sessionKey = sessionEntry?.sessionKey ?? identity.sessionKey ?? sessionName;
+    cancelYieldedRuntimeWork(sessionName, session, this.stashedMessages);
 
     // A completed tool result whose provider callback write is still in flight
     // is an atomic barrier: closing the provider mid-write leaves its thread
@@ -2690,6 +2691,7 @@ export class RuntimeSessionDispatcher {
     const source = prompt?.source ?? fallbackPrompt?.source ?? existing.currentSource;
     const barrier = successor.message.deliveryBarrier ?? DEFAULT_DELIVERY_BARRIER;
     existing.currentTurnSuperseded = true;
+    existing.currentTurnYieldContinuationId = successor.continuation?.pendingId;
     existing.interrupted = true;
     nats
       .emit(`ravi.session.${sessionName}.runtime`, {
@@ -2733,6 +2735,7 @@ export class RuntimeSessionDispatcher {
         reason,
         taskBarrierTaskId: successor.message.taskBarrierTaskId ?? prompt?.taskBarrierTaskId ?? null,
         currentTurnReplay: false,
+        continuationPendingId: successor.continuation?.pendingId ?? null,
       },
     });
     if (successor.coalescedMessages.length > 0) {
@@ -2757,7 +2760,7 @@ export class RuntimeSessionDispatcher {
       });
     }
     existing.queryHandle.interrupt().catch(() => {});
-    await terminalizeCoalescedChannelMessages(sessionName, successor.coalescedMessages);
+    await terminalizePendingChannelMessages(sessionName, successor.coalescedMessages);
   }
 
   private async enqueuePromptOnLiveSession(
@@ -3427,7 +3430,30 @@ function cloneRuntimeUserMessage(message: RuntimeUserMessage): RuntimeUserMessag
   return JSON.parse(JSON.stringify(message)) as RuntimeUserMessage;
 }
 
-async function terminalizeCoalescedChannelMessages(sessionName: string, messages: RuntimeUserMessage[]): Promise<void> {
+/** Cancel suspended work before either abort path can stash it for a restart. */
+function cancelYieldedRuntimeWork(
+  sessionName: string,
+  session: RuntimeHostStreamingSession,
+  stashedMessages: Map<string, RuntimeUserMessage[]>,
+): void {
+  const cancelled: RuntimeUserMessage[] = [];
+  const keep = (message: RuntimeUserMessage) => {
+    if (message.yieldedRequest === undefined) return true;
+    cancelled.push(message);
+    return false;
+  };
+  session.pendingMessages = session.pendingMessages.filter(keep);
+  const stashed = stashedMessages.get(sessionName);
+  if (stashed) {
+    const remaining = stashed.filter(keep);
+    if (remaining.length > 0) stashedMessages.set(sessionName, remaining);
+    else stashedMessages.delete(sessionName);
+  }
+  session.currentTurnYieldContinuationId = undefined;
+  void terminalizePendingChannelMessages(sessionName, cancelled);
+}
+
+async function terminalizePendingChannelMessages(sessionName: string, messages: RuntimeUserMessage[]): Promise<void> {
   for (const message of messages) {
     const metadata = message.launchPrompt?._channelBackend;
     if (!metadata) continue;
@@ -3437,7 +3463,7 @@ async function terminalizeCoalescedChannelMessages(sessionName: string, messages
         event: { type: "turn.interrupted" },
       });
     } catch (error) {
-      log.warn("Failed to terminalize coalesced channel turn", {
+      log.warn("Failed to terminalize pending channel turn", {
         sessionName,
         turnId: metadata.binding.turnId,
         error,
