@@ -110,6 +110,11 @@ const MAX_RUNTIME_EVENT_LOOP_RESTARTS = 2;
 const MAX_PROVIDER_TURN_INACTIVE_RESTARTS = 1;
 const MAX_PROVIDER_TRANSPORT_FAILURE_RESTARTS = 2;
 const MAX_FATAL_TOOL_FAILURE_RESTARTS = 1;
+// Transport restarts escalate instead of hammering a provider that just dropped
+// the connection. The budget stays at two restarts; the schedule only spaces
+// them out (attempt 1 → 1s, attempt 2 → 5s, attempt 3 → 15s if the budget ever
+// grows). Everything else restarts immediately, as before.
+const TRANSPORT_RESTART_BACKOFF_MS: readonly number[] = [1_000, 5_000, 15_000];
 const RUNTIME_RECOVERY_RESTART_LIMITS: Readonly<Partial<Record<string, number>>> = {
   [RUNTIME_EVENT_LOOP_CLOSED_REASON]: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
   [PROVIDER_TURN_INACTIVE_REASON]: MAX_PROVIDER_TURN_INACTIVE_RESTARTS,
@@ -130,6 +135,12 @@ function resolveBarrierStuckAlertMs(value = process.env.RAVI_RUNTIME_BARRIER_STU
     return Math.max(1, parsed);
   }
   return DEFAULT_BARRIER_STUCK_ALERT_MS;
+}
+
+function resolveTransportRestartBackoffMs(reason: string, restartAttempt: number | undefined): number {
+  if (reason !== PROVIDER_TRANSPORT_FAILURE_REASON || restartAttempt === undefined) return 0;
+  const index = Math.min(Math.max(restartAttempt, 1), TRANSPORT_RESTART_BACKOFF_MS.length) - 1;
+  return TRANSPORT_RESTART_BACKOFF_MS[index] ?? 0;
 }
 
 interface DebounceState {
@@ -1926,6 +1937,10 @@ export class RuntimeSessionDispatcher {
     this.barrierStuckAlerted.delete(sessionName);
   }
 
+  private async waitForTransportRestartBackoff(backoffMs: number): Promise<void> {
+    await new Promise<void>((resolve) => setTimeout(resolve, backoffMs));
+  }
+
   private async restartStashedSession(sessionName: string, reason: string): Promise<void> {
     const stashed = this.stashedMessages.get(sessionName);
     if (!stashed || stashed.length === 0) {
@@ -2038,6 +2053,17 @@ export class RuntimeSessionDispatcher {
         ...previousRestarts,
         [reason]: restartAttempt,
       });
+    }
+
+    const backoffMs = resolveTransportRestartBackoffMs(reason, restartAttempt);
+    if (backoffMs > 0) {
+      log.info("Backing off before restarting session after provider transport failure", {
+        sessionName,
+        reason,
+        restartAttempt,
+        backoffMs,
+      });
+      await this.waitForTransportRestartBackoff(backoffMs);
     }
 
     recordRuntimeTraceEvent({

@@ -677,10 +677,18 @@ describe("RuntimeSessionDispatcher runtime recovery", () => {
       restartStashedSession(sessionName: string, reason: string): Promise<void>;
     };
 
+    const backoffs: number[] = [];
+    (
+      dispatcher as unknown as { waitForTransportRestartBackoff(ms: number): Promise<void> }
+    ).waitForTransportRestartBackoff = async (ms: number) => {
+      backoffs.push(ms);
+    };
+
     await recovery.restartStashedSession("inactive-turn", "provider_turn_inactive");
     await recovery.restartStashedSession("inactive-turn", "provider_turn_inactive");
 
     expect(starts).toBe(1);
+    expect(backoffs).toEqual([]);
     expect(dispatcher.stashedMessages.has("inactive-turn")).toBe(true);
     expect(alerts).toEqual([
       expect.objectContaining({
@@ -730,11 +738,20 @@ describe("RuntimeSessionDispatcher runtime recovery", () => {
       restartStashedSession(sessionName: string, reason: string): Promise<void>;
     };
 
+    const backoffs: number[] = [];
+    (
+      dispatcher as unknown as { waitForTransportRestartBackoff(ms: number): Promise<void> }
+    ).waitForTransportRestartBackoff = async (ms: number) => {
+      backoffs.push(ms);
+    };
+
     await recovery.restartStashedSession("transport-failure", "provider_transport_failure");
     await recovery.restartStashedSession("transport-failure", "provider_transport_failure");
     await recovery.restartStashedSession("transport-failure", "provider_transport_failure");
 
     expect(starts).toBe(2);
+    // Escalating backoff, but the restart budget stays at two.
+    expect(backoffs).toEqual([1_000, 5_000]);
     expect(alerts).toEqual([
       expect.objectContaining({
         sessionName: "transport-failure",
