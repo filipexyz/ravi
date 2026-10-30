@@ -1947,12 +1947,12 @@ export class RuntimeSessionDispatcher {
       return;
     }
 
-    const prompt = buildStashedRestartPrompt(stashed);
+    let prompt = buildStashedRestartPrompt(stashed);
     if (!prompt) {
       return;
     }
 
-    const traceIdentity = this.resolvePendingStartTraceIdentity(sessionName, prompt);
+    let traceIdentity = this.resolvePendingStartTraceIdentity(sessionName, prompt);
     const maxRestartAttempts = RUNTIME_RECOVERY_RESTART_LIMITS[reason];
     const previousRestarts = this.runtimeRecoveryRestartAttempts.get(sessionName);
     const restartAttempt = maxRestartAttempts === undefined ? undefined : (previousRestarts?.[reason] ?? 0) + 1;
@@ -2063,7 +2063,63 @@ export class RuntimeSessionDispatcher {
         restartAttempt,
         backoffMs,
       });
-      await this.waitForTransportRestartBackoff(backoffMs);
+      // Reserve the session for the whole backoff. The failed provider was
+      // already removed, so without this reservation an inbound prompt can
+      // start a replacement while we sleep and the restart below would then
+      // start a second provider for the same session. While the session is
+      // pending, `handlePromptImmediate` queues prompts into the stash instead
+      // of starting a competing session.
+      this.pendingStartSessions.add(sessionName);
+      try {
+        await this.waitForTransportRestartBackoff(backoffMs);
+      } finally {
+        this.pendingStartSessions.delete(sessionName);
+      }
+
+      const liveAfterBackoff = this.streamingSessions.get(sessionName);
+      if (liveAfterBackoff && !liveAfterBackoff.done) {
+        // Someone else won the race while we slept. Never start a second
+        // provider: hand any prompts that queued during the backoff to the
+        // live session instead.
+        const queued = this.stashedMessages.get(sessionName) ?? [];
+        if (queued.length > 0) {
+          appendUniqueRuntimeMessages(liveAfterBackoff.pendingMessages, queued);
+          this.stashedMessages.delete(sessionName);
+          this.wakeStreamingSessionIfDeliverable(sessionName);
+        }
+        log.info("Skipping restart: a replacement provider started during backoff", {
+          sessionName,
+          reason,
+          handedOffPrompts: queued.length,
+        });
+        recordRuntimeTraceEvent({
+          sessionKey: traceIdentity.sessionKey,
+          sessionName,
+          agentId: traceIdentity.agentId ?? prompt._agentId,
+          provider: prompt._runtimeProviderId,
+          eventType: "dispatch.restart_skipped",
+          eventGroup: "dispatch",
+          status: "skipped",
+          source: prompt.source,
+          messageId: prompt.context?.messageId,
+          payloadJson: {
+            reason,
+            skippedReason: "replacement_started_during_backoff",
+            handedOffPrompts: queued.length,
+          },
+        });
+        return;
+      }
+
+      // Rebuild from the freshest stash: a prompt may have queued while we
+      // slept, and the restart must not replay the stale pre-backoff prompt.
+      const refreshedStash = this.stashedMessages.get(sessionName) ?? [];
+      const refreshedPrompt = refreshedStash.length > 0 ? buildStashedRestartPrompt(refreshedStash) : null;
+      if (!refreshedPrompt) {
+        return;
+      }
+      prompt = refreshedPrompt;
+      traceIdentity = this.resolvePendingStartTraceIdentity(sessionName, prompt);
     }
 
     recordRuntimeTraceEvent({

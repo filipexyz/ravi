@@ -45,6 +45,7 @@
 - Prompt-lane interrupts (`immediate_interrupt`, `after_tool`) still wait for an unsafe tool to finish before superseding the turn.
 - After-task barriers remain blocked while an active task binding exists.
 - A pending start waiting for runtime pool capacity is tracked separately from an actual cold start.
+- A provider transport restart keeps the session reserved during its backoff, so an inbound prompt is stashed instead of starting a competing provider; after the backoff it never starts a second provider when a replacement already owns the session and rebuilds the restart prompt from the freshest stash.
 - Subsequent prompts for a pending-start session are stashed with a pending-start reason, not `cold_start_inflight`.
 - Runtime pool backpressure trace events use the canonical session key when the session exists.
 - Background/task starts respect reserved interactive capacity; interactive starts may use that reserved capacity.
