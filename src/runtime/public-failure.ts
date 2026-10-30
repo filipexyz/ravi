@@ -1,11 +1,12 @@
 import { stripVTControlCharacters } from "node:util";
+import { isTransportFailureMessage } from "./transport-failure.js";
 
 const MAX_TURN_FAILURE_RESPONSE = 320;
 const INTERNAL_RUNTIME_FAILURE_MESSAGE =
   "The agent could not complete this request because of an internal runtime error. Please try again.";
 const RUNTIME_CREDENTIAL_UNAVAILABLE_MESSAGE =
   "The agent could not start because no model credential is available for it. Please contact the operator.";
-const PROVIDER_TEMPORARILY_UNAVAILABLE_MESSAGE = "The agent is temporarily unavailable. Please try again later.";
+export const PROVIDER_TEMPORARILY_UNAVAILABLE_MESSAGE = "The agent is temporarily unavailable. Please try again later.";
 const PROVIDER_MODEL_UNAVAILABLE_MESSAGE =
   "The agent's model is not available for its credential or region. Please contact the operator.";
 
@@ -115,6 +116,14 @@ export function publicRuntimeFailureDetail(error: unknown): string {
     return PROVIDER_TEMPORARILY_UNAVAILABLE_MESSAGE;
   }
 
+  // Provider transport drops ("Connection error.", ECONNRESET, socket hang up,
+  // ...) die before the provider answers. They are not actionable in chat and
+  // the raw client text must never reach the user, so they map to the same
+  // honest "temporarily unavailable" line as provider availability failures.
+  if (isTransportFailureMessage(detail)) {
+    return PROVIDER_TEMPORARILY_UNAVAILABLE_MESSAGE;
+  }
+
   const redacted = detail.replace(UUID_PATTERN, "<id>");
   return redacted.length > MAX_TURN_FAILURE_RESPONSE
     ? `${redacted.slice(0, MAX_TURN_FAILURE_RESPONSE - 15)}... [truncated]`
@@ -129,6 +138,20 @@ export const PROVIDER_ENDED_WITH_OPEN_TOOLS_USER_MESSAGE =
 
 export function formatUserFacingTurnFailure(error: unknown): string {
   return `Error: ${publicRuntimeFailureDetail(error)}`;
+}
+
+/**
+ * True when a chat text is exactly the mapped provider-transport line produced
+ * by {@link formatUserFacingTurnFailure} for a transport failure. Callers use
+ * this to coalesce duplicate deliveries of the same failure notice; arbitrary
+ * chat text never matches.
+ */
+export function isProviderUnavailableChatText(text: string): boolean {
+  const normalized = stripControlCharacters(text)
+    .trim()
+    .replace(/^(?:Error:\s*)+/i, "")
+    .trim();
+  return normalized === PROVIDER_TEMPORARILY_UNAVAILABLE_MESSAGE;
 }
 
 export function isOpenToolsTurnFailure(error: unknown): boolean {

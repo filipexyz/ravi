@@ -3,6 +3,7 @@ import { SQLITE_CAPACITY_USER_MESSAGE } from "../db/write-retry.js";
 import {
   formatUserFacingTurnFailure,
   isOpenToolsTurnFailure,
+  isProviderUnavailableChatText,
   isRecoverableOpenToolsOrInterruptFailure,
   PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE,
   PROVIDER_ENDED_WITH_OPEN_TOOLS_USER_MESSAGE,
@@ -105,6 +106,29 @@ describe("public runtime failures", () => {
     expect(formatUserFacingTurnFailure(raw)).toBe(
       "Error: The agent is temporarily unavailable. Please try again later.",
     );
+  });
+
+  it.each([
+    "Error: Connection error.",
+    "Connection error.",
+    "read ECONNRESET",
+    "socket hang up",
+    "connect ETIMEDOUT 1.2.3.4:443",
+    "fetch failed",
+    "network error",
+  ])("maps provider transport drops to an honest unavailable message: %s", (raw) => {
+    const formatted = formatUserFacingTurnFailure(raw);
+    expect(formatted).toBe("Error: The agent is temporarily unavailable. Please try again later.");
+    expect(formatted).not.toContain("Connection error");
+  });
+
+  it("recognizes only the mapped provider-unavailable chat text for coalescing", () => {
+    expect(isProviderUnavailableChatText("Error: The agent is temporarily unavailable. Please try again later.")).toBe(
+      true,
+    );
+    expect(isProviderUnavailableChatText("The agent is temporarily unavailable. Please try again later.")).toBe(true);
+    expect(isProviderUnavailableChatText("Error: Connection error.")).toBe(false);
+    expect(isProviderUnavailableChatText("oi, tudo bem?")).toBe(false);
   });
 
   it.each([
