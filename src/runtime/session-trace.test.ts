@@ -5582,6 +5582,51 @@ describe("runtime session trace instrumentation", () => {
     expect(shouldSuppressUserFacingRuntimeLimitFailure({ error, scope }).suppressed).toBe(false);
   });
 
+  it("deduplicates provider transport failures inside their own 15 minute window", () => {
+    const now = new Date("2026-10-27T10:36:00-03:00").getTime();
+    const scope = "pi:slack:ravi-hil:C123";
+    const error = "Error: Connection error.";
+
+    const classified = classifyUserFacingRuntimeLimitFailure(error, now);
+    expect(classified?.kind).toBe("transport");
+    expect(classified?.expiresAt).toBe(now + 15 * 60_000);
+
+    expect(shouldSuppressUserFacingRuntimeLimitFailure({ error, scope, now }).suppressed).toBe(false);
+    expect(shouldSuppressUserFacingRuntimeLimitFailure({ error, scope, now: now + 60_000 }).suppressed).toBe(true);
+    expect(shouldSuppressUserFacingRuntimeLimitFailure({ error, scope, now: now + 16 * 60_000 }).suppressed).toBe(
+      false,
+    );
+    expect(
+      shouldSuppressUserFacingRuntimeLimitFailure({
+        error,
+        scope: "pi:slack:ravi-hil:C999",
+        now: now + 1_000,
+      }).suppressed,
+    ).toBe(false);
+  });
+
+  it("keeps the session-limit window separate from the transport window", () => {
+    const now = new Date("2026-10-27T10:36:00-03:00").getTime();
+    const scope = "pi:slack:ravi-hil:C123";
+
+    const limit = classifyUserFacingRuntimeLimitFailure("You've hit your session limit - resets 4:20pm", now);
+    const transport = classifyUserFacingRuntimeLimitFailure("Error: Connection error.", now);
+
+    expect(limit?.kind).toBe("session_limit");
+    expect(transport?.kind).toBe("transport");
+    expect(transport?.expiresAt ?? 0).toBeLessThan(limit?.expiresAt ?? 0);
+    expect(
+      shouldSuppressUserFacingRuntimeLimitFailure({ error: "Error: Connection error.", scope, now }).suppressed,
+    ).toBe(false);
+    expect(
+      shouldSuppressUserFacingRuntimeLimitFailure({
+        error: "You've hit your session limit - resets 4:20pm",
+        scope,
+        now: now + 1_000,
+      }).suppressed,
+    ).toBe(false);
+  });
+
   it("times out active provider turns that stop emitting runtime events", async () => {
     const previousTimeout = process.env.RAVI_RUNTIME_TURN_INACTIVITY_MS;
     process.env.RAVI_RUNTIME_TURN_INACTIVITY_MS = "1000";

@@ -91,6 +91,7 @@ import {
   publicRuntimeFailureDetail,
   shouldEmitUserFacingTurnFailure,
 } from "./public-failure.js";
+import { isTransportFailureMessage } from "./transport-failure.js";
 import {
   createTurnToolContinuationLedger,
   listOpenTurnToolNames,
@@ -179,6 +180,10 @@ const RUNTIME_SESSION_CLOSE_TIMEOUT_MS = 5_000;
 const USER_FACING_LIMIT_SUPPRESSION_DEFAULT_MS = 60 * 60_000;
 const USER_FACING_LIMIT_SUPPRESSION_MAX_MS = 24 * 60 * 60_000;
 const USER_FACING_LIMIT_SUPPRESSION_RESET_GRACE_MS = 60_000;
+// Transport drops are transient by nature. A provider outage that outlives this
+// window is worth surfacing again, so transport keeps a short window and never
+// borrows the hour-long session-limit constant.
+const USER_FACING_TRANSPORT_SUPPRESSION_MS = 15 * 60_000;
 const GENERATED_IMAGE_ITEM_TYPE = "imageGeneration";
 const GENERATED_MEDIA_FILE_PREFIX = "ravi-generated-media";
 const MAX_GENERATED_MEDIA_BYTES = 50 * 1024 * 1024;
@@ -776,7 +781,7 @@ function isAlreadyProcessingFailure(event: { error?: string; rawEvent?: Record<s
 }
 
 type UserFacingRuntimeLimitFailure = {
-  kind: "session_limit";
+  kind: "session_limit" | "transport";
   windowKey: string;
   expiresAt: number;
 };
@@ -840,6 +845,18 @@ export function classifyUserFacingRuntimeLimitFailure(
   now = Date.now(),
 ): UserFacingRuntimeLimitFailure | undefined {
   const normalized = normalizeSuppressionText(error);
+
+  // Transport failures repeat identically while a provider link is down. They
+  // are classified by the closed transport signature list, never by free text,
+  // and deduplicated inside their own short window per chat scope.
+  if (isTransportFailureMessage(error)) {
+    return {
+      kind: "transport",
+      windowKey: `message:${firstNonEmptyLine(normalized).slice(0, 160)}`,
+      expiresAt: now + USER_FACING_TRANSPORT_SUPPRESSION_MS,
+    };
+  }
+
   const isExactSessionLimit = /you['’]?ve hit your session limit/i.test(error);
   const isGenericSessionLimitWithReset = /\bsession limit\b/i.test(error) && /\breset(?:s|ting)?\b/i.test(error);
   if (!isExactSessionLimit && !isGenericSessionLimitWithReset) return undefined;
