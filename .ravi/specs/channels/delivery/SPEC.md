@@ -169,3 +169,4 @@ The default provider-send lease is five minutes. An adapter MUST normally finish
 10. Delivery MUST preserve enough origin session metadata for status anchoring to select the last outbound message for that session and chat/thread.
 11. Provider send, durable receipt and canonical persistence MUST remain separately resumable phases; trace and telemetry remain explicitly at-least-once.
 12. The durable receipt MUST preserve the first successful provider response for an idempotency key.
+13. The publish outbox MAY coalesce pending duplicates of the same mapped provider-unavailable notice for the same channel, chat and text, keeping one copy and closing the rest as superseded. Coalescing MUST be driven by that mapped failure class only and MUST NOT discard arbitrary chat text, even when it repeats verbatim.

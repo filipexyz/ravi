@@ -4,6 +4,7 @@ import { nats } from "../nats.js";
 import { logger } from "../utils/logger.js";
 import { CHANNEL_OUTBOUND_RECEIPT_RETENTION_MS } from "./outbound-receipts.js";
 import { type ChannelOutboundJob, publishChannelOutboundJob } from "./outbound-stream.js";
+import { isProviderUnavailableChatText } from "../runtime/public-failure.js";
 
 const log = logger.child("channels:outbound-publish-outbox");
 
@@ -28,6 +29,7 @@ export interface ChannelOutboundPublishRecord {
   lastErrorMessage?: string;
   lastErrorAt?: number;
   publishedAt?: number;
+  supersededBy?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -56,6 +58,7 @@ interface ChannelOutboundPublishRow {
   last_error_message: string | null;
   last_error_at: number | null;
   published_at: number | null;
+  superseded_by: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -81,6 +84,7 @@ export interface ChannelOutboundPublishOutboxStore {
   listDue(options?: { now?: number; limit?: number }): ChannelOutboundPublishRecord[];
   markPublished(idempotencyKey: string, publishedAt?: number): ChannelOutboundPublishRecord;
   recordFailure(idempotencyKey: string, error: unknown, failedAt?: number): ChannelOutboundPublishRecord;
+  supersede(idempotencyKey: string, supersededBy: string, supersededAt?: number): ChannelOutboundPublishRecord;
   prunePublished(cutoff: number, now?: number): number;
   summary(now?: number): ChannelOutboundPublishOutboxSummary;
 }
@@ -91,6 +95,7 @@ export const sqliteChannelOutboundPublishOutboxStore: ChannelOutboundPublishOutb
   listDue: listDueChannelOutboundPublishJobs,
   markPublished: markChannelOutboundPublishJobPublished,
   recordFailure: recordChannelOutboundPublishJobFailure,
+  supersede: markChannelOutboundPublishJobSuperseded,
   prunePublished: prunePublishedChannelOutboundPublishJobs,
   summary: getChannelOutboundPublishOutboxSummary,
 };
@@ -208,6 +213,37 @@ export function recordChannelOutboundPublishJobFailure(
   return requireChannelOutboundPublishJob(key);
 }
 
+/**
+ * Discards a pending job whose chat text is an exact duplicate of the failure
+ * notice already queued for the same (channel, chat, text). The row is closed as
+ * `published` so it stops retrying and follows the published-row retention, but
+ * it records `supersededBy` so the ledger never pretends it delivered a message.
+ */
+export function markChannelOutboundPublishJobSuperseded(
+  idempotencyKey: string,
+  supersededBy: string,
+  supersededAt = Date.now(),
+): ChannelOutboundPublishRecord {
+  ensureChannelOutboundPublishOutboxSchema();
+  const key = requireText(idempotencyKey, "idempotencyKey");
+  const supersededByKey = requireText(supersededBy, "supersededBy");
+  const now = finiteNumber(supersededAt) ?? Date.now();
+  getDb()
+    .prepare(
+      `UPDATE channel_outbound_publish_jobs
+          SET status = 'published',
+              published_at = COALESCE(published_at, ?),
+              superseded_by = ?,
+              last_error_message = NULL,
+              last_error_at = NULL,
+              updated_at = ?
+        WHERE idempotency_key = ?
+          AND status = 'pending'`,
+    )
+    .run(now, supersededByKey, now, key);
+  return requireChannelOutboundPublishJob(key);
+}
+
 export function getChannelOutboundPublishOutboxSummary(_now = Date.now()): ChannelOutboundPublishOutboxSummary {
   ensureChannelOutboundPublishOutboxSchema();
   const row = getDb()
@@ -306,14 +342,42 @@ export async function reconcileDueChannelOutboundPublishes(
     now?: () => number;
     limit?: number;
   } = {},
-): Promise<{ attempted: number; published: number; failed: number }> {
+): Promise<{ attempted: number; published: number; failed: number; coalesced: number }> {
   const store = options.store ?? sqliteChannelOutboundPublishOutboxStore;
   const now = options.now ?? Date.now;
   const due = store.listDue({ now: now(), limit: options.limit });
   let published = 0;
   let failed = 0;
+  let coalesced = 0;
 
+  // A provider outage queues the same failure notice over and over. When the
+  // link recovers the outbox used to deliver every copy in one burst. Keep the
+  // earliest pending copy per (channel, chat, text) and discard the rest. This
+  // only ever applies to the mapped provider-transport notice text, never to
+  // arbitrary chat messages.
+  const keepByCoalesceKey = new Map<string, string>();
+  const candidates: ChannelOutboundPublishRecord[] = [];
   for (const record of due) {
+    const coalesceKey = coalescibleProviderUnavailableKey(record.job);
+    if (coalesceKey === null) {
+      candidates.push(record);
+      continue;
+    }
+    const keptKey = keepByCoalesceKey.get(coalesceKey);
+    if (keptKey === undefined) {
+      keepByCoalesceKey.set(coalesceKey, record.idempotencyKey);
+      candidates.push(record);
+      continue;
+    }
+    store.supersede(record.idempotencyKey, keptKey, now());
+    coalesced++;
+    log.info("Discarded duplicate provider-unavailable publish from a burst", {
+      jobId: record.jobId,
+      keptIdempotencyKey: keptKey,
+    });
+  }
+
+  for (const record of candidates) {
     try {
       await (options.publisher ?? publishChannelOutboundJob)(record.job);
       const updated = store.markPublished(record.idempotencyKey, now());
@@ -338,7 +402,7 @@ export async function reconcileDueChannelOutboundPublishes(
     }
   }
 
-  return { attempted: due.length, published, failed };
+  return { attempted: candidates.length, published, failed, coalesced };
 }
 
 export class ChannelOutboundPublishReconciler {
@@ -414,6 +478,7 @@ function ensureChannelOutboundPublishOutboxSchema(): void {
       last_error_message   TEXT,
       last_error_at        INTEGER,
       published_at         INTEGER,
+      superseded_by        TEXT,
       created_at           INTEGER NOT NULL,
       updated_at           INTEGER NOT NULL
     );
@@ -424,6 +489,18 @@ function ensureChannelOutboundPublishOutboxSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_channel_outbound_publish_jobs_error
       ON channel_outbound_publish_jobs(last_error_at);
   `);
+  ensureChannelOutboundPublishSupersedeColumn();
+}
+
+function ensureChannelOutboundPublishSupersedeColumn(): void {
+  const columns = new Set(
+    (getDb().prepare("PRAGMA table_info(channel_outbound_publish_jobs)").all() as Array<{ name: string }>).map(
+      (column) => column.name,
+    ),
+  );
+  if (!columns.has("superseded_by")) {
+    getDb().exec("ALTER TABLE channel_outbound_publish_jobs ADD COLUMN superseded_by TEXT");
+  }
 }
 
 function selectChannelOutboundPublishRow(idempotencyKey: string): ChannelOutboundPublishRow | null {
@@ -455,6 +532,7 @@ function rowToPublishRecord(row: ChannelOutboundPublishRow): ChannelOutboundPubl
     ...(row.last_error_message ? { lastErrorMessage: row.last_error_message } : {}),
     ...(row.last_error_at !== null ? { lastErrorAt: row.last_error_at } : {}),
     ...(row.published_at !== null ? { publishedAt: row.published_at } : {}),
+    ...(row.superseded_by ? { supersededBy: row.superseded_by } : {}),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -462,6 +540,18 @@ function rowToPublishRecord(row: ChannelOutboundPublishRow): ChannelOutboundPubl
 
 function channelOutboundPublishRequestFingerprint(job: ChannelOutboundJob): string {
   return createHash("sha256").update(JSON.stringify(job.request)).digest("hex");
+}
+
+/**
+ * Coalescing key for duplicate provider-unavailable notices, or `null` when the
+ * job is not eligible. Eligibility is the mapped failure class only: a text job
+ * whose content is exactly the provider-unavailable chat line.
+ */
+function coalescibleProviderUnavailableKey(job: ChannelOutboundJob): string | null {
+  const content = job.request.content;
+  if (content.type !== "text") return null;
+  if (!isProviderUnavailableChatText(content.text)) return null;
+  return JSON.stringify([job.request.channelId, job.request.targetChatId, content.text]);
 }
 
 async function emitQueuedDelivery(

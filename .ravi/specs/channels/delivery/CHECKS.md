@@ -21,3 +21,4 @@
 - [ ] Slack sends MUST use a deterministic UUID `client_msg_id` derived from the request idempotency key as a provider-dependent duplicate-suppression token, not an exactly-once guarantee.
 - [ ] Adapter sends MUST finish within the claim lease, renew it, or rely on provider-side idempotency for the stable token.
 - [ ] Every receipt state MUST be retained for at least 14 days since its last update, then pruned at startup and periodically without deleting active claim leases or retaining raw provider responses.
+- [ ] Publish-outbox reconciliation MUST coalesce identical provider-unavailable notices per channel, chat and text into one delivery, close the duplicates as superseded, and MUST NOT coalesce arbitrary repeated chat text.

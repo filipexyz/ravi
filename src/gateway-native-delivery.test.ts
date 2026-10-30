@@ -584,7 +584,7 @@ describe("Gateway native channel outbound queue", () => {
       },
     });
 
-    expect(reconciled).toEqual({ attempted: 1, published: 1, failed: 0 });
+    expect(reconciled).toEqual({ attempted: 1, published: 1, failed: 0, coalesced: 0 });
     expect(publishedJobs).toHaveLength(1);
     expect(publishedJobs[0]?.jobId).toBe("runtime:main-slack:emit-fail");
     const publishedRecord = await getPublishOutboxJob(idempotencyKey);
@@ -601,7 +601,7 @@ describe("Gateway native channel outbound queue", () => {
     });
 
     const second = await reconcilePublishOutbox({ now: () => Date.now() + 120_000 });
-    expect(second).toEqual({ attempted: 0, published: 0, failed: 0 });
+    expect(second).toEqual({ attempted: 0, published: 0, failed: 0, coalesced: 0 });
     expect(publishedJobs).toHaveLength(1);
   });
 

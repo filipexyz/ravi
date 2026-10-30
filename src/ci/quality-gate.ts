@@ -26,6 +26,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/backend.test.ts",
     "src/channels/health.test.ts",
     "src/channels/outbound-consumer.test.ts",
+    // Durable outbound publish outbox: retry/backoff, retention and burst coalescing.
+    "src/channels/outbound-publish-outbox.test.ts",
     "src/channels/runtime-events.test.ts",
     "src/channels/runner.test.ts",
     "src/channels/session-prompt.test.ts",
