@@ -17,7 +17,7 @@ import {
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import { KNOWLEDGE_AUDIENCE_LINES } from "../knowledge/turn/preamble.js";
 import { RuntimeHostSubscriptions } from "./host-subscriptions.js";
-import type { RuntimeUserMessage } from "./host-session.js";
+import { stashPendingRuntimeMessages, type RuntimeUserMessage } from "./host-session.js";
 import type { RuntimeHostStreamingSession } from "./host-session.js";
 import type { RuntimeRecoveryExhaustedAlertInput } from "./runtime-recovery-alert.js";
 import type { PendingRuntimeSessionStart } from "./session-launcher.js";
@@ -1172,6 +1172,49 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       await cleanupIsolatedRaviState(stateDir);
     }
   });
+
+  for (const deferred of [false, true]) {
+    it(`removes yielded work from pending and restart queues on ${deferred ? "deferred" : "immediate"} abort`, async () => {
+      const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-yield-abort-");
+      try {
+        const sessionName = "yield-abort";
+        getOrCreateSession("agent:main:test:yield-abort", "main", stateDir, { name: sessionName });
+        const dispatcher = createDispatcher(2);
+        const active = createQueuedRuntimeUserMessage({ prompt: "active Slack request" });
+        const queued = createQueuedRuntimeUserMessage({ prompt: "new unrelated request" });
+        const continuations = ["unfinished WhatsApp request", "unfinished thread request"].map((request) => ({
+          ...createQueuedRuntimeUserMessage({ prompt: request, deliveryBarrier: "after_response" }),
+          yieldedRequest: request,
+        }));
+        const streaming = createActiveSession({
+          agentId: "main",
+          turnActive: true,
+          currentTurnToolStarted: true,
+          currentTurnPendingIds: [active.pendingId!],
+          pendingMessages: [active, queued, ...continuations],
+          toolResultDeliveryPending: deferred,
+        });
+        dispatcher.streamingSessions.set(sessionName, streaming);
+        dispatcher.stashedMessages.set(
+          sessionName,
+          continuations.map((message) => ({ ...message })),
+        );
+
+        expect(dispatcher.abortSession(sessionName)).toBe(true);
+
+        expect(streaming.pendingMessages).toEqual([active, queued]);
+        expect(streaming.pendingAbort).toBe(deferred);
+        expect(streaming.abortController.signal.aborted).toBe(!deferred);
+        if (deferred) expect(dispatcher.stashedMessages.has(sessionName)).toBe(false);
+
+        // Deferred abort and shutdown recovery must not recreate cancelled work.
+        stashPendingRuntimeMessages(sessionName, streaming, dispatcher.stashedMessages);
+        expect(dispatcher.stashedMessages.get(sessionName)).toEqual([queued]);
+      } finally {
+        await cleanupIsolatedRaviState(stateDir);
+      }
+    });
+  }
 
   it("keeps deferring an explicit abort only while a completed tool result is still being delivered", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-delivery-vs-running-");

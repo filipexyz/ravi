@@ -13,6 +13,9 @@ import { resolveSession } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import type { RuntimeHostStreamingSession } from "../runtime/host-session.js";
 import { runRuntimeEventLoop } from "../runtime/host-event-loop.js";
+import { RuntimeSessionDispatcher } from "../runtime/session-dispatcher.js";
+import { createQueuedRuntimeUserMessage } from "../runtime/delivery-queue.js";
+import type { RuntimeCrashRecoveryCoordinator } from "../runtime/crash-recovery.js";
 import type { ChannelBackendPromptMetadata } from "../runtime/message-types.js";
 import type { RuntimeCapabilities, RuntimeEvent, RuntimeSessionHandle } from "../runtime/types.js";
 import {
@@ -964,6 +967,63 @@ describe("channel runtime event projection", () => {
       expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)?.state).toBe("completed");
       expect(events.filter((event) => event.kind === "turn.terminal_output")).toHaveLength(1);
       expect(outputs).toHaveLength(1);
+    });
+  }
+
+  for (const deferred of [false, true]) {
+    it(`closes a waiting continuation's channel request on ${deferred ? "deferred" : "immediate"} session abort`, async () => {
+      const metadata = await acceptedMetadata();
+      const events: KnownChannelRuntimeEvent[] = [];
+      unregisterRuntimeEvents = channelRuntimeEventSinks.register(metadata.target, {
+        async emit(event) {
+          events.push(event);
+        },
+      });
+      await projectChannelRuntimeEvent({
+        metadata,
+        event: { type: "tool.started", toolUse: { id: "original-tool", name: "read", input: {} } },
+      });
+      const session = resolveSession(metadata.binding.sessionId)!;
+      const dispatcher = new RuntimeSessionDispatcher({
+        instanceId: "test",
+        maxConcurrentSessions: 2,
+        interactiveReservedSessions: 0,
+        safeEmit: async () => {},
+        notifyRuntimeRecoveryExhausted: async () => {},
+        getConfigModel: () => "test-model",
+        crashRecovery: { acceptingDeliveries: true } as RuntimeCrashRecoveryCoordinator,
+      });
+      const continuation = {
+        ...createQueuedRuntimeUserMessage({
+          prompt: "resume the original work",
+          _channelBackend: metadata,
+          deliveryBarrier: "after_response",
+        }),
+        yieldedRequest: "original work",
+      };
+      const streaming = streamingSession(metadata, runtimeHandle([]));
+      streaming.currentSource = {
+        channel: "slack",
+        accountId: "slack-account",
+        chatId: "other-chat",
+        threadId: "other-thread",
+      };
+      streaming.currentChannelBackend = undefined;
+      streaming.pendingMessages = [continuation];
+      streaming.toolResultDeliveryPending = deferred;
+      dispatcher.streamingSessions.set(session.name!, streaming);
+      dispatcher.stashedMessages.set(session.name!, [{ ...continuation }]);
+
+      expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)?.state).toBe("running");
+      expect(dispatcher.abortSession(session.name!)).toBe(true);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+
+      expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)?.state).toBe("interrupted");
+      expect(events.filter((event) => event.kind === "turn.terminal_output")).toHaveLength(1);
+      expect(streaming.pendingMessages).toEqual([]);
+      expect(dispatcher.stashedMessages.has(session.name!)).toBe(false);
+      expect(streaming.pendingAbort).toBe(deferred);
+      expect(streaming.abortController.signal.aborted).toBe(!deferred);
     });
   }
 

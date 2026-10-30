@@ -46,6 +46,7 @@
 - After-task barriers remain blocked while an active task binding exists.
 - `bun test src/runtime/delivery-queue.test.ts src/runtime/session-dispatcher.test.ts src/runtime/session-trace.test.ts` covers yielding a WhatsApp tool turn to queued Slack input, preserving later input order, then continuing the unfinished WhatsApp request with its original target and a fresh delivery id.
 - A cross-thread continuation retains its original actor, authority, task/model overrides and channel binding. Repeated interrupt requests do not duplicate the continuation; pending continuations remain in restart stashes after tools have run.
+- Explicit abort removes yielded continuations from both pending and restart queues and interrupts their original logical channel requests, including when the active turn belongs to another chat and tool-result delivery defers the abort. Unrelated pending requests survive; later stashing cannot resurrect the cancelled work.
 - `bun test src/channels/runtime-events.test.ts` verifies that an interrupted or racing completed physical turn leaves the yielded logical channel request open, and only the resumed response produces its terminal output.
 - A pending start waiting for runtime pool capacity is tracked separately from an actual cold start.
 - Subsequent prompts for a pending-start session are stashed with a pending-start reason, not `cold_start_inflight`.
