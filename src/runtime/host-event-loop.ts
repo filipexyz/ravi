@@ -1992,6 +1992,14 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   const projectRuntimeEventToChannel = async (event: RuntimeEvent, projectedResponseText?: string) => {
     const metadata = streaming.currentChannelBackend;
     if (!metadata) return;
+    // The physical turn ends, but its queued continuation still owns this channel request.
+    if (
+      streaming.currentTurnYieldContinuationId &&
+      !streaming.internalAbortReason &&
+      (event.type === "turn.interrupted" || event.type === "turn.complete")
+    ) {
+      return;
+    }
     const toolProjection =
       event.type === "tool.started"
         ? {

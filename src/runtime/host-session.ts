@@ -71,6 +71,8 @@ export interface RuntimeUserMessage extends RuntimePromptMessage {
   launchPrompt?: RuntimeLaunchPrompt;
   pendingId?: string;
   queuedAt?: number;
+  /** Original work for a fresh continuation after yielding to another reply surface. */
+  yieldedRequest?: string;
 }
 
 export function runtimeTurnAttemptTerminalEventType(
@@ -183,6 +185,8 @@ export interface RuntimeHostStreamingSession {
   currentTurnPendingIds?: string[];
   /** Whether a newer prompt intentionally preempted the active provider turn. */
   currentTurnSuperseded?: boolean;
+  /** Queued continuation owns the logical channel turn after this physical turn yields. */
+  currentTurnYieldContinuationId?: string;
   /** Whether the current provider turn has started at least one tool. Used to block unsafe replay. */
   currentTurnToolStarted?: boolean;
   /** Whether prompt-bearing provider control mutated the physical turn after its immutable handoff. */

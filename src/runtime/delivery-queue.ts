@@ -98,6 +98,7 @@ export function hasIsolatedRuntimeTurnEnvelope(
 export interface RuntimeInterruptSuccessorPreparation {
   message: RuntimeUserMessage;
   coalescedMessages: RuntimeUserMessage[];
+  continuation?: RuntimeUserMessage;
 }
 
 /**
@@ -110,6 +111,7 @@ export function prepareRuntimeInterruptSuccessor(
   sessionName: string,
   session: RuntimeHostStreamingSession,
 ): RuntimeInterruptSuccessorPreparation | null {
+  if (session.currentTurnSuperseded || session.interrupted) return null;
   const activePendingIds = new Set(session.currentTurnPendingIds ?? []);
   if (activePendingIds.size === 0) return null;
 
@@ -122,8 +124,12 @@ export function prepareRuntimeInterruptSuccessor(
       (message) => message.pendingId !== undefined && activePendingIds.has(message.pendingId),
     )?.launchPrompt?.source ??
     (session.suppressChatEmit ? undefined : session.currentReplyTarget);
+  const nextSource = successors[0]?.launchPrompt?.source;
+  const yielding = !isSameRuntimeTurnSurface(activeSource, nextSource);
+  // Source-less/CLI turns must not acquire a chat destination through a yield.
+  if (yielding && (!activeSource || !nextSource || session.suppressChatEmit)) return null;
   const nextSurfaceIndex = successors.findIndex(
-    (message) => !isSameRuntimeTurnSurface(activeSource, message.launchPrompt?.source),
+    (message) => !isSameRuntimeTurnSurface(nextSource, message.launchPrompt?.source),
   );
   const sameSurfaceSuccessors = nextSurfaceIndex < 0 ? successors : successors.slice(0, nextSurfaceIndex);
   const eligible = sameSurfaceSuccessors.filter(
@@ -159,15 +165,48 @@ export function prepareRuntimeInterruptSuccessor(
   const active = session.pendingMessages.filter(
     (message) => message.pendingId !== undefined && activePendingIds.has(message.pendingId),
   );
+  if (yielding && active.length === 0) return null;
   const remaining = session.pendingMessages.filter(
     (message) => !cohortSet.has(message) && (!message.pendingId || !activePendingIds.has(message.pendingId)),
   );
-  session.pendingMessages = [...active, merged, ...remaining];
+  const continuation = yielding ? createYieldContinuation(session, active, activeSource ?? undefined) : undefined;
+  session.pendingMessages = [...active, merged, ...remaining, ...(continuation ? [continuation] : [])];
 
   return {
     message: merged,
     coalescedMessages: cohort.filter((message) => message !== interrupting),
+    ...(continuation ? { continuation } : {}),
   };
+}
+
+function createYieldContinuation(
+  session: RuntimeHostStreamingSession,
+  active: RuntimeUserMessage[],
+  source: RuntimeLaunchPrompt["source"],
+): RuntimeUserMessage {
+  const original = active[active.length - 1]?.launchPrompt;
+  const request = active.map((message) => message.yieldedRequest ?? message.message.content).join("\n\n");
+  const continuation = createQueuedRuntimeUserMessage({
+    ...original,
+    ...session.currentTurnAuthority,
+    source,
+    prompt: [
+      "[System] Resume the unfinished request below after yielding to another chat or thread.",
+      "Continue from the existing conversation and tool results. Do not repeat completed actions.",
+      "If a command was interrupted, verify its outcome before retrying it.",
+      "",
+      request,
+    ].join("\n"),
+    _runtimePrompt: undefined,
+    _modelBrokerTurnId: undefined,
+    _resumeStashedMessages: undefined,
+    _daemonRestartResume: undefined,
+    commands: undefined,
+    deliveryBarrier: "after_response",
+    deliveryBarrierSource: "inferred",
+  });
+  continuation.yieldedRequest = request;
+  return continuation;
 }
 
 function cloneRuntimeLaunchPrompt(prompt: RuntimePromptDeliveryMessage): RuntimeLaunchPrompt {
@@ -368,8 +407,8 @@ export function getDeliverableRuntimeMessages(
   );
   // These envelopes bind authority to one logical turn. Never let adjacent
   // messages borrow their channel binding or validated internal origin.
-  const firstIsolatedTurnIndex = deliverable.findIndex((message) =>
-    hasIsolatedRuntimeTurnEnvelope(message.launchPrompt),
+  const firstIsolatedTurnIndex = deliverable.findIndex(
+    (message) => message.yieldedRequest !== undefined || hasIsolatedRuntimeTurnEnvelope(message.launchPrompt),
   );
   const envelopeBounded =
     firstIsolatedTurnIndex === 0
@@ -565,6 +604,7 @@ export async function* createRuntimeMessageGenerator({
     }
     session.currentTurnPendingIds = [...yieldedIds];
     session.currentTurnSuperseded = false;
+    session.currentTurnYieldContinuationId = undefined;
     const combined = combineSessionSurfacePromptContents(deliverable.map((message) => message.message.content));
     log.info("Generator: yielding", {
       sessionName,
@@ -687,5 +727,6 @@ export async function* createRuntimeMessageGenerator({
     }
     session.currentTurnPendingIds = undefined;
     session.currentTurnSuperseded = false;
+    session.currentTurnYieldContinuationId = undefined;
   }
 }

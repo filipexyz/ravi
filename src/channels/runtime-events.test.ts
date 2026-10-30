@@ -918,6 +918,71 @@ describe("channel runtime event projection", () => {
     });
   });
 
+  for (const terminalType of ["turn.interrupted", "turn.complete"] as const) {
+    it(`keeps a yielded channel request open across ${terminalType} until its continuation replies`, async () => {
+      const metadata = await acceptedMetadata();
+      const events: KnownChannelRuntimeEvent[] = [];
+      const outputs: ChannelOutputEnvelope[] = [];
+      const emitSpy = spyOn(nats, "emit").mockImplementation(async () => {});
+      unregisterRuntimeEvents = channelRuntimeEventSinks.register(metadata.target, {
+        async emit(event) {
+          events.push(event);
+        },
+      });
+      unregisterOutput = channelOutputSinks.register(metadata.target, {
+        async emit(output) {
+          outputs.push(output);
+        },
+      });
+      try {
+        await runAcceptedHostRuntime(
+          metadata,
+          [
+            { type: "tool.started", toolUse: { id: "yield-tool", name: "read", input: {} } },
+            { type: "tool.completed", toolUseId: "yield-tool", toolName: "read", content: "done" },
+            terminalType === "turn.complete"
+              ? { type: "turn.complete", usage: { inputTokens: 1, outputTokens: 0 } }
+              : { type: "turn.interrupted" },
+          ],
+          (streaming) => {
+            streaming.currentTurnSuperseded = true;
+            streaming.currentTurnYieldContinuationId = "pending-continuation";
+            streaming.interrupted = true;
+          },
+        );
+        expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)?.state).toBe("running");
+        expect(events.some((event) => event.kind === "turn.terminal_output")).toBe(false);
+        expect(outputs).toHaveLength(0);
+
+        await runAcceptedHostRuntime(metadata, [
+          { type: "assistant.message", text: "Original work completed after yielding." },
+          { type: "turn.complete", usage: { inputTokens: 1, outputTokens: 1 } },
+        ]);
+      } finally {
+        emitSpy.mockRestore();
+      }
+      expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)?.state).toBe("completed");
+      expect(events.filter((event) => event.kind === "turn.terminal_output")).toHaveLength(1);
+      expect(outputs).toHaveLength(1);
+    });
+  }
+
+  it("still terminalizes an explicitly aborted channel turn while a yield is pending", async () => {
+    const metadata = await acceptedMetadata();
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async () => {});
+    try {
+      await runAcceptedHostRuntime(metadata, [{ type: "turn.interrupted" }], (streaming) => {
+        streaming.currentTurnSuperseded = true;
+        streaming.currentTurnYieldContinuationId = "pending-continuation";
+        streaming.internalAbortReason = "explicit_abort";
+        streaming.interrupted = true;
+      });
+    } finally {
+      emitSpy.mockRestore();
+    }
+    expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)?.state).toBe("interrupted");
+  });
+
   it("keeps sentinel assistant content off the channel output path", async () => {
     const metadata = await acceptedMetadata();
     const events: KnownChannelRuntimeEvent[] = [];

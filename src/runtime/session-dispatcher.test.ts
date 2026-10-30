@@ -2674,7 +2674,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 
-  it("queues another surface without replacing or interrupting the active turn", async () => {
+  it("yields to another surface without replacing the active reply target", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-interrupt-source-");
     try {
       getOrCreateSession("agent:main:test:interrupt-source", "main", stateDir, { name: "interrupt-source" });
@@ -2736,7 +2736,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       });
 
       expect(activeSession.currentSource).toEqual(activeSource);
-      expect(activeSession.pendingMessages).toHaveLength(2);
+      expect(activeSession.pendingMessages).toHaveLength(3);
       expect(activeSession.pendingMessages[1]?.deliveryBarrier).toBe("after_tool");
       expect(activeSession.pendingMessages[1]?.launchPrompt?.source).toEqual(slackSource);
       expect(activeSession.pendingMessages[1]?.message.content).toBe(
@@ -2745,9 +2745,12 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
           "[Slack C123 mid:123.456] <@U123>: hello",
       );
       expect(activeSession.pendingMessages[1]?.launchPrompt?._sessionSurfaceHint).toBe(true);
-      expect(activeSession.currentTurnSuperseded).not.toBe(true);
-      expect(activeSession.interrupted).not.toBe(true);
-      expect(interrupt).not.toHaveBeenCalled();
+      expect(activeSession.pendingMessages[2]?.launchPrompt?.source).toEqual(activeSource);
+      expect(activeSession.pendingMessages[2]?.yieldedRequest).toBe("active work");
+      expect(activeSession.currentTurnYieldContinuationId).toBe(activeSession.pendingMessages[2]?.pendingId);
+      expect(activeSession.currentTurnSuperseded).toBe(true);
+      expect(activeSession.interrupted).toBe(true);
+      expect(interrupt).toHaveBeenCalledTimes(1);
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }
