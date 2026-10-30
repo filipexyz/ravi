@@ -65320,6 +65320,12 @@ class RaviSchemas {
         "type"
       ],
       "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -65381,6 +65387,12 @@ class RaviSchemas {
         "type"
       ],
       "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -65442,6 +65454,12 @@ class RaviSchemas {
         "type"
       ],
       "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -65624,6 +65642,12 @@ class RaviSchemas {
         "type"
       ],
       "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -65689,6 +65713,12 @@ class RaviSchemas {
         "type"
       ],
       "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -65760,6 +65790,12 @@ class RaviSchemas {
         "type"
       ],
       "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [

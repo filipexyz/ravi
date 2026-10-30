@@ -1582,6 +1582,38 @@ describe("ravi bases in a turn Ravi cannot attribute", () => {
     expect(JSON.parse(output).error.suggestedAction).toContain("own chat");
     expect(calls).toEqual([]);
   });
+
+  it("names the cron job and its owner for a run of a job someone else owns, without sending anyone to a chat", async () => {
+    const calls: Call[] = [];
+    const deps = {
+      ...makeDeps(calls, () => ({ bases: [] })),
+      unattributedTurn: () => ({
+        reason: {
+          kind: "routine_not_operator_owned" as const,
+          routine: "cron" as const,
+          jobId: "job_1",
+          ownerPrincipal: "contact:c_ana",
+        },
+        actorPrincipal: "automation:cron:job_1",
+      }),
+    };
+
+    const { error, output } = await captureFailure(() =>
+      new BasesCommands(deps).list(undefined, undefined, undefined, undefined, "sales", undefined, true),
+    );
+
+    expect(error).toMatchObject({ code: "ACTOR_UNKNOWN", exitCode: 3 });
+    const envelope = JSON.parse(output).error;
+    expect(envelope).toMatchObject({
+      refusalReason: "routine_not_operator_owned",
+      jobId: "job_1",
+      ownerPrincipal: "contact:c_ana",
+    });
+    expect(envelope.message).toContain("cron job job_1");
+    expect(envelope.suggestedAction).toContain("do not disable the job");
+    expect(envelope.suggestedAction).not.toContain("the person can ask");
+    expect(calls).toEqual([]);
+  });
 });
 
 describe("ravi bases props add with an idempotency key", () => {

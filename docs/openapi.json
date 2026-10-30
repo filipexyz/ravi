@@ -80,7 +80,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "26a28a48517dc6f9"
+    "version": "305868c212ea6733"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -71524,6 +71524,12 @@
                         "type"
                       ],
                       "type": "object"
+                    },
+                    "warnings": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
                     }
                   },
                   "required": [
@@ -71621,6 +71627,12 @@
                         "type"
                       ],
                       "type": "object"
+                    },
+                    "warnings": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
                     }
                   },
                   "required": [
@@ -71718,6 +71730,12 @@
                         "type"
                       ],
                       "type": "object"
+                    },
+                    "warnings": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
                     }
                   },
                   "required": [
@@ -71972,6 +71990,12 @@
                         "type"
                       ],
                       "type": "object"
+                    },
+                    "warnings": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
                     }
                   },
                   "required": [
@@ -72073,6 +72097,12 @@
                         "type"
                       ],
                       "type": "object"
+                    },
+                    "warnings": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
                     }
                   },
                   "required": [
@@ -72180,6 +72210,12 @@
                         "type"
                       ],
                       "type": "object"
+                    },
+                    "warnings": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
                     }
                   },
                   "required": [

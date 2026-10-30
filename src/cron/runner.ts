@@ -21,6 +21,7 @@ import {
 } from "../router/index.js";
 import { getAgent } from "../router/config.js";
 import { spawnedAutomationEnv } from "../runtime/turn-origin.js";
+import { cronOwnerActsAsOperator } from "../link/connector-turn.js";
 import {
   dbGetDueJobs,
   dbGetNextDueJob,
@@ -371,6 +372,14 @@ export class CronRunner {
     try {
       if (!job.shellCommand?.trim()) {
         throw new Error("Shell cron job is missing shellCommand");
+      }
+      // A shell command runs as this machine's user, with the installation's
+      // credentials, so nothing in its own environment can hold it to its
+      // owner. Only a job that acts as the operator runs.
+      if (!cronOwnerActsAsOperator(job.ownerPrincipal ?? null)) {
+        throw new Error(
+          `Shell cron job ${job.id} is owned by ${job.ownerPrincipal}, not the operator, so it does not run: a shell command runs with this machine's access. The operator recreates it from the terminal or their own chat, or turns it into an agent job.`,
+        );
       }
 
       const result = await runShellCronCommand(job.shellCommand, {

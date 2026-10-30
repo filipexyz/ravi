@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { runWithContext } from "../cli/context.js";
-import { inRuntimeTurn, isUnattributedTurn, turnActorContactId } from "./turn-actor.js";
+import { spawnedAutomationEnv } from "../runtime/turn-origin.js";
+import { inRuntimeTurn, isUnattributedTurn, turnActorContactId, unattributedTurnRefusal } from "./turn-actor.js";
 
 describe("turnActorContactId", () => {
   it("is null outside a runtime turn, without classifying anything", () => {
@@ -51,6 +52,34 @@ describe("isUnattributedTurn", () => {
   });
 });
 
+describe("unattributedTurnRefusal", () => {
+  it("carries the refusal's reason, unknown when the classification gave none or failed", () => {
+    const env = { RAVI_CONTEXT_KEY: "ctx_1" };
+    const reason = {
+      kind: "routine_not_operator_owned" as const,
+      routine: "cron" as const,
+      jobId: "job_1",
+      ownerPrincipal: "contact:c_ana",
+    };
+    expect(
+      unattributedTurnRefusal(env, {
+        actor: { kind: "refused", message: "x", actorPrincipal: "automation:cron:job_1", reason },
+      }),
+    ).toEqual({ reason, actorPrincipal: "automation:cron:job_1" });
+    expect(
+      unattributedTurnRefusal(env, { actor: { kind: "refused", message: "x", actorPrincipal: "agent:x" } }),
+    ).toEqual({ reason: { kind: "unknown" }, actorPrincipal: "agent:x" });
+    expect(unattributedTurnRefusal(env, { actor: { kind: "operator" } })).toBeNull();
+    const throwing = {
+      readCredentials: () => {
+        throw new Error("credentials unreadable");
+      },
+    };
+    expect(unattributedTurnRefusal(env, throwing)?.reason).toEqual({ kind: "unknown" });
+    expect(unattributedTurnRefusal({})).toBeNull();
+  });
+});
+
 describe("inRuntimeTurn", () => {
   it("covers commands the daemon gateway runs for a turn, whose process has no RAVI_CONTEXT_KEY", () => {
     expect(inRuntimeTurn({})).toBe(false);
@@ -58,5 +87,44 @@ describe("inRuntimeTurn", () => {
     expect(runWithContext({ transport: "gateway" }, () => inRuntimeTurn({}))).toBe(true);
     expect(runWithContext({ transport: "tool" }, () => inRuntimeTurn({}))).toBe(true);
     expect(runWithContext({}, () => inRuntimeTurn({}))).toBe(false);
+  });
+
+  it("covers a shell cron the daemon spawned, but not shell triggers or jobs", () => {
+    expect(inRuntimeTurn(spawnedAutomationEnv("cron", "job_1"))).toBe(true);
+    expect(inRuntimeTurn(spawnedAutomationEnv("trigger", "trg_1"))).toBe(false);
+    expect(inRuntimeTurn(spawnedAutomationEnv("job", "job_1"))).toBe(false);
+    expect(inRuntimeTurn({ RAVI_AUTOMATION_PRINCIPAL: "automation:cron:" })).toBe(false);
+  });
+});
+
+describe("shell crons and Bases", () => {
+  const OWNER = { activeUserId: "user_luis", activeOrgId: "org_1", ownerName: "Luis" };
+
+  it("acts for the contact who owns a shell cron, refuses an ownerless one and lets an operator-owned one act as the operator", () => {
+    const env = spawnedAutomationEnv("cron", "job_1");
+    const contactOwned = {
+      turn: { ...OWNER, getCronJobOwner: () => ({ found: true, ownerPrincipal: "contact:c_ana" }) },
+    };
+    expect(unattributedTurnRefusal(env, contactOwned)).toBeNull();
+    expect(turnActorContactId(env, contactOwned)).toBe("c_ana");
+    const ownerless = unattributedTurnRefusal(env, {
+      turn: { ...OWNER, getCronJobOwner: () => ({ found: true, ownerPrincipal: "unknown" }) },
+    });
+    expect(ownerless?.reason).toEqual({
+      kind: "routine_not_operator_owned",
+      routine: "cron",
+      jobId: "job_1",
+      ownerPrincipal: "unknown",
+    });
+    expect(
+      unattributedTurnRefusal(env, {
+        turn: { ...OWNER, getCronJobOwner: () => ({ found: true, ownerPrincipal: "operator" }) },
+      }),
+    ).toBeNull();
+    expect(
+      turnActorContactId(env, {
+        turn: { ...OWNER, getCronJobOwner: () => ({ found: true, ownerPrincipal: "operator" }) },
+      }),
+    ).toBeNull();
   });
 });

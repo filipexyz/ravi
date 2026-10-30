@@ -2,6 +2,7 @@ import { describe, expect, it, mock } from "bun:test";
 import { ConsoleApiClient } from "../cloud-auth/client.js";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 import type { CloudCredentials } from "../cloud-auth/types.js";
+import { TurnRefusalError } from "../cloud-auth/turn-refusal.js";
 import { runWithContext } from "../cli/context.js";
 import {
   BASES_READ_SCOPE,
@@ -181,7 +182,32 @@ describe("Bases reads in a delegated turn", () => {
         { project: "sales" },
         { client, readCredentials: () => makeCredentials(), unattributedTurn: () => true, env: {} },
       ),
-    ).rejects.toMatchObject({ code: "ACTOR_UNKNOWN" });
+    ).rejects.toMatchObject({ code: "ACTOR_UNKNOWN", reason: { kind: "unknown" } });
+    expect(consoleCalls).toBe(0);
+
+    const routine = openBasesClient(
+      { project: "sales" },
+      {
+        client,
+        readCredentials: () => makeCredentials(),
+        unattributedTurn: () => ({
+          reason: {
+            kind: "routine_not_operator_owned",
+            routine: "cron",
+            jobId: "job_1",
+            ownerPrincipal: "contact:c_ana",
+          },
+          actorPrincipal: "automation:cron:job_1",
+        }),
+        env: {},
+      },
+    );
+    await expect(routine).rejects.toBeInstanceOf(TurnRefusalError);
+    await expect(routine).rejects.toMatchObject({
+      code: "ACTOR_UNKNOWN",
+      exitCode: 3,
+      details: { refusalReason: "routine_not_operator_owned", jobId: "job_1", ownerPrincipal: "contact:c_ana" },
+    });
     expect(consoleCalls).toBe(0);
 
     const attributed = await openBasesClient(

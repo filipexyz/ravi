@@ -7,6 +7,7 @@ import { ConsoleApiClient, normalizeConsoleUrl, refreshCredentialsForStore } fro
 import { CloudAuthError, isCloudAuthError } from "../cloud-auth/errors.js";
 import { deleteCloudCredentials, readCloudCredentials, writeCloudCredentials } from "../cloud-auth/storage.js";
 import type { CloudCredentials } from "../cloud-auth/types.js";
+import { normalizeTurnRefusal, TurnRefusalError, type TurnRefusal } from "../cloud-auth/turn-refusal.js";
 import { getContext, hasRuntimeInvocationContext } from "../cli/context.js";
 import { resolveConsoleProjectRef, type ConsoleScopeResolverDeps } from "../console-scope/resolver.js";
 import type {
@@ -71,8 +72,11 @@ export interface BasesClientDeps extends ConsoleScopeResolverDeps {
   deleteCredentials?: typeof deleteCloudCredentials;
   newIdempotencyKey?: () => string;
   clientHint?: () => BasesClientHint | null;
-  /** Whether a runtime turn runs this and Ravi cannot say who asked (default: `isUnattributedTurn`). */
-  unattributedTurn?: () => boolean | Promise<boolean>;
+  /**
+   * Whether a runtime turn runs this and Ravi cannot say who asked, as a
+   * boolean or the refusal with its reason (default: `unattributedTurnRefusal`).
+   */
+  unattributedTurn?: () => boolean | TurnRefusal | null | Promise<boolean | TurnRefusal | null>;
 }
 
 export interface BasesClientOptions {
@@ -515,12 +519,8 @@ export async function openBasesClient(
   const credentials = requireStoredCredentials(readCredentials(), options.console);
   // Every Bases call (reads included) acts as the person of the turn. A turn Ravi
   // cannot attribute would go out as the operator, so it stops here instead.
-  if (await (deps.unattributedTurn ?? defaultUnattributedTurn)()) {
-    throw new CloudAuthError(
-      "ACTOR_UNKNOWN",
-      "Ravi could not tell who is asking in this turn, so it will not read or write Bases for anyone, not even as the operator. Ask the person to send the request from their own chat, or the operator to run it in the terminal.",
-    );
-  }
+  const refusal = normalizeTurnRefusal(await (deps.unattributedTurn ?? defaultUnattributedTurn)());
+  if (refusal) throw new TurnRefusalError(refusal.reason, "bases");
   const { projectRef } = await resolveConsoleProjectRef(
     { consoleUrl: options.console, explicitProject: options.project ?? null },
     { ...deps, readCredentials },
@@ -536,10 +536,10 @@ export async function openBasesClient(
   });
 }
 
-async function defaultUnattributedTurn(): Promise<boolean> {
+async function defaultUnattributedTurn(): Promise<TurnRefusal | null> {
   // Loaded lazily, like the client's own actor lookup, to keep the turn classifier out of import cycles.
-  const { isUnattributedTurn } = await import("../cloud-auth/turn-actor.js");
-  return isUnattributedTurn();
+  const { unattributedTurnRefusal } = await import("../cloud-auth/turn-actor.js");
+  return unattributedTurnRefusal();
 }
 
 function requireStoredCredentials(credentials: CloudCredentials | null, consoleUrl?: string): CloudCredentials {

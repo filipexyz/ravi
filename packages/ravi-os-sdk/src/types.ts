@@ -12233,6 +12233,7 @@ export type CronAddReturn = {
     type: string;
     [k: string]: unknown;
   };
+  warnings?: string[];
   [k: string]: unknown;
 };
 
@@ -12250,6 +12251,7 @@ export type CronDisableReturn = {
     type: string;
     [k: string]: unknown;
   };
+  warnings?: string[];
   [k: string]: unknown;
 };
 
@@ -12267,6 +12269,7 @@ export type CronEnableReturn = {
     type: string;
     [k: string]: unknown;
   };
+  warnings?: string[];
   [k: string]: unknown;
 };
 
@@ -12313,6 +12316,7 @@ export type CronRmReturn = {
     type: string;
     [k: string]: unknown;
   };
+  warnings?: string[];
   [k: string]: unknown;
 };
 
@@ -12331,6 +12335,7 @@ export type CronRunReturn = {
     type: string;
     [k: string]: unknown;
   };
+  warnings?: string[];
   [k: string]: unknown;
 };
 
@@ -12350,6 +12355,7 @@ export type CronSetReturn = {
     type: string;
     [k: string]: unknown;
   };
+  warnings?: string[];
   [k: string]: unknown;
 };
 

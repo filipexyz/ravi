@@ -106,6 +106,10 @@ export type ConnectorTurnResult =
        * through agent exec.
        */
       candidate?: ConnectorTurn;
+      /** A cron run refused because someone other than the owner owns the job. */
+      routineOwner?: { kind: "cron"; id: string; ownerPrincipal: string };
+      /** The turn (or the turn it was projected from) already ended. */
+      ended?: boolean;
     };
 
 type BlockedTurn = Extract<ConnectorTurnResult, { ok: false }>;
@@ -205,7 +209,7 @@ export function resolveConnectorTurn(deps: ConnectorTurnDeps = {}): ConnectorTur
   const now = deps.now ?? Date.now();
   const lineage = findActorContext(runtime.record, getById, now);
   if (lineage.kind === "operator") return terminalTurn();
-  if (lineage.kind === "ended") return notOwner("unknown", endedTurnMessage(owner));
+  if (lineage.kind === "ended") return { ...notOwner("unknown", endedTurnMessage(owner)), ended: true };
   if (lineage.kind === "none") return notOwner("unknown", unknownTurnMessage(owner));
   const actorContext = lineage.context;
 
@@ -214,7 +218,7 @@ export function resolveConnectorTurn(deps: ConnectorTurnDeps = {}): ConnectorTur
   const projectionSourceId = readProjectionSourceId(metadata);
   const projectionSource = projectionSourceId ? getById(projectionSourceId) : null;
   if (projectionSourceId && (!projectionSource || !isContextLive(projectionSource, now))) {
-    return notOwner(actorPrincipal, endedTurnMessage(owner));
+    return { ...notOwner(actorPrincipal, endedTurnMessage(owner)), ended: true };
   }
   const compartment =
     stringField(metadata, "agentIdentityCompartment") ??
@@ -636,10 +640,13 @@ function classifyNonContactPrincipal(
         );
       }
       if (!cronOwnerIsOperator(job.ownerPrincipal, owner, deps)) {
-        return notOwner(
-          actorPrincipal,
-          `Cron job ${jobId} was created by ${job.ownerPrincipal}, not by ${owner.label}, so it cannot use ${owner.label}'s connected accounts.`,
-        );
+        return {
+          ...notOwner(
+            actorPrincipal,
+            `Cron job ${jobId} was created by ${job.ownerPrincipal}, not by ${owner.label}, so it cannot use ${owner.label}'s connected accounts.`,
+          ),
+          routineOwner: { kind: "cron", id: jobId, ownerPrincipal: job.ownerPrincipal ?? "unknown" },
+        };
       }
       return {
         ok: true,
@@ -681,6 +688,20 @@ function isOperatorRelay(actorPrincipal: string, metadata: Record<string, unknow
   if (origin.session !== undefined && origin.session !== null) return false;
   const principal = objectField(origin, "principal");
   return Boolean(principal && `${principal.type}:${principal.id}` === actorPrincipal);
+}
+
+/**
+ * Whether a cron job with this owner acts as the operator when it runs: the
+ * same test the classification applies to `automation:cron:<id>`. False when
+ * the binding cannot be read.
+ */
+export function cronOwnerActsAsOperator(ownerPrincipal: string | null, deps: ConnectorTurnDeps = {}): boolean {
+  if (ownerPrincipal === null || ownerPrincipal === CRON_OPERATOR_OWNER) return true;
+  try {
+    return cronOwnerIsOperator(ownerPrincipal, resolveOwner(deps, deps.env ?? process.env), deps);
+  } catch {
+    return false;
+  }
 }
 
 /** Legacy NULL and `operator` are the operator; so is a contact bound to the active Console user. */
