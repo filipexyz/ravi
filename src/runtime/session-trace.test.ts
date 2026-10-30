@@ -5605,6 +5605,27 @@ describe("runtime session trace instrumentation", () => {
     ).toBe(false);
   });
 
+  it("deduplicates transport failures that differ only in endpoint details", () => {
+    const now = new Date("2026-10-27T10:36:00-03:00").getTime();
+    const scope = "pi:slack:ravi-hil:C123";
+
+    expect(
+      shouldSuppressUserFacingRuntimeLimitFailure({
+        error: "Error: connect ECONNREFUSED 127.0.0.1:443",
+        scope,
+        now,
+      }).suppressed,
+    ).toBe(false);
+    // Same outage, different port/endpoint text: still one unavailable notice.
+    expect(
+      shouldSuppressUserFacingRuntimeLimitFailure({
+        error: "Error: connect ECONNREFUSED 127.0.0.1:8443",
+        scope,
+        now: now + 60_000,
+      }).suppressed,
+    ).toBe(true);
+  });
+
   it("keeps the session-limit window separate from the transport window", () => {
     const now = new Date("2026-10-27T10:36:00-03:00").getTime();
     const scope = "pi:slack:ravi-hil:C123";

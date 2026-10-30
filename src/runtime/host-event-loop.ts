@@ -848,11 +848,15 @@ export function classifyUserFacingRuntimeLimitFailure(
 
   // Transport failures repeat identically while a provider link is down. They
   // are classified by the closed transport signature list, never by free text,
-  // and deduplicated inside their own short window per chat scope.
+  // and deduplicated inside their own short window per chat scope. The window
+  // key is the failure class itself: transport errors routinely differ only in
+  // endpoint details (host:port in ECONNREFUSED/ETIMEDOUT messages) while
+  // mapping to the exact same unavailable notice, so the normalized first line
+  // must not split one outage into several suppression windows.
   if (isTransportFailureMessage(error)) {
     return {
       kind: "transport",
-      windowKey: `message:${firstNonEmptyLine(normalized).slice(0, 160)}`,
+      windowKey: "transport",
       expiresAt: now + USER_FACING_TRANSPORT_SUPPRESSION_MS,
     };
   }

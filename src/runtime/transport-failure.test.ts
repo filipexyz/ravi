@@ -25,6 +25,8 @@ describe("transport failure classification", () => {
     "Tool output exceeded the size limit.",
     "permission denied",
     "Agent is already processing a prompt",
+    "Request terminated by policy",
+    "Requested model was terminated",
   ])("does not classify %p as transport", (message) => {
     expect(isTransportFailureMessage(message)).toBe(false);
     expect(classifyTransportFailureKind(message)).toBeUndefined();

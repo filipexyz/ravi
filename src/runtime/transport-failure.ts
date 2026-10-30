@@ -18,7 +18,10 @@ const TRANSPORT_FAILURE_PATTERNS: readonly RegExp[] = [
   /\bsocket hang up\b/i,
   /\bETIMEDOUT\b/,
   /\bfetch failed\b/i,
-  /\bterminated\b/i,
+  // Node/undici AbortError text. Kept to the documented operation-abort form:
+  // a bare `terminated` would also match unrelated provider text such as
+  // `Request terminated by policy` and wrongly treat it as a transport drop.
+  /\boperation was terminated\b/i,
   /\bnetwork error\b/i,
 ];
 
