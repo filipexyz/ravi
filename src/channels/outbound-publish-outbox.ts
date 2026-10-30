@@ -63,6 +63,19 @@ interface ChannelOutboundPublishRow {
   updated_at: number;
 }
 
+/**
+ * Delivery destination of a provider-unavailable notice. Coalescing must never
+ * collapse notices headed to different destinations (different Slack account,
+ * instance, chat or thread), so the whole destination is part of the key.
+ */
+export interface ChannelOutboundNoticeScope {
+  channelId: string;
+  accountId: string;
+  instanceId: string | null;
+  targetChatId: string;
+  targetThreadId: string | null;
+}
+
 export type ChannelOutboundPublisher = (job: ChannelOutboundJob) => Promise<void>;
 
 export type ChannelOutboundPublishResult =
@@ -85,6 +98,7 @@ export interface ChannelOutboundPublishOutboxStore {
   markPublished(idempotencyKey: string, publishedAt?: number): ChannelOutboundPublishRecord;
   recordFailure(idempotencyKey: string, error: unknown, failedAt?: number): ChannelOutboundPublishRecord;
   supersede(idempotencyKey: string, supersededBy: string, supersededAt?: number): ChannelOutboundPublishRecord;
+  listPendingNoticeCandidates(scope: ChannelOutboundNoticeScope, limit?: number): ChannelOutboundPublishRecord[];
   prunePublished(cutoff: number, now?: number): number;
   summary(now?: number): ChannelOutboundPublishOutboxSummary;
 }
@@ -96,6 +110,7 @@ export const sqliteChannelOutboundPublishOutboxStore: ChannelOutboundPublishOutb
   markPublished: markChannelOutboundPublishJobPublished,
   recordFailure: recordChannelOutboundPublishJobFailure,
   supersede: markChannelOutboundPublishJobSuperseded,
+  listPendingNoticeCandidates: listPendingNoticeCandidates,
   prunePublished: prunePublishedChannelOutboundPublishJobs,
   summary: getChannelOutboundPublishOutboxSummary,
 };
@@ -244,6 +259,42 @@ export function markChannelOutboundPublishJobSuperseded(
   return requireChannelOutboundPublishJob(key);
 }
 
+/**
+ * Every pending job in the same delivery scope, whether or not it is due yet.
+ * Callers re-check the notice eligibility themselves (text content) and close
+ * the duplicates they find, so a backlog larger than one reconciliation batch
+ * cannot keep publishing one extra copy per tick.
+ */
+export function listPendingNoticeCandidates(
+  scope: ChannelOutboundNoticeScope,
+  limit = 1000,
+): ChannelOutboundPublishRecord[] {
+  ensureChannelOutboundPublishOutboxSchema();
+  const boundedLimit = Math.max(1, Math.min(Math.trunc(finiteNumber(limit) ?? 1000), 10_000));
+  const rows = getDb()
+    .prepare(
+      `SELECT *
+         FROM channel_outbound_publish_jobs
+        WHERE status = 'pending'
+          AND channel_id = ?
+          AND json_extract(payload_json, '$.request.accountId') = ?
+          AND json_extract(payload_json, '$.request.instanceId') IS ?
+          AND json_extract(payload_json, '$.request.targetChatId') = ?
+          AND json_extract(payload_json, '$.request.targetThreadId') IS ?
+        ORDER BY next_attempt_at ASC, created_at ASC
+        LIMIT ?`,
+    )
+    .all(
+      scope.channelId,
+      scope.accountId,
+      scope.instanceId,
+      scope.targetChatId,
+      scope.targetThreadId,
+      boundedLimit,
+    ) as ChannelOutboundPublishRow[];
+  return rows.map(rowToPublishRecord);
+}
+
 export function getChannelOutboundPublishOutboxSummary(_now = Date.now()): ChannelOutboundPublishOutboxSummary {
   ensureChannelOutboundPublishOutboxSchema();
   const row = getDb()
@@ -352,29 +403,48 @@ export async function reconcileDueChannelOutboundPublishes(
 
   // A provider outage queues the same failure notice over and over. When the
   // link recovers the outbox used to deliver every copy in one burst. Keep the
-  // earliest pending copy per (channel, chat, text) and discard the rest. This
+  // earliest pending copy per delivery destination and discard the rest. This
   // only ever applies to the mapped provider-transport notice text, never to
   // arbitrary chat messages.
-  const keepByCoalesceKey = new Map<string, string>();
+  const keepByCoalesceKey = new Map<string, { idempotencyKey: string; scope: ChannelOutboundNoticeScope }>();
   const candidates: ChannelOutboundPublishRecord[] = [];
   for (const record of due) {
-    const coalesceKey = coalescibleProviderUnavailableKey(record.job);
-    if (coalesceKey === null) {
+    const scope = coalescibleProviderUnavailableScope(record.job);
+    if (scope === null) {
       candidates.push(record);
       continue;
     }
-    const keptKey = keepByCoalesceKey.get(coalesceKey);
-    if (keptKey === undefined) {
-      keepByCoalesceKey.set(coalesceKey, record.idempotencyKey);
+    const scopeKey = noticeScopeKey(scope);
+    const kept = keepByCoalesceKey.get(scopeKey);
+    if (kept === undefined) {
+      keepByCoalesceKey.set(scopeKey, { idempotencyKey: record.idempotencyKey, scope });
       candidates.push(record);
       continue;
     }
-    store.supersede(record.idempotencyKey, keptKey, now());
+    store.supersede(record.idempotencyKey, kept.idempotencyKey, now());
     coalesced++;
     log.info("Discarded duplicate provider-unavailable publish from a burst", {
       jobId: record.jobId,
-      keptIdempotencyKey: keptKey,
+      keptIdempotencyKey: kept.idempotencyKey,
     });
+  }
+
+  // The due batch is capped (listDue limit), so a backlog larger than one batch
+  // would still publish one extra copy per tick. Close the matching duplicates
+  // that sit beyond this batch as well; publishing work stays capped because
+  // only the due batch is ever delivered.
+  for (const kept of keepByCoalesceKey.values()) {
+    for (const backlogRecord of store.listPendingNoticeCandidates(kept.scope)) {
+      if (backlogRecord.idempotencyKey === kept.idempotencyKey) continue;
+      const backlogScope = coalescibleProviderUnavailableScope(backlogRecord.job);
+      if (backlogScope === null || noticeScopeKey(backlogScope) !== noticeScopeKey(kept.scope)) continue;
+      store.supersede(backlogRecord.idempotencyKey, kept.idempotencyKey, now());
+      coalesced++;
+      log.info("Discarded provider-unavailable publish beyond the due batch", {
+        jobId: backlogRecord.jobId,
+        keptIdempotencyKey: kept.idempotencyKey,
+      });
+    }
   }
 
   for (const record of candidates) {
@@ -543,15 +613,29 @@ function channelOutboundPublishRequestFingerprint(job: ChannelOutboundJob): stri
 }
 
 /**
- * Coalescing key for duplicate provider-unavailable notices, or `null` when the
- * job is not eligible. Eligibility is the mapped failure class only: a text job
- * whose content is exactly the provider-unavailable chat line.
+ * Coalescing scope for duplicate provider-unavailable notices, or `null` when
+ * the job is not eligible. Eligibility is the mapped failure class only: a text
+ * job whose content is exactly the provider-unavailable chat line.
+ *
+ * The scope carries the full delivery destination (channel, account, instance,
+ * chat and thread) so two identical notices headed to different Slack accounts
+ * or different threads in the same channel are never treated as duplicates.
  */
-function coalescibleProviderUnavailableKey(job: ChannelOutboundJob): string | null {
+function coalescibleProviderUnavailableScope(job: ChannelOutboundJob): ChannelOutboundNoticeScope | null {
   const content = job.request.content;
   if (content.type !== "text") return null;
   if (!isProviderUnavailableChatText(content.text)) return null;
-  return JSON.stringify([job.request.channelId, job.request.targetChatId, content.text]);
+  return {
+    channelId: job.request.channelId,
+    accountId: job.request.accountId ?? "",
+    instanceId: job.request.instanceId ?? null,
+    targetChatId: job.request.targetChatId,
+    targetThreadId: job.request.targetThreadId ?? null,
+  };
+}
+
+function noticeScopeKey(scope: ChannelOutboundNoticeScope): string {
+  return JSON.stringify([scope.channelId, scope.accountId, scope.instanceId, scope.targetChatId, scope.targetThreadId]);
 }
 
 async function emitQueuedDelivery(
