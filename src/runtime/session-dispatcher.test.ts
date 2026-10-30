@@ -677,10 +677,18 @@ describe("RuntimeSessionDispatcher runtime recovery", () => {
       restartStashedSession(sessionName: string, reason: string): Promise<void>;
     };
 
+    const backoffs: number[] = [];
+    (
+      dispatcher as unknown as { waitForTransportRestartBackoff(ms: number): Promise<void> }
+    ).waitForTransportRestartBackoff = async (ms: number) => {
+      backoffs.push(ms);
+    };
+
     await recovery.restartStashedSession("inactive-turn", "provider_turn_inactive");
     await recovery.restartStashedSession("inactive-turn", "provider_turn_inactive");
 
     expect(starts).toBe(1);
+    expect(backoffs).toEqual([]);
     expect(dispatcher.stashedMessages.has("inactive-turn")).toBe(true);
     expect(alerts).toEqual([
       expect.objectContaining({
@@ -730,11 +738,20 @@ describe("RuntimeSessionDispatcher runtime recovery", () => {
       restartStashedSession(sessionName: string, reason: string): Promise<void>;
     };
 
+    const backoffs: number[] = [];
+    (
+      dispatcher as unknown as { waitForTransportRestartBackoff(ms: number): Promise<void> }
+    ).waitForTransportRestartBackoff = async (ms: number) => {
+      backoffs.push(ms);
+    };
+
     await recovery.restartStashedSession("transport-failure", "provider_transport_failure");
     await recovery.restartStashedSession("transport-failure", "provider_transport_failure");
     await recovery.restartStashedSession("transport-failure", "provider_transport_failure");
 
     expect(starts).toBe(2);
+    // Escalating backoff, but the restart budget stays at two.
+    expect(backoffs).toEqual([1_000, 5_000]);
     expect(alerts).toEqual([
       expect.objectContaining({
         sessionName: "transport-failure",
@@ -753,6 +770,111 @@ describe("RuntimeSessionDispatcher runtime recovery", () => {
         }),
       }),
     ]);
+  });
+
+  function createLiveReplacementSession(): RuntimeHostStreamingSession {
+    return {
+      queryHandle: { provider: "pi", events: (async function* () {})(), interrupt: async () => {} },
+      turnActive: true,
+      done: false,
+      starting: false,
+      compacting: false,
+      toolRunning: false,
+      lastActivity: Date.now(),
+      pendingMessages: [],
+    } as unknown as RuntimeHostStreamingSession;
+  }
+
+  it("reserves the session during transport backoff and never starts a competing provider", async () => {
+    const dispatcher = new RuntimeSessionDispatcher({
+      instanceId: "test",
+      maxConcurrentSessions: 10,
+      interactiveReservedSessions: 0,
+      safeEmit: async () => {},
+      notifyRuntimeRecoveryExhausted: async () => {},
+      getConfigModel: () => "test-model",
+      crashRecovery: crashRecoveryStub,
+    });
+    dispatcher.stashedMessages.set("transport-race", [
+      createQueuedRuntimeUserMessage({ prompt: "retry transport", _agentId: "main" }),
+    ]);
+
+    let starts = 0;
+    dispatcher.startStreamingSession = mock(async () => {
+      starts++;
+    });
+    const recovery = dispatcher as unknown as {
+      restartStashedSession(sessionName: string, reason: string): Promise<void>;
+    };
+
+    let reservedDuringWait = false;
+    let replacement: RuntimeHostStreamingSession | null = null;
+    (
+      dispatcher as unknown as { waitForTransportRestartBackoff(ms: number): Promise<void> }
+    ).waitForTransportRestartBackoff = async () => {
+      // The session must be reserved while the restart sleeps, so an inbound
+      // prompt queues into the stash instead of starting a replacement.
+      reservedDuringWait = dispatcher.pendingStartSessions.has("transport-race");
+      stashPromptForStartingSession(
+        "transport-race",
+        { prompt: "mensagem durante o backoff", _agentId: "main" },
+        dispatcher.stashedMessages,
+      );
+      // A replacement provider still wins the race (e.g. another recovery).
+      replacement = createLiveReplacementSession();
+      dispatcher.streamingSessions.set("transport-race", replacement);
+    };
+
+    await recovery.restartStashedSession("transport-race", "provider_transport_failure");
+
+    expect(reservedDuringWait).toBe(true);
+    expect(starts).toBe(0);
+    expect(dispatcher.pendingStartSessions.has("transport-race")).toBe(false);
+    expect(dispatcher.stashedMessages.has("transport-race")).toBe(false);
+    expect(replacement!.pendingMessages.map((message) => message.message.content)).toEqual([
+      "retry transport",
+      "mensagem durante o backoff",
+    ]);
+  });
+
+  it("rebuilds the restart prompt from the freshest stash after the backoff", async () => {
+    const dispatcher = new RuntimeSessionDispatcher({
+      instanceId: "test",
+      maxConcurrentSessions: 10,
+      interactiveReservedSessions: 0,
+      safeEmit: async () => {},
+      notifyRuntimeRecoveryExhausted: async () => {},
+      getConfigModel: () => "test-model",
+      crashRecovery: crashRecoveryStub,
+    });
+    dispatcher.stashedMessages.set("transport-refresh", [
+      createQueuedRuntimeUserMessage({ prompt: "retry transport", _agentId: "main" }),
+    ]);
+
+    let startedPrompt: RuntimeLaunchPrompt | null = null;
+    dispatcher.startStreamingSession = mock(async (_sessionName: string, prompt: RuntimeLaunchPrompt) => {
+      startedPrompt = prompt;
+    });
+    const recovery = dispatcher as unknown as {
+      restartStashedSession(sessionName: string, reason: string): Promise<void>;
+    };
+
+    (
+      dispatcher as unknown as { waitForTransportRestartBackoff(ms: number): Promise<void> }
+    ).waitForTransportRestartBackoff = async () => {
+      stashPromptForStartingSession(
+        "transport-refresh",
+        { prompt: "mensagem durante o backoff", _agentId: "main" },
+        dispatcher.stashedMessages,
+      );
+    };
+
+    await recovery.restartStashedSession("transport-refresh", "provider_transport_failure");
+
+    expect(startedPrompt).not.toBeNull();
+    expect(startedPrompt!.prompt).toContain("retry transport");
+    expect(startedPrompt!.prompt).toContain("mensagem durante o backoff");
+    expect(dispatcher.pendingStartSessions.has("transport-refresh")).toBe(false);
   });
 });
 

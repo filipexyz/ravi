@@ -1193,6 +1193,49 @@ describe("Pi runtime provider", () => {
     );
   });
 
+  it.each(["Connection error.", "read ECONNRESET", "socket hang up", "fetch failed", "network error"])(
+    "marks a Pi provider transport drop as a recoverable transport failure: %s",
+    async (errorMessage) => {
+      const transport = new FakePiRpcTransport();
+      transport.pushEvent({
+        type: "turn_end",
+        message: assistantMessage("", { stopReason: "error", errorMessage }),
+        toolResults: [],
+      });
+
+      const events = await collectRuntimeEvents(
+        createPiRuntimeProvider({ transport }).startSession(createStartRequest("queda de rede")).events,
+      );
+
+      expect(events.filter((event) => event.type === "turn.failed")).toEqual([
+        expect.objectContaining({
+          type: "turn.failed",
+          recoverable: true,
+          failureKind: "transport",
+          error: errorMessage,
+        }),
+      ]);
+    },
+  );
+
+  it("leaves a non-transport Pi turn error without a failureKind", async () => {
+    const transport = new FakePiRpcTransport();
+    transport.pushEvent({
+      type: "turn_end",
+      message: assistantMessage("", { stopReason: "error", errorMessage: "Pi turn failed" }),
+      toolResults: [],
+    });
+
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport }).startSession(createStartRequest("falha seca")).events,
+    );
+
+    const failures = events.filter((event) => event.type === "turn.failed");
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({ type: "turn.failed", recoverable: true });
+    expect(failures[0]?.failureKind).toBeUndefined();
+  });
+
   it("maps Pi aborted turns to a single interrupted terminal event", async () => {
     const transport = new FakePiRpcTransport();
     transport.pushEvent({
