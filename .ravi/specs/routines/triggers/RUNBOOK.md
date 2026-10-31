@@ -91,6 +91,8 @@ If the CLI reports `active` but the daemon still skips the trigger, the CLI is p
 
 - Triggers named `gh-follow:<owner>/<repo>#<number>` are generated. Do not hand-edit their filters.
 - The follow maintenance sweep rewrites invalid filters on triggers for open PRs to the canonical form and emits one refresh. It runs about 5 seconds after the daemon starts, then every `RAVI_GH_FOLLOW_MAINTENANCE_MS` (default 60000, minimum 10000). A repair shows up in the `gh follow maintenance` log line as `triggersRepaired`.
+- The same sweep ensures the repo watch for every repo that still has a follow (`watchesEnsured` in the log line). That is what heals a follow whose local CI/comment watch was deleted or never created: without it, the trigger stays enabled and mute forever.
+- Following a PR covers PR lifecycle, CI results (`workflow_run.*`) and new PR comments (`pull_request_comment.created`). The Console watch delivers lifecycle; the local poller derives CI and comments. If a follow reports no CI and no comments, check `ravi watch list` for an active `local` watch on that repo before touching the trigger.
 - If maintenance is off (`RAVI_GH_FOLLOW_ENABLED=0`), nothing repairs these triggers. Fix them with `ravi triggers set <id> filter ...`, using the same shape `ghFollowFilter` produces.
 
 ## Task Automations

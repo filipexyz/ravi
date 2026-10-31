@@ -43,6 +43,7 @@ export * from "./crm.js";
 export * from "./cron.js";
 export * from "./daemon.js";
 export * from "./db.js";
+export * from "./decisions.js";
 export * from "./devin.js";
 export * from "./doctor.js";
 export * from "./eval.js";

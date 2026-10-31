@@ -34,6 +34,7 @@ class RaviClient {
   CrmNamespace get crm => CrmNamespace(_transport);
   CronNamespace get cron => CronNamespace(_transport);
   DaemonNamespace get daemon => DaemonNamespace(_transport);
+  DecisionsNamespace get decisions => DecisionsNamespace(_transport);
   DevinNamespace get devin => DevinNamespace(_transport);
   EvalNamespace get eval => EvalNamespace(_transport);
   FeedbackNamespace get feedback => FeedbackNamespace(_transport);
@@ -4430,6 +4431,81 @@ class DaemonNamespace {
       command: "uninstall",
       body: requestBody,
       decode: daemonUninstallReturnFromJson,
+    );
+  }
+}
+
+class DecisionsNamespace {
+  const DecisionsNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<DecisionsAnswerReturn> answer(String id, [DecisionsAnswerOptions options = const DecisionsAnswerOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["decisions"],
+      command: "answer",
+      body: requestBody,
+      decode: decisionsAnswerReturnFromJson,
+    );
+  }
+
+  Future<DecisionsAskReturn> ask([DecisionsAskOptions options = const DecisionsAskOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["decisions"],
+      command: "ask",
+      body: requestBody,
+      decode: decisionsAskReturnFromJson,
+    );
+  }
+
+  Future<DecisionsListReturn> list([DecisionsListOptions options = const DecisionsListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["decisions"],
+      command: "list",
+      body: requestBody,
+      decode: decisionsListReturnFromJson,
+    );
+  }
+
+  Future<DecisionsResolveDeliveryReturn> resolveDelivery(String id, [DecisionsResolveDeliveryOptions options = const DecisionsResolveDeliveryOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["decisions"],
+      command: "resolve-delivery",
+      body: requestBody,
+      decode: decisionsResolveDeliveryReturnFromJson,
+    );
+  }
+
+  Future<DecisionsRetryReturn> retry(String id, [DecisionsRetryOptions options = const DecisionsRetryOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["decisions"],
+      command: "retry",
+      body: requestBody,
+      decode: decisionsRetryReturnFromJson,
+    );
+  }
+
+  Future<DecisionsShowReturn> show(String id) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    return _transport.callJson(
+      groupSegments: const ["decisions"],
+      command: "show",
+      body: requestBody,
+      decode: decisionsShowReturnFromJson,
     );
   }
 }
@@ -9878,18 +9954,6 @@ class TasksNamespace {
 
   TasksProfilesNamespace get profiles => TasksProfilesNamespace(_transport);
 
-  Future<TasksAnswerReturn> answer(String taskId, [TasksAnswerOptions options = const TasksAnswerOptions()]) async {
-    final requestBody = <String, RaviJson>{};
-    requestBody["taskId"] = RaviJson.from(taskId);
-    options.encodeBody(requestBody);
-    return _transport.callJson(
-      groupSegments: const ["tasks"],
-      command: "answer",
-      body: requestBody,
-      decode: tasksAnswerReturnFromJson,
-    );
-  }
-
   Future<TasksArchiveReturn> archive(String taskId, [TasksArchiveOptions options = const TasksArchiveOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["taskId"] = RaviJson.from(taskId);
@@ -9947,18 +10011,6 @@ class TasksNamespace {
       command: "create",
       body: requestBody,
       decode: tasksCreateReturnFromJson,
-    );
-  }
-
-  Future<TasksDecideReturn> decide(String taskId, [TasksDecideOptions options = const TasksDecideOptions()]) async {
-    final requestBody = <String, RaviJson>{};
-    requestBody["taskId"] = RaviJson.from(taskId);
-    options.encodeBody(requestBody);
-    return _transport.callJson(
-      groupSegments: const ["tasks"],
-      command: "decide",
-      body: requestBody,
-      decode: tasksDecideReturnFromJson,
     );
   }
 

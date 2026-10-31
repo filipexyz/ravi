@@ -1,4 +1,5 @@
 import { configStore } from "../config-store.js";
+import { DecisionError, DecisionDispatchRejectedError } from "../decisions/model.js";
 import {
   clearProviderSession,
   expandHome,
@@ -192,10 +193,20 @@ export function resolveRuntimeSessionIdentity(options: {
 }): RuntimeSessionIdentity | null {
   const routerConfig = configStore.getConfig();
   const sessionEntry = getSessionByName(options.sessionName);
+  // Dispatch preflight can await I/O. A renamed/replaced session must not inherit its queued answer.
+  if (
+    options.prompt._decisionDeliveryId &&
+    (!sessionEntry || sessionEntry.sessionKey !== options.prompt._decisionSessionKey)
+  ) {
+    throw new DecisionError("DECISION_ORIGIN_MISMATCH", "The waiting session changed before runtime launch.");
+  }
   const agentId = options.prompt._agentId ?? sessionEntry?.agentId ?? routerConfig.defaultAgent;
-  const agent = routerConfig.agents[agentId] ?? routerConfig.agents[routerConfig.defaultAgent];
+  const agent =
+    routerConfig.agents[agentId] ??
+    (options.prompt._decisionDeliveryId ? undefined : routerConfig.agents[routerConfig.defaultAgent]);
 
   if (!agent) {
+    if (options.prompt._decisionDeliveryId) throw new DecisionDispatchRejectedError();
     log.error("No agent found", { sessionName: options.sessionName, agentId });
     return null;
   }

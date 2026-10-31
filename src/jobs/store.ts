@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getDb, getDbChanges } from "../router/router-db.js";
-import type { JobCreateInput, JobOrigin, JobRecord, JobStatus } from "./types.js";
+import { isJobTerminal, type JobCreateInput, type JobOrigin, type JobRecord, type JobStatus } from "./types.js";
 
 interface JobRow {
   id: string;
@@ -133,6 +133,63 @@ export function dbListRunningJobs(): JobRecord[] {
     .prepare("SELECT * FROM jobs WHERE status IN ('pending','running') ORDER BY created_at")
     .all() as JobRow[];
   return rows.map(rowToJob);
+}
+
+export interface JobRegisterInput {
+  id: string;
+  sessionName?: string | null;
+  agentId?: string | null;
+  command: string;
+  cwd?: string | null;
+  logPath: string;
+  pid: number | null;
+  /** Presente quando o comando terminou antes de o wrapper desistir de esperar. */
+  exit?: {
+    status: "succeeded" | "failed" | "killed";
+    exitCode: number | null;
+    signal: string | null;
+  } | null;
+}
+
+/**
+ * Registra um job que já está rodando, criado fora do daemon (o wrapper de detach).
+ *
+ * Idempotente de propósito: o wrapper pode registrar de novo depois de um
+ * `finish` que chegou antes da linha existir. Nunca reabre um job terminal.
+ */
+export function dbRegisterJob(input: JobRegisterInput): JobRecord {
+  ensureJobsSchema();
+  const existing = dbGetJob(input.id);
+  if (!existing) {
+    dbCreateJob({
+      id: input.id,
+      sessionName: input.sessionName ?? null,
+      agentId: input.agentId ?? null,
+      command: input.command,
+      cwd: input.cwd ?? null,
+      logPath: input.logPath,
+      origin: "detach",
+    });
+    dbMarkJobRunning(input.id, input.pid);
+  } else if (!isJobTerminal(existing.status)) {
+    const now = Date.now();
+    getDb()
+      .prepare(
+        "UPDATE jobs SET pid = ?, status = 'running', started_at = COALESCE(started_at, ?), updated_at = ? WHERE id = ?",
+      )
+      .run(input.pid, now, now, input.id);
+  }
+
+  if (input.exit) {
+    const current = dbGetJob(input.id);
+    if (current && !isJobTerminal(current.status)) {
+      dbFinishJob(input.id, input.exit);
+    }
+  }
+
+  const registered = dbGetJob(input.id);
+  if (!registered) throw new Error(`Job not found after register: ${input.id}`);
+  return registered;
 }
 
 function ensureJobsSchema(): void {

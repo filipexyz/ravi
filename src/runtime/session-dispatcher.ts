@@ -1,4 +1,5 @@
 import { configStore } from "../config-store.js";
+import { DecisionDispatchRejectedError } from "../decisions/model.js";
 import { projectChannelRuntimeEvent } from "../channels/runtime-events.js";
 import { saveMessage } from "../db.js";
 import {
@@ -858,8 +859,11 @@ export class RuntimeSessionDispatcher {
     const routerConfig = configStore.getConfig();
     const sessionEntry = getSessionByName(sessionName);
     const agentId = prompt._agentId ?? sessionEntry?.agentId ?? routerConfig.defaultAgent;
-    const agent = routerConfig.agents[agentId] ?? routerConfig.agents[routerConfig.defaultAgent];
+    const agent =
+      routerConfig.agents[agentId] ??
+      (prompt._decisionDeliveryId ? undefined : routerConfig.agents[routerConfig.defaultAgent]);
     if (!agent) {
+      if (prompt._decisionDeliveryId) throw new DecisionDispatchRejectedError();
       this.reportPromptIntakeFailure(sessionName, prompt, agentId);
       return;
     }
@@ -873,7 +877,8 @@ export class RuntimeSessionDispatcher {
     const debounceMs = isGroup && agent?.groupDebounceMs ? agent.groupDebounceMs : agent?.debounceMs;
     log.debug("handlePrompt", { sessionName, agentId, debounceMs, isGroup });
 
-    if (debounceMs && debounceMs > 0) {
+    // Decision receipts must not acknowledge a timer buffer as runtime admission.
+    if (!prompt._decisionDeliveryId && debounceMs && debounceMs > 0) {
       this.handlePromptWithDebounce(sessionName, prompt, debounceMs);
       return;
     }
@@ -979,8 +984,11 @@ export class RuntimeSessionDispatcher {
       this.dropQueuedObserverPendingStarts();
     }
     const agentId = prompt._agentId ?? sessionEntry?.agentId ?? routerConfig.defaultAgent;
-    const agent = routerConfig.agents[agentId] ?? routerConfig.agents[routerConfig.defaultAgent];
+    const agent =
+      routerConfig.agents[agentId] ??
+      (prompt._decisionDeliveryId ? undefined : routerConfig.agents[routerConfig.defaultAgent]);
     if (!agent) {
+      if (prompt._decisionDeliveryId) throw new DecisionDispatchRejectedError();
       this.reportPromptIntakeFailure(sessionName, prompt, agentId);
       return;
     }

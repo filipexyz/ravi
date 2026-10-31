@@ -21,7 +21,7 @@ import {
 } from "../router/index.js";
 import { getAgent } from "../router/config.js";
 import { spawnedAutomationEnv } from "../runtime/turn-origin.js";
-import { cronOwnerActsAsOperator } from "../link/connector-turn.js";
+import { cronOwnershipError } from "./ownership.js";
 import {
   dbGetDueJobs,
   dbGetNextDueJob,
@@ -30,6 +30,8 @@ import {
   dbGetCronJob,
   dbMarkJobDispatched,
   dbRecordJobOutcome,
+  dbListCronJobs,
+  dbDisableShellJobForOwner,
 } from "./cron-db.js";
 import { classifyDiskPressureHint } from "./disk-pressure.js";
 import { calculateNextRun } from "./schedule.js";
@@ -126,6 +128,9 @@ export class CronRunner {
       this.timer = null;
     }
 
+    // Reconcile all enabled jobs, including distant and unscheduled legacy rows.
+    for (const job of dbListCronJobs()) this.reconcileOwnership(job);
+
     // Find next job to run
     const nextJob = dbGetNextDueJob();
     if (!nextJob || !nextJob.nextRunAt) {
@@ -185,6 +190,11 @@ export class CronRunner {
    * instead of a healthy run.
    */
   private async executeJob(job: CronJob): Promise<void> {
+    // Recheck immediately before execution (manual runs and ownership changes
+    // since the timer was armed follow the same rule).
+    const current = dbGetCronJob(job.id);
+    if (!current || !this.reconcileOwnership(current)) return;
+    job = current;
     const startTime = Date.now();
     log.info("Executing job", {
       jobId: job.id,
@@ -373,15 +383,6 @@ export class CronRunner {
       if (!job.shellCommand?.trim()) {
         throw new Error("Shell cron job is missing shellCommand");
       }
-      // A shell command runs as this machine's user, with the installation's
-      // credentials, so nothing in its own environment can hold it to its
-      // owner. Only a job that acts as the operator runs.
-      if (!cronOwnerActsAsOperator(job.ownerPrincipal ?? null)) {
-        throw new Error(
-          `Shell cron job ${job.id} is owned by ${job.ownerPrincipal}, not the operator, so it does not run: a shell command runs with this machine's access. The operator recreates it from the terminal or their own chat, or turns it into an agent job.`,
-        );
-      }
-
       const result = await runShellCronCommand(job.shellCommand, {
         timeoutMs: job.shellTimeoutMs ?? DEFAULT_CRON_SHELL_TIMEOUT_MS,
         envFile: job.shellEnvFile,
@@ -473,6 +474,34 @@ export class CronRunner {
 
       log.error("Shell job failed", { jobId: job.id, jobName: job.name, error: errorMessage });
     }
+  }
+
+  /** Invalid ownership is configuration state, not a failed execution. */
+  private reconcileOwnership(job: CronJob): boolean {
+    const code = cronOwnershipError(job);
+    if (!code) return true;
+    if (dbDisableShellJobForOwner(job)) {
+      // The persisted transition is the notice claim, including across reloads
+      // and competing runners. Never include the command, env or output here.
+      log.error("Shell cron disabled: owner is not the operator", { jobId: job.id, code });
+      const agentId = getDefaultAgentId();
+      const sessionName = getMainSession(agentId)?.name ?? agentId;
+      void publishSessionPrompt(sessionName, {
+        prompt: `[System] Inform: [from: cron:${job.id}] Shell cron disabled (${code}). Its owner does not act as the operator. No command was executed and no retry is scheduled. Inspect with ravi cron show ${job.id}. The operator can recreate it or convert it to an agent job.`,
+        deliveryBarrier: "after_response",
+        deliveryBarrierSource: "default",
+        _cron: true,
+        _jobId: job.id,
+        _cronOnError: true,
+      }).catch((error) => {
+        log.error("Failed to publish cron ownership notice; job remains disabled", {
+          jobId: job.id,
+          code,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
+    return false;
   }
 
   /**

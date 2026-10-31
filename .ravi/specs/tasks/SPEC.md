@@ -109,8 +109,8 @@ ravi tasks report <task-id> --message "..."
 ravi tasks done <task-id> --summary "..."
 ravi tasks block <task-id> --reason "..."
 ravi tasks fail <task-id> --reason "..."
-ravi tasks decide <task-id> --key <k> --ask "..." [--owner human:<contact>|agent:<id>] [--blocks]
-ravi tasks answer <task-id> --key <k> --text "..." [--by <actor>]
+ravi decisions ask --task <task-id> --key <k> --ask "..." [--owner human:<contact>|agent:<id>] [--blocks]
+ravi decisions answer <decision-id> --text "..." [--by <actor>]
 ravi tasks attention [--agent <id>] [--owner human|agent|unassigned] [--task <id>]
 ```
 

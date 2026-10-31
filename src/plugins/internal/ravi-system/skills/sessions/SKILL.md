@@ -290,6 +290,20 @@ Progresso e resultado chegam na sessão do canal como `[System] Inform: Slack th
 
 `sessions send` envia prompt/contexto para a sessão do agent; ele não publica texto visível diretamente em WhatsApp, Telegram, Matrix ou outro canal externo. Se o objetivo é falar com uma pessoa/canal, deixe a sessão responder normalmente ou use uma CLI explícita de canal/mídia/outbound apropriada.
 
+### Decisões de uma thread
+
+Uma thread pode precisar de decisão sem task. Leia `ravi skills show decisions`.
+
+```bash
+ravi decisions ask --thread <sessão-filha> --key janela --ask "Qual janela?" --owner human:<contato> --execute --json
+ravi decisions list --thread <sessão-filha> --json
+# Registrar pela sessão pai autorizada ou CLI do operador:
+ravi decisions answer <decision-id> --text "Após 18h" --execute --json
+ravi decisions show <decision-id> --json
+```
+
+A filha que espera não responde à própria pergunta; conversa comum não vira resposta automaticamente. O card prioriza a pendência e `threads --json` inclui `openDecisionCount`. Fechar com pergunta aberta ou resposta ainda não entregue falha com `THREAD_DECISIONS_PENDING`; resolva a pergunta e confira a entrega. `--by` e dono são proveniência, não prova de aprovação humana. O novo namespace não recebe grants automaticamente.
+
 ### Session Trace
 
 Use `ravi sessions trace` quando precisar entender uma sessão real ponta a ponta:

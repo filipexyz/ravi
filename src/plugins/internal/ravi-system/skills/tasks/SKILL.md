@@ -72,6 +72,54 @@ Checklist antes de responder sobre tasks:
 - `worktree` é metadata/contexto
 - `TASK.md` só deve existir quando o próprio contrato pede isso
 
+## Decisões
+
+A primitiva é genérica: consulte `ravi skills show decisions`. O namespace `decisions` precisa estar autorizado além do acesso à origem; nenhum grant é ampliado automaticamente.
+
+Use uma decisão para registrar uma pergunta pendente com chave e dono na task.
+`blocked` registra um impedimento; a decisão guarda a pergunta e o histórico da resposta.
+
+```bash
+# Registrar a pergunta; --blocks marca espera por esta decisão
+ravi decisions ask --task <task-id> --key janela --ask "Qual janela de execução?" --owner "human:<contact-id>" --blocks --json
+
+# Consultar pendências (mais antigas primeiro) e o histórico de uma task
+ravi tasks attention --owner human --json
+ravi tasks attention --agent <agent-id> --task <task-id> --json
+ravi tasks show <task-id> --json
+
+# Após receber a decisão do dono, registrar pela sessão solicitante autorizada
+ravi decisions answer <decision-id> --text "Após 18h" --json
+```
+
+`decisions ask --task` e `decisions answer` para origem task gravam imediatamente, sem `--execute`. `attention` e `show` só leem.
+
+- `--owner` aceita `human:<contact-id>`, `agent:<agent-id>` ou `unassigned` (default).
+  Em `attention`, `--owner` filtra o **tipo**; `--agent` filtra o agent atribuído à task.
+- `--key` é normalizada para minúsculas: até 64 caracteres de `a-z`, `0-9`, `.`, `_`, `-`,
+  começando por letra ou número. Só existe uma decisão aberta por chave na mesma task.
+- Repetir `decisions ask --task` numa chave aberta atualiza pergunta, dono e `blocks`, preservando id,
+  autor e data originais. Repasse `--owner` e `--blocks` para mantê-los; omiti-los usa os defaults.
+  Após uma resposta, um novo `ask` com a mesma chave cria outro registro, sem alterar o anterior.
+- `parked` é derivado: decisão `open` + `blocks` + dono `human`, em task não terminal
+  e não arquivada. Não é um status nem uma pausa do worker. `attention` exclui tasks
+  arquivadas; decisões abertas de tasks `done|failed` podem aparecer, mas sem `parked`.
+- `waitingFor` prioriza `human`, depois `agent`, depois `unassigned` nas decisões abertas
+  do recorte. `attention` não detecta stalls nem substitui a lista de tasks bloqueadas.
+- Cada mutação emite `task.decision.open` ou `task.decision.answered`, aceitos por
+  `tasks automations add --on`. Sem automação configurada, não há aviso ao dono nem retomada
+  do worker. Status da task, threads, followups e checkpoints continuam independentes;
+  o observer não abre nem responde decisões.
+
+Armadilhas:
+
+- O worker não responde a própria decisão: a sessão da assignment ativa recebe
+  `DECISION_SELF_ANSWER` (exit 1). `--by` registra proveniência, não dá autoridade
+  nem contorna essa proteção. Não invente uma resposta pelo dono.
+- `answer` em id já respondido falha com `DECISION_NOT_OPEN` (exit 1): a resposta
+  é imutável. Id inexistente dá `DECISION_NOT_FOUND` (exit 1).
+  Chave/dono inválidos ou pergunta/resposta vazia são erros de uso (exit 2).
+
 ## Catálogo
 
 Sources:

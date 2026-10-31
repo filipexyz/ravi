@@ -435,6 +435,7 @@ const slackThreadSummarySchema = z
     childSessionKey: z.string().nullable(),
     childSessionName: z.string().nullable(),
     childSessionMissing: z.boolean(),
+    openDecisionCount: z.number(),
     slackThreadTs: z.string().nullable(),
     link: z.string().nullable(),
     runtime: z
@@ -6813,10 +6814,13 @@ export class SessionCommands {
         const title = thread.title ? ` — ${thread.title}` : "";
         const pending = thread.parentReturn.pending ? " (return pending)" : "";
         const missing = thread.childSessionMissing ? " (session missing)" : "";
+        const decisions = thread.openDecisionCount ? ` (${thread.openDecisionCount} decisions pending)` : "";
         const runtime = [thread.runtime.provider, thread.runtime.model, thread.runtime.effort]
           .filter((value): value is string => Boolean(value))
           .join(" · ");
-        console.log(`  [${thread.status}] ${name}${title}${pending}${missing}${runtime ? ` (${runtime})` : ""}`);
+        console.log(
+          `  [${thread.status}] ${name}${title}${pending}${missing}${decisions}${runtime ? ` (${runtime})` : ""}`,
+        );
       }
     }
     return payload;

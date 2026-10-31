@@ -188,6 +188,15 @@ export function dbListCronJobs(): CronJob[] {
   return rows.map(rowToJob);
 }
 
+/** Claim the enabled -> disabled transition once, without recording a run. */
+export function dbDisableShellJobForOwner(job: CronJob): boolean {
+  const result = getDb()
+    .prepare(`UPDATE cron_jobs SET enabled = 0, next_run_at = NULL, updated_at = ?
+      WHERE id = ? AND enabled = 1 AND execution_type = 'shell' AND owner_principal IS ?`)
+    .run(Date.now(), job.id, job.ownerPrincipal ?? null);
+  return result.changes > 0;
+}
+
 /**
  * Update a cron job.
  */

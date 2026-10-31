@@ -518,6 +518,10 @@ const THREAD_COMMAND_COPY: Readonly<Record<string, { message: string; suggestedA
     message: "The Slack thread's parent session no longer exists.",
     suggestedAction: "Check the parent channel session with: ravi sessions list --json",
   },
+  THREAD_DECISIONS_PENDING: {
+    message: "Thread has open decisions or an undelivered answer.",
+    suggestedAction: "Answer pending decisions and verify delivery before closing.",
+  },
   THREAD_PARENT_RETURN_PENDING: {
     message: "A previous return to the parent session is still pending.",
     suggestedAction: "Retry after the parent session receives the pending return",
@@ -532,12 +536,54 @@ const TASK_DISPATCH_COPY: Readonly<Record<string, { message: string; suggestedAc
   },
 };
 
+const DECISION_COMMAND_COPY: Readonly<Record<string, { message: string; suggestedAction: string }>> = {
+  DECISION_NOT_FOUND: {
+    message: "Decision or origin not found in this scope.",
+    suggestedAction: "Use ravi decisions list from the authorized originating session.",
+  },
+  DECISION_NOT_OPEN: {
+    message: "The decision is not open; answers are immutable.",
+    suggestedAction: "Read ravi decisions show before recording a new question.",
+  },
+  DECISION_SELF_ANSWER: {
+    message: "The waiting worker cannot answer its own decision.",
+    suggestedAction: "Record the answer from the authorized parent session or operator CLI.",
+  },
+  DECISION_ORIGIN_MISMATCH: {
+    message: "The originating thread or waiting session binding changed.",
+    suggestedAction: "Inspect the thread and restore its original binding before retrying.",
+  },
+  DECISION_DELIVERY_UNCERTAIN: {
+    message: "Runtime admission is uncertain; the answer will not be repeated automatically.",
+    suggestedAction: "Have the local operator inspect the trace and use decisions resolve-delivery with evidence.",
+  },
+  DECISION_INVALID_KEY: {
+    message: "Invalid decision key.",
+    suggestedAction:
+      "Use a slug of 1 to 64 lowercase letters, digits, dots, underscores or dashes, starting with a letter or digit.",
+  },
+  DECISION_INVALID_OWNER: {
+    message: "Invalid decision owner.",
+    suggestedAction: "Use human:<contact>, agent:<id> or unassigned.",
+  },
+  DECISION_INVALID_ASK: {
+    message: "A non-empty question is required.",
+    suggestedAction: "Pass --ask with the explicit question.",
+  },
+  DECISION_INVALID_ANSWER: {
+    message: "A non-empty answer is required.",
+    suggestedAction: "Pass --text with the explicit outcome.",
+  },
+};
+
 function threadCommandCatalogCopy(op: string, code: string): { message: string; suggestedAction: string } | undefined {
   const table = SESSIONS_THREAD_OPS.has(op)
     ? THREAD_COMMAND_COPY
     : TASK_DISPATCH_OPS.has(op)
       ? TASK_DISPATCH_COPY
-      : undefined;
+      : op.startsWith("decisions ")
+        ? DECISION_COMMAND_COPY
+        : undefined;
   return table && Object.hasOwn(table, code) ? table[code] : undefined;
 }
 

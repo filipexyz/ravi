@@ -77,6 +77,7 @@ const fakeSlackThreadSummary = {
   childSessionKey: "agent:dev:slack:ravi-slack:C123:thread:1713000000.000100",
   childSessionName: "dev-slack-t-1713000000000100",
   childSessionMissing: false,
+  openDecisionCount: 0,
   slackThreadTs: "1713000000.000100",
   link: null,
   runtime: {

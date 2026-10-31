@@ -21,7 +21,7 @@ import type { SlackBlockKitBlock } from "./block-kit.js";
 import { markdownToSlackMrkdwn } from "./mrkdwn.js";
 import { decodeLiteralLineBreaks } from "./thread-text.js";
 
-export type SlackThreadCardStatus = "open" | "closed" | "reopened";
+export type SlackThreadCardStatus = "open" | "closed" | "reopened" | "waiting";
 
 export interface SlackThreadCardState {
   readonly status: SlackThreadCardStatus;
@@ -53,12 +53,14 @@ const BODY_MAX_LENGTH = 200;
 const SUBTEXT_MAX_LENGTH = 200;
 
 const STATUS_LABELS: Record<SlackThreadCardStatus, string> = {
+  waiting: ":large_yellow_circle: *Aguardando decisão*",
   open: ":large_green_circle: *Em andamento*",
   closed: ":white_check_mark: *Concluída*",
   reopened: ":arrows_counterclockwise: *Reaberta*",
 };
 
 const NOTE_LABELS: Record<SlackThreadCardStatus, string> = {
+  waiting: "Decisão pendente",
   open: "Progresso",
   closed: "Resultado",
   reopened: "Progresso",
@@ -94,9 +96,6 @@ export function buildSlackThreadCard(rawBrief: string, state: SlackThreadCardSta
 
   const fallbackBlocks: SlackBlockKitBlock[] = [
     { type: "header", block_id: "ravi_thread_title", text: { type: "plain_text", text: title, emoji: true } },
-    ...(summary
-      ? [{ type: "section", block_id: "ravi_thread_summary", text: { type: "mrkdwn", text: summary.text } }]
-      : []),
     ...(noteText
       ? [
           {
@@ -106,11 +105,17 @@ export function buildSlackThreadCard(rawBrief: string, state: SlackThreadCardSta
           },
         ]
       : []),
+    ...(summary
+      ? [{ type: "section", block_id: "ravi_thread_summary", text: { type: "mrkdwn", text: summary.text } }]
+      : []),
     { type: "context", block_id: "ravi_thread_status", elements: [{ type: "mrkdwn", text: statusLine }] },
   ];
 
   return {
-    text: title,
+    text:
+      state.status === "waiting"
+        ? `${title} — Aguardando decisão: ${note ? escapedWithin(note, SUBTITLE_MAX_LENGTH) : ""}`.trimEnd()
+        : title,
     blocks: [card],
     fallbackBlocks,
     ...(truncated ? { fullBrief: `**Instruções completas**\n\n${brief.trim()}` } : {}),

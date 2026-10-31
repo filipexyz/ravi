@@ -1376,3 +1376,22 @@ describe("session_events index budget", () => {
     expect(present()).toBe(0);
   });
 });
+
+describe("router decision migration", () => {
+  it("migrates legacy task questions on DB open without changing the chat or its message ledger", () => {
+    const chat = dbUpsertChat({ channel: "slack", instanceId: "fixture", platformChatId: "C123", chatType: "channel" });
+    getDb().exec(`CREATE TABLE task_decisions(id TEXT PRIMARY KEY,task_id TEXT,key TEXT,status TEXT,owner_type TEXT,owner_id TEXT,ask TEXT,asked_by TEXT,asked_at INTEGER,answer TEXT,answered_by TEXT,answered_at INTEGER,blocks INTEGER,created_at INTEGER,updated_at INTEGER);
+      INSERT INTO task_decisions VALUES('legacy-decision','task-fixture','window','answered','human','person-fixture','When?','worker',1,'Later','operator',2,1,1,2)`);
+    closeRouterDb();
+    const migrated = getDb().query("SELECT * FROM decisions WHERE id='legacy-decision'").get() as {
+      origin_type: string;
+      origin_id: string;
+      answer: string;
+    };
+    expect(migrated).toMatchObject({ origin_type: "task", origin_id: "task-fixture", answer: "Later" });
+    expect(dbFindChat({ channel: "slack", instanceId: "fixture", platformChatId: "C123" })?.id).toBe(chat.id);
+    expect(getDb().query("SELECT name FROM sqlite_master WHERE name='task_decisions'").get()).toBeNull();
+    closeRouterDb();
+    expect(getDb().query("SELECT * FROM decisions").all()).toHaveLength(1);
+  });
+});

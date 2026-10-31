@@ -1,3 +1,5 @@
+import { listDecisions } from "../../decisions/store.js";
+import { getDb } from "../../router/router-db.js";
 import { randomUUID } from "node:crypto";
 import { CliExpectedError } from "../../cli/expected-error.js";
 import { nats } from "../../nats.js";
@@ -80,6 +82,7 @@ export const SLACK_THREAD_ERROR_CODES = [
   "THREAD_SESSION_MISSING",
   "THREAD_PARENT_MISSING",
   "THREAD_PARENT_RETURN_PENDING",
+  "THREAD_DECISIONS_PENDING",
 ] as const;
 export type SlackThreadErrorCode = (typeof SLACK_THREAD_ERROR_CODES)[number];
 
@@ -226,6 +229,11 @@ export async function reconcileSlackThreadLifecycle(
     }
   }
 
+  const { reconcileDecisionDeliveries } = await import("../../decisions/delivery.js");
+  await reconcileDecisionDeliveries({
+    publishPrompt: dependencies.publishPrompt,
+    publishOutbound: dependencies.publishOutbound ?? publishChannelOutboundJobDurably,
+  });
   return { creations, parentReturns, failures };
 }
 
@@ -452,6 +460,7 @@ export interface SlackThreadSummary {
    * or reset). Replies cannot reach it, and dispatching by its name is refused.
    */
   childSessionMissing: boolean;
+  openDecisionCount: number;
   slackThreadTs: string | null;
   link: string | null;
   runtime: SlackThreadRuntimeSummary;
@@ -512,6 +521,7 @@ export function summarizeSlackThread(record: SlackThreadLifecycleRecord): SlackT
     childSessionKey: record.childSessionKey ?? null,
     childSessionName: record.childSessionName ?? null,
     childSessionMissing: isSlackThreadChildMissing(record),
+    openDecisionCount: listDecisions({ type: "thread", id: record.requestId }, true).length,
     slackThreadTs: record.providerThreadId ?? null,
     link: slackThreadLink(record) ?? null,
     runtime: summarizeSlackThreadRuntime(record),
@@ -751,13 +761,24 @@ export async function sendSlackThreadMessage(
  * thread a person started has their own message as root, which Ravi cannot
  * edit. Best effort: the lifecycle change already happened.
  */
-async function updateSlackThreadCard(
+export async function updateSlackThreadCard(
   record: SlackThreadLifecycleRecord,
   state: Omit<SlackThreadCardState, "updatedAt" | "requestedBy">,
   dependencies: SlackThreadLifecycleDependencies,
 ): Promise<void> {
   const publish = dependencies.publishOutbound;
   if (!publish || record.source !== "action" || !record.initialPrompt || !record.providerThreadId) return;
+  const pending = listDecisions({ type: "thread", id: record.requestId }, true);
+  const pendingAnswer = getDb()
+    .query(`SELECT 1 FROM decision_deliveries x JOIN decisions d ON d.id=x.decision_id
+    WHERE d.origin_type='thread' AND d.origin_id=? AND x.kind='answer' AND x.status NOT IN ('delivered','superseded') LIMIT 1`)
+    .get(record.requestId);
+  const status = pending.length ? ("waiting" as const) : state.status;
+  const note = pending.length
+    ? `${pending[0]!.ask}${pending.length > 1 ? ` (+${pending.length - 1})` : ""}`
+    : pendingAnswer
+      ? "Resposta registrada; entrega pendente."
+      : state.note;
   const job = buildChannelChatActionJob({
     sessionName: record.parentSessionName,
     requestId: `slack-thread-card:${record.requestId}:${randomUUID()}`,
@@ -774,8 +795,8 @@ async function updateSlackThreadCard(
       providerMessageId: record.providerThreadId,
       text: record.initialPrompt,
       threadCard: {
-        status: state.status,
-        ...(state.note?.trim() ? { note: state.note.trim() } : {}),
+        status,
+        ...(note?.trim() ? { note: note.trim() } : {}),
         updatedAt: Date.now(),
         ...(record.requestedBy ? { requestedBy: record.requestedBy } : {}),
         ...(slackThreadRuntimeLabel(record) ? { runtime: slackThreadRuntimeLabel(record) } : {}),

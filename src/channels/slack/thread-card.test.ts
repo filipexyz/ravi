@@ -34,6 +34,37 @@ function fallbackTexts(blocks: readonly Record<string, unknown>[]): string[] {
 }
 
 describe("Slack thread card", () => {
+  it("prioritizes a pending question with accessible fallback and removes the cue after answer", () => {
+    const waiting = buildSlackThreadCard("Publish report\nReview and publish.", {
+      status: "waiting",
+      note: "Which window?",
+    });
+    validateSlackBlockKitMessage(waiting);
+    validateSlackBlockKitMessage({ text: waiting.text, blocks: waiting.fallbackBlocks });
+    expect(cardTexts(waiting.blocks).subtitle).toBe("*Decisão pendente:* Which window?");
+    expect(cardTexts(waiting.blocks).subtext).toContain("Aguardando decisão");
+    expect(waiting.text).toContain("Which window?");
+    expect(fallbackTexts(waiting.fallbackBlocks).join(" ")).toContain("Which window?");
+    const answered = buildSlackThreadCard("Publish report\nReview and publish.", {
+      status: "open",
+      note: "Resposta registrada; entrega pendente.",
+    });
+    expect(cardTexts(answered.blocks).subtext).not.toContain("Aguardando decisão");
+  });
+
+  it("bounds and escapes the waiting notification so question text cannot ping Slack members", () => {
+    const card = buildSlackThreadCard("Review report", {
+      status: "waiting",
+      note: "<!channel> <!here> <@U123> & " + "long question ".repeat(100),
+    });
+    expect(card.text).not.toContain("<!channel>");
+    expect(card.text).not.toContain("<!here>");
+    expect(card.text).not.toContain("<@U123>");
+    expect(card.text).toContain("&lt;!channel&gt;");
+    expect(card.text.length).toBeLessThanOrEqual("Review report — Aguardando decisão: ".length + 150);
+    expect(buildSlackThreadCard("Review report", { status: "open", note: "<!channel>" }).text).toBe("Review report");
+  });
+
   it("is one card block: title, a short summary and the open status", () => {
     const card = buildSlackThreadCard(LONG_BRIEF, { status: "open" });
     validateSlackBlockKitMessage(card);
@@ -59,7 +90,7 @@ describe("Slack thread card", () => {
     const texts = cardTexts(card.blocks);
 
     expect(card.fallbackBlocks.map((block) => block.type)).toEqual(["header", "section", "section", "context"]);
-    expect(fallbackTexts(card.fallbackBlocks)).toEqual([card.text, texts.body, texts.subtitle, texts.subtext]);
+    expect(fallbackTexts(card.fallbackBlocks)).toEqual([card.text, texts.subtitle, texts.body, texts.subtext]);
   });
 
   it("keeps a short brief whole in the card, with nothing posted in the thread", () => {

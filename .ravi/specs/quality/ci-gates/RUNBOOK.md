@@ -9,6 +9,15 @@ status: active
 
 # CI Quality Gates Runbook
 
+## When The Runtime Isolation Regression Fails
+
+Run `bun test --timeout 20000 --preload ./src/test/isolated-runtime-preload.ts src/runtime/session-dispatcher.test.ts`.
+`TEST_PRODUCTION_DB_BLOCKED` means a consumer selected the operator state;
+the preload threw before opening SQLite. Inspect the first stack and whether
+an inner fixture removed the launcher's `RAVI_STATE_DIR`. The final assertion
+also reports blocked opens swallowed by recovery code. Fix the isolation; do
+not remove the preload or point the test at production to make it pass.
+
 ## When CI Fails On Spec Validation
 
 1. Read the CI output for the failing spec id and the specific error.

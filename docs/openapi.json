@@ -80,7 +80,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "b11e389d16910186"
+    "version": "fcc5b23d85ddee5a"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -73191,6 +73191,1813 @@
         ]
       }
     },
+    "/api/v1/decisions/answer": {
+      "post": {
+        "operationId": "decisions.answer",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "by": {
+                    "description": "Additional provenance only; never authority",
+                    "type": "string"
+                  },
+                  "execute": {
+                    "description": "Required for a thread: queues work in the waiting session",
+                    "type": "boolean"
+                  },
+                  "id": {
+                    "description": "Decision id from ask/list",
+                    "type": "string"
+                  },
+                  "text": {
+                    "description": "Explicit outcome",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "created": {
+                      "type": "boolean"
+                    },
+                    "decision": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "answer": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "answeredAt": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "answeredBy": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "ask": {
+                          "type": "string"
+                        },
+                        "askedAt": {
+                          "type": "number"
+                        },
+                        "askedBy": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "blocks": {
+                          "type": "boolean"
+                        },
+                        "createdAt": {
+                          "type": "number"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "key": {
+                          "type": "string"
+                        },
+                        "origin": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "chatId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "id": {
+                              "type": "string"
+                            },
+                            "sessionKey": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "type": {
+                              "enum": [
+                                "task",
+                                "thread"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "id",
+                            "chatId",
+                            "sessionKey"
+                          ],
+                          "type": "object"
+                        },
+                        "ownerId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "ownerType": {
+                          "enum": [
+                            "human",
+                            "agent",
+                            "unassigned"
+                          ],
+                          "type": "string"
+                        },
+                        "revision": {
+                          "type": "number"
+                        },
+                        "status": {
+                          "enum": [
+                            "open",
+                            "answered",
+                            "superseded"
+                          ],
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "origin",
+                        "key",
+                        "status",
+                        "ownerType",
+                        "ownerId",
+                        "ask",
+                        "askedBy",
+                        "askedAt",
+                        "answer",
+                        "answeredBy",
+                        "answeredAt",
+                        "blocks",
+                        "revision",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "type": "object"
+                    },
+                    "deliveries": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "attempts": {
+                            "type": "number"
+                          },
+                          "decisionId": {
+                            "type": "string"
+                          },
+                          "deliveredAt": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "enum": [
+                              "question",
+                              "answer"
+                            ],
+                            "type": "string"
+                          },
+                          "lastError": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "nextAttemptAt": {
+                            "type": "number"
+                          },
+                          "revision": {
+                            "type": "number"
+                          },
+                          "status": {
+                            "enum": [
+                              "pending",
+                              "publishing",
+                              "published",
+                              "accepting",
+                              "delivered",
+                              "failed",
+                              "uncertain",
+                              "superseded"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "decisionId",
+                          "kind",
+                          "revision",
+                          "status",
+                          "attempts",
+                          "nextAttemptAt",
+                          "lastError",
+                          "deliveredAt"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "decision",
+                    "deliveries"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Record an immutable answer; thread answers resume the waiting work",
+        "tags": [
+          "decisions"
+        ]
+      }
+    },
+    "/api/v1/decisions/ask": {
+      "post": {
+        "operationId": "decisions.ask",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "ask": {
+                    "description": "Explicit question",
+                    "type": "string"
+                  },
+                  "blocks": {
+                    "description": "Blocks work; a human-owned task decision derives parked",
+                    "type": "boolean"
+                  },
+                  "execute": {
+                    "description": "Required for a thread: publishes the question",
+                    "type": "boolean"
+                  },
+                  "key": {
+                    "description": "Stable question key within the origin",
+                    "type": "string"
+                  },
+                  "owner": {
+                    "description": "human:<contact>|agent:<id>|unassigned; ownership is not approval authority",
+                    "type": "string"
+                  },
+                  "task": {
+                    "description": "Originating task",
+                    "type": "string"
+                  },
+                  "thread": {
+                    "description": "Managed thread child session or lifecycle id",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "created": {
+                      "type": "boolean"
+                    },
+                    "decision": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "answer": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "answeredAt": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "answeredBy": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "ask": {
+                          "type": "string"
+                        },
+                        "askedAt": {
+                          "type": "number"
+                        },
+                        "askedBy": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "blocks": {
+                          "type": "boolean"
+                        },
+                        "createdAt": {
+                          "type": "number"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "key": {
+                          "type": "string"
+                        },
+                        "origin": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "chatId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "id": {
+                              "type": "string"
+                            },
+                            "sessionKey": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "type": {
+                              "enum": [
+                                "task",
+                                "thread"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "id",
+                            "chatId",
+                            "sessionKey"
+                          ],
+                          "type": "object"
+                        },
+                        "ownerId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "ownerType": {
+                          "enum": [
+                            "human",
+                            "agent",
+                            "unassigned"
+                          ],
+                          "type": "string"
+                        },
+                        "revision": {
+                          "type": "number"
+                        },
+                        "status": {
+                          "enum": [
+                            "open",
+                            "answered",
+                            "superseded"
+                          ],
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "origin",
+                        "key",
+                        "status",
+                        "ownerType",
+                        "ownerId",
+                        "ask",
+                        "askedBy",
+                        "askedAt",
+                        "answer",
+                        "answeredBy",
+                        "answeredAt",
+                        "blocks",
+                        "revision",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "type": "object"
+                    },
+                    "deliveries": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "attempts": {
+                            "type": "number"
+                          },
+                          "decisionId": {
+                            "type": "string"
+                          },
+                          "deliveredAt": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "enum": [
+                              "question",
+                              "answer"
+                            ],
+                            "type": "string"
+                          },
+                          "lastError": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "nextAttemptAt": {
+                            "type": "number"
+                          },
+                          "revision": {
+                            "type": "number"
+                          },
+                          "status": {
+                            "enum": [
+                              "pending",
+                              "publishing",
+                              "published",
+                              "accepting",
+                              "delivered",
+                              "failed",
+                              "uncertain",
+                              "superseded"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "decisionId",
+                          "kind",
+                          "revision",
+                          "status",
+                          "attempts",
+                          "nextAttemptAt",
+                          "lastError",
+                          "deliveredAt"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "decision",
+                    "deliveries"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Ask or update one open question on an explicit origin",
+        "tags": [
+          "decisions"
+        ]
+      }
+    },
+    "/api/v1/decisions/list": {
+      "post": {
+        "operationId": "decisions.list",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "all": {
+                    "description": "Include answered history",
+                    "type": "boolean"
+                  },
+                  "limit": {
+                    "description": "Page size (default 50, maximum 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Page offset",
+                    "type": "string"
+                  },
+                  "task": {
+                    "description": "Filter to a task",
+                    "type": "string"
+                  },
+                  "thread": {
+                    "description": "Filter to a thread",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "decisions": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "answer": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "answeredAt": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "answeredBy": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "ask": {
+                            "type": "string"
+                          },
+                          "askedAt": {
+                            "type": "number"
+                          },
+                          "askedBy": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "blocks": {
+                            "type": "boolean"
+                          },
+                          "createdAt": {
+                            "type": "number"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "key": {
+                            "type": "string"
+                          },
+                          "origin": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "chatId": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "sessionKey": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "type": {
+                                "enum": [
+                                  "task",
+                                  "thread"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "id",
+                              "chatId",
+                              "sessionKey"
+                            ],
+                            "type": "object"
+                          },
+                          "ownerId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "ownerType": {
+                            "enum": [
+                              "human",
+                              "agent",
+                              "unassigned"
+                            ],
+                            "type": "string"
+                          },
+                          "revision": {
+                            "type": "number"
+                          },
+                          "status": {
+                            "enum": [
+                              "open",
+                              "answered",
+                              "superseded"
+                            ],
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "origin",
+                          "key",
+                          "status",
+                          "ownerType",
+                          "ownerId",
+                          "ask",
+                          "askedBy",
+                          "askedAt",
+                          "answer",
+                          "answeredBy",
+                          "answeredAt",
+                          "blocks",
+                          "revision",
+                          "createdAt",
+                          "updatedAt"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "pagination": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "hasMore": {
+                          "type": "boolean"
+                        },
+                        "limit": {
+                          "type": "number"
+                        },
+                        "nextCommand": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "nextOffset": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "offset": {
+                          "type": "number"
+                        },
+                        "returned": {
+                          "type": "number"
+                        },
+                        "total": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "limit",
+                        "offset",
+                        "returned",
+                        "total"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "decisions",
+                    "pagination"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Read visible decisions; open only unless --all",
+        "tags": [
+          "decisions"
+        ]
+      }
+    },
+    "/api/v1/decisions/resolve-delivery": {
+      "post": {
+        "operationId": "decisions.resolve-delivery",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "evidence": {
+                    "description": "Trace reference and finding; stored in audit history",
+                    "type": "string"
+                  },
+                  "execute": {
+                    "description": "Record the resolution; not_received makes delivery retryable",
+                    "type": "boolean"
+                  },
+                  "id": {
+                    "description": "Decision id with uncertain answer delivery",
+                    "type": "string"
+                  },
+                  "outcome": {
+                    "description": "received or not_received, established by operator inspection",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "created": {
+                      "type": "boolean"
+                    },
+                    "decision": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "answer": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "answeredAt": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "answeredBy": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "ask": {
+                          "type": "string"
+                        },
+                        "askedAt": {
+                          "type": "number"
+                        },
+                        "askedBy": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "blocks": {
+                          "type": "boolean"
+                        },
+                        "createdAt": {
+                          "type": "number"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "key": {
+                          "type": "string"
+                        },
+                        "origin": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "chatId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "id": {
+                              "type": "string"
+                            },
+                            "sessionKey": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "type": {
+                              "enum": [
+                                "task",
+                                "thread"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "id",
+                            "chatId",
+                            "sessionKey"
+                          ],
+                          "type": "object"
+                        },
+                        "ownerId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "ownerType": {
+                          "enum": [
+                            "human",
+                            "agent",
+                            "unassigned"
+                          ],
+                          "type": "string"
+                        },
+                        "revision": {
+                          "type": "number"
+                        },
+                        "status": {
+                          "enum": [
+                            "open",
+                            "answered",
+                            "superseded"
+                          ],
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "origin",
+                        "key",
+                        "status",
+                        "ownerType",
+                        "ownerId",
+                        "ask",
+                        "askedBy",
+                        "askedAt",
+                        "answer",
+                        "answeredBy",
+                        "answeredAt",
+                        "blocks",
+                        "revision",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "type": "object"
+                    },
+                    "deliveries": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "attempts": {
+                            "type": "number"
+                          },
+                          "decisionId": {
+                            "type": "string"
+                          },
+                          "deliveredAt": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "enum": [
+                              "question",
+                              "answer"
+                            ],
+                            "type": "string"
+                          },
+                          "lastError": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "nextAttemptAt": {
+                            "type": "number"
+                          },
+                          "revision": {
+                            "type": "number"
+                          },
+                          "status": {
+                            "enum": [
+                              "pending",
+                              "publishing",
+                              "published",
+                              "accepting",
+                              "delivered",
+                              "failed",
+                              "uncertain",
+                              "superseded"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "decisionId",
+                          "kind",
+                          "revision",
+                          "status",
+                          "attempts",
+                          "nextAttemptAt",
+                          "lastError",
+                          "deliveredAt"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "decision",
+                    "deliveries"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Local operator recovery of uncertain runtime admission using trace evidence",
+        "tags": [
+          "decisions"
+        ]
+      }
+    },
+    "/api/v1/decisions/retry": {
+      "post": {
+        "operationId": "decisions.retry",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "execute": {
+                    "description": "Actually retry publication",
+                    "type": "boolean"
+                  },
+                  "id": {
+                    "description": "Decision id",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "created": {
+                      "type": "boolean"
+                    },
+                    "decision": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "answer": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "answeredAt": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "answeredBy": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "ask": {
+                          "type": "string"
+                        },
+                        "askedAt": {
+                          "type": "number"
+                        },
+                        "askedBy": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "blocks": {
+                          "type": "boolean"
+                        },
+                        "createdAt": {
+                          "type": "number"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "key": {
+                          "type": "string"
+                        },
+                        "origin": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "chatId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "id": {
+                              "type": "string"
+                            },
+                            "sessionKey": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "type": {
+                              "enum": [
+                                "task",
+                                "thread"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "id",
+                            "chatId",
+                            "sessionKey"
+                          ],
+                          "type": "object"
+                        },
+                        "ownerId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "ownerType": {
+                          "enum": [
+                            "human",
+                            "agent",
+                            "unassigned"
+                          ],
+                          "type": "string"
+                        },
+                        "revision": {
+                          "type": "number"
+                        },
+                        "status": {
+                          "enum": [
+                            "open",
+                            "answered",
+                            "superseded"
+                          ],
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "origin",
+                        "key",
+                        "status",
+                        "ownerType",
+                        "ownerId",
+                        "ask",
+                        "askedBy",
+                        "askedAt",
+                        "answer",
+                        "answeredBy",
+                        "answeredAt",
+                        "blocks",
+                        "revision",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "type": "object"
+                    },
+                    "deliveries": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "attempts": {
+                            "type": "number"
+                          },
+                          "decisionId": {
+                            "type": "string"
+                          },
+                          "deliveredAt": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "enum": [
+                              "question",
+                              "answer"
+                            ],
+                            "type": "string"
+                          },
+                          "lastError": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "nextAttemptAt": {
+                            "type": "number"
+                          },
+                          "revision": {
+                            "type": "number"
+                          },
+                          "status": {
+                            "enum": [
+                              "pending",
+                              "publishing",
+                              "published",
+                              "accepting",
+                              "delivered",
+                              "failed",
+                              "uncertain",
+                              "superseded"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "decisionId",
+                          "kind",
+                          "revision",
+                          "status",
+                          "attempts",
+                          "nextAttemptAt",
+                          "lastError",
+                          "deliveredAt"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "decision",
+                    "deliveries"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Retry a failed thread delivery without recording another answer",
+        "tags": [
+          "decisions"
+        ]
+      }
+    },
+    "/api/v1/decisions/show": {
+      "post": {
+        "operationId": "decisions.show",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "description": "Decision id",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "created": {
+                      "type": "boolean"
+                    },
+                    "decision": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "answer": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "answeredAt": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "answeredBy": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "ask": {
+                          "type": "string"
+                        },
+                        "askedAt": {
+                          "type": "number"
+                        },
+                        "askedBy": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "blocks": {
+                          "type": "boolean"
+                        },
+                        "createdAt": {
+                          "type": "number"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "key": {
+                          "type": "string"
+                        },
+                        "origin": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "chatId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "id": {
+                              "type": "string"
+                            },
+                            "sessionKey": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "type": {
+                              "enum": [
+                                "task",
+                                "thread"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "id",
+                            "chatId",
+                            "sessionKey"
+                          ],
+                          "type": "object"
+                        },
+                        "ownerId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "ownerType": {
+                          "enum": [
+                            "human",
+                            "agent",
+                            "unassigned"
+                          ],
+                          "type": "string"
+                        },
+                        "revision": {
+                          "type": "number"
+                        },
+                        "status": {
+                          "enum": [
+                            "open",
+                            "answered",
+                            "superseded"
+                          ],
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "origin",
+                        "key",
+                        "status",
+                        "ownerType",
+                        "ownerId",
+                        "ask",
+                        "askedBy",
+                        "askedAt",
+                        "answer",
+                        "answeredBy",
+                        "answeredAt",
+                        "blocks",
+                        "revision",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "type": "object"
+                    },
+                    "deliveries": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "attempts": {
+                            "type": "number"
+                          },
+                          "decisionId": {
+                            "type": "string"
+                          },
+                          "deliveredAt": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "enum": [
+                              "question",
+                              "answer"
+                            ],
+                            "type": "string"
+                          },
+                          "lastError": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "nextAttemptAt": {
+                            "type": "number"
+                          },
+                          "revision": {
+                            "type": "number"
+                          },
+                          "status": {
+                            "enum": [
+                              "pending",
+                              "publishing",
+                              "published",
+                              "accepting",
+                              "delivered",
+                              "failed",
+                              "uncertain",
+                              "superseded"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "decisionId",
+                          "kind",
+                          "revision",
+                          "status",
+                          "attempts",
+                          "nextAttemptAt",
+                          "lastError",
+                          "deliveredAt"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "history": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "actor": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "createdAt": {
+                            "type": "number"
+                          },
+                          "id": {
+                            "type": "number"
+                          },
+                          "snapshot": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "type",
+                          "actor",
+                          "snapshot",
+                          "createdAt"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "decision",
+                    "deliveries",
+                    "history"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Read a decision, its immutable history and delivery state",
+        "tags": [
+          "decisions"
+        ]
+      }
+    },
     "/api/v1/devin/auth/check": {
       "post": {
         "operationId": "devin.auth.check",
@@ -118756,6 +120563,9 @@
                             }
                           ]
                         },
+                        "openDecisionCount": {
+                          "type": "number"
+                        },
                         "parentReturn": {
                           "additionalProperties": false,
                           "properties": {
@@ -118946,6 +120756,7 @@
                         "childSessionKey",
                         "childSessionName",
                         "childSessionMissing",
+                        "openDecisionCount",
                         "slackThreadTs",
                         "link",
                         "runtime",
@@ -119084,6 +120895,9 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "openDecisionCount": {
+                            "type": "number"
                           },
                           "parentReturn": {
                             "additionalProperties": false,
@@ -119275,6 +121089,7 @@
                           "childSessionKey",
                           "childSessionName",
                           "childSessionMissing",
+                          "openDecisionCount",
                           "slackThreadTs",
                           "link",
                           "runtime",
@@ -138748,281 +140563,6 @@
         ]
       }
     },
-    "/api/v1/tasks/answer": {
-      "post": {
-        "operationId": "tasks.answer",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": false,
-                "properties": {
-                  "by": {
-                    "description": "Who is answering, recorded as provenance",
-                    "type": "string"
-                  },
-                  "key": {
-                    "description": "Decision key to answer",
-                    "type": "string"
-                  },
-                  "taskId": {
-                    "description": "Task ID",
-                    "type": "string"
-                  },
-                  "text": {
-                    "description": "The decision outcome",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "taskId"
-                ],
-                "type": "object"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "created": {
-                      "type": "boolean"
-                    },
-                    "decision": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "answer": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "answeredAt": {
-                          "anyOf": [
-                            {
-                              "type": "number"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "answeredBy": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "ask": {
-                          "type": "string"
-                        },
-                        "askedAt": {
-                          "type": "number"
-                        },
-                        "askedBy": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "blocks": {
-                          "type": "boolean"
-                        },
-                        "createdAt": {
-                          "type": "number"
-                        },
-                        "id": {
-                          "type": "string"
-                        },
-                        "key": {
-                          "type": "string"
-                        },
-                        "ownerId": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "ownerType": {
-                          "enum": [
-                            "human",
-                            "agent",
-                            "unassigned"
-                          ],
-                          "type": "string"
-                        },
-                        "status": {
-                          "enum": [
-                            "open",
-                            "answered",
-                            "superseded"
-                          ],
-                          "type": "string"
-                        },
-                        "taskId": {
-                          "type": "string"
-                        },
-                        "updatedAt": {
-                          "type": "number"
-                        }
-                      },
-                      "required": [
-                        "id",
-                        "taskId",
-                        "key",
-                        "status",
-                        "ownerType",
-                        "ownerId",
-                        "ask",
-                        "askedBy",
-                        "askedAt",
-                        "answer",
-                        "answeredBy",
-                        "answeredAt",
-                        "blocks",
-                        "createdAt",
-                        "updatedAt"
-                      ],
-                      "type": "object"
-                    },
-                    "event": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "actor": {
-                          "type": "string"
-                        },
-                        "agentId": {
-                          "type": "string"
-                        },
-                        "createdAt": {
-                          "type": "number"
-                        },
-                        "id": {
-                          "type": "number"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "progress": {
-                          "type": "number"
-                        },
-                        "sessionName": {
-                          "type": "string"
-                        },
-                        "taskId": {
-                          "type": "string"
-                        },
-                        "type": {
-                          "enum": [
-                            "task.decision.open",
-                            "task.decision.answered"
-                          ],
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "id",
-                        "taskId",
-                        "type",
-                        "createdAt"
-                      ],
-                      "type": "object"
-                    },
-                    "task": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "assigneeAgentId": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "assigneeSessionName": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "id": {
-                          "type": "string"
-                        },
-                        "priority": {
-                          "type": "string"
-                        },
-                        "progress": {
-                          "type": "number"
-                        },
-                        "status": {
-                          "type": "string"
-                        },
-                        "title": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "id",
-                        "title",
-                        "status",
-                        "priority",
-                        "progress"
-                      ],
-                      "type": "object"
-                    }
-                  },
-                  "required": [
-                    "task",
-                    "decision",
-                    "event"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success — body conforms to the `@Returns` schema."
-          },
-          "400": {
-            "description": "Bad request — body failed schema validation."
-          },
-          "500": {
-            "description": "Internal error."
-          }
-        },
-        "security": [],
-        "summary": "Answer (close) an open decision on a task",
-        "tags": [
-          "tasks"
-        ]
-      }
-    },
     "/api/v1/tasks/archive": {
       "post": {
         "operationId": "tasks.archive",
@@ -140312,285 +141852,6 @@
         },
         "security": [],
         "summary": "Create a tracked task; unresolved dependencies arm launch plans instead of dispatching early",
-        "tags": [
-          "tasks"
-        ]
-      }
-    },
-    "/api/v1/tasks/decide": {
-      "post": {
-        "operationId": "tasks.decide",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": false,
-                "properties": {
-                  "ask": {
-                    "description": "The pending question",
-                    "type": "string"
-                  },
-                  "blocks": {
-                    "description": "Park the task on this decision",
-                    "type": "boolean"
-                  },
-                  "key": {
-                    "description": "Stable decision slug, unique while open per task",
-                    "type": "string"
-                  },
-                  "owner": {
-                    "description": "human:<contact>|agent:<id>|unassigned (default: unassigned)",
-                    "type": "string"
-                  },
-                  "taskId": {
-                    "description": "Task ID",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "taskId"
-                ],
-                "type": "object"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "created": {
-                      "type": "boolean"
-                    },
-                    "decision": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "answer": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "answeredAt": {
-                          "anyOf": [
-                            {
-                              "type": "number"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "answeredBy": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "ask": {
-                          "type": "string"
-                        },
-                        "askedAt": {
-                          "type": "number"
-                        },
-                        "askedBy": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "blocks": {
-                          "type": "boolean"
-                        },
-                        "createdAt": {
-                          "type": "number"
-                        },
-                        "id": {
-                          "type": "string"
-                        },
-                        "key": {
-                          "type": "string"
-                        },
-                        "ownerId": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "ownerType": {
-                          "enum": [
-                            "human",
-                            "agent",
-                            "unassigned"
-                          ],
-                          "type": "string"
-                        },
-                        "status": {
-                          "enum": [
-                            "open",
-                            "answered",
-                            "superseded"
-                          ],
-                          "type": "string"
-                        },
-                        "taskId": {
-                          "type": "string"
-                        },
-                        "updatedAt": {
-                          "type": "number"
-                        }
-                      },
-                      "required": [
-                        "id",
-                        "taskId",
-                        "key",
-                        "status",
-                        "ownerType",
-                        "ownerId",
-                        "ask",
-                        "askedBy",
-                        "askedAt",
-                        "answer",
-                        "answeredBy",
-                        "answeredAt",
-                        "blocks",
-                        "createdAt",
-                        "updatedAt"
-                      ],
-                      "type": "object"
-                    },
-                    "event": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "actor": {
-                          "type": "string"
-                        },
-                        "agentId": {
-                          "type": "string"
-                        },
-                        "createdAt": {
-                          "type": "number"
-                        },
-                        "id": {
-                          "type": "number"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "progress": {
-                          "type": "number"
-                        },
-                        "sessionName": {
-                          "type": "string"
-                        },
-                        "taskId": {
-                          "type": "string"
-                        },
-                        "type": {
-                          "enum": [
-                            "task.decision.open",
-                            "task.decision.answered"
-                          ],
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "id",
-                        "taskId",
-                        "type",
-                        "createdAt"
-                      ],
-                      "type": "object"
-                    },
-                    "task": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "assigneeAgentId": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "assigneeSessionName": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "id": {
-                          "type": "string"
-                        },
-                        "priority": {
-                          "type": "string"
-                        },
-                        "progress": {
-                          "type": "number"
-                        },
-                        "status": {
-                          "type": "string"
-                        },
-                        "title": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "id",
-                        "title",
-                        "status",
-                        "priority",
-                        "progress"
-                      ],
-                      "type": "object"
-                    }
-                  },
-                  "required": [
-                    "task",
-                    "decision",
-                    "event"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success — body conforms to the `@Returns` schema."
-          },
-          "400": {
-            "description": "Bad request — body failed schema validation."
-          },
-          "500": {
-            "description": "Internal error."
-          }
-        },
-        "security": [],
-        "summary": "Open (or re-ask) a decision with an owner and a stable key on a task",
         "tags": [
           "tasks"
         ]
@@ -158395,6 +159656,10 @@
     {
       "description": "Inspect ravi.db state (locks, WAL, holders)",
       "name": "db"
+    },
+    {
+      "description": "Explicit questions and immutable answers owned by tasks or threads",
+      "name": "decisions"
     },
     {
       "name": "devin"

@@ -103,6 +103,10 @@ public final class RaviClient {
     DaemonNamespace(transport: transport)
   }
 
+  public var decisions: DecisionsNamespace {
+    DecisionsNamespace(transport: transport)
+  }
+
   public var devin: DevinNamespace {
     DevinNamespace(transport: transport)
   }
@@ -3228,6 +3232,53 @@ public struct DaemonNamespace: Sendable {
   public func uninstall() async throws -> DaemonUninstallReturn {
     let requestBody: [String: RaviJSON] = [:]
     return try await transport.call(groupSegments: ["daemon"], command: "uninstall", body: requestBody, as: DaemonUninstallReturn.self)
+  }
+}
+
+public struct DecisionsNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func answer(_ id: String, _ options: DecisionsAnswerOptions = .init()) async throws -> DecisionsAnswerReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["decisions"], command: "answer", body: requestBody, as: DecisionsAnswerReturn.self)
+  }
+
+  public func ask(_ options: DecisionsAskOptions = .init()) async throws -> DecisionsAskReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["decisions"], command: "ask", body: requestBody, as: DecisionsAskReturn.self)
+  }
+
+  public func list(_ options: DecisionsListOptions = .init()) async throws -> DecisionsListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["decisions"], command: "list", body: requestBody, as: DecisionsListReturn.self)
+  }
+
+  public func resolveDelivery(_ id: String, _ options: DecisionsResolveDeliveryOptions = .init()) async throws -> DecisionsResolveDeliveryReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["decisions"], command: "resolve-delivery", body: requestBody, as: DecisionsResolveDeliveryReturn.self)
+  }
+
+  public func retry(_ id: String, _ options: DecisionsRetryOptions = .init()) async throws -> DecisionsRetryReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["decisions"], command: "retry", body: requestBody, as: DecisionsRetryReturn.self)
+  }
+
+  public func show(_ id: String) async throws -> DecisionsShowReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    return try await transport.call(groupSegments: ["decisions"], command: "show", body: requestBody, as: DecisionsShowReturn.self)
   }
 }
 
@@ -6867,13 +6918,6 @@ public struct TasksNamespace: Sendable {
     TasksProfilesNamespace(transport: transport)
   }
 
-  public func answer(_ taskId: String, _ options: TasksAnswerOptions = .init()) async throws -> TasksAnswerReturn {
-    var requestBody: [String: RaviJSON] = [:]
-    requestBody["taskId"] = try RaviJSON.fromEncodable(taskId)
-    try options.encodeBody(into: &requestBody)
-    return try await transport.call(groupSegments: ["tasks"], command: "answer", body: requestBody, as: TasksAnswerReturn.self)
-  }
-
   public func archive(_ taskId: String, _ options: TasksArchiveOptions = .init()) async throws -> TasksArchiveReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["taskId"] = try RaviJSON.fromEncodable(taskId)
@@ -6907,13 +6951,6 @@ public struct TasksNamespace: Sendable {
     requestBody["title"] = try RaviJSON.fromEncodable(title)
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["tasks"], command: "create", body: requestBody, as: TasksCreateReturn.self)
-  }
-
-  public func decide(_ taskId: String, _ options: TasksDecideOptions = .init()) async throws -> TasksDecideReturn {
-    var requestBody: [String: RaviJSON] = [:]
-    requestBody["taskId"] = try RaviJSON.fromEncodable(taskId)
-    try options.encodeBody(into: &requestBody)
-    return try await transport.call(groupSegments: ["tasks"], command: "decide", body: requestBody, as: TasksDecideReturn.self)
   }
 
   public func dispatch(_ taskId: String, _ options: TasksDispatchOptions = .init()) async throws -> TasksDispatchReturn {

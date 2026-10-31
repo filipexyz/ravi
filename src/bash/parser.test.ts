@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import {
   parseBashCommand,
   checkDangerousPatterns,
@@ -222,4 +224,127 @@ describe("findOutputRedirectTargets", () => {
   it("reports /dev/null like any other target so callers decide", () => {
     expect(findOutputRedirectTargets("ravi x 2>/dev/null")).toEqual(["/dev/null"]);
   });
+});
+
+describe("shell quoting boundaries", () => {
+  const safe = [
+    "rg -e '$(whoami)' file",
+    'grep -F "\\$(whoami)" file',
+    "printf '%s' '{\"pattern\":\"$(id) `id` <(id) <<EOF\"}'",
+    "echo '`id` <(id) >(id) <<EOF'",
+    'echo "<(id) >(id) <<EOF"',
+    "echo \\`id\\`",
+    "echo '$'\"(id)\"",
+    "echo 'it'\\''s $(id)'",
+    "echo 'literal\\' '$(id)'",
+    'echo "\\$(id) \\`id\\`"',
+    "echo '| bash' '| python3' '| node -e code'",
+    "echo x \\| bash",
+    "echo ok # $(id)\npwd",
+    "echo '$(id)' ; grep foo file",
+    "echo 'line\n$(id)'",
+    "echo '$\\\n(id)'",
+  ];
+  const unsafe = [
+    "echo $(id)",
+    'echo "$(id)"',
+    'echo "`id`"',
+    "cat <(id)",
+    "tee >(id)",
+    "cat <<EOF\nx\nEOF",
+    "cat <<'EOF'\n$(id)\nEOF",
+    'cat <<<"ok"',
+    'echo "\\\\$(id)"',
+    'echo "a\\q$(id)"',
+    "echo 'ok'$(id)",
+    "echo $\\\n(id)",
+    'echo "$\\\n(id)"',
+    'echo "$\\\n\\\n(id)"',
+    "echo \\ #$(id)",
+    'echo ""#$(id)',
+    "echo x#$(id)",
+    "echo \"$(printf 'nested')\"",
+    'echo "$(printf "nested")"',
+    'cat script | "bash"',
+    'cat script | py"thon3"',
+    'echo x | "node" "-e" "hi"',
+    'echo "unterminated',
+    "echo $'unsupported'",
+  ];
+
+  for (const command of safe) {
+    it(`allows literal data: ${JSON.stringify(command)}`, () => {
+      expect(checkDangerousPatterns(command).safe).toBe(true);
+      expect(parseBashCommand(command).success).toBe(true);
+    });
+  }
+  for (const command of unsafe) {
+    it(`refuses active or unsupported syntax: ${JSON.stringify(command)}`, () => {
+      expect(checkDangerousPatterns(command).safe).toBe(false);
+    });
+  }
+
+  it("keeps command and argument boundaries while decoding quoted words", () => {
+    expect(parseBashCommand('"rg" -e \'$(id); bash\' file && g"rep" x file').executables).toEqual(["rg", "grep"]);
+    expect(parseBashCommand('ba"sh" -c "echo ok"').executables).toEqual(["bash"]);
+    expect(parseBashCommand('sudo "bash" -c "echo ok"').executables).toEqual(["sudo", "bash"]);
+    expect(parseBashCommand("echo x 2>&1").executables).toEqual(["echo"]);
+    expect(parseBashCommand(">|out echo x").executables).toEqual(["echo"]);
+    expect(parseBashCommand("echo x # comment\npwd").executables).toEqual(["echo", "pwd"]);
+    expect(parseBashCommand('echo "line\npwd"').executables).toEqual(["echo"]);
+    expect(parseBashCommand('"$EXECUTABLE" harmless').success).toBe(false);
+  });
+
+  for (const command of [
+    'python3 "-c" "print(1)"',
+    'py"thon3" -c "print(1)"',
+    'python3 -\\c "print(1)"',
+    'node -e"console.log(1)"',
+    'node "--eval=console.log(1)"',
+    'sudo python3 "-c" "print(1)"',
+    'python3 < input "-c" "print(1)"',
+  ]) {
+    it(`retains inline interpreter refusal: ${command}`, () => {
+      expect(parseBashCommand(command).success).toBe(false);
+      expect(parseBashCommand(command).error).toContain("inline code");
+    });
+  }
+});
+
+it.skipIf(!existsSync("/bin/bash"))("agrees with Bash expansion on harmless printf examples", () => {
+  const argumentsToCheck = [
+    { argument: "'$(printf changed)'", output: "$(printf changed)", safe: true },
+    { argument: '"$(printf changed)"', output: "changed", safe: false },
+    { argument: '"\\$(printf changed)"', output: "$(printf changed)", safe: true },
+    { argument: '"$\\\n(printf changed)"', output: "changed", safe: false },
+    { argument: "'$\\\n(printf changed)'", output: "$\\\n(printf changed)", safe: true },
+    { argument: "'`printf changed`'", output: "`printf changed`", safe: true },
+    { argument: '"`printf changed`"', output: "changed", safe: false },
+    { argument: '"\\`printf changed\\`"', output: "`printf changed`", safe: true },
+    { argument: '"<(printf changed)"', output: "<(printf changed)", safe: true },
+    { argument: "'it'\\''s $(printf changed)'", output: "it's $(printf changed)", safe: true },
+    { argument: "\\ #$(printf changed)", output: " #changed", safe: false },
+  ];
+  const cases = [
+    ...argumentsToCheck.map(({ argument, output, safe }) => ({ command: `printf '%s' ${argument}`, output, safe })),
+    { command: "printf '%s' $(printf changed)", output: "changed", safe: false },
+    { command: "printf '%s' `printf changed`", output: "changed", safe: false },
+    { command: "printf '%s' \"$(printf '%s' \"$(printf changed)\")\"", output: "changed", safe: false },
+    { command: "printf '%s' $(printf '%s' 'nested literal')", output: "nestedliteral", safe: false },
+    { command: "printf '%s' \\$\\(printf\\ changed\\)", output: "$(printf changed)", safe: true },
+    { command: "cat <<EOF\n$(printf changed)\nEOF", output: "changed\n", safe: false },
+    { command: "cat <<'EOF'\n$(printf changed)\nEOF", output: "$(printf changed)\n", safe: false },
+    { command: "cat <<\\EOF\n$(printf changed)\nEOF", output: "$(printf changed)\n", safe: false },
+    { command: "cat <(printf changed)", output: "changed", safe: false },
+  ];
+  for (const { command, output, safe } of cases) {
+    expect(
+      execFileSync("/bin/bash", ["--noprofile", "--norc", "-c", command], {
+        encoding: "utf8",
+        env: { PATH: "/usr/bin:/bin" },
+        timeout: 1000,
+      }),
+    ).toBe(output);
+    expect(checkDangerousPatterns(command).safe).toBe(safe);
+  }
 });

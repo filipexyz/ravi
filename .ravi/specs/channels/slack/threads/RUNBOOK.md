@@ -43,3 +43,6 @@ sqlite3 ~/.ravi/ravi.db "SELECT session_key, name FROM sessions WHERE session_ke
 sqlite3 ~/.ravi/ravi.db "SELECT platform_chat_id, chat_type FROM chats WHERE channel='slack' AND chat_type='thread' ORDER BY updated_at DESC LIMIT 10;"
 sqlite3 ~/.ravi/ravi.db "SELECT request_id, status, parent_session_key, child_session_key, provider_thread_id, model_override, parent_notified_at FROM slack_thread_lifecycle ORDER BY updated_at DESC LIMIT 10;"
 ```
+
+
+If close reports `THREAD_DECISIONS_PENDING`, run `ravi decisions list --thread <child-session> --json`, then `ravi decisions show <decision-id> --json`. Answer from the authorized parent/operator. A recorded answer with failed delivery uses `ravi decisions retry <decision-id> --execute`; uncertainty requires operator trace inspection and `decisions resolve-delivery`.

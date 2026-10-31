@@ -41,8 +41,12 @@ import {
 import { isCloudAuthError } from "../../cloud-auth/errors.js";
 import { cloudErrorToContractError, commandOperation } from "../../cli/cloud-error-contract.js";
 import { parseCallerCwd } from "../../cli/caller-cwd.js";
+import { sanitizePublicValue } from "../../cli/redaction.js";
+import { logger } from "../../utils/logger.js";
 import { enforceWriteAfterRead, writeAfterReadContractError } from "../../knowledge/safety/write-after-read.js";
 import { contractErrorResponse, json, returnShapeError, type JsonIssue } from "./errors.js";
+
+const log = logger.child("gateway:dispatcher");
 
 export interface DispatchOptions {
   /** Allow `superadmin`-scoped commands. Off by default. */
@@ -221,6 +225,26 @@ export async function dispatch(
           : undefined;
       const isUnexpected =
         !(err instanceof ContractError) && !isCloudAuthError(err) && knownContractError.code === "UNHANDLED_ERROR";
+      if (isUnexpected) {
+        // Keep the cause locally without copying request bodies, raw context
+        // keys or arbitrary properties attached to the exception into logs.
+        const diagnostic = sanitizePublicValue({
+          error: err instanceof Error ? err.message : "Non-Error exception",
+          errorName: err instanceof Error ? err.name : typeof err,
+          stack:
+            err instanceof Error
+              ? err.stack
+                  ?.split("\n")
+                  .filter((line) => /^\s+at\s/.test(line))
+                  .slice(0, 8)
+              : undefined,
+        }) as Record<string, unknown>;
+        log.error("Unhandled command exception", {
+          command: cmd.fullName,
+          durationMs: Date.now() - startedAt,
+          ...diagnostic,
+        });
+      }
       response = contractErrorResponse(knownContractError, cloudStatus ?? (isUnexpected ? 500 : undefined));
     }
     const audit = buildAuditEvent(cmd, tool, auditInput, outcome, startedAt, lineage, auditExitCode, auditErrorCode);
