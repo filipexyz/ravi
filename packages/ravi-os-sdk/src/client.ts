@@ -9559,6 +9559,7 @@ export class RaviClient {
       checkpoint?: string;
       dependsOn?: string[];
       effort?: string;
+      idempotencyKey?: string;
       input?: string[];
       instructions?: string;
       model?: string;

@@ -129,3 +129,12 @@ describe("CliExpectedError default code", () => {
     expect(contract.envelope().error.message).toBe("Agent not found: ghost. Pass --create-agent to create it.");
   });
 });
+
+describe("public expected-error credentials", () => {
+  it.each(["password=opaque", "access_token=opaque", "apiKey=opaque", "ctx_fixture_secret"])(
+    "does not relay a secret embedded in public error copy: %s",
+    (secret) => {
+      expect(sanitizePublicContractMessage(`Lookup failed: ${secret}`)).toBeUndefined();
+    },
+  );
+});

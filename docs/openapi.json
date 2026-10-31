@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "18e7649ab6680dc3"
+    "version": "667f486aab0c4590"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -143713,6 +143713,10 @@
                   },
                   "effort": {
                     "description": "Runtime effort: none|minimal|low|medium|high|xhigh|max|ultra",
+                    "type": "string"
+                  },
+                  "idempotencyKey": {
+                    "description": "Stable creation key; retries reuse the task and its Thread",
                     "type": "string"
                   },
                   "input": {

@@ -125817,6 +125817,10 @@ export const TasksCreateInputSchema = {
       "description": "Runtime effort: none|minimal|low|medium|high|xhigh|max|ultra",
       "type": "string"
     },
+    "idempotencyKey": {
+      "description": "Stable creation key; retries reuse the task and its Thread",
+      "type": "string"
+    },
     "input": {
       "description": "Profile input values pinned to the task",
       "items": {

@@ -72,6 +72,21 @@ Checklist antes de responder sobre tasks:
 - `worktree` é metadata/contexto
 - `TASK.md` só deve existir quando o próprio contrato pede isso
 
+## Thread canônica e admissão
+
+Toda task cria uma Thread independente de canal, identificada por `task.threadId`.
+Não é necessário chat, Slack timestamp nem `--report-to` para criar uma task.
+Use `ravi tasks create "Trabalho" --instructions "Resultado esperado" --idempotency-key <operação>`
+para repetir criação com segurança; a mesma chave com entrada diferente falha.
+
+A assignment escolhe o executor. Repetir dispatch para o mesmo destino conserva a assignment
+e o envelope original. `activeAssignment.executionStatus` distingue publicação pendente
+(`pending`), admissão em curso (`accepting`), admitida (`admitted`) e ambígua (`uncertain`).
+Não troque o executor nem repita a execução para resolver incerteza: reconcilie o trace.
+Uma task terminal não admite redispatch. `tasks done` grava task, Thread e resultado juntos,
+e recusa decisões abertas ou respostas ainda não admitidas. Feche pelo runtime da task;
+`threads close` não fecha uma Thread pertencente a task.
+
 ## Decisões
 
 A primitiva é genérica: consulte `ravi skills show decisions`. O namespace `decisions` precisa estar autorizado além do acesso à origem; nenhum grant é ampliado automaticamente.
@@ -189,8 +204,9 @@ ravi settings set tasks.sessionTtl.knowledgeEngineer 5m
 ```
 
 `off`, `false`, `disabled`, `none` ou `0` desativam o TTL automático para novas
-materializações/retomadas de sessão de task. Para continuar uma task cuja sessão
-foi apagada, despache/comente a task de novo para criar uma nova sessão.
+materializações/retomadas de sessão de task. Se a sessão foi apagada, a publicação
+pendente reutiliza a chave congelada no handoff. Dispatch não reexecuta uma assignment
+já admitida; uma continuação explícita pode entrar por comentário dirigido ao assignee.
 
 Sessões de task de agents `knowledge-engineer-*` usam `tasks.sessionTtl.knowledgeEngineer`
 e default `5m`, inclusive ao completar turnos em sessões `task-*-work`, para evitar acúmulo

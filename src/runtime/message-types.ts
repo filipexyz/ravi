@@ -252,6 +252,10 @@ export interface PromptMessage {
   _thread?: ThreadHandoffPromptMetadata;
   /** Durable decision-answer admission; validated against the stored envelope. */
   _decisionDeliveryId?: string;
+  /** Durable task dispatch admission, keyed by the execution assignment. */
+  _taskAssignmentId?: string;
+  /** Frozen assignment session identity, rechecked at runtime launch. */
+  _taskSessionKey?: string;
   /** Canonical waiting session, rechecked after asynchronous dispatch preflight. */
   _decisionSessionKey?: string;
   /**

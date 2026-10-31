@@ -304,7 +304,10 @@ describe("global cloud failure contract", () => {
     expect(exitCode).toBe(3);
     expect(outcome).toBe("blocked");
     expect(toolEnvelope).toEqual(cliEnvelope);
-    expect(gatewayEnvelope).toEqual(cliEnvelope);
+    expect(gatewayEnvelope).toEqual({
+      ...cliEnvelope,
+      error: { ...cliEnvelope.error, requestId: expect.stringMatching(/^[0-9a-f-]{36}$/) },
+    });
     const serialized = JSON.stringify(cliEnvelope);
     expect(serialized).not.toContain("PRIVATE_MESSAGE_8K2R");
     expect(serialized).not.toContain("SENTINEL_SECRET_7M4Q");
@@ -383,7 +386,10 @@ describe("global cloud failure contract", () => {
     expect(exitCode).toBe(1);
     expect(outcome).toBe("failed");
     expect(toolEnvelope).toEqual(cliEnvelope);
-    expect(gatewayEnvelope).toEqual(cliEnvelope);
+    expect(gatewayEnvelope).toEqual({
+      ...cliEnvelope,
+      error: { ...cliEnvelope.error, requestId: expect.stringMatching(/^[0-9a-f-]{36}$/) },
+    });
     expect(cliEnvelope).toMatchObject({
       success: false,
       op: "cloud fixture fail",
@@ -447,7 +453,14 @@ describe("global cloud failure contract", () => {
     expect(exitCode).toBe(1);
     expect(outcome).toBe("failed");
     expect(toolEnvelope).toEqual(cliEnvelope);
-    expect(gatewayEnvelope).toEqual(cliEnvelope);
+    expect(gatewayEnvelope).toEqual({
+      ...cliEnvelope,
+      error: {
+        ...cliEnvelope.error,
+        message: "cloud fixture expected failed (COMMAND_FAILED). Report this requestId to the operator.",
+        requestId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      },
+    });
     expect(cliEnvelope).toMatchObject({
       success: false,
       op: "cloud fixture expected",
@@ -512,7 +525,10 @@ describe("global cloud failure contract", () => {
     expect(exitCode).toBe(1);
     expect(outcome).toBe("failed");
     expect(toolEnvelope).toEqual(cliEnvelope);
-    expect(gatewayEnvelope).toEqual(cliEnvelope);
+    expect(gatewayEnvelope).toEqual({
+      ...cliEnvelope,
+      error: { ...cliEnvelope.error, requestId: expect.stringMatching(/^[0-9a-f-]{36}$/) },
+    });
     expect(cliEnvelope).toMatchObject({
       success: false,
       op: "cloud fixture safe-expected",
@@ -609,7 +625,10 @@ describe("global cloud failure contract", () => {
     expect(exitCode).toBe(1);
     expect(outcome).toBe("denied");
     expect(toolResult).toMatchObject({ isError: true, outcome: "denied", exitCode: 1 });
-    expect(gatewayEnvelope).toEqual(toolEnvelope);
+    expect(gatewayEnvelope).toEqual({
+      ...toolEnvelope,
+      error: { ...toolEnvelope.error, requestId: expect.stringMatching(/^[0-9a-f-]{36}$/) },
+    });
     expect(toolEnvelope).toMatchObject({
       success: false,
       op: "cloud fixture fail",
@@ -668,7 +687,10 @@ describe("global cloud failure contract", () => {
     expect(exitCode).toBe(1);
     expect(outcome).toBe("denied");
     expect(toolEnvelope).toEqual(cliEnvelope);
-    expect(gatewayEnvelope).toEqual(cliEnvelope);
+    expect(gatewayEnvelope).toEqual({
+      ...cliEnvelope,
+      error: { ...cliEnvelope.error, requestId: expect.stringMatching(/^[0-9a-f-]{36}$/) },
+    });
     expect(cliEnvelope).toMatchObject({
       success: false,
       op: "cloud fixture delegate",

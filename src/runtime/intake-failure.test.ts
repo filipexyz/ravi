@@ -17,6 +17,7 @@ import { dbCreateCronJob, dbGetCronJob } from "../cron/cron-db.js";
 import { admitCronRun, getCronRun } from "../cron/run-db.js";
 import { CronRunner } from "../cron/runner.js";
 import { listLocalInboxItems } from "../inbox/local-db.js";
+import { resolveRuntimeSessionIdentity } from "./session-resolver.js";
 
 const crashRecoveryStub = { acceptingDeliveries: true } as unknown as RuntimeCrashRecoveryCoordinator;
 const SESSION_KEY = "agent:main:main";
@@ -133,6 +134,54 @@ describe("runtime prompt intake failure", () => {
     for (const event of runtimeEvents) await replacementRunner.handleRuntimeEvent(event);
     expect(getCronRun("durable-invalid-model")?.status).toBe("error");
     expect(dbGetCronJob(job.id)).toMatchObject({ lastStatus: "error" });
+  });
+
+  it("never substitutes the default agent for a task assignment", async () => {
+    const dispatcher = createDispatcher();
+    const prompt = {
+      prompt: "Assigned work",
+      _taskAssignmentId: "assignment",
+      _taskSessionKey: SESSION_KEY,
+      _agentId: "gone",
+    };
+    await expect(dispatcher.handlePrompt("main", prompt)).rejects.toThrow("agent is unavailable");
+    await expect(dispatcher.handlePromptImmediate("main", prompt)).rejects.toThrow("agent is unavailable");
+    expect(responses).toEqual([]);
+  });
+
+  it("bypasses debounce for durable task admission", async () => {
+    const config = configStore.getConfig();
+    spyOn(configStore, "getConfig").mockReturnValue({
+      ...config,
+      agents: { ...config.agents, main: { ...config.agents.main!, debounceMs: 1000 } },
+    });
+    const dispatcher = createDispatcher();
+    const immediate = spyOn(dispatcher, "handlePromptImmediate").mockResolvedValue();
+    const debounce = spyOn(dispatcher, "handlePromptWithDebounce");
+    const prompt = {
+      prompt: "Assigned work",
+      _taskAssignmentId: "assignment",
+      _taskSessionKey: SESSION_KEY,
+      _agentId: "main",
+    };
+    await dispatcher.handlePrompt("main", prompt);
+    expect(immediate).toHaveBeenCalledWith("main", prompt);
+    expect(debounce).not.toHaveBeenCalled();
+  });
+
+  it("rechecks task session identity and agent availability after dispatch preflight", () => {
+    const prompt = {
+      prompt: "Assigned work",
+      _taskAssignmentId: "assignment",
+      _taskSessionKey: SESSION_KEY,
+      _agentId: "main",
+    };
+    expect(() =>
+      resolveRuntimeSessionIdentity({ sessionName: "main", prompt: { ...prompt, _taskSessionKey: "replaced" } }),
+    ).toThrow("session changed");
+    expect(() => resolveRuntimeSessionIdentity({ sessionName: "missing", prompt })).toThrow("session changed");
+    withoutAgents();
+    expect(() => resolveRuntimeSessionIdentity({ sessionName: "main", prompt })).toThrow("agent is unavailable");
   });
 
   it("acknowledges a prompt with no agent, records a durable trace, and notifies the chat user", async () => {

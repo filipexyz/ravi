@@ -1,3 +1,4 @@
+import { admitTaskDispatch } from "../tasks/dispatch-admission.js";
 import { admitDecisionAnswer } from "../decisions/delivery.js";
 import { StringCodec, type JsMsg } from "nats";
 import { getNats, nats } from "../nats.js";
@@ -256,6 +257,9 @@ export class RuntimePromptSubscription {
       // it. Provider/bootstrap failures can happen before a turn exists, so
       // acknowledging earlier loses the only retryable copy.
       if (
+        !(await admitTaskDispatch(sessionName, prompt, (accepted) =>
+          this.options.handlePrompt(sessionName, accepted),
+        )) &&
         !(await admitDecisionAnswer(sessionName, prompt, (accepted) =>
           this.options.handlePrompt(sessionName, accepted),
         ))

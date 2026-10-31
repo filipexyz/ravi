@@ -18,19 +18,22 @@ import { resolveAuth, type AuthFailureReason, type GatewayAuthConfig } from "./a
 import { currentConsoleInvocation } from "./console-context.js";
 import { CALLER_CWD_HEADER, parseCallerCwd } from "../../cli/caller-cwd.js";
 import { dispatch } from "./dispatcher.js";
-import { errorResponse, json, methodNotAllowed, notFound, unauthorized } from "./errors.js";
+import { errorResponse, internalError, json, methodNotAllowed, notFound, unauthorized } from "./errors.js";
 import { corsHeaders, withCorsHeaders } from "./cors.js";
 import { raviHttpServeOptions } from "./http-serve.js";
 import { handleStreamingRequest } from "./streaming/handler.js";
 import type { StreamingGatewayConfig } from "./streaming/types.js";
+
+import { gatewayRequestContext, withGatewayRequest } from "./request-context.js";
+import { logGatewayFailure } from "./diagnostics.js";
 
 const log = logger.child("sdk:gateway");
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 7777;
 const DEFAULT_MAX_BODY_BYTES = 2 * 1024 * 1024;
-const AUTH_WARN_THROTTLE_MS = 60_000;
-const loggedAuthWarnings = new Map<string, number>();
+const REQUEST_WARN_THROTTLE_MS = 60_000;
+const loggedRequestWarnings = new Map<string, number>();
 
 interface ServeLike {
   port: number;
@@ -111,8 +114,22 @@ export async function handleGatewayRequest(request: Request, ctx: GatewayHandler
     return new Response(null, { status: 204, headers: corsHeaders(origin, requestedHeaders) });
   }
   const startedAt = Date.now();
-  const response = await processGatewayRequest(request, url, ctx);
-  return logged(request, url, response.status, startedAt, withCorsHeaders(response, origin, requestedHeaders));
+  const cmd = ctx.table.byPath.get(url.pathname);
+  const op = cmd ? [...cmd.groupSegments, cmd.command].join(" ") : "gateway";
+  return withGatewayRequest(op, async () => {
+    let response: Response;
+    try {
+      response = await processGatewayRequest(request, url, ctx);
+    } catch (error) {
+      logGatewayFailure(error, "UNHANDLED_ERROR");
+      response = internalError("Gateway processing failed.");
+    }
+    // Binary handlers may return fetch() responses with immutable headers.
+    const headers = new Headers(response.headers);
+    headers.set("x-request-id", gatewayRequestContext().requestId);
+    response = new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+    return logged(request, url, response.status, startedAt, withCorsHeaders(response, origin, requestedHeaders));
+  });
 }
 
 /**
@@ -220,8 +237,7 @@ async function processGatewayRequest(request: Request, url: URL, ctx: GatewayHan
   let raw = "";
   try {
     raw = await request.text();
-  } catch (error) {
-    log.warn("gateway: failed to read body", { path: url.pathname, error });
+  } catch {
     return errorResponse(400, "BadRequest", { message: "Failed to read request body." });
   }
 
@@ -272,33 +288,27 @@ function logged(request: Request, url: URL, status: number, startedAt: number, r
   const level = gatewayLogLevel(request.method, url.pathname, status, Date.now());
   log[level]("gateway request", {
     method: request.method,
-    path: url.pathname,
+    operation: gatewayRequestContext().op,
+    requestId: gatewayRequestContext().requestId,
     status,
     durationMs,
-    ...safeGatewayRequestFields(request),
   });
   return response;
 }
 
 export function gatewayLogLevel(method: string, path: string, status: number, now: number): "debug" | "warn" | "error" {
-  if (status >= 500) return "error";
+  // Detailed failures are throttled by diagnostics.ts; access lines remain correlatable at debug.
+  if (status >= 500) return "debug";
   if (status < 400) return "debug";
-  if (status !== 401) return "warn";
 
   const key = `${method}:${path}:${status}`;
-  const previous = loggedAuthWarnings.get(key);
-  if (previous === undefined || now - previous >= AUTH_WARN_THROTTLE_MS) {
-    loggedAuthWarnings.set(key, now);
+  const previous = loggedRequestWarnings.get(key);
+  if (previous === undefined || now - previous >= REQUEST_WARN_THROTTLE_MS) {
+    if (!loggedRequestWarnings.has(key) && loggedRequestWarnings.size >= 256) {
+      loggedRequestWarnings.delete(loggedRequestWarnings.keys().next().value!);
+    }
+    loggedRequestWarnings.set(key, now);
     return "warn";
   }
   return "debug";
-}
-
-function safeGatewayRequestFields(request: Request): Record<string, string> {
-  const fields: Record<string, string> = {};
-  const origin = request.headers.get("origin");
-  const userAgent = request.headers.get("user-agent");
-  if (origin) fields.origin = origin.slice(0, 200);
-  if (userAgent) fields.userAgent = userAgent.slice(0, 200);
-  return fields;
 }

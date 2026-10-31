@@ -36315,6 +36315,7 @@ public struct TasksCreateOptions: Codable, Sendable {
   public var checkpoint: String?
   public var dependsOn: [String]?
   public var effort: String?
+  public var idempotencyKey: String?
   public var input: [String]?
   public var instructions: String?
   public var model: String?
@@ -36330,12 +36331,13 @@ public struct TasksCreateOptions: Codable, Sendable {
   public var worktreeMode: String?
   public var worktreePath: String?
 
-  public init(agent: String? = nil, assignee: String? = nil, checkpoint: String? = nil, dependsOn: [String]? = nil, effort: String? = nil, input: [String]? = nil, instructions: String? = nil, model: String? = nil, parent: String? = nil, priority: String? = nil, profile: String? = nil, reportEvents: String? = nil, reportTo: String? = nil, session: String? = nil, tag: [String]? = nil, thinking: String? = nil, worktreeBranch: String? = nil, worktreeMode: String? = nil, worktreePath: String? = nil) {
+  public init(agent: String? = nil, assignee: String? = nil, checkpoint: String? = nil, dependsOn: [String]? = nil, effort: String? = nil, idempotencyKey: String? = nil, input: [String]? = nil, instructions: String? = nil, model: String? = nil, parent: String? = nil, priority: String? = nil, profile: String? = nil, reportEvents: String? = nil, reportTo: String? = nil, session: String? = nil, tag: [String]? = nil, thinking: String? = nil, worktreeBranch: String? = nil, worktreeMode: String? = nil, worktreePath: String? = nil) {
     self.agent = agent
     self.assignee = assignee
     self.checkpoint = checkpoint
     self.dependsOn = dependsOn
     self.effort = effort
+    self.idempotencyKey = idempotencyKey
     self.input = input
     self.instructions = instructions
     self.model = model
@@ -36358,6 +36360,7 @@ public struct TasksCreateOptions: Codable, Sendable {
     case checkpoint = "checkpoint"
     case dependsOn = "dependsOn"
     case effort = "effort"
+    case idempotencyKey = "idempotencyKey"
     case input = "input"
     case instructions = "instructions"
     case model = "model"
@@ -36389,6 +36392,9 @@ public struct TasksCreateOptions: Codable, Sendable {
     }
     if let value = self.effort {
       body["effort"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.idempotencyKey {
+      body["idempotencyKey"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.input {
       body["input"] = try RaviJSON.fromEncodable(value)

@@ -1417,6 +1417,7 @@ describe("task substrate contract", () => {
   it("builds a brainstorm resume prompt that points back to the persisted draft artifact", () => {
     const task = {
       id: "task-brainstorm-resume",
+      threadId: "thread-task-brainstorm-resume",
       title: "Brainstorm Session Resume",
       instructions: "Continue refining the idea",
       status: "in_progress" as const,
@@ -1464,6 +1465,7 @@ describe("task substrate contract", () => {
   it("promotes brainstorm design artifacts on done while keeping the jar as supporting state", () => {
     const task = {
       id: "task-brainstorm-done",
+      threadId: "thread-task-brainstorm-done",
       title: "Brainstorm Done Artifact",
       instructions: "Finalize into design and jar",
       status: "done" as const,
@@ -1521,6 +1523,7 @@ describe("task substrate contract", () => {
       isTaskRecoveryFresh(
         {
           id: "task-fresh",
+          threadId: "thread-task-fresh",
           title: "Fresh",
           instructions: "Fresh task",
           status: "in_progress",
@@ -1546,6 +1549,7 @@ describe("task substrate contract", () => {
       isTaskRecoveryFresh(
         {
           id: "task-stale",
+          threadId: "thread-task-stale",
           title: "Stale",
           instructions: "Old task",
           status: "in_progress",
@@ -1851,6 +1855,7 @@ describe("task substrate contract", () => {
   it("derives bootstrap worktree metadata without treating it as the effective session cwd", () => {
     const baseTask = {
       id: "task-bootstrap-worktree",
+      threadId: "thread-task-bootstrap-worktree",
       title: "Bootstrap worktree metadata",
       instructions: "Expose worktree as context only.",
       status: "open",
