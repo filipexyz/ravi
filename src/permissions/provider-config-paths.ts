@@ -1,6 +1,6 @@
-import { existsSync, realpathSync } from "node:fs";
+import { lstatSync, readlinkSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, parse, resolve, sep } from "node:path";
 import { normalizeRuntimeBuiltinToolName } from "../cli/tool-registry.js";
 import type { CapabilityContextLike } from "./capability-context.js";
 import { canWithCapabilityContext } from "./provider-runtime.js";
@@ -17,36 +17,65 @@ const FILE_WRITE_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"])
 const PATCH_PATH_LINE = /^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+)$/gm;
 
 function hasProviderConfigSegment(path: string): boolean {
-  const segments = path.split(/[\\/]+/);
-  return segments.some((segment) => PROVIDER_CONFIG_DIRS.has(segment)) || PROVIDER_CONFIG_FILES.has(basename(path));
+  // Treat case variants conservatively too: the daemon may run on a
+  // case-insensitive filesystem where .CoDeX is the provider's .codex.
+  const segments = path.toLowerCase().split(/[\\/]+/);
+  return (
+    segments.some((segment) => PROVIDER_CONFIG_DIRS.has(segment)) ||
+    PROVIDER_CONFIG_FILES.has(basename(path).toLowerCase())
+  );
 }
 
-function realpathOfNearestExisting(path: string): string {
-  let current = path;
-  const rest: string[] = [];
-  while (!existsSync(current)) {
-    const parent = dirname(current);
-    if (parent === current) return path;
-    rest.unshift(basename(current));
-    current = parent;
+/**
+ * Resolve filesystem traversal in kernel order: follow a symlink before the
+ * next `..`. path.resolve/realpath on the normalized path loses that ordering.
+ * Missing final components are allowed (writes may create them); unreadable
+ * paths and link cycles are indeterminate and must fail closed at the caller.
+ */
+export function physicalPathForPermissionCheck(path: string, cwd = process.cwd()): string | null {
+  const base = isAbsolute(cwd) ? cwd : `${process.cwd()}${sep}${cwd}`;
+  const absolute = isAbsolute(path) ? path : `${base}${sep}${path}`;
+  let current = parse(absolute).root;
+  const pending = absolute.slice(current.length).split(sep);
+  let symlinks = 0;
+  while (pending.length > 0) {
+    const part = pending.shift()!;
+    if (!part || part === ".") continue;
+    if (part === "..") {
+      current = dirname(current);
+      continue;
+    }
+    const next = join(current, part);
+    try {
+      if (lstatSync(next).isSymbolicLink()) {
+        if (++symlinks > 40) return null;
+        const target = readlinkSync(next);
+        if (isAbsolute(target)) current = parse(target).root;
+        pending.unshift(...target.split(sep));
+        continue;
+      }
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT" && code !== "ENOTDIR") return null;
+    }
+    current = next;
   }
-  try {
-    return resolve(realpathSync(current), ...rest);
-  } catch {
-    return path;
-  }
+  return current;
 }
 
 export function isProviderConfigPath(path: string, cwd?: string): boolean {
-  const raw = path.trim();
+  // Whitespace is part of a filesystem name, including a symlink's name.
+  const raw = path;
   if (!raw) return false;
   if (hasProviderConfigSegment(raw)) return true;
-  const absolute = resolve(cwd ?? process.cwd(), raw.replace(/^~(?=\/|$)/, homedir()));
-  return hasProviderConfigSegment(absolute) || hasProviderConfigSegment(realpathOfNearestExisting(absolute));
+  const expanded = raw.replace(/^~(?=\/|$)/, homedir());
+  const absolute = resolve(cwd ?? process.cwd(), expanded);
+  const physical = physicalPathForPermissionCheck(expanded, cwd);
+  return physical === null || hasProviderConfigSegment(absolute) || hasProviderConfigSegment(physical);
 }
 
 function stringValue(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value : undefined;
+  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 /** The paths a file-writing tool call would change, by the input shapes the providers use. */

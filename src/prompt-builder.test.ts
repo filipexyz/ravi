@@ -290,6 +290,8 @@ describe("buildSystemPrompt", () => {
       const prompt = activePrompt();
       expect(prompt).toContain("`ravi cron show <id>`");
       expect(prompt).toContain("verify agent, account, session/reply-session, schedule, and delete-after");
+      expect(prompt).toContain('"Runs as"');
+      expect(prompt).toContain("`ravi cron run <id> --execute`");
     });
 
     it("preserves sentinel exclusion from background followup automation", () => {

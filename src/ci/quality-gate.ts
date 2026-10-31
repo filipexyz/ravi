@@ -26,6 +26,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/backend.test.ts",
     "src/channels/health.test.ts",
     "src/channels/outbound-consumer.test.ts",
+    // Durable outbound publish outbox: retry/backoff, retention and burst coalescing.
+    "src/channels/outbound-publish-outbox.test.ts",
     "src/channels/runtime-events.test.ts",
     "src/channels/runner.test.ts",
     "src/channels/session-prompt.test.ts",
@@ -76,6 +78,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/router/router-db.link-requests.test.ts",
     // Trigger session migration: drops the legacy main|isolated CHECK, keeps rows and indexes.
     "src/router/router-db.trigger-session-check.test.ts",
+    // Open channel threads own their session name: missing child and key mismatch are told apart.
+    "src/router/thread-identity.test.ts",
     // Crash-recovery storage covers both the router schema and its typed runtime DAO.
     "src/runtime/crash-recovery-store.test.ts",
     // Agent delete: live contexts revoked, Library listing not inherited by a same-id agent.

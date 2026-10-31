@@ -456,6 +456,7 @@ describe("ravi cloud runs", () => {
     );
     const approve = await capture(() => commands.approve("run_1", "ap_1", true, true));
     expect(approve.error).toMatchObject({ code: "ACTOR_UNKNOWN", exitCode: 3 });
+    expect((approve.error as Error).message).toContain("Next: ask the run's person");
     const answer = await capture(() => commands.answer("run_1", "q_1", "Suporte", true, true));
     expect(answer.error).toMatchObject({ code: "ACTOR_UNKNOWN", exitCode: 3 });
     expect(fake.writes()).toHaveLength(0);

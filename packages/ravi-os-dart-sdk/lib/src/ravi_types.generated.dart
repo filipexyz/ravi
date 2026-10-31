@@ -13084,12 +13084,13 @@ class CronAddOptions {
 }
 
 class CronAddReturn {
-  const CronAddReturn({required this.changedCount, required this.job, required this.status, required this.target});
+  const CronAddReturn({required this.changedCount, required this.job, required this.status, required this.target, this.warnings});
 
   final double changedCount;
   final RaviJson job;
   final String status;
   final RaviJson target;
+  final List<String>? warnings;
 
   factory CronAddReturn.fromJson(Map<String, Object?> json) {
     return CronAddReturn(
@@ -13097,6 +13098,7 @@ class CronAddReturn {
       job: RaviJson.from(json["job"]),
       status: raviJsonAsString(json["status"]),
       target: RaviJson.from(json["target"]),
+      warnings: json["warnings"] == null ? null : raviJsonAsList(json["warnings"], raviJsonAsString),
     );
   }
 
@@ -13108,12 +13110,13 @@ class CronAddReturn {
 CronAddReturn cronAddReturnFromJson(Object? json) => CronAddReturn.fromJsonValue(json);
 
 class CronDisableReturn {
-  const CronDisableReturn({required this.changedCount, required this.job, required this.status, required this.target});
+  const CronDisableReturn({required this.changedCount, required this.job, required this.status, required this.target, this.warnings});
 
   final double changedCount;
   final RaviJson job;
   final String status;
   final RaviJson target;
+  final List<String>? warnings;
 
   factory CronDisableReturn.fromJson(Map<String, Object?> json) {
     return CronDisableReturn(
@@ -13121,6 +13124,7 @@ class CronDisableReturn {
       job: RaviJson.from(json["job"]),
       status: raviJsonAsString(json["status"]),
       target: RaviJson.from(json["target"]),
+      warnings: json["warnings"] == null ? null : raviJsonAsList(json["warnings"], raviJsonAsString),
     );
   }
 
@@ -13132,12 +13136,13 @@ class CronDisableReturn {
 CronDisableReturn cronDisableReturnFromJson(Object? json) => CronDisableReturn.fromJsonValue(json);
 
 class CronEnableReturn {
-  const CronEnableReturn({required this.changedCount, required this.job, required this.status, required this.target});
+  const CronEnableReturn({required this.changedCount, required this.job, required this.status, required this.target, this.warnings});
 
   final double changedCount;
   final RaviJson job;
   final String status;
   final RaviJson target;
+  final List<String>? warnings;
 
   factory CronEnableReturn.fromJson(Map<String, Object?> json) {
     return CronEnableReturn(
@@ -13145,6 +13150,7 @@ class CronEnableReturn {
       job: RaviJson.from(json["job"]),
       status: raviJsonAsString(json["status"]),
       target: RaviJson.from(json["target"]),
+      warnings: json["warnings"] == null ? null : raviJsonAsList(json["warnings"], raviJsonAsString),
     );
   }
 
@@ -13224,12 +13230,13 @@ class CronRmOptions {
 }
 
 class CronRmReturn {
-  const CronRmReturn({required this.changedCount, required this.job, required this.status, required this.target});
+  const CronRmReturn({required this.changedCount, required this.job, required this.status, required this.target, this.warnings});
 
   final double changedCount;
   final RaviJson job;
   final String status;
   final RaviJson target;
+  final List<String>? warnings;
 
   factory CronRmReturn.fromJson(Map<String, Object?> json) {
     return CronRmReturn(
@@ -13237,6 +13244,7 @@ class CronRmReturn {
       job: RaviJson.from(json["job"]),
       status: raviJsonAsString(json["status"]),
       target: RaviJson.from(json["target"]),
+      warnings: json["warnings"] == null ? null : raviJsonAsList(json["warnings"], raviJsonAsString),
     );
   }
 
@@ -13260,12 +13268,13 @@ class CronRunOptions {
 }
 
 class CronRunReturn {
-  const CronRunReturn({required this.changedCount, required this.job, required this.status, required this.target});
+  const CronRunReturn({required this.changedCount, required this.job, required this.status, required this.target, this.warnings});
 
   final double changedCount;
   final RaviJson job;
   final String status;
   final RaviJson target;
+  final List<String>? warnings;
 
   factory CronRunReturn.fromJson(Map<String, Object?> json) {
     return CronRunReturn(
@@ -13273,6 +13282,7 @@ class CronRunReturn {
       job: RaviJson.from(json["job"]),
       status: raviJsonAsString(json["status"]),
       target: RaviJson.from(json["target"]),
+      warnings: json["warnings"] == null ? null : raviJsonAsList(json["warnings"], raviJsonAsString),
     );
   }
 
@@ -13284,12 +13294,13 @@ class CronRunReturn {
 CronRunReturn cronRunReturnFromJson(Object? json) => CronRunReturn.fromJsonValue(json);
 
 class CronSetReturn {
-  const CronSetReturn({required this.changedCount, required this.job, required this.status, required this.target});
+  const CronSetReturn({required this.changedCount, required this.job, required this.status, required this.target, this.warnings});
 
   final double changedCount;
   final RaviJson job;
   final String status;
   final RaviJson target;
+  final List<String>? warnings;
 
   factory CronSetReturn.fromJson(Map<String, Object?> json) {
     return CronSetReturn(
@@ -13297,6 +13308,7 @@ class CronSetReturn {
       job: RaviJson.from(json["job"]),
       status: raviJsonAsString(json["status"]),
       target: RaviJson.from(json["target"]),
+      warnings: json["warnings"] == null ? null : raviJsonAsList(json["warnings"], raviJsonAsString),
     );
   }
 

@@ -65,12 +65,16 @@ describe("writes to runtime provider settings", () => {
     expect(await writeDecision(WRITER, "Write", { file_path: ".claude/settings.json", content: "{}" })).toBe("deny");
     expect(await writeDecision(WRITER, "Edit", { file_path: join(workspace, ".mcp.json") })).toBe("deny");
     expect(await writeDecision(WRITER, "Write", { file_path: "notes.md", content: "ok" })).toBe("allow");
+    expect(await writeDecision(WRITER, "Write", { file_path: ".CoDeX/config.toml", content: "{}" })).toBe("deny");
+    expect(await writeDecision(WRITER, "Write", { file_path: ".MCP.JSON", content: "{}" })).toBe("deny");
   });
 
   it("follows a symlink planted to reach the settings directory", async () => {
     mkdirSync(join(workspace, ".claude"));
     symlinkSync(join(workspace, ".claude"), join(workspace, "innocent"));
     expect(await writeDecision(WRITER, "Write", { file_path: "innocent/settings.json", content: "{}" })).toBe("deny");
+    symlinkSync(".claude", join(workspace, " innocent "));
+    expect(await writeDecision(WRITER, "Write", { file_path: " innocent /settings.json", content: "{}" })).toBe("deny");
   });
 
   it("allows them for a context that can already run any executable", async () => {
@@ -89,6 +93,97 @@ describe("writes to runtime provider settings", () => {
     symlinkSync(join(workspace, ".claude"), join(workspace, "innocent"));
     const ctx = { agentId, capabilities: caps("use:tool:Write", "execute:executable:echo"), cwd: workspace };
     expect(evaluateBashPermission("echo '{}' > innocent/settings.json", ctx).allowed).toBe(false);
+  });
+
+  it("follows static cd chains and their symlinks without assuming cd succeeds", () => {
+    mkdirSync(join(workspace, "nested", ".codex"), { recursive: true });
+    symlinkSync(".codex", join(workspace, "nested", "innocent"));
+    // A failed `cd` followed by || or ; can still write in the original cwd.
+    symlinkSync("nested/.codex", join(workspace, "innocent"));
+    const ctx = {
+      agentId,
+      capabilities: caps("use:tool:Write", "execute:executable:echo", "execute:executable:cd"),
+      cwd: workspace,
+    };
+    for (const command of [
+      "cd nested && echo '{}' > innocent/config.toml",
+      "cd nested; echo '{}' >> innocent/config.toml",
+      "cd missing || echo '{}' > innocent/config.toml",
+      "cd missing; echo '{}' > innocent/config.toml",
+      "cd nested && echo '{}' &> innocent/config.toml",
+      "cd nested && echo '{}' >| innocent/config.toml",
+      "cd nested && echo '{}' >&innocent/config.toml",
+      "2>/dev/null cd nested && echo '{}' > innocent/config.toml",
+      "cd nested 2>/dev/null && echo '{}' > innocent/config.toml",
+    ]) {
+      expect(evaluateBashPermission(command, ctx).allowed, command).toBe(false);
+    }
+    expect(evaluateBashPermission("cd nested && echo ok > notes.txt", ctx).allowed).toBe(true);
+    expect(evaluateBashPermission("cd nested && cd .. && echo ok > notes.txt", ctx).allowed).toBe(true);
+    expect(evaluateBashPermission("cd -- 'nested' && echo ok > 'notes with spaces.txt'", ctx).allowed).toBe(true);
+  });
+
+  it("refuses unresolved shell state and dynamic redirect paths", () => {
+    const ctx = {
+      agentId,
+      cwd: workspace,
+      capabilities: caps(
+        "use:tool:Write",
+        "execute:executable:echo",
+        "execute:executable:cd",
+        "execute:executable:pushd",
+        "execute:executable:popd",
+        "execute:executable:export",
+        "execute:executable:printf",
+        "execute:executable:trap",
+      ),
+    };
+    for (const command of [
+      "(cd nested); echo ok > notes.txt",
+      "cd nested | echo ok > notes.txt",
+      "cd nested & echo ok > notes.txt",
+      "pushd nested; echo ok > notes.txt",
+      "popd; echo ok > notes.txt",
+      "cd -; echo ok > notes.txt",
+      "cd $TARGET; echo ok > notes.txt",
+      "export CDPATH=/tmp; cd nested; echo ok > notes.txt",
+      "printf -v CDPATH /tmp; cd nested; echo ok > notes.txt",
+      "trap 'cd nested' DEBUG; echo ok > innocent/config.toml",
+      "echo ok > $TARGET",
+      "echo ok > */config.toml",
+      "echo ok > innocent/[c]onfig.toml",
+      "echo ok > innocent/{config,other}.toml",
+      "cd nested # comment\necho ok > innocent/config.toml",
+      "cd nested && \\\necho ok > innocent/config.toml",
+      "echo ok <> innocent/config.toml",
+    ]) {
+      expect(evaluateBashPermission(command, ctx).allowed, command).toBe(false);
+    }
+  });
+
+  it("follows a symlink before processing .. for file tools and shell redirects", async () => {
+    mkdirSync(join(workspace, ".codex", "nested"), { recursive: true });
+    symlinkSync(".codex/nested", join(workspace, "innocent"));
+    const target = `${workspace}/innocent/../config.toml`;
+    expect(isProviderConfigPath(target)).toBe(true);
+    expect(await writeDecision(WRITER, "Write", { file_path: target, content: "{}" })).toBe("deny");
+    const ctx = {
+      agentId,
+      capabilities: caps("use:tool:Write", "execute:executable:echo", "execute:executable:cd"),
+      cwd: workspace,
+    };
+    expect(evaluateBashPermission("echo ok > innocent/../config.toml", ctx).allowed).toBe(false);
+    expect(evaluateBashPermission("cd -P innocent/.. && echo ok > config.toml", ctx).allowed).toBe(false);
+  });
+
+  it("follows dangling file symlinks and refuses cyclic links", async () => {
+    mkdirSync(join(workspace, ".codex"));
+    symlinkSync(".codex/config.toml", join(workspace, "innocent"));
+    expect(await writeDecision(WRITER, "Write", { file_path: "innocent", content: "{}" })).toBe("deny");
+    symlinkSync(".codex/config.toml", join(workspace, "   "));
+    expect(await writeDecision(WRITER, "Write", { file_path: "   ", content: "{}" })).toBe("deny");
+    symlinkSync("loop", join(workspace, "loop"));
+    expect(isProviderConfigPath("loop/file.txt", workspace)).toBe(true);
   });
 
   it("resolves relative host-service tool paths against the session cwd", async () => {

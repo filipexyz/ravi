@@ -15,7 +15,7 @@
 
 import {
   checkDangerousPatterns,
-  findOutputRedirectTargets,
+  analyzeOutputRedirects,
   parseBashCommand,
   stripShellQuoting,
   UNCONDITIONAL_BLOCKS,
@@ -437,13 +437,29 @@ function checkExecutablePermissionsForContext(
 
   // An allowed executable plus `> file` is a file write: `ravi crypto status > ~/.ravi/crypto.db`
   // would wipe the ledger. Restricted agents may only discard output unless they can write files anyway.
-  const fileWrites = findOutputRedirectTargets(command).filter((target) => !HARMLESS_REDIRECT_TARGETS.has(target));
-  const configWriteDenial = providerConfigWriteDenial({
-    can: (permission, objectType, objectId) => canWithBashContext(ctx, permission, objectType, objectId),
-    agentId: ctx.agentId,
-    targets: fileWrites,
-    cwd: ctx.cwd,
-  });
+  const redirects = analyzeOutputRedirects(command, ctx.cwd);
+  if (redirects.error) {
+    return {
+      allowed: false,
+      reason: `Permission denied: agent:${ctx.agentId ?? "unknown"} cannot redirect output to files: ${redirects.error}`,
+      deniedCapabilities: canWithBashContext(ctx, "use", "tool", "Write")
+        ? [{ relation: "execute", objectType: "executable", objectId: "*" }]
+        : [{ relation: "use", objectType: "tool", objectId: "Write" }],
+    };
+  }
+  const fileWrites = redirects.writes.filter((write) => !HARMLESS_REDIRECT_TARGETS.has(write.target));
+  const configWriteDenial = fileWrites
+    .flatMap((write) =>
+      write.cwds.map((cwd) =>
+        providerConfigWriteDenial({
+          can: (permission, objectType, objectId) => canWithBashContext(ctx, permission, objectType, objectId),
+          agentId: ctx.agentId,
+          targets: [write.target],
+          cwd,
+        }),
+      ),
+    )
+    .find(Boolean);
   if (configWriteDenial) {
     return {
       allowed: false,
@@ -454,7 +470,7 @@ function checkExecutablePermissionsForContext(
   if (fileWrites.length > 0 && !canWithBashContext(ctx, "use", "tool", "Write")) {
     return {
       allowed: false,
-      reason: `Permission denied: agent:${ctx.agentId ?? "unknown"} cannot redirect output to files (${fileWrites.join(", ")})`,
+      reason: `Permission denied: agent:${ctx.agentId ?? "unknown"} cannot redirect output to files (${fileWrites.map((write) => write.target).join(", ")})`,
       deniedCapabilities: [{ relation: "use", objectType: "tool", objectId: "Write" }],
     };
   }

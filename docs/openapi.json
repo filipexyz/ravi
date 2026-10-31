@@ -80,7 +80,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "c7f3f26f197a066d"
+    "version": "305868c212ea6733"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -71524,6 +71524,12 @@
                         "type"
                       ],
                       "type": "object"
+                    },
+                    "warnings": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
                     }
                   },
                   "required": [
@@ -71621,6 +71627,12 @@
                         "type"
                       ],
                       "type": "object"
+                    },
+                    "warnings": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
                     }
                   },
                   "required": [
@@ -71718,6 +71730,12 @@
                         "type"
                       ],
                       "type": "object"
+                    },
+                    "warnings": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
                     }
                   },
                   "required": [
@@ -71972,6 +71990,12 @@
                         "type"
                       ],
                       "type": "object"
+                    },
+                    "warnings": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
                     }
                   },
                   "required": [
@@ -72073,6 +72097,12 @@
                         "type"
                       ],
                       "type": "object"
+                    },
+                    "warnings": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
                     }
                   },
                   "required": [
@@ -72180,6 +72210,12 @@
                         "type"
                       ],
                       "type": "object"
+                    },
+                    "warnings": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
                     }
                   },
                   "required": [
@@ -118612,6 +118648,9 @@
                             }
                           ]
                         },
+                        "childSessionMissing": {
+                          "type": "boolean"
+                        },
                         "childSessionName": {
                           "anyOf": [
                             {
@@ -118834,6 +118873,7 @@
                         "source",
                         "childSessionKey",
                         "childSessionName",
+                        "childSessionMissing",
                         "slackThreadTs",
                         "link",
                         "runtime",
@@ -118936,6 +118976,9 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "childSessionMissing": {
+                            "type": "boolean"
                           },
                           "childSessionName": {
                             "anyOf": [
@@ -119159,6 +119202,7 @@
                           "source",
                           "childSessionKey",
                           "childSessionName",
+                          "childSessionMissing",
                           "slackThreadTs",
                           "link",
                           "runtime",

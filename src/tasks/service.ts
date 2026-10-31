@@ -20,6 +20,7 @@ import {
   getSessionByName,
   resolveSession,
 } from "../router/sessions.js";
+import { assessSessionThreadIdentity } from "../router/thread-identity.js";
 import { logger } from "../utils/logger.js";
 import { resolveRuntimeDefaults } from "../runtime/runtime-defaults.js";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
@@ -455,7 +456,7 @@ export interface TaskStreamEventPayload {
 
 export interface TaskRecoveryResult {
   recoveredTaskIds: string[];
-  skipped: Array<{ taskId: string; reason: string }>;
+  skipped: Array<{ taskId: string; reason: string; code?: string }>;
 }
 
 export function deriveTaskReadStatus(
@@ -1338,6 +1339,30 @@ export function resolveTaskWorktreeContext(
 }
 
 export const TASK_SESSION_OWNERSHIP_CONFLICT = "TASK_SESSION_OWNERSHIP_CONFLICT";
+export const TASK_SESSION_THREAD_IDENTITY_CONFLICT = "TASK_SESSION_THREAD_IDENTITY_CONFLICT";
+
+/**
+ * An open channel thread owns its session name. When that thread's session is
+ * gone, or the name now resolves to a session under another key, creating or
+ * reusing a session by the bare name would shadow the thread: replies would
+ * stop routing and thread commands would refuse. Refuse before anything is
+ * written.
+ */
+function assertTaskSessionThreadIdentity(sessionName: string): void {
+  const assessment = assessSessionThreadIdentity(sessionName, resolveSession(sessionName));
+  if (assessment.kind === "none" || assessment.kind === "ok") return;
+  const { thread } = assessment;
+  const reason =
+    assessment.kind === "child_missing"
+      ? `its session ${thread.childSessionKey} no longer exists`
+      : `the name now resolves to ${assessment.sessionKey}, not ${thread.childSessionKey}`;
+  throw new CliExpectedError(
+    `Session ${sessionName} belongs to open thread ${thread.requestId} of ${thread.parentSessionName}, but ${reason}. Dispatching to it would create a session outside the thread.`,
+    TASK_SESSION_THREAD_IDENTITY_CONFLICT,
+    1,
+    `Dispatch with another --session, or check the thread with: ravi sessions threads --session ${thread.parentSessionName}`,
+  );
+}
 
 /**
  * A task session must run under the task's agent. A session of the same name
@@ -1366,6 +1391,7 @@ export function resolveTaskSessionContext(
 ): { agentId: string; sessionName: string; sessionCwd: string; worktree?: TaskWorktreeConfig } {
   const resolvedAgent = requireTaskRuntimeAgent(agentId);
   const sessionCwd = resolvedAgent.cwd;
+  assertTaskSessionThreadIdentity(sessionName);
   const worktree = resolveTaskWorktreeContext(sessionCwd, task, profile, worktreeInput ?? task.worktree);
   const existingSession = assertTaskSessionOwnership(sessionName, resolvedAgent.id);
 
@@ -1396,7 +1422,7 @@ export type TaskAssigneeSessionTarget =
        */
       briefPrompt?: string;
     }
-  | { ok: false; reason: string };
+  | { ok: false; reason: string; code?: string };
 
 /**
  * Resolves the assignee's work session before Ravi prompts it. A task session can expire while the
@@ -1416,6 +1442,7 @@ export function resolveTaskAssigneeSession(
   }
 
   try {
+    assertTaskSessionThreadIdentity(sessionName);
     const profile = resolveTaskProfileForTask(task);
     const worktreeInput = activeAssignment?.worktree ?? task.worktree;
     if (resolveSession(sessionName)) {
@@ -1443,7 +1470,11 @@ export function resolveTaskAssigneeSession(
     const context = resolveTaskSessionContext(task, profile, agentId, sessionName, worktreeInput);
     return { ok: true, ...context, briefPrompt };
   } catch (error) {
-    return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+    return {
+      ok: false,
+      reason: error instanceof Error ? error.message : String(error),
+      ...(error instanceof CliExpectedError ? { code: error.code } : {}),
+    };
   }
 }
 
@@ -1499,6 +1530,7 @@ function prepareTaskDispatchContext(
   primaryArtifact: TaskProfileArtifactRef | null;
 } {
   assertTaskStartAllowed(task, options.materializeSession ? "dispatch" : "arm a launch plan");
+  assertTaskSessionThreadIdentity(input.sessionName);
 
   const { task: profiledTask, profile } = ensureResolvedTaskProfile(task, { persistMissingProfileId: true });
   const bootstrappedTask = ensureTaskWorkspaceBootstrap(profiledTask, profile);
@@ -3085,7 +3117,7 @@ export async function dispatchTask(
 
 export async function recoverActiveTasksAfterRestart(): Promise<TaskRecoveryResult> {
   const recoveredTaskIds: string[] = [];
-  const skipped: Array<{ taskId: string; reason: string }> = [];
+  const skipped: Array<{ taskId: string; reason: string; code?: string }> = [];
   const seen = new Set<string>();
   const now = Date.now();
 
@@ -3146,6 +3178,7 @@ export async function recoverActiveTasksAfterRestart(): Promise<TaskRecoveryResu
         skipped.push({
           taskId: task.id,
           reason: error instanceof Error ? error.message : String(error),
+          ...(error instanceof CliExpectedError ? { code: error.code } : {}),
         });
       }
     }

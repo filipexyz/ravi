@@ -2240,6 +2240,7 @@ export const cronMutationReturnSchema = z
     target: commandTargetSchema,
     changedCount: z.number(),
     job: looseObjectOrNullSchema,
+    warnings: z.array(z.string()).optional(),
   })
   .passthrough();
 

@@ -6,6 +6,9 @@
  */
 
 import type { ParsedCommand, PatternCheckResult } from "./types.js";
+import { parse as parseShell, type ParseEntry } from "shell-quote";
+import { resolve } from "node:path";
+import { physicalPathForPermissionCheck } from "../permissions/provider-config-paths.js";
 
 // ============================================================================
 // Dangerous Patterns (checked before parsing)
@@ -337,45 +340,172 @@ export function parseBashCommand(command: string): ParsedCommand {
 /**
  * Targets of output redirections (`>`, `>>`, `>|`, `&>`, `N>`) outside quotes.
  * Duplications to another descriptor (`2>&1`, `>&2`) are not file writes and
- * are skipped. A redirection whose target cannot be read is reported as "?".
+ * are skipped. This lists only recovered targets; permission checks MUST use
+ * analyzeOutputRedirects and refuse its errors, not infer safety from this list.
  */
 export function findOutputRedirectTargets(command: string): string[] {
-  const targets: string[] = [];
-  let quote: "'" | '"' | null = null;
-  for (let i = 0; i < command.length; i++) {
-    const char = command[i];
-    if (quote) {
-      if (char === "\\" && quote === '"') i++;
-      else if (char === quote) quote = null;
-      continue;
-    }
-    if (char === "\\") {
-      i++;
-      continue;
-    }
-    if (char === "'" || char === '"') {
-      quote = char;
-      continue;
-    }
-    if (char !== ">") continue;
-    let j = i + 1;
-    if (command[j] === ">" || command[j] === "|") j++;
-    if (command[j] === "&") {
-      // `>&N` duplicates a descriptor; `>&file` is a bash-ism for "both streams to file".
-      const dup = /^&\s*(\d+|-)(?![^\s;&|<>])/.exec(command.slice(j));
-      if (dup) {
-        i = j + dup[0].length - 1;
-        continue;
-      }
-      j++;
-    }
-    while (command[j] === " " || command[j] === "\t") j++;
-    const rest = command.slice(j);
-    const target = /^(?:"[^"]*"|'[^']*'|[^\s;&|<>])+/.exec(rest)?.[0];
-    targets.push(target ? target.replace(/["']/g, "") : "?");
-    i = j + (target?.length ?? 0) - 1;
+  return analyzeOutputRedirects(command).writes.map((write) => write.target);
+}
+
+export interface ShellOutputRedirect {
+  target: string;
+  /** All possible directories at this command, including a preceding cd failing. */
+  cwds: string[];
+}
+
+const MAX_REDIRECT_CWDS = 32;
+const AMBIGUOUS_REDIRECT_COMMANDS = new Set([
+  "pushd",
+  "popd",
+  "chdir",
+  "command",
+  "builtin",
+  "env",
+  "sudo",
+  "doas",
+  "exec",
+  "source",
+  ".",
+  "export",
+  "unset",
+  "set",
+  "shopt",
+  "alias",
+  "unalias",
+  "enable",
+  "hash",
+  "declare",
+  "typeset",
+  "local",
+  "readonly",
+  "read",
+  "mapfile",
+  "readarray",
+  "getopts",
+  "let",
+  "trap",
+  "if",
+  "then",
+  "else",
+  "elif",
+  "fi",
+  "for",
+  "while",
+  "until",
+  "do",
+  "done",
+  "case",
+  "esac",
+  "select",
+  "function",
+  "time",
+  "!",
+  "{",
+  "}",
+]);
+
+/**
+ * A deliberately bounded shell subset for file writes. shell-quote owns token
+ * and quote parsing. We model only simple commands separated by &&, || or ;,
+ * and literal cd destinations. Retaining both sides of every cd over-approximates
+ * control flow instead of assuming it succeeds. More complex shell execution
+ * cannot be authorized as a harmless redirect from this static inspection.
+ */
+export function analyzeOutputRedirects(
+  command: string,
+  cwd = process.cwd(),
+): { writes: ShellOutputRedirect[]; error?: string } {
+  const writes: ShellOutputRedirect[] = [];
+  // The tokenizer does not model newline command boundaries or ANSI-C quotes.
+  // Refuse them, including before comments, rather than normalizing shell meaning.
+  if (!command.includes(">")) return { writes };
+  if (/[\r\n]/.test(command) || /\$['"]/.test(command)) {
+    return { writes, error: "Cannot resolve output redirects with multiline or expanded shell quoting" };
   }
-  return targets;
+  let tokens: ParseEntry[];
+  try {
+    tokens = parseShell(command, () => ({ op: "glob", pattern: "unknown expansion" }));
+  } catch {
+    return { writes, error: "Cannot parse output redirect safely" };
+  }
+  const hasRedirect = tokens.some(
+    (token) => typeof token === "object" && "op" in token && [">", ">>", ">&"].includes(token.op),
+  );
+  if (!hasRedirect) return { writes };
+  const physicalCwd = physicalPathForPermissionCheck(cwd);
+  if (physicalCwd === null) return { writes, error: "Cannot resolve the shell working directory" };
+  const cwds = new Set([resolve(cwd), physicalCwd]);
+  let args: string[] = [];
+  const finishCommand = (): string | undefined => {
+    const [executable, ...rest] = args;
+    args = [];
+    if (!executable) return;
+    if (
+      isEnvAssignment(executable) ||
+      AMBIGUOUS_REDIRECT_COMMANDS.has(executable) ||
+      (executable === "printf" && rest.some((arg) => arg.startsWith("-v")))
+    ) {
+      return "Cannot resolve output redirects across shell state changes or compound commands";
+    }
+    if (executable !== "cd") return;
+    const destinations = rest.filter((arg) => arg !== "--" && arg !== "-L" && arg !== "-P");
+    const destination = destinations[0];
+    if (
+      destinations.length !== 1 ||
+      !destination ||
+      destination.startsWith("-") ||
+      /[\u0000\r\n$*?[\]{}~]/.test(destination) ||
+      process.env.CDPATH
+    ) {
+      return "Cannot resolve a dynamic shell working directory for output redirects";
+    }
+    for (const prior of [...cwds]) {
+      const physical = physicalPathForPermissionCheck(destination, prior);
+      if (physical === null) return "Cannot resolve a shell working directory symlink";
+      cwds.add(resolve(prior, destination));
+      cwds.add(physical);
+      if (cwds.size > MAX_REDIRECT_CWDS) return "Too many possible working directories for output redirects";
+    }
+  };
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i]!;
+    if (typeof token === "string") {
+      args.push(token);
+      continue;
+    }
+    if ("comment" in token) break;
+    if (token.op === ";" || token.op === "&&" || token.op === "||") {
+      const error = finishCommand();
+      if (error) return { writes, error };
+      continue;
+    }
+    // &> / &>> and >| are two tokens in shell-quote.
+    const next = tokens[i + 1];
+    if (token.op === "&" && typeof next === "object" && "op" in next && [">", ">>"].includes(next.op)) {
+      continue;
+    }
+    if (token.op === ">" || token.op === ">>" || token.op === ">&") {
+      // A numeric word before the operator may be the descriptor, even when
+      // redirections precede `cd`. Removing a separated numeric argument too
+      // is conservative: it makes a numeric cd destination indeterminate.
+      if (/^\d+$/.test(args[args.length - 1] ?? "")) args.pop();
+      if (token.op === ">" && typeof next === "object" && "op" in next && next.op === "|") i++;
+      const target = tokens[++i];
+      if (typeof target !== "string" || !target) {
+        return { writes, error: "Cannot resolve a dynamic output redirect target" };
+      }
+      // Descriptor duplication/closure does not open a path.
+      if (token.op === ">&" && /^(?:\d+|-)$/.test(target)) continue;
+      writes.push({ target, cwds: [...cwds] });
+      if (/[\u0000\r\n$*?[\]{}~]/.test(target)) {
+        return { writes, error: "Cannot resolve a dynamic output redirect target" };
+      }
+      continue;
+    }
+    return { writes, error: "Cannot resolve output redirects in a subshell, pipeline, or expanded command" };
+  }
+  const error = finishCommand();
+  return { writes, ...(error ? { error } : {}) };
 }
 
 /** Remove shell quoting (`r'a'vi` → `ravi`) so text checks see what the shell will run. */

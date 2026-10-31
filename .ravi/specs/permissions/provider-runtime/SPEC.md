@@ -103,6 +103,31 @@ Required capability materializers:
   transitioning the daemon, restore only the managed processes that were
   running before the update, and verify that they return online.
 
+## Provider Settings File Writes
+
+- File-writing tools and shell output redirects MUST require
+  `execute:executable:*` or `admin:system:*` when their destination is runtime
+  provider configuration (`.claude`, `.codex`, `.pi`, or `.mcp.json`). `use:tool:Write`
+  alone MUST NOT authorize that write. Case variants MUST also be protected on
+  case-insensitive filesystems.
+- Destination checks MUST resolve paths against the executing tool's working
+  directory and follow symlinks before processing subsequent `..` components.
+  Missing targets behind symlinks MUST NOT bypass the check. Cycles or unreadable
+  path resolution MUST fail closed.
+- Shell redirect checks MUST account for literal `cd` commands in a chain and
+  for both success and failure of those commands. They MUST bound the number of
+  candidate directories and symlink traversals and refuse on overflow.
+- Shell syntax whose redirect destination or working directory cannot be proven
+  by the supported parser subset MUST be refused for restricted writers. This
+  includes dynamic destinations, subshells, pipelines, shell state mutations,
+  multiline commands and unsupported expansions. Simple `cd nested && echo ok > notes.txt`
+  SHOULD remain possible when all candidate destinations are safe.
+- This pre-execution check is not a filesystem sandbox. Executables with their
+  own write operations (for example `cp` or `tee`), hard-link aliases outside the
+  protected paths, and filesystem changes between authorization and execution
+  remain outside this path check. Executable grants MUST be reviewed with those
+  limits in mind.
+
 ## Operator Control Boundary
 
 `operator-control` is a provider-runtime control-plane branch for operator

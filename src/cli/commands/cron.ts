@@ -4,7 +4,7 @@
 
 import "reflect-metadata";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
-import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import { CONTRACT_EXIT_POLICY, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { cronListReturnSchema, cronMutationReturnSchema, cronShowReturnSchema } from "./operational-return-schemas.js";
@@ -40,7 +40,11 @@ import { DEFAULT_CRON_SHELL_TIMEOUT_MS } from "../../cron/shell-executor.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 import { buildCronShowOutput, type CronRoutingResolution, type CronRoutingSource } from "../cron-show-output.js";
 import { resolveCronTarget, type CronTargetResolution } from "../../cron/target-resolver.js";
-import { CRON_OPERATOR_OWNER, resolveCronOwnerPrincipalForCurrentTurn } from "../../link/connector-turn.js";
+import {
+  CRON_OPERATOR_OWNER,
+  cronOwnerActsAsOperator,
+  resolveCronOwnerPrincipalForCurrentTurn,
+} from "../../link/connector-turn.js";
 import { assertShellAutomationAuthorized } from "../../permissions/shell-automation.js";
 import { assertNoUserOverlayAutomationWrite } from "../../permissions/user-overlay-automation.js";
 
@@ -263,14 +267,88 @@ function cronJobRunsAs(job: Pick<CronJob, "ownerPrincipal">): string {
 }
 
 /**
+ * The `cron add`/`set` warning for a job that does not act as the operator,
+ * or null. What refuses its runs depends on what runs: an agent turn hits
+ * Bases, connectors, Pages access and Knowledge; a shell process hits
+ * Bases, connectors and Pages access.
+ */
+function cronRunsAsWarning(job: Pick<CronJob, "id" | "ownerPrincipal" | "executionType">): string | null {
+  if (cronOwnerActsAsOperator(job.ownerPrincipal ?? null)) return null;
+  const owner = cronJobRunsAs(job);
+  const lead = `Warning: cron job ${job.id} runs as ${owner}, not the operator`;
+  if (job.executionType !== "agent") {
+    return `${lead}: a shell job does not run unless it acts as the operator, since its command runs with this machine's access and the operator's credentials. The operator recreates it from the terminal or their own chat, or turns it into an agent job (cron set ${job.id} message ...).`;
+  }
+  const consequence = owner.startsWith("contact:")
+    ? "Bases and Pages access act as that person through their own ravi link, never as the operator, and refuse while they have not linked (ACTOR_NOT_LINKED); personal connectors and Knowledge refuse its runs (CONNECTOR_SPEAKER_NOT_OWNER / KNOWLEDGE_TURN_NOT_OPERATOR)"
+    : "Bases, personal connectors, Pages share/invites and Knowledge refuse its runs (ACTOR_UNKNOWN / CONNECTOR_SPEAKER_NOT_OWNER / KNOWLEDGE_TURN_NOT_OPERATOR)";
+  return `${lead}: ${consequence}. The operator's ravi login never lends its authority to a job someone else created.`;
+}
+
+/**
+ * A shell job runs as this machine's user, with the installation's
+ * credentials, and its command controls its own environment, so no owner can
+ * be enforced on it: only an owner that acts as the operator may have one.
+ */
+function assertShellOwnerActsAsOperator(op: string, ownerPrincipal: string | null, asJson?: boolean): void {
+  if (cronOwnerActsAsOperator(ownerPrincipal)) return;
+  const suggestedAction =
+    "do not retry from this turn; use an agent job (--message) instead, which runs as its creator, or ask the operator to create the shell job from the terminal or their own chat";
+  // Text output prints only the message, so it carries the next step.
+  contractFail(
+    op,
+    "CRON_SHELL_NOT_OPERATOR",
+    `A shell cron job would run as ${ownerPrincipal ?? "unknown"}, not the operator. A shell command runs with this machine's access and the operator's credentials, so only the operator can own one. Next: ${suggestedAction}.`,
+    {
+      asJson,
+      exitCode: CONTRACT_EXIT_POLICY,
+      details: { ownerPrincipal: ownerPrincipal ?? "unknown", suggestedAction },
+    },
+  );
+}
+
+function printCronRunsAs(job: CronJob, warning: string): void {
+  console.log(`  Runs as:    ${cronJobRunsAs(job)}`);
+  console.log(warning);
+}
+
+/**
  * `cron set` keys that change neither what a job runs nor where its output
  * goes. Any other key (name, which goes into the prompt and the isolated
  * session's name, instructions, agent, env file, error target, reply
- * session, account, and any key added later) set from another person's turn
- * makes that person the job's owner, so the job cannot keep the operator's
- * connectors under somebody else's changes.
+ * session, account, and any key added later) set by a different non-operator
+ * makes the setter its owner. The operator takes over only when rewriting
+ * what runs, as selected by CRON_RUN_KEYS below.
  */
 const CRON_OWNER_KEEP_KEYS = new Set(["description", "cron", "every", "tz", "timezone", "timeout", "delete-after"]);
+
+const CRON_SET_KEYS = new Set([
+  "name",
+  "message",
+  "shell",
+  "exec",
+  "timeout",
+  "env-file",
+  "on-error",
+  "cron",
+  "every",
+  "tz",
+  "agent",
+  "account",
+  "description",
+  "session",
+  "reply-session",
+  "delete-after",
+]);
+
+const CRON_RUN_KEYS = new Set(["message", "shell", "exec"]);
+
+// `timezone` is accepted as an alias of `tz`.
+const CRON_SET_KEY_ALIASES = new Set(["timezone"]);
+
+function failUnknownCronSetKey(key: string): never {
+  fail(`Unknown property: ${key}. Valid: ${[...CRON_SET_KEYS].join(", ")}`);
+}
 
 /** Owner change that goes in the same write as a `cron set` edit, or nothing. */
 function cronOwnerUpdateForSet(
@@ -280,10 +358,13 @@ function cronOwnerUpdateForSet(
   if (CRON_OWNER_KEEP_KEYS.has(key)) return {};
   const setterOwner = resolveCronOwnerPrincipalForCurrentTurn();
   const overlayChat = currentUserOverlayChat();
-  if (setterOwner === CRON_OPERATOR_OWNER) return {};
   if (setterOwner === cronJobRunsAs(job)) {
     return overlayChat && overlayChat !== job.creatorChat ? { creatorChat: overlayChat } : {};
   }
+  // The operator takes over someone else's job only by writing what it runs
+  // (its message or command). Any other edit leaves it with its owner, so a
+  // prompt or command the operator did not write never gains their authority.
+  if (setterOwner === CRON_OPERATOR_OWNER && !CRON_RUN_KEYS.has(key)) return {};
   return { ownerPrincipal: setterOwner, creatorChat: overlayChat };
 }
 
@@ -313,6 +394,7 @@ function serializeCronJob(job: CronJob) {
   return {
     ...job,
     ownerPrincipal: cronJobRunsAs(job),
+    runsAsOperator: cronOwnerActsAsOperator(job.ownerPrincipal ?? null),
     effectiveAgentId: job.executionType === "agent" ? (job.agentId ?? getDefaultAgentId()) : undefined,
     ownerAgentId: job.executionType === "shell" ? job.agentId : undefined,
     scheduleDescription: describeSchedule(job.schedule),
@@ -502,7 +584,8 @@ export class CronCommands {
       for (const line of buildCronShowOutput(job, describeSchedule(job.schedule), agentId, routing)) {
         console.log(line);
       }
-      console.log(`  ${"Runs as:".padEnd(16)}${cronJobRunsAs(job)}`);
+      const boundToOperator = job.ownerPrincipal?.startsWith("contact:") && cronOwnerActsAsOperator(job.ownerPrincipal);
+      console.log(`  ${"Runs as:".padEnd(16)}${cronJobRunsAs(job)}${boundToOperator ? " (acts as the operator)" : ""}`);
     }
     return payload;
   }
@@ -632,6 +715,12 @@ export class CronCommands {
     // Capture reply session from caller context (e.g., agent:comm:whatsapp:main:group:123)
     const replySession = isShellJob ? undefined : ctx?.sessionKey;
 
+    // Invalid input fails before the owner refusal (exit 3).
+    const shellTimeoutMs = isShellJob ? parseCronShellTimeout(timeout) : undefined;
+    const normalizedOnError = isShellJob ? normalizeCronOnError(onError) : undefined;
+    const ownerPrincipal = resolveCronOwnerPrincipalForCurrentTurn();
+    if (isShellJob) assertShellOwnerActsAsOperator("cron add", ownerPrincipal, asJson);
+
     // Create job
     const input: CronJobInput = {
       name,
@@ -645,10 +734,10 @@ export class CronCommands {
       deleteAfterRun: deleteAfter,
       executionType: isShellJob ? "shell" : "agent",
       shellCommand: isShellJob ? shellCommand : undefined,
-      shellTimeoutMs: isShellJob ? parseCronShellTimeout(timeout) : undefined,
+      shellTimeoutMs,
       shellEnvFile: isShellJob ? envFile : undefined,
-      onError: isShellJob ? normalizeCronOnError(onError) : undefined,
-      ownerPrincipal: resolveCronOwnerPrincipalForCurrentTurn(),
+      onError: normalizedOnError,
+      ownerPrincipal,
       creatorChat: currentUserOverlayChat(),
     };
 
@@ -663,6 +752,8 @@ export class CronCommands {
             : undefined,
       );
       const job = creation.job;
+      const runsAsWarning = job ? cronRunsAsWarning(job) : null;
+      if (runsAsWarning) warnings.push(runsAsWarning);
 
       // Signal daemon to refresh timers
       if (creation.created) await nats.emit("ravi.cron.refresh", {});
@@ -689,6 +780,7 @@ export class CronCommands {
       } else if (!creation.created) {
         console.log(`\n= Cron action already handled: ${creation.targetId}`);
         if (!job) console.log("  The original one-shot job has already been removed.");
+        if (job && runsAsWarning) printCronRunsAs(job, runsAsWarning);
       } else {
         if (!job) fail("Created cron job could not be reloaded.");
         console.log(`\n✓ Created job: ${job.id}`);
@@ -701,6 +793,7 @@ export class CronCommands {
         if (job.nextRunAt) {
           console.log(`  Next run:   ${new Date(job.nextRunAt).toLocaleString()}`);
         }
+        if (runsAsWarning) printCronRunsAs(job, runsAsWarning);
       }
       return payload;
     } catch (err) {
@@ -804,13 +897,26 @@ export class CronCommands {
     if (key === "reply-session" && value !== "null" && value !== "-") {
       assertCronTargetAuthorized("cron set", { agentId: cronJobOwnerId(job), replySession: value }, asJson);
     }
+    const ownerUpdate = cronOwnerUpdateForSet(key, job);
+    // Setting a command, or a change that moves a shell job to another owner,
+    // must leave it with an owner that acts as the operator. Other edits of an
+    // existing shell job stay possible: the runner refuses to run it anyway.
+    const setsCommand = key === "shell" || key === "exec";
+    const reownsShell = job.executionType === "shell" && key !== "message" && "ownerPrincipal" in ownerUpdate;
+    if (setsCommand || reownsShell) {
+      // Invalid input fails before the owner refusal (exit 3).
+      if (!CRON_SET_KEYS.has(key) && !CRON_SET_KEY_ALIASES.has(key)) failUnknownCronSetKey(key);
+      if (key === "timeout" && value !== "null" && value !== "-") parseCronShellTimeout(value);
+      if (key === "on-error") normalizeCronOnError(value);
+      const nextOwner = "ownerPrincipal" in ownerUpdate ? ownerUpdate.ownerPrincipal : job.ownerPrincipal;
+      assertShellOwnerActsAsOperator("cron set", nextOwner ?? null, asJson);
+    }
 
     try {
       let normalizedValue: unknown = value;
       const logHuman = (message: string) => {
         if (!asJson) console.log(message);
       };
-      const ownerUpdate = cronOwnerUpdateForSet(key, job);
       const update = (updates: Partial<CronJob>) => dbUpdateCronJob(id, { ...updates, ...ownerUpdate });
 
       switch (key) {
@@ -832,14 +938,26 @@ export class CronCommands {
           break;
 
         case "shell":
-        case "exec":
+        case "exec": {
+          // A new owner does not inherit the env file someone else chose (it
+          // is loaded over the command's environment, PATH included) nor the
+          // session that receives the command's output when it fails.
+          const changesOwner = "ownerPrincipal" in ownerUpdate;
+          const dropsEnvFile = changesOwner && Boolean(job.shellEnvFile);
+          const dropsOnError = changesOwner && Boolean(job.onError);
           update({
             executionType: "shell",
             message: "",
             shellCommand: value,
+            ...(dropsEnvFile ? { shellEnvFile: undefined } : {}),
+            ...(dropsOnError ? { onError: undefined } : {}),
           });
           logHuman(`✓ Shell command set: ${id}`);
+          if (dropsEnvFile) logHuman("  Env file cleared: set it again with `ravi cron set <id> env-file <path>`.");
+          if (dropsOnError)
+            logHuman("  Error target cleared: set it again with `ravi cron set <id> on-error <target>`.");
           break;
+        }
 
         case "timeout": {
           if (job.executionType !== "shell") {
@@ -974,25 +1092,27 @@ export class CronCommands {
         }
 
         default:
-          fail(
-            `Unknown property: ${key}. Valid: name, message, shell, exec, timeout, env-file, on-error, cron, every, tz, agent, account, description, session, reply-session, delete-after`,
-          );
+          failUnknownCronSetKey(key);
       }
 
       // Signal daemon to refresh timers
       await nats.emit("ravi.cron.refresh", {});
 
       const updatedJob = dbGetCronJob(id);
+      const runsAsWarning = updatedJob ? cronRunsAsWarning(updatedJob) : null;
       const payload = {
         status: "updated" as const,
         target: { type: "cron" as const, id },
         changedCount: 1,
         property: key,
         value: normalizedValue,
+        warnings: runsAsWarning ? [runsAsWarning] : [],
         job: updatedJob ? serializeCronJob(updatedJob) : null,
       };
       if (asJson) {
         printJson(payload);
+      } else if (updatedJob && runsAsWarning) {
+        printCronRunsAs(updatedJob, runsAsWarning);
       }
       return payload;
     } catch (err) {

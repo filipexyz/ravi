@@ -1,5 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ZodTypeAny } from "zod";
+import { CliExpectedError } from "../expected-error.js";
 
 afterAll(() => mock.restore());
 
@@ -75,6 +76,7 @@ const fakeSlackThreadSummary = {
   source: "action",
   childSessionKey: "agent:dev:slack:ravi-slack:C123:thread:1713000000.000100",
   childSessionName: "dev-slack-t-1713000000000100",
+  childSessionMissing: false,
   slackThreadTs: "1713000000.000100",
   link: null,
   runtime: {
@@ -102,6 +104,7 @@ let effortUpdates: Array<{ sessionKey: string; effort: string | null }> = [];
 let dropSessionOverrideWrites = false;
 const runtimeLiveStates = new Map<string, Record<string, unknown>>();
 let toolContext: Record<string, unknown> | undefined;
+let threadIdentityAssessment: Record<string, unknown> = { kind: "none" };
 let scopeEnforced = false;
 let canAccess = true;
 let sessionGoal: Record<string, unknown> | null = null;
@@ -216,7 +219,14 @@ mock.module("../../channels/slack/thread-lifecycle-store.js", () => ({
   findSlackThreadLifecycleByChildSession: () => null,
 }));
 
+mock.module("../../router/thread-identity.js", () => ({
+  assessSessionThreadIdentity: () => threadIdentityAssessment,
+  findOpenThreadIdentity: () => null,
+}));
+
 mock.module("../../channels/slack/thread-lifecycle.js", () => ({
+  slackThreadError: (code: string, message: string, suggestedAction?: string) =>
+    new CliExpectedError(message, code, 1, suggestedAction),
   slackThreadParentSessionKey: (sessionKey: string) => sessionKey.split(":thread:")[0] ?? sessionKey,
   slackThreadRuntimeLabel: (input: {
     providerOverride?: string;
@@ -253,6 +263,9 @@ mock.module("../../channels/slack/thread-lifecycle.js", () => ({
   }) => {
     sentSlackThreadMessages.push(input);
     if (input.ref === "missing") throw new Error("Slack thread not found for this session: missing");
+    if (input.ref === "vanished") {
+      throw new CliExpectedError("Slack thread session not found: x", "THREAD_SESSION_MISSING", 1);
+    }
     return {
       messageId: "slack-thread-send:slack-thread:req-1:m1",
       reopened: true,
@@ -630,6 +643,7 @@ beforeEach(() => {
   closedSlackThreads.length = 0;
   reportedSlackThreads.length = 0;
   sentSlackThreadMessages.length = 0;
+  threadIdentityAssessment = { kind: "none" };
   displayNameUpdates = [];
   deletedSessionKeys = [];
   renameSessionNameCalls = [];
@@ -2265,7 +2279,48 @@ describe("SessionCommands attach hints", () => {
     await expect(new SessionCommands().report("Nope", undefined, true)).rejects.toThrow(
       "thread.report is available only inside a Slack thread child session",
     );
+    await expect(new SessionCommands().report("Nope", undefined, true)).rejects.toMatchObject({
+      code: "THREAD_NOT_THREAD_CHILD",
+    });
     expect(reportedSlackThreads).toHaveLength(1);
+  });
+
+  it("refuses report and close-thread with THREAD_IDENTITY_MISMATCH from a session that took an open thread's name", async () => {
+    const childKey = "agent:dev:slack:ravi-slack:C123:thread:1713000000.000100";
+    resolvedSession = { sessionKey: "dev-slack-t-1", name: "dev-slack-t-1", agentId: "dev", agentCwd: "/tmp/dev" };
+    toolContext = { sessionKey: "dev-slack-t-1", sessionName: "dev-slack-t-1" };
+    threadIdentityAssessment = {
+      kind: "key_mismatch",
+      sessionKey: "dev-slack-t-1",
+      thread: {
+        requestId: "slack-thread:req-1",
+        parentSessionKey: "agent:dev:slack:ravi-slack:C123",
+        parentSessionName: "dev-slack",
+        childSessionKey: childKey,
+        childSessionName: "dev-slack-t-1",
+        providerThreadId: "1713000000.000100",
+      },
+    };
+
+    await expect(new SessionCommands().report("Progress", undefined, true)).rejects.toMatchObject({
+      code: "THREAD_IDENTITY_MISMATCH",
+      suggestedAction: "Check the thread with: ravi sessions threads --session dev-slack",
+    });
+    await expect(new SessionCommands().closeThread(undefined, undefined, true)).rejects.toMatchObject({
+      code: "THREAD_IDENTITY_MISMATCH",
+    });
+    expect(reportedSlackThreads).toHaveLength(0);
+    expect(closedSlackThreads).toHaveLength(0);
+  });
+
+  it("keeps the typed code when thread-send targets a thread whose session is gone", async () => {
+    const rootKey = "agent:dev:slack:ravi-slack:C123";
+    resolvedSession = { sessionKey: rootKey, name: "dev-slack", agentId: "dev", agentCwd: "/tmp/dev" };
+    toolContext = { sessionKey: rootKey, sessionName: "dev-slack" };
+
+    await expect(new SessionCommands().threadSend("vanished", "Hello", undefined, true)).rejects.toMatchObject({
+      code: "THREAD_SESSION_MISSING",
+    });
   });
 
   it("lists the threads a Slack session owns and sends one new instructions", async () => {

@@ -17,7 +17,7 @@ import {
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import { KNOWLEDGE_AUDIENCE_LINES } from "../knowledge/turn/preamble.js";
 import { RuntimeHostSubscriptions } from "./host-subscriptions.js";
-import type { RuntimeUserMessage } from "./host-session.js";
+import { stashPendingRuntimeMessages, type RuntimeUserMessage } from "./host-session.js";
 import type { RuntimeHostStreamingSession } from "./host-session.js";
 import type { RuntimeRecoveryExhaustedAlertInput } from "./runtime-recovery-alert.js";
 import type { PendingRuntimeSessionStart } from "./session-launcher.js";
@@ -716,10 +716,18 @@ describe("RuntimeSessionDispatcher runtime recovery", () => {
       restartStashedSession(sessionName: string, reason: string): Promise<void>;
     };
 
+    const backoffs: number[] = [];
+    (
+      dispatcher as unknown as { waitForTransportRestartBackoff(ms: number): Promise<void> }
+    ).waitForTransportRestartBackoff = async (ms: number) => {
+      backoffs.push(ms);
+    };
+
     await recovery.restartStashedSession("inactive-turn", "provider_turn_inactive");
     await recovery.restartStashedSession("inactive-turn", "provider_turn_inactive");
 
     expect(starts).toBe(1);
+    expect(backoffs).toEqual([]);
     expect(dispatcher.stashedMessages.has("inactive-turn")).toBe(true);
     expect(alerts).toEqual([
       expect.objectContaining({
@@ -769,11 +777,20 @@ describe("RuntimeSessionDispatcher runtime recovery", () => {
       restartStashedSession(sessionName: string, reason: string): Promise<void>;
     };
 
+    const backoffs: number[] = [];
+    (
+      dispatcher as unknown as { waitForTransportRestartBackoff(ms: number): Promise<void> }
+    ).waitForTransportRestartBackoff = async (ms: number) => {
+      backoffs.push(ms);
+    };
+
     await recovery.restartStashedSession("transport-failure", "provider_transport_failure");
     await recovery.restartStashedSession("transport-failure", "provider_transport_failure");
     await recovery.restartStashedSession("transport-failure", "provider_transport_failure");
 
     expect(starts).toBe(2);
+    // Escalating backoff, but the restart budget stays at two.
+    expect(backoffs).toEqual([1_000, 5_000]);
     expect(alerts).toEqual([
       expect.objectContaining({
         sessionName: "transport-failure",
@@ -792,6 +809,111 @@ describe("RuntimeSessionDispatcher runtime recovery", () => {
         }),
       }),
     ]);
+  });
+
+  function createLiveReplacementSession(): RuntimeHostStreamingSession {
+    return {
+      queryHandle: { provider: "pi", events: (async function* () {})(), interrupt: async () => {} },
+      turnActive: true,
+      done: false,
+      starting: false,
+      compacting: false,
+      toolRunning: false,
+      lastActivity: Date.now(),
+      pendingMessages: [],
+    } as unknown as RuntimeHostStreamingSession;
+  }
+
+  it("reserves the session during transport backoff and never starts a competing provider", async () => {
+    const dispatcher = new RuntimeSessionDispatcher({
+      instanceId: "test",
+      maxConcurrentSessions: 10,
+      interactiveReservedSessions: 0,
+      safeEmit: async () => {},
+      notifyRuntimeRecoveryExhausted: async () => {},
+      getConfigModel: () => "test-model",
+      crashRecovery: crashRecoveryStub,
+    });
+    dispatcher.stashedMessages.set("transport-race", [
+      createQueuedRuntimeUserMessage({ prompt: "retry transport", _agentId: "main" }),
+    ]);
+
+    let starts = 0;
+    dispatcher.startStreamingSession = mock(async () => {
+      starts++;
+    });
+    const recovery = dispatcher as unknown as {
+      restartStashedSession(sessionName: string, reason: string): Promise<void>;
+    };
+
+    let reservedDuringWait = false;
+    let replacement: RuntimeHostStreamingSession | null = null;
+    (
+      dispatcher as unknown as { waitForTransportRestartBackoff(ms: number): Promise<void> }
+    ).waitForTransportRestartBackoff = async () => {
+      // The session must be reserved while the restart sleeps, so an inbound
+      // prompt queues into the stash instead of starting a replacement.
+      reservedDuringWait = dispatcher.pendingStartSessions.has("transport-race");
+      stashPromptForStartingSession(
+        "transport-race",
+        { prompt: "mensagem durante o backoff", _agentId: "main" },
+        dispatcher.stashedMessages,
+      );
+      // A replacement provider still wins the race (e.g. another recovery).
+      replacement = createLiveReplacementSession();
+      dispatcher.streamingSessions.set("transport-race", replacement);
+    };
+
+    await recovery.restartStashedSession("transport-race", "provider_transport_failure");
+
+    expect(reservedDuringWait).toBe(true);
+    expect(starts).toBe(0);
+    expect(dispatcher.pendingStartSessions.has("transport-race")).toBe(false);
+    expect(dispatcher.stashedMessages.has("transport-race")).toBe(false);
+    expect(replacement!.pendingMessages.map((message) => message.message.content)).toEqual([
+      "retry transport",
+      "mensagem durante o backoff",
+    ]);
+  });
+
+  it("rebuilds the restart prompt from the freshest stash after the backoff", async () => {
+    const dispatcher = new RuntimeSessionDispatcher({
+      instanceId: "test",
+      maxConcurrentSessions: 10,
+      interactiveReservedSessions: 0,
+      safeEmit: async () => {},
+      notifyRuntimeRecoveryExhausted: async () => {},
+      getConfigModel: () => "test-model",
+      crashRecovery: crashRecoveryStub,
+    });
+    dispatcher.stashedMessages.set("transport-refresh", [
+      createQueuedRuntimeUserMessage({ prompt: "retry transport", _agentId: "main" }),
+    ]);
+
+    let startedPrompt: RuntimeLaunchPrompt | null = null;
+    dispatcher.startStreamingSession = mock(async (_sessionName: string, prompt: RuntimeLaunchPrompt) => {
+      startedPrompt = prompt;
+    });
+    const recovery = dispatcher as unknown as {
+      restartStashedSession(sessionName: string, reason: string): Promise<void>;
+    };
+
+    (
+      dispatcher as unknown as { waitForTransportRestartBackoff(ms: number): Promise<void> }
+    ).waitForTransportRestartBackoff = async () => {
+      stashPromptForStartingSession(
+        "transport-refresh",
+        { prompt: "mensagem durante o backoff", _agentId: "main" },
+        dispatcher.stashedMessages,
+      );
+    };
+
+    await recovery.restartStashedSession("transport-refresh", "provider_transport_failure");
+
+    expect(startedPrompt).not.toBeNull();
+    expect(startedPrompt!.prompt).toContain("retry transport");
+    expect(startedPrompt!.prompt).toContain("mensagem durante o backoff");
+    expect(dispatcher.pendingStartSessions.has("transport-refresh")).toBe(false);
   });
 });
 
@@ -1237,6 +1359,49 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       await cleanupIsolatedRaviState(stateDir);
     }
   });
+
+  for (const deferred of [false, true]) {
+    it(`removes yielded work from pending and restart queues on ${deferred ? "deferred" : "immediate"} abort`, async () => {
+      const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-yield-abort-");
+      try {
+        const sessionName = "yield-abort";
+        getOrCreateSession("agent:main:test:yield-abort", "main", stateDir, { name: sessionName });
+        const dispatcher = createDispatcher(2);
+        const active = createQueuedRuntimeUserMessage({ prompt: "active Slack request" });
+        const queued = createQueuedRuntimeUserMessage({ prompt: "new unrelated request" });
+        const continuations = ["unfinished WhatsApp request", "unfinished thread request"].map((request) => ({
+          ...createQueuedRuntimeUserMessage({ prompt: request, deliveryBarrier: "after_response" }),
+          yieldedRequest: request,
+        }));
+        const streaming = createActiveSession({
+          agentId: "main",
+          turnActive: true,
+          currentTurnToolStarted: true,
+          currentTurnPendingIds: [active.pendingId!],
+          pendingMessages: [active, queued, ...continuations],
+          toolResultDeliveryPending: deferred,
+        });
+        dispatcher.streamingSessions.set(sessionName, streaming);
+        dispatcher.stashedMessages.set(
+          sessionName,
+          continuations.map((message) => ({ ...message })),
+        );
+
+        expect(dispatcher.abortSession(sessionName)).toBe(true);
+
+        expect(streaming.pendingMessages).toEqual([active, queued]);
+        expect(streaming.pendingAbort).toBe(deferred);
+        expect(streaming.abortController.signal.aborted).toBe(!deferred);
+        if (deferred) expect(dispatcher.stashedMessages.has(sessionName)).toBe(false);
+
+        // Deferred abort and shutdown recovery must not recreate cancelled work.
+        stashPendingRuntimeMessages(sessionName, streaming, dispatcher.stashedMessages);
+        expect(dispatcher.stashedMessages.get(sessionName)).toEqual([queued]);
+      } finally {
+        await cleanupIsolatedRaviState(stateDir);
+      }
+    });
+  }
 
   it("keeps deferring an explicit abort only while a completed tool result is still being delivered", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-delivery-vs-running-");
@@ -2739,7 +2904,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 
-  it("queues another surface without replacing or interrupting the active turn", async () => {
+  it("yields to another surface without replacing the active reply target", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-interrupt-source-");
     try {
       getOrCreateSession("agent:main:test:interrupt-source", "main", stateDir, { name: "interrupt-source" });
@@ -2801,7 +2966,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       });
 
       expect(activeSession.currentSource).toEqual(activeSource);
-      expect(activeSession.pendingMessages).toHaveLength(2);
+      expect(activeSession.pendingMessages).toHaveLength(3);
       expect(activeSession.pendingMessages[1]?.deliveryBarrier).toBe("after_tool");
       expect(activeSession.pendingMessages[1]?.launchPrompt?.source).toEqual(slackSource);
       expect(activeSession.pendingMessages[1]?.message.content).toBe(
@@ -2810,9 +2975,12 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
           "[Slack C123 mid:123.456] <@U123>: hello",
       );
       expect(activeSession.pendingMessages[1]?.launchPrompt?._sessionSurfaceHint).toBe(true);
-      expect(activeSession.currentTurnSuperseded).not.toBe(true);
-      expect(activeSession.interrupted).not.toBe(true);
-      expect(interrupt).not.toHaveBeenCalled();
+      expect(activeSession.pendingMessages[2]?.launchPrompt?.source).toEqual(activeSource);
+      expect(activeSession.pendingMessages[2]?.yieldedRequest).toBe("active work");
+      expect(activeSession.currentTurnYieldContinuationId).toBe(activeSession.pendingMessages[2]?.pendingId);
+      expect(activeSession.currentTurnSuperseded).toBe(true);
+      expect(activeSession.interrupted).toBe(true);
+      expect(interrupt).toHaveBeenCalledTimes(1);
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }

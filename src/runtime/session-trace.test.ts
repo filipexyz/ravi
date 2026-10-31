@@ -801,260 +801,275 @@ describe("runtime session trace instrumentation", () => {
     await runtimeRequest.prompt.return?.(undefined);
   });
 
-  it("keeps a Slack turn ahead of later WhatsApp input while a WhatsApp tool turn is active", async () => {
-    updateSessionName(SESSION_KEY, SESSION_NAME);
-    const whatsappChat = dbUpsertChat({
-      channel: "whatsapp",
-      instanceId: "whatsapp-main",
-      platformChatId: "wa-busy@s.whatsapp.net",
-      chatType: "dm",
-      title: "WhatsApp busy turn",
-    });
-    const slackChat = dbUpsertChat({
-      channel: "slack",
-      instanceId: "slack-main",
-      platformChatId: "D123",
-      chatType: "dm",
-      title: "Slack queued turn",
-    });
-    attachChatToSession({ sessionKey: SESSION_KEY, chatId: whatsappChat.id, setOutputTarget: true });
-    attachChatToSession({ sessionKey: SESSION_KEY, chatId: slackChat.id, setOutputTarget: false });
-
-    const whatsappSource: RuntimeMessageTarget = {
-      channel: "whatsapp",
-      accountId: "whatsapp-main",
-      instanceId: "whatsapp-main",
-      chatId: whatsappChat.platformChatId,
-      canonicalChatId: whatsappChat.id,
-      sourceMessageId: "wamid-active",
-    };
-    const slackSource: RuntimeMessageTarget = {
-      channel: "slack",
-      accountId: "slack-main",
-      instanceId: "slack-main",
-      chatId: slackChat.platformChatId,
-      canonicalChatId: slackChat.id,
-      sourceMessageId: "slack-during-tool",
-    };
-    const laterWhatsappSource: RuntimeMessageTarget = {
-      ...whatsappSource,
-      sourceMessageId: "wamid-later",
-    };
-    const activeWhatsapp = createQueuedRuntimeUserMessage({
-      prompt: "long WhatsApp turn",
-      source: whatsappSource,
-      deliveryBarrier: "after_tool",
-    });
-    const streaming = makeStreamingSession({
-      agentMode: "active",
-      currentSource: whatsappSource,
-      currentEffort: "xhigh",
-      pendingMessages: [activeWhatsapp],
-      turnActive: false,
-    });
-    const provider: SessionRuntimeProvider = {
-      id: "codex",
-      getCapabilities: () => capabilities,
-      startSession: () => makeRuntimeSession([]),
-    };
-    const { runtimeRequest } = await buildRuntimeStartRequest({
-      runId: "run-cross-surface-tool-order",
-      sessionName: SESSION_NAME,
-      prompt: { prompt: "long WhatsApp turn", source: whatsappSource },
-      session: makeSession(),
-      agent: makeAgent({ provider: "codex" }),
-      runtimeProviderId: "codex",
-      runtimeProvider: provider,
-      runtimeCapabilities: capabilities,
-      sessionCwd: stateDir ?? "/tmp",
-      dbSessionKey: SESSION_KEY,
-      model: MODEL,
-      runtimeResolution: {
-        options: { model: MODEL },
-        sources: { model: "agent_default", effort: null, thinking: null },
-        hasTaskRuntimeContext: false,
-      },
-      storedRuntimeSessionParams: undefined,
-      canResumeStoredSession: false,
-      resolvedSource: whatsappSource,
-      streamingSession: streaming,
-      stashedMessages: new Map(),
-      defaultRuntimeProviderId: "codex",
-      crashRecovery,
-    });
-    const providerTurns: Array<{ prompt: string; sourceChatId?: string; replyChatId?: string }> = [];
-    const readProviderTurn = async () => {
-      const next = await runtimeRequest.prompt.next();
-      if (next.done) throw new Error("runtime prompt stream ended before the queued cross-surface turn");
-      providerTurns.push({
-        prompt: next.value.message.content,
-        sourceChatId: streaming.currentSource?.canonicalChatId,
-        replyChatId: streaming.currentReplyTarget?.canonicalChatId,
+  for (const providerId of ["codex", "pi"] as const) {
+    it(`${providerId} yields after a WhatsApp tool, answers queued chats in order and resumes unfinished work`, async () => {
+      updateSessionName(SESSION_KEY, SESSION_NAME);
+      const whatsappChat = dbUpsertChat({
+        channel: "whatsapp",
+        instanceId: "whatsapp-main",
+        platformChatId: "wa-busy@s.whatsapp.net",
+        chatType: "dm",
+        title: "WhatsApp busy turn",
       });
-    };
-
-    let interruptCalls = 0;
-    const toolStatesWhenQueued: boolean[] = [];
-    const dispatcher = new RuntimeSessionDispatcher({
-      instanceId: "trace-test",
-      maxConcurrentSessions: 10,
-      interactiveReservedSessions: 0,
-      safeEmit: async () => {},
-      notifyRuntimeRecoveryExhausted: async () => {},
-      getConfigModel: () => MODEL,
-      crashRecovery,
-    });
-    dispatcher.streamingSessions.set(SESSION_NAME, streaming);
-    const runtimeSession: RuntimeSessionHandle = {
-      provider: "codex",
-      interrupt: async () => {
-        interruptCalls++;
-      },
-      events: (async function* () {
-        await readProviderTurn();
-        yield {
-          type: "tool.started",
-          toolUse: { id: "tool-long-whatsapp", name: "Bash", input: { cmd: "true" } },
-        } satisfies RuntimeEvent;
-
-        toolStatesWhenQueued.push(streaming.toolRunning);
-        await dispatcher.handlePromptImmediate(SESSION_NAME, {
-          prompt: "Slack while WhatsApp is busy",
-          source: slackSource,
-          context: {
-            channelId: "slack",
-            channelName: "Slack",
-            accountId: slackSource.accountId,
-            instanceId: slackSource.instanceId,
-            chatId: slackSource.chatId,
-            canonicalChatId: slackSource.canonicalChatId,
-            messageId: slackSource.sourceMessageId!,
-            senderId: "U123",
-            isGroup: false,
-            timestamp: Date.now(),
-          },
-          _agentId: AGENT_ID,
-          deliveryBarrier: "after_tool",
-          deliveryBarrierSource: "default",
-        });
-        await dispatcher.handlePromptImmediate(SESSION_NAME, {
-          prompt: "later WhatsApp direction",
-          source: laterWhatsappSource,
-          context: {
-            channelId: "whatsapp",
-            channelName: "WhatsApp",
-            accountId: laterWhatsappSource.accountId,
-            instanceId: laterWhatsappSource.instanceId,
-            chatId: laterWhatsappSource.chatId,
-            canonicalChatId: laterWhatsappSource.canonicalChatId,
-            messageId: laterWhatsappSource.sourceMessageId!,
-            senderId: "5511999999999",
-            isGroup: false,
-            timestamp: Date.now() + 1,
-          },
-          _agentId: AGENT_ID,
-          deliveryBarrier: "after_tool",
-          deliveryBarrierSource: "default",
-        });
-        yield {
-          type: "tool.completed",
-          toolUseId: "tool-long-whatsapp",
-          toolName: "Bash",
-          content: "ok",
-        } satisfies RuntimeEvent;
-        yield { type: "assistant.message", text: "original WhatsApp response" } satisfies RuntimeEvent;
-        yield {
-          type: "turn.complete",
-          providerSessionId: "provider-after-whatsapp",
-          usage: { inputTokens: 1, outputTokens: 1 },
-        } satisfies RuntimeEvent;
-
-        await readProviderTurn();
-        yield { type: "assistant.message", text: "Slack response" } satisfies RuntimeEvent;
-        yield {
-          type: "turn.complete",
-          providerSessionId: "provider-after-slack",
-          usage: { inputTokens: 1, outputTokens: 1 },
-        } satisfies RuntimeEvent;
-
-        await readProviderTurn();
-        yield { type: "assistant.message", text: "later WhatsApp response" } satisfies RuntimeEvent;
-        yield {
-          type: "turn.complete",
-          providerSessionId: "provider-after-later-whatsapp",
-          usage: { inputTokens: 1, outputTokens: 1 },
-        } satisfies RuntimeEvent;
-      })(),
-    };
-    streaming.queryHandle = runtimeSession;
-
-    const releaseAfterTool = dispatcher as unknown as {
-      releaseQueuedPromptsAfterTool(sessionName: string): Promise<void>;
-    };
-    let toolBarrierReleaseCalls = 0;
-    const responses: Array<{ response?: string; target?: RuntimeMessageTarget }> = [];
-    const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
-      if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
-        responses.push(data as (typeof responses)[number]);
-      }
-    });
-
-    try {
-      await runTraceLoop(streaming, runtimeSession, {
-        agent: makeAgent({ provider: "codex" }),
-        streamingSessions: dispatcher.streamingSessions,
-        onToolBarrierReleased: (sessionName) => {
-          toolBarrierReleaseCalls++;
-          return releaseAfterTool.releaseQueuedPromptsAfterTool(sessionName);
-        },
+      const slackChat = dbUpsertChat({
+        channel: "slack",
+        instanceId: "slack-main",
+        platformChatId: "D123",
+        chatType: "dm",
+        title: "Slack queued turn",
       });
-    } finally {
-      emitSpy.mockRestore();
-      streaming.done = true;
-      streaming.onTurnComplete?.();
-      await runtimeRequest.prompt.return?.(undefined);
-    }
+      attachChatToSession({ sessionKey: SESSION_KEY, chatId: whatsappChat.id, setOutputTarget: true });
+      attachChatToSession({ sessionKey: SESSION_KEY, chatId: slackChat.id, setOutputTarget: false });
 
-    expect(toolStatesWhenQueued).toEqual([true]);
-    expect(toolBarrierReleaseCalls).toBe(1);
-    expect(interruptCalls).toBe(0);
-    expect(
-      listSessionEventsForTest(SESSION_KEY).filter((event) => event.eventType === "dispatch.queued_busy"),
-    ).toHaveLength(2);
-    expect(providerTurns).toEqual([
-      {
+      const whatsappSource: RuntimeMessageTarget = {
+        channel: "whatsapp",
+        accountId: "whatsapp-main",
+        instanceId: "whatsapp-main",
+        chatId: whatsappChat.platformChatId,
+        canonicalChatId: whatsappChat.id,
+        sourceMessageId: "wamid-active",
+      };
+      const slackSource: RuntimeMessageTarget = {
+        channel: "slack",
+        accountId: "slack-main",
+        instanceId: "slack-main",
+        chatId: slackChat.platformChatId,
+        canonicalChatId: slackChat.id,
+        sourceMessageId: "slack-during-tool",
+      };
+      const laterWhatsappSource: RuntimeMessageTarget = {
+        ...whatsappSource,
+        sourceMessageId: "wamid-later",
+      };
+      const activeWhatsapp = createQueuedRuntimeUserMessage({
         prompt: "long WhatsApp turn",
-        sourceChatId: whatsappChat.id,
-        replyChatId: whatsappChat.id,
-      },
-      {
-        prompt:
-          "[session surface] This turn came from a Slack chat. A normal reply returns there.\n" +
-          "[knowledge] audience=none: ravi knowledge will refuse on this turn (exit 3).\n" +
-          "Slack while WhatsApp is busy",
-        sourceChatId: slackChat.id,
-        replyChatId: slackChat.id,
-      },
-      {
-        prompt:
-          "[session surface] This turn came from a WhatsApp chat. A normal reply returns there.\n" +
-          "[knowledge] audience=none: ravi knowledge will refuse on this turn (exit 3).\n" +
-          "later WhatsApp direction",
-        sourceChatId: whatsappChat.id,
-        replyChatId: whatsappChat.id,
-      },
-    ]);
-    expect(
-      responses.map((response) => ({
-        response: response.response,
-        targetChatId: response.target?.canonicalChatId,
-      })),
-    ).toEqual([
-      { response: "original WhatsApp response", targetChatId: whatsappChat.id },
-      { response: "Slack response", targetChatId: slackChat.id },
-      { response: "later WhatsApp response", targetChatId: whatsappChat.id },
-    ]);
-  });
+        source: whatsappSource,
+        deliveryBarrier: "after_tool",
+      });
+      const streaming = makeStreamingSession({
+        agentMode: "active",
+        currentSource: whatsappSource,
+        currentEffort: "xhigh",
+        pendingMessages: [activeWhatsapp],
+        turnActive: false,
+      });
+      const provider: SessionRuntimeProvider = {
+        id: providerId,
+        getCapabilities: () => capabilities,
+        startSession: () => makeRuntimeSession([]),
+      };
+      const { runtimeRequest } = await buildRuntimeStartRequest({
+        runId: "run-cross-surface-tool-order",
+        sessionName: SESSION_NAME,
+        prompt: { prompt: "long WhatsApp turn", source: whatsappSource },
+        session: makeSession(),
+        agent: makeAgent({ provider: providerId }),
+        runtimeProviderId: providerId,
+        runtimeProvider: provider,
+        runtimeCapabilities: capabilities,
+        sessionCwd: stateDir ?? "/tmp",
+        dbSessionKey: SESSION_KEY,
+        model: MODEL,
+        runtimeResolution: {
+          options: { model: MODEL },
+          sources: { model: "agent_default", effort: null, thinking: null },
+          hasTaskRuntimeContext: false,
+        },
+        storedRuntimeSessionParams: undefined,
+        canResumeStoredSession: false,
+        resolvedSource: whatsappSource,
+        streamingSession: streaming,
+        stashedMessages: new Map(),
+        defaultRuntimeProviderId: providerId,
+        crashRecovery,
+      });
+      const providerTurns: Array<{ prompt: string; sourceChatId?: string; replyChatId?: string }> = [];
+      const readProviderTurn = async () => {
+        const next = await runtimeRequest.prompt.next();
+        if (next.done) throw new Error("runtime prompt stream ended before the queued cross-surface turn");
+        providerTurns.push({
+          prompt: next.value.message.content,
+          sourceChatId: streaming.currentSource?.canonicalChatId,
+          replyChatId: streaming.currentReplyTarget?.canonicalChatId,
+        });
+      };
+
+      let interruptCalls = 0;
+      const toolStatesWhenQueued: boolean[] = [];
+      const dispatcher = new RuntimeSessionDispatcher({
+        instanceId: "trace-test",
+        maxConcurrentSessions: 10,
+        interactiveReservedSessions: 0,
+        safeEmit: async () => {},
+        notifyRuntimeRecoveryExhausted: async () => {},
+        getConfigModel: () => MODEL,
+        crashRecovery,
+      });
+      dispatcher.streamingSessions.set(SESSION_NAME, streaming);
+      const runtimeSession: RuntimeSessionHandle = {
+        provider: providerId,
+        interrupt: async () => {
+          interruptCalls++;
+        },
+        events: (async function* () {
+          await readProviderTurn();
+          yield {
+            type: "tool.started",
+            toolUse: { id: "tool-long-whatsapp", name: "Bash", input: { cmd: "true" } },
+          } satisfies RuntimeEvent;
+
+          toolStatesWhenQueued.push(streaming.toolRunning);
+          await dispatcher.handlePromptImmediate(SESSION_NAME, {
+            prompt: "Slack while WhatsApp is busy",
+            source: slackSource,
+            context: {
+              channelId: "slack",
+              channelName: "Slack",
+              accountId: slackSource.accountId,
+              instanceId: slackSource.instanceId,
+              chatId: slackSource.chatId,
+              canonicalChatId: slackSource.canonicalChatId,
+              messageId: slackSource.sourceMessageId!,
+              senderId: "U123",
+              isGroup: false,
+              timestamp: Date.now(),
+            },
+            _agentId: AGENT_ID,
+            deliveryBarrier: "after_tool",
+            deliveryBarrierSource: "default",
+          });
+          await dispatcher.handlePromptImmediate(SESSION_NAME, {
+            prompt: "later WhatsApp direction",
+            source: laterWhatsappSource,
+            context: {
+              channelId: "whatsapp",
+              channelName: "WhatsApp",
+              accountId: laterWhatsappSource.accountId,
+              instanceId: laterWhatsappSource.instanceId,
+              chatId: laterWhatsappSource.chatId,
+              canonicalChatId: laterWhatsappSource.canonicalChatId,
+              messageId: laterWhatsappSource.sourceMessageId!,
+              senderId: "5511999999999",
+              isGroup: false,
+              timestamp: Date.now() + 1,
+            },
+            _agentId: AGENT_ID,
+            deliveryBarrier: "after_tool",
+            deliveryBarrierSource: "default",
+          });
+          yield {
+            type: "tool.completed",
+            toolUseId: "tool-long-whatsapp",
+            toolName: "Bash",
+            content: "ok",
+          } satisfies RuntimeEvent;
+          expect(interruptCalls).toBe(1);
+          expect(streaming.currentSource?.canonicalChatId).toBe(whatsappChat.id);
+          yield { type: "turn.interrupted" } satisfies RuntimeEvent;
+
+          await readProviderTurn();
+          yield { type: "assistant.message", text: "Slack response" } satisfies RuntimeEvent;
+          yield {
+            type: "turn.complete",
+            providerSessionId: "provider-after-slack",
+            usage: { inputTokens: 1, outputTokens: 1 },
+          } satisfies RuntimeEvent;
+
+          await readProviderTurn();
+          yield { type: "assistant.message", text: "later WhatsApp response" } satisfies RuntimeEvent;
+          yield {
+            type: "turn.complete",
+            providerSessionId: "provider-after-later-whatsapp",
+            usage: { inputTokens: 1, outputTokens: 1 },
+          } satisfies RuntimeEvent;
+
+          await readProviderTurn();
+          yield { type: "assistant.message", text: "resumed WhatsApp response" } satisfies RuntimeEvent;
+          yield {
+            type: "turn.complete",
+            providerSessionId: "provider-after-resume",
+            usage: { inputTokens: 1, outputTokens: 1 },
+          } satisfies RuntimeEvent;
+        })(),
+      };
+      streaming.queryHandle = runtimeSession;
+
+      const releaseAfterTool = dispatcher as unknown as {
+        releaseQueuedPromptsAfterTool(sessionName: string): Promise<void>;
+      };
+      let toolBarrierReleaseCalls = 0;
+      const responses: Array<{ response?: string; target?: RuntimeMessageTarget }> = [];
+      const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
+        if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
+          responses.push(data as (typeof responses)[number]);
+        }
+      });
+
+      try {
+        await runTraceLoop(streaming, runtimeSession, {
+          agent: makeAgent({ provider: providerId }),
+          streamingSessions: dispatcher.streamingSessions,
+          onToolBarrierReleased: (sessionName) => {
+            toolBarrierReleaseCalls++;
+            return releaseAfterTool.releaseQueuedPromptsAfterTool(sessionName);
+          },
+        });
+      } finally {
+        emitSpy.mockRestore();
+        streaming.done = true;
+        streaming.onTurnComplete?.();
+        await runtimeRequest.prompt.next();
+        await runtimeRequest.prompt.return?.(undefined);
+      }
+
+      expect(toolStatesWhenQueued).toEqual([true]);
+      expect(toolBarrierReleaseCalls).toBe(1);
+      expect(interruptCalls).toBe(1);
+      expect(
+        listSessionEventsForTest(SESSION_KEY).filter((event) => event.eventType === "dispatch.queued_busy"),
+      ).toHaveLength(2);
+      expect(providerTurns).toEqual([
+        {
+          prompt: "long WhatsApp turn",
+          sourceChatId: whatsappChat.id,
+          replyChatId: whatsappChat.id,
+        },
+        {
+          prompt:
+            "[session surface] This turn came from a Slack chat. A normal reply returns there.\n" +
+            "[knowledge] audience=none: ravi knowledge will refuse on this turn (exit 3).\n" +
+            "Slack while WhatsApp is busy",
+          sourceChatId: slackChat.id,
+          replyChatId: slackChat.id,
+        },
+        {
+          prompt:
+            "[session surface] This turn came from a WhatsApp chat. A normal reply returns there.\n" +
+            "[knowledge] audience=none: ravi knowledge will refuse on this turn (exit 3).\n" +
+            "later WhatsApp direction",
+          sourceChatId: whatsappChat.id,
+          replyChatId: whatsappChat.id,
+        },
+        {
+          prompt: expect.stringContaining("Resume the unfinished request"),
+          sourceChatId: whatsappChat.id,
+          replyChatId: whatsappChat.id,
+        },
+      ]);
+      expect(
+        responses.map((response) => ({
+          response: response.response,
+          targetChatId: response.target?.canonicalChatId,
+        })),
+      ).toEqual([
+        { response: "Slack response", targetChatId: slackChat.id },
+        { response: "later WhatsApp response", targetChatId: whatsappChat.id },
+        { response: "resumed WhatsApp response", targetChatId: whatsappChat.id },
+      ]);
+      expect(providerTurns[3]?.prompt).toContain("long WhatsApp turn");
+      expect(streaming.pendingMessages).toEqual([]);
+    });
+  }
 
   it("persists operator/HTTP sessions.send as raw user text and keeps inbound surface hints", async () => {
     const slackSource: RuntimeMessageTarget = {
@@ -5580,6 +5595,72 @@ describe("runtime session trace instrumentation", () => {
     expect(classifyUserFacingRuntimeLimitFailure(error)).toBeUndefined();
     expect(shouldSuppressUserFacingRuntimeLimitFailure({ error, scope }).suppressed).toBe(false);
     expect(shouldSuppressUserFacingRuntimeLimitFailure({ error, scope }).suppressed).toBe(false);
+  });
+
+  it("deduplicates provider transport failures inside their own 15 minute window", () => {
+    const now = new Date("2026-10-27T10:36:00-03:00").getTime();
+    const scope = "pi:slack:ravi-hil:C123";
+    const error = "Error: Connection error.";
+
+    const classified = classifyUserFacingRuntimeLimitFailure(error, now);
+    expect(classified?.kind).toBe("transport");
+    expect(classified?.expiresAt).toBe(now + 15 * 60_000);
+
+    expect(shouldSuppressUserFacingRuntimeLimitFailure({ error, scope, now }).suppressed).toBe(false);
+    expect(shouldSuppressUserFacingRuntimeLimitFailure({ error, scope, now: now + 60_000 }).suppressed).toBe(true);
+    expect(shouldSuppressUserFacingRuntimeLimitFailure({ error, scope, now: now + 16 * 60_000 }).suppressed).toBe(
+      false,
+    );
+    expect(
+      shouldSuppressUserFacingRuntimeLimitFailure({
+        error,
+        scope: "pi:slack:ravi-hil:C999",
+        now: now + 1_000,
+      }).suppressed,
+    ).toBe(false);
+  });
+
+  it("deduplicates transport failures that differ only in endpoint details", () => {
+    const now = new Date("2026-10-27T10:36:00-03:00").getTime();
+    const scope = "pi:slack:ravi-hil:C123";
+
+    expect(
+      shouldSuppressUserFacingRuntimeLimitFailure({
+        error: "Error: connect ECONNREFUSED 127.0.0.1:443",
+        scope,
+        now,
+      }).suppressed,
+    ).toBe(false);
+    // Same outage, different port/endpoint text: still one unavailable notice.
+    expect(
+      shouldSuppressUserFacingRuntimeLimitFailure({
+        error: "Error: connect ECONNREFUSED 127.0.0.1:8443",
+        scope,
+        now: now + 60_000,
+      }).suppressed,
+    ).toBe(true);
+  });
+
+  it("keeps the session-limit window separate from the transport window", () => {
+    const now = new Date("2026-10-27T10:36:00-03:00").getTime();
+    const scope = "pi:slack:ravi-hil:C123";
+
+    const limit = classifyUserFacingRuntimeLimitFailure("You've hit your session limit - resets 4:20pm", now);
+    const transport = classifyUserFacingRuntimeLimitFailure("Error: Connection error.", now);
+
+    expect(limit?.kind).toBe("session_limit");
+    expect(transport?.kind).toBe("transport");
+    expect(transport?.expiresAt ?? 0).toBeLessThan(limit?.expiresAt ?? 0);
+    expect(
+      shouldSuppressUserFacingRuntimeLimitFailure({ error: "Error: Connection error.", scope, now }).suppressed,
+    ).toBe(false);
+    expect(
+      shouldSuppressUserFacingRuntimeLimitFailure({
+        error: "You've hit your session limit - resets 4:20pm",
+        scope,
+        now: now + 1_000,
+      }).suppressed,
+    ).toBe(false);
   });
 
   it("times out active provider turns that stop emitting runtime events", async () => {

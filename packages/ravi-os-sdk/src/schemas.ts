@@ -64708,6 +64708,12 @@ export const CronAddReturnSchema = {
         "type"
       ],
       "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -64767,6 +64773,12 @@ export const CronDisableReturnSchema = {
         "type"
       ],
       "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -64826,6 +64838,12 @@ export const CronEnableReturnSchema = {
         "type"
       ],
       "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -65004,6 +65022,12 @@ export const CronRmReturnSchema = {
         "type"
       ],
       "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -65067,6 +65091,12 @@ export const CronRunReturnSchema = {
         "type"
       ],
       "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -65136,6 +65166,12 @@ export const CronSetReturnSchema = {
         "type"
       ],
       "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -103496,6 +103532,9 @@ export const SessionsThreadSendReturnSchema = {
             }
           ]
         },
+        "childSessionMissing": {
+          "type": "boolean"
+        },
         "childSessionName": {
           "anyOf": [
             {
@@ -103718,6 +103757,7 @@ export const SessionsThreadSendReturnSchema = {
         "source",
         "childSessionKey",
         "childSessionName",
+        "childSessionMissing",
         "slackThreadTs",
         "link",
         "runtime",
@@ -103792,6 +103832,9 @@ export const SessionsThreadsReturnSchema = {
                 "type": "null"
               }
             ]
+          },
+          "childSessionMissing": {
+            "type": "boolean"
           },
           "childSessionName": {
             "anyOf": [
@@ -104015,6 +104058,7 @@ export const SessionsThreadsReturnSchema = {
           "source",
           "childSessionKey",
           "childSessionName",
+          "childSessionMissing",
           "slackThreadTs",
           "link",
           "runtime",
