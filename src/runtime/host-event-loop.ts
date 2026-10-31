@@ -4160,7 +4160,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         if (sessionRecoveryFailure && sessionRecoveryHasStateToClear && currentTurnReplaySafety.replayable) {
           const recoveryPlan = resolveRuntimeSessionRecoveryPlan(sessionRecoveryFailure);
           await projectRuntimeEventToChannel(event);
-          const history = getRecentHistory(sessionName, 48);
+          const history = getRecentHistory(sessionName, 48).filter(
+            (message) => message.id > (session.historyResetAfterId ?? 0),
+          );
           // The restated request is this turn's own input, not the newest history
           // row, which may be another sender's queued message.
           const ownPendingIds = new Set(streaming.currentTurnPendingIds ?? []);
@@ -4176,7 +4178,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           const queuedSuccessors = streaming.pendingMessages
             .filter((message) => !message.pendingId || !ownPendingIds.has(message.pendingId))
             .map((message) => ({ ...message }));
-          const resetApplied = resetSession(session.sessionKey);
+          const resetApplied = resetSession(session.sessionKey, { preserveHistoryContext: true });
           session.sdkSessionId = undefined;
           session.providerSessionId = undefined;
           session.runtimeProvider = undefined;

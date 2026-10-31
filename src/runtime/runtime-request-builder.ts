@@ -1,4 +1,5 @@
 import { homedir } from "node:os";
+import { getRecentHistory } from "../db.js";
 import { DEFAULT_DELIVERY_BARRIER } from "../delivery-barriers.js";
 import { getSessionByName, type AgentConfig, type SessionEntry } from "../router/index.js";
 import { dbGetChat, dbGetSessionDefaultChatId, dbGetSetting } from "../router/router-db.js";
@@ -9,6 +10,7 @@ import {
   createSessionTraceTurnId,
   recordAdapterRequestTrace,
   recordTerminalTurnTrace,
+  recordRuntimeTraceEvent,
   summarizeRuntimeCapabilities,
   type RuntimeTraceAdapterRequestInput,
 } from "../session-trace/runtime-trace.js";
@@ -54,6 +56,10 @@ import {
 import { resolveRuntimeSessionContinuity } from "./runtime-session-continuity.js";
 import { isSkillAuthorizedForAgent } from "./skill-authorization.js";
 import { isStoredSkillVisibilityCompatible } from "./skill-visibility.js";
+import { buildRuntimeContextRecoveryPrompt } from "./context-window-recovery.js";
+import { resolvePersistedUserText } from "./session-surface-hint.js";
+import { validateRuntimeSessionState } from "./session-state.js";
+import type { RuntimeResumeDecision } from "./session-resolver.js";
 import { buildRuntimeSystemPrompt } from "./runtime-system-prompt.js";
 import {
   MODEL_BROKER_REQUIRED_SETTING,
@@ -122,6 +128,7 @@ export interface RuntimeStartRequestBuildOptions {
   storedRuntimeSessionParams: Record<string, unknown> | undefined;
   storedProviderSessionId?: string;
   canResumeStoredSession: boolean;
+  resumeDecision?: RuntimeResumeDecision;
   resolvedSource?: RuntimeMessageTarget;
   approvalSource?: RuntimeMessageTarget;
   streamingSession: RuntimeHostStreamingSession;
@@ -597,10 +604,18 @@ async function buildRuntimeStartRequestInternal(
     undefined,
     (skillId) => isSkillAuthorizedForAgent(agent.id, skillId, { capabilities: runtimeContext.capabilities }),
   );
-  const canResumeCredentialSession =
-    canResumeStoredSession &&
-    canResumeSkillSession &&
-    isRuntimeCredentialSessionCompatible(storedRuntimeSessionParams, credentialResolution.attemptBinding);
+  const credentialCompatible = isRuntimeCredentialSessionCompatible(
+    storedRuntimeSessionParams,
+    credentialResolution.attemptBinding,
+  );
+  const canResumeCredentialSession = canResumeStoredSession && canResumeSkillSession && credentialCompatible;
+  // The launcher already persisted this input. Exclude that row from the
+  // recovery snapshot; the generator delivers the current input unchanged.
+  const history = canResumeCredentialSession
+    ? []
+    : getRecentHistory(sessionName, 48).filter((message) => message.id > (session.historyResetAfterId ?? 0));
+  const lastMessage = history.at(-1);
+  if (lastMessage?.role === "user" && lastMessage.content === resolvePersistedUserText(prompt)) history.pop();
   const { forkFromProviderSessionId, resumeProviderSessionId } = resolveRuntimeSessionContinuity({
     dbSessionKey,
     runtimeProviderId,
@@ -609,6 +624,61 @@ async function buildRuntimeStartRequestInternal(
     storedProviderSessionId,
     canResumeStoredSession: canResumeCredentialSession,
     defaultRuntimeProviderId,
+    hasSessionHistory: history.length > 0 || session.historyResetAfterId !== undefined,
+    isParentSessionCompatible: (parent) =>
+      validateRuntimeSessionState({
+        capabilities: runtimeCapabilities,
+        storedProviderSessionId: parent.runtimeSessionDisplayId ?? parent.providerSessionId ?? parent.sdkSessionId,
+        storedRuntimeSessionParams: parent.runtimeSessionParams,
+        sessionCwd,
+      }).valid &&
+      isRuntimeCredentialSessionCompatible(parent.runtimeSessionParams, credentialResolution.attemptBinding) &&
+      isStoredSkillVisibilityCompatible(parent.runtimeSessionParams, allowedSkills, undefined, (skillId) =>
+        isSkillAuthorizedForAgent(agent.id, skillId, { capabilities: runtimeContext.capabilities }),
+      ),
+  });
+  const recovery =
+    !resumeProviderSessionId && history.length > 0
+      ? buildRuntimeContextRecoveryPrompt({
+          sessionName,
+          history,
+          recoveryKind: "cold_start",
+          latestUserRequest: "Use the current request after the recovered context below.",
+        })
+      : undefined;
+  let recoveryPending = Boolean(recovery);
+  recordRuntimeTraceEvent({
+    sessionKey: dbSessionKey,
+    sessionName,
+    agentId: agent.id,
+    runId,
+    provider: runtimeProviderId,
+    model,
+    eventType: "runtime.continuity",
+    eventGroup: "runtime",
+    status: "ready",
+    payloadJson: {
+      strategy: forkFromProviderSessionId
+        ? "parent_fork"
+        : resumeProviderSessionId
+          ? "resume"
+          : recovery
+            ? "durable_history"
+            : "fresh",
+      reason: !canResumeStoredSession
+        ? (options.resumeDecision?.reason ?? "provider_state_unavailable")
+        : !canResumeSkillSession
+          ? "skill_visibility_changed"
+          : !credentialCompatible
+            ? "credential_changed"
+            : "resuming",
+      canResumeStoredSession,
+      skillCompatible: canResumeSkillSession,
+      credentialCompatible,
+      historyMessages: recovery?.messageCount ?? 0,
+      historyChars: recovery?.chars ?? 0,
+      historyTruncated: recovery?.truncated ?? false,
+    },
   });
   const { specServer, hooks, remoteSpawn } = buildRuntimeHostAttachments({
     runtimeCapabilities,
@@ -1015,6 +1085,12 @@ async function buildRuntimeStartRequestInternal(
       streamingSession.currentRuntimeContextKey = runtimeEnv.RAVI_CONTEXT_KEY;
     },
     transformTurnPrompt: ({ combinedPrompt }) => {
+      // Only the first physical turn needs the transcript. Keep the original
+      // queued message/authority/delivery id intact, and trace the actual input.
+      if (recoveryPending && recovery) {
+        combinedPrompt = `${recovery.prompt}\n\n# Current Request\n${combinedPrompt}`;
+        recoveryPending = false;
+      }
       turnSignals = null;
       try {
         const rendered = renderSignalsForTurn({ sessionName, sessionKey: dbSessionKey });

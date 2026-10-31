@@ -44,3 +44,17 @@ ravi sessions info <session>
 - A missing-conversation error on an already-fresh Claude session surfaces normally instead of looping.
 - Credential failures still use credential retry logic when retryable.
 - Interrupted-tool recovery still stashes pending messages as before.
+
+## Cold Start Regression
+
+- Drive a real `turn.complete` through idle eviction, re-read SQLite, and build the next provider request. Compatible state resumes the same id; rejected skills/credentials recover the prior decision plus the current `pode implementar`.
+- Repeat for child threads. A rejected child MUST NOT resume the parent; missing state/provider changes recover only the child's history.
+- A second turn on the same live handle MUST NOT repeat recovery; the durable user message count MUST remain unchanged.
+- Explicit reset MUST suppress prior context without deleting durable history; provider-only recovery and later provider updates MUST preserve the reset boundary.
+- New parent forks MUST respect the same compatibility guard.
+- A piped `skills show --json` body headed `Sessions Manager` MUST record the canonical sessions skill, never a loaded skill named after that heading.
+
+```bash
+bun test --timeout 60000 src/runtime/session-trace.test.ts src/runtime/runtime-session-continuity.test.ts src/runtime/context-window-recovery.test.ts src/runtime/runtime-request-builder.test.ts src/runtime/runtime-request-builder.crash-recovery.test.ts src/runtime/session-resolver.test.ts src/router/sessions.test.ts src/runtime/skill-visibility.test.ts
+bun run typecheck
+```

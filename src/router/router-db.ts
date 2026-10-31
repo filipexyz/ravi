@@ -1578,6 +1578,7 @@ function getDb(): Database {
       runtime_provider TEXT,
       runtime_provider_override TEXT,
       runtime_session_json TEXT,
+      history_reset_after_id INTEGER,
       runtime_session_display_id TEXT,
       agent_id TEXT NOT NULL,
       agent_cwd TEXT NOT NULL,
@@ -3073,6 +3074,9 @@ function getDb(): Database {
   if (!sessionColumns.some((c) => c.name === "runtime_session_json")) {
     db.exec("ALTER TABLE sessions ADD COLUMN runtime_session_json TEXT");
     log.info("Added runtime_session_json column to sessions table");
+  }
+  if (!sessionColumns.some((c) => c.name === "history_reset_after_id")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN history_reset_after_id INTEGER");
   }
   if (!sessionColumns.some((c) => c.name === "runtime_session_display_id")) {
     db.exec("ALTER TABLE sessions ADD COLUMN runtime_session_display_id TEXT");
