@@ -463,11 +463,11 @@ describe("remote gateway exit taxonomy", () => {
           op: "demo echo",
           exitCode: 1,
           outcome: "failed",
-          error: { code: "TASK_PROFILE_NOT_FOUND", message: "private", retryable: false },
+          error: { code: "TASK_PROFILE_NOT_FOUND", message: "Profile lookup failed.", retryable: false },
         }),
       }),
     );
-    expect(error?.message).toBe("Remote command failed.");
+    expect(error?.message).toBe("Profile lookup failed.");
   });
 
   it("projects 400 validation issues into a usage error", () => {
