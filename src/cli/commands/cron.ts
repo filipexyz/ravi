@@ -37,6 +37,7 @@ import {
   type CronSchedule,
 } from "../../cron/index.js";
 import { DEFAULT_CRON_SHELL_TIMEOUT_MS } from "../../cron/shell-executor.js";
+import { cronOwnershipError, cronOwnershipStatus } from "../../cron/ownership.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 import { buildCronShowOutput, type CronRoutingResolution, type CronRoutingSource } from "../cron-show-output.js";
 import { resolveCronTarget, type CronTargetResolution } from "../../cron/target-resolver.js";
@@ -395,6 +396,7 @@ function serializeCronJob(job: CronJob) {
     ...job,
     ownerPrincipal: cronJobRunsAs(job),
     runsAsOperator: cronOwnerActsAsOperator(job.ownerPrincipal ?? null),
+    ownershipError: cronOwnershipError(job),
     effectiveAgentId: job.executionType === "agent" ? (job.agentId ?? getDefaultAgentId()) : undefined,
     ownerAgentId: job.executionType === "shell" ? job.agentId : undefined,
     scheduleDescription: describeSchedule(job.schedule),
@@ -521,16 +523,18 @@ export class CronCommands {
             ? " (scope: all agents)"
             : "";
       console.log(`\nScheduled Jobs${scopeHint}:\n`);
-      console.log("  ID        NAME                      ENABLED  SCHEDULE                 TARGET       NEXT RUN");
       console.log(
-        "  --------  ------------------------  -------  -----------------------  -----------  --------------------",
+        "  ID        NAME                      STATUS          SCHEDULE                 TARGET       NEXT RUN",
+      );
+      console.log(
+        "  --------  ------------------------  --------------  -----------------------  -----------  --------------------",
       );
 
       const resolverDeps = getTargetResolverDeps();
       for (const job of pageJobs) {
         const id = job.id.padEnd(8);
         const name = job.name.slice(0, 24).padEnd(24);
-        const enabled = (job.enabled ? "yes" : "no").padEnd(7);
+        const enabled = cronOwnershipStatus(job).padEnd(14);
         const schedule = describeSchedule(job.schedule).slice(0, 23).padEnd(23);
         const target = formatTargetStateCompact(resolveCronTarget(job, resolverDeps));
         const nextRun = job.nextRunAt
@@ -586,6 +590,9 @@ export class CronCommands {
       }
       const boundToOperator = job.ownerPrincipal?.startsWith("contact:") && cronOwnerActsAsOperator(job.ownerPrincipal);
       console.log(`  ${"Runs as:".padEnd(16)}${cronJobRunsAs(job)}${boundToOperator ? " (acts as the operator)" : ""}`);
+      if (cronOwnershipError(job)) {
+        console.log(`  Ownership:      ${cronOwnershipStatus(job)} (${cronOwnershipError(job)})`);
+      }
     }
     return payload;
   }
