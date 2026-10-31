@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { runWithContext } from "../cli/context.js";
+import { CRON_RUN_AUTHORITY_ENV } from "../cron/authority.js";
 import { spawnedAutomationEnv } from "../runtime/turn-origin.js";
 import { inRuntimeTurn, isUnattributedTurn, turnActorContactId, unattributedTurnRefusal } from "./turn-actor.js";
 
@@ -118,30 +119,25 @@ describe("shell crons and Bases", () => {
   const OWNER = { activeUserId: "user_luis", activeOrgId: "org_1", ownerName: "Luis" };
 
   it("acts for the contact who owns a shell cron, refuses an ownerless one and lets an operator-owned one act as the operator", () => {
-    const env = spawnedAutomationEnv("cron", "job_1");
-    const contactOwned = {
-      turn: { ...OWNER, getCronJobOwner: () => ({ found: true, ownerPrincipal: "contact:c_ana" }) },
-    };
-    expect(unattributedTurnRefusal(env, contactOwned)).toBeNull();
-    expect(turnActorContactId(env, contactOwned)).toBe("c_ana");
-    const ownerless = unattributedTurnRefusal(env, {
-      turn: { ...OWNER, getCronJobOwner: () => ({ found: true, ownerPrincipal: "unknown" }) },
+    const envFor = (ownerPrincipal: string) => ({
+      ...spawnedAutomationEnv("cron", "job_1"),
+      [CRON_RUN_AUTHORITY_ENV]: JSON.stringify({
+        jobId: "job_1",
+        ownerPrincipal,
+        ownerIsOperator: ownerPrincipal === "operator",
+      }),
     });
-    expect(ownerless?.reason).toEqual({
+    const deps = { turn: { ...OWNER, getContactStatus: () => "allowed" } };
+    expect(unattributedTurnRefusal(envFor("contact:c_ana"), deps)).toBeNull();
+    expect(turnActorContactId(envFor("contact:c_ana"), deps)).toBe("c_ana");
+    expect(unattributedTurnRefusal(envFor("unknown"), deps)?.reason).toEqual({
       kind: "routine_not_operator_owned",
       routine: "cron",
       jobId: "job_1",
       ownerPrincipal: "unknown",
     });
-    expect(
-      unattributedTurnRefusal(env, {
-        turn: { ...OWNER, getCronJobOwner: () => ({ found: true, ownerPrincipal: "operator" }) },
-      }),
-    ).toBeNull();
-    expect(
-      turnActorContactId(env, {
-        turn: { ...OWNER, getCronJobOwner: () => ({ found: true, ownerPrincipal: "operator" }) },
-      }),
-    ).toBeNull();
+    expect(unattributedTurnRefusal(envFor("operator"), deps)).toBeNull();
+    expect(turnActorContactId(envFor("operator"), deps)).toBeNull();
+    expect(unattributedTurnRefusal(spawnedAutomationEnv("cron", "job_1"), deps)).not.toBeNull();
   });
 });
