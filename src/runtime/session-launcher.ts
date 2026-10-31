@@ -411,6 +411,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       storedRuntimeSessionParams,
       storedProviderSessionId,
       canResumeStoredSession,
+      resumeDecision,
       resolvedSource,
       approvalSource,
       streamingSession,

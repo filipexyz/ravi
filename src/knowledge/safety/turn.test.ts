@@ -121,7 +121,11 @@ describe("classifyKnowledgeTurn", () => {
       message: "summarize",
       ownerPrincipal: "operator",
     });
-    const cron = { actorPrincipal: `automation:cron:${job.id}`, agentIdentityCompartment: `automation:cron:${job.id}` };
+    const cron = {
+      cronRunAuthority: { jobId: job.id, ownerPrincipal: "operator", ownerIsOperator: true },
+      actorPrincipal: `automation:cron:${job.id}`,
+      agentIdentityCompartment: `automation:cron:${job.id}`,
+    };
     const context = turnContext(cron, { sessionKey: `agent:main:cron:${job.id}`, sessionName: "main-cron" });
 
     const verdict = classify(context);

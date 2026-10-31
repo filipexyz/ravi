@@ -59,7 +59,8 @@ export function resolveCallerPath(path: string, mode: CallerPathMode = "read"): 
   return resolved;
 }
 
-function assertCallerFileAccess(path: string, mode: CallerPathMode): void {
+/** Authorize an exact filesystem path without trimming manifest filenames. */
+export function assertCallerFileAccess(path: string, mode: CallerPathMode): void {
   const ctx = getContext();
   const context = ctx?.context;
   if (!context) return;

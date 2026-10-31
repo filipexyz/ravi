@@ -348,3 +348,41 @@ it.skipIf(!existsSync("/bin/bash"))("agrees with Bash expansion on harmless prin
     expect(checkDangerousPatterns(command).safe).toBe(safe);
   }
 });
+
+describe("review reconciliation: Bash comment and pipeline boundaries", () => {
+  it("does not let a mid-word hash hide an executable or inline flag", () => {
+    expect(parseBashCommand("X=a#b bash -c id").executables).toEqual(["bash"]);
+    expect(parseBashCommand("X=a#b sudo bash -c id").executables).toEqual(["sudo", "bash"]);
+    expect(parseBashCommand("python3 -W ignore#x -c code").success).toBe(false);
+    expect(parseBashCommand("X=a#b sudo python3 -W ignore#x -c code").success).toBe(false);
+  });
+
+  it("preserves literal hashes, real comments and subsequent command boundaries", () => {
+    expect(parseBashCommand("curl http://h/#frag; pwd").executables).toEqual(["curl", "pwd"]);
+    expect(parseBashCommand("echo x # bash -c id\npwd").executables).toEqual(["echo", "pwd"]);
+    expect(parseBashCommand("echo x#y > notes.txt").executables).toEqual(["echo"]);
+    expect(findOutputRedirectTargets("echo x#y > .codex/config.toml")).toEqual([".codex/config.toml"]);
+    expect(findOutputRedirectTargets("echo x > file#fragment")).toEqual(["file#fragment"]);
+  });
+
+  for (const receiver of [
+    "python3 # comment",
+    "python3 2>/dev/null",
+    "python3 >/dev/null",
+    "python3 2>&1",
+    "python3 &>/dev/null",
+    "python3 >|/dev/null",
+    "X=a#b python3 2>/dev/null # comment",
+    "2>/dev/null python3",
+    "python3 0<&0",
+    "0<&0 python3",
+  ]) {
+    it(`refuses piped stdin despite comments/redirects: ${receiver}`, () => {
+      expect(checkDangerousPatterns(`printf code | ${receiver}`).safe).toBe(false);
+    });
+  }
+
+  it("still recognizes a piped interpreter file argument", () => {
+    expect(checkDangerousPatterns("cat input | python3 script.py 2>/dev/null # comment").safe).toBe(true);
+  });
+});

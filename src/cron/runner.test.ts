@@ -1,6 +1,13 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { resolveSession } from "../router/sessions.js";
+import { createContact, deleteContact, setContactStatus } from "../contacts.js";
+import { pickRuntimeTurnAuthorityEnvelope } from "../runtime/delivery-queue.js";
+import { CRON_RUN_AUTHORITY_ENV } from "./authority.js";
+import { accessActorFromTurn } from "../access/actor.js";
+import { buildRuntimeRequestContext } from "../runtime/runtime-request-context.js";
+import type { RuntimeLaunchPrompt } from "../runtime/message-types.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 
 afterAll(() => mock.restore());
@@ -10,6 +17,7 @@ const publishCalls: Array<{ sessionName: string; payload: Record<string, unknown
 const subscribedTopics: string[] = [];
 let publishError: Error | null = null;
 let beforePublishAck: ((sessionName: string) => Promise<void>) | null = null;
+let onPublish: (() => void) | null = null;
 
 mock.module("../nats.js", () => ({
   connectNats: mock(async () => {}),
@@ -38,6 +46,7 @@ mock.module("../omni/session-stream.js", () => ({
     if (publishError) throw publishError;
     publishCalls.push({ sessionName, payload });
     await beforePublishAck?.(sessionName);
+    onPublish?.();
   }),
 }));
 
@@ -57,6 +66,7 @@ beforeEach(async () => {
   subscribedTopics.length = 0;
   publishError = null;
   beforePublishAck = null;
+  onPublish = null;
 });
 
 afterEach(async () => {
@@ -88,6 +98,134 @@ function cronProvenance(jobId: string) {
 function runtimeEvent(sessionName: string, data: Record<string, unknown>) {
   return { topic: `ravi.session.${sessionName}.runtime`, data };
 }
+
+describe("CronRunner admission authority", () => {
+  function admit(index = 0, continuation = false) {
+    const dispatched = publishCalls[index]!;
+    const prompt = dispatched.payload as unknown as RuntimeLaunchPrompt;
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: resolveSession(dispatched.sessionName)!.sessionKey,
+      sessionName: dispatched.sessionName,
+      sessionCwd: stateDir!,
+      agent: { id: "main", cwd: stateDir! },
+      prompt: continuation ? { prompt: "continue", ...pickRuntimeTurnAuthorityEnvelope(prompt) } : prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution: {
+        options: {},
+        sources: { model: null, effort: null, thinking: null },
+        hasTaskRuntimeContext: false,
+      },
+    });
+    return () =>
+      accessActorFromTurn(
+        resolveConnectorTurn({
+          env: { RAVI_CONTEXT_KEY: runtimeContext.contextKey },
+          activeUserId: "operator-user",
+          activeOrgId: "test-org",
+        }),
+      );
+  }
+
+  for (const sessionTarget of ["main", "isolated"] as const) {
+    it(`does not elevate an admitted contact prompt when the operator takes ownership (${sessionTarget})`, async () => {
+      const contact = createContact({ name: "Cron author", phone: "5511900000101" });
+      const job = createAgentJob({ agentId: "main", sessionTarget, ownerPrincipal: `contact:${contact.id}` });
+      const runner = new CronRunner();
+      await runner.triggerJob(job.id);
+      const classify = admit();
+      expect(classify()).toMatchObject({ kind: "contact", contactId: contact.id });
+      dbUpdateCronJob(job.id, { ownerPrincipal: "operator", message: "new operator instructions" });
+      expect(classify()).toMatchObject({ kind: "contact", contactId: contact.id });
+      // A host continuation and delayed queue consumption keep the same owner.
+      expect(admit(0, true)()).toMatchObject({ kind: "contact", contactId: contact.id });
+      expect(admit()()).toMatchObject({ kind: "contact", contactId: contact.id });
+      await runner.triggerJob(job.id);
+      expect(admit(1)()).toMatchObject({ kind: "operator" });
+    });
+  }
+
+  it("keeps the operator on an admitted run after transfer to another contact", async () => {
+    const contact = createContact({ name: "New owner", phone: "5511900000102" });
+    const job = createAgentJob({ agentId: "main", ownerPrincipal: "operator" });
+    const runner = new CronRunner();
+    await runner.triggerJob(job.id);
+    const classify = admit();
+    dbUpdateCronJob(job.id, { ownerPrincipal: `contact:${contact.id}`, message: "contact instructions" });
+    expect(classify()).toMatchObject({ kind: "operator" });
+    await runner.triggerJob(job.id);
+    expect(admit(1)()).toMatchObject({ kind: "contact", contactId: contact.id });
+  });
+
+  for (const action of ["blocked", "removed"] as const) {
+    it(`refuses protected calls when the admitted owner is ${action}, even after transfer`, async () => {
+      const contact = createContact({ name: "Revoked owner", phone: "5511900000103" });
+      const job = createAgentJob({ agentId: "main", ownerPrincipal: `contact:${contact.id}` });
+      await new CronRunner().triggerJob(job.id);
+      const classify = admit();
+      expect(classify()).toMatchObject({ kind: "contact", contactId: contact.id });
+      dbUpdateCronJob(job.id, { ownerPrincipal: "operator" });
+      if (action === "blocked") setContactStatus(contact.id, "blocked");
+      else deleteContact(contact.id);
+      expect(classify()).toMatchObject({ kind: "refused" });
+    });
+  }
+
+  it("lets admitted work finish when disabled while preventing scheduled redispatch", async () => {
+    const job = createAgentJob({ agentId: "main", ownerPrincipal: "operator" });
+    const runner = new CronRunner();
+    await runner.triggerJob(job.id);
+    const classify = admit();
+    dbUpdateJobState(job.id, { lastRunAt: 123, lastStatus: "ok", nextRunAt: Date.now() - 1 });
+    dbUpdateCronJob(job.id, { enabled: false });
+    expect(classify()).toMatchObject({ kind: "operator" });
+    await runner.start();
+    try {
+      expect(publishCalls).toHaveLength(1);
+    } finally {
+      await runner.stop();
+    }
+  });
+
+  it("rechecks disable at admission after waiting for another due job", async () => {
+    const first = createAgentJob();
+    const second = createAgentJob();
+    dbUpdateJobState(first.id, { lastRunAt: 123, lastStatus: "ok", nextRunAt: Date.now() - 2000 });
+    dbUpdateJobState(second.id, { lastRunAt: 123, lastStatus: "ok", nextRunAt: Date.now() - 1000 });
+    onPublish = () => dbUpdateCronJob(second.id, { enabled: false });
+    const runner = new CronRunner();
+    await runner.start();
+    try {
+      await runner["runDueJobs"]();
+      expect(publishCalls.map((call) => call.payload._jobId)).toEqual([first.id]);
+      expect(dbGetCronJob(second.id)?.lastRunAt).toBe(123);
+    } finally {
+      await runner.stop();
+    }
+  });
+
+  it("keeps a one-shot's admitted authority after automatic job deletion", async () => {
+    const job = createAgentJob({ agentId: "main", ownerPrincipal: "operator", deleteAfterRun: true });
+    await new CronRunner().triggerJob(job.id);
+    expect(dbGetCronJob(job.id)).toBeNull();
+    expect(admit()()).toMatchObject({ kind: "operator" });
+  });
+
+  for (const snapshot of [
+    undefined,
+    null,
+    {},
+    { jobId: "different-job", ownerPrincipal: "operator", ownerIsOperator: true },
+    { ownerPrincipal: "operator", ownerIsOperator: "true" },
+  ]) {
+    it(`refuses invalid queued admission authority: ${JSON.stringify(snapshot)}`, async () => {
+      const job = createAgentJob({ agentId: "main", ownerPrincipal: "operator" });
+      await new CronRunner().triggerJob(job.id);
+      publishCalls[0]!.payload._cronAuthority = snapshot;
+      expect(admit()()).toMatchObject({ kind: "refused" });
+    });
+  }
+});
 
 describe("CronRunner agent job outcome tracking", () => {
   it("caps distant timers and re-arms without dispatching a job before its due time", async () => {
@@ -409,7 +547,10 @@ describe("CronRunner shell jobs and personal connectors", () => {
     const out = join(stateDir!, `env-${Math.random().toString(36).slice(2, 8)}.txt`);
     const envFile = join(stateDir!, "job.env");
     // The env file cannot rename the automation the command acts for.
-    writeFileSync(envFile, "RAVI_AUTOMATION_PRINCIPAL=automation:cron:someone-else\n");
+    writeFileSync(
+      envFile,
+      `RAVI_AUTOMATION_PRINCIPAL=automation:cron:someone-else\n${CRON_RUN_AUTHORITY_ENV}=invalid\n`,
+    );
     const job = dbCreateCronJob({
       name: `shell-env-${Math.random().toString(36).slice(2, 8)}`,
       schedule: { type: "every", every: 60_000 },
@@ -428,6 +569,8 @@ describe("CronRunner shell jobs and personal connectors", () => {
   it("runs an operator's command as the job's routine, never as the operator's terminal", async () => {
     const operatorJob = await runShellJobEnv("operator");
     expect(operatorJob.env.RAVI_AUTOMATION_PRINCIPAL).toBe(`automation:cron:${operatorJob.jobId}`);
+    // The spawned process retains admission authority after a live transfer.
+    dbUpdateCronJob(operatorJob.jobId, { ownerPrincipal: "unknown" });
     const allowed = resolveConnectorTurn({ ...owner, env: operatorJob.env });
     expect(allowed.ok).toBe(true);
     if (allowed.ok) {
@@ -571,6 +714,7 @@ describe("CronRunner shell jobs and personal connectors", () => {
     try {
       expect(dbGetCronJob(job.id)?.enabled).toBe(false);
       publishError = null;
+      onPublish = null;
       runner.refreshTimers();
       expect(publishCalls).toHaveLength(0);
       expect(dbGetCronJob(job.id)?.lastRunAt).toBeUndefined();

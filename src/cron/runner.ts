@@ -21,6 +21,8 @@ import {
 } from "../router/index.js";
 import { getAgent } from "../router/config.js";
 import { spawnedAutomationEnv } from "../runtime/turn-origin.js";
+import { cronOwnerActsAsOperator } from "../link/connector-turn.js";
+import { CRON_RUN_AUTHORITY_ENV, type CronRunAuthority } from "./authority.js";
 import { cronOwnershipError } from "./ownership.js";
 import {
   dbGetDueJobs,
@@ -48,6 +50,15 @@ import { notifyCronFailure } from "./failure-notification.js";
 
 const log = logger.child("cron:runner");
 const MAX_NOTIFY_OUTPUT_CHARS = 4000;
+
+function captureRunAuthority(job: CronJob): CronRunAuthority {
+  return {
+    jobId: job.id,
+    ownerPrincipal: job.ownerPrincipal ?? "operator",
+    ownerIsOperator: cronOwnerActsAsOperator(job.ownerPrincipal ?? null),
+    ...(job.creatorChat ? { creatorChat: job.creatorChat } : {}),
+  };
+}
 
 /** Agent job dispatch whose turn has not reached a terminal runtime event yet. */
 interface PendingCronTurn {
@@ -172,7 +183,7 @@ export class CronRunner {
 
       for (const job of dueJobs) {
         if (!this.running) break;
-        await this.executeJob(job);
+        await this.executeJob(job, true);
       }
     } finally {
       this.processing = false;
@@ -190,12 +201,13 @@ export class CronRunner {
    * turn that fails (e.g. provider rejects the model) surfaces as an error
    * instead of a healthy run.
    */
-  private async executeJob(job: CronJob): Promise<void> {
+  private async executeJob(job: CronJob, scheduled = false): Promise<void> {
     // Recheck immediately before execution (manual runs and ownership changes
     // since the timer was armed follow the same rule).
     const current = dbGetCronJob(job.id);
-    if (!current || !this.reconcileOwnership(current)) return;
+    if (!current || (scheduled && !current.enabled) || !this.reconcileOwnership(current)) return;
     job = current;
+    const authority = captureRunAuthority(job);
     const startTime = Date.now();
     log.info("Executing job", {
       jobId: job.id,
@@ -205,15 +217,15 @@ export class CronRunner {
     });
 
     if (job.executionType === "shell") {
-      await this.executeShellJob(job, startTime);
+      await this.executeShellJob(job, startTime, authority);
       return;
     }
 
     try {
       const sessionName =
         job.sessionTarget === "main"
-          ? await this.executeMainJob(job, startTime)
-          : await this.executeIsolatedJob(job, startTime);
+          ? await this.executeMainJob(job, startTime, authority)
+          : await this.executeIsolatedJob(job, startTime, authority);
 
       log.info("Job dispatched", { jobId: job.id, jobName: job.name, sessionName });
 
@@ -330,7 +342,12 @@ export class CronRunner {
     return diskHint ? `${base} [disk-pressure] ${diskHint}` : base;
   }
 
-  private async notifyShellError(job: CronJob, result: ShellCronRunResult, errorMessage: string): Promise<void> {
+  private async notifyShellError(
+    job: CronJob,
+    result: ShellCronRunResult,
+    errorMessage: string,
+    authority: CronRunAuthority,
+  ): Promise<void> {
     if (!job.onError) return;
     const prefix = "notify-session:";
     if (!job.onError.startsWith(prefix)) {
@@ -371,11 +388,12 @@ export class CronRunner {
       deliveryBarrierSource: "default",
       _cron: true,
       _jobId: job.id,
+      _cronAuthority: authority,
       _cronOnError: true,
     });
   }
 
-  private async executeShellJob(job: CronJob, startTime: number): Promise<void> {
+  private async executeShellJob(job: CronJob, startTime: number, authority: CronRunAuthority): Promise<void> {
     try {
       if (!job.shellCommand?.trim()) {
         throw new Error("Shell cron job is missing shellCommand");
@@ -385,7 +403,7 @@ export class CronRunner {
         envFile: job.shellEnvFile,
         // Wins over the env file: the command acts for this job (and its
         // owner), never as the operator's terminal.
-        env: spawnedAutomationEnv("cron", job.id),
+        env: { ...spawnedAutomationEnv("cron", job.id), [CRON_RUN_AUTHORITY_ENV]: JSON.stringify(authority) },
       });
 
       if (result.stdout.trim()) {
@@ -410,7 +428,7 @@ export class CronRunner {
 
       if (!ok && errorMessage) {
         try {
-          await this.notifyShellError(job, result, errorMessage);
+          await this.notifyShellError(job, result, errorMessage, authority);
         } catch (notifyError) {
           log.error("Failed to notify session about cron shell error", {
             jobId: job.id,
@@ -460,6 +478,7 @@ export class CronRunner {
               timedOut: false,
             },
             errorMessage,
+            authority,
           );
         } catch (notifyError) {
           log.error("Failed to notify session about cron shell exception", {
@@ -489,6 +508,7 @@ export class CronRunner {
         deliveryBarrierSource: "default",
         _cron: true,
         _jobId: job.id,
+        _cronAuthority: captureRunAuthority(job),
         _cronOnError: true,
       }).catch((error) => {
         log.error("Failed to publish cron ownership notice; job remains disabled", {
@@ -548,7 +568,7 @@ export class CronRunner {
    * If replySession is set, uses that session instead of agent main.
    * Returns the session name the prompt was published to.
    */
-  private async executeMainJob(job: CronJob, startTime: number): Promise<string> {
+  private async executeMainJob(job: CronJob, startTime: number, authority: CronRunAuthority): Promise<string> {
     const agentId = job.agentId ?? getDefaultAgentId();
 
     let sessionName: string;
@@ -590,6 +610,7 @@ export class CronRunner {
       deliveryBarrierSource: "default",
       _cron: true,
       _jobId: job.id,
+      _cronAuthority: authority,
     });
     return sessionName;
   }
@@ -598,7 +619,7 @@ export class CronRunner {
    * Execute a job in an isolated session.
    * Returns the session name the prompt was published to.
    */
-  private async executeIsolatedJob(job: CronJob, startTime: number): Promise<string> {
+  private async executeIsolatedJob(job: CronJob, startTime: number, authority: CronRunAuthority): Promise<string> {
     const agentId = job.agentId ?? getDefaultAgentId();
     const agent = getAgent(agentId);
     const agentCwd = agent ? expandHome(agent.cwd) : `/tmp/ravi-${agentId}`;
@@ -649,6 +670,7 @@ export class CronRunner {
       deliveryBarrierSource: "default",
       _cron: true,
       _jobId: job.id,
+      _cronAuthority: authority,
     });
     return sessionName;
   }
