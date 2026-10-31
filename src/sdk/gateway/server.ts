@@ -15,6 +15,7 @@ import { getRegistry, type RegistrySnapshot } from "../../cli/registry-snapshot.
 import { emitJson } from "../openapi/emit.js";
 import { buildRouteTable, buildMetaPayload, type RouteTable, API_PREFIX } from "./route-table.js";
 import { resolveAuth, type AuthFailureReason, type GatewayAuthConfig } from "./auth.js";
+import { currentConsoleInvocation } from "./console-context.js";
 import { CALLER_CWD_HEADER, parseCallerCwd } from "../../cli/caller-cwd.js";
 import { dispatch } from "./dispatcher.js";
 import { errorResponse, json, methodNotAllowed, notFound, unauthorized } from "./errors.js";
@@ -203,6 +204,12 @@ async function processGatewayRequest(request: Request, url: URL, ctx: GatewayHan
     if (!resolved.authenticated) {
       return unauthorized(authFailureMessage(resolved.reason));
     }
+  }
+
+  if (cmd.access?.consoleOnly && !currentConsoleInvocation()) {
+    return errorResponse(403, "ConsoleAuthorityRequired", {
+      message: "This command requires signed authority on the dedicated Console listener.",
+    });
   }
 
   const contentLength = Number(request.headers.get("content-length") ?? "0");

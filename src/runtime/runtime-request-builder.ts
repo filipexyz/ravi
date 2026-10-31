@@ -1088,6 +1088,7 @@ async function buildRuntimeStartRequestInternal(
       }
       turnRuntimeContextActivated = true;
       streamingSession.currentRuntimeContextKey = runtimeEnv.RAVI_CONTEXT_KEY;
+      streamingSession.currentBridgeTurnId = boundTurnPrompt._bridgeTurnId;
     },
     transformTurnPrompt: ({ combinedPrompt }) => {
       // Only the first physical turn needs the transcript. Keep the original

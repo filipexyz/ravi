@@ -140,6 +140,28 @@ describe("runtime context registry", () => {
     expect(resolveRuntimeContext(otherSession.contextKey, { touch: false })).not.toBeNull();
   });
 
+  it("does not let a child inject a Console bridge binding", () => {
+    const parent = createRuntimeContext({ kind: "turn-runtime", agentId: TEST_AGENT_ID, capabilities: [] });
+    const child = issueRuntimeContext({
+      parent,
+      cliName: "test",
+      capabilities: [],
+      metadata: { bridgeTurnId: "forged", bridgeConversationId: "forged" },
+    });
+    expect(child.metadata?.bridgeTurnId).toBeUndefined();
+    expect(child.metadata?.bridgeConversationId).toBeUndefined();
+  });
+  it("local agent permission edits do not revoke Console-managed authority", () => {
+    const managed = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: TEST_AGENT_ID,
+      capabilities: [],
+      metadata: { bridgeTurnId: "test-binding" },
+    });
+    revokeLiveRuntimeContextsForAgent(TEST_AGENT_ID);
+    expect(dbGetContext(managed.contextId)).not.toBeNull();
+    expect(dbGetContext(managed.contextId)?.revokedAt).toBeUndefined();
+  });
   it("revokes every live authority snapshot when agent permissions change", () => {
     const agentRuntime = createRuntimeContext({
       kind: "agent-runtime",

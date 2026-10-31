@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { authorizeBridgeAction } from "../bridge/native.js";
 import { nats as runtimeNats } from "../nats.js";
 import { isChatOnlyAgent, isToolOrExecCapability } from "../permissions/agent-default-capabilities-provider.js";
 import { canWithCapabilityContext } from "../permissions/provider-runtime.js";
@@ -521,6 +522,8 @@ export async function authorizeRuntimeContext(opts: ContextAuthorizationOptions)
     return denyRuntimeContext(opts, reason, "runtime_context_not_live");
   }
 
+  if (context.metadata?.bridgeTurnId !== undefined) return authorizeBridgeAction(opts);
+
   if (isChatOnlyAgent(context.agentId) && isToolOrExecCapability({ permission, objectType })) {
     const reason = `Permission denied: agent:${context.agentId ?? "unknown"} is chat-only and cannot use ${permission} ${objectType}:${objectId}`;
     return denyRuntimeContext(opts, reason, "runtime_chat_only_ceiling");
@@ -731,6 +734,7 @@ function denyRuntimeContext(
   blockType: string,
 ): ContextAuthorizationResult {
   const { context, permission, objectType, objectId } = opts;
+
   const provenance = buildAuditContextProvenance({ context });
   recordAndEmitPermissionDenial({
     subjectType: "agent",

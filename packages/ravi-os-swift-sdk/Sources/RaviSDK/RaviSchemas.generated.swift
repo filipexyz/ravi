@@ -56896,6 +56896,52 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ContextBridgeToolHookInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "payload": {
+        "description": "Hook input",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let ContextBridgeToolHookReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "hookSpecificOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "hookEventName": {
+            "const": "PreToolUse",
+            "type": "string"
+          },
+          "permissionDecision": {
+            "enum": [
+              "deny"
+            ],
+            "type": "string"
+          },
+          "permissionDecisionReason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "hookEventName",
+          "permissionDecision",
+          "permissionDecisionReason"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
   public static let ContextCapabilitiesInputSchema = #"""
   {
     "additionalProperties": false,
@@ -101630,6 +101676,1544 @@ public enum RaviSchemas {
       "parentSession",
       "childSession",
       "slack"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsAgentsInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "createdAt": {
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991,
+        "type": "integer"
+      },
+      "projectId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "requestId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "createdAt",
+      "projectId",
+      "requestId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsAgentsReturnSchema = #"""
+  {
+    "items": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "type": "array"
+  }
+  """#
+
+  public static let SessionsConversationsCancelInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "conversationId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "createdAt": {
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991,
+        "type": "integer"
+      },
+      "projectId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "requestId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "turnId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "conversationId",
+      "createdAt",
+      "projectId",
+      "requestId",
+      "turnId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsCancelReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "cancelRequested": {
+        "type": "boolean"
+      },
+      "conversationId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "status": {
+        "enum": [
+          "queued",
+          "running",
+          "awaiting_approval",
+          "completed",
+          "failed",
+          "cancelled",
+          "authorization_expired",
+          "interrupted_unknown"
+        ],
+        "type": "string"
+      },
+      "turnId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "conversationId",
+      "turnId",
+      "cancelRequested",
+      "status"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsCreateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agentId": {
+        "pattern": "^[a-zA-Z0-9_-]{1,80}$",
+        "type": "string"
+      },
+      "createdAt": {
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991,
+        "type": "integer"
+      },
+      "projectId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "requestId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "agentId",
+      "createdAt",
+      "projectId",
+      "requestId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsCreateReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "conversation": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "version": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "title",
+          "version",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "conversationId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "conversationId",
+      "conversation"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsDecideInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "actionDigest": {
+        "maxLength": 64,
+        "minLength": 64,
+        "type": "string"
+      },
+      "approvalId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "conversationId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "createdAt": {
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991,
+        "type": "integer"
+      },
+      "decision": {
+        "enum": [
+          "approve",
+          "reject"
+        ],
+        "type": "string"
+      },
+      "expectedVersion": {
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991,
+        "type": "integer"
+      },
+      "projectId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "requestId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "actionDigest",
+      "approvalId",
+      "conversationId",
+      "createdAt",
+      "decision",
+      "expectedVersion",
+      "projectId",
+      "requestId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsDecideReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "approvalId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "conversationId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "state": {
+        "enum": [
+          "approved",
+          "rejected"
+        ],
+        "type": "string"
+      },
+      "version": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "conversationId",
+      "approvalId",
+      "state",
+      "version"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsEventsInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "conversationId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "createdAt": {
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991,
+        "type": "integer"
+      },
+      "cursor": {
+        "anyOf": [
+          {
+            "maxLength": 1500,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "projectId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "requestId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "conversationId",
+      "createdAt",
+      "cursor",
+      "projectId",
+      "requestId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsEventsReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "cursor": {
+        "type": "string"
+      },
+      "events": {
+        "items": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "createdAt": {
+                  "type": "number"
+                },
+                "data": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "createdAt": {
+                      "type": "number"
+                    },
+                    "id": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    },
+                    "role": {
+                      "enum": [
+                        "user",
+                        "assistant"
+                      ],
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "turnId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "role",
+                    "text",
+                    "turnId",
+                    "createdAt"
+                  ],
+                  "type": "object"
+                },
+                "sequence": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "type": {
+                  "const": "message.accepted",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "sequence",
+                "createdAt",
+                "type",
+                "data"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "createdAt": {
+                  "type": "number"
+                },
+                "data": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "createdAt": {
+                      "type": "number"
+                    },
+                    "id": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    },
+                    "role": {
+                      "enum": [
+                        "user",
+                        "assistant"
+                      ],
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "turnId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "role",
+                    "text",
+                    "turnId",
+                    "createdAt"
+                  ],
+                  "type": "object"
+                },
+                "sequence": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "type": {
+                  "const": "message.finalized",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "sequence",
+                "createdAt",
+                "type",
+                "data"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "createdAt": {
+                  "type": "number"
+                },
+                "data": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "cancelRequested": {
+                      "type": "boolean"
+                    },
+                    "id": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    },
+                    "status": {
+                      "enum": [
+                        "queued",
+                        "running",
+                        "awaiting_approval",
+                        "completed",
+                        "failed",
+                        "cancelled",
+                        "authorization_expired",
+                        "interrupted_unknown"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "status",
+                    "cancelRequested"
+                  ],
+                  "type": "object"
+                },
+                "sequence": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "type": {
+                  "const": "turn.state",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "sequence",
+                "createdAt",
+                "type",
+                "data"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "createdAt": {
+                  "type": "number"
+                },
+                "data": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "turnId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "turnId",
+                    "status"
+                  ],
+                  "type": "object"
+                },
+                "sequence": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "type": {
+                  "const": "turn.activity",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "sequence",
+                "createdAt",
+                "type",
+                "data"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "createdAt": {
+                  "type": "number"
+                },
+                "data": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "turnId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "turnId"
+                  ],
+                  "type": "object"
+                },
+                "sequence": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "type": {
+                  "const": "cancel.requested",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "sequence",
+                "createdAt",
+                "type",
+                "data"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "createdAt": {
+                  "type": "number"
+                },
+                "data": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "actionDigest": {
+                      "type": "string"
+                    },
+                    "capability": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "objectId": {
+                          "type": "string"
+                        },
+                        "objectType": {
+                          "type": "string"
+                        },
+                        "permission": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "permission",
+                        "objectType",
+                        "objectId"
+                      ],
+                      "type": "object"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "number"
+                    },
+                    "id": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    },
+                    "state": {
+                      "enum": [
+                        "pending",
+                        "approved",
+                        "rejected",
+                        "expired",
+                        "invalidated"
+                      ],
+                      "type": "string"
+                    },
+                    "turnId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "turnId",
+                    "capability",
+                    "description",
+                    "actionDigest",
+                    "version",
+                    "expiresAt",
+                    "state"
+                  ],
+                  "type": "object"
+                },
+                "sequence": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "type": {
+                  "const": "approval.opened",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "sequence",
+                "createdAt",
+                "type",
+                "data"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "createdAt": {
+                  "type": "number"
+                },
+                "data": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    },
+                    "state": {
+                      "enum": [
+                        "approved",
+                        "rejected",
+                        "expired",
+                        "invalidated"
+                      ],
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "state"
+                  ],
+                  "type": "object"
+                },
+                "sequence": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "type": {
+                  "const": "approval.state",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "sequence",
+                "createdAt",
+                "type",
+                "data"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "events",
+      "cursor"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsHistoryInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "before": {
+        "anyOf": [
+          {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "conversationId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "createdAt": {
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991,
+        "type": "integer"
+      },
+      "projectId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "requestId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "before",
+      "conversationId",
+      "createdAt",
+      "projectId",
+      "requestId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsHistoryReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "hasOlder": {
+        "type": "boolean"
+      },
+      "messages": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "createdAt": {
+              "type": "number"
+            },
+            "id": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "role": {
+              "enum": [
+                "user",
+                "assistant"
+              ],
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "turnId": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "role",
+            "text",
+            "turnId",
+            "createdAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "messages",
+      "hasOlder"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "createdAt": {
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991,
+        "type": "integer"
+      },
+      "limit": {
+        "description": "Page size (default 100, max 100)",
+        "maximum": 100,
+        "minimum": 1,
+        "type": "integer"
+      },
+      "offset": {
+        "description": "Skip authorized conversations",
+        "maximum": 9007199254740991,
+        "minimum": 0,
+        "type": "integer"
+      },
+      "projectId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "requestId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "createdAt",
+      "projectId",
+      "requestId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsListReturnSchema = #"""
+  {
+    "items": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "agentId",
+        "title",
+        "version",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "type": "array"
+  }
+  """#
+
+  public static let SessionsConversationsOpenInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "conversationId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "createdAt": {
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991,
+        "type": "integer"
+      },
+      "projectId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "requestId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "conversationId",
+      "createdAt",
+      "projectId",
+      "requestId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsOpenReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "approvals": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "actionDigest": {
+              "type": "string"
+            },
+            "capability": {
+              "additionalProperties": false,
+              "properties": {
+                "objectId": {
+                  "type": "string"
+                },
+                "objectType": {
+                  "type": "string"
+                },
+                "permission": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "permission",
+                "objectType",
+                "objectId"
+              ],
+              "type": "object"
+            },
+            "description": {
+              "type": "string"
+            },
+            "expiresAt": {
+              "type": "number"
+            },
+            "id": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "state": {
+              "enum": [
+                "pending",
+                "approved",
+                "rejected",
+                "expired",
+                "invalidated"
+              ],
+              "type": "string"
+            },
+            "turnId": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "version": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "turnId",
+            "capability",
+            "description",
+            "actionDigest",
+            "version",
+            "expiresAt",
+            "state"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "conversation": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "version": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "title",
+          "version",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "cursor": {
+        "type": "string"
+      },
+      "hasOlder": {
+        "type": "boolean"
+      },
+      "messages": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "createdAt": {
+              "type": "number"
+            },
+            "id": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "role": {
+              "enum": [
+                "user",
+                "assistant"
+              ],
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "turnId": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "role",
+            "text",
+            "turnId",
+            "createdAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "turn": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "cancelRequested": {
+                "type": "boolean"
+              },
+              "id": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "queued",
+                  "running",
+                  "awaiting_approval",
+                  "completed",
+                  "failed",
+                  "cancelled",
+                  "authorization_expired",
+                  "interrupted_unknown"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "status",
+              "cancelRequested"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "conversation",
+      "messages",
+      "hasOlder",
+      "cursor",
+      "turn",
+      "approvals"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsReceiptInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "createdAt": {
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991,
+        "type": "integer"
+      },
+      "projectId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "requestId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "targetRequestId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "createdAt",
+      "projectId",
+      "requestId",
+      "targetRequestId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsReceiptReturnSchema = #"""
+  {
+    "anyOf": [
+      {
+        "additionalProperties": false,
+        "properties": {
+          "conversation": {
+            "additionalProperties": false,
+            "properties": {
+              "agentId": {
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              },
+              "version": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id",
+              "agentId",
+              "title",
+              "version",
+              "updatedAt"
+            ],
+            "type": "object"
+          },
+          "conversationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversationId",
+          "conversation"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "accepted": {
+            "const": true,
+            "type": "boolean"
+          },
+          "conversationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "messageId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "turnId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "accepted",
+          "conversationId",
+          "messageId",
+          "turnId",
+          "version"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "cancelRequested": {
+            "type": "boolean"
+          },
+          "conversationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "awaiting_approval",
+              "completed",
+              "failed",
+              "cancelled",
+              "authorization_expired",
+              "interrupted_unknown"
+            ],
+            "type": "string"
+          },
+          "turnId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversationId",
+          "turnId",
+          "cancelRequested",
+          "status"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "approvalId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "conversationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "approved",
+              "rejected"
+            ],
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "conversationId",
+          "approvalId",
+          "state",
+          "version"
+        ],
+        "type": "object"
+      }
+    ]
+  }
+  """#
+
+  public static let SessionsConversationsRenewInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "conversationId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "createdAt": {
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991,
+        "type": "integer"
+      },
+      "projectId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "requestId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "conversationId",
+      "createdAt",
+      "projectId",
+      "requestId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsRenewReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "conversationId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "renewed": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "renewed",
+      "conversationId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsSendInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "conversationId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "createdAt": {
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991,
+        "type": "integer"
+      },
+      "expectedVersion": {
+        "maximum": 9007199254740991,
+        "minimum": 0,
+        "type": "integer"
+      },
+      "projectId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "requestId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "text": {
+        "maxLength": 16384,
+        "minLength": 1,
+        "type": "string"
+      }
+    },
+    "required": [
+      "conversationId",
+      "createdAt",
+      "expectedVersion",
+      "projectId",
+      "requestId",
+      "text"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsSendReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "accepted": {
+        "const": true,
+        "type": "boolean"
+      },
+      "conversationId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "messageId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "turnId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "version": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "accepted",
+      "conversationId",
+      "messageId",
+      "turnId",
+      "version"
     ],
     "type": "object"
   }
