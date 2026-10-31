@@ -1,4 +1,5 @@
-import { Database, type SQLQueryBindings } from "bun:sqlite";
+import { assertDatabaseTargetAllowed, openStateDatabase } from "./db/production-boundary.js";
+import { type Database, type SQLQueryBindings } from "bun:sqlite";
 import { join } from "node:path";
 import { mkdirSync } from "node:fs";
 import { getRaviStateDir } from "./utils/paths.js";
@@ -17,6 +18,7 @@ export function getChatDbPath(env: NodeJS.ProcessEnv = process.env): string {
 
 function getDb(): Database {
   const nextDbPath = resolveDbPath();
+  assertDatabaseTargetAllowed(nextDbPath);
   if (db !== null && dbPath === nextDbPath) {
     return db;
   }
@@ -26,7 +28,7 @@ function getDb(): Database {
 
   mkdirSync(getRaviStateDir(), { recursive: true });
 
-  db = new Database(nextDbPath);
+  db = openStateDatabase(nextDbPath);
   dbPath = nextDbPath;
 
   // WAL mode for concurrent read/write access (CLI + daemon)

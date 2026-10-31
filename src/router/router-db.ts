@@ -1,3 +1,4 @@
+import { assertDatabaseTargetAllowed, openStateDatabase } from "../db/production-boundary.js";
 import { migrateDecisions } from "../decisions/schema.js";
 import { ensureSessionGoalStatusSchema } from "../runtime/session-goal-schema.js";
 /**
@@ -1376,6 +1377,7 @@ function dropPreviewLibraryRequestsTable(db: Database): void {
 
 function getDb(): Database {
   const nextDbPath = resolveDbPath();
+  assertDatabaseTargetAllowed(nextDbPath);
   if (routerDbState.db !== null && routerDbState.dbPath === nextDbPath) {
     return routerDbState.db;
   }
@@ -1399,7 +1401,7 @@ function getDb(): Database {
     }
   }
 
-  const db = new Database(nextDbPath);
+  const db = openStateDatabase(nextDbPath);
   instrumentSlowQueries(db, nextDbPath);
   routerDbState.db = db;
   routerDbState.dbPath = nextDbPath;

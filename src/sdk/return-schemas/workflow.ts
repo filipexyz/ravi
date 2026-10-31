@@ -1,7 +1,8 @@
+import { assertDatabaseTargetAllowed, openStateDatabase } from "../../db/production-boundary.js";
 import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { Database, type SQLQueryBindings } from "bun:sqlite";
+import { type Database, type SQLQueryBindings } from "bun:sqlite";
 import type { CommandRegistryEntry, RegistrySnapshot } from "../../cli/registry-snapshot.js";
 import { getRegistry } from "../../cli/registry-snapshot.js";
 import { getRaviStateDir } from "../../utils/paths.js";
@@ -768,8 +769,9 @@ function resolveDbPath(options: ReturnSchemaWorkflowOptions): string {
 }
 
 function openDb(dbPath: string): Database {
+  assertDatabaseTargetAllowed(dbPath);
   mkdirSync(join(dbPath, ".."), { recursive: true });
-  const db = new Database(dbPath);
+  const db = openStateDatabase(dbPath);
   db.exec("PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL;");
   return db;
 }

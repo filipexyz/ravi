@@ -1,4 +1,5 @@
-import { Database, type SQLQueryBindings } from "bun:sqlite";
+import { assertDatabaseTargetAllowed, openStateDatabase } from "./db/production-boundary.js";
+import { type Database, type SQLQueryBindings } from "bun:sqlite";
 import { join } from "node:path";
 import { existsSync, mkdirSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -98,6 +99,7 @@ const CRM_PIPELINE_STAGE_TOPIC_TYPES = new Set([
 
 function ensureDb(): Database {
   const nextDbPath = resolveDbPath();
+  assertDatabaseTargetAllowed(nextDbPath);
   if (db !== null && dbPath === nextDbPath) {
     return db;
   }
@@ -108,7 +110,7 @@ function ensureDb(): Database {
 
   mkdirSync(getRaviStateDir(), { recursive: true });
 
-  const database = new Database(nextDbPath);
+  const database = openStateDatabase(nextDbPath);
 
   // WAL mode for concurrent read/write access (CLI + daemon)
   database.exec("PRAGMA journal_mode = WAL");
@@ -8173,7 +8175,7 @@ function uniqueNonEmptyStrings(values: Array<string | null | undefined>): string
 function openBackfillRouterDb(): Database | null {
   const routerDbPath = resolveRouterDbPath();
   if (!existsSync(routerDbPath)) return null;
-  const database = new Database(routerDbPath);
+  const database = openStateDatabase(routerDbPath);
   database.exec("PRAGMA busy_timeout = 5000");
   database.exec("PRAGMA foreign_keys = ON");
   return database;

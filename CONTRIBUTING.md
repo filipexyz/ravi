@@ -35,7 +35,7 @@ bun src/cli/index.ts agents list    # the CLI straight from source, no bundle
 ./bin/ravi daemon dev               # rebuilds on every src/ change; apply with ravi daemon restart -m "<reason>"
 ```
 
-To try commands without touching a real install, give them a throwaway home: `HOME=$(mktemp -d) ./bin/ravi <group> <command> --help`.
+To try source commands safely, set an isolated state directory: `RAVI_STATE_DIR="$(mktemp -d)" bun src/cli/index.ts <group> <command> --help`. Do not invoke the auto-building wrapper on a production host.
 
 ## Build
 
@@ -81,7 +81,25 @@ The pre-push checks clear both runtime identity and Git's repository-local
 environment variables. Test fixtures that initialize their own repositories must
 not inherit the pushing checkout's `GIT_DIR`, index or worktree paths.
 
-Never bypass the hooks with `--no-verify`.
+Never bypass the hooks with `--no-verify`, per-command `git -c core.hooksPath=/dev/null push`, or shared hook settings. Per-command bypass is still bypass even when persistent config and hook files remain unchanged.
+
+### Production-host publication
+
+On a machine running the live daemon, do not run the full build/suite or install dependencies in a new worktree. Use the sanctioned Git Data API tool after committing:
+
+```bash
+bun scripts/publish-branch.ts --branch fix/example --test src/router/production-boundary.test.ts
+bun scripts/publish-branch.ts --branch fix/example --test src/router/production-boundary.test.ts --execute
+gh pr create --base dev --head fix/example --body-file /path/to/pr-description.md
+```
+
+Repeat `--test` for relevant exact test files. Both preview and execute run focused tests and the spec/coverage gate in temporary state. The tool requires clean committed work and verifies the uploaded tree equals HEAD before creating a fresh work branch. It never changes hooks, updates existing refs, or publishes directly to release branches. It creates a squash snapshot with a different commit id; local signatures/history are not preserved. Use a new branch for subsequent publications with this tool. Full build, typecheck, lint, generated-code checks and suite are enforced by PR CI; wait for green CI before merge.
+
+### Production database confirmation
+
+Writable state opens under `~/.ravi` fail closed because initialization can migrate schema even during a read command. Development and CI must use isolated `RAVI_STATE_DIR`; test cleanup restores its previous value. Symlink aliases are protected and hardlinked database files are refused. Tests cannot opt in to production.
+
+A reviewed production deployment must explicitly set `RAVI_CONFIRM_PRODUCTION_STATE_DIR` to the absolute production root in its launcher. For another production root, also set `RAVI_PRODUCTION_STATE_DIR`; the default remains protected. Keep confirmation out of shared shell profiles and development/test processes. This is a deployment prerequisite, not an instruction to mutate the live environment while developing. See `.ravi/specs/quality/production-boundary/RUNBOOK.md`.
 
 ## Adding or changing a CLI command
 
@@ -185,7 +203,7 @@ bun run check:docs          # lint:docs + docs:check-links (also: make docs-chec
 
 ## Pull requests
 
-- Keep each pull request to one change. Run `bun run test` and `make quality` before pushing; the pre-push hook runs the same build, typecheck and test steps.
+- Keep each pull request to one change. On development machines, run `bun run test` and `make quality` before pushing. On production hosts, use the focused publication path above and require the complete checks in PR CI.
 - Fill in every section of [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md): the objective, the problem, the solution, the practical impact, what does not change, how you validated it, the risks and how to roll it back. Follow-ups are optional. The "PR Description" check fails when a required section is missing, has less than 20 characters of content, or still contains template comments, `TODO`/`TBD` or an empty `-` bullet. Name the commands and tests you actually ran under Validation.
 - CI runs `bun run build`, `bun run typecheck`, `bun run test` and the Swift SDK tests, then a quality gate on the pull request diff:
   - **Specs:** every changed spec needs valid frontmatter and its `WHY.md`, `RUNBOOK.md` and `CHECKS.md`, and `CHECKS.md` needs verifiable list items.

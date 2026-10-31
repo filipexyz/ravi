@@ -30,6 +30,9 @@ jobs:
     name: Quality Gate
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      # No source/test command may fall back to the runner's persistent state.
+      RAVI_STATE_DIR: ${{ runner.temp }}/ravi-ci-state
 
     steps:
       - uses: actions/checkout@v5
@@ -54,6 +57,9 @@ jobs:
 
       - name: Test
         run: bun run test
+
+      - name: Test production boundary and publication tooling
+        run: bun test src/router/production-boundary.test.ts src/ci/publish-branch.test.ts src/test/ravi-state.test.ts
 
       - name: Test Swift SDK
         run: bun run test:swift-sdk

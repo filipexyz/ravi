@@ -53,10 +53,10 @@ bun run test         # the CI suite, including SDK, OpenAPI, Swift and Dart drif
 bun test <path>      # one focused suite
 ```
 
-- Pre-commit runs Biome on staged files. Pre-push runs `bun run sdk:check` (on drift it regenerates and blocks until you commit), then build, typecheck and `bun run test`. Never use `--no-verify`.
+- Pre-commit runs Biome on staged files. Ordinary pre-push runs SDK/build/typecheck/full tests on development machines. On production hosts use `bun scripts/publish-branch.ts --branch fix/name --test src/path.test.ts` (preview), then `--execute`; see CONTRIBUTING.md. Full validation remains mandatory in PR CI. Never disable hooks or use `--no-verify`.
 - Changing a command's flags or return schema changes the generated SDKs and `openapi.json`/`docs/openapi.json`; `CONTRIBUTING.md` lists the regenerate commands.
 - `src/cli/execute-consumers.test.ts` checks exact command strings in `README.md`, `AGENTS.md`, skills and docs. When a command gains or loses its `--execute` brake, update that test and those files.
-- Try the CLI without touching a live install: `HOME=$(mktemp -d) ./bin/ravi <group> <command> --help`.
+- Try source commands with isolated `RAVI_STATE_DIR="$(mktemp -d)"`; avoid the auto-building wrapper on production hosts. Writable production DB opens require explicit `RAVI_CONFIRM_PRODUCTION_STATE_DIR` in the reviewed production launcher, and tests always refuse them. All new writable SQLite constructors must use `openStateDatabase` from `src/db/production-boundary.ts`.
 
 The daemon and the channel runner run the built bundle, so `src/` changes need a build and a restart. `ravi daemon restart` re-registers the daemon with the bundle of the CLI you invoke, so restart through `./bin/ravi` to run this checkout. CLI config writes (agents, instances, routes, triggers, cron) need no restart: they emit refresh events such as `ravi.config.changed`. Editing `~/.ravi/.env` needs a daemon restart.
 

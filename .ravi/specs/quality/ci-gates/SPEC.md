@@ -60,6 +60,10 @@ High-risk channel lifecycle files MUST also map to their own focused health,
 runner, or Socket Mode test so an unrelated channel test cannot satisfy their
 coverage requirement.
 
+## Production-host publication
+
+The production-host path is `scripts/publish-branch.ts`, governed by `quality/production-boundary`. It runs focused tests and this spec/coverage gate without build/full-suite work locally. Full build, typecheck, lint and tests MUST remain in PR CI. An impossible local hook MUST NOT become a reason to disable hooks or waive CI. CI MUST supply isolated state, and test cleanup MUST preserve its enclosing harness directory.
+
 ## Validation
 
 - `bun test src/ci/quality-gate.test.ts`

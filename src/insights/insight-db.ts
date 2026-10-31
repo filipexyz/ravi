@@ -1,7 +1,8 @@
+import { assertDatabaseTargetAllowed, openStateDatabase } from "../db/production-boundary.js";
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { Database } from "bun:sqlite";
+import type { Database } from "bun:sqlite";
 import { getRaviStateDir } from "../utils/paths.js";
 import { executeWrite } from "../db/write-retry.js";
 import { reconcileColumns } from "../db/reconcile-columns.js";
@@ -91,6 +92,7 @@ function resolveDbPath(env: NodeJS.ProcessEnv = process.env): string {
 
 function ensureDb(): Database {
   const nextDbPath = resolveDbPath();
+  assertDatabaseTargetAllowed(nextDbPath);
   if (insightDbState.db !== null && insightDbState.dbPath === nextDbPath) {
     return insightDbState.db;
   }
@@ -101,7 +103,7 @@ function ensureDb(): Database {
 
   mkdirSync(getRaviStateDir(), { recursive: true });
 
-  const db = new Database(nextDbPath);
+  const db = openStateDatabase(nextDbPath);
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA busy_timeout = 5000");
   db.exec("PRAGMA foreign_keys = ON");

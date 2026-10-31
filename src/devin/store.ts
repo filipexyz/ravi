@@ -1,23 +1,28 @@
+import { assertDatabaseTargetAllowed, openStateDatabase } from "../db/production-boundary.js";
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { Database } from "bun:sqlite";
+import type { Database } from "bun:sqlite";
 import { canonicalAssetIdsForTag, replaceMirroredTagSlugsForAsset } from "../tags/index.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import { executeWrite } from "../db/write-retry.js";
 import { toDevinApiId, type DevinSession, type DevinSessionAttachment, type DevinSessionMessage } from "./client.js";
 
 let db: Database | null = null;
+let dbPath: string | null = null;
 
 export function getDevinDbPath(env: NodeJS.ProcessEnv = process.env): string {
   return join(getRaviStateDir(env), "devin.db");
 }
 
 function getDevinDb(): Database {
-  if (db) return db;
   const path = getDevinDbPath();
+  assertDatabaseTargetAllowed(path);
+  if (db && dbPath === path) return db;
+  db?.close();
   mkdirSync(dirname(path), { recursive: true });
-  db = new Database(path);
+  db = openStateDatabase(path);
+  dbPath = path;
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA busy_timeout = 5000");
   db.exec("PRAGMA foreign_keys = ON");
@@ -28,6 +33,7 @@ export function closeDevinDb(): void {
   if (!db) return;
   db.close();
   db = null;
+  dbPath = null;
 }
 
 export interface DevinSessionRecord {

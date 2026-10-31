@@ -1,3 +1,4 @@
+import { assertDatabaseTargetAllowed, openStateDatabase } from "../../db/production-boundary.js";
 // Local Knowledge database `~/.ravi/knowledge.db` (spec knowledge, contract
 // §10.1). Its own file, not ravi.db: FTS5 tables cannot go through
 // `reconcileColumns`, chat history lives in chat.db, and the file can be
@@ -134,13 +135,14 @@ export function getKnowledgeDbPath(env: NodeJS.ProcessEnv = process.env): string
 /** The read-write handle, opened (and the schema applied) on first use. */
 export function getKnowledgeDb(): Database {
   const nextDbPath = getKnowledgeDbPath();
+  assertDatabaseTargetAllowed(nextDbPath);
   if (knowledgeDbState.db !== null && knowledgeDbState.dbPath === nextDbPath) {
     return knowledgeDbState.db;
   }
   if (knowledgeDbState.db !== null) closeKnowledgeDb();
 
   mkdirSync(getRaviStateDir(), { recursive: true });
-  const db = new Database(nextDbPath);
+  const db = openStateDatabase(nextDbPath);
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA busy_timeout = 5000");
   db.exec("PRAGMA synchronous = NORMAL");

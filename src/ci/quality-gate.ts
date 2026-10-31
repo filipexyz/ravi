@@ -59,7 +59,9 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     // Headless Omni stub: presence/renew no-ops when Omni is not installed.
     "src/omni/stub-consumer.test.ts",
   ],
+  "src/db/production-boundary.ts": ["src/router/production-boundary.test.ts"],
   "src/router/": [
+    "src/router/production-boundary.test.ts",
     "src/channels/backend.test.ts",
     "src/channels/runtime-events.test.ts",
     "src/router/router.test.ts",
