@@ -5,7 +5,8 @@ import { runWithContext } from "../cli/context.js";
 import { cloudErrorToContractError } from "../cli/cloud-error-contract.js";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 import { join } from "node:path";
-import { dbCreateCronJob } from "../cron/cron-db.js";
+import { CRON_RUN_AUTHORITY_ENV } from "../cron/authority.js";
+import { dbCreateCronJob, dbGetCronJob } from "../cron/cron-db.js";
 import { JobsRunner } from "../jobs/runner.js";
 import { dbCreateJob } from "../jobs/store.js";
 import { TriggerRunner } from "../triggers/runner.js";
@@ -48,7 +49,12 @@ import {
 } from "./connector-turn.js";
 import { readAgentConnectorMode, type ConnectorUseMode, writeAgentConnectorMode } from "./connector-mode.js";
 
-const OWNER = { activeUserId: "user_luis", activeOrgId: "org_1", ownerName: "Luis" } satisfies ConnectorTurnDeps;
+const OWNER = {
+  activeUserId: "user_luis",
+  activeOrgId: "org_1",
+  ownerName: "Luis",
+  getContactStatus: () => "allowed",
+} satisfies ConnectorTurnDeps;
 /** The owner's direct chat in a session of its own (dmScope per-peer). */
 const OWNER_DM_SESSION = { sessionKey: "agent:main:whatsapp:wa-main:dm:5511999999999", sessionName: "luis-dm" };
 /** What the runtime records for a relay whose answer goes back to the waiting terminal. */
@@ -64,6 +70,21 @@ afterEach(async () => {
   await cleanupIsolatedRaviState(stateDir);
   stateDir = null;
 });
+
+function snapshotFor(jobId: string) {
+  const job = dbGetCronJob(jobId);
+  return job
+    ? {
+        jobId,
+        ownerPrincipal: job.ownerPrincipal ?? "operator",
+        ownerIsOperator: cronOwnerActsAsOperator(job.ownerPrincipal ?? null, OWNER),
+      }
+    : null;
+}
+
+function cronEnv(jobId: string) {
+  return { ...spawnedAutomationEnv("cron", jobId), [CRON_RUN_AUTHORITY_ENV]: JSON.stringify(snapshotFor(jobId)) };
+}
 
 function turnContext(
   metadata: Record<string, unknown>,
@@ -367,6 +388,7 @@ describe("connector turn classification", () => {
   describe("cron routines", () => {
     function cronTurn(jobId: string) {
       return turnContext({
+        cronRunAuthority: snapshotFor(jobId),
         actorPrincipal: `automation:cron:${jobId}`,
         agentIdentityCompartment: `automation:cron:${jobId}`,
       });
@@ -434,6 +456,43 @@ describe("connector turn classification", () => {
       expect(cronOwnerActsAsOperator("contact:c_luis", { ...OWNER, activeUserId: "user_other" })).toBe(false);
     });
 
+    it("inherits admission through a child but refuses child-supplied actor authority", () => {
+      const job = createJob("contact:c_ana");
+      const parent = cronTurn(job.id);
+      const child = issueRuntimeContext({ parent, cliName: "child" });
+      const inherited = classify(child);
+      expect(!inherited.ok && inherited.routineOwner?.ownerPrincipal).toBe("contact:c_ana");
+      const forged = issueRuntimeContext({
+        parent,
+        cliName: "child",
+        metadata: {
+          actorPrincipal: `automation:cron:${job.id}`,
+          cronRunAuthority: { jobId: job.id, ownerPrincipal: "operator", ownerIsOperator: true },
+        },
+      });
+      const refused = classify(forged);
+      expectBlocked(refused, "CONNECTOR_SPEAKER_NOT_OWNER");
+      expect(!refused.ok && refused.routineOwner).toBeUndefined();
+    });
+
+    it("does not promote a contact run when its identity is linked to the operator later", () => {
+      const job = createJob("contact:c_ana");
+      const context = cronTurn(job.id);
+      bindToConsole("c_ana", "user_luis");
+      expectBlocked(classify(context), "CONNECTOR_SPEAKER_NOT_OWNER");
+      expect(classify(cronTurn(job.id)).ok).toBe(true);
+    });
+
+    it("revokes an operator-linked contact run when that admitted contact is blocked", () => {
+      bindToConsole("c_luis", "user_luis");
+      const job = createJob("contact:c_luis");
+      const context = cronTurn(job.id);
+      expect(classify(context).ok).toBe(true);
+      const result = classify(context, { getContactStatus: () => "blocked" });
+      expectBlocked(result, "CONNECTOR_SPEAKER_NOT_OWNER");
+      expect(!result.ok && result.routineOwner).toBeUndefined();
+    });
+
     it("refuses a job that no longer exists", () => {
       expectBlocked(classify(cronTurn("gone1234")), "CONNECTOR_SPEAKER_NOT_OWNER");
     });
@@ -491,7 +550,7 @@ describe("connector turn classification", () => {
       const operatorJob = createJob("operator");
       const contactJob = createJob("contact:c_bob");
 
-      const allowed = resolveConnectorTurn({ ...OWNER, env: spawnedAutomationEnv("cron", operatorJob.id) });
+      const allowed = resolveConnectorTurn({ ...OWNER, env: cronEnv(operatorJob.id) });
       expect(allowed).toEqual({
         ok: true,
         turn: {
@@ -501,18 +560,15 @@ describe("connector turn classification", () => {
           routine: { kind: "cron", id: operatorJob.id },
         },
       });
-      expectBlocked(
-        resolveConnectorTurn({ ...OWNER, env: spawnedAutomationEnv("cron", contactJob.id) }),
-        "CONNECTOR_SPEAKER_NOT_OWNER",
-      );
+      expectBlocked(resolveConnectorTurn({ ...OWNER, env: cronEnv(contactJob.id) }), "CONNECTOR_SPEAKER_NOT_OWNER");
     });
 
     it("records a cron created inside a spawned automation as owned by that automation", () => {
       const contactJob = createJob("contact:c_bob");
 
-      expect(
-        resolveCronOwnerPrincipalForCurrentTurn({ ...OWNER, env: spawnedAutomationEnv("cron", contactJob.id) }),
-      ).toBe(`automation:cron:${contactJob.id}`);
+      expect(resolveCronOwnerPrincipalForCurrentTurn({ ...OWNER, env: cronEnv(contactJob.id) })).toBe(
+        `automation:cron:${contactJob.id}`,
+      );
       expect(resolveCronOwnerPrincipalForCurrentTurn({ ...OWNER, env: spawnedAutomationEnv("job", "job_1") })).toBe(
         "automation:job:job_1",
       );
@@ -684,6 +740,7 @@ describe("connector turn classification", () => {
 
       const result = classify(
         turnContext({
+          cronRunAuthority: snapshotFor(job.id),
           actorPrincipal: `automation:cron:${job.id}`,
           agentIdentityCompartment: `chat:${chat.id}`,
           actorMetadata: { channel: "whatsapp", canonicalChatId: chat.id },
@@ -1635,6 +1692,7 @@ describe("per-agent connector mode", () => {
         ownerPrincipal: "operator",
       });
       const cron = {
+        cronRunAuthority: snapshotFor(job.id),
         actorPrincipal: `automation:cron:${job.id}`,
         agentIdentityCompartment: `automation:cron:${job.id}`,
       };

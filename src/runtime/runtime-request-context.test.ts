@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { createContact } from "../contacts.js";
 import { dbDeleteContactChatGrant, dbEnsureContactChatGrant } from "../permissions/contact-chat-grants.js";
-import { dbCreateCronJob } from "../cron/cron-db.js";
+import { dbCreateCronJob, dbUpdateCronJob } from "../cron/cron-db.js";
 import { canWithCapabilities } from "../permissions/provider-runtime.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
@@ -2003,7 +2003,17 @@ describe("runtime request context chat-scoped user overlay", () => {
       creatorChat: chat.id,
     });
     const cronContext = () => {
-      const prompt: RuntimeLaunchPrompt = { ...promptInChat(ana.id, chat), _cron: true, _jobId: job.id };
+      const prompt: RuntimeLaunchPrompt = {
+        ...promptInChat(ana.id, chat),
+        _cron: true,
+        _jobId: job.id,
+        _cronAuthority: {
+          jobId: job.id,
+          ownerPrincipal: `contact:${ana.id}`,
+          ownerIsOperator: false,
+          creatorChat: chat.id,
+        },
+      };
       const overlaySessionKey = `agent:provider-agent:cron:${job.id}`;
       getOrCreateSession(overlaySessionKey, agent.id, agent.cwd, { name: `cron-${job.id}` });
       return buildRuntimeRequestContext({
@@ -2019,6 +2029,8 @@ describe("runtime request context chat-scoped user overlay", () => {
       }).runtimeContext;
     };
 
+    // The queued prompt retains the contact overlay after the live row changes.
+    dbUpdateCronJob(job.id, { ownerPrincipal: "operator", creatorChat: undefined });
     const granted = cronContext();
     expect(granted.metadata?.actorPrincipal).toBe(`automation:cron:${job.id}`);
     expect(canWithCapabilities(granted.capabilities, "mutate", "image", "generate")).toBe(true);

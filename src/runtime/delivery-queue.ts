@@ -51,6 +51,7 @@ export type RuntimeTurnAuthorityEnvelope = Pick<
   | "_heartbeat"
   | "_cron"
   | "_jobId"
+  | "_cronAuthority"
   | "_trigger"
   | "_triggerId"
   | "_sessionFollowup"
@@ -76,6 +77,7 @@ export function pickRuntimeTurnAuthorityEnvelope(
   if (prompt._cron) {
     envelope._cron = prompt._cron;
     if (prompt._jobId) envelope._jobId = prompt._jobId;
+    if (prompt._cronAuthority) envelope._cronAuthority = { ...prompt._cronAuthority };
   }
   if (prompt._trigger) {
     envelope._trigger = prompt._trigger;

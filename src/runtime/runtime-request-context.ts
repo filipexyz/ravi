@@ -43,7 +43,7 @@ import {
 import type { RuntimeCapabilities, RuntimeProviderId } from "./types.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
 import { resolveRuntimeTurnOrigin } from "./turn-origin.js";
-import { dbGetCronJob } from "../cron/cron-db.js";
+import { readCronRunAuthority } from "../cron/authority.js";
 import { TURN_REPLY_TARGET_METADATA_KEY, type TurnReplyTarget } from "./turn-reply-target.js";
 
 export interface RuntimeRequestContextOptions {
@@ -365,11 +365,12 @@ function buildAgentIdentityRuntimeContextInputForPrompt(options: {
 /**
  * A job a contact wrote from a turn narrowed to their chat grants runs every
  * turn under those grants as they are now: none left means no capabilities.
- * The binding is read from the stored job, never from the published prompt.
+ * The runner captured owner/chat with the prompt; queued work must not adopt
+ * a new owner or lose its overlay after an edit or one-shot deletion.
  */
 function resolveStoredAutomationCreatorOverlay(prompt: RuntimeLaunchPrompt): ContactChatOverlay | null {
   if (!prompt._cron || !prompt._jobId) return null;
-  const job = dbGetCronJob(prompt._jobId);
+  const job = readCronRunAuthority(prompt._cronAuthority, prompt._jobId);
   const owner = job?.ownerPrincipal ?? "";
   if (!job?.creatorChat || !owner.startsWith("contact:")) return null;
   const overlay = resolveContactChatOverlay({ contactId: owner.slice("contact:".length), chatId: job.creatorChat });
@@ -731,6 +732,9 @@ function buildRuntimeContextMetadata(options: {
     ...(options.replyTarget ? { [TURN_REPLY_TARGET_METADATA_KEY]: options.replyTarget } : {}),
     ...(actorMetadata ? { actor: actorMetadata, actorMetadata } : {}),
     ...(turnOrigin ? { turnOrigin } : {}),
+    ...(options.prompt._cron && options.prompt._jobId
+      ? { cronRunAuthority: readCronRunAuthority(options.prompt._cronAuthority, options.prompt._jobId) }
+      : {}),
     ...(options.prompt._observation ? { observation: { ...options.prompt._observation } } : {}),
     ...(options.prompt._thread ? { raviThread: options.prompt._thread } : {}),
   };

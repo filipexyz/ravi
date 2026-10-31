@@ -44,6 +44,33 @@ target resolution, and operational inspection.
 
 ## Visibility And Authority
 
+### Bind each run at admission
+
+- Immediately before execution, the runner MUST read the current job once and
+  capture its owner principal, operator eligibility and creator chat together
+  with that job's instructions. Legacy NULL owners normalize to `operator` here.
+- Agent prompts MUST carry this snapshot through durable queues, runtime context
+  creation/refresh and host continuations. Shell commands and their error prompts
+  MUST carry the same admission snapshot. It is trusted internal producer data,
+  never model text or a CLI caller's replacement for a live runtime context.
+- Owner-attributed calls (connectors, Bases, Pages access and Knowledge) MUST
+  classify against the admitted owner, never reread `cron_jobs.owner_principal`.
+  Creator-chat overlays MUST use the admitted contact/chat with current grants.
+- Ownership transfers and edits MUST affect only the next admitted execution.
+  Linking a contact to the operator later MUST NOT promote an admitted run's
+  operator eligibility. Current identity checks MAY reduce that eligibility.
+- `enabled=false` MUST prevent subsequent scheduled admission; it MUST NOT cancel
+  an already admitted run. Deleting a job, including one-shot auto-deletion,
+  MUST NOT invalidate its already admitted snapshot. Explicit manual run semantics
+  remain unchanged; disabling is a scheduling action, not an emergency stop.
+- Blocking or removing the admitted contact MUST refuse subsequent owner-attributed
+  calls, even after the job transfers to a healthy owner. Refusal MUST NOT expose
+  a contact fallback that Console could authorize. Checks do not undo effects
+  already performed or terminate an already spawned OS process.
+- A missing, malformed or mismatched snapshot MUST fail closed for owner-attributed
+  calls. Old queued prompts without it MUST NOT recover authority from live jobs;
+  let them fail and admit a new execution through the runner if still wanted.
+
 ### Reconcile shell ownership
 
 - An entry guard without reconciliation of existing state leaves dead capability
