@@ -18,11 +18,14 @@ import { spawnedAutomationEnv } from "../runtime/turn-origin.js";
 import { logger } from "../utils/logger.js";
 import { dbFinishJob, dbGetJob, dbListJobs, dbListRunningJobs, dbMarkJobNotified, dbMarkJobRunning } from "./store.js";
 import { isJobTerminal, type JobRecord } from "./types.js";
+import { jobStatusFromExitCode, readJobExitState } from "./detach.js";
 
 const log = logger.child("jobs:runner");
 
 export const JOB_START_TOPIC = "ravi.jobs.start";
 export const JOB_KILL_TOPIC = "ravi.jobs.kill";
+/** Publicado pelo processo que terminou o comando (o shell do detach). */
+export const JOB_FINISHED_TOPIC = "ravi.jobs.finished";
 
 /** Depois disso, quem ignorou SIGTERM recebe SIGKILL. */
 export const KILL_ESCALATION_MS = 5_000;
@@ -49,6 +52,8 @@ interface SpawnedJob {
 export class JobsRunner {
   private running = false;
   private readonly jobs = new Map<string, SpawnedJob>();
+  /** Jobs cujo kill foi pedido: o desfecho não pode ser confundido com falha própria. */
+  private readonly killRequested = new Set<string>();
   private subscription: { unsubscribe?: () => void } | undefined;
   private reconcileTimer: ReturnType<typeof setInterval> | undefined;
   private readonly spawnCommand: NonNullable<JobsRunnerOptions["spawnCommand"]>;
@@ -69,6 +74,7 @@ export class JobsRunner {
     this.subscription = nats.subscribe(JOB_START_TOPIC) as unknown as { unsubscribe?: () => void };
     void this.consumeStartRequests();
     void this.consumeKillRequests();
+    void this.consumeFinishedRequests();
 
     this.reconcileTimer = setInterval(() => {
       void this.reconcileOrphans();
@@ -130,17 +136,57 @@ export class JobsRunner {
   /** Entrega o desfecho na sessão que pediu. Sem sessão, não há para quem avisar. */
   private async deliverOutcome(job: JobRecord): Promise<void> {
     if (!job.sessionName) return;
+    // Duas rotas podem ver o mesmo desfecho (o tópico publicado pelo CLI e o
+    // reconcile). Reler a linha fecha a janela em que as duas entregariam.
+    const current = dbGetJob(job.id);
+    if (!current || !isJobTerminal(current.status) || current.notifiedAt || !current.sessionName) return;
     try {
-      await this.notify(job, buildJobOutcomeSummary(job));
-      dbMarkJobNotified(job.id);
+      await this.notify(current, buildJobOutcomeSummary(current));
+      dbMarkJobNotified(current.id);
     } catch (error) {
-      log.warn("Could not deliver job outcome to session", { jobId: job.id, sessionName: job.sessionName, error });
+      log.warn("Could not deliver job outcome to session", {
+        jobId: current.id,
+        sessionName: current.sessionName,
+        error,
+      });
     }
+  }
+
+  /**
+   * Um job terminou fora do daemon (detach) e avisou pelo tópico.
+   *
+   * Idempotente: o `finish` do CLI pode chegar duas vezes, e o reconcile pode
+   * ter chegado antes. Quem já foi avisado não é avisado de novo.
+   */
+  async handleJobFinished(jobId: string): Promise<void> {
+    const job = dbGetJob(jobId);
+    if (!job) return;
+    if (!isJobTerminal(job.status)) this.finishFromExitState(job);
+    const finished = dbGetJob(jobId);
+    if (!finished || !isJobTerminal(finished.status) || finished.notifiedAt) return;
+    await this.deliverOutcome(finished);
+  }
+
+  /**
+   * O shell que rodou o comando escreveu o exit code. Esse arquivo é a verdade:
+   * `pid vivo` não distingue comando terminando de processo reutilizado, e
+   * `signal` não é adivinhável a partir do banco.
+   */
+  private finishFromExitState(job: JobRecord): boolean {
+    const state = readJobExitState(job.logPath);
+    if (!state) return false;
+    dbFinishJob(job.id, {
+      status: jobStatusFromExitCode(state.exitCode),
+      exitCode: state.exitCode,
+      signal: state.signal,
+    });
+    return true;
   }
 
   async killJob(jobId: string): Promise<boolean> {
     const job = dbGetJob(jobId);
     if (!job || isJobTerminal(job.status)) return false;
+    this.killRequested.add(jobId);
     const pid = this.jobs.get(jobId)?.pid ?? job.pid ?? null;
     if (!pid) {
       dbFinishJob(jobId, { status: "killed", exitCode: null, signal: "SIGTERM" });
@@ -154,7 +200,27 @@ export class JobsRunner {
       if (isPidAlive(pid)) killProcessGroup(pid, "SIGKILL");
     }, KILL_ESCALATION_MS);
     escalation.unref?.();
+    // Job criado fora do daemon não tem `onExit` para chamar: alguém precisa
+    // observar a morte e entregar o desfecho, senão o kill parece não ter efeito.
+    if (!this.jobs.has(jobId)) void this.settleKilledJob(jobId, pid);
     return true;
+  }
+
+  private async settleKilledJob(jobId: string, pid: number): Promise<void> {
+    const deadline = Date.now() + KILL_ESCALATION_MS + 2_000;
+    while (Date.now() < deadline && isPidAlive(pid)) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    if (this.jobs.has(jobId)) return;
+    const job = dbGetJob(jobId);
+    if (!job) return;
+    // O runner que rodou o comando também fecha a linha quando termina. Neste
+    // ponto ela já pode estar terminal — o que falta não é o status, é a entrega.
+    if (!isJobTerminal(job.status) && !this.finishFromExitState(job)) {
+      dbFinishJob(jobId, { status: "killed", exitCode: null, signal: "SIGTERM" });
+    }
+    const finished = dbGetJob(jobId);
+    if (finished && !finished.notifiedAt) await this.deliverOutcome(finished);
   }
 
   private async reconcileOrphans(): Promise<void> {
@@ -165,13 +231,33 @@ export class JobsRunner {
         this.startJob(job.id);
         continue;
       }
+      // Job de detach: o estado escrito pelo shell fecha o job com o código real.
+      if (this.finishFromExitState(job)) {
+        const finished = dbGetJob(job.id);
+        if (finished && !finished.notifiedAt) await this.deliverOutcome(finished);
+        continue;
+      }
       if (job.pid && isPidAlive(job.pid)) continue;
-      dbFinishJob(job.id, { status: "failed", exitCode: null, signal: null });
+      const killed = this.killRequested.has(job.id);
+      dbFinishJob(job.id, {
+        status: killed ? "killed" : "failed",
+        exitCode: null,
+        signal: killed ? "SIGTERM" : null,
+      });
       const finished = dbGetJob(job.id);
       if (finished && !finished.notifiedAt) {
         // O processo sumiu sem o daemon ver: entrega o que houver no log.
         await this.deliverOutcome(finished);
       }
+    }
+  }
+
+  private async consumeFinishedRequests(): Promise<void> {
+    for await (const event of nats.subscribe(JOB_FINISHED_TOPIC)) {
+      if (!this.running) return;
+      const data = event.data as { jobId?: string } | undefined;
+      if (!data?.jobId) continue;
+      await this.handleJobFinished(data.jobId);
     }
   }
 
@@ -283,6 +369,14 @@ export async function startJobsRunner(): Promise<void> {
   if (process.env.RAVI_JOBS_ENABLED === "0") {
     log.info("Jobs runner disabled by RAVI_JOBS_ENABLED=0");
     return;
+  }
+  // O wrapper de detach precisa existir antes do primeiro comando longo, e precisa
+  // ser gerado pelo mesmo runtime que observa os jobs.
+  try {
+    const { ensureDetachScript } = await import("./detach-script.js");
+    ensureDetachScript();
+  } catch (error) {
+    log.warn("Could not materialize the detach wrapper; long commands stay in the turn", { error });
   }
   await getJobsRunner().start();
 }
