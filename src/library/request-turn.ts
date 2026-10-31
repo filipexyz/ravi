@@ -254,11 +254,12 @@ export async function runLibraryRequestTurn(
   const readHistory = deps.readHistory ?? ((name: string) => getRecentHistory(name, 20));
   // The history fallback reads only rows written after this point, so a reused
   // session can never answer with an earlier turn's final message.
-  let historyCursor = 0;
+  let historyCursor: number | null = null;
   try {
     historyCursor = lastHistoryId(readHistory(sessionName));
   } catch {
-    historyCursor = 0;
+    // Without a baseline, history cannot prove that an answer belongs to this turn.
+    historyCursor = null;
   }
 
   try {
@@ -285,7 +286,7 @@ export async function runLibraryRequestTurn(
     return { ok: false, failure: `${why}${end.error ? `: ${end.error}` : "."}`.slice(0, 500), sessionName };
   }
   let reply = parts.join("\n\n").trim();
-  if (!reply) {
+  if (!reply && historyCursor !== null) {
     try {
       reply = lastAssistantText(
         readHistory(sessionName).filter((row) => typeof row.id !== "number" || row.id > historyCursor),

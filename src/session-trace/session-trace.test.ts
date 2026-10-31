@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { attachChatToSession, getOrCreateSession, updateSessionName } from "../router/sessions.js";
-import { dbUpsertChat } from "../router/router-db.js";
+import { dbUpsertChat, getDb, closeRouterDb } from "../router/router-db.js";
 import { recordDeliveryTrace, recordResponseEmittedTrace } from "./channel-trace.js";
 import { querySessionTrace } from "./query.js";
 import { recordAdapterRequestTrace, summarizeRuntimeCapabilities } from "./runtime-trace.js";
@@ -79,6 +79,47 @@ describe("session trace query", () => {
     expect(getLatestSessionTurn(sessionKey)?.turnId).toBe("turn-new");
     expect(getLatestSessionTurn(sessionKey, 3000)).toMatchObject({ turnId: "turn-new", completedAt: 3500 });
     expect(getLatestSessionTurn(sessionKey, 3001)).toBeNull();
+  });
+
+  it("upgrades existing turns while preserving measured usage and unknown new usage", () => {
+    upsertSessionTurn({
+      turnId: "legacy",
+      sessionKey: "agent:main:upgrade",
+      status: "complete",
+      startedAt: 1000,
+      updatedAt: 2000,
+      inputTokens: 42,
+      outputTokens: 7,
+      costUsd: 0.02,
+    });
+    // Reproduce the previous table shape, then open it through the real migration path.
+    getDb().exec("ALTER TABLE session_turns DROP COLUMN output_state");
+    closeRouterDb();
+    expect(getSessionTurn("legacy")).toMatchObject({
+      inputTokens: 42,
+      outputTokens: 7,
+      costUsd: 0.02,
+      outputState: null,
+    });
+    upsertSessionTurn({
+      turnId: "new-failed",
+      sessionKey: "agent:main:upgrade",
+      status: "failed",
+      startedAt: 3000,
+      updatedAt: 4000,
+      inputTokens: null,
+      outputTokens: null,
+      costUsd: null,
+      outputState: "incomplete",
+    });
+    closeRouterDb();
+    expect(getSessionTurn("new-failed")).toMatchObject({
+      inputTokens: null,
+      outputTokens: null,
+      costUsd: null,
+      outputState: "incomplete",
+    });
+    expect(getSessionTurn("legacy")?.inputTokens).toBe(42);
   });
 
   it("lists recent events by type using newest event ids first", () => {

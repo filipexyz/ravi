@@ -141,10 +141,10 @@ materialized text.
   `isFinalAssistantMessage` (`src/runtime/utterance-class.ts`) is the one predicate for
   "this row may stand as the answer".
 - `src/runtime/host-event-loop.ts`: every non-silent utterance is materialized with its
-  class and turn id before, and independently of, delivery. A terminal turn with
+  class and turn id before, and independently of, delivery. Delivery cleanup cannot rewrite the materialized provider block; a history write failure is logged and does not stop delivery. A terminal turn with
   commentary and no final utterance is recorded with `output_state = 'incomplete'`.
 - `session_turns`: token and cost columns are NULL when the provider reported no usage
-  (`turn.failed`, `turn.interrupted`); `output_state` holds `final` or `incomplete`.
+  (`turn.failed`, `turn.interrupted`); reported terminal usage is preserved, including Codex goal-chain usage and Claude failure results. `output_state` holds `final` or `incomplete`.
 - Readers: `sessions send -w`, Library request turns and the Knowledge curator take only
   final rows as the answer; replay detection compares against final rows only.
   `sessions info`, `sessions trace` and `agents session` print `unknown` for NULL usage,

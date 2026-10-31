@@ -595,10 +595,12 @@ export type RuntimeEvent =
     } & RuntimeEventBase)
   | ({
       type: "turn.interrupted";
+      usage?: RuntimeUsage;
       rawEvent?: Record<string, unknown>;
     } & RuntimeEventBase)
   | ({
       type: "turn.failed";
+      usage?: RuntimeUsage;
       error: string;
       recoverable?: boolean;
       /** Canonical failure class used by the host to apply bounded, replay-safe recovery. */

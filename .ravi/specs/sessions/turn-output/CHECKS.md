@@ -19,7 +19,7 @@ fail before the fix lands, and to stay as a regression test after it.
 
 ## Run health and usage
 
-- [ ] A turn that fails with `provider_inactive` persists the reason and the usage it received.
+- [x] A turn that fails with `provider_inactive` persists the reason and the usage it received.
 - [x] Usage not reported by the provider is persisted as `NULL` and rendered as `unknown`, never `0`.
 - [ ] `sessions info` prints `unknown` for a turn with `NULL` usage.
 - [x] A token-summing aggregate skips `NULL` rows and reports an `unknown` count instead of adding zero.
@@ -30,3 +30,11 @@ fail before the fix lands, and to stay as a regression test after it.
 - `bun test src/runtime/assistant-transcript.test.ts`
 - `bun test src/runtime/`
 - manual: run a task against a provider with commentary phases and inspect `~/.ravi/chat.db` for the work session.
+
+## PR 751 review regressions
+
+- `src/db.test.ts`: upgrade an existing chat database without rewriting history, then race two writer processes on an identical turn output.
+- `src/session-trace/session-trace.test.ts`: upgrade `session_turns` without `output_state`, preserving old measured usage and new NULL usage.
+- `src/runtime/session-trace.test.ts`: delivery survives a failed history insert; delivery cleanup never rewrites a provider block; failures/interruption preserve reported usage.
+- `src/runtime/claude-provider.test.ts` and `src/runtime/codex-provider.test.ts`: measured failure/interruption usage reaches the canonical event.
+- `src/library/requests.test.ts`: an unreadable pre-turn history cursor cannot reuse an old answer.

@@ -133,17 +133,8 @@ export function saveMessage(
   const database = getDb();
   const turnId = metadata.turnId?.trim() || null;
   const utteranceClass = role === "assistant" ? (metadata.utteranceClass ?? "final") : null;
-  if (turnId) {
-    const replay = database
-      .prepare(
-        `SELECT 1 AS found FROM messages
-         WHERE session_id = ? AND turn_id = ? AND role = ? AND COALESCE(utterance_class, '') = ? AND content = ?
-         LIMIT 1`,
-      )
-      .get(sessionId, turnId, role, utteranceClass ?? "", content);
-    if (replay) return false;
-  }
-  database
+  // One SQLite write statement makes the exact-replay check atomic across processes.
+  const result = database
     .prepare(
       `INSERT INTO messages (
         session_id,
@@ -158,7 +149,12 @@ export function saveMessage(
         command_json,
         utterance_class,
         turn_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        WHERE ? IS NULL OR NOT EXISTS (
+          SELECT 1 FROM messages
+          WHERE session_id = ? AND turn_id = ? AND role = ?
+            AND COALESCE(utterance_class, 'final') = ? AND content = ?
+        )`,
     )
     .run(
       sessionId,
@@ -173,8 +169,14 @@ export function saveMessage(
       metadata.commands && metadata.commands.length > 0 ? JSON.stringify(metadata.commands) : null,
       utteranceClass,
       turnId,
+      turnId,
+      sessionId,
+      turnId,
+      role,
+      utteranceClass ?? "final",
+      content,
     );
-  return true;
+  return result.changes > 0;
 }
 
 /**

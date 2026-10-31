@@ -342,6 +342,27 @@ describe("library requests: the request turn", () => {
       failure: "The turn failed: boom",
     });
   });
+
+  it("does not reuse an old answer when the initial history cursor cannot be read", async () => {
+    let reads = 0;
+    const outcome = await runLibraryRequestTurn(
+      { agentId: "helper", request: fakeAgentRequest({ id: "req-cursor" }), sessionName: "s" },
+      {
+        publishPrompt: async () => {},
+        subscribe: async function* () {
+          yield { topic: "ravi.session.s.runtime", data: { type: "turn.complete" } };
+        },
+        readHistory: () => {
+          if (++reads === 1) throw new Error("storage temporarily unavailable");
+          return [{ id: 7, role: "assistant", content: "Old answer.", utterance_class: "final" }];
+        },
+        timeoutMs: 5000,
+        graceMs: 0,
+      },
+    );
+    expect(outcome).toMatchObject({ ok: false, failure: "The agent finished without an answer." });
+    expect(reads).toBe(1);
+  });
 });
 
 describe("library request runner", () => {
