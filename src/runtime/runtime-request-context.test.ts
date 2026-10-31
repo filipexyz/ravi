@@ -62,6 +62,38 @@ describe("runtime request context authority", () => {
     stateDir = null;
   });
 
+  it("refuses alternate providers before resolving a bridge turn or touching provider credentials", () => {
+    for (const provider of ["pi", "claude", "grok"] as const) {
+      expect(() =>
+        buildRuntimeRequestContext({
+          dbSessionKey: "agent:provider-agent:console:00000000-0000-4000-8000-000000000001",
+          sessionName: "console-00000000-0000-4000-8000-000000000001",
+          sessionCwd: agent.cwd,
+          agent,
+          prompt: { prompt: "private", _bridgeTurnId: "turn-test" },
+          runtimeProviderId: provider,
+          model: "test-model",
+          runtimeResolution,
+        }),
+      ).toThrow("isolated Codex provider");
+    }
+    expect(() =>
+      refreshRuntimeRequestContextForTurn({
+        runtimeContext: {} as any,
+        toolContext: {},
+        dbSessionKey: "agent:provider-agent:console:00000000-0000-4000-8000-000000000001",
+        sessionName: "private",
+        sessionCwd: agent.cwd,
+        agent,
+        prompt: { prompt: "next", _bridgeTurnId: "next-turn" },
+        runtimeProviderId: "pi",
+        model: "test",
+        runtimeResolution,
+      }),
+    ).toThrow("isolated Codex provider");
+    expect(existsSync(join(stateDir!, "human-bridge"))).toBe(false);
+  });
+
   it("ordinary authorization and runtime events never open bridge state", () => {
     const context = {
       kind: "turn-runtime",

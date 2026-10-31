@@ -25,6 +25,20 @@ describe("chat db messages", () => {
     rmSync(stateDir, { recursive: true, force: true });
   });
 
+  it("does not copy private bridge prompts or replies into ordinary chat history", () => {
+    for (const ref of [
+      "console-00000000-0000-4000-8000-000000000001",
+      "agent:main:console:00000000-0000-4000-8000-000000000001",
+    ]) {
+      saveMessage(ref, "user", "private prompt", "provider-private", { chatId: "shared-chat" });
+      saveMessage(ref, "assistant", "private reply", "provider-private", { chatId: "shared-chat" });
+      expect(getRecentHistory(ref)).toEqual([]);
+    }
+    expect(getRecentHistoryByChatIds(["shared-chat"])).toEqual([]);
+    saveMessage("console-main", "assistant", "ordinary reply");
+    expect(getRecentHistory("console-main").map((m) => m.content)).toEqual(["ordinary reply"]);
+  });
+
   it("persists channel source metadata with messages", () => {
     saveMessage("dev", "user", "hello", "provider-1", {
       agentId: "main",

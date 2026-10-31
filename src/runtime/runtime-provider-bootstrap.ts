@@ -1,4 +1,5 @@
 import { resolveLibrarySessionPlugins } from "../library/session-plugins.js";
+import { assertBridgeProvider } from "../bridge/isolation.js";
 import { isOperatorOwnTurn } from "../library/turn.js";
 import { discoverPlugins } from "../plugins/index.js";
 import type { AgentConfig, SessionEntry } from "../router/index.js";
@@ -45,6 +46,7 @@ export interface RuntimeProviderBootstrap {
 export async function prepareRuntimeProviderBootstrap(
   options: RuntimeProviderBootstrapOptions,
 ): Promise<RuntimeProviderBootstrap> {
+  if (options.context?.metadata?.bridgeTurnId) assertBridgeProvider(options.runtimeProvider.id);
   const session = options.session;
   const hostServices = createRuntimeHostServices({
     context: options.context,

@@ -3,6 +3,14 @@
  */
 
 import "reflect-metadata";
+import {
+  isBridgeSessionTarget,
+  listSessions,
+  getSessionsByAgent,
+  getSession,
+  resolveSession,
+  findSessionByChatId,
+} from "../session-targets.js";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { Group, Command, CommandAccess, CliOnly, Arg, Option } from "../decorators.js";
@@ -34,14 +42,9 @@ import {
   type SessionAdapterRecord,
 } from "../../adapters/index.js";
 import {
-  listSessions,
-  getSessionsByAgent,
-  getSession,
   deleteSession,
   resetSession,
-  resolveSession,
   getOrCreateSession,
-  findSessionByChatId,
   updateSessionDisplayName,
   renameSessionName,
   updateSessionModelOverride,
@@ -5762,6 +5765,10 @@ export class SessionCommands {
    * Resolve a target session by name, key, or chatId. Optionally create with -a.
    */
   private resolveTraceTarget(nameOrKey: string): { session: SessionEntry | null } | null {
+    if (isBridgeSessionTarget(nameOrKey)) {
+      fail(`Session not found: ${nameOrKey}`);
+      return null;
+    }
     let session = resolveSession(nameOrKey);
     if (!session) {
       const match = findSessionByChatId(nameOrKey);
@@ -5788,6 +5795,10 @@ export class SessionCommands {
       onCreated?: (session: SessionEntry | null) => void;
     } = {},
   ): SessionEntry | null {
+    if (isBridgeSessionTarget(nameOrKey)) {
+      fail(`Session not found: ${nameOrKey}`);
+      return null;
+    }
     let session = resolveSession(nameOrKey);
 
     // Try chatId lookup

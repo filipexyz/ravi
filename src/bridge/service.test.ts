@@ -278,6 +278,31 @@ describe("Console is the only bridge permission authority", () => {
     expect(store.turn(receipt.turnId)!.status).toBe("authorization_expired");
     expect(cancelled).toHaveLength(1);
   });
+  for (const revoke of [{ canSend: false }, { agents: [] }]) {
+    it(`persists a newer revocation even when renewal is denied: ${JSON.stringify(revoke)}`, async () => {
+      const { bridgeContextCapabilities } = await import("./authority.js");
+      const id = await create();
+      const receipt = await send(id);
+      await service.tick();
+      data(await call(req("lease.renew", { conversationId: id }), owner, grants(2)));
+      const context = { kind: "turn-runtime", capabilities: [], metadata: { bridgeTurnId: receipt.turnId } };
+      expect(bridgeContextCapabilities(context, store)).toEqual([sleep]);
+      const denied = req("lease.renew", { conversationId: id });
+      expect(await call(denied, owner, { ...grants(3), ...revoke })).toMatchObject({
+        ok: false,
+        error: "NOT_FOUND_OR_DENIED",
+      });
+      expect(bridgeContextCapabilities(context, store)).toEqual([]);
+      expect(store.db.query<{ revision: number }, []>("SELECT revision FROM delegation_heads").get()!.revision).toBe(3);
+      expect(await call(req("lease.renew", { conversationId: id }), owner, grants(2))).toMatchObject({
+        ok: false,
+        error: "STALE_DELEGATION",
+      });
+      await service.tick();
+      expect(store.turn(receipt.turnId)!.status).toBe("authorization_expired");
+      expect(cancelled).toHaveLength(1);
+    });
+  }
   it("fails closed at lease expiry when Console cannot deliver a revocation", async () => {
     const id = await create(),
       receipt = await send(id);

@@ -58,6 +58,13 @@ owners:
   protocol constraint, not a permission allowlist; every executable still needs
   a Console decision. Unsupported native tools fail closed. The read-only native
   sandbox and resource isolation are mandatory; grants cannot disable them.
+- Generic CLI/SDK session read, recap, trace, list and control surfaces must exclude
+  the reserved bridge namespace, even for ordinary wildcard/admin capabilities.
+  Humans read their history only through the owner-verified bridge API. Private
+  prompts/replies must not be copied into the ordinary chat/knowledge store.
+- Only Codex currently implements the mandatory bridge isolation. Any other
+  selected runtime provider MUST be rejected before credentials or preparation.
+  This execution constraint does not alter ordinary provider selection.
 - The Codex bridge uses a private provider profile, read-only native sandbox and
   a synchronous guard covering all native tools. Unsupported tools deny. Before
   starting a thread, the app-server must list exactly the generated guard;
@@ -85,7 +92,9 @@ owners:
   only by a newly authorized request. A fresh Console policy revision replaces
   the current decision, including grants; old revisions and equal revisions with
   different digests are rejected using durable per-subject/project high-water
-  marks. New decisions received on reads narrow/replace running-turn authority
+  marks. A verified newer policy and its restrictions MUST commit even if the
+  requested operation is denied; operation rollback cannot undo revocation.
+  New decisions received on reads narrow/replace running-turn authority
   without extending leases. Loss of send access expires the turn. If Console
   stops issuing delegation, authority expires within30seconds plus a250ms abort
   tick. In-flight effects cannot be undone; revocation is bounded, not instantaneous.

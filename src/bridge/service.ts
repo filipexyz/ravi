@@ -77,13 +77,16 @@ export class BridgeService {
       const request = bridgeRequestSchema.parse(input);
       requestId = request.requestId;
       const { grant, enrollment } = await verifyBridgeGrant(this.store, request, token, connectionId, this.runtimeId);
-      const data = this.store.atomic(() => {
+      this.store.atomic(() => {
         // Verification yields during crypto: recheck enrollment inside the transaction.
         const live = this.store.enrollment(enrollment.id);
         if (!live?.active || live.epoch !== grant.epoch) throw new BridgeError("ACCESS_REVOKED");
         this.advanceDelegation(grant);
-        return this.execute(request, grant, live);
       });
+      // Policy is an authenticated fact, independent of whether this operation
+      // succeeds. A denied renewal/read must not roll back revocation or its
+      // high-water mark. Neither transaction yields between these checks.
+      const data = this.store.atomic(() => this.execute(request, grant, enrollment));
       return { ok: true, requestId, data };
     } catch (error) {
       return {

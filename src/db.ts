@@ -1,3 +1,4 @@
+import { isBridgeSessionRef } from "./bridge/isolation.js";
 import { Database, type SQLQueryBindings } from "bun:sqlite";
 import { join } from "node:path";
 import { mkdirSync } from "node:fs";
@@ -106,6 +107,9 @@ export function saveMessage(
   providerSessionId?: string | null,
   metadata: SaveMessageMetadata = {},
 ): void {
+  // The human journal is authoritative; never copy private conversations into
+  // the ordinary chat/knowledge store, whose readers lack Console delegation.
+  if (isBridgeSessionRef(sessionId)) return;
   getDb()
     .prepare(
       `INSERT INTO messages (

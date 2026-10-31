@@ -1,5 +1,6 @@
 import { getAccountForAgent, type AgentConfig } from "../router/index.js";
 import { resolveBridgeInvocation } from "../bridge/authority.js";
+import { assertBridgeProvider, isBridgeSessionRef } from "../bridge/isolation.js";
 import {
   dbGetContext,
   dbUpdateContextCapabilities,
@@ -74,6 +75,7 @@ export function buildRuntimeRequestContext(options: RuntimeRequestContextOptions
     approvalSource,
   } = options;
 
+  if (prompt._bridgeTurnId || isBridgeSessionRef(dbSessionKey)) assertBridgeProvider(runtimeProviderId);
   const capabilities = buildRuntimeContextCapabilities(agent.id, sessionName, prompt);
   // A fresh runtime launch owns the session's authority slot. Any turn-scoped
   // context still live here belongs to a runtime that is already gone: idle
@@ -151,6 +153,8 @@ export function refreshRuntimeRequestContextForTurn(options: {
   /** Where this turn's answer goes, as the runtime bound it for the turn. */
   replyTarget?: TurnReplyTarget;
 }): ContextRecord {
+  if (options.prompt._bridgeTurnId || isBridgeSessionRef(options.dbSessionKey))
+    assertBridgeProvider(options.runtimeProviderId);
   const derived = deriveRuntimeContextForPrompt({
     agentId: options.agent.id,
     sessionKey: options.dbSessionKey,

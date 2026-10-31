@@ -37,6 +37,16 @@ Bridge state is separate, under `human-bridge/bridge.db`; existing conversations
 are never adopted. Receipts and journal must survive rollback. Stop new managed
 work and disable the listener to roll back; do not replay uncertain turns.
 
+## Additional publication security review
+
+Generic session tools intentionally cannot enumerate, read, trace or control the
+reserved private bridge namespace, including ordinary admin/wildcard contexts.
+The owner uses the signed bridge surface. New private prompts/replies do not
+enter shared chat history. This changes only the new private sessions, not legacy
+channel sessions. Only Codex supports this MVP isolation; alternate providers
+fail before preparation. Authenticated policy revisions commit independently of
+denied operations, so a failed lease renewal cannot restore revoked authority.
+
 ## Evidence and limits
 
 Focused tests cover ordinary authorization without bridge storage, agent naming,
