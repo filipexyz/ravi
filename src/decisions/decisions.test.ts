@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
+import { renameSessionName } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { runWithContext, type ToolContext } from "../cli/context.js";
 import { getDb, dbUpsertChat } from "../router/router-db.js";
@@ -212,6 +213,35 @@ describe("generic decisions and managed threads", () => {
       ),
     );
     expect(getDecision(decision.id)!.status).toBe("open");
+  });
+
+  it("keeps active task self-answer protection when its existing runtime session is renamed", async () => {
+    getOrCreateSession("canonical-worker-key", "main", state!, { name: "task-worker-alias" });
+    const { task } = dbCreateTask({ title: "Owned work", instructions: "fixture", createdByAgentId: "main" });
+    dbDispatchTask(task.id, { agentId: "main", sessionName: "task-worker-alias" });
+    const { decision } = dbDecideTask(task.id, { key: "k", ask: "Question" });
+    const before = getDb()
+      .query("SELECT assigned_at,checkpoint_due_at,checkpoint_overdue_count FROM task_assignments WHERE task_id=?")
+      .get(task.id);
+    renameSessionName("canonical-worker-key", "renamed-task-worker");
+    expect(getDb().query("SELECT assignee_session_name FROM tasks WHERE id=?").get(task.id)).toEqual({
+      assignee_session_name: "renamed-task-worker",
+    });
+    expect(
+      getDb()
+        .query("SELECT assigned_at,checkpoint_due_at,checkpoint_overdue_count FROM task_assignments WHERE task_id=?")
+        .get(task.id),
+    ).toEqual(before);
+    expect(() =>
+      runWithContext(caller("canonical-worker-key"), () =>
+        validateDecisionMutation(
+          { type: "task", id: task.id, chatId: null, sessionKey: null },
+          "answer",
+          getDecision(decision.id)!,
+        ),
+      ),
+    ).toThrow("waiting worker");
+    expect(getDecision(decision.id)!.askedBy).toBeNull();
   });
 
   it("requires modify as well as read access for a non-parent session", async () => {
