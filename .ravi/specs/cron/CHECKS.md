@@ -71,3 +71,21 @@ RAVI_CONTEXT_KEY=<viewer-ctx> ravi cron disable <other-agent-job-id> --json
 - Repeating `cron add` with the same explicit idempotency key and the same normalized input MUST return the original target with `changedCount=0`.
 - Reusing an explicit key for different input MUST fail.
 - Replaying the same observer rule/source-turn/action after a one-shot target was deleted MUST NOT recreate the cron.
+
+## Admission Authority MUST Survive Job Mutation
+
+- `bun test src/cron/runner.test.ts` MUST dispatch a contact job, classify its
+  runtime context, transfer to the operator mid-turn, and still classify as the
+  contact. The next dispatch MUST use the operator. Cover main and isolated
+  sessions, queued consumption, continuations, and the reverse transfer.
+- The same suite MUST refuse owner-attributed calls after the original contact
+  is blocked or removed, even when the job has transferred to the operator.
+- Disabling a job MUST preserve admitted authority while stopping subsequent
+  scheduled dispatch. One-shot auto-deletion MUST preserve admitted authority.
+- Shell execution MUST carry the captured authority after a transfer, overriding
+  an env-file replacement. Missing or malformed prompt snapshots MUST refuse.
+- `bun test src/runtime/runtime-request-context.test.ts` MUST retain the admitted
+  contact/chat overlay when ownership changes before queued consumption.
+- `bun test src/link/connector-turn.test.ts src/cloud-auth/turn-actor.test.ts`
+  MUST prevent promotion through a later operator identity link and prevent a
+  blocked operator-linked contact from falling back to contact/Console authority.

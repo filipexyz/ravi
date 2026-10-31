@@ -76,8 +76,12 @@ and compact discovery. Tasks are the core work-dispatch surface for agents, so
 | case | code | exit |
 |---|---|---|
 | task not found | `TASK_NOT_FOUND` + suggestions | 1 |
+| profile id not found | `TASK_PROFILE_NOT_FOUND` (HTTP 422), without enumerating the catalog | 1 |
 | invalid flag/arg | `USAGE_ERROR` + acceptedFlags | 2 |
 | braked write without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
+
+The remote CLI MUST preserve `TASK_PROFILE_NOT_FOUND` for task commands using local
+message/action copy, without relaying a runtime catalog or raw exception text.
 
 ## Internal consumers
 

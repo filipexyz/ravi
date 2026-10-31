@@ -146,6 +146,14 @@ Required capability materializers:
   delete their content. Quoting `bash`, `python3` or `-c` MUST NOT bypass the
   unconditional executable or inline-code checks. Active pipeline receivers
   MUST be checked independently of literal pipe characters in arguments.
+- All shell token consumers, including output-redirect checks, MUST use the
+  same word-start comment semantics: an unquoted mid-word `#` is data and MUST
+  NOT hide later executables, inline flags or redirect targets. A real comment
+  MUST still stop at the next newline.
+- Piped-interpreter stdin detection MUST count command words, excluding leading
+  assignments, comments, redirection operators, descriptors and destinations.
+  These shell decorations MUST NOT make a bare interpreter appear to have a
+  script argument, even when wildcard executable access is granted.
 - The bounded scanner MUST refuse unterminated quotes/escapes and unsupported
   ANSI-C / locale quoting rather than assume them safe. It is not a shell AST.
   `stripShellQuoting`, used for identity text checks, MUST NOT be used as the

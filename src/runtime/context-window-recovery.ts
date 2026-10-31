@@ -36,7 +36,7 @@ export interface RuntimeContextRecoveryPromptInput {
   runtimeProvider?: RuntimeProviderId | null;
   model?: string | null;
   error?: string | null;
-  recoveryKind?: RuntimeSessionRecoveryFailure["kind"];
+  recoveryKind?: RuntimeSessionRecoveryFailure["kind"] | "cold_start";
   history: Message[];
   /** The failed turn's own input. History rows carry no sender, so it wins over them. */
   latestUserRequest?: string;
@@ -173,7 +173,7 @@ function renderPrompt(input: {
   sessionName: string;
   runtimeProvider?: RuntimeProviderId | null;
   model?: string | null;
-  recoveryKind?: RuntimeSessionRecoveryFailure["kind"];
+  recoveryKind?: RuntimeContextRecoveryPromptInput["recoveryKind"];
   latestUserRequest?: string;
   transcript: string;
   truncated: boolean;
@@ -208,7 +208,10 @@ function renderPrompt(input: {
     .join("\n");
 }
 
-function renderRecoveryNotice(kind: RuntimeSessionRecoveryFailure["kind"] | undefined): string {
+function renderRecoveryNotice(kind: RuntimeContextRecoveryPromptInput["recoveryKind"]): string {
+  if (kind === "cold_start") {
+    return "The previous provider session could not be safely resumed. Ravi recovered this bounded transcript from this session's durable history. The current request below takes precedence over historical requests.";
+  }
   if (kind === "provider_session_missing") {
     return "The provider could not find the previous conversation it was asked to resume. Ravi cleared only provider state and started a fresh provider session.";
   }

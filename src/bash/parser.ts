@@ -87,7 +87,7 @@ export function checkDangerousPatterns(command: string): PatternCheckResult {
         if (isInlineCodeExecution(executable, receiver).blocked) {
           return { safe: false, reason: "piping to interpreter with inline code is not allowed" };
         }
-        if (parseShell(receiver).length === 1) {
+        if (countCommandWords(receiver) === 1) {
           return { safe: false, reason: "piping to interpreter stdin is not allowed" };
         }
       }
@@ -185,17 +185,57 @@ function isEnvAssignment(token: string): boolean {
   return /^[A-Za-z_][A-Za-z0-9_]*=/.test(token);
 }
 
+/** Keep shell-quote's word view consistent with Bash's word-start comments. */
+function parseWords(command: string, env?: Parameters<typeof parseShell>[1]): ParseEntry[] {
+  const inspected = inspectShellSyntax(command);
+  if (inspected.error) throw new Error(inspected.error);
+  let view = "";
+  for (let i = 0; i < inspected.command.length; i++) {
+    // Only active, mid-word hashes survive in syntax. Quoted/escaped hashes
+    // and actual comments must retain their original spelling.
+    view += (inspected.syntax[i] === "#" ? "\\" : "") + inspected.command[i];
+  }
+  return parseShell(view, env);
+}
+
+/** Assignments, comments and redirect operands are not interpreter arguments. */
+function countCommandWords(command: string): number {
+  const tokens = parseWords(command);
+  let count = 0;
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i]!;
+    const next = tokens[i + 1];
+    if (typeof token === "string") {
+      if (count === 0 && isEnvAssignment(token)) continue;
+      if (/^\d+$/.test(token) && typeof next === "object" && "op" in next && /[<>]/.test(next.op)) continue;
+      count++;
+    } else if ("comment" in token) {
+      break;
+    } else if (token.op === "glob") {
+      count++;
+    } else if (token.op === "&" && typeof next === "object" && "op" in next && [">", ">>"].includes(next.op)) {
+      // The following redirect token consumes the combined redirect destination.
+    } else if ([">", ">>", "<", ">&", "<&", "<>"].includes(token.op)) {
+      if (token.op === ">" && typeof next === "object" && "op" in next && next.op === "|") i++;
+      if (tokens[++i] === undefined) throw new Error("Missing shell redirect destination");
+    } else {
+      throw new Error("Cannot resolve shell pipeline arguments");
+    }
+  }
+  return count;
+}
+
 /**
  * Parse a single simple command (no pipes/chains) and extract the executable.
  */
 function parseSimpleCommand(command: string): string | null {
-  const tokens = parseShell(command.trim(), () => ({ op: "glob", pattern: "unknown expansion" }));
+  const tokens = parseWords(command.trim(), () => ({ op: "glob", pattern: "unknown expansion" }));
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i]!;
     if (typeof token !== "string") {
       if ("comment" in token) break;
       if (token.op === "glob") throw new Error("Cannot resolve a dynamic shell executable");
-      if ([">", ">>", "<", ">&"].includes(token.op)) {
+      if ([">", ">>", "<", ">&", "<&", "<>"].includes(token.op)) {
         const next = tokens[i + 1];
         if (token.op === ">" && typeof next === "object" && "op" in next && next.op === "|") i++;
         i++; // redirect destination
@@ -243,7 +283,7 @@ function isInlineCodeExecution(executable: string, command: string): { blocked: 
   if (!flags) return { blocked: false };
 
   // Check if any inline code flag is present in the command
-  const tokens = parseShell(command);
+  const tokens = parseWords(command);
   const execIndex = tokens.findIndex((t) => typeof t === "string" && extractExecutableName(t) === executable);
 
   if (execIndex === -1) return { blocked: false };
@@ -253,7 +293,7 @@ function isInlineCodeExecution(executable: string, command: string): { blocked: 
     const token = tokens[i];
     if (typeof token !== "string") {
       if (!token || "comment" in token) break;
-      if ([">", ">>", "<", ">&"].includes(token.op)) {
+      if ([">", ">>", "<", ">&", "<&", "<>"].includes(token.op)) {
         const next = tokens[i + 1];
         if (token.op === ">" && typeof next === "object" && "op" in next && next.op === "|") i++;
         i++;
@@ -302,7 +342,7 @@ export function parseBashCommand(command: string): ParsedCommand {
 
         // Check for sudo - also extract the actual command
         if (exec === "sudo") {
-          const words = parseShell(cmd).filter((token): token is string => typeof token === "string");
+          const words = parseWords(cmd).filter((token): token is string => typeof token === "string");
           const index = words.findIndex((word) => extractExecutableName(word) === "sudo");
           const actualExec = words[index + 1] ? extractExecutableName(words[index + 1]!) : null;
           if (actualExec) {
@@ -429,7 +469,7 @@ export function analyzeOutputRedirects(
   }
   let tokens: ParseEntry[];
   try {
-    tokens = parseShell(command, () => ({ op: "glob", pattern: "unknown expansion" }));
+    tokens = parseWords(command, () => ({ op: "glob", pattern: "unknown expansion" }));
   } catch {
     return { writes, error: "Cannot parse output redirect safely" };
   }
