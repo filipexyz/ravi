@@ -119,3 +119,25 @@ it("only updates explicitly, from an integrated remote parent, with force false;
   git("commit", "-qm", "unrelated");
   expect(() => planPublication("fix/fixture", cwd, true)).toThrow();
 });
+
+it("requires integrating dev and preserves its ancestry when updating an existing work branch", () => {
+  const workBranch = git("branch", "--show-current");
+  git("update-ref", "refs/remotes/origin/fix/fixture", "HEAD");
+  git("checkout", "-qb", "dev-advance", "origin/dev");
+  writeFileSync(join(cwd, "from-dev"), "upstream change");
+  git("add", ".");
+  git("commit", "-qm", "advance dev");
+  git("update-ref", "refs/remotes/origin/dev", "HEAD");
+  git("checkout", workBranch);
+  expect(() => planPublication("fix/fixture", cwd, true)).toThrow();
+  git("merge", "--no-edit", "dev-advance");
+  const plan = planPublication("fix/fixture", cwd, true);
+  expect(plan.parents).toEqual([git("rev-parse", "origin/fix/fixture"), git("rev-parse", "origin/dev")]);
+  const { api, calls } = backend(plan, { existing: true });
+  publishPlan(plan, api, (sha) => execFileSync("git", ["cat-file", "blob", sha], { cwd }));
+  expect(calls.find((call) => call.endpoint.endsWith("/commits"))?.body).toMatchObject({
+    parents: plan.parents,
+    tree: plan.tree,
+  });
+  expect(calls.at(-1)?.body).toMatchObject({ force: false });
+});

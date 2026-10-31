@@ -15,6 +15,7 @@ export interface PublishPlan {
   repository: string;
   branch: string;
   base: string;
+  parents: string[];
   head: string;
   tree: string;
   baseTree: string;
@@ -54,6 +55,12 @@ export function planPublication(branch: string, cwd = process.cwd(), update = fa
   const base = git("rev-parse", baseRef);
   const head = git("rev-parse", "HEAD");
   git("merge-base", "--is-ancestor", base, head);
+  const dev = git("rev-parse", "origin/dev");
+  git("merge-base", "--is-ancestor", dev, head);
+  // Preserve an integrated base branch in the published graph, not just its
+  // content. Otherwise every subsequent dev update can conflict with a squash.
+  const parents = [base];
+  if (update && git("merge-base", dev, base) !== dev) parents.push(dev);
   git("diff", "--check", base, head);
   const entries = run("git", ["diff", "--raw", "--no-abbrev", "--no-renames", "-z", base, head], { cwd })
     .toString()
@@ -70,6 +77,7 @@ export function planPublication(branch: string, cwd = process.cwd(), update = fa
     repository,
     branch,
     base,
+    parents,
     head,
     changes,
     update,
@@ -103,7 +111,7 @@ export function publishPlan(plan: PublishPlan, api: GitApi, readBlob: (sha: stri
   }
   const tree = api("POST", `${root}/trees`, { base_tree: plan.baseTree, tree: plan.changes }) as { sha: string };
   if (tree.sha !== plan.tree) throw new Error("Published tree differs from checked HEAD; no ref created.");
-  const commit = api("POST", `${root}/commits`, { message: plan.message, tree: tree.sha, parents: [plan.base] }) as {
+  const commit = api("POST", `${root}/commits`, { message: plan.message, tree: tree.sha, parents: plan.parents }) as {
     sha: string;
   };
   if (plan.update) api("PATCH", `${root}/refs/heads/${plan.branch}`, { sha: commit.sha, force: false });
@@ -129,7 +137,12 @@ export function runFocusedChecks(plan: PublishPlan, tests: string[], cwd = proce
     console.log(run("bun", ["src/ci/run-quality-gate.ts"], { cwd, env }).toString());
     // A check that edits tracked files invalidates the reviewed plan.
     const after = planPublication(plan.branch, cwd, plan.update);
-    if (after.head !== plan.head || after.tree !== plan.tree || after.base !== plan.base)
+    if (
+      after.head !== plan.head ||
+      after.tree !== plan.tree ||
+      after.base !== plan.base ||
+      after.parents.join() !== plan.parents.join()
+    )
       throw new Error("Checkout changed during checks.");
   } finally {
     rmSync(state, { recursive: true, force: true });
