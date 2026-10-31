@@ -190,6 +190,18 @@ export function modelProviderMismatch(
 ): string | null {
   const value = model?.trim();
   if (!value || !provider) return null;
+  // Pi chooses its own API provider for bare model ids. A Codex selector
+  // inherited from a parent must not silently run against that provider.
+  // Explicit Pi provider/model selectors remain valid (including custom models).
+  if (provider === "pi" && /^(gpt[-_.]?\d|gpt-|o[1-9]([-_.]|$)|codex)/i.test(value)) {
+    return `Model "${value}" requires an explicit runtime: pass --provider codex, or use a Pi provider/model selector.`;
+  }
+  if (provider === "codex" && /^(grok|gemini|llama|mistral|deepseek|[^/]+\/)/i.test(value)) {
+    return `Model "${value}" does not belong to the codex runtime. Pass --provider for that model.`;
+  }
+  if (provider === "grok" && FOREIGN_MODEL_PATTERN.test(value) && !/^grok/i.test(value)) {
+    return `Model "${value}" does not belong to the grok runtime. Pass --provider for that model.`;
+  }
   if (provider === "claude") {
     if (isClaudeModelAlias(value) || !FOREIGN_MODEL_PATTERN.test(value)) return null;
     return `Model "${value}" does not belong to the claude runtime. Pass --provider for that model, or choose a Claude model.`;

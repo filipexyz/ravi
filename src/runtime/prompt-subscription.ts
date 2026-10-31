@@ -23,6 +23,7 @@ import { formatUserFacingTurnFailure } from "./public-failure.js";
 const log = logger.child("runtime:prompt-subscription");
 const PROMPT_DISPATCH_RETRY_DELAY_MS = 5_000;
 const PROMPT_ACK_PROGRESS_INTERVAL_MS = 30_000;
+const START_CAPACITY_RETRY_DELAYS_MS = [1_000, 5_000] as const;
 
 export interface RuntimePromptSubscriptionOptions {
   isRunning(): boolean;
@@ -31,6 +32,7 @@ export interface RuntimePromptSubscriptionOptions {
   getRuntimeSessionPoolSnapshot?(): RuntimeSessionPoolSnapshot;
   ensurePromptInfrastructure?(options?: EnsureSessionPromptInfrastructureOptions): Promise<void>;
   promptAckProgressIntervalMs?: number;
+  startCapacityRetryDelaysMs?: readonly number[];
   markConsumerReady(): void;
   handlePrompt(sessionName: string, prompt: RuntimeLaunchPrompt): Promise<void>;
 }
@@ -265,6 +267,45 @@ export class RuntimePromptSubscription {
     void dispatch;
   }
 
+  private async handlePromptWithCapacityRetry(sessionName: string, prompt: RuntimeLaunchPrompt): Promise<void> {
+    const delays = this.options.startCapacityRetryDelaysMs ?? START_CAPACITY_RETRY_DELAYS_MS;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await this.options.handlePrompt(sessionName, prompt);
+        return;
+      } catch (error) {
+        // Only this typed refusal proves that no provider handoff happened.
+        // Decision receipts already have their own durable retry owner.
+        if (
+          !(error instanceof RuntimeStartCapacityError) ||
+          prompt._decisionDeliveryId ||
+          attempt >= delays.length ||
+          !this.options.isRunning()
+        )
+          throw error;
+        const retryDelayMs = delays[attempt]!;
+        log.info("Retrying runtime admission before provider handoff", {
+          sessionName,
+          attempt: attempt + 1,
+          retryDelayMs,
+        });
+        await nats
+          .emit(`ravi.session.${sessionName}.runtime`, {
+            type: "dispatch.start_retry",
+            reason: error.capacity.reason,
+            attempt: attempt + 1,
+            retryDelayMs,
+            providerHandoff: false,
+            ...(prompt.source ? { _source: prompt.source } : {}),
+            timestamp: new Date().toISOString(),
+          })
+          .catch((emitError) => log.warn("Failed to emit admission retry", { sessionName, error: emitError }));
+        await delay(retryDelayMs);
+        if (!this.options.isRunning()) throw error;
+      }
+    }
+  }
+
   private async dispatchPrompt(sessionName: string, prompt: RuntimeLaunchPrompt, msg: JsMsg): Promise<void> {
     const info = msg.info;
     const key = runtimeStartReceiptKey(
@@ -291,7 +332,7 @@ export class RuntimePromptSubscription {
           this.options.handlePrompt(sessionName, accepted),
         ))
       ) {
-        await this.options.handlePrompt(sessionName, prompt);
+        await this.handlePromptWithCapacityRetry(sessionName, prompt);
       }
     } catch (error) {
       if (error instanceof RuntimeStartCapacityError) {

@@ -1460,6 +1460,16 @@ function loadSessionReadTranscript(session: SessionEntry, maxMessages: number): 
     };
   }
 
+  // A thread shares the platform chat id with its parent and sibling threads.
+  // An empty child history is not permission to read that shared chat history.
+  if (session.lastThreadId || session.sessionKey.includes(":thread:")) {
+    return {
+      messages: [],
+      totalMessages: 0,
+      transcript: { available: true, source: "chat-db", sessionName: sessionLabel },
+    };
+  }
+
   const chatIdVariants = resolveSessionChatIdVariants(session);
   const chatDbByChat = getRecentHistoryByChatIds(chatIdVariants, maxMessages, session.agentId);
   if (chatDbByChat.length > 0) {
@@ -6582,10 +6592,13 @@ export class SessionCommands {
           loadRouterConfig().agents[creationTarget.parentSession.agentId] ??
           null,
       }).provider.value;
-    const providerMismatch = modelProviderMismatch(parentProvider, normalizedModel);
+    const selectorValidation = normalizedModel ? validateRuntimeModelSelector(parentProvider, normalizedModel) : null;
+    const providerMismatch = selectorValidation?.error ?? modelProviderMismatch(parentProvider, normalizedModel);
     if (providerMismatch) {
-      fail(providerMismatch);
-      return;
+      contractFail("sessions create-thread", "THREAD_MODEL_PROVIDER_MISMATCH", providerMismatch, {
+        asJson,
+        details: { suggestedAction: "Choose --provider explicitly; Pi selectors use provider/model" },
+      });
     }
     const requestedBy = resolveSlackThreadRequester();
     const requestedRuntimeLabel = slackThreadRuntimeLabel({

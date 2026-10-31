@@ -95,6 +95,72 @@ beforeEach(async () => {
 });
 
 describe("RuntimePromptSubscription", () => {
+  it.each([false, true])("retries capacity only before handoff, exhausted=%s", async (exhausted) => {
+    const prompt = {
+      prompt: "original",
+      source: { channel: "slack", accountId: "slack", chatId: "C123", threadId: "123.456" },
+    };
+    const message = makePromptMessage("ravi.session.child.prompt", prompt);
+    const capacity = {
+      lane: "interactive" as const,
+      reason: "concurrency_limit" as const,
+      active: 1,
+      reserved: 0,
+      max: 1,
+      backgroundLimit: 0,
+      queuePosition: null,
+      occupants: [],
+      largestConsumer: null,
+    };
+    let attempts = 0;
+    const handlePrompt = mock(async (_name: string, received: unknown) => {
+      expect(received).toEqual(prompt);
+      attempts++;
+      if (exhausted || attempts < 3) throw new RuntimeStartCapacityError(capacity);
+    });
+    const subscription = new RuntimePromptSubscription({
+      isRunning: () => true,
+      canAcceptPrompt: () => true,
+      getStreamingSessionCount: () => 1,
+      markConsumerReady: () => {},
+      handlePrompt,
+      startCapacityRetryDelaysMs: [1, 5],
+    });
+    await (subscription as any).dispatchPrompt("child", prompt, message);
+    expect(handlePrompt).toHaveBeenCalledTimes(3);
+    expect(message.ack).toHaveBeenCalledTimes(1);
+    const retries = emitCalls.filter((call) => call.payload.type === "dispatch.start_retry");
+    expect(retries.map((call) => call.payload.retryDelayMs)).toEqual([1, 5]);
+    expect(retries.every((call) => call.payload.providerHandoff === false)).toBe(true);
+    expect(listLocalInboxItems()).toHaveLength(exhausted ? 1 : 0);
+    const notice = emitCalls.find((call) => call.topic === "ravi.session.child.response");
+    if (exhausted) expect(notice?.payload.response).toContain("pedido foi salvo");
+    else expect(notice).toBeUndefined();
+    if (exhausted) {
+      await (subscription as any).dispatchPrompt("child", prompt, message);
+      expect(handlePrompt).toHaveBeenCalledTimes(3);
+    }
+  });
+
+  it("never locally retries an ambiguous provider failure after admission", async () => {
+    const message = makePromptMessage("ravi.session.child.prompt", { prompt: "original" });
+    const handlePrompt = mock(async () => {
+      throw new Error("provider transport failed after handoff");
+    });
+    const subscription = new RuntimePromptSubscription({
+      isRunning: () => true,
+      canAcceptPrompt: () => true,
+      getStreamingSessionCount: () => 1,
+      markConsumerReady: () => {},
+      handlePrompt,
+      startCapacityRetryDelaysMs: [1, 5],
+    });
+    await (subscription as any).dispatchPrompt("child", { prompt: "original" }, message);
+    expect(handlePrompt).toHaveBeenCalledTimes(1);
+    expect(emitCalls.filter((call) => call.payload.type === "dispatch.start_retry")).toHaveLength(0);
+    expect(listLocalInboxItems()).toHaveLength(0);
+  });
+
   it("routes decision envelopes through durable admission and ACKs an already accepted duplicate without another turn", async () => {
     const message = makePromptMessage("ravi.session.dev.prompt", {
       prompt: "duplicate",
@@ -111,6 +177,7 @@ describe("RuntimePromptSubscription", () => {
       canAcceptPrompt: () => true,
       getStreamingSessionCount: () => 0,
       ensurePromptInfrastructure: ensureInfrastructureMock,
+      startCapacityRetryDelaysMs: [],
       markConsumerReady: () => {},
       handlePrompt,
     });
@@ -126,6 +193,7 @@ describe("RuntimePromptSubscription", () => {
       canAcceptPrompt: () => true,
       getStreamingSessionCount: () => 0,
       ensurePromptInfrastructure: ensureInfrastructureMock,
+      startCapacityRetryDelaysMs: [],
       markConsumerReady: mock(() => {}),
       handlePrompt: mock(async () => {}),
     });
@@ -156,6 +224,7 @@ describe("RuntimePromptSubscription", () => {
       canAcceptPrompt,
       getStreamingSessionCount: () => 0,
       ensurePromptInfrastructure: ensureInfrastructureMock,
+      startCapacityRetryDelaysMs: [],
       markConsumerReady: mock(() => {}),
       handlePrompt,
     });
@@ -181,6 +250,7 @@ describe("RuntimePromptSubscription", () => {
       canAcceptPrompt: () => true,
       getStreamingSessionCount: () => 0,
       ensurePromptInfrastructure: ensureInfrastructureMock,
+      startCapacityRetryDelaysMs: [],
       markConsumerReady: mock(() => {}),
       handlePrompt,
     });
@@ -207,6 +277,7 @@ describe("RuntimePromptSubscription", () => {
       canAcceptPrompt: () => true,
       getStreamingSessionCount: () => 0,
       ensurePromptInfrastructure: ensureInfrastructureMock,
+      startCapacityRetryDelaysMs: [],
       markConsumerReady: mock(() => {}),
       handlePrompt,
     });
@@ -239,6 +310,7 @@ describe("RuntimePromptSubscription", () => {
       canAcceptPrompt: () => true,
       getStreamingSessionCount: () => 0,
       ensurePromptInfrastructure: ensureInfrastructureMock,
+      startCapacityRetryDelaysMs: [],
       markConsumerReady: mock(() => {}),
       handlePrompt,
     });
@@ -278,6 +350,7 @@ describe("RuntimePromptSubscription", () => {
       canAcceptPrompt: () => true,
       getStreamingSessionCount: () => 0,
       ensurePromptInfrastructure: ensureInfrastructureMock,
+      startCapacityRetryDelaysMs: [],
       markConsumerReady: mock(() => {}),
       handlePrompt,
     });
@@ -308,6 +381,7 @@ describe("RuntimePromptSubscription", () => {
       canAcceptPrompt: () => true,
       getStreamingSessionCount: () => 0,
       ensurePromptInfrastructure: ensureInfrastructureMock,
+      startCapacityRetryDelaysMs: [],
       promptAckProgressIntervalMs: 5,
       markConsumerReady: mock(() => {}),
       handlePrompt: async () => accepted,
@@ -342,6 +416,7 @@ describe("RuntimePromptSubscription", () => {
       canAcceptPrompt: () => true,
       getStreamingSessionCount: () => 12,
       ensurePromptInfrastructure: ensureInfrastructureMock,
+      startCapacityRetryDelaysMs: [],
       markConsumerReady: () => {},
       handlePrompt: async (_name, prompt) => {
         handled.push(prompt.prompt);
@@ -379,6 +454,7 @@ describe("RuntimePromptSubscription", () => {
       canAcceptPrompt: () => true,
       getStreamingSessionCount: () => 1,
       ensurePromptInfrastructure: ensureInfrastructureMock,
+      startCapacityRetryDelaysMs: [],
       markConsumerReady: () => {},
       handlePrompt: async (name, prompt) => {
         if (saturated && name === "main")
@@ -459,6 +535,7 @@ describe("RuntimePromptSubscription", () => {
       canAcceptPrompt: () => true,
       getStreamingSessionCount: () => 1,
       ensurePromptInfrastructure: ensureInfrastructureMock,
+      startCapacityRetryDelaysMs: [],
       markConsumerReady: () => {},
       handlePrompt: async () => {
         throw new RuntimeStartCapacityError({
@@ -495,6 +572,7 @@ describe("RuntimePromptSubscription", () => {
       canAcceptPrompt: () => true,
       getStreamingSessionCount: () => 1,
       ensurePromptInfrastructure: ensureInfrastructureMock,
+      startCapacityRetryDelaysMs: [],
       markConsumerReady: () => {},
       handlePrompt: async () => {
         throw new RuntimeStartCapacityError({
@@ -531,6 +609,7 @@ describe("RuntimePromptSubscription", () => {
       canAcceptPrompt: () => true,
       getStreamingSessionCount: () => 0,
       ensurePromptInfrastructure: ensureInfrastructureMock,
+      startCapacityRetryDelaysMs: [],
       markConsumerReady: mock(() => {}),
       handlePrompt,
     });
@@ -565,6 +644,7 @@ describe("RuntimePromptSubscription", () => {
       canAcceptPrompt,
       getStreamingSessionCount: () => 0,
       ensurePromptInfrastructure: ensureInfrastructureMock,
+      startCapacityRetryDelaysMs: [],
       markConsumerReady: mock(() => {}),
       handlePrompt,
     });
