@@ -12,9 +12,9 @@ ravi decisions retry <decision-id> --execute --json
 
 Command authorization remains separate from origin authorization. Existing tasks/sessions grants are not silently expanded to the new namespace. Before rollout, the operator must explicitly provision the command capability for intended callers; this PR performs no live grant or provider mutation.
 
-For `THREAD_DECISIONS_PENDING`, inspect open decisions and answer deliveries. `published` is waiting for runtime acceptance. A failed publication retries with backoff and can be retried explicitly. `DECISION_ORIGIN_MISMATCH` requires fixing the actual chat/session binding, never changing a decision's destination to another thread.
+For `THREAD_DECISIONS_PENDING`, inspect open decisions and answer deliveries. `published` is waiting for runtime acceptance. A failed publication retries with backoff and can be retried explicitly. `DECISION_AGENT_MISSING` means the original child agent was unavailable before dispatch; restore it before retrying, never redirect to a default agent. `DECISION_ORIGIN_MISMATCH` requires fixing the actual chat/session binding, never changing a decision's destination to another thread.
 
-For `uncertain`, inspect `ravi sessions trace <child-session>` and the decision detail. Only the local operator, after establishing whether admission occurred, may run:
+For `uncertain`, inspect `ravi sessions trace <child-session>` and the decision detail. Daemon-spawned shell automations are not local operators. Only the local operator, after establishing whether admission occurred, may run:
 
 ```bash
 ravi decisions resolve-delivery <decision-id> --outcome received --evidence "Trace <turn-ref> shows admission" --execute --json

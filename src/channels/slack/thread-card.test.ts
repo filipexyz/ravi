@@ -52,6 +52,19 @@ describe("Slack thread card", () => {
     expect(cardTexts(answered.blocks).subtext).not.toContain("Aguardando decisão");
   });
 
+  it("bounds and escapes the waiting notification so question text cannot ping Slack members", () => {
+    const card = buildSlackThreadCard("Review report", {
+      status: "waiting",
+      note: "<!channel> <!here> <@U123> & " + "long question ".repeat(100),
+    });
+    expect(card.text).not.toContain("<!channel>");
+    expect(card.text).not.toContain("<!here>");
+    expect(card.text).not.toContain("<@U123>");
+    expect(card.text).toContain("&lt;!channel&gt;");
+    expect(card.text.length).toBeLessThanOrEqual("Review report — Aguardando decisão: ".length + 150);
+    expect(buildSlackThreadCard("Review report", { status: "open", note: "<!channel>" }).text).toBe("Review report");
+  });
+
   it("is one card block: title, a short summary and the open status", () => {
     const card = buildSlackThreadCard(LONG_BRIEF, { status: "open" });
     validateSlackBlockKitMessage(card);

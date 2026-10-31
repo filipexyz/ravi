@@ -38,3 +38,17 @@ This validates composition and generated copy, not Slack's proprietary card rend
 `decisions` needs explicit command grants in addition to origin access. There is no automatic grant expansion. Human free text is not ingested as a decision answer: an authorized parent/operator explicitly records it, preserving the existing distinction between provenance and authenticated approval. `resolve-delivery` is local-operator-only and requires trace evidence; it cannot be used by the waiting worker.
 
 The question outbox freezes its payload before first publication. Answer ids and frozen envelopes survive publication retries. An ambiguous dispatcher outcome requires operator inspection, because database and runtime admission cannot be committed in one transaction. Do not claim exactly-once execution across an unverified crash; the guarantee is durable duplicate suppression after admission and no automatic replay of uncertainty.
+
+## Adversarial review before merge
+
+Reproduced and corrected these gaps:
+
+- Nested authenticated caller identity was honored by authorization but omitted by self-answer validation and actor/relay provenance. Tests now cover thread and task workers, an unrelated caller, read-only grants and an explicitly authorized answerer.
+- A shell automation without session fields could reach local-operator recovery. The spawned automation principal now forbids that path.
+- Dispatcher success could acknowledge only a volatile debounce buffer, or silently fall back after the assigned agent disappeared. Decision prompts bypass debounce; a verified missing-agent rejection stays failed/retryable. Unknown outcomes still become uncertain rather than replaying automatically.
+- The dispatcher may await preflight before resolving its runtime session by name. The frozen envelope now carries the canonical waiting key, checked again at launch to reject a renamed/replaced target.
+- A reconciler holding a stale batch could reconstruct a question payload already frozen by another attempt. Claim now re-reads the stored payload and checks its retry deadline. An interleaving/rename test verifies identical retries.
+- The waiting card's notification text embedded raw mention syntax and unbounded question text. It now escapes and bounds the note using the existing helper. This preserves the inspected composition and reading order.
+- Sessions-skill decision examples now participate in the execute-consumer drift test.
+
+Also checked concurrent admission, close while admission is in progress, original migration field/provenance preservation, rollback on collision, and scope exclusions. The contract is one verified dispatcher admission under retries, with no automatic replay across ambiguous crashes; it does not claim exactly-once execution of arbitrary side effects. Signals, followups and checkpoint logic are unchanged.

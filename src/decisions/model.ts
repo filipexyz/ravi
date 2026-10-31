@@ -1,4 +1,13 @@
 import type { Decision, DecisionOwnerType, DecisionStatus } from "./types.js";
+
+/** A verified rejection before queueing or execution; safe to retry with the same delivery id. */
+export class DecisionDispatchRejectedError extends Error {
+  readonly reason = "DECISION_AGENT_MISSING";
+  constructor() {
+    super("The waiting session's agent is unavailable; the decision was not admitted.");
+    this.name = "DecisionDispatchRejectedError";
+  }
+}
 export type DecisionErrorCode =
   | "DECISION_ORIGIN_MISMATCH"
   | "DECISION_DELIVERY_UNCERTAIN"

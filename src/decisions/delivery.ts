@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { hasRuntimeInvocationContext } from "../cli/context.js";
+import { readSpawnedAutomationPrincipal } from "../runtime/turn-origin.js";
 import { CliExpectedError } from "../cli/expected-error.js";
 import { getScopeContext, isScopeEnforced } from "../permissions/scope.js";
 import { getDb } from "../router/router-db.js";
@@ -9,7 +10,7 @@ import { buildChannelTextOutboundJob } from "../channels/outbound-stream.js";
 import { publishChannelOutboundJobDurably } from "../channels/outbound-publish-outbox.js";
 import { getDecision, decisionWrite } from "./store.js";
 import { requireDecisionThread } from "./service.js";
-import { DecisionError } from "./model.js";
+import { DecisionError, DecisionDispatchRejectedError } from "./model.js";
 
 export interface DecisionDelivery {
   id: string;
@@ -65,13 +66,15 @@ export async function reconcileDecisionDeliveries(
   if (decisionId) await refreshDecisionCard(decisionId, deps);
 }
 
-async function deliver(row: DeliveryRow, deps: DecisionDeliveryDeps): Promise<void> {
+async function deliver(candidate: DeliveryRow, deps: DecisionDeliveryDeps): Promise<void> {
   const claim = randomUUID();
   const won = getDb()
     .query(`UPDATE decision_deliveries SET status='publishing',claim_id=?,claim_until=?,attempts=attempts+1
-    WHERE id=? AND status IN ('pending','failed','published','publishing') AND (claim_until IS NULL OR claim_until<?)`)
-    .run(claim, Date.now() + 60_000, row.id, Date.now()).changes;
+    WHERE id=? AND status IN ('pending','failed','published','publishing') AND next_attempt_at<=? AND (claim_until IS NULL OR claim_until<?)`)
+    .run(claim, Date.now() + 60_000, candidate.id, Date.now(), Date.now()).changes;
   if (!won) return;
+  // Another reconciler may have frozen a payload since the batch was read.
+  const row = getDb().query(`${SELECT} WHERE id=?`).get(candidate.id) as DeliveryRow;
   try {
     const decision = getDecision(row.decisionId)!;
     const { record, child, chat } = requireDecisionThread(decision.origin);
@@ -128,7 +131,7 @@ async function deliver(row: DeliveryRow, deps: DecisionDeliveryDeps): Promise<vo
       .query(
         "UPDATE decision_deliveries SET status='failed',claim_id=NULL,claim_until=NULL,next_attempt_at=?,last_error='DELIVERY_FAILED' WHERE id=? AND claim_id=? AND status='publishing'",
       )
-      .run(Date.now() + Math.min(300_000, 30_000 * 2 ** Math.min(row.attempts, 4)), row.id, claim);
+      .run(Date.now() + Math.min(300_000, 30_000 * 2 ** Math.min(row.attempts - 1, 4)), row.id, claim);
   }
 }
 
@@ -196,6 +199,14 @@ export async function admitDecisionAnswer(
     finish(id, claimed.claim, "delivered");
     await refreshDecisionCard(claimed.decisionId, deps);
   } catch (error) {
+    if (error instanceof DecisionDispatchRejectedError) {
+      getDb()
+        .query(
+          "UPDATE decision_deliveries SET status='failed',claim_id=NULL,claim_until=NULL,next_attempt_at=?,last_error=? WHERE id=? AND claim_id=?",
+        )
+        .run(Date.now() + 30_000, error.reason, id, claimed.claim);
+      throw error;
+    }
     // The runtime may have started before throwing. Repeating would risk executing twice.
     getDb()
       .query(
@@ -225,6 +236,7 @@ export function resetFailedDecisionDeliveries(decisionId: string): void {
 export function validateDeliveryResolution(decisionId: string, outcome: string, evidence: string): void {
   if (
     hasRuntimeInvocationContext() ||
+    readSpawnedAutomationPrincipal() ||
     isScopeEnforced(getScopeContext()) ||
     getScopeContext().sessionKey ||
     getScopeContext().sessionName

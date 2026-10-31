@@ -7,3 +7,9 @@
 - `bun test src/channels/slack/thread-card.test.ts src/channels/slack/thread-lifecycle.test.ts` MUST preserve card fallback/lifecycle and reject close with pending decisions.
 - `bun test src/runtime/prompt-subscription.test.ts` MUST route decision envelopes through durable admission without another turn on duplicate receipt.
 - SDK client, Dart, Swift and both OpenAPI drift checks MUST match the registry; full suite runs in CI.
+
+- Nested runtime identity MUST retain actor/relay provenance and refuse active-worker self-answer for both origins. Explicit read-only grants MUST NOT permit answers.
+- Concurrent answer admission MUST invoke the dispatcher once; closure MUST remain blocked while admission is in progress. Reconciler interleaving across a rename MUST preserve the frozen outbound job.
+- A daemon-spawned shell automation MUST NOT resolve uncertain delivery as the local operator.
+- Decision prompts MUST bypass debounce and reject a missing assigned agent, with a retryable receipt. Existing non-decision dispatch behavior MUST remain unchanged.
+- Waiting-card notification text MUST escape Slack mention syntax and respect the subtitle bound; sessions-skill decision examples MUST remain covered by execute-consumers tests.

@@ -112,7 +112,10 @@ export function buildSlackThreadCard(rawBrief: string, state: SlackThreadCardSta
   ];
 
   return {
-    text: state.status === "waiting" ? `${title} — Aguardando decisão: ${note ?? ""}` : title,
+    text:
+      state.status === "waiting"
+        ? `${title} — Aguardando decisão: ${note ? escapedWithin(note, SUBTITLE_MAX_LENGTH) : ""}`.trimEnd()
+        : title,
     blocks: [card],
     fallbackBlocks,
     ...(truncated ? { fullBrief: `**Instruções completas**\n\n${brief.trim()}` } : {}),

@@ -245,6 +245,8 @@ export interface PromptMessage {
   _thread?: ThreadHandoffPromptMetadata;
   /** Durable decision-answer admission; validated against the stored envelope. */
   _decisionDeliveryId?: string;
+  /** Canonical waiting session, rechecked after asynchronous dispatch preflight. */
+  _decisionSessionKey?: string;
   /**
    * Internal restart envelope: start a fresh runtime only to drain messages that
    * were already persisted and stashed by the previous runtime session.

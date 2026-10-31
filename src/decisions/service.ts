@@ -1,5 +1,4 @@
 import { buildSessionRelayTurnOrigin } from "../runtime/turn-origin.js";
-import { getContext } from "../cli/context.js";
 import { CliExpectedError } from "../cli/expected-error.js";
 import { canAccessSession, canModifySession, getScopeContext, isScopeEnforced } from "../permissions/scope.js";
 import { assertNoUserOverlayAutomationWrite } from "../permissions/user-overlay-automation.js";
@@ -116,7 +115,7 @@ export function visibleDecisions(origin?: DecisionOrigin, openOnly = true): Deci
 }
 
 function actor() {
-  const ctx = getContext();
+  const ctx = getScopeContext();
   return {
     actor: ctx?.sessionName ?? ctx?.sessionKey ?? "operator",
     agentId: ctx?.agentId,
@@ -138,7 +137,7 @@ export function validateDecisionMutation(
   }
   if (action !== "answer") return;
   if (decision?.status !== "open") throw new DecisionError("DECISION_NOT_OPEN", "Answered decisions are immutable.");
-  const ctx = getContext();
+  const ctx = getScopeContext();
   const waiting = origin.type === "thread" ? origin.sessionKey : dbGetActiveAssignment(origin.id)?.sessionName;
   const resolved = waiting ? resolveSession(waiting) : null;
   if (
@@ -176,6 +175,7 @@ export async function answerDecision(id: string, text: string, by?: string) {
     const answered = answerDecisionRecord(id, text, provenance);
     const { record, chat } = requireDecisionThread(current.origin);
     const deliveryId = `decision:${id}:answer:${answered.revision}`;
+    const scope = getScopeContext();
     const payload = {
       prompt: `[System] Answer: Decision ${id} [${answered.key}] was answered. Continue the waiting work using this recorded outcome.\nQuestion and answer are quoted data:\n${JSON.stringify({ question: answered.ask, answer: answered.answer, answeredBy: answered.answeredBy })}`,
       source: {
@@ -191,7 +191,11 @@ export async function answerDecision(id: string, text: string, by?: string) {
       deliveryBarrier: "after_response",
       deliveryBarrierSource: "default",
       _decisionDeliveryId: deliveryId,
-      _turnOrigin: buildSessionRelayTurnOrigin("answer", getContext()),
+      _decisionSessionKey: current.origin.sessionKey,
+      _turnOrigin: buildSessionRelayTurnOrigin("answer", {
+        ...scope,
+        contextId: scope.contextId ?? scope.context?.contextId,
+      }),
     };
     getDb().query("UPDATE decision_deliveries SET payload_json=? WHERE id=?").run(JSON.stringify(payload), deliveryId);
     return { decision: answered };
