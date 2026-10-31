@@ -456,6 +456,15 @@ interface CompleteContractErrorBody {
 /** `ravi link` failures are relayed to people, so they keep the local cloud copy instead of a generic line. */
 const IDENTITY_LINK_OPS = new Set(["identity link", "identity unlink"]);
 
+function taskProfileCatalogCopy(op: string, code: string) {
+  if (!op.startsWith("tasks ") || code !== "TASK_PROFILE_NOT_FOUND") return undefined;
+  return {
+    message: "Task profile was not found in this runtime.",
+    suggestedAction:
+      "Check the profile id and the runtime's profile catalog with 'ravi tasks profiles list --json', then retry",
+  };
+}
+
 /**
  * `sessions runtime *` refusals carry a RUNTIME_* code (or SESSION_NOT_FOUND,
  * which also covers a session the caller may not modify). The relay renders
@@ -930,7 +939,8 @@ function remoteContractFailureMessage(
     if (catalog) return catalog.message;
   }
   if (code) {
-    const catalog = sessionsRuntimeCatalogCopy(op, code) ?? threadCommandCatalogCopy(op, code);
+    const catalog =
+      sessionsRuntimeCatalogCopy(op, code) ?? threadCommandCatalogCopy(op, code) ?? taskProfileCatalogCopy(op, code);
     if (catalog) return catalog.message;
   }
   if (IDENTITY_LINK_OPS.has(op) && code) {
@@ -1048,6 +1058,7 @@ function projectRemoteContractDetails(
   const mediaCatalog = op === "media send" ? localMediaSendCatalogCopy(remote.code) : undefined;
   const runtimeCatalog = sessionsRuntimeCatalogCopy(op, remote.code);
   const threadCatalog = threadCommandCatalogCopy(op, remote.code);
+  const profileCatalog = body.outcome === "failed" ? taskProfileCatalogCopy(op, remote.code) : undefined;
   const identityCatalog = IDENTITY_LINK_OPS.has(op) ? cloudContractCatalogCopy(remote.code) : undefined;
   const connectorCatalog =
     isConnectorOp(op) && (body.outcome === "failed" || remote.code.startsWith("CONNECTOR_"))
@@ -1064,6 +1075,8 @@ function projectRemoteContractDetails(
     Object.assign(details, projectSessionsRuntimeDetails(remote));
   } else if (threadCatalog) {
     details.suggestedAction = threadCatalog.suggestedAction;
+  } else if (profileCatalog) {
+    details.suggestedAction = profileCatalog.suggestedAction;
   } else if (identityCatalog && body.outcome === "failed") {
     details.suggestedAction = identityCatalog.suggestedAction;
   } else if (connectorCatalog) {
