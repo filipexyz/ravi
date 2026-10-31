@@ -355,6 +355,7 @@ export async function closeSlackThreadRecord(
   }
   const closed = closeSlackThreadLifecycle({
     childSessionKey: existing.childSessionKey,
+    requestId: existing.requestId,
     returnResult,
     closeContextId: getContext({ localOnly: true })?.contextId,
   });

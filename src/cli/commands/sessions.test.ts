@@ -3125,6 +3125,7 @@ describe("SessionCommands set-provider", () => {
       sessionKey: "agent:ravi-console:wa",
       name: "wa-group",
       agentId: "ravi-console",
+      modelOverride: "gpt-6-astra",
       runtimeProvider: "codex",
     };
     listedSessions = [
@@ -3163,6 +3164,7 @@ describe("SessionCommands set-provider", () => {
       sessionKey: "agent:ravi-console:wa",
       name: "wa-group",
       agentId: "ravi-console",
+      modelOverride: "gpt-6-astra",
     };
     routerConfig = { agents: { "ravi-console": { provider: "pi" } } };
 
@@ -3181,6 +3183,7 @@ describe("SessionCommands set-provider", () => {
       sessionKey: "agent:ravi-console:wa",
       name: "wa-group",
       agentId: "ravi-console",
+      modelOverride: "gpt-6-astra",
       runtimeProvider: "pi",
     };
     routerConfig = { agents: { "ravi-console": { provider: "pi" } } };
@@ -3244,6 +3247,7 @@ describe("SessionCommands set-provider", () => {
       sessionKey: "agent:ravi-console:wa",
       name: "wa-group",
       agentId: "ravi-console",
+      modelOverride: "gpt-6-astra",
     };
     routerConfig = { agents: { "ravi-console": { provider: "pi" } } };
 

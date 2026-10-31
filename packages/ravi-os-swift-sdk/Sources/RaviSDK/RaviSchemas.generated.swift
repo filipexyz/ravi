@@ -97091,116 +97091,96 @@ public enum RaviSchemas {
 
   public static let RuntimeCredentialsStatusReturnSchema = #"""
   {
-    "anyOf": [
-      {
+    "additionalProperties": {},
+    "properties": {
+      "credential": {
         "additionalProperties": {},
-        "properties": {
-          "credential": {
+        "properties": {},
+        "type": "object"
+      },
+      "credentials": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "health": {
+        "anyOf": [
+          {
             "additionalProperties": {},
             "properties": {},
             "type": "object"
           },
-          "health": {
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
             "anyOf": [
               {
-                "additionalProperties": {},
-                "properties": {},
-                "type": "object"
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ]
-          }
-        },
-        "required": [
-          "credential",
-          "health"
-        ],
-        "type": "object"
-      },
-      {
-        "additionalProperties": {},
-        "properties": {
-          "credentials": {
-            "items": {
-              "additionalProperties": {},
-              "properties": {},
-              "type": "object"
-            },
-            "type": "array"
           },
-          "pagination": {
-            "additionalProperties": {},
-            "properties": {
-              "hasMore": {
-                "type": "boolean"
-              },
-              "limit": {
+          "nextOffset": {
+            "anyOf": [
+              {
                 "type": "number"
               },
-              "nextCommand": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "nextOffset": {
-                "anyOf": [
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "offset": {
-                "type": "number"
-              },
-              "returned": {
-                "type": "number"
-              },
-              "total": {
-                "type": "number"
+              {
+                "type": "null"
               }
-            },
-            "required": [
-              "limit",
-              "offset",
-              "returned",
-              "total",
-              "hasMore",
-              "nextOffset",
-              "nextCommand"
-            ],
-            "type": "object"
+            ]
           },
-          "providerHealth": {
-            "items": {
-              "additionalProperties": {},
-              "properties": {},
-              "type": "object"
-            },
-            "type": "array"
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
           },
           "total": {
             "type": "number"
           }
         },
         "required": [
+          "limit",
+          "offset",
+          "returned",
           "total",
-          "pagination",
-          "credentials",
-          "providerHealth"
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
         ],
         "type": "object"
+      },
+      "providerHealth": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
       }
-    ]
+    },
+    "type": "object"
   }
   """#
 

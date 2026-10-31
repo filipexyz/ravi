@@ -88,6 +88,8 @@ describe("RuntimeCredentialsCommands", () => {
     expect(runtimeCredentialsStatusReturnSchema.safeParse(detail).success).toBe(true);
     const listing = captureConsole(() => commands.status(undefined, true)).result;
     expect(runtimeCredentialsStatusReturnSchema.safeParse(listing).success).toBe(true);
+    expect(runtimeCredentialsStatusReturnSchema.safeParse({}).success).toBe(false);
+    expect(runtimeCredentialsStatusReturnSchema.safeParse({ total: 0 }).success).toBe(false);
   });
   it("adds and lists credential pools as redacted JSON", () => {
     const commands = new RuntimeCredentialsCommands();

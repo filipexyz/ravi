@@ -61,3 +61,8 @@ bun run build
 ```
 
 - `bun test src/decisions/decisions.test.ts src/channels/slack/thread-card.test.ts` MUST verify pending close refusal, one admission, sibling isolation, retry and pending-card fallback.
+
+## Orphan close
+
+- `bun test src/channels/slack/thread-lifecycle.test.ts` closes a pruned child by its durable request id without recreating the session, is idempotent, and closes only the selected request when child keys collide.
+- `bun test src/cli/commands/sessions.test.ts` cloaks missing, ambiguous and unauthorized orphan references as SESSION_NOT_FOUND and requires modify authority before exposing or closing the card.

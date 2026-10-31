@@ -18440,13 +18440,11 @@ export type RuntimeCredentialsStatusInput = {
 };
 
 /** Return shape for `runtime.credentials.status`. */
-export type RuntimeCredentialsStatusReturn = ({
-  credential: Record<string, unknown>;
-  health: (Record<string, unknown>) | null;
-  [k: string]: unknown;
-}) | ({
-  credentials: Array<Record<string, unknown>>;
-  pagination: {
+export type RuntimeCredentialsStatusReturn = {
+  credential?: Record<string, unknown>;
+  credentials?: Array<Record<string, unknown>>;
+  health?: (Record<string, unknown>) | null;
+  pagination?: {
     hasMore: boolean;
     limit: number;
     nextCommand: string | null;
@@ -18456,10 +18454,10 @@ export type RuntimeCredentialsStatusReturn = ({
     total: number;
     [k: string]: unknown;
   };
-  providerHealth: Array<Record<string, unknown>>;
-  total: number;
+  providerHealth?: Array<Record<string, unknown>>;
+  total?: number;
   [k: string]: unknown;
-});
+};
 
 /** Input shape for `runtime.env.get`. */
 export type RuntimeEnvGetInput = {

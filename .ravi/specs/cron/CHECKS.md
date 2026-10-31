@@ -89,3 +89,10 @@ RAVI_CONTEXT_KEY=<viewer-ctx> ravi cron disable <other-agent-job-id> --json
 - `bun test src/link/connector-turn.test.ts src/cloud-auth/turn-actor.test.ts`
   MUST prevent promotion through a later operator identity link and prevent a
   blocked operator-linked contact from falling back to contact/Console authority.
+
+## Failure correlation
+
+- `bun test src/cron/runner.test.ts src/cron/failure-notification.test.ts src/cron/turn-outcome.test.ts` covers failure before publish acknowledgement, recreation, overlapping runs, duplicate terminals, unknown/mismatched provenance, admitted owner after transfer/deletion and one-shot retention. Run files separately if module mocks are shared.
+- Failure delivery rejection/no owner target MUST retain the inbox record without leaking raw provider errors; repeated notices MUST share a run dedupe key.
+- `bun test src/runtime/delivery-queue.test.ts src/runtime/turn-provenance.test.ts src/runtime/prompt-subscription.test.ts` verifies run separation, continuation identity and pre-turn failure provenance.
+- `bun test src/runtime/intake-failure.test.ts` MUST pass a persisted cron run through the real cold launcher with an incompatible model and with a missing agent, then recreate the runner and verify the terminal state and retained one-shot. A permanent intake drop MUST preserve the original run identity.

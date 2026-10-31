@@ -6,6 +6,10 @@ import type { CronJob } from "./types.js";
 
 const log = logger.child("cron:failure-notification");
 
+export type CronFailureJob = Pick<CronJob, "id" | "name" | "agentId" | "ownerPrincipal" | "lastRunAt" | "updatedAt"> & {
+  runId?: string;
+};
+
 export function classifyCronFailure(
   error: string,
 ): "configuration" | "credential" | "timeout" | "interruption" | "execution" {
@@ -34,13 +38,13 @@ export function resolveCronFailureOwner(job: Pick<CronJob, "ownerPrincipal">): O
 
 /** Deterministic delivery: reporting a broken model must never need that model. */
 export async function notifyCronFailure(
-  job: CronJob,
+  job: CronFailureJob,
   error: string,
   deps: {
     owner?: typeof resolveCronFailureOwner;
     deliver?: (target: OwnerDirectTarget, text: string) => Promise<unknown>;
   } = {},
-): Promise<void> {
+): Promise<boolean> {
   try {
     const category = classifyCronFailure(error);
     const target = (deps.owner ?? resolveCronFailureOwner)(job);
@@ -49,7 +53,7 @@ export async function notifyCronFailure(
       sourceDomain: "cron",
       sourceType: "run_failed",
       sourceId: job.id,
-      dedupeKey: `cron-failure:${job.id}:${job.lastRunAt ?? job.updatedAt}`,
+      dedupeKey: `cron-failure:${job.id}:${job.runId ?? job.lastRunAt ?? job.updatedAt}`,
       title: `Falha no agendamento: ${job.name}`,
       summary,
       priority: "high",
@@ -61,14 +65,16 @@ export async function notifyCronFailure(
       metadata: { jobId: job.id, category, ownerPrincipal: job.ownerPrincipal ?? "operator" },
       actorType: "system",
     });
-    if (listLocalInboxEvents(item.id).some((event) => event.eventType === "cron.failure.notified")) return;
+    if (listLocalInboxEvents(item.id).some((event) => event.eventType === "cron.failure.notified")) return true;
     if (!target) {
       log.warn("Cron failure retained in inbox; owner has no direct delivery target", { jobId: job.id });
-      return;
+      return false;
     }
     await (deps.deliver ?? ((owner, text) => deliverToChat(owner, { text })))(target, summary);
     markLocalInboxItem(item.id, item.status, { eventType: "cron.failure.notified", actorType: "system" });
+    return true;
   } catch (error) {
     log.error("Cron failure notification failed; run remains failed and inbox stays open", { jobId: job.id, error });
+    return false;
   }
 }

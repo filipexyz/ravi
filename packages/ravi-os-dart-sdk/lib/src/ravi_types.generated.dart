@@ -22251,9 +22251,33 @@ class RuntimeCredentialsSelectReturn {
 
 RuntimeCredentialsSelectReturn runtimeCredentialsSelectReturnFromJson(Object? json) => RuntimeCredentialsSelectReturn.fromJsonValue(json);
 
-typedef RuntimeCredentialsStatusReturn = RaviJson;
+class RuntimeCredentialsStatusReturn {
+  const RuntimeCredentialsStatusReturn({this.credential, this.credentials, this.health, this.pagination, this.providerHealth, this.total});
 
-RuntimeCredentialsStatusReturn runtimeCredentialsStatusReturnFromJson(Object? json) => RaviJson.from(json);
+  final Map<String, RaviJson>? credential;
+  final List<Map<String, RaviJson>>? credentials;
+  final RaviJson? health;
+  final RaviJson? pagination;
+  final List<Map<String, RaviJson>>? providerHealth;
+  final double? total;
+
+  factory RuntimeCredentialsStatusReturn.fromJson(Map<String, Object?> json) {
+    return RuntimeCredentialsStatusReturn(
+      credential: json["credential"] == null ? null : raviJsonAsRaviJsonMap(json["credential"]),
+      credentials: json["credentials"] == null ? null : raviJsonAsList(json["credentials"], raviJsonAsRaviJsonMap),
+      health: json["health"] == null ? null : RaviJson.from(json["health"]),
+      pagination: json["pagination"] == null ? null : RaviJson.from(json["pagination"]),
+      providerHealth: json["providerHealth"] == null ? null : raviJsonAsList(json["providerHealth"], raviJsonAsRaviJsonMap),
+      total: json["total"] == null ? null : raviJsonAsDouble(json["total"]),
+    );
+  }
+
+  static RuntimeCredentialsStatusReturn fromJsonValue(Object? json) {
+    return RuntimeCredentialsStatusReturn.fromJson(raviJsonObject(json, "RuntimeCredentialsStatusReturn"));
+  }
+}
+
+RuntimeCredentialsStatusReturn runtimeCredentialsStatusReturnFromJson(Object? json) => RuntimeCredentialsStatusReturn.fromJsonValue(json);
 
 class RuntimeEnvGetReturn {
   const RuntimeEnvGetReturn({required this.key, required this.origin, required this.path, required this.present, required this.processPresent, required this.redacted, required this.secret, required this.value});

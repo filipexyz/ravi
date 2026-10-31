@@ -137,7 +137,7 @@ ravi sessions thread-send <thread> "<instructions>"
 
 - Both commands infer the current session and Slack surface from tool context.
 - `create-thread` is available only when an executable Slack surface exists.
-- `close-thread` is available only inside an open Slack thread child session.
+- `close-thread` is available inside an open Slack thread child session or through the authorized explicit orphan-close path below.
 - `--return` opts into the parent completion event; omission is intentionally
   silent.
 - `report` is available only inside a Slack thread child session.

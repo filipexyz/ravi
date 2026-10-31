@@ -476,6 +476,7 @@ export function registerInboundSlackThread(input: RegisterInboundSlackThreadInpu
 
 export function closeSlackThreadLifecycle(input: {
   childSessionKey: string;
+  requestId?: string;
   returnResult?: string;
   closeContextId?: string;
   closedAt?: number;
@@ -485,7 +486,12 @@ export function closeSlackThreadLifecycle(input: {
   return executeWrite(
     getDb(),
     (database) => {
-      const existing = selectSlackThreadLifecycleByChildSession(database, input.childSessionKey);
+      const existing = input.requestId
+        ? selectSlackThreadLifecycle(database, input.requestId)
+        : selectSlackThreadLifecycleByChildSession(database, input.childSessionKey);
+      if (existing && existing.childSessionKey !== input.childSessionKey) {
+        throw new Error("Slack thread lifecycle child does not match the selected request");
+      }
       if (!existing) {
         throw new Error(`Slack thread lifecycle not found for session: ${input.childSessionKey}`);
       }
