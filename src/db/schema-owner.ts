@@ -1,9 +1,9 @@
 import type { Database } from "bun:sqlite";
-import { version } from "../../package.json";
+import packageInfo from "../../package.json" with { type: "json" };
 import { isSchemaConsumer, type DatabaseBoundaryOptions } from "./state-boundary.js";
 
 // A channel runner must use the exact release whose daemon prepared the stores.
-export const STATE_SCHEMA_VERSION = `1:${version}`;
+export const STATE_SCHEMA_VERSION = `1:${packageInfo.version}`;
 const initialized = new WeakMap<Database, Set<string>>();
 
 export class StateSchemaNotReadyError extends Error {
