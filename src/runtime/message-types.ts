@@ -243,6 +243,8 @@ export interface PromptMessage {
   _sessionFollowupRunId?: string;
   /** Ravi thread metadata. Distinct from provider-native thread/topic IDs. */
   _thread?: ThreadHandoffPromptMetadata;
+  /** Durable decision-answer admission; validated against the stored envelope. */
+  _decisionDeliveryId?: string;
   /**
    * Internal restart envelope: start a fresh runtime only to drain messages that
    * were already persisted and stashed by the previous runtime session.

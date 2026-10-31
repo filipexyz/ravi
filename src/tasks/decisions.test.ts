@@ -14,12 +14,7 @@ import {
   dbListTaskEvents,
 } from "./task-db.js";
 import { answerTaskDecision, decideTask, getTaskDetails, listTaskDecisionAttention } from "./service.js";
-import {
-  TaskDecisionError,
-  foldTaskDecisionAttention,
-  normalizeTaskDecisionKey,
-  parseTaskDecisionOwner,
-} from "./decisions.js";
+import { DecisionError, normalizeDecisionKey, parseDecisionOwner } from "../decisions/model.js";
 
 const createdTaskIds: string[] = [];
 let stateDir: string | null = null;
@@ -52,7 +47,9 @@ function createTask(title = "Decision test task"): string {
 }
 
 function countDecisions(taskId: string): number {
-  const row = getDb().prepare("SELECT COUNT(*) AS total FROM task_decisions WHERE task_id = ?").get(taskId) as {
+  const row = getDb()
+    .prepare("SELECT COUNT(*) AS total FROM decisions WHERE origin_type = 'task' AND origin_id = ?")
+    .get(taskId) as {
     total: number;
   };
   return row.total;
@@ -131,8 +128,8 @@ describe("task decisions", () => {
     } catch (caught) {
       error = caught;
     }
-    expect(error).toBeInstanceOf(TaskDecisionError);
-    expect((error as TaskDecisionError).code).toBe("TASK_DECISION_NOT_OPEN");
+    expect(error).toBeInstanceOf(DecisionError);
+    expect((error as DecisionError).code).toBe("DECISION_NOT_OPEN");
 
     // A new ask after the answer opens a fresh decision record.
     const reopened = dbDecideTask(taskId, { key: "k", ask: "again?", ownerType: "human", ownerId: "contact-1" });
@@ -149,8 +146,8 @@ describe("task decisions", () => {
     } catch (caught) {
       error = caught;
     }
-    expect(error).toBeInstanceOf(TaskDecisionError);
-    expect((error as TaskDecisionError).code).toBe("TASK_DECISION_NOT_FOUND");
+    expect(error).toBeInstanceOf(DecisionError);
+    expect((error as DecisionError).code).toBe("DECISION_NOT_FOUND");
   });
 
   it("rejects the worker's own work session as the answerer", () => {
@@ -171,8 +168,8 @@ describe("task decisions", () => {
     } catch (caught) {
       error = caught;
     }
-    expect(error).toBeInstanceOf(TaskDecisionError);
-    expect((error as TaskDecisionError).code).toBe("TASK_DECISION_SELF_ANSWER");
+    expect(error).toBeInstanceOf(DecisionError);
+    expect((error as DecisionError).code).toBe("DECISION_SELF_ANSWER");
     // The decision stays open: nothing was written.
     expect(dbListTaskDecisions(taskId)[0]?.status).toBe("open");
 
@@ -200,7 +197,9 @@ describe("task decisions", () => {
       blocks: true,
     });
     // Age the parked ask deterministically so ordering does not depend on clock ticks.
-    getDb().prepare("UPDATE task_decisions SET asked_at = asked_at - 5000 WHERE task_id = ?").run(parkedTask);
+    getDb()
+      .prepare("UPDATE decisions SET asked_at = asked_at - 5000 WHERE origin_type = 'task' AND origin_id = ?")
+      .run(parkedTask);
     dbDecideTask(parkedTask, { key: "naming", ask: "Name?", ownerType: "unassigned" });
     dbDecideTask(agentTask, { key: "spec", ask: "Which spec?", ownerType: "agent", ownerId: "main", blocks: true });
 
@@ -229,10 +228,10 @@ describe("task decisions", () => {
 
     // Side-effect free: same rows before and after the folds.
     expect(dbListOpenTaskDecisions()).toHaveLength(3);
-    const before = getDb().prepare("SELECT COUNT(*) AS total FROM task_decisions").get() as { total: number };
+    const before = getDb().prepare("SELECT COUNT(*) AS total FROM decisions").get() as { total: number };
     listTaskDecisionAttention();
     getTaskDetails(parkedTask);
-    const after = getDb().prepare("SELECT COUNT(*) AS total FROM task_decisions").get() as { total: number };
+    const after = getDb().prepare("SELECT COUNT(*) AS total FROM decisions").get() as { total: number };
     expect(after.total).toBe(before.total);
     expect(dbGetTask(parkedTask)?.status).toBe("open");
   });
@@ -312,19 +311,21 @@ describe("task decisions", () => {
   });
 
   it("validates decision keys and owners as usage errors", () => {
-    expect(normalizeTaskDecisionKey("Deploy-Window")).toBe("deploy-window");
-    expect(() => normalizeTaskDecisionKey("bad key!")).toThrow(TaskDecisionError);
-    expect(parseTaskDecisionOwner("human:contact-1")).toEqual({ ownerType: "human", ownerId: "contact-1" });
-    expect(parseTaskDecisionOwner(undefined)).toEqual({ ownerType: "unassigned", ownerId: null });
-    expect(() => parseTaskDecisionOwner("human:")).toThrow(TaskDecisionError);
-    expect(() => parseTaskDecisionOwner("robot:1")).toThrow(TaskDecisionError);
+    expect(normalizeDecisionKey("Deploy-Window")).toBe("deploy-window");
+    expect(() => normalizeDecisionKey("bad key!")).toThrow(DecisionError);
+    expect(parseDecisionOwner("human:contact-1")).toEqual({ ownerType: "human", ownerId: "contact-1" });
+    expect(parseDecisionOwner(undefined)).toEqual({ ownerType: "unassigned", ownerId: null });
+    expect(() => parseDecisionOwner("human:")).toThrow(DecisionError);
+    expect(() => parseDecisionOwner("robot:1")).toThrow(DecisionError);
 
     let error: unknown;
     try {
-      normalizeTaskDecisionKey("bad key!");
+      normalizeDecisionKey("bad key!");
     } catch (caught) {
       error = caught;
     }
-    expect((error as TaskDecisionError).exitCode).toBe(2);
+    expect((error as DecisionError).exitCode).toBe(2);
   });
 });
+
+import { foldTaskDecisionAttention } from "./decisions.js";

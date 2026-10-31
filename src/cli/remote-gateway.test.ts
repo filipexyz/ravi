@@ -1904,6 +1904,18 @@ describe("thread command remote relay", () => {
     expect(JSON.stringify(remote?.envelope())).not.toContain("PRIVATE");
   });
 
+  it("relays decision errors and pending closure with safe local guidance", async () => {
+    for (const [op, code, copy] of [
+      ["decisions answer", "DECISION_SELF_ANSWER", "waiting worker"],
+      ["decisions retry", "DECISION_DELIVERY_UNCERTAIN", "uncertain"],
+      ["sessions close-thread", "THREAD_DECISIONS_PENDING", "open decisions"],
+    ]) {
+      const remote = await relay(op!, new ContractError(op!, code!, "PRIVATE_DECISION_TEXT", 1));
+      expect(remote?.message).toContain(copy!);
+      expect(JSON.stringify(remote?.envelope())).not.toContain("PRIVATE");
+    }
+  });
+
   it("keeps the generic failure for unknown codes, prototype keys and other commands", async () => {
     for (const [op, code] of [
       ["sessions report", "COMMAND_FAILED"],

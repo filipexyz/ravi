@@ -73,6 +73,7 @@ export const DEFAULT_RAVI_GROUP_SKILL_RULES: readonly RaviGroupSkillRule[] = [
   { id: "slack", pattern: /^slack(?:[._]|$)/, skill: "ravi-system-slack" },
   { id: "specs", pattern: /^specs(?:[._]|$)/, skill: "ravi-system-specs" },
   { id: "stickers", pattern: /^stickers(?:[._]|$)/, skill: "ravi-system-stickers" },
+  { id: "decisions", pattern: /^decisions(?:[._]|$)/, skill: "ravi-system-decisions" },
   { id: "tasks", pattern: /^tasks(?:[._]|$)/, skill: "ravi-system-tasks" },
   { id: "themes", pattern: /^themes(?:[._]|$)/, skill: "ravi-system-pages" },
   { id: "triggers", pattern: /^triggers(?:[._]|$)/, skill: "ravi-system-trigger-manager" },

@@ -1,3 +1,4 @@
+import { CliExpectedError } from "../../cli/expected-error.js";
 import { randomUUID } from "node:crypto";
 import { executeWrite } from "../../db/write-retry.js";
 import { getDb } from "../../router/router-db.js";
@@ -479,6 +480,17 @@ export function closeSlackThreadLifecycle(input: {
       if (!existing) {
         throw new Error(`Slack thread lifecycle not found for session: ${input.childSessionKey}`);
       }
+      const pending = database
+        .query(`SELECT 1 FROM decisions d WHERE d.origin_type='thread' AND d.origin_id=?
+        AND (d.status='open' OR EXISTS (SELECT 1 FROM decision_deliveries x WHERE x.decision_id=d.id AND x.kind='answer' AND x.status NOT IN ('delivered','superseded'))) LIMIT 1`)
+        .get(existing.requestId);
+      if (pending)
+        throw new CliExpectedError(
+          "Thread has an open decision or an undelivered answer.",
+          "THREAD_DECISIONS_PENDING",
+          1,
+          "Answer the pending question and verify delivery before closing.",
+        );
       if (existing.status === "closed") {
         return { record: existing, changed: false };
       }

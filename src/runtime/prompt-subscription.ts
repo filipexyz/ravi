@@ -1,3 +1,4 @@
+import { admitDecisionAnswer } from "../decisions/delivery.js";
 import { StringCodec, type JsMsg } from "nats";
 import { getNats, nats } from "../nats.js";
 import {
@@ -254,7 +255,13 @@ export class RuntimePromptSubscription {
       // Keep the JetStream work item durable until the dispatcher has accepted
       // it. Provider/bootstrap failures can happen before a turn exists, so
       // acknowledging earlier loses the only retryable copy.
-      await this.options.handlePrompt(sessionName, prompt);
+      if (
+        !(await admitDecisionAnswer(sessionName, prompt, (accepted) =>
+          this.options.handlePrompt(sessionName, accepted),
+        ))
+      ) {
+        await this.options.handlePrompt(sessionName, prompt);
+      }
     } catch (error) {
       if (isSqliteCapacityError(error)) {
         log.error("Failed to handle prompt because SQLite/process memory (or disk) is exhausted", {
