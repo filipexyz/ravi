@@ -59,6 +59,10 @@ Quoting regressions (`bun test src/bash/`):
   parser entry points and the actual hook. Cover arbitrary descriptor numbers,
   `/proc/**/fd/N`, stdout/stderr aliases, multiple leading comment lines and a
   real `python3 script.py` receiver after comments that still passes.
+- `cd /dev && printf code | python3 fd/3 3<&0`, the `stdin` variant and
+  `cd /tmp && printf data | python3 build.js` MUST deny; `python3 build.js` alone MUST pass.
+- `printf data | cat; python3 --version` and `printf data | cat && python3 script.py`
+  MUST pass; `printf a | tee x | python3 -u` MUST deny at the later pipe.
 - Single-quoted substitution/backtick/process/heredoc text and escaped dollar
   or backtick in double quotes MUST pass in JSON and rg/grep arguments.
 - Active substitutions outside and inside double quotes MUST fail, including

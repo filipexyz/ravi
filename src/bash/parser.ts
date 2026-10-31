@@ -95,12 +95,17 @@ export function checkDangerousPatterns(command: string): PatternCheckResult {
     for (let i = 0; i < inspected.syntax.length; i++) {
       if (inspected.syntax[i] !== "|" || /[|>]/.test(inspected.syntax[i - 1] ?? "") || inspected.syntax[i + 1] === "|")
         continue;
-      // A comment/empty segment after a pipe does not end its receiver scan.
-      for (const receiver of splitByOperators(inspected.command.slice(i + 1))) {
+      // Skip |&'s stderr marker, then scan only this pipe's receiver. Comments
+      // and blank lines may precede it; another chain cannot become its receiver.
+      const receiverStart = i + (inspected.syntax[i + 1] === "&" ? 2 : 1);
+      for (const receiver of splitByOperators(inspected.command.slice(receiverStart), true)) {
         const executable = parseSimpleCommand(receiver);
         if (!executable) continue;
         if (UNCONDITIONAL_BLOCKS.has(executable)) return { safe: false, reason: "piping to shell is not allowed" };
         if (INLINE_CODE_INTERPRETERS[executable]) {
+          if (splitByOperators(inspected.command).some((segment) => parseSimpleCommand(segment) === "cd")) {
+            return { safe: false, reason: "piping to interpreter in a command containing cd is not allowed" };
+          }
           if (isInlineCodeExecution(executable, receiver).blocked) {
             return { safe: false, reason: "piping to interpreter with inline code is not allowed" };
           }
@@ -108,6 +113,7 @@ export function checkDangerousPatterns(command: string): PatternCheckResult {
             return { safe: false, reason: "piping to interpreter stdin or ambiguous script arguments is not allowed" };
           }
         }
+        break;
       }
     }
   } catch {
@@ -298,9 +304,10 @@ function parseSimpleCommand(command: string): string | null {
 
 /**
  * Split command by operators (pipes, and, or, semicolons).
- * Returns array of simple commands.
+ * Returns array of simple commands. Receiver scans stop at the next operator
+ * except newline, which may separate leading blank/comment-only segments.
  */
-function splitByOperators(command: string): string[] {
+function splitByOperators(command: string, receiverOnly = false): string[] {
   const inspected = inspectShellSyntax(command);
   if (inspected.error) throw new Error(inspected.error);
   const commands: string[] = [];
@@ -313,6 +320,7 @@ function splitByOperators(command: string): string[] {
     if (match[0] === "|" && inspected.syntax[index - 1] === ">") continue;
     const part = inspected.command.slice(start, match.index).trim();
     if (part) commands.push(part);
+    if (receiverOnly && match[0] !== "\n") return commands;
     start = match.index! + match[0].length;
   }
   const last = inspected.command.slice(start).trim();

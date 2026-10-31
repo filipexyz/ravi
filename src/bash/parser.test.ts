@@ -492,7 +492,6 @@ describe("piped interpreter descriptor aliases and receiver segments", () => {
     "# c\n node --no-warnings",
     "# c\n bash",
     "# c\n python3 -c 'print(731)'",
-    "cat; # c\n python3 -u",
   ]) {
     it(`continues checking all receiver segments: ${JSON.stringify(receiver)}`, () => {
       const command = `printf 'print(731)\\n' | ${receiver}`;
@@ -515,4 +514,51 @@ describe("piped interpreter descriptor aliases and receiver segments", () => {
       }
     }
   });
+});
+
+describe("pipeline receiver scope and directory changes", () => {
+  for (const command of [
+    "cd /dev && printf 'print(731)\\n' | python3 fd/3 3<&0",
+    "cd /dev && printf 'print(731)\\n' | python3 stdin",
+    "cd /tmp && printf data | python3 build.js",
+    "printf data | python3 script.py; cd /tmp",
+    "'cd' /tmp && printf data | # c\n python3 script.py",
+    "printf data | # c\n python3 -u",
+    "printf a | tee x | python3 -u",
+    "printf a |& python3 -u",
+    "printf data | python3 /dev/stdout 1<&0",
+    "printf data | python3 /proc/$$/fd/0",
+    "printf data | python3 /proc/self/task/1/fd/0",
+  ]) {
+    it(`refuses ${JSON.stringify(command)}`, () => {
+      expect(checkDangerousPatterns(command).safe).toBe(false);
+      expect(parseBashCommand(command).success).toBe(false);
+    });
+  }
+
+  for (const command of [
+    "python3 build.js",
+    "printf data | cat; python3 --version",
+    "printf data | cat && python3 script.py",
+    "printf data | cat || python3 --version",
+    "printf data | cat\n python3 --version",
+    "printf data | cat; # c\n python3 -u",
+    "printf data | # c\n cat; python3 --version",
+    "printf cd | python3 script.py # cd /dev",
+    "cd /tmp && printf data | cat; python3 build.js",
+    "printf data |& python3 script.py",
+  ]) {
+    it(`preserves ${JSON.stringify(command)}`, () => {
+      expect(checkDangerousPatterns(command).safe).toBe(true);
+      expect(parseBashCommand(command).success).toBe(true);
+    });
+  }
+
+  for (const boundary of [";", "&&", "||"]) {
+    it(`does not scan past ${boundary} after an assignment-only receiver`, () => {
+      const command = `printf data | FOO=bar ${boundary} python3 --version`;
+      expect(checkDangerousPatterns(command).safe).toBe(true);
+      expect(parseBashCommand(command).success).toBe(true);
+    });
+  }
 });
