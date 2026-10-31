@@ -19,7 +19,7 @@ import { buildTurnReplyTarget } from "./turn-reply-target.js";
 import { resolveAgentSkills } from "./allowed-skills.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { createRuntimeMessageGenerator, pickRuntimeTurnAuthorityEnvelope } from "./delivery-queue.js";
-import { renderSignalsForTurn } from "../signals/render.js";
+import { commitRenderedSignals, releaseRenderedSignals, renderSignalsForTurn } from "../signals/render.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import { markRuntimeTaskAcceptedForPrompt, resolveRuntimeForPrompt } from "./task-runtime-context.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
@@ -90,6 +90,12 @@ import type {
 const CRASH_RECOVERY_APPROVAL_OWNERSHIP_CHANGED_REASON =
   "Runtime action approval denied because durable turn ownership changed before authorization completed.";
 const runtimeRequestLog = logger.child("runtime-request");
+
+/** Signals render failures since start; each one also logs a warning (runtime/signals CLI contract). */
+let signalRenderFailures = 0;
+export function getSignalRenderFailureCount(): number {
+  return signalRenderFailures;
+}
 
 class RuntimeCrashRecoveryApprovalOwnershipChangedError extends Error {
   constructor() {
@@ -1013,10 +1019,34 @@ async function buildRuntimeStartRequestInternal(
       turnSignals = null;
       try {
         const rendered = renderSignalsForTurn({ sessionName, sessionKey: dbSessionKey });
-        if (!rendered.suffix) return combinedPrompt;
-        turnSignals = { surfaced: rendered.surfacedIds, skipped: rendered.skipped, budget: rendered.budget };
-        return `${combinedPrompt}${rendered.suffix}`;
-      } catch {
+        if (!rendered.suffix) {
+          if (rendered.skipped.length > 0) {
+            turnSignals = { surfaced: [], skipped: rendered.skipped, budget: rendered.budget };
+          }
+          return combinedPrompt;
+        }
+        const signals = { surfaced: rendered.surfacedIds, skipped: rendered.skipped, budget: rendered.budget };
+        turnSignals = signals;
+        return {
+          prompt: `${combinedPrompt}${rendered.suffix}`,
+          // The block reached the provider: the reservations are consumed.
+          commit: () => {
+            commitRenderedSignals(rendered.reservations);
+          },
+          // The turn never started: return the units, no cooldown starts.
+          release: (reason: string) => {
+            signals.budget.released = releaseRenderedSignals(rendered.reservations, reason);
+          },
+        };
+      } catch (error) {
+        // A render failure keeps the original prompt, warns and is counted.
+        signalRenderFailures += 1;
+        runtimeRequestLog.warn("Signals render failed; turn continues without the block", {
+          sessionName,
+          failures: signalRenderFailures,
+          error,
+        });
+        turnSignals = { surfaced: [], skipped: [], budget: null, renderError: String(error) };
         return combinedPrompt;
       }
     },

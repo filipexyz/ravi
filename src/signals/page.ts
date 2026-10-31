@@ -15,7 +15,8 @@ export function resolveSignalPageTarget(sessionName: string): MessageTarget | nu
 }
 
 export function buildSignalPageText(signal: SignalRecord, now = Date.now()): string {
-  const observed = new Date(signal.lastSeenAt || now).toISOString().slice(11, 16);
+  // The stored evaluation time, never the send time.
+  const observed = new Date(signal.lastEvalAt ?? signal.lastSeenAt ?? now).toISOString().slice(11, 16);
   const detail = signal.detail ? ` — ${signal.detail}` : "";
   return `⚠ ${signal.title}${detail} (observed ${observed}Z). Ack: ravi signals ack ${signal.id}`;
 }
@@ -23,12 +24,11 @@ export function buildSignalPageText(signal: SignalRecord, now = Date.now()): str
 export async function sendSignalPage(
   signal: SignalRecord,
   sessionName: string,
-  bucket: string,
+  idempotencyKey: string,
 ): Promise<"sent" | "skipped_no_binding" | "failed"> {
   const target = resolveSignalPageTarget(sessionName);
   if (!target) return "skipped_no_binding";
   try {
-    const idempotencyKey = `signal-page:${signal.id}:${bucket}`;
     const job = buildChannelTextOutboundJob({
       requestId: idempotencyKey,
       sessionName,

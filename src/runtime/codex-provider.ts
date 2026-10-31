@@ -990,7 +990,12 @@ async function* normalizeCodexEvents(
           }
 
           if (event.type === "turn.interrupted") {
-            const terminal: RuntimeEvent = { type: "turn.interrupted", rawEvent, metadata };
+            const terminal: RuntimeEvent = {
+              type: "turn.interrupted",
+              usage: event.usage ? mapCliUsage(event.usage) : undefined,
+              rawEvent,
+              metadata,
+            };
             if (terminalTracker.accept(terminal)) {
               yield terminal;
             }
@@ -1001,6 +1006,7 @@ async function* normalizeCodexEvents(
             const terminal: RuntimeEvent = {
               type: "turn.failed",
               error: extractCliFailureMessage(event) ?? lastErrorMessage ?? "Codex turn failed",
+              usage: event.usage ? mapCliUsage(event.usage) : undefined,
               recoverable: true,
               rawEvent,
               metadata,
@@ -2139,6 +2145,15 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             thread_id: threadId,
             turn_id: turnId,
             turn: normalizeAppServerTurn(completedTurn),
+            usage:
+              turn.turnUsage || turn.chainUsage
+                ? {
+                    input_tokens: toNumber(turn.chainUsage?.input_tokens) + toNumber(turn.turnUsage?.input_tokens),
+                    output_tokens: toNumber(turn.chainUsage?.output_tokens) + toNumber(turn.turnUsage?.output_tokens),
+                    cached_input_tokens:
+                      toNumber(turn.chainUsage?.cached_input_tokens) + toNumber(turn.turnUsage?.cached_input_tokens),
+                  }
+                : undefined,
           });
         } else {
           turn.queue.push({
@@ -2148,6 +2163,15 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             turn_id: turnId,
             turn: normalizeAppServerTurn(completedTurn),
             error: extractAppServerTurnError(completedTurn) ?? `Codex turn ${status}`,
+            usage:
+              turn.turnUsage || turn.chainUsage
+                ? {
+                    input_tokens: toNumber(turn.chainUsage?.input_tokens) + toNumber(turn.turnUsage?.input_tokens),
+                    output_tokens: toNumber(turn.chainUsage?.output_tokens) + toNumber(turn.turnUsage?.output_tokens),
+                    cached_input_tokens:
+                      toNumber(turn.chainUsage?.cached_input_tokens) + toNumber(turn.turnUsage?.cached_input_tokens),
+                  }
+                : undefined,
           });
         }
         pendingDynamicToolResults.clear();

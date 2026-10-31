@@ -98,7 +98,7 @@ Every producer MUST supply:
 
 - `kind`: `fact` or `judgment`;
 - `key`: stable condition identity (see `runtime/signals/model`);
-- `scope`: one of `person`, `chat`, `project`, `agent`, `fleet`;
+- `scope`: one of `person`, `chat`, `project`, `agent`, `install`;
 - `title`: one redacted line;
 - an effective clear rule;
 - `producer_id` and provenance (`source`).
@@ -132,7 +132,7 @@ The producer observes a state transition and calls the signals service directly 
 ```bash
 ravi signals raise daemon.crash_loop \
   --kind fact \
-  --scope fleet \
+  --scope install \
   --severity page \
   --title "Daemon crashed 4 times in 10 minutes" \
   --detail "Last exit: 137" \
@@ -157,7 +157,7 @@ The producer registers a read-only probe and raises with `clear_when.type=probe`
 ```bash
 ravi signals raise host.disk.free \
   --kind fact \
-  --scope fleet \
+  --scope install \
   --severity page \
   --title "Disk free below 15%" \
   --detail "/ has 9.2% free" \
@@ -230,7 +230,7 @@ Rules:
 | `goal.off_cadence.<id>` | operator assistant | `person:<operator>` | goal, expected cadence, last movement | 72h |
 | `project.no_movement.<id>` | operator assistant | `project:<id>` | last task/commit/decision | 7d |
 | `decision.pending.<id>` | operator assistant | `person:<operator>` | decision, asked at, waiting time | 72h |
-| `anomaly.week.<id>` | operator assistant | `fleet` | metric, current vs previous week | 7d |
+| `anomaly.week.<id>` | operator assistant | `install` | metric, current vs previous week | 7d |
 
 The operator-facing judgments are still judgments: they inform, they do not interrupt. A pending decision that truly must interrupt is a different product decision and MUST NOT be smuggled through a judgment.
 
@@ -268,7 +268,7 @@ ravi signals budget [--json]
 
 ```text
 --kind fact|judgment                  required
---scope <type>:<id>|fleet             required
+--scope <type>:<id>|install             required
 --severity ambient|piggyback|nudge|interrupt|page
 --title "<one line>"                  required
 --detail "<context>"

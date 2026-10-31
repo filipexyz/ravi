@@ -337,6 +337,25 @@ describe("createClaudeRuntimeProvider", () => {
     cache_creation_input_tokens: 0,
   };
 
+  it("keeps measured usage on failed results and leaves unmeasured usage absent", async () => {
+    nextMessages = [
+      {
+        type: "result",
+        subtype: "error_during_execution",
+        errors: ["interrupted"],
+        usage: { input_tokens: 23, output_tokens: 9, cache_read_input_tokens: 4 },
+      },
+    ];
+    const measured = await runSingleTurn();
+    expect(findEventsByType(measured, "turn.failed")[0]?.usage).toMatchObject({
+      inputTokens: 23,
+      outputTokens: 9,
+      cacheReadTokens: 4,
+    });
+    nextMessages = [{ type: "result", subtype: "error_during_execution", errors: ["interrupted"] }];
+    expect(findEventsByType(await runSingleTurn(), "turn.failed")[0]?.usage).toBeUndefined();
+  });
+
   it("fails the turn on Claude assistant error frames instead of delivering them as replies", async () => {
     nextMessages = [
       {

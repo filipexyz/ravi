@@ -30,7 +30,7 @@ import { pickRuntimeTurnAuthorityEnvelope } from "./delivery-queue.js";
 import { buildRuntimeRequestContext, refreshRuntimeRequestContextForTurn } from "./runtime-request-context.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
 import { resolveRuntimePromptSource } from "./runtime-request-builder.js";
-import { buildChannelTurnOrigin, buildSessionRelayTurnOrigin } from "./turn-origin.js";
+import { buildChannelTurnOrigin, buildSessionRelayTurnOrigin, buildSignalTurnOrigin } from "./turn-origin.js";
 import { buildTurnReplyTarget, readTurnReplyTarget, type TurnReplyTarget } from "./turn-reply-target.js";
 
 let stateDir: string | null = null;
@@ -1465,6 +1465,50 @@ describe("runtime request context authority", () => {
       turnOrigin: {
         producer: "channel",
         action: "session.bootstrap",
+      },
+      turnProvenance: {
+        origin: "system",
+        background: true,
+      },
+    });
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Bash")).toBe(true);
+  });
+
+  it("runs signal escalation in a chat under its typed automation origin", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    const prompt: RuntimeLaunchPrompt = {
+      prompt: "[System] Inform: introduce yourself",
+      source: {
+        channel: "telegram",
+        accountId: "main",
+        chatId: "test-group",
+        canonicalChatId: "chat_group_1",
+      },
+      _turnOrigin: buildSignalTurnOrigin("sig_review"),
+    };
+
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: agent.cwd,
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+
+    expect(runtimeContext.metadata).toMatchObject({
+      actorPrincipal: "automation:signal:sig_review",
+      actorResolution: "resolved",
+      agentIdentityCompartment: "chat:chat_group_1",
+      turnOrigin: {
+        producer: "signals",
+        action: "escalate",
       },
       turnProvenance: {
         origin: "system",

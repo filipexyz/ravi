@@ -1,13 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { attachChatToSession, getOrCreateSession, updateSessionName } from "../router/sessions.js";
-import { dbUpsertChat } from "../router/router-db.js";
+import { dbUpsertChat, getDb, closeRouterDb } from "../router/router-db.js";
 import { recordDeliveryTrace, recordResponseEmittedTrace } from "./channel-trace.js";
 import { querySessionTrace } from "./query.js";
 import { recordAdapterRequestTrace, summarizeRuntimeCapabilities } from "./runtime-trace.js";
 import {
   getLatestSessionTurn,
   getSessionTraceBlob,
+  getSessionTurn,
   listRecentSessionEventsByType,
   recordSessionEvent,
   upsertSessionTurn,
@@ -78,6 +79,47 @@ describe("session trace query", () => {
     expect(getLatestSessionTurn(sessionKey)?.turnId).toBe("turn-new");
     expect(getLatestSessionTurn(sessionKey, 3000)).toMatchObject({ turnId: "turn-new", completedAt: 3500 });
     expect(getLatestSessionTurn(sessionKey, 3001)).toBeNull();
+  });
+
+  it("upgrades existing turns while preserving measured usage and unknown new usage", () => {
+    upsertSessionTurn({
+      turnId: "legacy",
+      sessionKey: "agent:main:upgrade",
+      status: "complete",
+      startedAt: 1000,
+      updatedAt: 2000,
+      inputTokens: 42,
+      outputTokens: 7,
+      costUsd: 0.02,
+    });
+    // Reproduce the previous table shape, then open it through the real migration path.
+    getDb().exec("ALTER TABLE session_turns DROP COLUMN output_state");
+    closeRouterDb();
+    expect(getSessionTurn("legacy")).toMatchObject({
+      inputTokens: 42,
+      outputTokens: 7,
+      costUsd: 0.02,
+      outputState: null,
+    });
+    upsertSessionTurn({
+      turnId: "new-failed",
+      sessionKey: "agent:main:upgrade",
+      status: "failed",
+      startedAt: 3000,
+      updatedAt: 4000,
+      inputTokens: null,
+      outputTokens: null,
+      costUsd: null,
+      outputState: "incomplete",
+    });
+    closeRouterDb();
+    expect(getSessionTurn("new-failed")).toMatchObject({
+      inputTokens: null,
+      outputTokens: null,
+      costUsd: null,
+      outputState: "incomplete",
+    });
+    expect(getSessionTurn("legacy")?.inputTokens).toBe(42);
   });
 
   it("lists recent events by type using newest event ids first", () => {
@@ -272,6 +314,43 @@ describe("session trace query", () => {
       actorType: "agent",
       actorAgentId: "main",
     });
+  });
+});
+
+describe("session turn usage and output state", () => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-session-turn-usage-test-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  it("keeps unreported usage as NULL, never 0, and round-trips the output state", () => {
+    const sessionKey = "agent:main:usage-null";
+    upsertSessionTurn({ turnId: "turn-null", sessionKey, status: "running", startedAt: 1000, updatedAt: 1000 });
+    upsertSessionTurn({
+      turnId: "turn-null",
+      sessionKey,
+      status: "failed",
+      inputTokens: null,
+      outputTokens: null,
+      costUsd: null,
+      outputState: "incomplete",
+      completedAt: 2000,
+      updatedAt: 2000,
+    });
+    const turn = getSessionTurn("turn-null");
+    expect(turn?.inputTokens).toBeNull();
+    expect(turn?.outputTokens).toBeNull();
+    expect(turn?.cacheReadTokens).toBeNull();
+    expect(turn?.costUsd).toBeNull();
+    expect(turn?.outputState).toBe("incomplete");
+
+    upsertSessionTurn({ turnId: "turn-null", sessionKey, status: "failed", inputTokens: 12, updatedAt: 3000 });
+    expect(getSessionTurn("turn-null")?.inputTokens).toBe(12);
+    expect(getSessionTurn("turn-null")?.outputState).toBe("incomplete");
   });
 });
 

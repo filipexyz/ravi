@@ -8079,7 +8079,7 @@ export class RaviClient {
         body: { idOrKey },
       });
     },
-    /** Evaluate signals and escalate due ones */
+    /** Evaluate signals and escalate due ones (dry-run unless --execute) */
     tick: async (options?: {
       execute?: boolean;
     }): Promise<SignalsTickReturn> => {

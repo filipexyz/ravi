@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { calculateCost, prewarmPricingCatalog } from "../costs/pricing-catalog.js";
 import { projectChannelRuntimeEvent } from "../channels/runtime-events.js";
 import { backfillProviderSessionId, getRecentHistory, saveMessage } from "../db.js";
+import { isCommentaryMetadata, isFinalAssistantMessage, type UtteranceClass } from "./utterance-class.js";
 import { HEARTBEAT_OK } from "../heartbeat/index.js";
 import { getToolSafety } from "../hooks/tool-safety.js";
 import { nats } from "../nats.js";
@@ -280,7 +281,7 @@ function appendAssistantResponse(current: string, next: string): string {
 }
 
 function isCommentaryResponse(metadata: RuntimeEventMetadata | undefined): boolean {
-  return metadata?.item?.phase === "commentary";
+  return isCommentaryMetadata(metadata);
 }
 
 /** Upper bound for the full assistant text carried to observers that read detail. */
@@ -1067,6 +1068,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       provider: runtimeSession.provider,
       model,
       startedAt: streaming.currentTraceTurnStartedAt,
+      // A turn that kept commentary but never produced a final utterance is
+      // `incomplete`, so readers never conclude no work happened.
+      outputState: turnOutputCounts.final > 0 ? "final" : turnOutputCounts.commentary > 0 ? "incomplete" : null,
+      usage: reportedTerminalUsage,
       ...input,
       status: terminal.status,
       eventType: runtimeTurnAttemptTerminalEventType(terminal.status),
@@ -1088,6 +1093,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     streaming.currentTraceRequestBlobSha256 = undefined;
     streaming.currentTraceTurnTerminalRecorded = false;
     streaming.currentTraceStatusRecorded = undefined;
+    turnOutputCounts.final = 0;
+    turnOutputCounts.commentary = 0;
+    reportedTerminalUsage = undefined;
   };
   const markCurrentTurnAttemptSafety = (input: { startedTool?: true; materializedOutput?: true }) => {
     const attemptId = streaming.currentCrashRecoveryAttemptId;
@@ -1105,6 +1113,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   let responseText = "";
   let channelResponseText = "";
   const deliveredVisibleThisTurn: string[] = [];
+  // sessions/turn-output: utterances materialized by the current trace turn, per class.
+  const turnOutputCounts = { final: 0, commentary: 0 };
+  let reportedTerminalUsage: Extract<RuntimeEvent, { type: "turn.complete" }>["usage"] | undefined;
   const turnToolContinuation = createTurnToolContinuationLedger();
   let pendingGeneratedMedia: ResponseMediaAttachment[] = [];
   const generatedMediaKeys = new Set<string>();
@@ -2508,21 +2519,54 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }).catch((err) => log.warn("Failed to announce skill-gate load", { sessionName, error: err }));
   };
 
-  const recentAssistantContents = (): string[] =>
-    getRecentHistory(sessionName, 48)
-      .filter((message) => message.role === "assistant")
-      .map((message) => message.content);
+  // Replay detection compares against final rows only: commentary is history,
+  // but it never stood as an answer the provider could mash back in.
+  const recentAssistantContents = (): string[] => {
+    try {
+      return getRecentHistory(sessionName, 48)
+        .filter((message) => isFinalAssistantMessage(message))
+        .map((message) => message.content);
+    } catch (error) {
+      log.warn("Assistant history unavailable for delivery cleanup", { sessionName, error });
+      return [];
+    }
+  };
 
-  const persistVisibleAssistantMessage = (text: string) => {
+  /**
+   * Materialize one utterance with its class (sessions/turn-output inv. 1-2, 8):
+   * independent of any chat target, and an exact same-turn replay writes nothing.
+   */
+  const persistVisibleAssistantMessage = (text: string, utteranceClass: UtteranceClass = "final") => {
     const trimmedVisible = text.trim();
     if (!trimmedVisible) return;
-    saveMessage(sessionName, "assistant", trimmedVisible, session.providerSessionId ?? session.sdkSessionId ?? null, {
-      agentId: streaming.agentId,
-      channel: streaming.currentSource?.channel,
-      accountId: streaming.currentSource?.accountId,
-      chatId: streaming.currentSource?.chatId,
-      sourceMessageId: streaming.currentSource?.sourceMessageId,
-    });
+    try {
+      const written = saveMessage(
+        sessionName,
+        "assistant",
+        trimmedVisible,
+        session.providerSessionId ?? session.sdkSessionId ?? null,
+        {
+          agentId: streaming.agentId,
+          channel: streaming.currentSource?.channel,
+          accountId: streaming.currentSource?.accountId,
+          chatId: streaming.currentSource?.chatId,
+          sourceMessageId: streaming.currentSource?.sourceMessageId,
+          utteranceClass,
+          turnId: streaming.currentTraceTurnId ?? null,
+        },
+      );
+      // An exact replay proves the row is durable too.
+      turnOutputCounts[utteranceClass] += 1;
+      if (!written)
+        log.info("Skipped same-turn assistant replay", { sessionName, utteranceClass, chars: trimmedVisible.length });
+    } catch (error) {
+      log.error("Failed to materialize assistant output; continuing delivery", {
+        sessionName,
+        utteranceClass,
+        turnId: streaming.currentTraceTurnId,
+        error: String(error),
+      });
+    }
   };
 
   const emitResponse = async (text: string, metadata?: RuntimeEventMetadata) => {
@@ -2783,6 +2827,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             type: "turn.failed",
             error: blockedComplete.error,
             recoverable: true,
+            usage: event.usage,
             rawEvent: event.rawEvent,
             metadata: event.metadata,
           };
@@ -2802,6 +2847,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           type: "turn.failed",
           error,
           recoverable: false,
+          usage: event.usage,
           rawEvent: event.rawEvent,
         };
       }
@@ -2945,6 +2991,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           break;
         }
         if (receivedTerminalStatus !== "complete") {
+          if (event.type === "turn.failed" || event.type === "turn.interrupted") reportedTerminalUsage = event.usage;
           // Interrupted/failed native envelopes may contain partial assistant
           // content that was never accepted by response policy.
           suppressProviderRawForCurrentTurn = true;
@@ -3321,9 +3368,14 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               // This content will be persisted/projected/emitted. Fence replay
               // before any of those effects; silent and discarded responses do
               // not advance the materialized-output marker.
+              const priorAssistantContents = commentaryResponse ? [] : recentAssistantContents();
+              markCurrentTurnAttemptSafety({ materializedOutput: true });
+              fencePendingProviderRawEvent(correlatedProviderRawEvent);
+              // Delivery cleanup must not rewrite or discard the provider utterance in history.
+              persistVisibleAssistantMessage(messageText, commentaryResponse ? "commentary" : "final");
               const visibility = commentaryResponse
                 ? { utterances: [messageText] }
-                : classifyVisibleAssistantUtterances(messageText, recentAssistantContents(), {
+                : classifyVisibleAssistantUtterances(messageText, priorAssistantContents, {
                     alreadyDeliveredThisTurn: deliveredVisibleThisTurn,
                     structuredTurn: Boolean(streaming.currentBridgeTurnId),
                   });
@@ -3345,14 +3397,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 });
                 continue;
               }
-              markCurrentTurnAttemptSafety({ materializedOutput: true });
-              fencePendingProviderRawEvent(correlatedProviderRawEvent);
               for (const utterance of visibleUtterances) {
                 noteTurnPostToolAssistant(turnToolContinuation, utterance.length);
                 recordAssistantState(true, utterance);
                 if (!commentaryResponse) {
                   channelResponseText = appendAssistantResponse(channelResponseText, utterance);
-                  persistVisibleAssistantMessage(utterance);
                   deliveredVisibleThisTurn.push(utterance);
                 }
                 await emitRuntimeEvent({
@@ -3382,7 +3431,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 !commentaryResponse &&
                 (visibleUtterances.length > 1 || visibleUtterances[0] !== messageText.trim())
               ) {
-                log.info("Split empty-join assistant mash into turn-immutable rows", {
+                log.info("Split empty-join assistant mash for delivery", {
                   sessionName,
                   incomingLen: messageText.length,
                   utteranceCount: visibleUtterances.length,

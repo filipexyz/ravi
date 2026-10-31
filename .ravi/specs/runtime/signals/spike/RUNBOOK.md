@@ -30,7 +30,7 @@ The probe registry MUST expose a test seam that does not require changing produc
 ## Run the Loop
 
 1. Tick with the fake probe below threshold -> one open signal.
-2. Start a turn in the fleet session -> block appears; no extra turn.
+2. Start a turn in the install session -> block appears; no extra turn.
 3. Run `signals tick --execute` -> one deterministic line and one OOB prompt.
 4. Change the fake probe to 25% -> next evaluation resolves.
 5. Run `signals tick --execute` -> no further page.
@@ -39,7 +39,7 @@ The probe registry MUST expose a test seam that does not require changing produc
 
 ```bash
 ravi signals raise host.disk.free \
-  --kind fact --scope fleet --severity page \
+  --kind fact --scope install --severity page \
   --title "Disk free below 15%" \
   --evidence '{"metric":"free_pct","value":9.2,"threshold":15}' \
   --clear-probe host.disk --clear-expr "free_pct >= 20" \
@@ -68,7 +68,7 @@ Verify either owner:
 
 - exactly one owner is active;
 - it can read the same state DB as the daemon;
-- it can resolve the fleet session (`signals.fleet_session`, default agent main).
+- it can resolve the install session (`signals.install_session`, default agent main).
 
 ## Disable
 

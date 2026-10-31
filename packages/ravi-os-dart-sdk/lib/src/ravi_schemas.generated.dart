@@ -106226,7 +106226,7 @@ class RaviSchemas {
   "additionalProperties": false,
   "properties": {
     "by": {
-      "description": "Actor, e.g. agent:main or operator:luis",
+      "description": "Operator label, e.g. operator:luis (agents ack as themselves)",
       "type": "string"
     },
     "idOrKey": {
@@ -106286,7 +106286,13 @@ class RaviSchemas {
   },
   "additionalProperties": false,
   "properties": {
+    "changed": {
+      "type": "boolean"
+    },
     "created": {
+      "type": "boolean"
+    },
+    "reopened": {
       "type": "boolean"
     },
     "signal": {
@@ -106681,6 +106687,12 @@ class RaviSchemas {
         "limit": {
           "type": "number"
         },
+        "oobLimit": {
+          "type": "number"
+        },
+        "oobUsed": {
+          "type": "number"
+        },
         "used": {
           "type": "number"
         }
@@ -106689,7 +106701,9 @@ class RaviSchemas {
         "day",
         "used",
         "limit",
-        "held"
+        "held",
+        "oobUsed",
+        "oobLimit"
       ],
       "type": "object"
     }
@@ -106770,6 +106784,12 @@ class RaviSchemas {
         "limit": {
           "type": "number"
         },
+        "oobLimit": {
+          "type": "number"
+        },
+        "oobUsed": {
+          "type": "number"
+        },
         "used": {
           "type": "number"
         }
@@ -106778,7 +106798,9 @@ class RaviSchemas {
         "day",
         "used",
         "limit",
-        "held"
+        "held",
+        "oobUsed",
+        "oobLimit"
       ],
       "type": "object"
     },
@@ -106801,6 +106823,9 @@ class RaviSchemas {
           "createdAt": {
             "type": "number"
           },
+          "fromState": {
+            "type": "string"
+          },
           "id": {
             "type": "number"
           },
@@ -106819,8 +106844,14 @@ class RaviSchemas {
           "signalId": {
             "type": "string"
           },
+          "toState": {
+            "type": "string"
+          },
           "type": {
             "type": "string"
+          },
+          "version": {
+            "type": "number"
           }
         },
         "required": [
@@ -106896,12 +106927,16 @@ class RaviSchemas {
             "type": "string"
           },
           "type": "object"
+        },
+        "status": {
+          "type": "string"
         }
       },
       "required": [
         "at",
         "error",
-        "cleared"
+        "cleared",
+        "status"
       ],
       "type": "object"
     },
@@ -106916,6 +106951,36 @@ class RaviSchemas {
       ]
     },
     "lastSurfaceAt": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "ledgerToday": {
+      "additionalProperties": false,
+      "properties": {
+        "failed": {
+          "type": "number"
+        },
+        "pending": {
+          "type": "number"
+        },
+        "sent": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "pending",
+        "sent",
+        "failed"
+      ],
+      "type": "object"
+    },
+    "nextSurfaceAt": {
       "anyOf": [
         {
           "type": "number"
@@ -107280,6 +107345,33 @@ class RaviSchemas {
         "type": "string"
       },
       "type": "array"
+    },
+    "tick": {
+      "additionalProperties": false,
+      "properties": {
+        "lastSuccessfulTickAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "staleAfterMs": {
+          "type": "number"
+        },
+        "staleAfterSource": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "lastSuccessfulTickAt",
+        "staleAfterMs",
+        "staleAfterSource"
+      ],
+      "type": "object"
     }
   },
   "required": [
@@ -107288,9 +107380,12 @@ class RaviSchemas {
     "targetSessions",
     "clearRule",
     "lastEvaluation",
+    "tick",
     "budget",
+    "ledgerToday",
     "lastSurfaceAt",
     "lastOobAt",
+    "nextSurfaceAt",
     "keyMute",
     "events"
   ],
@@ -107315,7 +107410,7 @@ class RaviSchemas {
       "type": "string"
     },
     "scope": {
-      "description": "fleet or type:id",
+      "description": "install or type:id",
       "type": "string"
     },
     "state": {
@@ -107802,7 +107897,13 @@ class RaviSchemas {
   },
   "additionalProperties": false,
   "properties": {
+    "changed": {
+      "type": "boolean"
+    },
     "created": {
+      "type": "boolean"
+    },
+    "reopened": {
       "type": "boolean"
     },
     "signal": {
@@ -108300,7 +108401,7 @@ class RaviSchemas {
       "type": "string"
     },
     "scope": {
-      "description": "fleet or person|chat|project|agent:<id>",
+      "description": "install or person|chat|project|agent:<id> (an agent turn defaults to agent:<its id>)",
       "type": "string"
     },
     "severity": {
@@ -108308,7 +108409,7 @@ class RaviSchemas {
       "type": "string"
     },
     "source": {
-      "description": "Producer provenance",
+      "description": "Producer provenance (operator only; agents raise as themselves)",
       "type": "string"
     },
     "subject": {
@@ -108376,7 +108477,13 @@ class RaviSchemas {
   },
   "additionalProperties": false,
   "properties": {
+    "changed": {
+      "type": "boolean"
+    },
     "created": {
+      "type": "boolean"
+    },
+    "reopened": {
       "type": "boolean"
     },
     "signal": {
@@ -108812,7 +108919,13 @@ class RaviSchemas {
   },
   "additionalProperties": false,
   "properties": {
+    "changed": {
+      "type": "boolean"
+    },
     "created": {
+      "type": "boolean"
+    },
+    "reopened": {
       "type": "boolean"
     },
     "signal": {
@@ -109603,7 +109716,7 @@ class RaviSchemas {
   "additionalProperties": false,
   "properties": {
     "execute": {
-      "description": "Actually deliver out-of-band signals",
+      "description": "Actually evaluate, expire and deliver out-of-band signals",
       "type": "boolean"
     }
   },
@@ -109673,8 +109786,104 @@ class RaviSchemas {
     "expired": {
       "type": "number"
     },
+    "outbox": {
+      "additionalProperties": false,
+      "properties": {
+        "failed": {
+          "type": "number"
+        },
+        "retried": {
+          "type": "number"
+        },
+        "sent": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "sent",
+        "retried",
+        "failed"
+      ],
+      "type": "object"
+    },
     "resolved": {
       "type": "number"
+    },
+    "skipped": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "sessionName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "sessionName",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "tickState": {
+      "additionalProperties": false,
+      "properties": {
+        "lastSuccessfulTickAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastTickAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastTickError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "staleAfterMs": {
+          "type": "number"
+        },
+        "staleAfterSource": {
+          "type": "string"
+        },
+        "tickIntervalMs": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "lastSuccessfulTickAt",
+        "lastTickAt",
+        "lastTickError",
+        "tickIntervalMs",
+        "staleAfterMs",
+        "staleAfterSource"
+      ],
+      "type": "object"
     },
     "watchers": {
       "items": {
@@ -109711,6 +109920,9 @@ class RaviSchemas {
     "escalated",
     "errors",
     "candidates",
+    "skipped",
+    "outbox",
+    "tickState",
     "watchers"
   ],
   "type": "object"
@@ -109774,7 +109986,13 @@ class RaviSchemas {
   },
   "additionalProperties": false,
   "properties": {
+    "changed": {
+      "type": "boolean"
+    },
     "created": {
+      "type": "boolean"
+    },
+    "reopened": {
       "type": "boolean"
     },
     "signal": {
@@ -110257,7 +110475,13 @@ class RaviSchemas {
   },
   "additionalProperties": false,
   "properties": {
+    "changed": {
+      "type": "boolean"
+    },
     "created": {
+      "type": "boolean"
+    },
+    "reopened": {
       "type": "boolean"
     },
     "signal": {

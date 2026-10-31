@@ -94,7 +94,7 @@ This case is a test fixture, not a second production condition. The spike ships 
 | `kind` | `fact` |
 | `producer_type` | `code` |
 | `producer_id` | `signals.watch.disk` |
-| `scope` | `fleet` |
+| `scope` | `install` |
 | `severity` | `page` |
 | `title` | `Disk free below 15%` |
 | `detail` | `<path>: <free_pct>% free (<free_gb> GB of <total_gb> GB)` |
@@ -152,7 +152,7 @@ A future generic watcher registry is explicitly out of scope for the spike.
 
 ## Route 1: Piggyback
 
-On the next physical turn in the fleet session:
+On the next physical turn in the install session:
 
 1. render evaluates `host.disk` (cache may satisfy it);
 2. if `free_pct < 20`, the signal stays open and is eligible;
@@ -177,7 +177,7 @@ If no turn happens, nothing is delivered by this route. That is the intended eco
 1. refresh the disk fact;
 2. find `host.disk.free` with `now - opened_at >= 0`, not muted, not acked within `renotify_after_ms`, no OOB in the last `cooldown_ms`;
 3. write one `signal_surfaces` row with `route=oob` and an escalation bucket;
-4. send the deterministic line through the channel outbound path to the fleet session's bound chat:
+4. send the deterministic line through the channel outbound path to the install session's bound chat:
 
 ```text
 ⚠ Disk free below 15% — / has 9.2% free (observed 14:01Z). Ack: ravi signals ack <id>
@@ -188,7 +188,7 @@ If no turn happens, nothing is delivered by this route. That is the intended eco
 
 If the disk clears before the tick, no OOB is sent and the signal resolves at the next evaluation.
 
-If the deterministic line cannot be sent because the fleet session has no channel binding, the tick MUST log and still publish the OOB prompt; `explain` MUST show `deterministic_line=skipped_no_binding`.
+If the deterministic line cannot be sent because the install session has no channel binding, the tick MUST log and still publish the OOB prompt; `explain` MUST show `deterministic_line=skipped_no_binding`.
 
 ## Escalation Timeline
 
@@ -222,7 +222,7 @@ The exact repeats are bounded by `max_surfaces=3` and `escalation_count<3`. An i
 | Tick stops | piggyback still works; no escalation; `signals tick` health is visible in `explain` |
 | Two ticks overlap | lock prevents double delivery |
 | Disk recovers between ticks | render resolves; tick sends nothing |
-| Fleet session has no chat binding | OOB prompt still published; deterministic line skipped and logged |
+| Install session has no chat binding | OOB prompt still published; deterministic line skipped and logged |
 | Budget exhausted | block shows held count; page still allowed |
 
 ## Implementation Plan
@@ -292,6 +292,15 @@ Phases 1-4 are implemented in the source tree:
 - `src/daemon.ts` — leader-owned `SignalsRunner` every five minutes;
 - tests: `src/signals/*.test.ts` plus `src/runtime/delivery-queue.test.ts` and `src/tasks/checkpoint-runner.test.ts`.
 
+The six review decisions of the parent spec are implemented on top of the spike:
+
+- owner and scope come from the ToolContext: an agent owns `agent:<id>`, cannot raise a fact, and its scope must include its own session; owner and kind are immutable on re-raise;
+- transitions are compare-and-swap on `version` with an audit row (`version`, `from_state`, `to_state`) in `signal_events`; ack is idempotent, mute and ack are rejected on terminal records, and reopen is guarded by the record's stored `reopen_after_ms`;
+- `signal_surfaces` is a `pending → sent | failed` ledger with a unique idempotency key; the budget is reserved in the same transaction that records the surface, and every count is derived from `sent` rows;
+- OOB and page delivery go through the transactional `signal_outbox`, the only retry path, under one idempotency key;
+- render never probes: it reads the `signal_observations` cache written by the tick, labels `fresh`, `stale` or `unknown` against `signals_tick_state.last_successful_tick_at` and `stale_after` (`2 × tick_interval_ms`, or the persisted `signals.stale_after_ms`), and OOB requires a fresh, successful evaluation;
+- CLI failures follow the agent contract (exit 2 usage, exit 1 not found, `tick` dry-runs with exit 3), and the turn trace records the reservations, the budget and render failures.
+
 Defaults remain safe: `signals.enabled=false`, no cron installed, no daemon restart performed. The daemon must be restarted to load the new runner and CLI command group; enabling the feature is a separate operator decision.
 
 ## Test Cases
@@ -311,7 +320,7 @@ Defaults remain safe: `signals.enabled=false`, no cron installed, no daemon rest
 13. Mute for 12h -> no block, no page.
 14. Budget exhausted -> zero items, held line present, `page` still delivered and audited.
 15. Two concurrent ticks -> one OOB.
-16. Signal scoped `fleet` -> not rendered into a non-fleet agent session.
+16. Signal scoped `install` -> not rendered into a non-install agent session.
 17. Restart the daemon between raise and turn -> signal still open and surfaces once.
 18. `explain` lists scope resolution, last probe value, next surface time, budget, escalation count.
 19. Task `in_progress` + `turn_active=false` + `pending_count=0` -> one `task.orphaned` fact, `piggyback`, no OOB.
@@ -346,7 +355,7 @@ Defaults remain safe: `signals.enabled=false`, no cron installed, no daemon rest
 
 These are product decisions, not implementation details, and MUST be settled before Phase 4:
 
-1. **Enablement owner**: is the fleet session the operator main session, or a dedicated `signals` session? Default proposed: main.
+1. **Enablement owner**: is the install session the operator main session, or a dedicated `signals` session? Default proposed: main.
 2. **Page channel**: deterministic line goes to the main session's bound chat. Confirm that is the operator's preferred surface for P0.
 3. **Budget**: 3 surfaces/day is the proposed hard cap. Confirm or lower it.
 4. **Ack ownership**: explicit ack only, or should any operator reply in the target chat ack piggyback judgments? Default proposed: explicit only.
@@ -364,5 +373,5 @@ These are product decisions, not implementation details, and MUST be settled bef
 - A signal is resurrected over an archived task because the producer checks only `status`, and `archived_at` never changes status.
 - An ended ephemeral session is mistaken for a stalled workload and pages the operator.
 - The terminal-subject guard runs only at raise, so an already-open signal keeps surfacing after the task is archived.
-- Tick runs under a different user or environment and cannot resolve the fleet session.
+- Tick runs under a different user or environment and cannot resolve the install session.
 - The signal is enabled without a way to disable it quickly; the runbook must include the exact kill switch.

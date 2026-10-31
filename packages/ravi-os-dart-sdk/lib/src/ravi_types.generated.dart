@@ -25070,9 +25070,11 @@ class SignalsAckOptions {
 }
 
 class SignalsAckReturn {
-  const SignalsAckReturn({this.created, required this.signal, required this.status, this.suppressed, this.updated});
+  const SignalsAckReturn({this.changed, this.created, this.reopened, required this.signal, required this.status, this.suppressed, this.updated});
 
+  final bool? changed;
   final bool? created;
+  final bool? reopened;
   final RaviJson signal;
   final String status;
   final String? suppressed;
@@ -25080,7 +25082,9 @@ class SignalsAckReturn {
 
   factory SignalsAckReturn.fromJson(Map<String, Object?> json) {
     return SignalsAckReturn(
+      changed: json["changed"] == null ? null : raviJsonAsBool(json["changed"]),
       created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
+      reopened: json["reopened"] == null ? null : raviJsonAsBool(json["reopened"]),
       signal: RaviJson.from(json["signal"]),
       status: raviJsonAsString(json["status"]),
       suppressed: json["suppressed"] == null ? null : raviJsonAsString(json["suppressed"]),
@@ -25114,7 +25118,7 @@ class SignalsBudgetReturn {
 SignalsBudgetReturn signalsBudgetReturnFromJson(Object? json) => SignalsBudgetReturn.fromJsonValue(json);
 
 class SignalsExplainReturn {
-  const SignalsExplainReturn({required this.budget, required this.clearRule, required this.effectiveSeverity, required this.events, required this.keyMute, required this.lastEvaluation, required this.lastOobAt, required this.lastSurfaceAt, required this.signal, required this.targetSessions});
+  const SignalsExplainReturn({required this.budget, required this.clearRule, required this.effectiveSeverity, required this.events, required this.keyMute, required this.lastEvaluation, required this.lastOobAt, required this.lastSurfaceAt, required this.ledgerToday, required this.nextSurfaceAt, required this.signal, required this.targetSessions, required this.tick});
 
   final RaviJson budget;
   final String clearRule;
@@ -25124,8 +25128,11 @@ class SignalsExplainReturn {
   final RaviJson lastEvaluation;
   final RaviJson lastOobAt;
   final RaviJson lastSurfaceAt;
+  final RaviJson ledgerToday;
+  final RaviJson nextSurfaceAt;
   final RaviJson signal;
   final List<String> targetSessions;
+  final RaviJson tick;
 
   factory SignalsExplainReturn.fromJson(Map<String, Object?> json) {
     return SignalsExplainReturn(
@@ -25137,8 +25144,11 @@ class SignalsExplainReturn {
       lastEvaluation: RaviJson.from(json["lastEvaluation"]),
       lastOobAt: RaviJson.from(json["lastOobAt"]),
       lastSurfaceAt: RaviJson.from(json["lastSurfaceAt"]),
+      ledgerToday: RaviJson.from(json["ledgerToday"]),
+      nextSurfaceAt: RaviJson.from(json["nextSurfaceAt"]),
       signal: RaviJson.from(json["signal"]),
       targetSessions: raviJsonAsList(json["targetSessions"], raviJsonAsString),
+      tick: RaviJson.from(json["tick"]),
     );
   }
 
@@ -25218,9 +25228,11 @@ class SignalsMuteOptions {
 }
 
 class SignalsMuteReturn {
-  const SignalsMuteReturn({this.created, required this.signal, required this.status, this.suppressed, this.updated});
+  const SignalsMuteReturn({this.changed, this.created, this.reopened, required this.signal, required this.status, this.suppressed, this.updated});
 
+  final bool? changed;
   final bool? created;
+  final bool? reopened;
   final RaviJson signal;
   final String status;
   final String? suppressed;
@@ -25228,7 +25240,9 @@ class SignalsMuteReturn {
 
   factory SignalsMuteReturn.fromJson(Map<String, Object?> json) {
     return SignalsMuteReturn(
+      changed: json["changed"] == null ? null : raviJsonAsBool(json["changed"]),
       created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
+      reopened: json["reopened"] == null ? null : raviJsonAsBool(json["reopened"]),
       signal: RaviJson.from(json["signal"]),
       status: raviJsonAsString(json["status"]),
       suppressed: json["suppressed"] == null ? null : raviJsonAsString(json["suppressed"]),
@@ -25388,9 +25402,11 @@ class SignalsRaiseOptions {
 }
 
 class SignalsRaiseReturn {
-  const SignalsRaiseReturn({this.created, required this.signal, required this.status, this.suppressed, this.updated});
+  const SignalsRaiseReturn({this.changed, this.created, this.reopened, required this.signal, required this.status, this.suppressed, this.updated});
 
+  final bool? changed;
   final bool? created;
+  final bool? reopened;
   final RaviJson signal;
   final String status;
   final String? suppressed;
@@ -25398,7 +25414,9 @@ class SignalsRaiseReturn {
 
   factory SignalsRaiseReturn.fromJson(Map<String, Object?> json) {
     return SignalsRaiseReturn(
+      changed: json["changed"] == null ? null : raviJsonAsBool(json["changed"]),
       created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
+      reopened: json["reopened"] == null ? null : raviJsonAsBool(json["reopened"]),
       signal: RaviJson.from(json["signal"]),
       status: raviJsonAsString(json["status"]),
       suppressed: json["suppressed"] == null ? null : raviJsonAsString(json["suppressed"]),
@@ -25430,9 +25448,11 @@ class SignalsResolveOptions {
 }
 
 class SignalsResolveReturn {
-  const SignalsResolveReturn({this.created, required this.signal, required this.status, this.suppressed, this.updated});
+  const SignalsResolveReturn({this.changed, this.created, this.reopened, required this.signal, required this.status, this.suppressed, this.updated});
 
+  final bool? changed;
   final bool? created;
+  final bool? reopened;
   final RaviJson signal;
   final String status;
   final String? suppressed;
@@ -25440,7 +25460,9 @@ class SignalsResolveReturn {
 
   factory SignalsResolveReturn.fromJson(Map<String, Object?> json) {
     return SignalsResolveReturn(
+      changed: json["changed"] == null ? null : raviJsonAsBool(json["changed"]),
       created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
+      reopened: json["reopened"] == null ? null : raviJsonAsBool(json["reopened"]),
       signal: RaviJson.from(json["signal"]),
       status: raviJsonAsString(json["status"]),
       suppressed: json["suppressed"] == null ? null : raviJsonAsString(json["suppressed"]),
@@ -25486,7 +25508,7 @@ class SignalsTickOptions {
 }
 
 class SignalsTickReturn {
-  const SignalsTickReturn({required this.candidates, required this.errors, required this.escalated, required this.evaluated, required this.executed, required this.expired, required this.resolved, required this.watchers});
+  const SignalsTickReturn({required this.candidates, required this.errors, required this.escalated, required this.evaluated, required this.executed, required this.expired, required this.outbox, required this.resolved, required this.skipped, required this.tickState, required this.watchers});
 
   final List<RaviJson> candidates;
   final List<RaviJson> errors;
@@ -25494,7 +25516,10 @@ class SignalsTickReturn {
   final double evaluated;
   final bool executed;
   final double expired;
+  final RaviJson outbox;
   final double resolved;
+  final List<RaviJson> skipped;
+  final RaviJson tickState;
   final List<RaviJson> watchers;
 
   factory SignalsTickReturn.fromJson(Map<String, Object?> json) {
@@ -25505,7 +25530,10 @@ class SignalsTickReturn {
       evaluated: raviJsonAsDouble(json["evaluated"]),
       executed: raviJsonAsBool(json["executed"]),
       expired: raviJsonAsDouble(json["expired"]),
+      outbox: RaviJson.from(json["outbox"]),
       resolved: raviJsonAsDouble(json["resolved"]),
+      skipped: raviJsonAsList(json["skipped"], RaviJson.from),
+      tickState: RaviJson.from(json["tickState"]),
       watchers: raviJsonAsList(json["watchers"], RaviJson.from),
     );
   }
@@ -25518,9 +25546,11 @@ class SignalsTickReturn {
 SignalsTickReturn signalsTickReturnFromJson(Object? json) => SignalsTickReturn.fromJsonValue(json);
 
 class SignalsUnmuteReturn {
-  const SignalsUnmuteReturn({this.created, required this.signal, required this.status, this.suppressed, this.updated});
+  const SignalsUnmuteReturn({this.changed, this.created, this.reopened, required this.signal, required this.status, this.suppressed, this.updated});
 
+  final bool? changed;
   final bool? created;
+  final bool? reopened;
   final RaviJson signal;
   final String status;
   final String? suppressed;
@@ -25528,7 +25558,9 @@ class SignalsUnmuteReturn {
 
   factory SignalsUnmuteReturn.fromJson(Map<String, Object?> json) {
     return SignalsUnmuteReturn(
+      changed: json["changed"] == null ? null : raviJsonAsBool(json["changed"]),
       created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
+      reopened: json["reopened"] == null ? null : raviJsonAsBool(json["reopened"]),
       signal: RaviJson.from(json["signal"]),
       status: raviJsonAsString(json["status"]),
       suppressed: json["suppressed"] == null ? null : raviJsonAsString(json["suppressed"]),
@@ -25592,9 +25624,11 @@ class SignalsUpdateOptions {
 }
 
 class SignalsUpdateReturn {
-  const SignalsUpdateReturn({this.created, required this.signal, required this.status, this.suppressed, this.updated});
+  const SignalsUpdateReturn({this.changed, this.created, this.reopened, required this.signal, required this.status, this.suppressed, this.updated});
 
+  final bool? changed;
   final bool? created;
+  final bool? reopened;
   final RaviJson signal;
   final String status;
   final String? suppressed;
@@ -25602,7 +25636,9 @@ class SignalsUpdateReturn {
 
   factory SignalsUpdateReturn.fromJson(Map<String, Object?> json) {
     return SignalsUpdateReturn(
+      changed: json["changed"] == null ? null : raviJsonAsBool(json["changed"]),
       created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
+      reopened: json["reopened"] == null ? null : raviJsonAsBool(json["reopened"]),
       signal: RaviJson.from(json["signal"]),
       status: raviJsonAsString(json["status"]),
       suppressed: json["suppressed"] == null ? null : raviJsonAsString(json["suppressed"]),
