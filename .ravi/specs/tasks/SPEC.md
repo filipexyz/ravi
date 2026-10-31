@@ -5,6 +5,7 @@ kind: domain
 domain: tasks
 capabilities:
   - profiles
+  - threads
   - lifecycle
   - dispatch
   - reporting
@@ -74,6 +75,8 @@ Tasks do not own:
 `TASK.md` is not the task. It is only an artifact used by profiles that declare it.
 
 ## Invariants
+
+- Every task MUST own one canonical channel-independent Thread. Creation, assignment admission, atomic completion and import follow `tasks/threads`.
 
 - The task runtime MUST resolve a profile before create or dispatch can apply profile-specific behavior.
 - Unknown profile ids MUST fail early. They MUST NOT silently fall back to `default`.

@@ -200,13 +200,24 @@ export function resolveRuntimeSessionIdentity(options: {
   ) {
     throw new DecisionError("DECISION_ORIGIN_MISMATCH", "The waiting session changed before runtime launch.");
   }
+  if (
+    options.prompt._taskAssignmentId &&
+    (!sessionEntry ||
+      sessionEntry.sessionKey !== options.prompt._taskSessionKey ||
+      sessionEntry.agentId !== options.prompt._agentId)
+  ) {
+    throw new Error("Task assignment session changed before runtime launch");
+  }
   const agentId = options.prompt._agentId ?? sessionEntry?.agentId ?? routerConfig.defaultAgent;
   const agent =
     routerConfig.agents[agentId] ??
-    (options.prompt._decisionDeliveryId ? undefined : routerConfig.agents[routerConfig.defaultAgent]);
+    (options.prompt._decisionDeliveryId || options.prompt._taskAssignmentId
+      ? undefined
+      : routerConfig.agents[routerConfig.defaultAgent]);
 
   if (!agent) {
     if (options.prompt._decisionDeliveryId) throw new DecisionDispatchRejectedError();
+    if (options.prompt._taskAssignmentId) throw new Error("Task assignment agent is unavailable");
     log.error("No agent found", { sessionName: options.sessionName, agentId });
     return null;
   }

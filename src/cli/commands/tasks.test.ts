@@ -1069,7 +1069,7 @@ describe("TaskCommands create", () => {
     expect(emittedEvents.map((event) => event.type)).toEqual(["task.created"]);
   });
 
-  it("fails create outside a Ravi session unless a report target is explicit", async () => {
+  it("creates a task without a session, channel or report target and passes the idempotency key", async () => {
     taskActorMock = { actor: "luis" };
     const commands = new TaskCommands();
 
@@ -1092,10 +1092,17 @@ describe("TaskCommands create", () => {
         undefined,
         undefined,
         true,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "create-once",
       ),
-    ).rejects.toThrow("Cannot infer task report target outside a Ravi session");
+    ).resolves.toBeDefined();
 
-    expect(createCalls).toHaveLength(0);
+    expect(createCalls).toHaveLength(1);
+    expect(createCalls[0]?.idempotencyKey).toBe("create-once");
+    expect(createCalls[0]?.reportToSessionName).toBeUndefined();
     expect(dispatchCalls).toHaveLength(0);
   });
 
