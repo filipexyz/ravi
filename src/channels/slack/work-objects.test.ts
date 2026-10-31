@@ -22,9 +22,9 @@ describe("Slack native Work Objects metadata", () => {
 
   it("adds app_unfurl_url for unfurl payloads", () => {
     const payload = normalizeSlackNativeWorkObjectUnfurlPayload(sampleMessage(), "https://example.com/tasks/native-1");
-    const first = (payload.metadata?.entities as Record<string, unknown>[])[0];
+    const first = (payload.metadata?.entities as Record<string, unknown>[] | undefined)?.[0];
 
-    expect(first.app_unfurl_url).toBe("https://example.com/tasks/native-1");
+    expect(first?.app_unfurl_url).toBe("https://example.com/tasks/native-1");
   });
 
   it("converts entity-array metadata to detail metadata", () => {

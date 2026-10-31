@@ -54,7 +54,7 @@ describe("sync db", () => {
     });
 
     expect(first?.id).toBe(second?.id);
-    expect((first?.payload as Record<string, unknown>).accessToken).toBe("[REDACTED]");
+    expect((first?.payload as Record<string, unknown> | undefined)?.accessToken).toBe("[REDACTED]");
     expect(getSyncStatusSummary().outbox.pending).toBe(1);
   });
 
