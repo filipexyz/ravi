@@ -1,4 +1,5 @@
 import { getContext } from "./context.js";
+import { currentConsoleInvocation, authorizeConsoleCommand } from "../sdk/gateway/console-context.js";
 import type { CommandAccessOptions, ScopeType } from "./decorators.js";
 import {
   authorizePermission,
@@ -25,6 +26,7 @@ import type {
 export type CliCommandAccessSource = "cli" | "tool" | "gateway";
 
 export interface CliCommandAccessInput {
+  canonicalName?: string;
   group: string;
   command: string;
   access?: CommandAccessOptions;
@@ -82,6 +84,8 @@ export function enforceCliCommandAuthorization(input: CliCommandAuthorizationInp
 }
 
 export function enforceCliCommandAccess(input: CliCommandAccessInput): CliCommandAccessResult {
+  const invocation = currentConsoleInvocation();
+  if (invocation) return authorizeConsoleCommand(invocation, input);
   if (!input.access) {
     return {
       allowed: false,

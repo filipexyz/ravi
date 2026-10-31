@@ -321,6 +321,20 @@ describe("SessionRuntimeCommands", () => {
     throw new Error("expected the command to fail");
   }
 
+  it("cannot control private bridge sessions through ordinary admin or wildcard access", async () => {
+    resolvedSession = {
+      ...resolvedSession,
+      sessionKey: "agent:dev:console:00000000-0000-4000-8000-000000000001",
+      name: "legacy-alias",
+    };
+    for (const enforced of [false, true]) {
+      scopeEnforced = enforced;
+      const error = await captureError(() => new SessionRuntimeCommands().steer("legacy-alias", "injected"));
+      expect(error.code).toBe("SESSION_NOT_FOUND");
+    }
+    expect(requestReplyCalls).toEqual([]);
+  });
+
   it("turns a disabled steer into a typed contract error instead of COMMAND_FAILED", async () => {
     requestReplyResult = {
       result: {

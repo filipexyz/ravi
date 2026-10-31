@@ -1,4 +1,5 @@
 import { emitCliAuditEvent } from "../../../cli/audit.js";
+import { currentConsoleInvocation } from "../console-context.js";
 import { buildAuditContextProvenance } from "../../../permissions/audit-provenance.js";
 import { flushPermissionAuditEvents, recordAndEmitPermissionDenial } from "../../../permissions/denials.js";
 import { canWithCapabilityContext } from "../../../permissions/provider-runtime.js";
@@ -36,6 +37,11 @@ export async function handleStreamingRequest(
   if (url.pathname !== streamPrefix && !url.pathname.startsWith(`${streamPrefix}/`)) {
     return null;
   }
+  const invocation = currentConsoleInvocation();
+  const matched = matchStreamChannel(url, options.streaming?.channels ?? defaultStreamChannels);
+  if (invocation)
+    return matched?.channel.consoleHandler?.(request, url, invocation) ?? permissionDenied("Console view required");
+  if (matched?.channel.consoleHandler) return permissionDenied("Console delegation required");
 
   if (request.method !== "GET") {
     return methodNotAllowed(request.method, url.pathname);
@@ -47,7 +53,6 @@ export async function handleStreamingRequest(
   }
   const contextRecord = resolved.contextRecord;
 
-  const matched = matchStreamChannel(url, options.streaming?.channels ?? defaultStreamChannels);
   if (!matched) {
     return notFound(url.pathname);
   }
