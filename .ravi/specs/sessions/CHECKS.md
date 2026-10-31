@@ -51,3 +51,5 @@
   terminal for minutes — the host MUST emit `turn.failed` / `turn.interrupted`
   and write a terminal `lastTurn`.
 - Bare `ravi tui` MUST fail with a usage error instead of opening `main`.
+
+- `bun test src/cli/commands/sessions.test.ts`: an empty child returns zero rows despite parent/sibling same-chat history and metadata; a populated child returns only its own rows.

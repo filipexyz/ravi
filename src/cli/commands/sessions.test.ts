@@ -2144,7 +2144,11 @@ describe("SessionCommands attach hints", () => {
     expect(publishedOutboundJobs).toHaveLength(0);
   });
 
-  it("checks the model against the runtime the child will actually start on", async () => {
+  it.each([
+    ["claude", "gpt-5.6", /does not belong to the claude runtime/],
+    ["pi", "gpt-6-astra", /--provider codex/],
+    ["codex", "deepseek/deepseek-flash", /does not belong to the codex runtime/],
+  ] as const)("checks thread model against the inherited %s runtime", async (provider, model, error) => {
     const sessionKey = "agent:dev:slack:ravi-slack:C123";
     resolvedSession = {
       sessionKey,
@@ -2183,7 +2187,7 @@ describe("SessionCommands attach hints", () => {
     // Nothing pins the child here: its runtime comes from the agent, and that is
     // the provider the model has to be valid for.
     routerConfig = {
-      agents: { dev: { id: "dev", name: "dev", cwd: "/tmp/dev", provider: "claude" } },
+      agents: { dev: { id: "dev", name: "dev", cwd: "/tmp/dev", provider } },
       channels: {
         "ravi-slack": {
           name: "ravi-slack",
@@ -2199,14 +2203,14 @@ describe("SessionCommands attach hints", () => {
     await expect(
       new SessionCommands().createThread(
         "Investigate this branch",
-        "gpt-5.6",
+        model,
         undefined,
         undefined,
         undefined,
         undefined,
         true,
       ),
-    ).rejects.toThrow(/does not belong to the claude runtime/);
+    ).rejects.toThrow(error);
     expect(createdSlackThreadLifecycles).toHaveLength(0);
     expect(publishedOutboundJobs).toHaveLength(0);
   });
@@ -3695,6 +3699,27 @@ describe("SessionCommands read", () => {
 
     expect(payload.transcript.source).toBe("chat-db");
     expect(payload.count).toBe(1);
+  });
+
+  it("keeps an empty thread isolated from the parent chat and sibling sessions", () => {
+    resolvedSession = {
+      ...resolvedSession!,
+      sessionKey: "agent:main:main:thread:1713000000.000100",
+      name: "child-thread",
+      lastThreadId: "1713000000.000100",
+      lastTo: "C123",
+    };
+    chatHistoryByChat = [
+      { id: 1, session_id: "parent", role: "user", content: "parent only", chat_id: "C123", agent_id: "main" },
+    ];
+    messageMetadataRows = [{ messageId: "parent-message", chatId: "C123", transcription: "parent only" }];
+    const payload = JSON.parse(captureLogs(() => new SessionCommands().read("child-thread", "10", true)));
+    expect(payload.messages).toEqual([]);
+    expect(payload.totalMessages).toBe(0);
+    expect(payload.transcript).toMatchObject({ available: true, source: "chat-db", sessionName: "child-thread" });
+    chatHistory = [{ id: 2, session_id: "child-thread", role: "user", content: "child only" }];
+    const populated = JSON.parse(captureLogs(() => new SessionCommands().read("child-thread", "10", true)));
+    expect(populated.messages.map((row: { text: string }) => row.text)).toEqual(["child only"]);
   });
 
   it("falls back to same-chat durable history before message metadata", () => {

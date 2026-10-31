@@ -486,9 +486,19 @@ function sessionsRuntimeCatalogCopy(
  * tasks/service.ts). The relay renders local copy for them instead of the
  * daemon's free text, which names sessions and threads.
  */
-const SESSIONS_THREAD_OPS = new Set(["sessions report", "sessions close-thread", "sessions thread-send"]);
+const SESSIONS_THREAD_OPS = new Set([
+  "sessions create-thread",
+  "sessions report",
+  "sessions close-thread",
+  "sessions thread-send",
+]);
 const TASK_DISPATCH_OPS = new Set(["tasks dispatch"]);
 const THREAD_COMMAND_COPY: Readonly<Record<string, { message: string; suggestedAction: string }>> = {
+  THREAD_MODEL_PROVIDER_MISMATCH: {
+    message: "The thread model selector is incompatible with its runtime provider. The thread was not created.",
+    suggestedAction:
+      "Set --provider explicitly (for example --provider codex --model <model>); Pi selectors use provider/model",
+  },
   THREAD_NOT_THREAD_CHILD: {
     message: "This command is available only inside a Slack thread child session.",
     suggestedAction: "Run it from the Slack thread's own session, or pass --session <thread session>",

@@ -1909,6 +1909,7 @@ describe("thread command remote relay", () => {
       ["decisions answer", "DECISION_SELF_ANSWER", "waiting worker"],
       ["decisions retry", "DECISION_DELIVERY_UNCERTAIN", "uncertain"],
       ["sessions close-thread", "THREAD_DECISIONS_PENDING", "open decisions"],
+      ["sessions create-thread", "THREAD_MODEL_PROVIDER_MISMATCH", "model selector"],
     ]) {
       const remote = await relay(op!, new ContractError(op!, code!, "PRIVATE_DECISION_TEXT", 1));
       expect(remote?.message).toContain(copy!);

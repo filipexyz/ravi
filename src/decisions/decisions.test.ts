@@ -1,3 +1,4 @@
+import { RuntimeStartCapacityError } from "../runtime/start-admission.js";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
 import { renameSessionName } from "../router/sessions.js";
@@ -303,6 +304,37 @@ describe("generic decisions and managed threads", () => {
       lastError: "DECISION_AGENT_MISSING",
     });
     expect(() => closeSlackThreadLifecycle({ childSessionKey: origin.sessionKey! })).toThrow("undelivered answer");
+    resetFailedDecisionDeliveries(decision.id);
+    await admitDecisionAnswer(name, published[0]!, async () => {});
+    expect(decisionDeliveries(decision.id).find((d) => d.kind === "answer")?.status).toBe("delivered");
+  });
+
+  it("keeps capacity refusal in the durable decision retry path without ambiguous admission", async () => {
+    const origin = await thread();
+    const { decision } = await askDecision(origin, { key: "capacity", ask: "Question" });
+    await answerDecision(decision.id, "Outcome");
+    const published: RuntimeLaunchPrompt[] = [];
+    await reconcileDecisionDeliveries(deps(published), decision.id);
+    const name = getSession(origin.sessionKey!)!.name!;
+    await expect(
+      admitDecisionAnswer(name, published[0]!, async () => {
+        throw new RuntimeStartCapacityError({
+          lane: "background",
+          reason: "concurrency_limit",
+          active: 1,
+          reserved: 0,
+          max: 1,
+          backgroundLimit: 1,
+          queuePosition: null,
+          occupants: [],
+          largestConsumer: null,
+        });
+      }),
+    ).rejects.toBeInstanceOf(RuntimeStartCapacityError);
+    expect(decisionDeliveries(decision.id).find((d) => d.kind === "answer")).toMatchObject({
+      status: "failed",
+      lastError: "RUNTIME_START_CAPACITY",
+    });
     resetFailedDecisionDeliveries(decision.id);
     await admitDecisionAnswer(name, published[0]!, async () => {});
     expect(decisionDeliveries(decision.id).find((d) => d.kind === "answer")?.status).toBe("delivered");

@@ -1,4 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { createRuntimeContext } from "../../runtime/context-registry.js";
+import { classifyRuntimeSessionStartLane } from "../../runtime/session-pool.js";
+import { classifyTurnProvenance } from "../../runtime/turn-provenance.js";
+import type { RuntimeLaunchPrompt } from "../../runtime/message-types.js";
 import type { PublishSessionPromptOptions } from "../../omni/session-stream.js";
 import type { ChannelOutboundJob } from "../outbound-stream.js";
 import { deleteSession, getOrCreateSession, getSession, listSessionSubscriptions } from "../../router/index.js";
@@ -36,6 +40,27 @@ afterEach(async () => {
 });
 
 describe("Slack thread lifecycle", () => {
+  it.each(["human", "cron", "agent", "observer", "unknown"])(
+    "uses the initiating %s turn for bootstrap admission without changing actor provenance",
+    async (origin) => {
+      getOrCreateSession("ravi-parent", "ravi", "/tmp/ravi", { name: "ravi-parent" });
+      const context = createRuntimeContext({
+        kind: "turn-runtime",
+        sessionKey: "ravi-parent",
+        metadata: { turnProvenance: { origin, background: origin !== "human" } },
+      });
+      const fixture = seedPendingCreation({ initiatorContextId: context.contextId });
+      const publishPrompt = mock(async () => {});
+      await finalizeSlackThreadCreation(fixture.requestId, { publishPrompt, publishEvent: mock(async () => {}) });
+      const [sessionName, payload] = publishPrompt.mock.calls[0] as unknown as [string, RuntimeLaunchPrompt];
+      expect(classifyRuntimeSessionStartLane(sessionName, payload)).toBe(
+        origin === "human" ? "interactive" : "background",
+      );
+      expect(classifyTurnProvenance({ prompt: payload }).origin).toBe("agent");
+      expect(payload.source?.actorType).toBe("agent");
+    },
+  );
+
   it("materializes one child turn after durable root delivery and applies its model first", async () => {
     const fixture = seedPendingCreation();
     const prompts: Array<{
@@ -685,7 +710,13 @@ describe("Slack thread orchestration", () => {
 });
 
 function seedPendingCreation(
-  input: { channelId?: string; chatType?: "channel" | "dm"; teamId?: string; requestedBy?: string } = {},
+  input: {
+    channelId?: string;
+    chatType?: "channel" | "dm";
+    teamId?: string;
+    requestedBy?: string;
+    initiatorContextId?: string;
+  } = {},
 ): {
   requestId: string;
   threadTs: string;
@@ -717,6 +748,7 @@ function seedPendingCreation(
     platformChatId: channelId,
     rootCanonicalChatId: rootChat.id,
     initialPrompt: "Investigate the branch",
+    initiatorContextId: input.initiatorContextId,
     ...(input.requestedBy ? { requestedBy: input.requestedBy } : {}),
     modelOverride: "gpt-5.6",
     providerOverride: "codex",

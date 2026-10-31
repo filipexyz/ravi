@@ -1,3 +1,4 @@
+import { RuntimeStartCapacityError } from "../runtime/start-admission.js";
 import { randomUUID } from "node:crypto";
 import { hasRuntimeInvocationContext } from "../cli/context.js";
 import { readSpawnedAutomationPrincipal } from "../runtime/turn-origin.js";
@@ -199,12 +200,17 @@ export async function admitDecisionAnswer(
     finish(id, claimed.claim, "delivered");
     await refreshDecisionCard(claimed.decisionId, deps);
   } catch (error) {
-    if (error instanceof DecisionDispatchRejectedError) {
+    if (error instanceof DecisionDispatchRejectedError || error instanceof RuntimeStartCapacityError) {
       getDb()
         .query(
           "UPDATE decision_deliveries SET status='failed',claim_id=NULL,claim_until=NULL,next_attempt_at=?,last_error=? WHERE id=? AND claim_id=?",
         )
-        .run(Date.now() + 30_000, error.reason, id, claimed.claim);
+        .run(
+          Date.now() + 30_000,
+          error instanceof RuntimeStartCapacityError ? error.code : error.reason,
+          id,
+          claimed.claim,
+        );
       throw error;
     }
     // The runtime may have started before throwing. Repeating would risk executing twice.
