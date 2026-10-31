@@ -5,10 +5,10 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { homedir } from "node:os";
+import { getRaviStateDir } from "../utils/paths.js";
 import { markRaviEnvFileSourced } from "../runtime/ravi-env-file-origin.js";
 
-const envFile = join(homedir(), ".ravi", ".env");
+const envFile = join(getRaviStateDir(), ".env");
 
 if (existsSync(envFile)) {
   const content = readFileSync(envFile, "utf-8");

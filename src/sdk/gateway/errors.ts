@@ -46,6 +46,11 @@ export function errorResponse(status: number, error: string, extras: Record<stri
       "Gateway access denied.",
       "Request the required permission before retrying",
     ],
+    ConsoleAuthorityRequired: [
+      "CONSOLE_AUTHORITY_REQUIRED",
+      "This command requires signed authority on the dedicated Console listener.",
+      "Use the dedicated Console listener with a valid signed delegation",
+    ],
     Unauthorized: [
       "AUTH_REQUIRED",
       "Gateway authentication failed.",

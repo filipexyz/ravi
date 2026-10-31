@@ -12,7 +12,7 @@ voltam para o dispatcher single-shot.
 - OpenAPI and SDK codegen MUST NOT expose CLI-only streaming handlers as normal
   request/response operations.
 - Gateway stream channels MUST enforce auth, audit open/close, keepalive,
-  drop-tail backpressure behavior, and reconnect semantics.
+  drop-oldest backpressure behavior, and reconnect semantics.
 
 1. **Nenhum handler streaming/process/interactive escapa pra route-table**
 
@@ -61,7 +61,7 @@ voltam para o dispatcher single-shot.
 
    Espera-se: `ok: cliOnly methods absent`.
 
-### SSE Checks Ativos
+### SSE Checks Ativos (canais NATS; exceções de `session-view` abaixo)
 
 4. **Auth obrigatória em /api/v1/_stream/**: request sem Bearer retorna 401.
 
@@ -100,3 +100,10 @@ voltam para o dispatcher single-shot.
 - **Confusão de prefixos:** se algum handler novo tentar registrar
   `/_stream/<channel>` colidindo com handler dispatcher, gateway MUST
   detectar collision em build do route-table e falhar.
+
+- `src/sdk/gateway/console.test.ts` cobre visão privada com cursor assinado e
+  ausência de renovação por leitura; a geração dos três SDKs inclui `sessionView`.
+
+- `session-view` usa delegação Console, `id:` HMAC, journal durável sem descarte,
+  batches de heartbeat e audit direto no SQLite privado; testes em
+  `src/sdk/gateway/console.test.ts` verificam rejeição local, replay e audit.

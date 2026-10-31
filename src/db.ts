@@ -1,3 +1,4 @@
+import { isBridgeSessionRef } from "./bridge/isolation.js";
 import { Database, type SQLQueryBindings } from "bun:sqlite";
 import { join } from "node:path";
 import { mkdirSync } from "node:fs";
@@ -120,7 +121,8 @@ export interface SaveMessageMetadata {
 
 /**
  * Persist one history row. Returns false when the row was an exact same-turn
- * replay (same session, turn, role, class and content) and nothing was written;
+ * replay (same session, turn, role, class and content), or belongs to the private
+ * bridge journal, and nothing was written;
  * a new utterance that merely resembles an older one is always written.
  */
 export function saveMessage(
@@ -130,6 +132,9 @@ export function saveMessage(
   providerSessionId?: string | null,
   metadata: SaveMessageMetadata = {},
 ): boolean {
+  // The human journal is authoritative; never copy private conversations into
+  // the ordinary chat/knowledge store, whose readers lack Console delegation.
+  if (isBridgeSessionRef(sessionId)) return false;
   const database = getDb();
   const turnId = metadata.turnId?.trim() || null;
   const utteranceClass = role === "assistant" ? (metadata.utteranceClass ?? "final") : null;

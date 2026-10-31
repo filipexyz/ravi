@@ -159,6 +159,7 @@ async function dispatchCommand(
   const toolContext = asToolContext(scopeContext, opts.contextRecord ?? null, opts.cwd ?? protocol.cwd);
   const accessResult = runWithContext(toolContext, () =>
     enforceCliCommandAuthorization({
+      canonicalName: cmd.fullName,
       group,
       command: cmd.command,
       access: cmd.access,

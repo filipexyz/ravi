@@ -17,7 +17,7 @@ import {
 import { fail } from "../context.js";
 import { declareCommandReturns, runtimeControlReturnSchema } from "./operational-return-schemas.js";
 import { requestReply } from "../../utils/request-reply.js";
-import { resolveSession } from "../../router/sessions.js";
+import { resolveSession } from "../session-targets.js";
 import type { SessionEntry } from "../../router/types.js";
 import type { RuntimeControlRequest, RuntimeControlResult } from "../../runtime/types.js";
 import { getScopeContext, isScopeEnforced, canAccessSession, canModifySession } from "../../permissions/scope.js";

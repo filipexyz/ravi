@@ -283,3 +283,10 @@ lacks `@CommandAccess` MUST fail the relevant quality gate.
   and can distinguish missing metadata from intentionally read-only commands.
 - Adding a new public mutating command without `@CommandAccess` fails tests or
   doctor checks.
+
+## Console transport binding
+
+`consoleScope` optionally describes a reviewed installation/project/session
+resolver for the dedicated Console listener. It is not a grant. Console signed
+control decisions use the same semantic action and dispatcher with no local
+operator fallback. Commands missing this boundary deny on that listener.
