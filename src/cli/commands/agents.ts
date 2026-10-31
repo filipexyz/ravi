@@ -49,11 +49,7 @@ import {
   resolveSession,
   type SessionTurnUsageSummary,
 } from "../../router/sessions.js";
-import {
-  createRuntimeProvider,
-  DEFAULT_RUNTIME_PROVIDER_ID,
-  listRegisteredRuntimeProviderIds,
-} from "../../runtime/provider-registry.js";
+import { createRuntimeProvider, listRegisteredRuntimeProviderIds } from "../../runtime/provider-registry.js";
 import { validateRuntimeModelSelector } from "../../runtime/model-validation.js";
 import { getRuntimeModelPreset } from "../../runtime/model-preset-store.js";
 import { resolveEffectiveAgentModel } from "../../runtime/model-preset-resolver.js";
@@ -360,7 +356,8 @@ function buildAgentJson(agent: AgentConfig, defaultAgent: string): AgentJsonSumm
 }
 
 function validateAgentModelValue(providerId: string | undefined, model: string): void {
-  const result = validateRuntimeModelSelector(providerId ?? DEFAULT_RUNTIME_PROVIDER_ID, model);
+  const provider = providerId ?? resolveRequestedRuntimeProvider({ agent: {} }).value;
+  const result = validateRuntimeModelSelector(provider, model);
   if (!result.ok) {
     fail(result.error ?? `Invalid model: ${model}`);
   }

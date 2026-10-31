@@ -95997,31 +95997,116 @@ export const RuntimeCredentialsStatusInputSchema = {
 
 /** JSON Schema for the return shape of `runtime.credentials.status`. */
 export const RuntimeCredentialsStatusReturnSchema = {
-  "additionalProperties": {},
-  "properties": {
-    "credential": {
+  "anyOf": [
+    {
       "additionalProperties": {},
-      "properties": {},
-      "type": "object"
-    },
-    "health": {
-      "anyOf": [
-        {
+      "properties": {
+        "credential": {
           "additionalProperties": {},
           "properties": {},
           "type": "object"
         },
-        {
-          "type": "null"
+        "health": {
+          "anyOf": [
+            {
+              "additionalProperties": {},
+              "properties": {},
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
-      ]
+      },
+      "required": [
+        "credential",
+        "health"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": {},
+      "properties": {
+        "credentials": {
+          "items": {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "pagination": {
+          "additionalProperties": {},
+          "properties": {
+            "hasMore": {
+              "type": "boolean"
+            },
+            "limit": {
+              "type": "number"
+            },
+            "nextCommand": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "nextOffset": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "offset": {
+              "type": "number"
+            },
+            "returned": {
+              "type": "number"
+            },
+            "total": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "limit",
+            "offset",
+            "returned",
+            "total",
+            "hasMore",
+            "nextOffset",
+            "nextCommand"
+          ],
+          "type": "object"
+        },
+        "providerHealth": {
+          "items": {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "total",
+        "pagination",
+        "credentials",
+        "providerHealth"
+      ],
+      "type": "object"
     }
-  },
-  "required": [
-    "credential",
-    "health"
-  ],
-  "type": "object"
+  ]
 } as const satisfies SdkJsonSchema;
 
 /** JSON Schema for the input body of `runtime.env.get`. */

@@ -201,3 +201,10 @@ Managed threads consume `decisions`. `ravi decisions ask --thread <child> --key 
 Every open question and every answer not yet admitted MUST prevent close atomically with `THREAD_DECISIONS_PENDING`. No silent discard or force-close is provided. Root cards prioritize the oldest question as `Aguardando decisão`; text fallback includes that question and state. `openDecisionCount` is part of the thread summary. Full questions appear inside the thread via durable outbound intent. The pending cue disappears after answer, with delivery feedback separate from work completion. A human-authored root is untouched.
 
 The existing thread reconciler also drains decision effects. Exact origin binding and durable consumer receipts protect retries; uncertain admission requires local operator resolution as specified in `decisions`.
+
+## Closing after runtime pruning
+
+- The durable lifecycle/card MUST remain closable after the child session is pruned. `close-thread --session` resolves its exact child name, key or lifecycle request id without recreating runtime state.
+- An orphan close MUST require modify authority over the child or its recorded parent. Missing, ambiguous and unauthorized references MUST be cloaked as `SESSION_NOT_FOUND`; public copy MUST distinguish this condition from an execution failure without revealing private names.
+- Closing an orphan uses the same card update, pending-decision guard, close sequence, parent-return delivery and idempotency as a live child.
+- Existing orphan cards are reconciled by this same close command; no deployment-time destructive cleanup or recreation is authorized by this fix.

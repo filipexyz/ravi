@@ -2015,6 +2015,13 @@ export const runtimeCredentialStatusReturnSchema = z
   })
   .passthrough();
 
+// status without an id returns the pool listing, while status <id> returns
+// one credential and its health. reset-health retains the single-item schema.
+export const runtimeCredentialsStatusReturnSchema = z.union([
+  runtimeCredentialStatusReturnSchema,
+  runtimeCredentialsListReturnSchema,
+]);
+
 export const runtimeCredentialRefreshReturnSchema = z
   .object({
     refreshed: z.array(looseObjectSchema),

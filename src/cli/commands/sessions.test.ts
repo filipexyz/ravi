@@ -27,6 +27,7 @@ const revokedRuntimeContextCalls: Array<{ sessionKey: string; reason?: string }>
 const providerRequestCalls: Array<{ topic: string; data: Record<string, unknown>; timeoutMs: number }> = [];
 let providerRequestResponse: Record<string, unknown> = { success: true };
 let listedSessions: Array<Record<string, unknown>> = [];
+let orphanThread: Record<string, unknown> | null = null;
 let resolvedSession: Record<string, unknown> | null = null;
 let sessionDerivedSource: { channel: string; accountId: string; chatId: string; threadId?: string } | undefined;
 let listedContexts: Array<Record<string, unknown>> = [];
@@ -107,6 +108,7 @@ const runtimeLiveStates = new Map<string, Record<string, unknown>>();
 let toolContext: Record<string, unknown> | undefined;
 let threadIdentityAssessment: Record<string, unknown> = { kind: "none" };
 let scopeEnforced = false;
+let sessionModifyAllowed = true;
 let canAccess = true;
 let sessionGoal: Record<string, unknown> | null = null;
 
@@ -218,6 +220,7 @@ mock.module("../../channels/slack/thread-lifecycle-store.js", () => ({
     };
   },
   findSlackThreadLifecycleByChildSession: () => null,
+  findSlackThreadLifecycleByChildRef: () => orphanThread,
 }));
 
 mock.module("../../router/thread-identity.js", () => ({
@@ -277,6 +280,11 @@ mock.module("../../channels/slack/thread-lifecycle.js", () => ({
     const [root, thread] = platformChatId.split("#");
     return root && thread ? { platformChatId: root, providerThreadId: thread } : null;
   },
+  closeSlackThreadRecord: async (record: Record<string, unknown>) => ({
+    record: { ...record, status: "closed", closeSequence: 1, parentReturnRequested: false },
+    changed: true,
+    parentReturnDelivered: false,
+  }),
   closeSlackThread: async (session: Record<string, unknown>, returnResult?: string) => {
     closedSlackThreads.push({ session, ...(returnResult ? { returnResult } : {}) });
     return {
@@ -496,7 +504,7 @@ mock.module("../../permissions/scope.js", () => ({
   getScopeContext: () => (scopeEnforced ? { agentId: "dev" } : undefined),
   isScopeEnforced: () => scopeEnforced,
   canAccessSession: () => canAccess,
-  canModifySession: () => true,
+  canModifySession: () => sessionModifyAllowed,
   canAccessResource: () => true,
   canAccessContact: () => true,
   filterAccessibleSessions: <T>(_: unknown, sessions: T[]) => sessions,
@@ -624,6 +632,7 @@ async function captureLogsAsync(run: () => Promise<unknown>): Promise<string> {
 beforeEach(() => {
   toolContext = undefined;
   scopeEnforced = false;
+  sessionModifyAllowed = true;
   canAccess = true;
   sessionGoal = null;
   chatHistory = [];
@@ -668,6 +677,7 @@ describe("SessionCommands wait mode", () => {
     claudeEvents = [];
     responseEvents = [];
     publishedPrompts.length = 0;
+    orphanThread = null;
     resolvedSession = null;
     sessionDerivedSource = undefined;
     listedContexts = [];
@@ -1909,6 +1919,34 @@ describe("SessionCommands attach hints", () => {
     );
   });
 
+  it("closes an orphan through its durable record without recreating a session", async () => {
+    orphanThread = {
+      requestId: "slack-thread:orphan",
+      parentSessionKey: "parent",
+      parentSessionName: "parent",
+      childSessionKey: "parent:thread:1",
+      childSessionName: "orphan",
+      platformChatId: "C123",
+      providerThreadId: "1",
+    };
+    resolvedSession = null;
+    const result = await new SessionCommands().closeThread(undefined, "orphan", true);
+    expect(result).toMatchObject({
+      closed: true,
+      childSession: { sessionName: "orphan", sessionKey: "parent:thread:1" },
+    });
+    expect(resolvedSession).toBeNull();
+    scopeEnforced = true;
+    sessionModifyAllowed = false;
+    await expect(new SessionCommands().closeThread(undefined, "orphan", true)).rejects.toMatchObject({
+      code: "SESSION_NOT_FOUND",
+    });
+    orphanThread = null;
+    await expect(new SessionCommands().closeThread(undefined, "missing", true)).rejects.toMatchObject({
+      code: "SESSION_NOT_FOUND",
+    });
+  });
+
   it("queues Slack thread creation with the selected child model", async () => {
     const sessionKey = "agent:dev:slack:ravi-slack:C123";
     resolvedSession = {
@@ -2209,6 +2247,36 @@ describe("SessionCommands attach hints", () => {
     ).rejects.toThrow(/does not belong to the claude runtime/);
     expect(createdSlackThreadLifecycles).toHaveLength(0);
     expect(publishedOutboundJobs).toHaveLength(0);
+    routerConfig.agents.dev!.model = "deepseek/deepseek-flash";
+    await expect(
+      new SessionCommands().createThread("Investigate", undefined, undefined, undefined, undefined, undefined, true),
+    ).rejects.toMatchObject({ code: "THREAD_MODEL_INVALID" });
+    expect(createdSlackThreadLifecycles).toHaveLength(0);
+    expect(publishedOutboundJobs).toHaveLength(0);
+    resolvedSession!.runtimeProviderOverride = "pi";
+    await expect(
+      new SessionCommands().createThread(
+        "Investigate",
+        "gpt-6-astra",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      ),
+    ).rejects.toMatchObject({ code: "THREAD_MODEL_INVALID" });
+    expect(createdSlackThreadLifecycles).toHaveLength(0);
+    expect(publishedOutboundJobs).toHaveLength(0);
+    await new SessionCommands().createThread(
+      "Investigate",
+      "gpt-6-astra",
+      "codex",
+      undefined,
+      undefined,
+      undefined,
+      true,
+    );
+    expect(createdSlackThreadLifecycles[0]).toMatchObject({ providerOverride: "codex", modelOverride: "gpt-6-astra" });
   });
 
   it("closes the current Slack child and opts into a parent return only with --return", async () => {
@@ -2745,9 +2813,24 @@ describe("SessionCommands rename and display labels", () => {
 describe("SessionCommands set-model", () => {
   beforeEach(() => {
     listedSessions = [];
+    orphanThread = null;
     resolvedSession = null;
     routerConfig = { agents: {} };
     natsEmits.length = 0;
+  });
+
+  it("rejects an incompatible session model before persisting or notifying", async () => {
+    resolvedSession = {
+      sessionKey: "agent:main:model-switch",
+      name: "model-switch",
+      agentId: "main",
+      runtimeProviderOverride: "claude",
+    };
+    await expect(new SessionCommands().setModel("model-switch", "deepseek/deepseek-flash")).rejects.toThrow(
+      "does not belong",
+    );
+    expect(resolvedSession.modelOverride).toBeUndefined();
+    expect(natsEmits).toHaveLength(0);
   });
 
   it("notifies the live daemon with the effective model", async () => {
@@ -2953,9 +3036,24 @@ describe("SessionCommands set-model", () => {
 describe("SessionCommands set-provider", () => {
   beforeEach(() => {
     listedSessions = [];
+    orphanThread = null;
     resolvedSession = null;
     routerConfig = { agents: {} };
     natsEmits.length = 0;
+  });
+
+  it("rejects an incompatible session provider and accepts repair of legacy drift", () => {
+    resolvedSession = {
+      sessionKey: "agent:main:pair",
+      name: "pair",
+      agentId: "main",
+      runtimeProviderOverride: "claude",
+      modelOverride: "deepseek/deepseek-flash",
+    };
+    expect(() => new SessionCommands().setProvider("pair", "codex", true)).toThrow("does not belong");
+    expect(resolvedSession.runtimeProviderOverride).toBe("claude");
+    captureLogs(() => new SessionCommands().setProvider("pair", "pi", true));
+    expect(resolvedSession.runtimeProviderOverride).toBe("pi");
   });
 
   it("notes when the session provider differs from the agent default", () => {
@@ -2964,6 +3062,7 @@ describe("SessionCommands set-provider", () => {
       name: "wa-group",
       agentId: "ravi-console",
       runtimeProvider: "codex",
+      modelOverride: "gpt-6-astra",
     };
     routerConfig = {
       agents: {
@@ -3174,6 +3273,7 @@ describe("SessionCommands set-provider", () => {
 describe("SessionCommands set-effort", () => {
   beforeEach(() => {
     listedSessions = [];
+    orphanThread = null;
     resolvedSession = null;
     routerConfig = { agents: {} };
     natsEmits.length = 0;
@@ -3293,6 +3393,7 @@ describe("SessionCommands set-effort", () => {
 
 describe("SessionCommands info", () => {
   beforeEach(() => {
+    orphanThread = null;
     resolvedSession = null;
     sessionDerivedSource = undefined;
     listedContexts = [];
@@ -4010,6 +4111,7 @@ describe("SessionCommands recap", () => {
   });
 
   it("cloaks a missing session as SESSION_NOT_FOUND", async () => {
+    orphanThread = null;
     resolvedSession = null;
     let thrown: unknown;
     await captureLogsAsync(async () => {
@@ -4132,6 +4234,7 @@ describe("sessions agent-first contract", () => {
   });
 
   it("emits SESSION_NOT_FOUND envelope without suggestions (exit 1)", async () => {
+    orphanThread = null;
     resolvedSession = null;
     const commands = new SessionCommands();
     let thrown: unknown;

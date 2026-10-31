@@ -9,6 +9,7 @@ const emittedEvents: Array<{ topic: string; data: Record<string, unknown> }> = [
 const publishCalls: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
 const subscribedTopics: string[] = [];
 let publishError: Error | null = null;
+let beforePublishAck: ((sessionName: string) => Promise<void>) | null = null;
 
 mock.module("../nats.js", () => ({
   connectNats: mock(async () => {}),
@@ -36,6 +37,7 @@ mock.module("../omni/session-stream.js", () => ({
   publishSessionPrompt: mock(async (sessionName: string, payload: Record<string, unknown>) => {
     if (publishError) throw publishError;
     publishCalls.push({ sessionName, payload });
+    await beforePublishAck?.(sessionName);
   }),
 }));
 
@@ -54,6 +56,7 @@ beforeEach(async () => {
   publishCalls.length = 0;
   subscribedTopics.length = 0;
   publishError = null;
+  beforePublishAck = null;
 });
 
 afterEach(async () => {
@@ -124,7 +127,7 @@ describe("CronRunner agent job outcome tracking", () => {
     expect(dispatched.lastError).toBeUndefined();
     expect(dispatched.lastDurationMs).toBeUndefined();
 
-    runner.handleRuntimeEvent(
+    await runner.handleRuntimeEvent(
       runtimeEvent(sessionName, {
         type: "turn.failed",
         provider: "codex",
@@ -142,6 +145,26 @@ describe("CronRunner agent job outcome tracking", () => {
     expect(failed.nextRunAt).toBe(dispatched.nextRunAt);
   });
 
+  it("retains a launch failure emitted before the prompt publish ack", async () => {
+    const job = createAgentJob({ schedule: { type: "at", at: Date.now() + 60000 } });
+    const runner = new CronRunner();
+    beforePublishAck = async (sessionName) => {
+      await runner.handleRuntimeEvent(
+        runtimeEvent(sessionName, {
+          type: "turn.failed",
+          error: "No managed runtime credential could be resolved",
+        }),
+      );
+    };
+    await runner.triggerJob(job.id);
+    expect(dbGetCronJob(job.id)).toMatchObject({
+      lastStatus: "error",
+      lastError: "No managed runtime credential could be resolved",
+    });
+    const { listLocalInboxItems } = await import("../inbox/local-db.js");
+    expect(listLocalInboxItems({ sourceDomain: "cron" })).toHaveLength(1);
+  });
+
   it("records ok only after the turn completes", async () => {
     const job = createAgentJob({ sessionTarget: "main" });
     const runner = new CronRunner();
@@ -150,7 +173,7 @@ describe("CronRunner agent job outcome tracking", () => {
     const { sessionName } = publishCalls[0]!;
     expect(dbGetCronJob(job.id)?.lastStatus).toBeUndefined();
 
-    runner.handleRuntimeEvent(
+    await runner.handleRuntimeEvent(
       runtimeEvent(sessionName, { type: "turn.complete", provider: "claude", _turnProvenance: cronProvenance(job.id) }),
     );
 
@@ -166,7 +189,7 @@ describe("CronRunner agent job outcome tracking", () => {
 
     await runner.triggerJob(job.id);
     const { sessionName } = publishCalls[0]!;
-    runner.handleRuntimeEvent(
+    await runner.handleRuntimeEvent(
       runtimeEvent(sessionName, { type: "turn.failed", error: "boom", _turnProvenance: cronProvenance(job.id) }),
     );
     expect(dbGetCronJob(job.id)?.lastStatus).toBe("error");
@@ -176,10 +199,29 @@ describe("CronRunner agent job outcome tracking", () => {
     expect(redispatched.lastStatus).toBeUndefined();
     expect(redispatched.lastError).toBeUndefined();
 
-    runner.handleRuntimeEvent(
+    await runner.handleRuntimeEvent(
       runtimeEvent(sessionName, { type: "turn.complete", _turnProvenance: cronProvenance(job.id) }),
     );
     expect(dbGetCronJob(job.id)?.lastStatus).toBe("ok");
+  });
+
+  it("keeps failed one-shots and deletes them only after a successful turn", async () => {
+    const job = createAgentJob({ schedule: { type: "at", at: Date.now() }, deleteAfterRun: true });
+    const runner = new CronRunner();
+    await runner.triggerJob(job.id);
+    expect(dbGetCronJob(job.id)).not.toBeNull();
+    const sessionName = publishCalls[0]!.sessionName;
+    await runner.handleRuntimeEvent(
+      runtimeEvent(sessionName, { type: "turn.interrupted", _turnProvenance: cronProvenance(job.id) }),
+    );
+    expect(dbGetCronJob(job.id)?.lastStatus).toBe("error");
+    const { listLocalInboxItems } = await import("../inbox/local-db.js");
+    expect(listLocalInboxItems({ sourceDomain: "cron" })).toHaveLength(1);
+    await runner.triggerJob(job.id);
+    await runner.handleRuntimeEvent(
+      runtimeEvent(sessionName, { type: "turn.complete", _turnProvenance: cronProvenance(job.id) }),
+    );
+    expect(dbGetCronJob(job.id)).toBeNull();
   });
 
   it("records interrupted turns as errors", async () => {
@@ -188,7 +230,7 @@ describe("CronRunner agent job outcome tracking", () => {
 
     await runner.triggerJob(job.id);
     const { sessionName } = publishCalls[0]!;
-    runner.handleRuntimeEvent(
+    await runner.handleRuntimeEvent(
       runtimeEvent(sessionName, {
         type: "turn.interrupted",
         reason: "provider_transport_failure",
@@ -208,14 +250,14 @@ describe("CronRunner agent job outcome tracking", () => {
     await runner.triggerJob(job.id);
     const { sessionName } = publishCalls[0]!;
 
-    runner.handleRuntimeEvent(
+    await runner.handleRuntimeEvent(
       runtimeEvent(sessionName, {
         type: "turn.failed",
         error: "human turn failed",
         _turnProvenance: { origin: "human", background: false, automationOriginated: false, reason: "contact" },
       }),
     );
-    runner.handleRuntimeEvent(
+    await runner.handleRuntimeEvent(
       runtimeEvent(sessionName, {
         type: "turn.complete",
         _turnProvenance: { origin: "trigger", automationId: "trigger:t1", background: true, reason: "x" },
@@ -223,7 +265,7 @@ describe("CronRunner agent job outcome tracking", () => {
     );
     expect(dbGetCronJob(job.id)?.lastStatus).toBeUndefined();
 
-    runner.handleRuntimeEvent(
+    await runner.handleRuntimeEvent(
       runtimeEvent(sessionName, { type: "turn.complete", _turnProvenance: cronProvenance(job.id) }),
     );
     expect(dbGetCronJob(job.id)?.lastStatus).toBe("ok");
@@ -240,7 +282,7 @@ describe("CronRunner agent job outcome tracking", () => {
     const otherSession = publishCalls[1]!.sessionName;
     expect(jobSession).not.toBe(otherSession);
 
-    runner.handleRuntimeEvent(
+    await runner.handleRuntimeEvent(
       runtimeEvent(jobSession, {
         type: "turn.failed",
         error: "Runtime failed to start: spawn ENOENT",
@@ -256,18 +298,18 @@ describe("CronRunner agent job outcome tracking", () => {
 
     // A pending dispatch is consumed once; a later unrelated launch failure on
     // the same session is not re-attributed to the finished run.
-    runner.handleRuntimeEvent(runtimeEvent(jobSession, { type: "turn.complete" }));
-    runner.handleRuntimeEvent(runtimeEvent(jobSession, { type: "turn.failed", error: "later failure" }));
+    await runner.handleRuntimeEvent(runtimeEvent(jobSession, { type: "turn.complete" }));
+    await runner.handleRuntimeEvent(runtimeEvent(jobSession, { type: "turn.failed", error: "later failure" }));
     expect(dbGetCronJob(job.id)?.lastError).toBe("Runtime failed to start: spawn ENOENT");
   });
 
-  it("records provenance-correlated outcomes even without an in-memory pending dispatch", () => {
+  it("records provenance-correlated outcomes even without an in-memory pending dispatch", async () => {
     const job = createAgentJob();
     const runner = new CronRunner();
     const dispatchedAt = Date.now() - 4_000;
     dbMarkJobDispatched(job.id, { lastRunAt: dispatchedAt, nextRunAt: dispatchedAt + 60_000 });
 
-    runner.handleRuntimeEvent(
+    await runner.handleRuntimeEvent(
       runtimeEvent("test-agent", {
         type: "turn.failed",
         error: "400 model not supported",
@@ -281,7 +323,7 @@ describe("CronRunner agent job outcome tracking", () => {
     expect(failed.lastDurationMs).toBeGreaterThanOrEqual(4_000);
   });
 
-  it("does not let shell on-error notification turns overwrite the shell result", () => {
+  it("does not let shell on-error notification turns overwrite the shell result", async () => {
     const shellJob = dbCreateCronJob({
       name: `etl-${Math.random().toString(36).slice(2, 8)}`,
       schedule: { type: "every", every: 60_000 },
@@ -299,7 +341,7 @@ describe("CronRunner agent job outcome tracking", () => {
     });
     const runner = new CronRunner();
 
-    runner.handleRuntimeEvent(
+    await runner.handleRuntimeEvent(
       runtimeEvent("ops", { type: "turn.complete", _turnProvenance: cronProvenance(shellJob.id) }),
     );
 
@@ -310,18 +352,21 @@ describe("CronRunner agent job outcome tracking", () => {
     });
   });
 
-  it("ignores outcomes for unknown jobs and non-terminal events", () => {
+  it("ignores outcomes for unknown jobs and non-terminal events", async () => {
     const job = createAgentJob();
     const runner = new CronRunner();
     dbMarkJobDispatched(job.id, { lastRunAt: Date.now() });
 
-    runner.handleRuntimeEvent(
+    await runner.handleRuntimeEvent(
       runtimeEvent("test-agent", { type: "turn.failed", error: "x", _turnProvenance: cronProvenance("missing") }),
     );
-    runner.handleRuntimeEvent(
+    await runner.handleRuntimeEvent(
       runtimeEvent("test-agent", { type: "assistant.message", text: "hi", _turnProvenance: cronProvenance(job.id) }),
     );
-    runner.handleRuntimeEvent({ topic: "ravi.session.test-agent.response", data: { type: "turn.failed", error: "x" } });
+    await runner.handleRuntimeEvent({
+      topic: "ravi.session.test-agent.response",
+      data: { type: "turn.failed", error: "x" },
+    });
 
     expect(dbGetCronJob(job.id)?.lastStatus).toBeUndefined();
   });

@@ -22251,25 +22251,9 @@ class RuntimeCredentialsSelectReturn {
 
 RuntimeCredentialsSelectReturn runtimeCredentialsSelectReturnFromJson(Object? json) => RuntimeCredentialsSelectReturn.fromJsonValue(json);
 
-class RuntimeCredentialsStatusReturn {
-  const RuntimeCredentialsStatusReturn({required this.credential, required this.health});
+typedef RuntimeCredentialsStatusReturn = RaviJson;
 
-  final Map<String, RaviJson> credential;
-  final RaviJson health;
-
-  factory RuntimeCredentialsStatusReturn.fromJson(Map<String, Object?> json) {
-    return RuntimeCredentialsStatusReturn(
-      credential: raviJsonAsRaviJsonMap(json["credential"]),
-      health: RaviJson.from(json["health"]),
-    );
-  }
-
-  static RuntimeCredentialsStatusReturn fromJsonValue(Object? json) {
-    return RuntimeCredentialsStatusReturn.fromJson(raviJsonObject(json, "RuntimeCredentialsStatusReturn"));
-  }
-}
-
-RuntimeCredentialsStatusReturn runtimeCredentialsStatusReturnFromJson(Object? json) => RuntimeCredentialsStatusReturn.fromJsonValue(json);
+RuntimeCredentialsStatusReturn runtimeCredentialsStatusReturnFromJson(Object? json) => RaviJson.from(json);
 
 class RuntimeEnvGetReturn {
   const RuntimeEnvGetReturn({required this.key, required this.origin, required this.path, required this.present, required this.processPresent, required this.redacted, required this.secret, required this.value});
