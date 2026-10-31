@@ -49,6 +49,9 @@ Quoting regressions (`bun test src/bash/`):
   whitespace, command boundaries after comments and quoted newlines MUST be tested.
 - Harmless printf fixtures MUST compare actual Bash output with the guard's
   expansion classification when `/bin/bash` is available.
+- Real Bash comparisons MUST include nested and unquoted substitutions, escaped
+  metacharacters, and heredocs with bare, quoted and escaped delimiters. A literal
+  heredoc body does not make the heredoc operator permitted by this policy.
 - Hook tests MUST demonstrate that named-executable grants permit literal search
   arguments, do not permit a later shell, and still permit interpreter file
   scripts: this last case documents the explicitly open capability boundary.

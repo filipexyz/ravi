@@ -312,7 +312,7 @@ describe("shell quoting boundaries", () => {
 });
 
 it.skipIf(!existsSync("/bin/bash"))("agrees with Bash expansion on harmless printf examples", () => {
-  const cases = [
+  const argumentsToCheck = [
     { argument: "'$(printf changed)'", output: "$(printf changed)", safe: true },
     { argument: '"$(printf changed)"', output: "changed", safe: false },
     { argument: '"\\$(printf changed)"', output: "$(printf changed)", safe: true },
@@ -325,8 +325,19 @@ it.skipIf(!existsSync("/bin/bash"))("agrees with Bash expansion on harmless prin
     { argument: "'it'\\''s $(printf changed)'", output: "it's $(printf changed)", safe: true },
     { argument: "\\ #$(printf changed)", output: " #changed", safe: false },
   ];
-  for (const { argument, output, safe } of cases) {
-    const command = `printf '%s' ${argument}`;
+  const cases = [
+    ...argumentsToCheck.map(({ argument, output, safe }) => ({ command: `printf '%s' ${argument}`, output, safe })),
+    { command: "printf '%s' $(printf changed)", output: "changed", safe: false },
+    { command: "printf '%s' `printf changed`", output: "changed", safe: false },
+    { command: "printf '%s' \"$(printf '%s' \"$(printf changed)\")\"", output: "changed", safe: false },
+    { command: "printf '%s' $(printf '%s' 'nested literal')", output: "nestedliteral", safe: false },
+    { command: "printf '%s' \\$\\(printf\\ changed\\)", output: "$(printf changed)", safe: true },
+    { command: "cat <<EOF\n$(printf changed)\nEOF", output: "changed\n", safe: false },
+    { command: "cat <<'EOF'\n$(printf changed)\nEOF", output: "$(printf changed)\n", safe: false },
+    { command: "cat <<\\EOF\n$(printf changed)\nEOF", output: "$(printf changed)\n", safe: false },
+    { command: "cat <(printf changed)", output: "changed", safe: false },
+  ];
+  for (const { command, output, safe } of cases) {
     expect(
       execFileSync("/bin/bash", ["--noprofile", "--norc", "-c", command], {
         encoding: "utf8",
